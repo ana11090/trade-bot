@@ -5,7 +5,8 @@ Configuration file for trade-bot
 import os
 
 # Data paths
-DATA_ROOT = r'D:\traiding data\xauusd'
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+DATA_ROOT = os.path.join(PROJECT_ROOT, 'xauusd')
 TICK_DATA_PATH = os.path.join(DATA_ROOT, 'ticks')
 TIMEFRAME_DATA_PATH = os.path.join(DATA_ROOT, 'timeframes')
 
