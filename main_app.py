@@ -16,6 +16,14 @@ from project0_data_pipeline.panels import (
 from project0_data_pipeline.probabilities.panels import (
     account_survival, expected_value, breakeven, kelly, streaks, drawdown_recovery
 )
+from project1_reverse_engineering.panels import (
+    configuration, run_scenarios, results
+)
+from project2_backtesting.panels import (
+    configuration as p2_configuration,
+    run_backtest_panel as p2_run_backtest,
+    view_results as p2_view_results
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN WINDOW
@@ -76,6 +84,16 @@ state.all_panels["kelly"]             = kelly.build_panel(content)
 state.all_panels["streaks"]           = streaks.build_panel(content)
 state.all_panels["drawdown_recovery"] = drawdown_recovery.build_panel(content)
 
+# Project 1 - Reverse Engineering
+state.all_panels["p1_config"]  = configuration.build_panel(content)
+state.all_panels["p1_run"]     = run_scenarios.build_panel(content)
+state.all_panels["p1_results"] = results.build_panel(content)
+
+# Project 2 - Backtesting
+state.all_panels["p2_config"]  = p2_configuration.build_panel(content)
+state.all_panels["p2_run"]     = p2_run_backtest.build_panel(content)
+state.all_panels["p2_results"] = p2_view_results.build_panel(content)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +103,12 @@ refresh_map = {
     "panel6": risk_flags.refresh,
     "panel7": prop_compliance.refresh,
     "panel8": cost_spread.refresh,
+    "p1_config": configuration.refresh,
+    "p1_run": run_scenarios.refresh,
+    "p1_results": results.refresh,
+    "p2_config": p2_configuration.refresh,
+    "p2_run": p2_run_backtest.refresh,
+    "p2_results": p2_view_results.refresh,
 }
 show_panel = build_sidebar(window, canvas, refresh_map)
 

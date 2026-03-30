@@ -12,6 +12,8 @@ def build_sidebar(window, canvas, refresh_map):
 
     stats_open = [False]
     prob_open  = [False]
+    project1_open = [False]
+    project2_open = [False]
 
     # ── Frames ────────────────────────────────────────────────────────────────
     # Everything under "0 - Data Pipeline" lives here (hidden until btn0 click)
@@ -22,6 +24,12 @@ def build_sidebar(window, canvas, refresh_map):
 
     # Probabilities submenu (inside project0_extras)
     prob_submenu = tk.Frame(project0_extras, bg=state.COL_SUB)
+
+    # Everything under "1 - Reverse Engineer" lives here (hidden until btn1 click)
+    project1_extras = tk.Frame(sidebar, bg="#16213e")
+
+    # Everything under "2 - Backtesting" lives here (hidden until btn2 click)
+    project2_extras = tk.Frame(sidebar, bg="#16213e")
 
     # ── Button helpers ────────────────────────────────────────────────────────
     def _sidebar_btn(parent, text, cmd):
@@ -47,6 +55,8 @@ def build_sidebar(window, canvas, refresh_map):
 
         is_stats_sub = name in state.SUB_PANELS
         is_prob_sub  = name in state.PROB_SUB_PANELS
+        is_project1_sub = name in state.PROJECT1_SUB_PANELS
+        is_project2_sub = name in state.PROJECT2_SUB_PANELS
 
         # btn0
         if name == "pipeline":
@@ -55,6 +65,22 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn0.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+
+        # btn1 (project1)
+        if is_project1_sub:
+            btn1.configure(bg=state.COL_PARENT, fg="white",
+                          activebackground=state.COL_PARENT, activeforeground="white")
+        else:
+            btn1.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
+                          activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+
+        # btn2 (project2)
+        if is_project2_sub:
+            btn2.configure(bg=state.COL_PARENT, fg="white",
+                          activebackground=state.COL_PARENT, activeforeground="white")
+        else:
+            btn2.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
+                          activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
 
         # stats_btn — lit when a stats sub-panel is active
         if is_stats_sub:
@@ -90,6 +116,24 @@ def build_sidebar(window, canvas, refresh_map):
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
+        # project1 sub-button colors
+        for pname, btn in PROJECT1_BUTTONS.items():
+            if pname == name:
+                btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
+                              activebackground=state.COL_ACTIVE, activeforeground=state.FG_ACTIVE)
+            else:
+                btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                              activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
+
+        # project2 sub-button colors
+        for pname, btn in PROJECT2_BUTTONS.items():
+            if pname == name:
+                btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
+                              activebackground=state.COL_ACTIVE, activeforeground=state.FG_ACTIVE)
+            else:
+                btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                              activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
+
         # auto-expand stats submenu when navigating directly to a stats sub-panel
         if is_stats_sub and not stats_open[0]:
             stats_submenu.pack(fill="x", after=stats_btn)
@@ -99,6 +143,16 @@ def build_sidebar(window, canvas, refresh_map):
         if is_prob_sub and not prob_open[0]:
             prob_submenu.pack(fill="x", after=prob_btn)
             prob_open[0] = True
+
+        # auto-expand project1 submenu when navigating directly to a project1 sub-panel
+        if is_project1_sub and not project1_open[0]:
+            project1_extras.pack(fill="x", after=btn1)
+            project1_open[0] = True
+
+        # auto-expand project2 submenu when navigating directly to a project2 sub-panel
+        if is_project2_sub and not project2_open[0]:
+            project2_extras.pack(fill="x", after=btn2)
+            project2_open[0] = True
 
         canvas.yview_moveto(0)
         state.active_panel[0] = name
@@ -127,6 +181,28 @@ def build_sidebar(window, canvas, refresh_map):
         show_panel("pipeline")
         if not project0_extras.winfo_ismapped():
             project0_extras.pack(fill="x", after=btn0)
+
+    # ── Reverse Engineer click — reveals/hides project1_extras ────────────────
+    def _toggle_project1():
+        if project1_open[0]:
+            project1_extras.pack_forget()
+            project1_open[0] = False
+        else:
+            project1_extras.pack(fill="x", after=btn1)
+            project1_open[0] = True
+            # Show first sub-panel
+            show_panel("p1_config")
+
+    # ── Backtesting click — reveals/hides project2_extras ─────────────────────
+    def _toggle_project2():
+        if project2_open[0]:
+            project2_extras.pack_forget()
+            project2_open[0] = False
+        else:
+            project2_extras.pack(fill="x", after=btn2)
+            project2_open[0] = True
+            # Show first sub-panel
+            show_panel("p2_config")
 
     # ── Build buttons ─────────────────────────────────────────────────────────
     btn0 = _sidebar_btn(sidebar, "0 - Data Pipeline", _on_pipeline_click)
@@ -175,10 +251,40 @@ def build_sidebar(window, canvas, refresh_map):
     }
 
     # ── Remaining project buttons (always visible) ────────────────────────────
-    btn1 = _sidebar_btn(sidebar, "1 - Reverse Engineer", lambda: None)
+    btn1 = _sidebar_btn(sidebar, "1 - Reverse Engineer", _toggle_project1)
     btn1.pack(fill="x")
-    btn2 = _sidebar_btn(sidebar, "2 - Backtesting",      lambda: None)
+
+    # project1_extras — hidden until btn1 is clicked
+    btn_p1_config = _sub_btn(project1_extras, "⚙️ Configuration & Data", lambda: show_panel("p1_config"))
+    btn_p1_config.pack(fill="x")
+    btn_p1_run = _sub_btn(project1_extras, "🚀 Run Scenarios", lambda: show_panel("p1_run"))
+    btn_p1_run.pack(fill="x")
+    btn_p1_results = _sub_btn(project1_extras, "📊 View Results", lambda: show_panel("p1_results"))
+    btn_p1_results.pack(fill="x")
+
+    PROJECT1_BUTTONS = {
+        "p1_config": btn_p1_config,
+        "p1_run": btn_p1_run,
+        "p1_results": btn_p1_results,
+    }
+
+    btn2 = _sidebar_btn(sidebar, "2 - Backtesting", _toggle_project2)
     btn2.pack(fill="x")
+
+    # project2_extras — hidden until btn2 is clicked
+    btn_p2_config = _sub_btn(project2_extras, "⚙️ Configuration", lambda: show_panel("p2_config"))
+    btn_p2_config.pack(fill="x")
+    btn_p2_run = _sub_btn(project2_extras, "🚀 Run Backtest", lambda: show_panel("p2_run"))
+    btn_p2_run.pack(fill="x")
+    btn_p2_results = _sub_btn(project2_extras, "📊 View Results", lambda: show_panel("p2_results"))
+    btn_p2_results.pack(fill="x")
+
+    PROJECT2_BUTTONS = {
+        "p2_config": btn_p2_config,
+        "p2_run": btn_p2_run,
+        "p2_results": btn_p2_results,
+    }
+
     btn3 = _sidebar_btn(sidebar, "3 - Forward Bot",      lambda: None)
     btn3.pack(fill="x")
 

@@ -30,4 +30,6 @@ all_panels   = {}
 active_panel = [None]
 SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}
+PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results"}
+PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results"}
 submenu_open = [False]
