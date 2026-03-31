@@ -8,9 +8,11 @@ __pycache__/
 dist/
 build/
 
-# Data files (too large for git)
-data/*.csv
-*.csv
+# Raw tick data (too large for git - 51 GB)
+xauusd/ticks/**/*.csv
+
+# Trade data from project0
+project0_data_pipeline/**/*.csv
 
 # IDE
 .vscode/
