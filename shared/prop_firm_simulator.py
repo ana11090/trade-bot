@@ -75,7 +75,48 @@ class SimulationSummary:
     expected_net_profit: float | None
     expected_roi_pct: float | None
 
+    # Configuration used
+    risk_per_trade_pct: float = 1.0
+    default_sl_pips: float = 150.0
+    calculated_lot_size: float = 0.0
+
     individual_results: list = field(default_factory=list)
+
+
+# ── Profit rescaling ──────────────────────────────────────────────────────────
+
+def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
+                    default_sl_pips: float, pip_value_per_lot: float):
+    """
+    Rescale trade profits from raw dollar values to what they would be
+    on the simulated account using proper position sizing.
+
+    Uses the Pips column (raw price movement) instead of the Profit column
+    (which depends on the robot's actual lot size).
+
+    Returns (modified_df, calculated_lot_size).
+    """
+    import pandas as pd
+
+    df = trades_df.copy()
+
+    # Calculate lot size for this account and risk level
+    risk_dollars = account_size * (risk_per_trade_pct / 100.0)
+    lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
+    lot_size = max(0.01, min(lot_size, 100.0))
+
+    if "Pips" in df.columns:
+        df["Profit_Original"] = df["Profit"].copy()
+        df["Profit"] = df["Pips"] * pip_value_per_lot * lot_size
+    else:
+        # Fallback: proportional scaling by lot ratio
+        avg_lot = df["Lots"].mean() if "Lots" in df.columns else 1.0
+        if avg_lot > 0:
+            scale_factor = lot_size / avg_lot
+            df["Profit_Original"] = df["Profit"].copy()
+            df["Profit"] = df["Profit"] * scale_factor
+
+    return df, lot_size
 
 
 # ── Payout frequency map ───────────────────────────────────────────────────────
@@ -366,7 +407,8 @@ def _single_sim(trading_dates, daily_pnl, start_date, date_to_idx,
     )
 
 
-def _aggregate(results, firm, challenge, account_size, mode):
+def _aggregate(results, firm, challenge, account_size, mode,
+               risk_per_trade_pct=1.0, default_sl_pips=150.0, calculated_lot_size=0.0):
     """Build SimulationSummary from a list of SingleSimResult."""
     import statistics as stats_mod
 
@@ -438,6 +480,9 @@ def _aggregate(results, firm, challenge, account_size, mode):
         expected_funded_income=round(expected_income, 2) if expected_income is not None else None,
         expected_net_profit=round(expected_net, 2) if expected_net is not None else None,
         expected_roi_pct=round(expected_roi, 1) if expected_roi is not None else None,
+        risk_per_trade_pct=risk_per_trade_pct,
+        default_sl_pips=default_sl_pips,
+        calculated_lot_size=round(calculated_lot_size, 4),
         individual_results=results,
     )
 
@@ -454,6 +499,9 @@ def simulate_challenge(
     simulate_funded: bool = True,
     max_eval_calendar_days: int | None = None,
     random_seed: int = 42,
+    risk_per_trade_pct: float = 1.0,
+    default_sl_pips: float = 150.0,
+    pip_value_per_lot: float = 1.0,
 ) -> SimulationSummary | None:
     """
     Simulate the full prop firm challenge lifecycle.
@@ -492,6 +540,13 @@ def simulate_challenge(
     df["_close_dt"]   = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
     df["_close_date"] = df["_close_dt"].dt.date
     df = df.dropna(subset=["_close_dt"]).sort_values("_close_dt").reset_index(drop=True)
+
+    # Rescale profits to match account size and risk level
+    df, calculated_lot_size = _rescale_trades(
+        df, account_size, risk_per_trade_pct, default_sl_pips, pip_value_per_lot
+    )
+    print(f"[SIMULATOR] Lot size: {calculated_lot_size:.2f} lots "
+          f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips)")
 
     # Aggregate daily P&L
     daily_pnl: dict = {}
@@ -540,4 +595,5 @@ def simulate_challenge(
 
     print(f"[SIMULATOR] Done — {sum(1 for r in all_results if r.eval_outcome == 'PASS')}/{total} passed")
 
-    return _aggregate(all_results, firm, challenge, account_size, mode)
+    return _aggregate(all_results, firm, challenge, account_size, mode,
+                      risk_per_trade_pct, default_sl_pips, calculated_lot_size)

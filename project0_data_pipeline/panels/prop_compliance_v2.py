@@ -20,6 +20,8 @@ _sim_status_label = None
 _sim_mode_var     = None
 _sim_samples_var  = None
 _sim_size_var     = None
+_sim_risk_var     = None
+_sim_sl_var       = None
 _sim_run_btn      = None
 _sim_running      = False
 
@@ -103,7 +105,7 @@ def build_panel(content):
 
 def _build_simulation_section(panel):
     global _sim_tree, _sim_status_label, _sim_mode_var, _sim_samples_var
-    global _sim_size_var, _sim_run_btn
+    global _sim_size_var, _sim_risk_var, _sim_sl_var, _sim_run_btn
 
     # Divider
     sep_frame = tk.Frame(panel, bg="#f0f2f5")
@@ -144,6 +146,18 @@ def _build_simulation_section(panel):
     sim_size_menu = tk.OptionMenu(row1, _sim_size_var, *sizes)
     sim_size_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
     sim_size_menu.pack(side="left", padx=(6, 20))
+
+    tk.Label(row1, text="Risk %:", bg="white", font=("Segoe UI", 10)).pack(side="left", padx=(12, 0))
+    _sim_risk_var = tk.StringVar(value="1.0")
+    risk_menu = tk.OptionMenu(row1, _sim_risk_var, "0.5", "1.0", "1.5", "2.0", "3.0")
+    risk_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
+    risk_menu.pack(side="left", padx=(4, 12))
+
+    tk.Label(row1, text="SL pips:", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    _sim_sl_var = tk.StringVar(value="150")
+    sl_entry = tk.Entry(row1, textvariable=_sim_sl_var, width=6,
+                        font=("Segoe UI", 10), bd=1, relief="solid")
+    sl_entry.pack(side="left", padx=(4, 12))
 
     _sim_run_btn = tk.Button(row1, text="Run Simulation",
                              bg="#2d8a4e", fg="white",
@@ -226,6 +240,17 @@ def _run_simulation():
     except ValueError:
         num_samples = 200
 
+    try:
+        risk_pct = float(_sim_risk_var.get())
+    except ValueError:
+        risk_pct = 1.0
+
+    try:
+        sl_pips = float(_sim_sl_var.get())
+        sl_pips = max(1.0, sl_pips)
+    except ValueError:
+        sl_pips = 150.0
+
     trades_path = get_history_trades_path(active["history_id"])
     try:
         trades_df = pd.read_csv(trades_path)
@@ -267,7 +292,10 @@ def _run_simulation():
         for idx, (firm_id, challenge_id, firm_name, challenge_name) in enumerate(targets):
             summary = simulate_challenge(
                 trades_df, firm_id, challenge_id, account_size,
-                mode=mode, num_samples=num_samples, simulate_funded=True
+                mode=mode, num_samples=num_samples, simulate_funded=True,
+                risk_per_trade_pct=risk_pct,
+                default_sl_pips=sl_pips,
+                pip_value_per_lot=1.0,
             )
             if summary:
                 results.append((firm_name, challenge_name, summary))
@@ -325,8 +353,13 @@ def _on_sim_done(results, total, account_size):
             attempts,
         ), tags=(tag,))
 
+    lot_info = ""
+    if results:
+        first_s = results[0][2]
+        lot_info = (f" | {first_s.calculated_lot_size:.2f} lots "
+                    f"({first_s.risk_per_trade_pct}% risk, {first_s.default_sl_pips:.0f}-pip SL)")
     _sim_status_label.configure(
-        text=f"Done — {len(results)}/{total} challenges simulated (${account_size:,})",
+        text=f"Done — {len(results)}/{total} challenges simulated (${account_size:,}){lot_info}",
         fg="#2d8a4e")
 
 
