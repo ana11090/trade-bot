@@ -45,7 +45,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": "Scale to 95% split after consistent profit"
+        "scaling_plan": "Scale to 95% split after consistent profit",
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [6000, 15000, 25000, 50000, 100000, 200000],
       "restrictions": {
@@ -90,7 +93,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": null
+        "scaling_plan": null,
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [6000, 15000, 25000, 50000, 100000, 200000],
       "restrictions": {
@@ -148,7 +154,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": null
+        "scaling_plan": null,
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
       "restrictions": {
@@ -179,7 +188,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "on_demand",
-        "scaling_plan": null
+        "scaling_plan": null,
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [5000, 10000, 20000],
       "restrictions": {

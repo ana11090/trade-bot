@@ -31,9 +31,12 @@
         "max_total_drawdown_pct": 4.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": null,
+        "consistency_rule_pct": 50.0,
         "payout_frequency": "weekly",
-        "scaling_plan": "First $10K at 100% split (legacy program)"
+        "scaling_plan": "First $10K at 100% split (legacy program)",
+        "dd_reset_on_payout": true,
+        "min_payout_amount": 100,
+        "consistency_rule_type": "best_day_vs_total"
       },
       "account_sizes": [50000],
       "restrictions": {
@@ -77,9 +80,12 @@
         "max_total_drawdown_pct": 3.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": null,
+        "consistency_rule_pct": 50.0,
         "payout_frequency": "weekly",
-        "scaling_plan": "First $10K at 100% split (legacy program)"
+        "scaling_plan": "First $10K at 100% split (legacy program)",
+        "dd_reset_on_payout": true,
+        "min_payout_amount": 100,
+        "consistency_rule_type": "best_day_vs_total"
       },
       "account_sizes": [100000],
       "restrictions": {
@@ -123,9 +129,12 @@
         "max_total_drawdown_pct": 3.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": null,
+        "consistency_rule_pct": 50.0,
         "payout_frequency": "weekly",
-        "scaling_plan": "First $10K at 100% split (legacy program)"
+        "scaling_plan": "First $10K at 100% split (legacy program)",
+        "dd_reset_on_payout": true,
+        "min_payout_amount": 100,
+        "consistency_rule_type": "best_day_vs_total"
       },
       "account_sizes": [150000],
       "restrictions": {

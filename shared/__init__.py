@@ -7,7 +7,7 @@ Modules are imported lazily to avoid pulling in heavy dependencies
 (like ta, pytz, scikit-learn) when only lightweight utilities are needed.
 """
 
-__all__ = ['data_utils', 'indicator_utils', 'trade_history_manager', 'prop_firm_engine']
+__all__ = ['data_utils', 'indicator_utils', 'trade_history_manager', 'prop_firm_engine', 'prop_firm_simulator']
 
 
 def __getattr__(name):
@@ -24,4 +24,7 @@ def __getattr__(name):
     elif name == 'prop_firm_engine':
         from . import prop_firm_engine
         return prop_firm_engine
+    elif name == 'prop_firm_simulator':
+        from . import prop_firm_simulator
+        return prop_firm_simulator
     raise AttributeError(f"module 'shared' has no attribute {name!r}")

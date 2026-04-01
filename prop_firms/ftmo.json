@@ -45,7 +45,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": "Scale up to 200% of initial capital after 4 successful payouts"
+        "scaling_plan": "Scale up to 200% of initial capital after 4 successful payouts",
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [10000, 25000, 50000, 100000, 200000],
       "restrictions": {
@@ -90,7 +93,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": null
+        "scaling_plan": null,
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [10000, 25000, 50000, 100000, 200000],
       "restrictions": {

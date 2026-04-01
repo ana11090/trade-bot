@@ -45,7 +45,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M"
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M",
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
       "restrictions": {
@@ -90,7 +93,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M"
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M",
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
       "restrictions": {
@@ -161,7 +167,10 @@
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
-        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M. Split scales to 100%."
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M. Split scales to 100%.",
+        "dd_reset_on_payout": false,
+        "min_payout_amount": 100,
+        "consistency_rule_type": null
       },
       "account_sizes": [5000, 10000, 20000, 40000],
       "restrictions": {
