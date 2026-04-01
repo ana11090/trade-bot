@@ -1,0 +1,8 @@
+{
+  "robots": [
+    {
+      "robot_id": "original_bot"
+    }
+  ],
+  "active_robot_id": "original_bot"
+}
