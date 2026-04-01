@@ -7,6 +7,9 @@ __pycache__/
 *.pkl
 trade_histories/*/project1_results/scenarios/*/*.png
 
+# Tick data (too large for git - kept locally only)
+xauusd/ticks/
+
 # OS files
 .DS_Store
 Thumbs.db
