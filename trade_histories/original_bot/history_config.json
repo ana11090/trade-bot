@@ -9,9 +9,11 @@
     "start": "2020-01-07",
     "end": "2026-03-10"
   },
-  "status": "analyzed",
+  "status": "loaded",
   "source_file": "trades_clean.csv",
   "pipeline_progress": {
-    "project0": "complete"
+    "project0": "pending",
+    "project1": "pending",
+    "project2": "pending"
   }
 }

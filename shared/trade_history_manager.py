@@ -193,6 +193,17 @@ def load_trades(
     except OSError as e:
         raise RuntimeError(f"Could not create workspace folder: {e}")
 
+    # Add .gitkeep files so empty dirs survive git push/pull
+    for gitkeep_dir in [
+        os.path.join(history_dir, "project0_results"),
+        os.path.join(history_dir, "project1_results"),
+        os.path.join(history_dir, "project1_results", "scenarios"),
+        os.path.join(history_dir, "project2_results"),
+    ]:
+        gitkeep_path = os.path.join(gitkeep_dir, ".gitkeep")
+        if not os.path.exists(gitkeep_path):
+            open(gitkeep_path, "w").close()
+
     # Copy trades files
     dest_original = os.path.join(history_dir, "trades_original.csv")
     dest_clean    = os.path.join(history_dir, "trades_clean.csv")
