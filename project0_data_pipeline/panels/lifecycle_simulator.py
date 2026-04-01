@@ -152,6 +152,93 @@ def build_panel(content):
         tk.Label(color_row, text=text, bg="#f0f2f5", fg=fg_color,
                  font=("Segoe UI", 8)).pack(side="left", padx=(0, 16))
 
+    # ── Methodology (collapsible) ─────────────────────────────────────────────
+    method_toggle_var = [False]
+
+    def _toggle_methodology():
+        if method_toggle_var[0]:
+            method_content.pack_forget()
+            method_btn.configure(text="▶ Show full methodology")
+            method_toggle_var[0] = False
+        else:
+            method_content.pack(fill="x", padx=20, pady=(0, 8))
+            method_btn.configure(text="▼ Hide methodology")
+            method_toggle_var[0] = True
+
+    method_btn = tk.Button(panel, text="▶ Show full methodology",
+                           bg="#f0f2f5", fg="#534AB7", bd=0,
+                           font=("Segoe UI", 9, "bold"), anchor="w",
+                           activebackground="#f0f2f5", activeforeground="#3C3489",
+                           command=_toggle_methodology)
+    method_btn.pack(anchor="w", padx=20, pady=(0, 4))
+
+    method_content = tk.Frame(panel, bg="white", bd=1, relief="solid")
+    # Starts collapsed — packed by _toggle_methodology()
+
+    methodology_sections = [
+        ("Why this simulator exists",
+         "A simple pass/fail check feeds ALL your trades through a challenge sequentially. "
+         "With years of profitable trading, any target gets hit eventually — so everything shows PASS. "
+         "This is useless. The simulator instead asks: 'If I started this challenge on a random day, "
+         "what would actually happen?' It tests hundreds of different starting points to give you "
+         "a realistic probability."),
+        ("How trades are rescaled (Pips-based sizing)",
+         "Your robot traded different lot sizes over time (e.g. 0.07 lots in 2020, 100 lots in 2026). "
+         "We can't use the raw dollar profits — a $90,000 win on 100 lots is meaningless for a $100K account. "
+         "Instead, we use the PIPS column (the raw price movement the robot captured) and recalculate "
+         "the dollar value based on proper position sizing for the simulated account.\n\n"
+         "Formula: lot_size = (account_size × risk%) ÷ (SL_pips × pip_value_per_lot)\n"
+         "Then: trade_profit = pips × pip_value_per_lot × lot_size\n\n"
+         "Example ($100K account, 1% risk, 150-pip SL, XAUUSD):\n"
+         "  lot_size = ($100,000 × 0.01) ÷ (150 × $1.00) = 6.67 lots\n"
+         "  A +908 pip trade = 908 × $1.00 × 6.67 = $6,056 profit\n"
+         "  A -150 pip trade = -150 × $1.00 × 6.67 = -$1,000 loss (exactly 1% risk)"),
+        ("Daily DD safety margin",
+         "Each prop firm has a daily loss limit (e.g. FTMO = 5% = $5,000 on $100K). "
+         "In real life, a smart trader stops trading BEFORE hitting this limit — not AT it. "
+         "The DD Safety % controls how cautious the bot is.\n\n"
+         "At 80% safety: the bot stops when daily loss reaches 80% of the limit ($4,000 on FTMO).\n"
+         "At 100% safety: the bot never stops early (maximum aggressive — risks hitting the actual limit).\n"
+         "At 60% safety: the bot stops at just 60% of the limit ($3,000) — very conservative.\n\n"
+         "The bot processes trades ONE BY ONE within each day. On winning days, all trades are taken. "
+         "On losing days, it stops early when approaching the danger zone."),
+        ("Drawdown types explained",
+         "Static: The limit is calculated from the starting balance and never moves. "
+         "If you start at $100K with 10% max DD, the floor is always $90K even if your account grows. "
+         "This is more forgiving — profit creates a buffer.\n\n"
+         "Trailing: The limit follows your highest balance. If your account reaches $115K, the floor "
+         "moves up to $105K. Any pullback from the peak counts against you.\n\n"
+         "Trailing EOD: Same as trailing, but the floor only updates at market close, not intraday."),
+        ("What 'Pass Rate' really means",
+         "If the simulator runs 500 windows and 350 pass, the pass rate is 70%. "
+         "This means: if you start this challenge on a random day, you have a 70% chance of passing. "
+         "A higher pass rate doesn't always mean 'better' — also consider how fast it passes "
+         "(fewer days = less fee time) and how much you earn once funded."),
+        ("How Expected $ is calculated",
+         "avg_attempts = 1 ÷ pass_rate  (e.g. 70% → 1.43 attempts on average)\n"
+         "expected_cost = challenge_fee × avg_attempts\n"
+         "expected_income = average total payouts across all funded simulations\n"
+         "expected_profit = expected_income − expected_cost\n"
+         "ROI = expected_profit ÷ expected_cost × 100%"),
+        ("Simulation modes",
+         "Sliding Window: Starts a fresh challenge at EVERY unique trading date. Most thorough — "
+         "tests every possible scenario. Slower but complete.\n\n"
+         "Monte Carlo: Randomly picks N starting dates. Faster but results have some randomness. "
+         "Use for quick estimates; use sliding window for final decisions."),
+        ("Settings guide",
+         "Risk %: How much of the account to risk per trade. 1% is standard.\n"
+         "SL pips: Stop-loss distance used to calculate lot size. Adjust if your robot uses a different SL.\n"
+         "DD Safety %: How cautious the bot is about the daily loss limit. 80% is recommended."),
+    ]
+
+    for title, text in methodology_sections:
+        tk.Label(method_content, text=title, bg="white", fg="#1a1a2a",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=16, pady=(10, 2))
+        tk.Label(method_content, text=text, bg="white", fg="#555566",
+                 font=("Segoe UI", 9), wraplength=800, justify="left").pack(
+                     anchor="w", padx=16, pady=(0, 4))
+    tk.Frame(method_content, bg="white", height=12).pack()
+
     # ── Summary cards (populated after run) ───────────────────────────────────
     _summary_frame = tk.Frame(panel, bg="#f0f2f5")
     _summary_frame.pack(fill="x", padx=20, pady=(0, 8))

@@ -85,6 +85,18 @@ def build_panel(content):
                              font=("Segoe UI", 9))
     _status_label.pack(anchor="w", padx=16, pady=(0, 8))
 
+    # Methodology note
+    note_box = tk.Frame(panel, bg="#f8f9fc", bd=1, relief="solid")
+    note_box.pack(fill="x", padx=20, pady=(0, 10))
+    tk.Label(note_box,
+             text="This panel runs a Monte Carlo simulation (50 samples per combination) for each loaded "
+                  "trade history against each prop firm. Cell values show the PASS RATE — the probability "
+                  "of passing the challenge if started on a random day. Trades are rescaled using the Pips "
+                  "column at your chosen Risk % and SL. For detailed methodology, see the "
+                  "'Show full methodology' section in the Lifecycle Simulator panel.",
+             bg="#f8f9fc", fg="#444466", font=("Segoe UI", 9),
+             wraplength=820, justify="left").pack(padx=12, pady=8)
+
     # Tree area — rebuilt dynamically each run
     _tree_frame = tk.Frame(panel, bg="#f0f2f5")
     _tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
