@@ -12,8 +12,11 @@ import state
 from sidebar import build_sidebar
 from helpers import make_copyable
 from project0_data_pipeline.panels import (
-    pipeline, performance, statistics, risk_flags, prop_compliance, cost_spread
+    pipeline, performance, statistics, risk_flags, cost_spread
 )
+from project0_data_pipeline.panels import prop_compliance_v2 as prop_compliance
+from project0_data_pipeline.panels import prop_explorer
+from project0_data_pipeline.panels import compare_histories
 from project0_data_pipeline.probabilities.panels import (
     account_survival, expected_value, breakeven, kelly, streaks, drawdown_recovery
 )
@@ -95,6 +98,10 @@ state.all_panels["p2_config"]  = p2_configuration.build_panel(content)
 state.all_panels["p2_run"]     = p2_run_backtest.build_panel(content)
 state.all_panels["p2_results"] = p2_view_results.build_panel(content)
 
+# New Project 0 extra panels
+state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
+state.all_panels["compare_histories"] = compare_histories.build_panel(content)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +117,8 @@ refresh_map = {
     "p2_config": p2_configuration.refresh,
     "p2_run": p2_run_backtest.refresh,
     "p2_results": p2_view_results.refresh,
+    "prop_explorer":     prop_explorer.refresh,
+    "compare_histories": compare_histories.refresh,
 }
 show_panel = build_sidebar(window, canvas, refresh_map)
 
