@@ -1,0 +1,146 @@
+{
+  "firm_id": "topstep",
+  "firm_name": "Topstep",
+  "website": "https://topstep.com",
+  "market_type": "futures",
+  "challenges": [
+    {
+      "challenge_id": "topstep_50k",
+      "challenge_name": "Trading Combine $50K",
+      "description": "Futures Trading Combine. $50K account. Profit target $3,000 (6%), trailing EOD max DD $2,000 (4%), daily loss limit $1,000 (2%). 50% consistency rule vs target.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Trading Combine",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 2.0,
+          "max_total_drawdown_pct": 4.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": 50.0,
+          "consistency_rule_type": "best_day_vs_target",
+          "notes": "Dollar amounts: target $3,000, max DD $2,000 (trailing EOD), daily loss limit $1,000"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 90,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 2.0,
+        "max_total_drawdown_pct": 4.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "weekly",
+        "scaling_plan": "First $10K at 100% split (legacy program)"
+      },
+      "account_sizes": [50000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"50000": 165},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "topstep_100k",
+      "challenge_name": "Trading Combine $100K",
+      "description": "Futures Trading Combine. $100K account. Profit target $6,000 (6%), trailing EOD max DD $3,000 (3%), daily loss limit $2,000 (2%). 50% consistency rule vs target.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Trading Combine",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 2.0,
+          "max_total_drawdown_pct": 3.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": 50.0,
+          "consistency_rule_type": "best_day_vs_target",
+          "notes": "Dollar amounts: target $6,000, max DD $3,000 (trailing EOD), daily loss limit $2,000"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 90,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 2.0,
+        "max_total_drawdown_pct": 3.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "weekly",
+        "scaling_plan": "First $10K at 100% split (legacy program)"
+      },
+      "account_sizes": [100000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"100000": 375},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "topstep_150k",
+      "challenge_name": "Trading Combine $150K",
+      "description": "Futures Trading Combine. $150K account. Profit target $9,000 (6%), trailing EOD max DD $4,500 (3%), daily loss limit $3,000 (2%). 50% consistency rule vs target.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Trading Combine",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 2.0,
+          "max_total_drawdown_pct": 3.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": 50.0,
+          "consistency_rule_type": "best_day_vs_target",
+          "notes": "Dollar amounts: target $9,000, max DD $4,500 (trailing EOD), daily loss limit $3,000"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 90,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 2.0,
+        "max_total_drawdown_pct": 3.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "weekly",
+        "scaling_plan": "First $10K at 100% split (legacy program)"
+      },
+      "account_sizes": [150000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"150000": 375},
+        "fee_refundable": false
+      }
+    }
+  ]
+}

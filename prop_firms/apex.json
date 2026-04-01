@@ -1,0 +1,376 @@
+{
+  "firm_id": "apex",
+  "firm_name": "Apex Trader Funding",
+  "website": "https://apextraderfunding.com",
+  "market_type": "futures",
+  "challenges": [
+    {
+      "challenge_id": "apex_25k_eod",
+      "challenge_name": "Apex $25K EOD Trailing",
+      "description": "Futures eval. $25K. Target $1,500 (6%). Max DD $1,500 (6%) trailing EOD. Daily loss limit $500 (2%). 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 2.0,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $1,500, max DD $1,500 (trailing EOD), daily loss limit $500"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 2.0,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [25000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"25000": 167},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_50k_eod",
+      "challenge_name": "Apex $50K EOD Trailing",
+      "description": "Futures eval. $50K. Target $3,000 (6%). Max DD $2,500 (5%) trailing EOD. Daily loss limit $1,000 (2%). 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 2.0,
+          "max_total_drawdown_pct": 5.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $3,000, max DD $2,500 (trailing EOD), daily loss limit $1,000"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 2.0,
+        "max_total_drawdown_pct": 5.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [50000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"50000": 167},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_100k_eod",
+      "challenge_name": "Apex $100K EOD Trailing",
+      "description": "Futures eval. $100K. Target $6,000 (6%). Max DD $3,000 (3%) trailing EOD. Daily loss limit $1,500 (1.5%). 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 1.5,
+          "max_total_drawdown_pct": 3.0,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $6,000, max DD $3,000 (trailing EOD), daily loss limit $1,500"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 1.5,
+        "max_total_drawdown_pct": 3.0,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [100000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"100000": 297},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_150k_eod",
+      "challenge_name": "Apex $150K EOD Trailing",
+      "description": "Futures eval. $150K. Target $7,500 (5%). Max DD $5,000 (3.3%) trailing EOD. Daily loss limit $1,500 (1%). 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 1.0,
+          "max_total_drawdown_pct": 3.3,
+          "drawdown_type": "trailing_eod",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $7,500, max DD $5,000 (trailing EOD), daily loss limit $1,500"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 1.0,
+        "max_total_drawdown_pct": 3.3,
+        "drawdown_type": "trailing_eod",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [150000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"150000": 297},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_25k_intraday",
+      "challenge_name": "Apex $25K Intraday Trailing",
+      "description": "Futures eval. $25K. Target $1,500 (6%). Max DD $1,500 (6%) trailing intraday (real-time). No daily loss limit. 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "trailing",
+          "drawdown_basis": "equity",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $1,500, max DD $1,500 (intraday trailing). No daily loss limit."
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [25000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"25000": 167},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_50k_intraday",
+      "challenge_name": "Apex $50K Intraday Trailing",
+      "description": "Futures eval. $50K. Target $3,000 (6%). Max DD $2,500 (5%) intraday trailing. No daily loss limit. 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 5.0,
+          "drawdown_type": "trailing",
+          "drawdown_basis": "equity",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $3,000, max DD $2,500 (intraday trailing). No daily loss limit."
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 5.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [50000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"50000": 167},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_100k_intraday",
+      "challenge_name": "Apex $100K Intraday Trailing",
+      "description": "Futures eval. $100K. Target $6,000 (6%). Max DD $3,000 (3%) intraday trailing. No daily loss limit. 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 3.0,
+          "drawdown_type": "trailing",
+          "drawdown_basis": "equity",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $6,000, max DD $3,000 (intraday trailing). No daily loss limit."
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 3.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [100000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"100000": 297},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "apex_150k_intraday",
+      "challenge_name": "Apex $150K Intraday Trailing",
+      "description": "Futures eval. $150K. Target $7,500 (5%). Max DD $5,000 (3.3%) intraday trailing. No daily loss limit. 30-day time limit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Apex Evaluation",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 3.3,
+          "drawdown_type": "trailing",
+          "drawdown_basis": "equity",
+          "min_trading_days": 0,
+          "max_calendar_days": 30,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null,
+          "notes": "Dollar amounts: target $7,500, max DD $5,000 (intraday trailing). No daily loss limit."
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 100,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 3.3,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 50.0,
+        "payout_frequency": "weekly",
+        "scaling_plan": "100% split after 5 payouts"
+      },
+      "account_sizes": [150000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": false,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"150000": 297},
+        "fee_refundable": false
+      }
+    }
+  ]
+}

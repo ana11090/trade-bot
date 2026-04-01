@@ -1,0 +1,200 @@
+{
+  "firm_id": "fundednext",
+  "firm_name": "FundedNext",
+  "website": "https://fundednext.com",
+  "market_type": "forex_cfd",
+  "challenges": [
+    {
+      "challenge_id": "fundednext_stellar_2step",
+      "challenge_name": "Stellar 2-Step",
+      "description": "Standard 2-phase evaluation. 8% phase 1 target, 5% phase 2. Static balance-based drawdown.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Stellar Phase 1",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "Stellar Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 95,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": "Scale to 95% split after consistent profit"
+      },
+      "account_sizes": [6000, 15000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"6000": 59, "15000": 119, "25000": 199, "50000": 299, "100000": 549, "200000": 999},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "fundednext_stellar_1step",
+      "challenge_name": "Stellar 1-Step",
+      "description": "Single-phase evaluation. 10% target, 3% daily DD, 6% max DD. Faster route to funded.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Stellar 1-Step Phase",
+          "profit_target_pct": 10.0,
+          "max_daily_drawdown_pct": 3.0,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 2,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 90,
+        "max_profit_split_pct": 95,
+        "max_daily_drawdown_pct": 3.0,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": null
+      },
+      "account_sizes": [6000, 15000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"6000": 65, "15000": 129, "25000": 229, "50000": 349, "100000": 599, "200000": 1099},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "fundednext_stellar_lite",
+      "challenge_name": "Stellar Lite",
+      "description": "Lighter 2-phase evaluation with easier targets. 8% phase 1, 4% phase 2.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Stellar Lite Phase 1",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 8.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "Stellar Lite Phase 2",
+          "profit_target_pct": 4.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 8.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 95,
+        "max_daily_drawdown_pct": 4.0,
+        "max_total_drawdown_pct": 8.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": 32, "10000": 59, "25000": 129, "50000": 199, "100000": 349, "200000": 699},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "fundednext_stellar_instant",
+      "challenge_name": "Stellar Instant",
+      "description": "No evaluation — instant funded account. 6% trailing max DD, no daily DD limit. On-demand payouts.",
+      "phases": [],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 80,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 20000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": 279, "10000": 479, "20000": 879},
+        "fee_refundable": false
+      }
+    }
+  ]
+}

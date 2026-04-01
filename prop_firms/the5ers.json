@@ -1,0 +1,182 @@
+{
+  "firm_id": "the5ers",
+  "firm_name": "The 5%ers",
+  "website": "https://the5ers.com",
+  "market_type": "forex_cfd",
+  "challenges": [
+    {
+      "challenge_id": "the5ers_high_stakes",
+      "challenge_name": "High Stakes 2-Step",
+      "description": "2-phase evaluation. 8% + 5% targets. Static drawdown. Account doubles every 10% profit up to $4M. No news restrictions.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "High Stakes Phase 1",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "High Stakes Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M"
+      },
+      "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"6000": 65, "10000": 95, "20000": 175, "40000": 235, "60000": 315, "100000": 495},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "the5ers_hyper_growth",
+      "challenge_name": "Hyper Growth 1-Step",
+      "description": "Single-phase evaluation with trailing drawdown. 10% target, 3% daily, 6% max trailing DD. Scales to 100% split and account up to $4M.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Hyper Growth Phase",
+          "profit_target_pct": 10.0,
+          "max_daily_drawdown_pct": 3.0,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "trailing",
+          "drawdown_basis": "equity",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 3.0,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M"
+      },
+      "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"6000": 85, "10000": 135, "20000": 235, "40000": 355, "60000": 475, "100000": 595},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "the5ers_bootcamp",
+      "challenge_name": "Bootcamp 3-Step",
+      "description": "3-phase evaluation with strict risk rules. 6% target per phase. Must use stop-loss on every trade. Max 2% risk per trade.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Bootcamp Phase 1",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 5.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "Bootcamp Phase 2",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 5.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 3,
+          "phase_name": "Bootcamp Phase 3",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 5.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 50,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 4.0,
+        "max_total_drawdown_pct": 5.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": "Account doubles every 10% profit milestone, up to $4M. Split scales to 100%."
+      },
+      "account_sizes": [5000, 10000, 20000, 40000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": false,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": 39, "10000": 85, "20000": 175, "40000": 245},
+        "fee_refundable": true
+      }
+    }
+  ]
+}

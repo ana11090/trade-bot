@@ -1,0 +1,361 @@
+{
+  "firm_id": "atlas_funded",
+  "firm_name": "Atlas Funded",
+  "website": "https://atlasfunded.com",
+  "market_type": "forex_cfd",
+  "challenges": [
+    {
+      "challenge_id": "atlas_1step",
+      "challenge_name": "1-Step Challenge",
+      "description": "Single-phase evaluation. 10% target, 5% daily DD, 10% max DD. 5 minimum profitable days (>0.5% each). 3-minute minimum trade duration.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "1-Step Phase",
+          "profit_target_pct": 10.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": "Scale to 100% split over time"
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": 49, "10000": 89, "25000": 189, "50000": 299, "100000": 499, "200000": 899},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "atlas_1step_pro",
+      "challenge_name": "1-Step Pro",
+      "description": "Advanced single-phase. 11% target, 4% daily DD, 7% max DD. Tighter risk rules, 5 profitable days >1% each.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "1-Step Pro Phase",
+          "profit_target_pct": 11.0,
+          "max_daily_drawdown_pct": 4.0,
+          "max_total_drawdown_pct": 7.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 4.0,
+        "max_total_drawdown_pct": 7.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "atlas_2step_standard",
+      "challenge_name": "2-Step Standard",
+      "description": "Classic 2-phase evaluation. Phase 1: 9% target, Phase 2: 5% target.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "2-Step Phase 1",
+          "profit_target_pct": 9.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "2-Step Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "atlas_2step_pro",
+      "challenge_name": "2-Step Pro",
+      "description": "Pro 2-phase evaluation. Phase 1: 8% target with tighter 8% max DD. Phase 2: 5% target.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "2-Step Pro Phase 1",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 8.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "2-Step Pro Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 8.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 8.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "atlas_3step",
+      "challenge_name": "3-Step Challenge",
+      "description": "3-phase evaluation. Phase 1: 8%, Phase 2: 5%, Phase 3: 3% profit targets.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "3-Step Phase 1",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "3-Step Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 3,
+          "phase_name": "3-Step Phase 3",
+          "profit_target_pct": 3.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "atlas_access",
+      "challenge_name": "Access Challenge",
+      "description": "Pay-after-pass model. 8% target, same DD rules as standard. No upfront fee required.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Access Phase",
+          "profit_target_pct": 8.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance",
+          "min_trading_days": 5,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": 0, "10000": 0, "25000": 0, "50000": 0, "100000": 0, "200000": 0},
+        "fee_refundable": false
+      }
+    },
+    {
+      "challenge_id": "atlas_instant",
+      "challenge_name": "Instant Funding",
+      "description": "No evaluation — instant funded access. Trailing drawdown varies by size. Up to 100% profit split.",
+      "phases": [],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 100,
+        "max_daily_drawdown_pct": null,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "on_demand",
+        "scaling_plan": null
+      },
+      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000, 300000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 5,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 180,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null, "300000": null},
+        "fee_refundable": false
+      }
+    }
+  ]
+}

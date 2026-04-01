@@ -1,0 +1,111 @@
+{
+  "firm_id": "ftmo",
+  "firm_name": "FTMO",
+  "website": "https://ftmo.com",
+  "market_type": "forex_cfd",
+  "challenges": [
+    {
+      "challenge_id": "ftmo_2step_standard",
+      "challenge_name": "FTMO 2-Step Standard",
+      "description": "Classic 2-phase evaluation. Phase 1: 10% target. Phase 2: 5% target. Static drawdown from balance or equity (whichever is higher at start of day).",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Challenge Phase 1",
+          "profit_target_pct": 10.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance_or_equity_higher",
+          "min_trading_days": 4,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        },
+        {
+          "phase_number": 2,
+          "phase_name": "Challenge Phase 2",
+          "profit_target_pct": 5.0,
+          "max_daily_drawdown_pct": 5.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance_or_equity_higher",
+          "min_trading_days": 4,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null,
+          "consistency_rule_type": null
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 90,
+        "max_daily_drawdown_pct": 5.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": "Scale up to 200% of initial capital after 4 successful payouts"
+      },
+      "account_sizes": [10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 2,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"10000": 155, "25000": 250, "50000": 345, "100000": 540, "200000": 1080},
+        "fee_refundable": true
+      }
+    },
+    {
+      "challenge_id": "ftmo_1step",
+      "challenge_name": "FTMO 1-Step",
+      "description": "Single-phase evaluation. 10% target, tighter daily DD, 50% consistency rule — no single day can exceed 50% of total profit.",
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Challenge Phase 1",
+          "profit_target_pct": 10.0,
+          "max_daily_drawdown_pct": 3.0,
+          "max_total_drawdown_pct": 10.0,
+          "drawdown_type": "static",
+          "drawdown_basis": "balance_or_equity_higher",
+          "min_trading_days": 4,
+          "max_calendar_days": null,
+          "consistency_rule_pct": 50.0,
+          "consistency_rule_type": "best_day_vs_total"
+        }
+      ],
+      "funded": {
+        "profit_split_pct": 90,
+        "max_profit_split_pct": 90,
+        "max_daily_drawdown_pct": 3.0,
+        "max_total_drawdown_pct": 10.0,
+        "drawdown_type": "static",
+        "profit_target_pct": null,
+        "consistency_rule_pct": null,
+        "payout_frequency": "biweekly",
+        "scaling_plan": null
+      },
+      "account_sizes": [10000, 25000, 50000, 100000, 200000],
+      "restrictions": {
+        "news_trading_allowed": true,
+        "news_blackout_minutes": 2,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      },
+      "costs": {
+        "challenge_fee_by_size": {"10000": 155, "25000": 250, "50000": 345, "100000": 540, "200000": 1080},
+        "fee_refundable": true
+      }
+    }
+  ]
+}
