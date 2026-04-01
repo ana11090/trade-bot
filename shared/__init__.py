@@ -12,22 +12,13 @@ __all__ = ['data_utils', 'indicator_utils', 'trade_history_manager', 'prop_firm_
 
 def __getattr__(name):
     """Lazy import — modules load only when first accessed."""
-    if name == 'data_utils':
-        from . import data_utils
-        return data_utils
-    elif name == 'indicator_utils':
-        from . import indicator_utils
-        return indicator_utils
-    elif name == 'trade_history_manager':
-        from . import trade_history_manager
-        return trade_history_manager
-    elif name == 'prop_firm_engine':
-        from . import prop_firm_engine
-        return prop_firm_engine
-    elif name == 'prop_firm_simulator':
-        from . import prop_firm_simulator
-        return prop_firm_simulator
-    elif name == 'data_validator':
-        from . import data_validator
-        return data_validator
+    import importlib
+
+    if name in __all__:
+        # Use importlib to avoid recursion
+        module = importlib.import_module(f'.{name}', package=__package__)
+        # Cache it in globals to avoid re-importing
+        globals()[name] = module
+        return module
+
     raise AttributeError(f"module 'shared' has no attribute {name!r}")
