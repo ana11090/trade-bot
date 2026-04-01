@@ -1,135 +1,231 @@
 """
-STEP 2 — COMPUTE INDICATORS
-Computes all 119 technical indicators for each trade at the aligned candle timestamp.
-Produces a feature matrix where each row is a trade and each column is an indicator value.
+STEP 2 — COMPUTE INDICATORS (Multi-Timeframe)
+Computes all technical indicators for each trade across all aligned timeframes.
+Produces a feature matrix with ~400 features (80 indicators × 5 timeframes).
 """
 
 import sys
 import os
-import argparse
 import pandas as pd
+import time
 
 # Add parent directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+sys.path.insert(0, PROJECT_ROOT)
 
 from shared import data_utils, indicator_utils
+from config_loader import load as _load_cfg
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-PRICE_DATA_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+# ── Paths ─────────────────────────────────────────────────────────────────────
+PRICE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data')
 OUTPUT_FOLDER     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
-from config_loader import load as _load_cfg
-_cfg   = _load_cfg()
-SYMBOL = _cfg['symbol']
+# ── Configuration ─────────────────────────────────────────────────────────────
+_cfg                 = _load_cfg()
+SYMBOL               = _cfg['symbol']
+ALIGN_TIMEFRAMES     = _cfg['align_timeframes'].split(',')
+LOOKBACK_CANDLES     = int(_cfg['lookback_candles'])
+SKIP_M1              = _cfg.get('skip_m1_features', 'true').lower() == 'true'
 
 
-def compute_indicators_for_scenario(scenario):
+def compute_features(aligned_trades_path=None, output_dir=None):
     """
-    Compute all indicators for a specific timeframe scenario.
+    Compute all technical indicators for each trade across all aligned timeframes.
+
+    For each trade and each timeframe:
+    1. Look up the aligned candle index
+    2. Get the lookback window (200 candles ending at that index)
+    3. Compute all indicators on that window
+    4. Take the LAST value (the value at the trade's entry moment)
+    5. Add as columns with prefix: {tf}_ (e.g., H1_rsi_14, M5_macd_std, D1_atr_14)
+
+    Output: feature_matrix.csv with one row per trade and columns like:
+      trade_id, open_time, action, pips, profit, ...,
+      M5_rsi_14, M5_rsi_21, ..., M5_macd_std, ...,
+      H1_rsi_14, H1_rsi_21, ..., H1_macd_std, ...,
+      D1_rsi_14, D1_rsi_21, ..., D1_macd_std, ...
 
     Args:
-        scenario: One of 'M5', 'M15', 'H1', 'H4', 'H1_M15'
+        aligned_trades_path: Optional path to aligned trades CSV
+        output_dir: Optional output directory
 
     Returns:
-        True if successful, False otherwise
+        DataFrame with feature matrix, or None if failed
     """
-    print(f"\n{'=' * 60}")
-    print(f"[STEP 2/7] Computing indicators — scenario: {scenario}")
-    print(f"{'=' * 60}\n")
-
-    output_dir = os.path.join(OUTPUT_FOLDER, f'scenario_{scenario}')
-
-    # Determine which timeframes to process
-    if scenario == 'H1_M15':
-        timeframes = ['H1', 'M15']
-    else:
-        timeframes = [scenario]
+    print(f"\n{'=' * 70}")
+    print(f"[STEP 2/2] COMPUTING INDICATORS (Multi-Timeframe)")
+    print(f"{'=' * 70}\n")
 
     try:
-        feature_matrix = None
+        # Get paths
+        if output_dir is None:
+            output_dir = OUTPUT_FOLDER
+        if aligned_trades_path is None:
+            aligned_trades_path = os.path.join(output_dir, 'aligned_trades.csv')
 
-        for tf in timeframes:
-            print(f"\n--- Processing timeframe: {tf} ---")
+        if not os.path.exists(aligned_trades_path):
+            print(f"ERROR: Aligned trades file not found: {aligned_trades_path}")
+            print(f"FIX: Run step1_align_price.py first")
+            return None
 
-            # Load aligned trades for this timeframe
-            aligned_trades_file = os.path.join(output_dir, f'trades_with_candles_{tf}.csv')
+        print(f"  Loading aligned trades from: {os.path.basename(aligned_trades_path)}")
+        trades_df = pd.read_csv(aligned_trades_path)
+        trades_df['open_time'] = pd.to_datetime(trades_df['open_time'])
+        trades_df['close_time'] = pd.to_datetime(trades_df['close_time'])
 
-            if not os.path.exists(aligned_trades_file):
-                print(f"ERROR: Aligned trades file not found: {aligned_trades_file}")
-                print(f"FIX: Run step1_align_price.py first for scenario {scenario}")
-                return False
+        print(f"  Loaded {len(trades_df)} trades\n")
 
-            trades_df = pd.read_csv(aligned_trades_file)
-            trades_df['open_time'] = pd.to_datetime(trades_df['open_time'])
-            trades_df['close_time'] = pd.to_datetime(trades_df['close_time'])
-            trades_df['aligned_candle_timestamp'] = pd.to_datetime(trades_df['aligned_candle_timestamp'])
+        # Initialize feature matrix with trade metadata
+        feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action', 'pips', 'profit']].copy()
 
-            # Load full OHLCV data for this timeframe
+        # Add auto-detected features (no candle data needed)
+        print("  Computing auto-detected features...")
+        feature_matrix['hour_of_day'] = trades_df['open_time'].dt.hour
+        feature_matrix['day_of_week'] = trades_df['open_time'].dt.dayofweek
+        feature_matrix['trade_duration_minutes'] = (trades_df['close_time'] - trades_df['open_time']).dt.total_seconds() / 60
+        feature_matrix['is_winner'] = (trades_df['pips'] > 0).astype(int)
+
+        # Handle different possible column names for direction
+        if 'action' in trades_df.columns:
+            # Map Buy/Sell to 1/-1
+            feature_matrix['trade_direction'] = trades_df['action'].map({'Buy': 1, 'Sell': -1, 'buy': 1, 'sell': -1})
+        elif 'type' in trades_df.columns:
+            feature_matrix['trade_direction'] = trades_df['type'].map({'Buy': 1, 'Sell': -1, 'buy': 1, 'sell': -1})
+        else:
+            # Try to infer from pips and profit
+            feature_matrix['trade_direction'] = 0
+
+        print(f"    Added {5} auto-detected features")
+
+        # Process each timeframe
+        timeframes_to_process = [tf for tf in ALIGN_TIMEFRAMES if tf != 'M1' or not SKIP_M1]
+
+        for tf in timeframes_to_process:
+            print(f"\n  Processing timeframe: {tf}")
+
+            # Check if this timeframe was aligned
+            idx_col = f'{tf}_candle_idx'
+            if idx_col not in trades_df.columns:
+                print(f"    Skipped (not aligned)")
+                continue
+
+            # Load candle data
             candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{tf}.csv')
 
             if not os.path.exists(candle_file):
-                print(f"ERROR: Candle data file not found: {candle_file}")
-                return False
+                print(f"    Skipped (candle file not found)")
+                continue
 
-            candles_df = data_utils.load_ohlcv_csv(candle_file, tf)
+            print(f"    Loading candles from {os.path.basename(candle_file)}...", end=" ", flush=True)
+            candles_df = pd.read_csv(candle_file)
+            candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'])
+            candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
+            print(f"({len(candles_df):,} candles)")
 
-            # Ensure timestamp is datetime
-            if candles_df['timestamp'].dt.tz is None:
-                candles_df['timestamp'] = candles_df['timestamp'].dt.tz_localize('UTC')
+            # Process each trade
+            print(f"    Computing indicators for {len(trades_df)} trades...")
+            start_time = time.time()
 
-            # Compute all indicators on the full candle dataset
-            prefix = f'{tf}_' if scenario == 'H1_M15' else ''
-            indicators_df = indicator_utils.compute_all_indicators(candles_df, prefix=prefix)
+            indicator_values = []
 
-            # Build feature matrix - extract indicator values at each trade's aligned timestamp
-            if feature_matrix is None:
-                # First timeframe - create feature matrix with trade metadata
-                feature_matrix = indicator_utils.build_feature_matrix(trades_df, indicators_df)
-            else:
-                # Second timeframe (H1_M15 scenario) - merge additional indicator columns
-                additional_features = indicator_utils.build_feature_matrix(trades_df, indicators_df)
+            for idx, trade in trades_df.iterrows():
+                # Print progress every 50 trades
+                if (idx + 1) % 50 == 0:
+                    elapsed = time.time() - start_time
+                    rate = (idx + 1) / elapsed
+                    remaining = (len(trades_df) - (idx + 1)) / rate
+                    print(f"      [{idx + 1:4d}/{len(trades_df)}] {elapsed:.0f}s elapsed, ~{remaining:.0f}s remaining")
 
-                # Get only the indicator columns (exclude metadata columns)
-                metadata_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips']
-                indicator_cols = [col for col in additional_features.columns if col not in metadata_cols]
+                # Get aligned candle index
+                candle_idx = trade[idx_col]
 
-                # Add these columns to the existing feature matrix
-                for col in indicator_cols:
-                    feature_matrix[col] = additional_features[col].values
+                if pd.isna(candle_idx):
+                    # No alignment for this trade - fill with NaN
+                    indicator_values.append({})
+                    continue
 
-                print(f"  Merged {len(indicator_cols)} additional features from {tf}")
+                candle_idx = int(candle_idx)
+
+                # Get lookback window (200 candles ending at the aligned candle)
+                start_idx = max(0, candle_idx - LOOKBACK_CANDLES + 1)
+                end_idx = candle_idx + 1
+
+                window = candles_df.iloc[start_idx:end_idx].copy()
+
+                if len(window) < 50:  # Need minimum candles for indicators
+                    indicator_values.append({})
+                    continue
+
+                # Compute all indicators on this window
+                try:
+                    indicators_df = indicator_utils.compute_all_indicators(window, prefix=f'{tf}_')
+
+                    # Take the LAST row (the values at trade entry)
+                    last_indicators = indicators_df.iloc[-1].to_dict()
+
+                    # Remove timestamp if present
+                    if 'timestamp' in last_indicators:
+                        del last_indicators['timestamp']
+
+                    indicator_values.append(last_indicators)
+
+                except Exception as e:
+                    print(f"\n      WARNING: Failed to compute indicators for trade {idx}: {e}")
+                    indicator_values.append({})
+
+            # Convert indicator values to DataFrame and add to feature matrix
+            indicators_df = pd.DataFrame(indicator_values)
+
+            # Add to feature matrix
+            for col in indicators_df.columns:
+                feature_matrix[col] = indicators_df[col].values
+
+            elapsed = time.time() - start_time
+            print(f"    Completed in {elapsed:.0f}s ({len(indicators_df.columns)} features added)")
 
         # Save feature matrix
         output_file = os.path.join(output_dir, 'feature_matrix.csv')
-        data_utils.save_dataframe(feature_matrix, output_file, "feature matrix")
+        feature_matrix.to_csv(output_file, index=False)
 
-        print(f"\n[STEP 2/7] COMPLETE — scenario: {scenario}")
-        print(f"Feature matrix: {len(feature_matrix)} trades × {len(feature_matrix.columns)} features\n")
+        print(f"\n  Saved: {output_file}")
 
-        return True
+        # Print summary
+        print(f"\n  Feature Matrix Summary:")
+        print(f"    Trades:   {len(feature_matrix):,}")
+        print(f"    Features: {len(feature_matrix.columns):,}")
+
+        # Check for NaN columns
+        nan_counts = feature_matrix.isna().sum()
+        nan_cols = nan_counts[nan_counts > 0].sort_values(ascending=False)
+        if len(nan_cols) > 0:
+            print(f"    NaN values: {len(nan_cols)} columns have NaN (top 5):")
+            for col, count in list(nan_cols.items())[:5]:
+                pct = count / len(feature_matrix) * 100
+                print(f"      {col}: {count} ({pct:.1f}%)")
+
+        print(f"\n[STEP 2/2] COMPLETE\n")
+
+        return feature_matrix
 
     except Exception as e:
-        print(f"\nERROR in step2 — {scenario}: {str(e)}")
+        print(f"\nERROR in step2: {str(e)}")
         import traceback
         traceback.print_exc()
-        return False
+        return None
 
 
 def main():
     """Main entry point for command-line usage."""
-    parser = argparse.ArgumentParser(description='Compute technical indicators for trades')
-    parser.add_argument('--scenario', type=str, required=True,
-                        choices=['M5', 'M15', 'H1', 'H4', 'H1_M15'],
-                        help='Timeframe scenario to process')
+    import argparse
+    parser = argparse.ArgumentParser(description='Compute technical indicators for trades (multi-timeframe)')
+    parser.add_argument('--aligned', type=str, help='Path to aligned trades CSV (optional)')
+    parser.add_argument('--output', type=str, help='Output directory (optional)')
 
     args = parser.parse_args()
 
-    success = compute_indicators_for_scenario(args.scenario)
+    result = compute_features(aligned_trades_path=args.aligned, output_dir=args.output)
 
-    if not success:
+    if result is None:
         sys.exit(1)
 
 

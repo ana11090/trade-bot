@@ -19,6 +19,13 @@ DEFAULTS = {
     # ── Pipeline ──────────────────────────────────────────────────────────────
     'min_lookback_candles':      '200',
 
+    # ── Alignment ─────────────────────────────────────────────────────────────
+    'align_timeframes':          'M5,M15,H1,H4,D1',
+    'lookback_candles':          '200',
+
+    # ── Feature Engineering ───────────────────────────────────────────────────
+    'skip_m1_features':          'true',   # M1 has too many candles, skip by default
+
     # ── Machine Learning ──────────────────────────────────────────────────────
     'train_test_split':          '0.80',
     'rf_trees':                  '500',
