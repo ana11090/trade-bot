@@ -174,9 +174,9 @@ def validate_all_candles(data_dir):
             print(f"  Price range: ${result['price_range'][0]:,.2f} - ${result['price_range'][1]:,.2f}")
 
         if result['price_ok']:
-            print(f"  Price check: ✓ OK")
+            print(f"  Price check: OK")
         else:
-            print(f"  Price check: ✗ FAILED")
+            print(f"  Price check: FAILED")
 
         if result['issues']:
             print(f"  Issues:")
@@ -203,9 +203,9 @@ def validate_all_candles(data_dir):
     print(f"  Files with valid prices: {files_price_ok}")
 
     if files_with_issues == 0:
-        print("\n  ✓ All files passed validation!")
+        print("\n  All files passed validation!")
     else:
-        print(f"\n  ✗ {files_with_issues} files have issues that need attention")
+        print(f"\n  {files_with_issues} files have issues that need attention")
 
     return results
 

@@ -33,7 +33,7 @@ if os.path.exists(trades_path) and os.path.exists(candles_path):
             print(f"    Candle: {m['candle_time']} range ${m['candle_low']:.2f}-${m['candle_high']:.2f}")
             print()
     else:
-        print("  ✓ All trade prices match candle data. OK")
+        print("  All trade prices match candle data. OK")
 else:
     if not os.path.exists(trades_path):
         print(f"Note: Trade history not found at {trades_path}, skipping cross-check")
