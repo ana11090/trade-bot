@@ -10,6 +10,7 @@ from tkinter import ttk
 
 import state
 from sidebar import build_sidebar
+from helpers import make_copyable
 from project0_data_pipeline.panels import (
     pipeline, performance, statistics, risk_flags, prop_compliance, cost_spread
 )
@@ -111,6 +112,17 @@ refresh_map = {
     "p2_results": p2_view_results.refresh,
 }
 show_panel = build_sidebar(window, canvas, refresh_map)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAKE ALL LABELS COPYABLE
+# ─────────────────────────────────────────────────────────────────────────────
+def _apply_copyable(widget):
+    if isinstance(widget, tk.Label):
+        make_copyable(widget)
+    for child in widget.winfo_children():
+        _apply_copyable(child)
+
+_apply_copyable(window)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # START

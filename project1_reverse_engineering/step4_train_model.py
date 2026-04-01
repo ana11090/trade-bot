@@ -22,11 +22,14 @@ from shared import data_utils
 # ============================================================
 # CONFIGURATION
 # ============================================================
-OUTPUT_FOLDER = './outputs/'
-RF_N_ESTIMATORS = 500
-RF_MAX_DEPTH = 6
-RF_MIN_SAMPLES_LEAF = 10
-RF_RANDOM_STATE = 42
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+
+from config_loader import load as _load_cfg
+_cfg                 = _load_cfg()
+RF_N_ESTIMATORS      = int(_cfg['rf_trees'])
+RF_MAX_DEPTH         = int(_cfg['max_tree_depth'])
+RF_MIN_SAMPLES_LEAF  = int(_cfg['min_samples_leaf'])
+RF_RANDOM_STATE      = 42
 
 
 def train_model_for_scenario(scenario):

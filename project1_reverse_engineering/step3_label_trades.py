@@ -18,8 +18,11 @@ from shared import data_utils
 # ============================================================
 # CONFIGURATION
 # ============================================================
-OUTPUT_FOLDER = './outputs/'
-TRAIN_TEST_SPLIT_RATIO = 0.80
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+
+from config_loader import load as _load_cfg
+_cfg                   = _load_cfg()
+TRAIN_TEST_SPLIT_RATIO = float(_cfg['train_test_split'])
 
 
 def label_trades_for_scenario(scenario):

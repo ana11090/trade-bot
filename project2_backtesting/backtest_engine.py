@@ -15,41 +15,86 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from shared import indicator_utils
 
 # ============================================================
-# CONFIGURATION - change these values, nothing else
+# CONFIGURATION - defaults (overridden by backtest_config.json if present)
 # ============================================================
-RULES_FILE = '../project1_reverse_engineering/outputs/scenario_H1/rules_report_H1.txt'
-PRICE_DATA_FILE = '../data/xauusd_H1.csv'
-ORIGINAL_TRADES_FILE = '../project0_data_pipeline/trades_clean.csv'
-OUTPUT_FOLDER = './outputs/'
-WINNING_SCENARIO = 'H1'  # which scenario won in Project 1
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, '..'))
+
+SYMBOL          = 'XAUUSD'
+WINNING_SCENARIO = 'H1'
+PIP_VALUE_PER_LOT = 10.0
+
+# File paths — built from SYMBOL/WINNING_SCENARIO after config load
+def _build_paths():
+    sym_lower = SYMBOL.lower()
+    rules = os.path.join(_ROOT, f'project1_reverse_engineering/outputs/scenario_{WINNING_SCENARIO}/rules_report_{WINNING_SCENARIO}.txt')
+    price = os.path.join(_ROOT, f'data/{sym_lower}_{WINNING_SCENARIO}.csv')
+    return rules, price
+
+ORIGINAL_TRADES_FILE = os.path.join(_ROOT, 'project0_data_pipeline/trades_clean.csv')
+OUTPUT_FOLDER        = os.path.join(_HERE, 'outputs')
 
 # Date ranges
-INSAMPLE_START = '2022-01-01'  # first date of bot's trade history
-INSAMPLE_END = '2023-12-31'    # last date of bot's trade history
-OUTSAMPLE_START = '2024-01-01'  # first date of fresh data
-OUTSAMPLE_END = '2024-12-31'    # last date of fresh data
+INSAMPLE_START  = '2022-01-01'
+INSAMPLE_END    = '2023-12-31'
+OUTSAMPLE_START = '2024-01-01'
+OUTSAMPLE_END   = '2024-12-31'
 
 # Capital and risk
-STARTING_CAPITAL = 10000.0  # USD - starting account balance
-RISK_PER_TRADE_PCT = 0.01   # 1% of current balance per trade
-LOT_SIZE_CALCULATION = 'DYNAMIC'  # 'DYNAMIC' or 'FIXED'
-FIXED_LOT_SIZE = 0.01  # only used if DYNAMIC = False
+STARTING_CAPITAL    = 10000.0
+RISK_PER_TRADE_PCT  = 0.01
+LOT_SIZE_CALCULATION = 'DYNAMIC'
+FIXED_LOT_SIZE      = 0.01
 
 # Stop loss and take profit (ATR multipliers)
-SL_ATR_MULTIPLIER = 1.5
-TP1_ATR_MULTIPLIER = 1.5  # 50% of position closed at TP1
-TP2_ATR_MULTIPLIER = 3.0  # remaining 50% closed at TP2
-HARD_CLOSE_HOUR_UTC = 21  # close all trades at 21:00 UTC
+SL_ATR_MULTIPLIER  = 1.5
+TP1_ATR_MULTIPLIER = 1.5
+TP2_ATR_MULTIPLIER = 3.0
 
 # Costs
-COMMISSION_PER_LOT = 4.0  # USD round trip - Leveraged prop firm
-SPREAD_PIPS = 0.3  # estimated spread in pips
-PIP_VALUE_PER_LOT = 10.0  # USD per pip per standard lot XAUUSD
+COMMISSION_PER_LOT = 4.0
+SPREAD_PIPS        = 0.3
 
 # Engine settings
-MAX_ONE_TRADE_OPEN = True  # never open second trade while one is open
-WARMUP_CANDLES = 200  # skip first N candles for indicator warmup
-SAME_CANDLE_SL_RULE = 'LOSS'  # if SL and TP hit same candle: LOSS or WIN
+HARD_CLOSE_HOUR_UTC  = 21
+WARMUP_CANDLES       = 200
+MAX_ONE_TRADE_OPEN   = True
+SAME_CANDLE_SL_RULE  = 'LOSS'
+
+# ── Load overrides from UI-saved config file ─────────────────────────────────
+import json as _json
+_cfg_path = os.path.join(_HERE, 'backtest_config.json')
+if os.path.exists(_cfg_path):
+    try:
+        with open(_cfg_path, 'r') as _f:
+            _cfg = _json.load(_f)
+        SYMBOL              = _cfg.get('symbol',            SYMBOL).upper()
+        WINNING_SCENARIO    = _cfg.get('winning_scenario',  WINNING_SCENARIO)
+        PIP_VALUE_PER_LOT   = float(_cfg.get('pip_value_per_lot', PIP_VALUE_PER_LOT))
+        INSAMPLE_START      = _cfg.get('insample_start',    INSAMPLE_START)
+        INSAMPLE_END        = _cfg.get('insample_end',      INSAMPLE_END)
+        OUTSAMPLE_START     = _cfg.get('outsample_start',   OUTSAMPLE_START)
+        OUTSAMPLE_END       = _cfg.get('outsample_end',     OUTSAMPLE_END)
+        STARTING_CAPITAL    = float(_cfg.get('starting_capital',  STARTING_CAPITAL))
+        RISK_PER_TRADE_PCT  = float(_cfg.get('risk_pct',          RISK_PER_TRADE_PCT * 100)) / 100
+        LOT_SIZE_CALCULATION = _cfg.get('lot_size_calc',    LOT_SIZE_CALCULATION).upper()
+        FIXED_LOT_SIZE      = float(_cfg.get('fixed_lot_size',    FIXED_LOT_SIZE))
+        SL_ATR_MULTIPLIER   = float(_cfg.get('sl_atr',            SL_ATR_MULTIPLIER))
+        TP1_ATR_MULTIPLIER  = float(_cfg.get('tp1_atr',           TP1_ATR_MULTIPLIER))
+        TP2_ATR_MULTIPLIER  = float(_cfg.get('tp2_atr',           TP2_ATR_MULTIPLIER))
+        COMMISSION_PER_LOT  = float(_cfg.get('commission',        COMMISSION_PER_LOT))
+        SPREAD_PIPS         = float(_cfg.get('spread',            SPREAD_PIPS))
+        HARD_CLOSE_HOUR_UTC = int(_cfg.get('hard_close_hour',     HARD_CLOSE_HOUR_UTC))
+        WARMUP_CANDLES      = int(_cfg.get('warmup_candles',      WARMUP_CANDLES))
+        MAX_ONE_TRADE_OPEN  = str(_cfg.get('max_one_trade',       MAX_ONE_TRADE_OPEN)).strip().lower() == 'true'
+        SAME_CANDLE_SL_RULE = _cfg.get('same_candle_sl_rule',     SAME_CANDLE_SL_RULE).upper()
+        print(f"[BACKTEST ENGINE] Loaded config from {_cfg_path}")
+    except Exception as _e:
+        print(f"[BACKTEST ENGINE] Warning: could not load config file: {_e}")
+
+# Build file paths after config is applied
+RULES_FILE, PRICE_DATA_FILE = _build_paths()
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class Rule:

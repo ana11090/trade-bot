@@ -14,17 +14,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from shared import data_utils
 import state
+from config_loader import load as _load_cfg
 
+# ── Paths (always relative to this file) ─────────────────────────────────────
+TRADES_CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'project0_data_pipeline', 'Data Files for data mining', 'trades_clean.csv')
+PRICE_DATA_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+OUTPUT_FOLDER     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
-# ============================================================
-# CONFIGURATION — change these values, nothing else
-# ============================================================
-TRADES_CSV_PATH = '../project0_data_pipeline/Data Files for data mining/trades_clean.csv'
-PRICE_DATA_FOLDER = '../data/'
-OUTPUT_FOLDER = './outputs/'
-SYMBOL = 'XAUUSD'
-BROKER_TIMEZONE = 'EET'  # change to 'GMT' if your broker uses GMT
-MIN_LOOKBACK_CANDLES = 200
+# ── Configurable values (loaded from p1_config.json, fallback to defaults) ───
+_cfg                 = _load_cfg()
+SYMBOL               = _cfg['symbol']
+BROKER_TIMEZONE      = _cfg['broker_timezone']
+MIN_LOOKBACK_CANDLES = int(_cfg['min_lookback_candles'])
+ALIGNMENT_TOLERANCE  = float(_cfg['alignment_tolerance_pips'])
 
 
 def align_price_for_scenario(scenario):
@@ -95,7 +97,7 @@ def align_price_for_scenario(scenario):
             )
 
             # Verify alignment
-            misaligned_count = data_utils.verify_alignment(aligned_trades, candles_df, tolerance_pips=5.0)
+            misaligned_count = data_utils.verify_alignment(aligned_trades, candles_df, tolerance_pips=ALIGNMENT_TOLERANCE)
 
             if misaligned_count > len(aligned_trades) * 0.1:  # More than 10% misaligned
                 print(f"WARNING: {misaligned_count}/{len(aligned_trades)} trades appear misaligned")

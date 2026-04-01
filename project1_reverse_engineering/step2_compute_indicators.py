@@ -18,9 +18,12 @@ from shared import data_utils, indicator_utils
 # ============================================================
 # CONFIGURATION
 # ============================================================
-PRICE_DATA_FOLDER = '../data/'
-OUTPUT_FOLDER = './outputs/'
-SYMBOL = 'XAUUSD'
+PRICE_DATA_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+OUTPUT_FOLDER     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+
+from config_loader import load as _load_cfg
+_cfg   = _load_cfg()
+SYMBOL = _cfg['symbol']
 
 
 def compute_indicators_for_scenario(scenario):

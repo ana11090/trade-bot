@@ -17,8 +17,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 # ============================================================
 # CONFIGURATION
 # ============================================================
-OUTPUT_FOLDER = './outputs/'
-MATCH_RATE_THRESHOLD = 0.70  # 70% match rate = project complete
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+
+from config_loader import load as _load_cfg
+_cfg                 = _load_cfg()
+MATCH_RATE_THRESHOLD = float(_cfg['match_rate_threshold'])
 
 
 def validate_rules_for_scenario(scenario):

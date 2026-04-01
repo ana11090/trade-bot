@@ -19,9 +19,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 # ============================================================
 # CONFIGURATION
 # ============================================================
-OUTPUT_FOLDER = './outputs/'
-RULE_MIN_CONFIDENCE = 0.65  # Minimum 65% win rate for a rule
-RULE_MIN_TRADE_COVERAGE = 5  # Minimum 5 trades per rule
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+
+from config_loader import load as _load_cfg
+_cfg                    = _load_cfg()
+RULE_MIN_CONFIDENCE     = float(_cfg['rule_min_confidence'])
+RULE_MIN_TRADE_COVERAGE = int(_cfg['rule_min_coverage'])
 
 
 def extract_rules_for_scenario(scenario):

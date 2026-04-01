@@ -187,8 +187,11 @@ def convert_to_utc(df, timestamp_col, source_timezone='EET'):
         df[timestamp_col] = df[timestamp_col].dt.tz_convert('UTC')
     else:
         # Localize to source timezone, then convert to UTC
+        # nonexistent/ambiguous='NaT' avoids crashes on DST boundary times
         source_tz = pytz.timezone(source_timezone)
-        df[timestamp_col] = df[timestamp_col].dt.tz_localize(source_tz).dt.tz_convert('UTC')
+        df[timestamp_col] = (df[timestamp_col]
+                             .dt.tz_localize(source_tz, ambiguous='NaT', nonexistent='NaT')
+                             .dt.tz_convert('UTC'))
 
     return df
 
@@ -208,6 +211,12 @@ def align_trades_to_candles(trades_df, candles_df, lookback_candles=200):
         aligned_trades_df has 'aligned_candle_idx' column added
     """
     print(f"  Aligning {len(trades_df)} trades to nearest candle...")
+
+    # Drop rows where open_time could not be parsed (NaT) — merge_asof rejects nulls
+    null_count = trades_df['open_time'].isna().sum()
+    if null_count > 0:
+        print(f"  WARNING: Dropping {null_count} trades with unparseable open_time (NaT)")
+        trades_df = trades_df.dropna(subset=['open_time']).copy()
 
     # Ensure both are sorted by time
     trades_df = trades_df.sort_values('open_time').reset_index(drop=True)

@@ -13,6 +13,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 import state
+from helpers import make_copyable
 
 
 def build_panel(parent):
@@ -63,6 +64,7 @@ def build_panel(parent):
                            bg="#d4edda", fg="#155724",
                            font=("Segoe UI", 12, "bold"))
     winner_label.pack(anchor="w", pady=(5, 0))
+    make_copyable(winner_label)
 
     # Comparison table
     tk.Label(left_frame, text="Comparison Table:",

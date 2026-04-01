@@ -13,6 +13,7 @@ import threading
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 import state
+from helpers import make_copyable
 
 # Module-level variable to store data status frame
 _data_status_frame = None
@@ -142,14 +143,33 @@ def build_panel(parent):
                        bg="#27ae60", fg="white",
                        font=("Segoe UI", 12, "bold"),
                        bd=0, pady=15, cursor="hand2",
-                       command=lambda: run_scenarios(scenario_vars, output_text, progress_label))
+                       command=lambda: run_scenarios(scenario_vars, output_text,
+                                                     progress_label, progress_bar, pct_label))
     run_btn.pack(fill="x", pady=(0, 10))
 
     # Progress indicator
     progress_label = tk.Label(right_frame, text="Ready to run",
                             bg="white", fg="#666",
                             font=("Segoe UI", 10))
-    progress_label.pack(anchor="w", pady=(0, 15))
+    progress_label.pack(anchor="w", pady=(0, 5))
+    make_copyable(progress_label)
+
+    # Progress bar
+    style = ttk.Style()
+    style.theme_use("default")
+    style.configure("scenarios.Horizontal.TProgressbar",
+                    troughcolor="#e0e0e0", background="#27ae60", thickness=16)
+    style.configure("scenarios.error.Horizontal.TProgressbar",
+                    troughcolor="#e0e0e0", background="#e74c3c", thickness=16)
+
+    progress_bar = ttk.Progressbar(right_frame, orient="horizontal",
+                                   mode="determinate", length=300,
+                                   style="scenarios.Horizontal.TProgressbar")
+    progress_bar.pack(fill="x", pady=(0, 4))
+
+    pct_label = tk.Label(right_frame, text="",
+                         bg="white", fg="#888", font=("Segoe UI", 8))
+    pct_label.pack(anchor="e", pady=(0, 10))
 
     # Output console
     tk.Label(right_frame, text="Console Output:",
@@ -169,7 +189,7 @@ def build_panel(parent):
     return panel
 
 
-def run_scenarios(scenario_vars, output_text, progress_label):
+def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label):
     """Run selected scenarios"""
     # Check if trade data is loaded from Project 0
     if state.loaded_data is None:
@@ -196,9 +216,22 @@ def run_scenarios(scenario_vars, output_text, progress_label):
     output_text.insert(tk.END, f"Selected: {', '.join(selected)}\n")
     output_text.insert(tk.END, "=" * 60 + "\n\n")
 
+    # Reset progress bar
+    progress_bar.after(0, lambda: progress_bar.config(
+        value=0, style="scenarios.Horizontal.TProgressbar"))
+    pct_label.after(0, lambda: pct_label.config(text="0%"))
+
+    STEPS_PER_SCENARIO = 7
+    total_steps = len(selected) * STEPS_PER_SCENARIO
+    completed_steps = [0]   # mutable counter accessible in closure
+
+    def _update_bar(extra_label=""):
+        pct = int(completed_steps[0] / total_steps * 100)
+        progress_bar.config(value=pct)
+        pct_label.config(text=f"{pct}%  {extra_label}".strip())
+
     def run_in_background():
         try:
-            # Import step modules
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
             import step1_align_price
@@ -210,29 +243,28 @@ def run_scenarios(scenario_vars, output_text, progress_label):
             import step7_validate
 
             steps = [
-                ("Step 1: Align Price", step1_align_price.align_price_for_scenario),
+                ("Step 1: Align Price",        step1_align_price.align_price_for_scenario),
                 ("Step 2: Compute Indicators", step2_compute_indicators.compute_indicators_for_scenario),
-                ("Step 3: Label Trades", step3_label_trades.label_trades_for_scenario),
-                ("Step 4: Train Model", step4_train_model.train_model_for_scenario),
-                ("Step 5: SHAP Analysis", step5_shap_analysis.shap_analysis_for_scenario),
-                ("Step 6: Extract Rules", step6_extract_rules.extract_rules_for_scenario),
-                ("Step 7: Validate", step7_validate.validate_rules_for_scenario),
+                ("Step 3: Label Trades",       step3_label_trades.label_trades_for_scenario),
+                ("Step 4: Train Model",        step4_train_model.train_model_for_scenario),
+                ("Step 5: SHAP Analysis",      step5_shap_analysis.shap_analysis_for_scenario),
+                ("Step 6: Extract Rules",      step6_extract_rules.extract_rules_for_scenario),
+                ("Step 7: Validate",           step7_validate.validate_rules_for_scenario),
             ]
 
             results = {}
 
             for scenario in selected:
                 def log(msg):
-                    output_text.after(0, lambda: output_text.insert(tk.END, msg + "\n"))
+                    output_text.after(0, lambda m=msg: output_text.insert(tk.END, m + "\n"))
                     output_text.after(0, lambda: output_text.see(tk.END))
 
                 def update_progress(msg):
-                    progress_label.after(0, lambda: progress_label.config(text=msg))
+                    progress_label.after(0, lambda m=msg: progress_label.config(text=m))
 
                 log(f"\n{'#' * 60}")
                 log(f"# SCENARIO: {scenario}")
                 log(f"{'#' * 60}\n")
-
                 update_progress(f"Running {scenario}...")
 
                 scenario_success = True
@@ -240,24 +272,26 @@ def run_scenarios(scenario_vars, output_text, progress_label):
                 for step_name, step_func in steps:
                     log(f">>> {step_name} — {scenario}")
                     update_progress(f"{scenario}: {step_name}")
+                    extra = f"({scenario} — {step_name})"
+                    progress_bar.after(0, lambda e=extra: _update_bar(e))
 
                     try:
-                        # Redirect stdout to capture prints
                         import io
                         old_stdout = sys.stdout
                         sys.stdout = buffer = io.StringIO()
-
                         try:
                             success = step_func(scenario)
                         finally:
                             sys.stdout = old_stdout
                             captured = buffer.getvalue()
 
-                        # Show captured output
                         if captured:
                             for line in captured.split('\n'):
                                 if line.strip():
                                     log(f"  {line}")
+
+                        completed_steps[0] += 1
+                        progress_bar.after(0, lambda: _update_bar())
 
                         if not success:
                             log(f"✗ FAILED: {step_name}")
@@ -267,6 +301,8 @@ def run_scenarios(scenario_vars, output_text, progress_label):
                         log(f"✓ COMPLETED: {step_name}\n")
 
                     except Exception as e:
+                        completed_steps[0] += 1
+                        progress_bar.after(0, lambda: _update_bar())
                         log(f"✗ ERROR: {str(e)}")
                         import traceback
                         log(traceback.format_exc())
@@ -279,6 +315,8 @@ def run_scenarios(scenario_vars, output_text, progress_label):
                     log(f"\n✓ SCENARIO {scenario} COMPLETED SUCCESSFULLY\n")
                 else:
                     log(f"\n✗ SCENARIO {scenario} FAILED\n")
+                    progress_bar.after(0, lambda: progress_bar.config(
+                        style="scenarios.error.Horizontal.TProgressbar"))
 
             # Summary
             log("\n" + "=" * 60)
@@ -293,14 +331,15 @@ def run_scenarios(scenario_vars, output_text, progress_label):
             log(f"\nCompleted: {successful}/{len(selected)} scenarios successful")
 
             update_progress(f"Done: {successful}/{len(selected)} successful")
+            progress_bar.after(0, lambda: pct_label.config(
+                text=f"100%  — {successful}/{len(selected)} scenarios OK"))
+            progress_bar.after(0, lambda: progress_bar.config(value=100))
 
-            def show_done():
-                messagebox.showinfo("Execution Complete",
-                                  f"Completed {len(selected)} scenario(s).\n"
-                                  f"{successful} successful, {len(selected)-successful} failed.\n\n"
-                                  f"Check the console output for details.")
-
-            output_text.after(0, show_done)
+            output_text.after(0, lambda: messagebox.showinfo(
+                "Execution Complete",
+                f"Completed {len(selected)} scenario(s).\n"
+                f"{successful} successful, {len(selected)-successful} failed.\n\n"
+                f"Check the console output for details."))
 
         except Exception as e:
             def show_error():
@@ -308,7 +347,6 @@ def run_scenarios(scenario_vars, output_text, progress_label):
                 import traceback
                 output_text.insert(tk.END, traceback.format_exc())
                 messagebox.showerror("Error", f"Execution failed:\n{str(e)}")
-
             output_text.after(0, show_error)
 
     # Run in background thread

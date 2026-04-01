@@ -9,6 +9,8 @@ import os
 import sys
 import webbrowser
 import pandas as pd
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from helpers import make_copyable
 
 # Module-level variables
 _output_text = None
@@ -145,6 +147,7 @@ def display_summary(output_text, summary_frame):
                 fg="#666666"
             )
             label_widget.pack(side=tk.LEFT)
+            make_copyable(label_widget)
 
             # Determine color
             if is_good is None:
@@ -162,6 +165,7 @@ def display_summary(output_text, summary_frame):
                 fg=color
             )
             value_widget.pack(side=tk.LEFT, padx=(5, 0))
+            make_copyable(value_widget)
 
     # Update output text with detailed stats
     output_text.delete(1.0, tk.END)

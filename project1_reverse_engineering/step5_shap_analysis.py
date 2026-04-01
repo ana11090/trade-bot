@@ -22,7 +22,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 # ============================================================
 # CONFIGURATION
 # ============================================================
-OUTPUT_FOLDER = './outputs/'
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 SHAP_MAX_SAMPLES = 200  # Limit samples for faster SHAP computation
 
 

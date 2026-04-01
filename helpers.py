@@ -1,5 +1,22 @@
+import tkinter as tk
 import pandas as pd
 import state
+
+
+def make_copyable(widget):
+    """Add right-click 'Copy' context menu to any tk.Label (or similar widget)."""
+    menu = tk.Menu(widget, tearoff=0)
+
+    def _copy():
+        try:
+            text = widget.cget("text")
+            widget.clipboard_clear()
+            widget.clipboard_append(text)
+        except Exception:
+            pass
+
+    menu.add_command(label="Copy", command=_copy)
+    widget.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
 
 # canvas -> mpl connection id; disconnect before re-attaching
 _hover_cids = {}
