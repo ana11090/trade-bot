@@ -11,20 +11,22 @@ import pandas as pd
 import state
 
 # Module-level refs
-_tree         = None
-_status_label = None
-_mode_var     = None
-_samples_var  = None
-_size_var     = None
-_risk_var     = None
-_sl_var       = None
-_run_btn      = None
-_running      = False
+_tree          = None
+_status_label  = None
+_mode_var      = None
+_samples_var   = None
+_size_var      = None
+_risk_var      = None
+_sl_var        = None
+_safety_var    = None
+_run_btn       = None
+_summary_frame = None
+_running       = False
 
 
 def build_panel(content):
     global _tree, _status_label, _mode_var, _samples_var
-    global _size_var, _risk_var, _sl_var, _run_btn
+    global _size_var, _risk_var, _sl_var, _safety_var, _run_btn, _summary_frame
 
     panel = tk.Frame(content, bg="#f0f2f5")
 
@@ -33,71 +35,126 @@ def build_panel(content):
 
     tk.Label(panel,
              text="Simulate starting a fresh challenge at every possible date to estimate real pass probability",
-             bg="#f0f2f5", fg="#666666", font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(0, 16))
+             bg="#f0f2f5", fg="#666666", font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(0, 12))
 
     # ── Controls card ────────────────────────────────────────────────────────
     card = tk.Frame(panel, bg="white", bd=1, relief="solid")
     card.pack(fill="x", padx=20, pady=(0, 10))
 
     row1 = tk.Frame(card, bg="white")
-    row1.pack(fill="x", padx=16, pady=(12, 6))
+    row1.pack(fill="x", padx=16, pady=(12, 4))
 
     tk.Label(row1, text="Mode:", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _mode_var = tk.StringVar(value="sliding_window")
     mode_menu = tk.OptionMenu(row1, _mode_var, "sliding_window", "monte_carlo",
                               command=_on_mode_change)
     mode_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
-    mode_menu.pack(side="left", padx=(6, 20))
+    mode_menu.pack(side="left", padx=(6, 16))
 
     tk.Label(row1, text="Samples (MC):", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _samples_var = tk.StringVar(value="200")
     samples_entry = tk.Entry(row1, textvariable=_samples_var, width=6,
                              font=("Segoe UI", 10), bd=1, relief="solid", state="disabled")
-    samples_entry.pack(side="left", padx=(6, 20))
+    samples_entry.pack(side="left", padx=(6, 16))
 
     tk.Label(row1, text="Account size:", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _size_var = tk.StringVar(value="100000")
     sizes = ["5000", "10000", "25000", "50000", "100000", "200000"]
     size_menu = tk.OptionMenu(row1, _size_var, *sizes)
     size_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
-    size_menu.pack(side="left", padx=(6, 20))
+    size_menu.pack(side="left", padx=(6, 16))
 
-    tk.Label(row1, text="Risk %:", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    row2 = tk.Frame(card, bg="white")
+    row2.pack(fill="x", padx=16, pady=(0, 4))
+
+    tk.Label(row2, text="Risk %:", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _risk_var = tk.StringVar(value="1.0")
-    risk_menu = tk.OptionMenu(row1, _risk_var, "0.5", "1.0", "1.5", "2.0", "3.0")
+    risk_menu = tk.OptionMenu(row2, _risk_var, "0.5", "1.0", "1.5", "2.0", "3.0")
     risk_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
-    risk_menu.pack(side="left", padx=(4, 12))
+    risk_menu.pack(side="left", padx=(4, 16))
 
-    tk.Label(row1, text="SL pips:", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    tk.Label(row2, text="SL pips:", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _sl_var = tk.StringVar(value="150")
-    sl_entry = tk.Entry(row1, textvariable=_sl_var, width=6,
+    sl_entry = tk.Entry(row2, textvariable=_sl_var, width=6,
                         font=("Segoe UI", 10), bd=1, relief="solid")
-    sl_entry.pack(side="left", padx=(4, 20))
+    sl_entry.pack(side="left", padx=(4, 16))
 
-    _run_btn = tk.Button(row1, text="Run Simulation",
+    tk.Label(row2, text="DD Safety:", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    _safety_var = tk.StringVar(value="80")
+    safety_menu = tk.OptionMenu(row2, _safety_var, "60", "70", "80", "90", "100")
+    safety_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
+    safety_menu.pack(side="left", padx=(4, 4))
+    tk.Label(row2, text="% of daily limit", bg="white",
+             font=("Segoe UI", 9), fg="#888888").pack(side="left", padx=(0, 16))
+
+    _run_btn = tk.Button(row2, text="Run Simulation",
                          bg="#2d8a4e", fg="white",
                          activebackground="#1e6b3c", activeforeground="white",
                          font=("Segoe UI", 10, "bold"), bd=0, padx=16, pady=4,
                          command=_run_simulation)
     _run_btn.pack(side="left")
 
-    # Store entry ref for enable/disable toggling
     _mode_var._samples_entry = samples_entry
 
     _status_label = tk.Label(card, text="", bg="white", fg="#666666",
                               font=("Segoe UI", 9))
     _status_label.pack(anchor="w", padx=16, pady=(0, 8))
 
-    # ── How it works explanation ─────────────────────────────────────────────
-    info_card = tk.Frame(panel, bg="#f8f9fc", bd=1, relief="solid")
-    info_card.pack(fill="x", padx=20, pady=(0, 12))
-    tk.Label(info_card,
-             text="How it works: Instead of running all trades through one challenge, "
-                  "the simulator starts a fresh challenge at every date in the history. "
-                  "Windows that run out of trades before hitting the profit target count as failures — "
-                  "this reveals the true probability a robot would have passed if it started on that day.",
+    # ── How it works ─────────────────────────────────────────────────────────
+    info_box = tk.Frame(panel, bg="#f8f9fc", bd=1, relief="solid")
+    info_box.pack(fill="x", padx=20, pady=(0, 8))
+    tk.Label(info_box,
+             text="How it works: The simulator starts a fresh challenge at every possible date in your "
+                  "trade history (or random samples in Monte Carlo mode). For each start date, it plays "
+                  "trades forward day by day — at the lot size matching your Risk % — until the profit "
+                  "target is hit (PASS) or a drawdown limit is breached (FAIL). If the daily loss "
+                  "approaches the firm's limit (DD Safety %), the bot stops trading for that day. "
+                  "Trades that pass continue into a funded account simulation with payouts. "
+                  "Expected $ accounts for challenge fees and retry costs.",
              bg="#f8f9fc", fg="#444466", font=("Segoe UI", 9),
              wraplength=820, justify="left").pack(padx=12, pady=8, anchor="w")
+
+    # ── Column guide ──────────────────────────────────────────────────────────
+    legend_box = tk.Frame(panel, bg="white", bd=1, relief="solid")
+    legend_box.pack(fill="x", padx=20, pady=(0, 8))
+    tk.Label(legend_box, text="Column guide:", bg="white", fg="#1a1a2a",
+             font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=12, pady=(8, 4))
+    legends = [
+        ("Pass Rate",      "% of simulated challenges that hit the profit target before any drawdown breach"),
+        ("Avg Days",       "Average calendar days to pass evaluation (successful attempts only)"),
+        ("Funded Months",  "Average months the funded account survived before drawdown breach"),
+        ("$/Month",        "Average monthly payout during funded period (profit × firm's split %)"),
+        ("Fee",            "One-time challenge fee for this account size"),
+        ("Expected $",     "Expected net profit after subtracting fee × average attempts needed"),
+        ("ROI",            "(Expected profit ÷ Expected cost) × 100 — return on your challenge investment"),
+    ]
+    for label, desc in legends:
+        row = tk.Frame(legend_box, bg="white")
+        row.pack(fill="x", padx=12, pady=1)
+        tk.Label(row, text=f"{label}:", bg="white", fg="#1a1a2a",
+                 font=("Segoe UI", 8, "bold"), width=14, anchor="w").pack(side="left")
+        tk.Label(row, text=desc, bg="white", fg="#666666",
+                 font=("Segoe UI", 8), anchor="w").pack(side="left", fill="x")
+    tk.Frame(legend_box, bg="white", height=4).pack()
+
+    # ── Color guide ───────────────────────────────────────────────────────────
+    color_row = tk.Frame(panel, bg="#f0f2f5")
+    color_row.pack(fill="x", padx=20, pady=(0, 8))
+    for bg_color, fg_color, text in [
+        ("#EAF3DE", "#27500A", "60%+ pass rate — good candidate"),
+        ("#FFF8E8", "#633806", "30–60% pass rate — risky, may need tweaking"),
+        ("#FCEBEB", "#791F1F", "Below 30% — likely unprofitable after fees"),
+    ]:
+        dot = tk.Frame(color_row, bg=bg_color, width=14, height=14,
+                       highlightthickness=1, highlightbackground=fg_color)
+        dot.pack(side="left", padx=(0, 4))
+        dot.pack_propagate(False)
+        tk.Label(color_row, text=text, bg="#f0f2f5", fg=fg_color,
+                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 16))
+
+    # ── Summary cards (populated after run) ───────────────────────────────────
+    _summary_frame = tk.Frame(panel, bg="#f0f2f5")
+    _summary_frame.pack(fill="x", padx=20, pady=(0, 8))
 
     # ── Results treeview ─────────────────────────────────────────────────────
     tree_frame = tk.Frame(panel, bg="#f0f2f5")
@@ -181,6 +238,11 @@ def _run_simulation():
     except ValueError:
         sl_pips = 150.0
 
+    try:
+        safety = float(_safety_var.get())
+    except ValueError:
+        safety = 80.0
+
     trades_path = get_history_trades_path(active["history_id"])
     try:
         trades_df = pd.read_csv(trades_path)
@@ -207,6 +269,8 @@ def _run_simulation():
 
     for item in _tree.get_children():
         _tree.delete(item)
+    for w in _summary_frame.winfo_children():
+        w.destroy()
 
     _running = True
     _run_btn.configure(state="disabled", text="Running...")
@@ -220,18 +284,16 @@ def _run_simulation():
 
         for idx, (firm_id, challenge_id, firm_name, challenge_name) in enumerate(targets):
             kwargs = dict(
-                trades_df=trades_df,
-                firm_id=firm_id,
-                challenge_id=challenge_id,
-                account_size=account_size,
-                mode=mode,
-                num_samples=num_samples,
+                trades_df=trades_df, firm_id=firm_id, challenge_id=challenge_id,
+                account_size=account_size, mode=mode, num_samples=num_samples,
                 simulate_funded=True,
             )
             if "risk_per_trade_pct" in sig.parameters:
                 kwargs["risk_per_trade_pct"] = risk_pct
             if "default_sl_pips" in sig.parameters:
                 kwargs["default_sl_pips"] = sl_pips
+            if "daily_dd_safety_pct" in sig.parameters:
+                kwargs["daily_dd_safety_pct"] = safety
 
             summary = simulate_challenge(**kwargs)
             if summary:
@@ -261,6 +323,38 @@ def _on_sim_done(results, total, account_size):
         key=lambda x: x[2].expected_net_profit if x[2].expected_net_profit is not None else -9999,
         reverse=True)
 
+    # ── Summary cards ────────────────────────────────────────────────────────
+    for w in _summary_frame.winfo_children():
+        w.destroy()
+
+    cards = tk.Frame(_summary_frame, bg="#f0f2f5")
+    cards.pack(fill="x")
+
+    best_profit = max(results, key=lambda x: x[2].expected_net_profit or -999)
+    best_pass   = max(results, key=lambda x: x[2].eval_pass_rate)
+    good_count  = sum(1 for _, _, s in results if s.eval_pass_rate >= 0.6)
+
+    def _card(parent, title, value, sub="", fg="#1a1a2a"):
+        c = tk.Frame(parent, bg="white", bd=1, relief="solid")
+        c.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Label(c, text=title, bg="white", fg="#888888",
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=10, pady=(6, 0))
+        tk.Label(c, text=value, bg="white", fg=fg,
+                 font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=10)
+        if sub:
+            tk.Label(c, text=sub, bg="white", fg="#888888",
+                     font=("Segoe UI", 8)).pack(anchor="w", padx=10, pady=(0, 6))
+        else:
+            tk.Frame(c, bg="white", height=6).pack()
+
+    _card(cards, "Best opportunity", best_profit[0],
+          f"Expected: ${best_profit[2].expected_net_profit or 0:,.0f}", "#2d8a4e")
+    _card(cards, "Highest pass rate",
+          f"{best_pass[2].eval_pass_rate * 100:.0f}%",
+          f"{best_pass[0]} — {best_pass[1]}")
+    _card(cards, "Good candidates", f"{good_count} / {len(results)}", "60%+ pass rate")
+
+    # ── Results table ────────────────────────────────────────────────────────
     for firm_name, challenge_name, s in results:
         pass_rate_pct = s.eval_pass_rate * 100
 
@@ -283,22 +377,19 @@ def _on_sim_done(results, total, account_size):
                          if s.expected_roi_pct is not None else "—")
 
         _tree.insert("", "end", values=(
-            firm_name,
-            challenge_name,
-            f"{pass_rate_pct:.1f}%",
-            avg_days,
-            funded_months,
-            per_month,
-            fee,
-            expected,
-            roi,
+            firm_name, challenge_name,
+            f"{pass_rate_pct:.1f}%", avg_days, funded_months,
+            per_month, fee, expected, roi,
         ), tags=(tag,))
 
     lot_info = ""
     if results and hasattr(results[0][2], "calculated_lot_size"):
         first_s = results[0][2]
+        safety_str = (f", {first_s.daily_dd_safety_pct:.0f}% DD safety"
+                      if hasattr(first_s, "daily_dd_safety_pct") else "")
         lot_info = (f" | {first_s.calculated_lot_size:.2f} lots "
-                    f"({first_s.risk_per_trade_pct}% risk, {first_s.default_sl_pips:.0f}-pip SL)")
+                    f"({first_s.risk_per_trade_pct}% risk, "
+                    f"{first_s.default_sl_pips:.0f}-pip SL{safety_str})")
 
     _status_label.configure(
         text=f"Done — {len(results)}/{total} challenges simulated (${account_size:,}){lot_info}",

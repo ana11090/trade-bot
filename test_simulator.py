@@ -85,13 +85,14 @@ def main():
     print()
     print("=" * 70)
     print("TEST 4 — Risk level comparison (FTMO 2-Step, $100k, 50 MC samples)")
-    print("Expected: higher risk = more variation in pass rates, different lot sizes")
+    print("Expected: higher risk = faster passes but more failures, different lot sizes")
     print("=" * 70)
     for risk in [0.5, 1.0, 2.0]:
         r = simulate_challenge(
             trades_df, "ftmo", "ftmo_2step_standard", account_size,
             mode="monte_carlo", num_samples=50,
             risk_per_trade_pct=risk, default_sl_pips=150.0, pip_value_per_lot=1.0,
+            daily_dd_safety_pct=80.0,
         )
         if r:
             monthly = f"${r.funded_avg_monthly_payout:,.0f}" if r.funded_avg_monthly_payout else "—"
@@ -104,6 +105,27 @@ def main():
 
     print()
     print("If all three risk levels show the same pass rate, rescaling is broken.")
+
+    # ── Test 5: Safety margin effect ─────────────────────────────────────────
+    print()
+    print("=" * 70)
+    print("TEST 5 — Safety margin effect (FTMO 2-Step, $100k, 50 MC samples)")
+    print("Expected: lower safety = more conservative (stops earlier on bad days)")
+    print("=" * 70)
+    for safety in [60, 80, 100]:
+        r = simulate_challenge(
+            trades_df, "ftmo", "ftmo_2step_standard", account_size,
+            mode="monte_carlo", num_samples=50,
+            risk_per_trade_pct=1.0, default_sl_pips=150.0,
+            daily_dd_safety_pct=float(safety),
+        )
+        if r:
+            monthly = f"${r.funded_avg_monthly_payout:,.0f}" if r.funded_avg_monthly_payout else "—"
+            print(f"  Safety {safety}%: pass rate {r.eval_pass_rate*100:.0f}%, "
+                  f"avg days {r.eval_avg_days_to_pass:.0f}, "
+                  f"monthly {monthly}")
+        else:
+            print(f"  Safety {safety}%: no result")
 
 
 def _print_summary(s):

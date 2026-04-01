@@ -10,7 +10,8 @@ Two simulation modes:
   - Sliding window: start a fresh challenge at every possible date in the trade history
   - Monte Carlo: randomly sample N starting dates
 
-Uses the robot's ACTUAL trade frequency — respects gaps between trades.
+Daily DD safety: on losing days, the bot stops trading once the running daily loss
+reaches `daily_dd_safety_pct` % of the firm's daily DD limit — protecting the account.
 """
 
 from dataclasses import dataclass, field
@@ -79,6 +80,7 @@ class SimulationSummary:
     risk_per_trade_pct: float = 1.0
     default_sl_pips: float = 150.0
     calculated_lot_size: float = 0.0
+    daily_dd_safety_pct: float = 80.0
 
     individual_results: list = field(default_factory=list)
 
@@ -88,19 +90,12 @@ class SimulationSummary:
 def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
                     default_sl_pips: float, pip_value_per_lot: float):
     """
-    Rescale trade profits from raw dollar values to what they would be
-    on the simulated account using proper position sizing.
-
-    Uses the Pips column (raw price movement) instead of the Profit column
-    (which depends on the robot's actual lot size).
-
+    Rescale trade profits using Pips column with fixed lot sizing.
+    Daily DD management happens during simulation, not here.
     Returns (modified_df, calculated_lot_size).
     """
-    import pandas as pd
-
     df = trades_df.copy()
 
-    # Calculate lot size for this account and risk level
     risk_dollars = account_size * (risk_per_trade_pct / 100.0)
     lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
     lot_size = max(0.01, min(lot_size, 100.0))
@@ -109,12 +104,10 @@ def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
         df["Profit_Original"] = df["Profit"].copy()
         df["Profit"] = df["Pips"] * pip_value_per_lot * lot_size
     else:
-        # Fallback: proportional scaling by lot ratio
         avg_lot = df["Lots"].mean() if "Lots" in df.columns else 1.0
-        if avg_lot > 0:
-            scale_factor = lot_size / avg_lot
-            df["Profit_Original"] = df["Profit"].copy()
-            df["Profit"] = df["Profit"] * scale_factor
+        scale = lot_size / avg_lot if avg_lot > 0 else 1.0
+        df["Profit_Original"] = df["Profit"].copy()
+        df["Profit"] = df["Profit"] * scale
 
     return df, lot_size
 
@@ -129,15 +122,41 @@ _PAYOUT_FREQ_DAYS = {
 }
 
 
+# ── Daily DD safety helper ─────────────────────────────────────────────────────
+
+def _apply_daily_safety(trade_profits: list, safety_threshold: float | None) -> float:
+    """
+    Process trades one by one within a day.
+    Stops trading for the day when running loss reaches the safety threshold.
+    Winning trades are never stopped — only protects against runaway losing days.
+    Returns the effective day P&L after applying the safety rule.
+    """
+    if not trade_profits:
+        return 0.0
+
+    if safety_threshold is None:
+        return sum(trade_profits)
+
+    running_pnl = 0.0
+    for profit in trade_profits:
+        # Check safety BEFORE taking the next trade (only when already in a loss)
+        if running_pnl < 0 and abs(running_pnl) >= safety_threshold:
+            break
+        running_pnl += profit
+
+    return running_pnl
+
+
 # ── Internal simulation helpers ────────────────────────────────────────────────
 
-def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, max_override_days):
+def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
+                    account_size, max_override_days, daily_dd_safety_pct):
     """
     Simulate one evaluation phase.
     Returns dict with outcome, calendar_days, trading_days, profit_pct, max_dd_pct, next_idx.
     """
     profit_target_pct = phase.get("profit_target_pct") or 0.0
-    max_daily_dd_pct  = phase.get("max_daily_drawdown_pct")      # may be None
+    max_daily_dd_pct  = phase.get("max_daily_drawdown_pct")
     max_total_dd_pct  = phase.get("max_total_drawdown_pct") or 999.0
     drawdown_type     = phase.get("drawdown_type", "static")
     min_trading_days  = phase.get("min_trading_days") or 0
@@ -147,6 +166,11 @@ def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, ma
 
     consistency_pct   = phase.get("consistency_rule_pct")
     consistency_type  = phase.get("consistency_rule_type")
+
+    # Compute daily safety threshold from firm's daily DD limit
+    daily_dd_limit_abs  = account_size * (max_daily_dd_pct / 100.0) if max_daily_dd_pct else None
+    safety_threshold    = (daily_dd_limit_abs * (daily_dd_safety_pct / 100.0)
+                           if daily_dd_limit_abs else None)
 
     if start_idx >= len(trading_dates):
         return {"outcome": "INSUFFICIENT_TRADES", "calendar_days": 0,
@@ -159,12 +183,13 @@ def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, ma
 
     trading_days = 0
     max_dd_hit   = 0.0
-    day_profits  = []          # for consistency check
+    day_profits  = []
     phase_start  = trading_dates[start_idx]
 
     for i in range(start_idx, len(trading_dates)):
-        cur_date = trading_dates[i]
-        day_pnl  = daily_pnl[cur_date]
+        cur_date    = trading_dates[i]
+        trade_list  = daily_trades[cur_date]
+        day_pnl     = _apply_daily_safety(trade_list, safety_threshold)
 
         balance      += day_pnl
         trading_days += 1
@@ -184,7 +209,7 @@ def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, ma
 
         max_dd_hit = max(max_dd_hit, total_dd)
 
-        # Daily DD breach
+        # Daily DD breach (safety margin didn't prevent it fully)
         if max_daily_dd_pct is not None and daily_dd >= max_daily_dd_pct:
             return {"outcome": "FAIL_DAILY_DD", "calendar_days": cal_days,
                     "trading_days": trading_days,
@@ -233,7 +258,7 @@ def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, ma
                     "trading_days": trading_days, "profit_pct": profit_pct,
                     "max_dd_pct": max_dd_hit, "next_idx": i + 1}
 
-    # Ran out of trades — target never reached
+    # Ran out of trades
     final_cal = (trading_dates[-1] - phase_start).days + 1 if len(trading_dates) > start_idx else 0
     return {"outcome": "INSUFFICIENT_TRADES", "calendar_days": final_cal,
             "trading_days": trading_days,
@@ -241,8 +266,8 @@ def _simulate_phase(trading_dates, daily_pnl, start_idx, phase, account_size, ma
             "max_dd_pct": max_dd_hit, "next_idx": len(trading_dates)}
 
 
-def _simulate_eval(trading_dates, daily_pnl, start_date, start_idx,
-                   phases, account_size, max_override_days):
+def _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
+                   phases, account_size, max_override_days, daily_dd_safety_pct):
     """Simulate all evaluation phases in sequence. Returns eval result dict."""
     if not phases:
         return {"outcome": "PASS", "calendar_days": 0, "trading_days": 0,
@@ -256,8 +281,8 @@ def _simulate_eval(trading_dates, daily_pnl, start_date, start_idx,
     phase_results  = []
 
     for phase in phases:
-        pr = _simulate_phase(trading_dates, daily_pnl, current_idx,
-                             phase, account_size, max_override_days)
+        pr = _simulate_phase(trading_dates, daily_trades, current_idx,
+                             phase, account_size, max_override_days, daily_dd_safety_pct)
         phase_results.append(pr)
         total_cal   += pr["calendar_days"]
         total_tdays += pr["trading_days"]
@@ -270,8 +295,6 @@ def _simulate_eval(trading_dates, daily_pnl, start_date, start_idx,
                     "phase_results": phase_results}
 
         current_idx = pr["next_idx"]
-        # Most firms reset balance to account_size for next phase (handled implicitly
-        # since _simulate_phase always starts from account_size)
 
     return {"outcome": "PASS", "calendar_days": total_cal,
             "trading_days": total_tdays,
@@ -280,7 +303,8 @@ def _simulate_eval(trading_dates, daily_pnl, start_date, start_idx,
             "phase_results": phase_results}
 
 
-def _simulate_funded_stage(trading_dates, daily_pnl, start_idx, funded_cfg, account_size):
+def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
+                           funded_cfg, account_size, daily_dd_safety_pct):
     """Simulate funded account from start_idx onward. Returns funded result dict."""
     max_daily_dd  = funded_cfg.get("max_daily_drawdown_pct")
     max_total_dd  = funded_cfg.get("max_total_drawdown_pct") or 999.0
@@ -290,6 +314,11 @@ def _simulate_funded_stage(trading_dates, daily_pnl, start_idx, funded_cfg, acco
     dd_reset      = funded_cfg.get("dd_reset_on_payout", False)
 
     payout_interval = _PAYOUT_FREQ_DAYS.get(payout_freq, 14)
+
+    # Funded safety threshold
+    daily_dd_limit_abs = account_size * (max_daily_dd / 100.0) if max_daily_dd else None
+    safety_threshold   = (daily_dd_limit_abs * (daily_dd_safety_pct / 100.0)
+                          if daily_dd_limit_abs else None)
 
     if start_idx >= len(trading_dates):
         return {"survival_days": 0, "trading_days": 0, "total_payouts": 0.0,
@@ -303,12 +332,13 @@ def _simulate_funded_stage(trading_dates, daily_pnl, start_idx, funded_cfg, acco
     trading_days = 0
     max_dd_hit   = 0.0
 
-    funded_start      = trading_dates[start_idx]
-    last_payout_date  = funded_start
+    funded_start     = trading_dates[start_idx]
+    last_payout_date = funded_start
 
     for i in range(start_idx, len(trading_dates)):
-        cur_date = trading_dates[i]
-        day_pnl  = daily_pnl[cur_date]
+        cur_date   = trading_dates[i]
+        trade_list = daily_trades[cur_date]
+        day_pnl    = _apply_daily_safety(trade_list, safety_threshold)
 
         balance      += day_pnl
         trading_days += 1
@@ -361,12 +391,13 @@ def _simulate_funded_stage(trading_dates, daily_pnl, start_idx, funded_cfg, acco
             "end_reason": "TRADES_EXHAUSTED"}
 
 
-def _single_sim(trading_dates, daily_pnl, start_date, date_to_idx,
-                phases, funded_cfg, account_size, simulate_funded, max_override_days):
+def _single_sim(trading_dates, daily_trades, start_date, date_to_idx,
+                phases, funded_cfg, account_size, simulate_funded,
+                max_override_days, daily_dd_safety_pct):
     """Run one complete simulation (eval + optional funded)."""
-    start_idx  = date_to_idx[start_date]
-    eval_r     = _simulate_eval(trading_dates, daily_pnl, start_date, start_idx,
-                                phases, account_size, max_override_days)
+    start_idx = date_to_idx[start_date]
+    eval_r    = _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
+                               phases, account_size, max_override_days, daily_dd_safety_pct)
 
     if eval_r["outcome"] != "PASS" or not simulate_funded:
         return SingleSimResult(
@@ -387,7 +418,8 @@ def _single_sim(trading_dates, daily_pnl, start_date, date_to_idx,
         )
 
     funded_r = _simulate_funded_stage(
-        trading_dates, daily_pnl, eval_r["next_idx"], funded_cfg, account_size)
+        trading_dates, daily_trades, eval_r["next_idx"],
+        funded_cfg, account_size, daily_dd_safety_pct)
 
     return SingleSimResult(
         start_date=str(start_date),
@@ -408,7 +440,8 @@ def _single_sim(trading_dates, daily_pnl, start_date, date_to_idx,
 
 
 def _aggregate(results, firm, challenge, account_size, mode,
-               risk_per_trade_pct=1.0, default_sl_pips=150.0, calculated_lot_size=0.0):
+               risk_per_trade_pct=1.0, default_sl_pips=150.0,
+               calculated_lot_size=0.0, daily_dd_safety_pct=80.0):
     """Build SimulationSummary from a list of SingleSimResult."""
     import statistics as stats_mod
 
@@ -416,7 +449,7 @@ def _aggregate(results, firm, challenge, account_size, mode,
     fails  = [r for r in results if r.eval_outcome != "PASS"]
     total  = len(results)
 
-    pass_rate  = len(passes) / total if total > 0 else 0.0
+    pass_rate    = len(passes) / total if total > 0 else 0.0
     fail_reasons = {}
     for r in fails:
         fail_reasons[r.eval_outcome] = fail_reasons.get(r.eval_outcome, 0) + 1
@@ -427,16 +460,18 @@ def _aggregate(results, firm, challenge, account_size, mode,
 
     funded_ok = [r for r in passes if r.funded_survival_days is not None]
 
-    def _mean(lst):  return stats_mod.mean(lst) if lst else 0.0
+    def _mean(lst):   return stats_mod.mean(lst) if lst else 0.0
     def _median(lst): return stats_mod.median(lst) if lst else 0.0
 
-    f_survival   = [r.funded_survival_days for r in funded_ok]
-    f_monthly    = [r.funded_monthly_avg    for r in funded_ok if r.funded_monthly_avg]
-    f_total_pay  = [r.funded_total_payouts  for r in funded_ok if r.funded_total_payouts is not None]
-    f_count      = [r.funded_payout_count   for r in funded_ok if r.funded_payout_count  is not None]
+    f_survival  = [r.funded_survival_days for r in funded_ok]
+    f_monthly   = [r.funded_monthly_avg   for r in funded_ok if r.funded_monthly_avg]
+    f_total_pay = [r.funded_total_payouts for r in funded_ok if r.funded_total_payouts is not None]
+    f_count     = [r.funded_payout_count  for r in funded_ok if r.funded_payout_count  is not None]
 
-    surv_3mo = len([r for r in funded_ok if r.funded_survival_days >= 90])  / len(funded_ok) if funded_ok else None
-    surv_6mo = len([r for r in funded_ok if r.funded_survival_days >= 180]) / len(funded_ok) if funded_ok else None
+    surv_3mo = (len([r for r in funded_ok if r.funded_survival_days >= 90])  / len(funded_ok)
+                if funded_ok else None)
+    surv_6mo = (len([r for r in funded_ok if r.funded_survival_days >= 180]) / len(funded_ok)
+                if funded_ok else None)
 
     # Fee lookup
     fee = None
@@ -447,11 +482,13 @@ def _aggregate(results, firm, challenge, account_size, mode,
         except (TypeError, ValueError):
             fee = None
 
-    avg_attempts   = 1.0 / pass_rate if pass_rate > 0 else float("inf")
-    expected_cost  = fee * avg_attempts if (fee is not None and pass_rate > 0) else None
+    avg_attempts    = 1.0 / pass_rate if pass_rate > 0 else float("inf")
+    expected_cost   = fee * avg_attempts if (fee is not None and pass_rate > 0) else None
     expected_income = _mean(f_total_pay) if f_total_pay else None
-    expected_net   = (expected_income - expected_cost) if (expected_income is not None and expected_cost is not None) else None
-    expected_roi   = (expected_net / expected_cost * 100) if (expected_net is not None and expected_cost and expected_cost > 0) else None
+    expected_net    = ((expected_income - expected_cost)
+                       if (expected_income is not None and expected_cost is not None) else None)
+    expected_roi    = ((expected_net / expected_cost * 100)
+                       if (expected_net is not None and expected_cost and expected_cost > 0) else None)
 
     return SimulationSummary(
         firm_name=firm.firm_name,
@@ -483,6 +520,7 @@ def _aggregate(results, firm, challenge, account_size, mode,
         risk_per_trade_pct=risk_per_trade_pct,
         default_sl_pips=default_sl_pips,
         calculated_lot_size=round(calculated_lot_size, 4),
+        daily_dd_safety_pct=daily_dd_safety_pct,
         individual_results=results,
     )
 
@@ -502,21 +540,27 @@ def simulate_challenge(
     risk_per_trade_pct: float = 1.0,
     default_sl_pips: float = 150.0,
     pip_value_per_lot: float = 1.0,
+    daily_dd_safety_pct: float = 80.0,
 ) -> SimulationSummary | None:
     """
     Simulate the full prop firm challenge lifecycle.
 
     Parameters
     ----------
-    trades_df : pd.DataFrame  — trades with 'Close Date' and 'Profit' columns
-    firm_id   : str           — e.g. "ftmo"
-    challenge_id : str        — e.g. "ftmo_2step_standard"
-    account_size : int        — e.g. 100000
-    mode      : "sliding_window" | "monte_carlo"
-    num_samples : int         — Monte Carlo sample count
-    simulate_funded : bool    — run Stage 2 for passed windows
-    max_eval_calendar_days : override firm's time limit (None = use firm's)
-    random_seed : int         — reproducible Monte Carlo
+    trades_df            : pd.DataFrame — trades with 'Close Date' and 'Profit' columns
+    firm_id              : str          — e.g. "ftmo"
+    challenge_id         : str          — e.g. "ftmo_2step_standard"
+    account_size         : int          — e.g. 100000
+    mode                 : "sliding_window" | "monte_carlo"
+    num_samples          : int          — Monte Carlo sample count
+    simulate_funded      : bool         — run Stage 2 for passed windows
+    max_eval_calendar_days: override firm's time limit (None = use firm's)
+    random_seed          : int          — reproducible Monte Carlo
+    risk_per_trade_pct   : float        — % of account risked per trade (e.g. 1.0 = 1%)
+    default_sl_pips      : float        — SL distance for lot sizing
+    pip_value_per_lot    : float        — $ per pip per standard lot (XAUUSD = 1.0)
+    daily_dd_safety_pct  : float        — stop trading when daily loss reaches this
+                                          % of the firm's daily DD limit (default 80%)
 
     Returns SimulationSummary or None if firm/challenge not found.
     """
@@ -546,22 +590,26 @@ def simulate_challenge(
         df, account_size, risk_per_trade_pct, default_sl_pips, pip_value_per_lot
     )
     print(f"[SIMULATOR] Lot size: {calculated_lot_size:.2f} lots "
-          f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips)")
+          f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips, "
+          f"daily DD safety: {daily_dd_safety_pct}%)")
 
-    # Aggregate daily P&L
-    daily_pnl: dict = {}
+    # Build daily_trades: date → sorted list of individual trade profits
+    daily_trades: dict = {}
     for _, row in df.iterrows():
         d = row["_close_date"]
-        daily_pnl[d] = daily_pnl.get(d, 0.0) + float(row["Profit"])
+        if d not in daily_trades:
+            daily_trades[d] = []
+        daily_trades[d].append(float(row["Profit"]))
+    # Trades are already sorted by _close_dt, so lists are chronologically ordered
 
-    trading_dates = sorted(daily_pnl.keys())
+    trading_dates = sorted(daily_trades.keys())
     if not trading_dates:
         return None
 
     date_to_idx = {d: i for i, d in enumerate(trading_dates)}
 
     # ── Build starting points ─────────────────────────────────────────────────
-    MIN_REMAINING = 10   # skip starting dates with < 10 trading days remaining
+    MIN_REMAINING = 10
     valid_starts  = [d for i, d in enumerate(trading_dates)
                      if len(trading_dates) - i >= MIN_REMAINING]
 
@@ -588,12 +636,14 @@ def simulate_challenge(
             print(f"[SIMULATOR] Running simulation {idx+1}/{total}...")
 
         r = _single_sim(
-            trading_dates, daily_pnl, start_date, date_to_idx,
-            phases, funded_cfg, account_size, simulate_funded, max_eval_calendar_days,
+            trading_dates, daily_trades, start_date, date_to_idx,
+            phases, funded_cfg, account_size, simulate_funded,
+            max_eval_calendar_days, daily_dd_safety_pct,
         )
         all_results.append(r)
 
     print(f"[SIMULATOR] Done — {sum(1 for r in all_results if r.eval_outcome == 'PASS')}/{total} passed")
 
     return _aggregate(all_results, firm, challenge, account_size, mode,
-                      risk_per_trade_pct, default_sl_pips, calculated_lot_size)
+                      risk_per_trade_pct, default_sl_pips,
+                      calculated_lot_size, daily_dd_safety_pct)
