@@ -1,0 +1,17 @@
+{
+  "history_id": "original_bot",
+  "robot_name": "Original Bot",
+  "symbol": "XAUUSD",
+  "description": "First loaded trade history \u2014 original bot trades from 2020-2026",
+  "date_loaded": "2026-04-01T10:17:33",
+  "trade_count": 1106,
+  "date_range": {
+    "start": "2020-01-07",
+    "end": "2026-03-10"
+  },
+  "status": "analyzed",
+  "source_file": "trades_clean.csv",
+  "pipeline_progress": {
+    "project0": "complete"
+  }
+}

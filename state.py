@@ -34,6 +34,6 @@ PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results"}
 PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results"}
 submenu_open = [False]
 
-# Robot management
-active_robot_id     = None   # ID of currently selected robot
-active_robot_config = None   # Dict with robot metadata
+# Trade history management
+active_history_id     = None    # ID of currently selected trade history
+active_history_config = None    # Dict with trade history metadata
