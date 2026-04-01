@@ -340,12 +340,17 @@ def build_sidebar(window, canvas, refresh_map):
                                 lambda: show_panel("prop_explorer"))
     explorer_btn.pack(fill="x")
 
+    sim_btn = _sidebar_btn(project0_extras, "Lifecycle Simulator",
+                           lambda: show_panel("lifecycle_sim"))
+    sim_btn.pack(fill="x")
+
     compare_btn = _sidebar_btn(project0_extras, "Compare Trade Histories",
                                lambda: show_panel("compare_histories"))
     compare_btn.pack(fill="x")
 
     PROJECT0_EXTRA_BUTTONS = {
         "prop_explorer":      explorer_btn,
+        "lifecycle_sim":      sim_btn,
         "compare_histories":  compare_btn,
     }
 

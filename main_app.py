@@ -17,6 +17,7 @@ from project0_data_pipeline.panels import (
 from project0_data_pipeline.panels import prop_compliance_v2 as prop_compliance
 from project0_data_pipeline.panels import prop_explorer
 from project0_data_pipeline.panels import compare_histories
+from project0_data_pipeline.panels import lifecycle_simulator
 from project0_data_pipeline.probabilities.panels import (
     account_survival, expected_value, breakeven, kelly, streaks, drawdown_recovery
 )
@@ -101,6 +102,7 @@ state.all_panels["p2_results"] = p2_view_results.build_panel(content)
 # New Project 0 extra panels
 state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
 state.all_panels["compare_histories"] = compare_histories.build_panel(content)
+state.all_panels["lifecycle_sim"]     = lifecycle_simulator.build_panel(content)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -119,6 +121,7 @@ refresh_map = {
     "p2_results": p2_view_results.refresh,
     "prop_explorer":     prop_explorer.refresh,
     "compare_histories": compare_histories.refresh,
+    "lifecycle_sim":     lifecycle_simulator.refresh,
 }
 show_panel = build_sidebar(window, canvas, refresh_map)
 
