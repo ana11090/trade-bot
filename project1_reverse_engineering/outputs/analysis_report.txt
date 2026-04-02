@@ -1,0 +1,120 @@
+======================================================================
+ROBOT ANALYSIS REPORT
+Generated: 2026-04-02T10:43:40.788158
+Trades analyzed: 1106 | Features: 631
+======================================================================
+
+-- ROBOT IDENTITY (auto-detected) ---------------------------------
+  Direction:      buy_only
+  Type:           scalper
+  Date range:     2020-01-07 to 2026-03-10
+  Win rate:       58%
+  Reward:Risk:    2.5:1
+  Avg win:        +347 pips
+  Avg loss:       -136 pips
+  Stop loss:      Fixed 150 pips (confidence: 88%)
+  Take profit:    Dynamic / trailing
+  Sessions:       Asian, London, New York
+  Peak hours:     [16, 17, 15] UTC
+  Frequency:      increasing (15/month avg)
+
+-- TOP FEATURES (what the robot reacts to) ------------------------
+  Model accuracy: train=81.4%, test=53.8%
+   1. H1_bb_20_3_width                              0.9%
+   2. H1_distance_to_fib_500                        0.8%
+   3. M15_std_dev_50                                0.8%
+   4. H1_std_dev_20                                 0.7%
+   5. H1_std_dev_50                                 0.7%
+   6. H1_cmf                                        0.6%
+   7. M15_atr_100                                   0.6%
+   8. H1_bb_20_2_width                              0.6%
+   9. M15_body_to_range_ratio                       0.6%
+  10. H4_bb_50_2_width                              0.6%
+
+-- TRADING RULES (IF/THEN) ----------------------------------------
+
+  RULE 1 (WIN, conf: 98%, 86 trades)
+    IF H1_distance_to_fib_500 > 1.2913 AND H4_adx_14 > 30.0975 AND M15_volume_change > -0.2959 AND M15_dpo <= 8.5565 AND H4_sma_50_distance <= 5.0623
+    Win rate: 98% | Avg pips: +451
+
+  RULE 2 (LOSS, conf: 64%, 123 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst > 10.1462 AND M5_aroon_down > 18.0 AND M15_bear_power > -5.7445
+    Win rate: 36% | Avg pips: -15
+
+  RULE 3 (WIN, conf: 61%, 116 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst > 10.1462 AND M5_aroon_down > 18.0 AND M15_bear_power <= -5.7445
+    Win rate: 61% | Avg pips: +118
+
+  RULE 4 (LOSS, conf: 60%, 95 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down <= 54.0 AND D1_ultimate_oscillator > 54.645 AND D1_atr_50 > 24.9317 AND M5_macd_fast_diff <= 0.2844
+    Win rate: 40% | Avg pips: +49
+
+  RULE 5 (LOSS, conf: 62%, 77 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst <= 10.1462 AND H1_adx_28 > 16.3667 AND M5_adx_21 > 21.5849
+    Win rate: 38% | Avg pips: -13
+
+  RULE 6 (WIN, conf: 57%, 84 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst > 10.1462 AND M5_aroon_down <= 18.0 AND M15_bb_20_2_width <= 1.0556
+    Win rate: 57% | Avg pips: +165
+
+  RULE 7 (LOSS, conf: 68%, 60 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst <= 10.1462 AND H1_adx_28 <= 16.3667 AND M15_atr_50 > 2.3818
+    Win rate: 32% | Avg pips: -26
+
+  RULE 8 (WIN, conf: 93%, 42 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst > 10.1462 AND M5_aroon_down <= 18.0 AND M15_bb_20_2_width > 1.0556
+    Win rate: 93% | Avg pips: +325
+
+  RULE 9 (WIN, conf: 100%, 33 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down <= 54.0 AND D1_ultimate_oscillator <= 54.645 AND M5_cci_14 > -37.2234 AND H4_close_position_in_range <= 0.6746
+    Win rate: 100% | Avg pips: +328
+
+  RULE 10 (LOSS, conf: 100%, 32 trades)
+    IF H1_distance_to_fib_500 <= 1.2913 AND M15_aroon_down > 54.0 AND D1_kst <= 10.1462 AND H1_adx_28 <= 16.3667 AND M15_atr_50 <= 2.3818
+    Win rate: 0% | Avg pips: -140
+
+-- TRADE CLUSTERS (auto-detected groups) --------------------------
+  'Big winners': 48 trades (4.3%), WR 85%, avg +559 pips, avg dur 1min
+  'Quick scalps': 314 trades (28.4%), WR 64%, avg +226 pips, avg dur 2min
+  'Short-term trades': 335 trades (30.3%), WR 58%, avg +104 pips, avg dur 25min
+  'Short-term trades': 409 trades (37.0%), WR 51%, avg +72 pips, avg dur 24min
+
+-- MARKET REGIME PERFORMANCE --------------------------------------
+  trend:
+    trending              : WR 62%, avg +189 pips (628 trades)
+    ranging               : WR 54%, avg +90 pips (478 trades)
+  volatility:
+    high                  : WR 65%, avg +223 pips (549 trades)
+    low                   : WR 52%, avg +71 pips (557 trades)
+  direction:
+    above_ema200          : WR 60%, avg +162 pips (848 trades)
+    below_ema200          : WR 54%, avg +95 pips (258 trades)
+  session:
+    asian                 : WR 62%, avg +187 pips (223 trades)
+    london                : WR 56%, avg +122 pips (414 trades)
+    new_york              : WR 57%, avg +130 pips (636 trades)
+  day_of_week:
+    Monday                : WR 62%, avg +169 pips (231 trades)
+    Tuesday               : WR 60%, avg +160 pips (196 trades)
+    Wednesday             : WR 56%, avg +135 pips (215 trades)
+    Thursday              : WR 57%, avg +122 pips (212 trades)
+    Friday                : WR 57%, avg +145 pips (252 trades)
+
+-- TIME PERIOD EVOLUTION ------------------------------------------
+  2020:   96 trades, WR 68%, avg +154 pips, 8.0/month
+  2021:   73 trades, WR 55%, avg +97 pips, 6.1/month
+  2022:  105 trades, WR 50%, avg +60 pips, 8.8/month
+  2023:   85 trades, WR 45%, avg +65 pips, 7.1/month
+  2024:  167 trades, WR 49%, avg +58 pips, 13.9/month
+  2025:  380 trades, WR 60%, avg +129 pips, 31.7/month
+  2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
+
+-- ANOMALIES -------------------------------------------------------
+  56 outlier trades (5.1%)
+  Anomaly win rate: 88% vs normal: 57%
+
+-- IMPROVEMENT SUGGESTIONS ----------------------------------------
+  -> Only trade in high volatility (ATR above median)
+     Would improve win rate from 58% to ~65%
+
+======================================================================
