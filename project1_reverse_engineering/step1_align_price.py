@@ -74,9 +74,23 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         # Load trades
         trades_df = pd.read_csv(trades_csv_path)
 
+        # Normalize column names (handle different CSV formats)
+        column_mapping = {
+            'Open Date': 'open_time',
+            'Close Date': 'close_time',
+            'Open Price': 'entry_price',
+            'Close Price': 'exit_price',
+            'Action': 'action',
+            'Lots': 'lots',
+            'Pips': 'pips',
+            'Profit': 'profit',
+        }
+        trades_df.rename(columns=column_mapping, inplace=True)
+
         # Parse timestamps (assume broker timezone, no UTC conversion)
-        trades_df['open_time'] = pd.to_datetime(trades_df['open_time'])
-        trades_df['close_time'] = pd.to_datetime(trades_df['close_time'])
+        # Use dayfirst=True for DD/MM/YYYY format, format='mixed' to handle inconsistent formats
+        trades_df['open_time'] = pd.to_datetime(trades_df['open_time'], format='mixed', dayfirst=True)
+        trades_df['close_time'] = pd.to_datetime(trades_df['close_time'], format='mixed', dayfirst=True)
 
         # Add trade_id if not present
         if 'trade_id' not in trades_df.columns:
