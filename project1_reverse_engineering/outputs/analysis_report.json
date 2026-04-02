@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-02T10:43:40.788158",
-  "analysis_time_s": 21.0,
+  "generated_at": "2026-04-03T00:39:29.891389",
+  "analysis_time_s": 8.6,
   "trade_count": 1106,
   "feature_count": 631,
   "profile": {
@@ -126,87 +126,87 @@
     "top_20": [
       [
         "H1_bb_20_3_width",
-        0.008628
+        0.0086
       ],
       [
         "H1_distance_to_fib_500",
-        0.007902
+        0.007752
       ],
       [
         "M15_std_dev_50",
-        0.007588
-      ],
-      [
-        "H1_std_dev_20",
-        0.006737
+        0.0064
       ],
       [
         "H1_std_dev_50",
-        0.00666
+        0.00619
       ],
       [
-        "H1_cmf",
-        0.006317
-      ],
-      [
-        "M15_atr_100",
-        0.006092
-      ],
-      [
-        "H1_bb_20_2_width",
-        0.005875
-      ],
-      [
-        "M15_body_to_range_ratio",
-        0.005804
-      ],
-      [
-        "H4_bb_50_2_width",
-        0.0058
-      ],
-      [
-        "M5_aroon_down",
-        0.005797
+        "H1_std_dev_20",
+        0.005913
       ],
       [
         "H4_keltner_width",
-        0.005686
+        0.005755
       ],
       [
-        "D1_std_dev_20",
-        0.005663
+        "H4_bb_50_2_width",
+        0.00571
       ],
       [
-        "D1_bb_20_3_width",
-        0.00511
+        "H1_bb_20_2_width",
+        0.005597
       ],
       [
-        "M5_adx_28",
-        0.005038
+        "M5_aroon_down",
+        0.005535
       ],
       [
         "M15_candle_body",
-        0.004882
+        0.005276
       ],
       [
-        "M15_adx_28",
-        0.004827
+        "M15_bb_50_2_width",
+        0.005167
       ],
       [
-        "H1_atr_50",
-        0.004571
-      ],
-      [
-        "M5_aroon_indicator",
-        0.00455
+        "H4_std_dev_20",
+        0.00505
       ],
       [
         "H1_candle_range",
-        0.00452
+        0.005037
+      ],
+      [
+        "H1_cmf",
+        0.005036
+      ],
+      [
+        "M15_atr_100",
+        0.004944
+      ],
+      [
+        "H1_distance_to_fib_618",
+        0.00481
+      ],
+      [
+        "H1_close_position_in_range",
+        0.004723
+      ],
+      [
+        "H1_macd_fast_signal",
+        0.004688
+      ],
+      [
+        "M15_body_to_range_ratio",
+        0.004619
+      ],
+      [
+        "D1_std_dev_20",
+        0.004593
       ]
     ],
-    "train_accuracy": 0.8142,
-    "test_accuracy": 0.5379
+    "train_accuracy": 0.8191,
+    "test_accuracy": 0.5487
   },
   "rules": [
     {
@@ -219,7 +219,7 @@
         {
           "feature": "H4_adx_14",
           "operator": ">",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M15_volume_change",
@@ -232,9 +232,9 @@
           "value": 8.5565
         },
         {
-          "feature": "H4_sma_50_distance",
+          "feature": "H4_distance_to_fib_236",
           "operator": "<=",
-          "value": 5.0623
+          "value": 6.4144
         }
       ],
       "prediction": "WIN",
@@ -242,7 +242,42 @@
       "coverage": 86,
       "coverage_pct": 7.8,
       "win_rate": 0.977,
-      "avg_pips": 450.7
+      "avg_pips": 447.6
+    },
+    {
+      "conditions": [
+        {
+          "feature": "H1_distance_to_fib_500",
+          "operator": "<=",
+          "value": 1.2913
+        },
+        {
+          "feature": "M15_aroon_down",
+          "operator": ">",
+          "value": 54.0
+        },
+        {
+          "feature": "D1_kst",
+          "operator": "<=",
+          "value": 10.1462
+        },
+        {
+          "feature": "H4_vpt",
+          "operator": ">",
+          "value": -2.7095
+        },
+        {
+          "feature": "M5_adx_14",
+          "operator": ">",
+          "value": 27.483
+        }
+      ],
+      "prediction": "LOSS",
+      "confidence": 0.806,
+      "coverage": 98,
+      "coverage_pct": 8.9,
+      "win_rate": 0.194,
+      "avg_pips": -79.4
     },
     {
       "conditions": [
@@ -334,7 +369,7 @@
         {
           "feature": "D1_atr_50",
           "operator": ">",
-          "value": 24.9317
+          "value": 24.9295
         },
         {
           "feature": "M5_macd_fast_diff",
@@ -348,41 +383,6 @@
       "coverage_pct": 8.6,
       "win_rate": 0.4,
       "avg_pips": 49.0
-    },
-    {
-      "conditions": [
-        {
-          "feature": "H1_distance_to_fib_500",
-          "operator": "<=",
-          "value": 1.2913
-        },
-        {
-          "feature": "M15_aroon_down",
-          "operator": ">",
-          "value": 54.0
-        },
-        {
-          "feature": "D1_kst",
-          "operator": "<=",
-          "value": 10.1462
-        },
-        {
-          "feature": "H1_adx_28",
-          "operator": ">",
-          "value": 16.3667
-        },
-        {
-          "feature": "M5_adx_21",
-          "operator": ">",
-          "value": 21.5849
-        }
-      ],
-      "prediction": "LOSS",
-      "confidence": 0.623,
-      "coverage": 77,
-      "coverage_pct": 7.0,
-      "win_rate": 0.377,
-      "avg_pips": -12.6
     },
     {
       "conditions": [
@@ -437,22 +437,22 @@
           "value": 10.1462
         },
         {
-          "feature": "H1_adx_28",
-          "operator": "<=",
-          "value": 16.3667
+          "feature": "H4_vpt",
+          "operator": ">",
+          "value": -2.7095
         },
         {
-          "feature": "M15_atr_50",
-          "operator": ">",
-          "value": 2.3818
+          "feature": "M5_adx_14",
+          "operator": "<=",
+          "value": 27.483
         }
       ],
       "prediction": "LOSS",
-      "confidence": 0.683,
-      "coverage": 60,
-      "coverage_pct": 5.4,
-      "win_rate": 0.317,
-      "avg_pips": -26.5
+      "confidence": 0.56,
+      "coverage": 84,
+      "coverage_pct": 7.6,
+      "win_rate": 0.44,
+      "avg_pips": 32.0
     },
     {
       "conditions": [
@@ -533,76 +533,6 @@
         },
         {
           "feature": "M15_aroon_down",
-          "operator": ">",
-          "value": 54.0
-        },
-        {
-          "feature": "D1_kst",
-          "operator": "<=",
-          "value": 10.1462
-        },
-        {
-          "feature": "H1_adx_28",
-          "operator": "<=",
-          "value": 16.3667
-        },
-        {
-          "feature": "M15_atr_50",
-          "operator": "<=",
-          "value": 2.3818
-        }
-      ],
-      "prediction": "LOSS",
-      "confidence": 1.0,
-      "coverage": 32,
-      "coverage_pct": 2.9,
-      "win_rate": 0.0,
-      "avg_pips": -140.1
-    },
-    {
-      "conditions": [
-        {
-          "feature": "H1_distance_to_fib_500",
-          "operator": "<=",
-          "value": 1.2913
-        },
-        {
-          "feature": "M15_aroon_down",
-          "operator": ">",
-          "value": 54.0
-        },
-        {
-          "feature": "D1_kst",
-          "operator": "<=",
-          "value": 10.1462
-        },
-        {
-          "feature": "H1_adx_28",
-          "operator": ">",
-          "value": 16.3667
-        },
-        {
-          "feature": "M5_adx_21",
-          "operator": "<=",
-          "value": 21.5849
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.707,
-      "coverage": 41,
-      "coverage_pct": 3.7,
-      "win_rate": 0.707,
-      "avg_pips": 127.5
-    },
-    {
-      "conditions": [
-        {
-          "feature": "H1_distance_to_fib_500",
-          "operator": "<=",
-          "value": 1.2913
-        },
-        {
-          "feature": "M15_aroon_down",
           "operator": "<=",
           "value": 54.0
         },
@@ -614,7 +544,7 @@
         {
           "feature": "D1_atr_50",
           "operator": ">",
-          "value": 24.9317
+          "value": 24.9295
         },
         {
           "feature": "M5_macd_fast_diff",
@@ -639,7 +569,7 @@
         {
           "feature": "H4_adx_14",
           "operator": ">",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M15_volume_change",
@@ -679,7 +609,7 @@
         {
           "feature": "D1_atr_50",
           "operator": "<=",
-          "value": 24.9317
+          "value": 24.9295
         }
       ],
       "prediction": "WIN",
@@ -693,13 +623,43 @@
       "conditions": [
         {
           "feature": "H1_distance_to_fib_500",
+          "operator": "<=",
+          "value": 1.2913
+        },
+        {
+          "feature": "M15_aroon_down",
+          "operator": ">",
+          "value": 54.0
+        },
+        {
+          "feature": "D1_kst",
+          "operator": "<=",
+          "value": 10.1462
+        },
+        {
+          "feature": "H4_vpt",
+          "operator": "<=",
+          "value": -2.7095
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.75,
+      "coverage": 28,
+      "coverage_pct": 2.5,
+      "win_rate": 0.75,
+      "avg_pips": 116.8
+    },
+    {
+      "conditions": [
+        {
+          "feature": "H1_distance_to_fib_500",
           "operator": ">",
           "value": 1.2913
         },
         {
           "feature": "H4_adx_14",
           "operator": "<=",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M5_close_position_in_range",
@@ -794,7 +754,7 @@
         {
           "feature": "H4_adx_14",
           "operator": "<=",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M5_close_position_in_range",
@@ -829,7 +789,7 @@
         {
           "feature": "H4_adx_14",
           "operator": ">",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M15_volume_change",
@@ -842,9 +802,9 @@
           "value": 8.5565
         },
         {
-          "feature": "H4_sma_50_distance",
+          "feature": "H4_distance_to_fib_236",
           "operator": ">",
-          "value": 5.0623
+          "value": 6.4144
         }
       ],
       "prediction": "WIN",
@@ -852,7 +812,7 @@
       "coverage": 20,
       "coverage_pct": 1.8,
       "win_rate": 0.8,
-      "avg_pips": 352.9
+      "avg_pips": 366.3
     },
     {
       "conditions": [
@@ -864,7 +824,7 @@
         {
           "feature": "H4_adx_14",
           "operator": ">",
-          "value": 30.0975
+          "value": 30.0973
         },
         {
           "feature": "M15_volume_change",
@@ -878,17 +838,47 @@
       "coverage_pct": 2.4,
       "win_rate": 0.556,
       "avg_pips": 169.7
+    },
+    {
+      "conditions": [
+        {
+          "feature": "H1_distance_to_fib_500",
+          "operator": ">",
+          "value": 1.2913
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.0973
+        },
+        {
+          "feature": "M5_close_position_in_range",
+          "operator": "<=",
+          "value": 0.5131
+        },
+        {
+          "feature": "M5_sma_20_distance",
+          "operator": "<=",
+          "value": 0.0128
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.6,
+      "coverage": 25,
+      "coverage_pct": 2.3,
+      "win_rate": 0.6,
+      "avg_pips": 171.8
     }
   ],
   "clusters": [
     {
-      "cluster_id": 0,
+      "cluster_id": 2,
       "name": "Big winners",
-      "count": 48,
-      "pct": 4.3,
-      "avg_duration_min": 0.6,
-      "avg_pips": 559.4,
-      "win_rate": 0.854,
+      "count": 49,
+      "pct": 4.4,
+      "avg_duration_min": 0.7,
+      "avg_pips": 562.2,
+      "win_rate": 0.857,
       "top_features": [
         "M5_roc_1",
         "M5_aroon_indicator",
@@ -898,29 +888,29 @@
       ]
     },
     {
-      "cluster_id": 3,
+      "cluster_id": 1,
       "name": "Quick scalps",
-      "count": 314,
-      "pct": 28.4,
+      "count": 312,
+      "pct": 28.2,
       "avg_duration_min": 2.2,
-      "avg_pips": 225.8,
-      "win_rate": 0.643,
+      "avg_pips": 224.7,
+      "win_rate": 0.641,
       "top_features": [
         "H4_roc_20",
         "M5_aroon_indicator",
-        "M5_roc_1",
         "H1_bull_power",
+        "M5_roc_1",
         "H4_cci_50"
       ]
     },
     {
-      "cluster_id": 2,
+      "cluster_id": 3,
       "name": "Short-term trades",
-      "count": 335,
-      "pct": 30.3,
-      "avg_duration_min": 24.9,
-      "avg_pips": 103.5,
-      "win_rate": 0.576,
+      "count": 340,
+      "pct": 30.7,
+      "avg_duration_min": 25.2,
+      "avg_pips": 106.1,
+      "win_rate": 0.579,
       "top_features": [
         "M5_aroon_indicator",
         "H4_roc_20",
@@ -930,13 +920,13 @@
       ]
     },
     {
-      "cluster_id": 1,
+      "cluster_id": 0,
       "name": "Short-term trades",
-      "count": 409,
-      "pct": 37.0,
-      "avg_duration_min": 24.4,
-      "avg_pips": 71.5,
-      "win_rate": 0.513,
+      "count": 405,
+      "pct": 36.6,
+      "avg_duration_min": 24.1,
+      "avg_pips": 68.9,
+      "win_rate": 0.511,
       "top_features": [
         "M5_aroon_indicator",
         "H4_roc_20",
@@ -980,16 +970,16 @@
     },
     "direction": {
       "above_ema200": {
-        "count": 848,
+        "count": 806,
         "win_rate": 0.598,
-        "avg_pips": 161.6,
-        "total_pips": 137074.0
+        "avg_pips": 168.5,
+        "total_pips": 135806.0
       },
       "below_ema200": {
-        "count": 258,
-        "win_rate": 0.539,
-        "avg_pips": 95.3,
-        "total_pips": 24591.0
+        "count": 300,
+        "win_rate": 0.547,
+        "avg_pips": 86.2,
+        "total_pips": 25859.0
       },
       "indicator_used": "H4_ema_200_distance"
     },
@@ -1129,7 +1119,16 @@
         "open_time": "2026-01-29 15:58:00",
         "pips": 205.0,
         "is_winner": true,
-        "score": -0.685,
+        "score": -0.677,
+        "hour": 15,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 152,
+        "open_time": "2026-01-29 15:13:00",
+        "pips": 415.0,
+        "is_winner": true,
+        "score": -0.667,
         "hour": 15,
         "duration": 1.0
       },
@@ -1138,52 +1137,25 @@
         "open_time": "2026-02-02 05:59:00",
         "pips": 774.0,
         "is_winner": true,
-        "score": -0.661,
+        "score": -0.651,
         "hour": 5,
         "duration": 1.0
-      },
-      {
-        "trade_id": 152,
-        "open_time": "2026-01-29 15:13:00",
-        "pips": 415.0,
-        "is_winner": true,
-        "score": -0.658,
-        "hour": 15,
-        "duration": 1.0
-      },
-      {
-        "trade_id": 136,
-        "open_time": "2026-01-30 18:35:00",
-        "pips": -150.0,
-        "is_winner": false,
-        "score": -0.648,
-        "hour": 18,
-        "duration": 0.0
       },
       {
         "trade_id": 150,
         "open_time": "2026-01-29 16:47:00",
         "pips": 205.0,
         "is_winner": true,
-        "score": -0.648,
+        "score": -0.651,
         "hour": 16,
         "duration": 0.0
-      },
-      {
-        "trade_id": 137,
-        "open_time": "2026-01-30 18:30:00",
-        "pips": 700.0,
-        "is_winner": true,
-        "score": -0.642,
-        "hour": 18,
-        "duration": 1.0
       },
       {
         "trade_id": 157,
         "open_time": "2026-01-29 02:02:00",
         "pips": 2655.0,
         "is_winner": true,
-        "score": -0.641,
+        "score": -0.646,
         "hour": 2,
         "duration": 1.0
       },
@@ -1192,26 +1164,44 @@
         "open_time": "2026-02-02 05:05:00",
         "pips": 1053.0,
         "is_winner": true,
-        "score": -0.636,
+        "score": -0.64,
         "hour": 5,
         "duration": 1.0
       },
       {
-        "trade_id": 156,
-        "open_time": "2026-01-29 04:03:00",
-        "pips": 1045.0,
+        "trade_id": 136,
+        "open_time": "2026-01-30 18:35:00",
+        "pips": -150.0,
+        "is_winner": false,
+        "score": -0.639,
+        "hour": 18,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 137,
+        "open_time": "2026-01-30 18:30:00",
+        "pips": 700.0,
         "is_winner": true,
-        "score": -0.631,
-        "hour": 4,
+        "score": -0.633,
+        "hour": 18,
         "duration": 1.0
       },
       {
-        "trade_id": 149,
-        "open_time": "2026-01-29 20:56:00",
-        "pips": 417.0,
+        "trade_id": 138,
+        "open_time": "2026-01-30 17:02:00",
+        "pips": 1610.0,
         "is_winner": true,
-        "score": -0.628,
-        "hour": 20,
+        "score": -0.632,
+        "hour": 17,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 148,
+        "open_time": "2026-01-29 21:02:00",
+        "pips": 1257.0,
+        "is_winner": true,
+        "score": -0.631,
+        "hour": 21,
         "duration": 1.0
       }
     ]

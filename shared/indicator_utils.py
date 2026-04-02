@@ -22,8 +22,8 @@ def compute_all_indicators(candles_df, prefix=""):
     """
     print(f"  Computing all indicators{' with prefix: ' + prefix if prefix else ''}...")
 
-    # Create output DataFrame indexed by timestamp
-    indicators = pd.DataFrame(index=candles_df['timestamp'])
+    # Create output DataFrame with same index as candles_df (integer index for proper alignment)
+    indicators = pd.DataFrame(index=candles_df.index)
 
     # Extract OHLCV arrays
     open_prices = candles_df['open'].values
@@ -382,7 +382,7 @@ def compute_all_indicators(candles_df, prefix=""):
     indicators[f'{prefix}std_dev_50'] = candles_df['close'].rolling(window=50).std()
 
     # Fill NaN values with forward fill then backward fill (for initial periods where rolling calculations produce NaN)
-    indicators = indicators.fillna(method='ffill').fillna(method='bfill')
+    indicators = indicators.ffill().bfill()
 
     print(f"  Computed {len(indicators.columns)} indicators")
 
