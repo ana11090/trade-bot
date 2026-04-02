@@ -58,6 +58,14 @@ def _load_and_display():
         for widget in _content_frame.winfo_children():
             widget.destroy()
 
+    # Show file path being loaded
+    report_path = os.path.join(
+        os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json'
+    )
+    report_path_normalized = os.path.normpath(report_path)
+
+    print(f"[robot_analysis] Loading from: {report_path_normalized}")
+
     report = _load_report()
 
     if report is None:
@@ -74,7 +82,8 @@ def _load_and_display():
 
         tk.Label(
             no_data_frame,
-            text="Click 'Run Full Analysis' to generate the report,\n"
+            text=f"Expected location:\n{report_path_normalized}\n\n"
+                 "Click 'Run Full Analysis' to generate the report,\n"
                  "or run Project 1 scenarios first.",
             font=("Segoe UI", 10),
             bg=WHITE, fg=MIDGREY,
@@ -84,6 +93,29 @@ def _load_and_display():
         if _status_label:
             _status_label.configure(text="No report found", fg=AMBER)
         return
+
+    # Show what was loaded
+    rule_count = len(report.get('rules', []))
+    trade_count = report.get('trade_count', 0)
+    print(f"[robot_analysis] Loaded {rule_count} rules, {trade_count} trades")
+
+    # File info banner
+    info_frame = tk.Frame(_content_frame, bg="#e8f4f8", padx=15, pady=10)
+    info_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+    tk.Label(
+        info_frame,
+        text=f"📁 Loaded from: {report_path_normalized}",
+        font=("Segoe UI", 8, "italic"),
+        bg="#e8f4f8", fg="#005580"
+    ).pack(anchor="w")
+
+    tk.Label(
+        info_frame,
+        text=f"📊 {rule_count} rules discovered from {trade_count} trades",
+        font=("Segoe UI", 9, "bold"),
+        bg="#e8f4f8", fg="#005580"
+    ).pack(anchor="w", pady=(3, 0))
 
     # Display all sections
     _display_profile(report.get('profile', {}), report.get('trade_count', 0))
@@ -97,7 +129,7 @@ def _load_and_display():
 
     if _status_label:
         _status_label.configure(
-            text=f"Loaded report: {report.get('trade_count', 0)} trades analyzed",
+            text=f"✓ Loaded {rule_count} rules from {trade_count} trades",
             fg=GREEN
         )
 
@@ -198,7 +230,16 @@ def _display_rules(rules):
     tk.Label(
         frame, text=f"3️⃣ Trading Rules ({len(rules)} discovered)",
         font=("Segoe UI", 13, "bold"), bg=WHITE, fg=DARK
-    ).pack(anchor="w", pady=(0, 10))
+    ).pack(anchor="w", pady=(0, 5))
+
+    if not rules:
+        tk.Label(
+            frame, text="No rules found in report",
+            font=("Segoe UI", 9, "italic"), bg=WHITE, fg=GREY
+        ).pack(anchor="w", pady=5)
+        return
+
+    print(f"[robot_analysis] Displaying {len(rules)} rules")
 
     # Display ALL rules
     for i, rule in enumerate(rules, 1):
@@ -209,6 +250,8 @@ def _display_rules(rules):
         pips = rule.get('avg_pips', 0)
         conditions = rule.get('conditions', [])
 
+        print(f"  Rule {i}: {pred}, {len(conditions)} conditions, {cov} trades")
+
         # Determine color
         if pred == 'WIN' and conf >= 0.65:
             header_color = GREEN
@@ -218,9 +261,9 @@ def _display_rules(rules):
             header_color = AMBER
 
         # Rule card
-        card = tk.Frame(frame, bg=WHITE, highlightbackground="#e0e0e0",
-                       highlightthickness=1, padx=12, pady=8)
-        card.pack(fill="x", pady=3)
+        card = tk.Frame(frame, bg=WHITE, highlightbackground="#d0d0d0",
+                       highlightthickness=2, padx=15, pady=10)
+        card.pack(fill="x", pady=5)
 
         # Header
         header_text = (f"Rule {i}: {pred} — "
@@ -230,22 +273,30 @@ def _display_rules(rules):
                       f"avg {pips:+.0f} pips")
         tk.Label(
             card, text=header_text,
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             bg=WHITE, fg=header_color
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(0, 5))
+
+        # Conditions label
+        if conditions:
+            tk.Label(
+                card, text=f"Conditions ({len(conditions)}):",
+                font=("Segoe UI", 9, "bold"),
+                bg=WHITE, fg=DARK
+            ).pack(anchor="w", pady=(5, 3))
 
         # Conditions (indented)
-        for cond in conditions:
+        for j, cond in enumerate(conditions, 1):
             feat = cond.get('feature', '?')
             op = cond.get('operator', '?')
             val = cond.get('value', 0)
-            cond_text = f"  {feat} {op} {val:.4f}"
+            cond_text = f"  {j}. {feat} {op} {val:.4f}"
 
             tk.Label(
                 card, text=cond_text,
-                font=("Segoe UI", 8, "normal"),
-                bg=WHITE, fg=MIDGREY
-            ).pack(anchor="w", padx=(10, 0))
+                font=("Consolas", 8, "normal"),
+                bg=WHITE, fg="#333333"
+            ).pack(anchor="w", padx=(15, 0), pady=1)
 
 
 def _display_clusters(clusters):
