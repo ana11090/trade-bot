@@ -1,1 +1,5 @@
 data/xauusd_M5.csv filter=lfs diff=lfs merge=lfs -text
+data/xauusd_M1.csv filter=lfs diff=lfs merge=lfs -text
+data/xauusd_M15.csv filter=lfs diff=lfs merge=lfs -text
+data/_backup_old/*.csv filter=lfs diff=lfs merge=lfs -text
+data/xauusd_*.csv filter=lfs diff=lfs merge=lfs -text

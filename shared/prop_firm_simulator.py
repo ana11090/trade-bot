@@ -15,6 +15,7 @@ reaches `daily_dd_safety_pct` % of the firm's daily DD limit — protecting the 
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 # ── Data classes ───────────────────────────────────────────────────────────────
@@ -31,13 +32,13 @@ class SingleSimResult:
     eval_max_dd_pct: float
     eval_phase_results: list
     # Stage 2 — Funded (only if eval passed)
-    funded_survival_days: int | None
-    funded_survival_trading_days: int | None
-    funded_total_payouts: float | None
-    funded_payout_count: int | None
-    funded_monthly_avg: float | None
-    funded_max_dd_pct: float | None
-    funded_end_reason: str | None
+    funded_survival_days: Optional[int]
+    funded_survival_trading_days: Optional[int]
+    funded_total_payouts: Optional[float]
+    funded_payout_count: Optional[int]
+    funded_monthly_avg: Optional[float]
+    funded_max_dd_pct: Optional[float]
+    funded_end_reason: Optional[str]
 
 
 @dataclass
@@ -60,21 +61,21 @@ class SimulationSummary:
     eval_fail_reasons: dict
 
     # Stage 2
-    funded_avg_survival_days: float | None
-    funded_median_survival_days: float | None
-    funded_avg_monthly_payout: float | None
-    funded_avg_total_payouts: float | None
-    funded_survival_rate_3mo: float | None
-    funded_survival_rate_6mo: float | None
-    funded_avg_payout_count: float | None
+    funded_avg_survival_days: Optional[float]
+    funded_median_survival_days: Optional[float]
+    funded_avg_monthly_payout: Optional[float]
+    funded_avg_total_payouts: Optional[float]
+    funded_survival_rate_3mo: Optional[float]
+    funded_survival_rate_6mo: Optional[float]
+    funded_avg_payout_count: Optional[float]
 
     # Stage 3
-    challenge_fee: float | None
+    challenge_fee: Optional[float]
     avg_attempts_to_pass: float
-    expected_cost: float | None
-    expected_funded_income: float | None
-    expected_net_profit: float | None
-    expected_roi_pct: float | None
+    expected_cost: Optional[float]
+    expected_funded_income: Optional[float]
+    expected_net_profit: Optional[float]
+    expected_roi_pct: Optional[float]
 
     # Configuration used
     risk_per_trade_pct: float = 1.0
@@ -124,7 +125,7 @@ _PAYOUT_FREQ_DAYS = {
 
 # ── Daily DD safety helper ─────────────────────────────────────────────────────
 
-def _apply_daily_safety(trade_profits: list, safety_threshold: float | None) -> float:
+def _apply_daily_safety(trade_profits: list, safety_threshold: Optional[float]) -> float:
     """
     Process trades one by one within a day.
     Stops trading for the day when running loss reaches the safety threshold.
@@ -535,13 +536,13 @@ def simulate_challenge(
     mode: str = "sliding_window",
     num_samples: int = 500,
     simulate_funded: bool = True,
-    max_eval_calendar_days: int | None = None,
+    max_eval_calendar_days: Optional[int] = None,
     random_seed: int = 42,
     risk_per_trade_pct: float = 1.0,
     default_sl_pips: float = 150.0,
     pip_value_per_lot: float = 1.0,
     daily_dd_safety_pct: float = 80.0,
-) -> SimulationSummary | None:
+) -> Optional[SimulationSummary]:
     """
     Simulate the full prop firm challenge lifecycle.
 

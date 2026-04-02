@@ -17,6 +17,7 @@ import json
 import shutil
 import re
 from datetime import datetime
+from typing import Optional, Tuple
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _SHARED_DIR   = os.path.dirname(os.path.abspath(__file__))  # shared/
@@ -78,7 +79,7 @@ def list_trade_histories() -> list:
 
 # ── Active history ────────────────────────────────────────────────────────────
 
-def get_active_history() -> dict | None:
+def get_active_history() -> Optional[dict]:
     registry = get_registry()
     history_id = registry.get("active_history_id")
     if not history_id:
@@ -108,7 +109,7 @@ def _slugify(name: str) -> str:
     return slug
 
 
-def _parse_trades_csv(csv_path: str) -> tuple[int, dict, str | None]:
+def _parse_trades_csv(csv_path: str) -> Tuple[int, dict, Optional[str]]:
     """
     Return (trade_count, date_range, detected_symbol).
     Uses pandas for date parsing; falls back gracefully if unavailable.

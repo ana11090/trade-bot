@@ -8,6 +8,7 @@ Returns a detailed result with PASS/FAIL per phase, daily breakdown, and failure
 import os
 import json
 from dataclasses import dataclass, field
+from typing import Optional
 
 _SHARED_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SHARED_DIR)
@@ -20,16 +21,16 @@ _PROP_FIRMS_DIR = os.path.join(_PROJECT_ROOT, "prop_firms")
 class PhaseResult:
     phase_name: str
     passed: bool
-    failure_reason: str | None
+    failure_reason: Optional[str]
     profit_target_pct: float
     profit_achieved_pct: float
-    max_daily_dd_allowed_pct: float | None
+    max_daily_dd_allowed_pct: Optional[float]
     max_daily_dd_hit_pct: float
     max_total_dd_allowed_pct: float
     max_total_dd_hit_pct: float
     trading_days: int
     min_trading_days_required: int
-    consistency_check_passed: bool | None
+    consistency_check_passed: Optional[bool]
     daily_breakdown: list = field(default_factory=list)
 
 
@@ -40,7 +41,7 @@ class ComplianceResult:
     account_size: int
     phases: list
     overall_passed: bool
-    failure_reason: str | None
+    failure_reason: Optional[str]
     summary: dict = field(default_factory=dict)
 
 
@@ -55,7 +56,7 @@ class PropFirmProfile:
         self.market_type = self._data.get("market_type", "forex_cfd")
         self._challenges = {c["challenge_id"]: c for c in self._data.get("challenges", [])}
 
-    def get_challenge(self, challenge_id: str) -> dict | None:
+    def get_challenge(self, challenge_id: str) -> Optional[dict]:
         return self._challenges.get(challenge_id)
 
     def list_challenges(self) -> list[dict]:
@@ -320,7 +321,7 @@ def check_compliance(
     challenge_id: str,
     account_size: int,
     start_date=None,
-) -> ComplianceResult | None:
+) -> Optional[ComplianceResult]:
     """
     Check whether trades pass a specific prop firm challenge.
     Returns ComplianceResult, or None if firm/challenge/account_size not found.
@@ -394,7 +395,7 @@ def check_compliance(
     )
 
 
-def check_compliance_all_firms(trades_df, account_size: int | None = None) -> list:
+def check_compliance_all_firms(trades_df, account_size: Optional[int] = None) -> list:
     """
     Run compliance against all firms and all their challenges.
     Returns list of ComplianceResults sorted: passes first.
@@ -415,7 +416,7 @@ def check_compliance_all_firms(trades_df, account_size: int | None = None) -> li
     return results
 
 
-def get_compliance_matrix(trades_df, firm_ids=None, account_size: int | None = None):
+def get_compliance_matrix(trades_df, firm_ids=None, account_size: Optional[int] = None):
     """
     Generate a comparison DataFrame across firms/challenges.
     Rows = challenges, columns = key metrics.
