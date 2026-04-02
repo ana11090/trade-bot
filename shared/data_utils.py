@@ -10,6 +10,26 @@ from datetime import datetime, timezone
 import pytz
 
 
+def normalize_timestamp(series):
+    """
+    Normalize a timestamp series to a consistent naive datetime type.
+
+    Strips timezone info (from parquet round-trips) without forcing a
+    specific resolution, so merge_asof keys always match regardless of
+    pandas version (2.x uses ns, 3.x uses us).
+    """
+    ts = pd.to_datetime(series)
+    if hasattr(ts, 'dt'):
+        # It's a Series
+        if ts.dt.tz is not None:
+            ts = ts.dt.tz_localize(None)
+    else:
+        # It's a DatetimeIndex
+        if ts.tz is not None:
+            ts = ts.tz_localize(None)
+    return ts  # No .astype — let pandas keep its native resolution
+
+
 def load_trades_csv(filepath):
     """
     Load trades from CSV file exported from Myfxbook.

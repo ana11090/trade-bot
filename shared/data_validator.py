@@ -210,6 +210,67 @@ def validate_all_candles(data_dir):
     return results
 
 
+def check_backtest_data_quality(candles_df, timeframe="H1"):
+    """
+    Quick data quality check for backtesting. Returns list of warnings.
+    Called at the start of run_comparison_matrix.
+
+    Args:
+        candles_df: DataFrame with columns [timestamp, open, high, low, close, volume]
+        timeframe: Timeframe string (M5, H1, H4, D1, etc.)
+
+    Returns:
+        List of warning dicts with keys: severity, message
+    """
+    warnings = []
+
+    if len(candles_df) == 0:
+        warnings.append({"severity": "error", "message": "No candles in DataFrame"})
+        return warnings
+
+    # Check for duplicate timestamps
+    duplicates = candles_df[candles_df.duplicated(subset=["timestamp"], keep=False)]
+    if len(duplicates) > 0:
+        warnings.append({
+            "severity": "warning",
+            "message": f"{len(duplicates)} duplicate timestamps found"
+        })
+
+    # Check for zero-volume candles
+    if "volume" in candles_df.columns:
+        zero_vol = candles_df[candles_df["volume"] == 0]
+        if len(zero_vol) > len(candles_df) * 0.2:  # More than 20%
+            warnings.append({
+                "severity": "info",
+                "message": f"{len(zero_vol)} zero-volume candles ({len(zero_vol)/len(candles_df)*100:.1f}%)"
+            })
+
+    # Check history length
+    tf_min_candles = {"M5": 10000, "M15": 5000, "H1": 1000, "H4": 500, "D1": 200}
+    min_required = tf_min_candles.get(timeframe, 1000)
+    if len(candles_df) < min_required:
+        warnings.append({
+            "severity": "warning",
+            "message": f"Short history: {len(candles_df)} candles (recommended: {min_required}+)"
+        })
+
+    # Check for time gaps
+    tf_delta = {"M5": pd.Timedelta(minutes=5), "M15": pd.Timedelta(minutes=15),
+                "H1": pd.Timedelta(hours=1), "H4": pd.Timedelta(hours=4),
+                "D1": pd.Timedelta(days=1)}
+    if timeframe in tf_delta:
+        expected = tf_delta[timeframe]
+        time_diff = candles_df["timestamp"].diff()
+        large_gaps = time_diff[time_diff > expected * 5]  # Allow 5x for weekends
+        if len(large_gaps) > 10:
+            warnings.append({
+                "severity": "info",
+                "message": f"{len(large_gaps)} large time gaps detected"
+            })
+
+    return warnings
+
+
 def cross_check_trades_vs_candles(trades_csv, candles_csv, tolerance_pct=5.0):
     """
     Check that trade prices fall within the candle price range for matching dates.

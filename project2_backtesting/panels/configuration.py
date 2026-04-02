@@ -126,7 +126,8 @@ def check_prerequisites(output_text, rules_label, price_label, silent=True):
     symbol = cfg.get('symbol', 'XAUUSD').upper()
     scenario = cfg.get('winning_scenario', 'H1')
 
-    rules_file = os.path.join(project_root, f'project1_reverse_engineering/outputs/scenario_{scenario}/rules_report_{scenario}.txt')
+    # New backtester uses analysis_report.json (not the old rules_report txt files)
+    rules_file = os.path.join(project_root, 'project1_reverse_engineering/outputs/analysis_report.json')
     rules_exists = os.path.exists(rules_file)
 
     price_file = os.path.join(project_root, f'data/{symbol.lower()}_{scenario}.csv')

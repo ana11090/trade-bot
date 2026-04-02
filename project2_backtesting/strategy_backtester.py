@@ -54,16 +54,20 @@ def _load_tf_indicators(tf, data_dir):
     and return a DataFrame with a 'timestamp' column plus all indicator columns.
     Uses a parquet cache in data_dir; rebuilds if the cache is older than the CSV.
     """
-    # New path: data/{symbol}/{tf}.csv  |  Legacy fallback: data/xauusd_{tf}.csv
+    # Try multiple path patterns to find the CSV file
+    # 1. New format: data/{tf}.csv
+    # 2. Legacy format with symbol: data/xauusd_{tf}.csv
+    # 3. Parent dir format: ../xauusd_{tf}.csv
     new_path   = os.path.join(data_dir, f"{tf}.csv")
-    legacy_path = os.path.join(data_dir, f"{os.path.basename(data_dir)}_{tf}.csv")
-    # Also check one level up for legacy flat layout
+    legacy_xauusd = os.path.join(data_dir, f"xauusd_{tf}.csv")
     parent_dir  = os.path.dirname(data_dir)
-    symbol_name = os.path.basename(data_dir)
-    legacy_flat = os.path.join(parent_dir, f"{symbol_name}_{tf}.csv")
+    legacy_flat = os.path.join(parent_dir, f"xauusd_{tf}.csv")
 
+    # Check all paths in order
     if os.path.exists(new_path):
         csv_path = new_path
+    elif os.path.exists(legacy_xauusd):
+        csv_path = legacy_xauusd
     elif os.path.exists(legacy_flat):
         csv_path = legacy_flat
     else:

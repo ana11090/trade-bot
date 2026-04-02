@@ -151,12 +151,15 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
         return
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-    rules_file = os.path.join(project_root, 'project1_reverse_engineering/outputs/scenario_H1/rules_report_H1.txt')
+    # New backtester uses analysis_report.json
+    rules_file = os.path.join(project_root, 'project1_reverse_engineering/outputs/analysis_report.json')
     price_file = os.path.join(project_root, 'data/xauusd_H1.csv')
 
     if not os.path.exists(rules_file):
         messagebox.showerror("Rules File Missing",
-                             "Rules file not found!\n\nPlease run Project 1 first.")
+                             "Rules file not found!\n\n"
+                             "Expected: project1_reverse_engineering/outputs/analysis_report.json\n\n"
+                             "Please run Project 1 first to generate the rules.")
         return
 
     if not os.path.exists(price_file):
