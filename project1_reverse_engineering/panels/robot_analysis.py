@@ -101,7 +101,7 @@ def _load_and_display():
 
     # File info banner
     info_frame = tk.Frame(_content_frame, bg="#e8f4f8", padx=15, pady=10)
-    info_frame.pack(fill="x", padx=10, pady=(0, 10))
+    info_frame.pack(fill="both", expand=True, padx=5, pady=(0, 10))
 
     tk.Label(
         info_frame,
@@ -137,7 +137,7 @@ def _load_and_display():
 def _display_profile(profile, trade_count):
     """Section 1: Robot Profile"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text="1️⃣ Robot Profile",
@@ -193,7 +193,7 @@ def _display_profile(profile, trade_count):
 def _display_feature_importance(fi):
     """Section 2: Feature Importance"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text="2️⃣ Feature Importance (Top 20)",
@@ -224,18 +224,18 @@ def _display_feature_importance(fi):
 
 def _display_rules(rules):
     """Section 3: Trading Rules - ALL 20 with full details"""
-    frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame = tk.Frame(_content_frame, bg=WHITE, padx=15, pady=15)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text=f"3️⃣ Trading Rules ({len(rules)} discovered)",
-        font=("Segoe UI", 13, "bold"), bg=WHITE, fg=DARK
-    ).pack(anchor="w", pady=(0, 5))
+        font=("Segoe UI", 16, "bold"), bg=WHITE, fg=DARK
+    ).pack(anchor="w", pady=(0, 10))
 
     if not rules:
         tk.Label(
             frame, text="No rules found in report",
-            font=("Segoe UI", 9, "italic"), bg=WHITE, fg=GREY
+            font=("Segoe UI", 11, "italic"), bg=WHITE, fg=GREY
         ).pack(anchor="w", pady=5)
         return
 
@@ -255,15 +255,18 @@ def _display_rules(rules):
         # Determine color
         if pred == 'WIN' and conf >= 0.65:
             header_color = GREEN
+            card_bg = "#f0fdf4"  # Light green background
         elif pred == 'LOSS':
             header_color = RED
+            card_bg = "#fef2f2"  # Light red background
         else:
             header_color = AMBER
+            card_bg = "#fffbeb"  # Light amber background
 
-        # Rule card
-        card = tk.Frame(frame, bg=WHITE, highlightbackground="#d0d0d0",
-                       highlightthickness=2, padx=15, pady=10)
-        card.pack(fill="x", pady=5)
+        # Rule card - FULL WIDTH
+        card = tk.Frame(frame, bg=card_bg, highlightbackground=header_color,
+                       highlightthickness=3, padx=20, pady=12)
+        card.pack(fill="both", expand=True, pady=8)
 
         # Header
         header_text = (f"Rule {i}: {pred} — "
@@ -273,19 +276,19 @@ def _display_rules(rules):
                       f"avg {pips:+.0f} pips")
         tk.Label(
             card, text=header_text,
-            font=("Segoe UI", 10, "bold"),
-            bg=WHITE, fg=header_color
-        ).pack(anchor="w", pady=(0, 5))
+            font=("Segoe UI", 12, "bold"),
+            bg=card_bg, fg=header_color
+        ).pack(anchor="w", pady=(0, 8))
 
         # Conditions label
         if conditions:
             tk.Label(
                 card, text=f"Conditions ({len(conditions)}):",
-                font=("Segoe UI", 9, "bold"),
-                bg=WHITE, fg=DARK
-            ).pack(anchor="w", pady=(5, 3))
+                font=("Segoe UI", 11, "bold"),
+                bg=card_bg, fg=DARK
+            ).pack(anchor="w", pady=(5, 5))
 
-        # Conditions (indented)
+        # Conditions - larger font, full width
         for j, cond in enumerate(conditions, 1):
             feat = cond.get('feature', '?')
             op = cond.get('operator', '?')
@@ -294,15 +297,16 @@ def _display_rules(rules):
 
             tk.Label(
                 card, text=cond_text,
-                font=("Consolas", 8, "normal"),
-                bg=WHITE, fg="#333333"
-            ).pack(anchor="w", padx=(15, 0), pady=1)
+                font=("Consolas", 10, "normal"),
+                bg=card_bg, fg="#1a1a1a",
+                anchor="w"
+            ).pack(fill="x", padx=(20, 0), pady=2)
 
 
 def _display_clusters(clusters):
     """Section 4: Trade Clusters"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text=f"4️⃣ Trade Clusters ({len(clusters)} groups)",
@@ -337,7 +341,7 @@ def _display_clusters(clusters):
 def _display_regimes(regimes):
     """Section 5: Market Regimes"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text="5️⃣ Market Regime Performance",
@@ -377,7 +381,7 @@ def _display_regimes(regimes):
 def _display_evolution(evolution):
     """Section 6: Time Period Evolution"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text="6️⃣ Time Period Evolution",
@@ -410,7 +414,7 @@ def _display_evolution(evolution):
 def _display_anomalies(anomalies):
     """Section 7: Anomalies"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     count = anomalies.get('count', 0)
     pct = anomalies.get('pct', 0)
@@ -432,7 +436,7 @@ def _display_anomalies(anomalies):
 def _display_suggestions(suggestions):
     """Section 8: Improvement Suggestions"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="x", padx=10, pady=5)
+    frame.pack(fill="both", expand=True, padx=5, pady=5)
 
     tk.Label(
         frame, text=f"8️⃣ Improvement Suggestions ({len(suggestions)} found)",
@@ -579,8 +583,8 @@ def build_panel(parent):
     canvas.create_window((0, 0), window=_content_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
 
-    canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
-    scrollbar.pack(side="right", fill="y", padx=(0, 20))
+    canvas.pack(side="left", fill="both", expand=True, padx=(5, 0))
+    scrollbar.pack(side="right", fill="y", padx=(0, 5))
 
     # Initial load
     _load_and_display()
