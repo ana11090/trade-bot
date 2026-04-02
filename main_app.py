@@ -22,7 +22,7 @@ from project0_data_pipeline.probabilities.panels import (
     account_survival, expected_value, breakeven, kelly, streaks, drawdown_recovery
 )
 from project1_reverse_engineering.panels import (
-    configuration, run_scenarios, results
+    configuration, run_scenarios, results, robot_analysis
 )
 from project2_backtesting.panels import (
     configuration as p2_configuration,
@@ -93,6 +93,7 @@ state.all_panels["drawdown_recovery"] = drawdown_recovery.build_panel(content)
 state.all_panels["p1_config"]  = configuration.build_panel(content)
 state.all_panels["p1_run"]     = run_scenarios.build_panel(content)
 state.all_panels["p1_results"] = results.build_panel(content)
+state.all_panels["p1_analysis"] = robot_analysis.build_panel(content)
 
 # Project 2 - Backtesting
 state.all_panels["p2_config"]  = p2_configuration.build_panel(content)
@@ -116,6 +117,7 @@ refresh_map = {
     "p1_config": configuration.refresh,
     "p1_run": run_scenarios.refresh,
     "p1_results": results.refresh,
+    "p1_analysis": robot_analysis.refresh,
     "p2_config": p2_configuration.refresh,
     "p2_run": p2_run_backtest.refresh,
     "p2_results": p2_view_results.refresh,

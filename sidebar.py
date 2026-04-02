@@ -364,11 +364,14 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p1_run.pack(fill="x")
     btn_p1_results = _sub_btn(project1_extras, "📊 View Results",          lambda: show_panel("p1_results"))
     btn_p1_results.pack(fill="x")
+    btn_p1_analysis = _sub_btn(project1_extras, "🤖 Robot Analysis",       lambda: show_panel("p1_analysis"))
+    btn_p1_analysis.pack(fill="x")
 
     PROJECT1_BUTTONS = {
-        "p1_config": btn_p1_config,
-        "p1_run":    btn_p1_run,
-        "p1_results": btn_p1_results,
+        "p1_config":   btn_p1_config,
+        "p1_run":      btn_p1_run,
+        "p1_results":  btn_p1_results,
+        "p1_analysis": btn_p1_analysis,
     }
 
     btn2 = _sidebar_btn(sidebar, "2 - Backtesting", _toggle_project2)
