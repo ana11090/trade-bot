@@ -18,18 +18,20 @@ _summary_frame = None
 
 
 def load_summary_stats():
-    """Load and display summary statistics"""
+    """Load backtest matrix results from strategy_backtester output"""
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-    stats_file = os.path.join(project_root, 'project2_backtesting/outputs/stats_summary.csv')
+    matrix_file = os.path.join(project_root, 'project2_backtesting/outputs/backtest_matrix.json')
 
-    if not os.path.exists(stats_file):
+    if not os.path.exists(matrix_file):
         return None
 
     try:
-        df = pd.read_csv(stats_file)
-        return df
+        import json
+        with open(matrix_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data
     except Exception as e:
-        print(f"Error loading stats: {e}")
+        print(f"Error loading backtest matrix: {e}")
         return None
 
 
@@ -85,15 +87,14 @@ def open_output_folder():
 
 
 def display_summary(output_text, summary_frame):
-    """Display summary statistics in the panel"""
+    """Display backtest comparison matrix results"""
     # Clear existing summary
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
-    # Load stats
-    stats_df = load_summary_stats()
+    data = load_summary_stats()
 
-    if stats_df is None or len(stats_df) == 0:
+    if data is None:
         no_data_label = tk.Label(
             summary_frame,
             text="No backtest results found. Run the backtest first.",
@@ -108,89 +109,96 @@ def display_summary(output_text, summary_frame):
         output_text.insert(tk.END, "Please run the backtest first to see results.")
         return
 
-    # Display summary for each period
-    for _, row in stats_df.iterrows():
-        period = row['period']
-        period_frame = tk.LabelFrame(
-            summary_frame,
-            text=period,
-            font=("Arial", 11, "bold"),
-            bg="#ffffff",
-            fg="#333333",
-            padx=15,
-            pady=10
-        )
-        period_frame.pack(fill="x", padx=10, pady=10)
+    results = data.get('results', [])
+    if not results:
+        output_text.delete(1.0, tk.END)
+        output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
+        return
 
-        # Create grid of key metrics
-        metrics = [
-            ("Net Profit", f"${row['net_profit']:,.2f}", row['net_profit'] > 0),
-            ("Total Trades", f"{int(row['total_trades'])}", None),
-            ("Win Rate", f"{row['win_rate_pct']:.1f}%", row['win_rate_pct'] >= 50),
-            ("Profit Factor", f"{row['profit_factor']:.2f}", row['profit_factor'] >= 1.5),
-            ("Return", f"{row['return_pct']:.1f}%", row['return_pct'] > 0),
-            ("Max Drawdown", f"{row['max_drawdown_pct']:.1f}%", row['max_drawdown_pct'] < 20),
-        ]
+    # Summary header
+    info_frame = tk.Frame(summary_frame, bg="#e8f5e9", padx=15, pady=10)
+    info_frame.pack(fill="x", padx=10, pady=(0, 10))
 
-        for i, (label, value, is_good) in enumerate(metrics):
-            row_num = i // 2
-            col_num = i % 2
+    combos = data.get('combinations', 0)
+    elapsed = data.get('elapsed_seconds', 0)
+    spread = data.get('spread_pips', 0)
+    gen_at = data.get('generated_at', '?')
 
-            metric_frame = tk.Frame(period_frame, bg="#ffffff")
-            metric_frame.grid(row=row_num, column=col_num, padx=10, pady=5, sticky="w")
+    tk.Label(info_frame, text=f"Backtest Matrix — {combos} combinations tested",
+             bg="#e8f5e9", fg="#2e7d32", font=("Arial", 11, "bold")).pack(anchor="w")
+    tk.Label(info_frame, text=f"Generated: {gen_at}  |  Spread: {spread} pips  |  Time: {elapsed:.0f}s",
+             bg="#e8f5e9", fg="#555555", font=("Arial", 9)).pack(anchor="w")
 
-            label_widget = tk.Label(
-                metric_frame,
-                text=f"{label}:",
-                font=("Arial", 9),
-                bg="#ffffff",
-                fg="#666666"
-            )
-            label_widget.pack(side=tk.LEFT)
-            make_copyable(label_widget)
+    # Top results as cards
+    for i, r in enumerate(results[:10]):
+        # Determine colors
+        net_pips = r.get('net_total_pips', 0)
+        wr = r.get('win_rate', 0)
+        pf = r.get('net_profit_factor', 0)
+        is_profitable = net_pips > 0
 
-            # Determine color
-            if is_good is None:
-                color = "#333333"
-            elif is_good:
-                color = "#28a745"
-            else:
-                color = "#dc3545"
+        bg_color = "#f8fff8" if is_profitable else "#fff8f8"
+        border_color = "#28a745" if is_profitable else "#dc3545"
 
-            value_widget = tk.Label(
-                metric_frame,
-                text=value,
-                font=("Arial", 9, "bold"),
-                bg="#ffffff",
-                fg=color
-            )
-            value_widget.pack(side=tk.LEFT, padx=(5, 0))
-            make_copyable(value_widget)
+        card = tk.Frame(summary_frame, bg=bg_color, highlightbackground=border_color,
+                       highlightthickness=1, padx=12, pady=8)
+        card.pack(fill="x", padx=10, pady=3)
 
-    # Update output text with detailed stats
+        # Row 1: rank + strategy name
+        header = f"#{i+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
+        tk.Label(card, text=header, bg=bg_color, fg="#333333",
+                font=("Arial", 10, "bold")).pack(anchor="w")
+
+        # Row 2: key metrics
+        trades = r.get('total_trades', 0)
+        net = r.get('net_total_pips', 0)
+        avg = r.get('net_avg_pips', 0)
+        dd = r.get('max_dd_pips', 0)
+
+        wr_color = "#28a745" if wr >= 55 else "#dc3545" if wr < 45 else "#ff8f00"
+        pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
+        net_color = "#28a745" if net > 0 else "#dc3545"
+
+        metrics_frame = tk.Frame(card, bg=bg_color)
+        metrics_frame.pack(fill="x", pady=(3, 0))
+
+        for label, value, color in [
+            ("Trades", str(trades), "#333333"),
+            ("WR", f"{wr:.1f}%", wr_color),
+            ("PF", f"{pf:.2f}", pf_color),
+            ("Net", f"{net:+.0f} pips", net_color),
+            ("Avg", f"{avg:+.1f} pips", net_color),
+            ("MaxDD", f"{dd:.0f} pips", "#dc3545"),
+        ]:
+            tk.Label(metrics_frame, text=f"{label}: ", bg=bg_color, fg="#888888",
+                    font=("Arial", 8)).pack(side=tk.LEFT)
+            tk.Label(metrics_frame, text=value, bg=bg_color, fg=color,
+                    font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
+
+    # Detailed text output
     output_text.delete(1.0, tk.END)
-    output_text.insert(tk.END, "=== BACKTEST RESULTS SUMMARY ===\n\n")
+    output_text.insert(tk.END, f"=== BACKTEST COMPARISON MATRIX ===\n")
+    output_text.insert(tk.END, f"Generated: {gen_at}\n")
+    output_text.insert(tk.END, f"Combinations: {combos}  |  Spread: {spread} pips\n\n")
 
-    for _, row in stats_df.iterrows():
-        period = row['period']
-        output_text.insert(tk.END, f"{period}:\n", "header")
-        output_text.insert(tk.END, f"  Total Trades: {int(row['total_trades'])}\n")
-        output_text.insert(tk.END, f"  Winning Trades: {int(row['winning_trades'])}\n")
-        output_text.insert(tk.END, f"  Losing Trades: {int(row['losing_trades'])}\n")
-        output_text.insert(tk.END, f"  Win Rate: {row['win_rate_pct']:.1f}%\n")
-        output_text.insert(tk.END, f"  Net Profit: ${row['net_profit']:,.2f}\n")
-        output_text.insert(tk.END, f"  Profit Factor: {row['profit_factor']:.2f}\n")
-        output_text.insert(tk.END, f"  Avg Win: ${row['avg_win']:,.2f}\n")
-        output_text.insert(tk.END, f"  Avg Loss: ${row['avg_loss']:,.2f}\n")
-        output_text.insert(tk.END, f"  Largest Win: ${row['largest_win']:,.2f}\n")
-        output_text.insert(tk.END, f"  Largest Loss: ${row['largest_loss']:,.2f}\n")
-        output_text.insert(tk.END, f"  Max Drawdown: {row['max_drawdown_pct']:.1f}%\n")
-        output_text.insert(tk.END, f"  Sharpe Ratio: {row['sharpe_ratio']:.2f}\n")
-        output_text.insert(tk.END, f"  Total Pips: {row['total_pips']:.1f}\n")
-        output_text.insert(tk.END, f"  Final Balance: ${row['final_balance']:,.2f}\n")
-        output_text.insert(tk.END, f"  Return: {row['return_pct']:.1f}%\n\n")
+    output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
+                                f"{'Trades':>6} {'WR%':>6} {'PF':>6} {'Net Pips':>10} {'Avg':>8} {'MaxDD':>8}\n")
+    output_text.insert(tk.END, "-" * 110 + "\n")
 
-    output_text.tag_config("header", font=("Courier", 9, "bold"))
+    for i, r in enumerate(results):
+        trades = r.get('total_trades', 0)
+        wr = r.get('win_rate', 0)
+        pf = r.get('net_profit_factor', 0)
+        net = r.get('net_total_pips', 0)
+        avg = r.get('net_avg_pips', 0)
+        dd = r.get('max_dd_pips', 0)
+        rule = r.get('rule_combo', '?')[:20]
+        exit_s = r.get('exit_strategy', '?')[:26]
+
+        output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
+                                    f"{trades:>6} {wr:>5.1f}% {pf:>5.2f} {net:>+10.0f} {avg:>+7.1f} {dd:>8.0f}\n")
+
+    output_text.see("1.0")
 
 
 def build_panel(parent):

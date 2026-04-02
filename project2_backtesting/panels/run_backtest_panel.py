@@ -18,12 +18,12 @@ _step_label    = None
 _run_button    = None
 _running       = False
 
-# Step weights: backtest engine is heavy, stats and report are fast
-_STEP_MILESTONES = [0, 70, 85, 100]   # % at start of each step boundary
+# Step weights: loading data, running matrix, completion
+_STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
 _STEP_NAMES = [
-    "Step 1 / 3 — Running backtest engine...",
-    "Step 2 / 3 — Computing statistics...",
-    "Step 3 / 3 — Building HTML report...",
+    "Loading data and rules...",
+    "Running comparison matrix...",
+    "Done!",
 ]
 
 
@@ -60,81 +60,81 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         run_button.config(state=tk.DISABLED, text="Running...")
         output_text.delete(1.0, tk.END)
         output_text.insert(tk.END, "=== BACKTEST STARTED ===\n\n")
+        output_text.insert(tk.END, "Using strategy_backtester with 14 WIN rules x 12 exit strategies\n")
+        output_text.insert(tk.END, "Entry: next candle open (no look-ahead bias)\n\n")
         output_text.see(tk.END)
 
-        ui(lambda: _set_progress(progress_bar, step_label, 0, _STEP_NAMES[0]))
-
-        def run_step(script, timeout, step_idx):
-            """Run one subprocess step. Returns True on success."""
-            label_txt  = _STEP_NAMES[step_idx]
-            start_pct  = _STEP_MILESTONES[step_idx]
-            end_pct    = _STEP_MILESTONES[step_idx + 1]
-
-            ui(lambda: progress_label.config(text=label_txt, fg="#667eea"))
-            output_text.insert(tk.END, f"\n[STEP {step_idx+1}/3] {label_txt}\n")
-            output_text.see(tk.END)
-
-            # Animate bar to midpoint while step runs
-            mid = start_pct + (end_pct - start_pct) // 2
-            ui(lambda m=mid: _animate_to(progress_bar, int(progress_bar['value']), m, 80))
-
-            result = subprocess.run(
-                [sys.executable, script],
-                cwd=backtest_dir,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-
-            output_text.insert(tk.END, result.stdout)
-            if result.stderr:
-                output_text.insert(tk.END, f"\nErrors:\n{result.stderr}\n")
-            output_text.see(tk.END)
-
-            if result.returncode != 0:
-                progress_label.config(text=f"Step {step_idx+1} failed!", fg="#dc3545")
-                output_text.insert(tk.END, f"\n[ERROR] Step {step_idx+1} failed!\n")
-                output_text.see(tk.END)
-                return False
-
-            # Snap to exact end milestone
-            ui(lambda e=end_pct: _animate_to(progress_bar, int(progress_bar['value']), e, 30))
-            return True
+        ui(lambda: _set_progress(progress_bar, step_label, 5, "Loading data and rules..."))
 
         try:
-            steps = [
-                ('backtest_engine.py', 300),
-                ('compute_stats.py',   60),
-                ('build_report.py',    60),
-            ]
+            import io
+            import contextlib
 
-            for i, (script, timeout) in enumerate(steps):
-                if not run_step(script, timeout, i):
-                    return
+            # Find candle data
+            h1_path = None
+            for p in [
+                os.path.join(project_root, 'data', 'xauusd_H1.csv'),
+                os.path.join(project_root, 'data', 'xauusd', 'H1.csv'),
+            ]:
+                if os.path.exists(p):
+                    h1_path = p
+                    break
 
-            # All done
+            if h1_path is None:
+                output_text.insert(tk.END, "ERROR: H1 candle data not found!\n")
+                output_text.insert(tk.END, "Looked in:\n")
+                output_text.insert(tk.END, "  data/xauusd_H1.csv\n")
+                output_text.insert(tk.END, "  data/xauusd/H1.csv\n")
+                progress_label.config(text="Error: price data not found", fg="#dc3545")
+                return
+
+            output_text.insert(tk.END, f"Candle data: {h1_path}\n\n")
+            output_text.see(tk.END)
+
+            # Progress callback for the backtester
+            def _progress(cur, tot, name):
+                pct = 10 + int(cur / max(tot, 1) * 75)
+                ui(lambda p=pct, n=name: _set_progress(
+                    progress_bar, step_label, p, f"Testing {cur}/{tot}: {n}"
+                ))
+
+            # Run the backtest with captured output
+            ui(lambda: _set_progress(progress_bar, step_label, 10, "Running comparison matrix..."))
+
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture):
+                sys.path.insert(0, project_root)
+                from project2_backtesting.strategy_backtester import run_comparison_matrix
+                results = run_comparison_matrix(
+                    candles_path=h1_path,
+                    timeframe='H1',
+                    progress_callback=_progress,
+                )
+
+            output_text.insert(tk.END, capture.getvalue())
+            output_text.see(tk.END)
+
+            # Show completion
+            ui(lambda: _animate_to(progress_bar, int(progress_bar['value']), 100, 30))
             ui(lambda: progress_bar.config(style="green.Horizontal.TProgressbar"))
             progress_label.config(text="Backtest completed successfully!", fg="#28a745")
-            step_label.config(text="All 3 steps finished.")
+            step_label.config(text="Done!")
             output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
-            output_text.insert(tk.END, "\nGo to 'View Results' panel to see the report!\n")
+            output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
             output_text.see(tk.END)
 
             output_text.after(0, lambda: messagebox.showinfo(
                 "Backtest Complete",
                 "Backtest completed successfully!\n\n"
-                "Go to the 'View Results' panel to review the HTML report."
+                "Go to the 'View Results' panel to review results."
             ))
 
-        except subprocess.TimeoutExpired:
-            progress_label.config(text="Backtest timed out!", fg="#dc3545")
-            output_text.insert(tk.END, "\n[ERROR] Backtest timed out!\n")
-            output_text.see(tk.END)
-
         except Exception as e:
-            progress_label.config(text=f"Error: {str(e)}", fg="#dc3545")
-            output_text.insert(tk.END, f"\n[ERROR] {str(e)}\n")
+            import traceback
+            err = traceback.format_exc()
+            output_text.insert(tk.END, f"\n[ERROR] {e}\n{err}\n")
             output_text.see(tk.END)
+            progress_label.config(text=f"Error: {str(e)[:60]}", fg="#dc3545")
 
         finally:
             _running = False
