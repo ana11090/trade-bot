@@ -90,7 +90,20 @@ def run_scratch_discovery(
     from shared.data_utils import normalize_timestamp
 
     candles = pd.read_csv(candles_path)
-    candles['timestamp'] = pd.to_datetime(candles.iloc[:, 0])
+
+    # Auto-detect timestamp column — don't assume the name
+    ts_col = None
+    for col in candles.columns:
+        cl = col.lower().strip()
+        if cl in ('timestamp', 'time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
+            ts_col = col
+            break
+    if ts_col is None:
+        # Fallback: use first column
+        ts_col = candles.columns[0]
+
+    candles['timestamp'] = pd.to_datetime(candles[ts_col], errors='coerce')
+    candles = candles.dropna(subset=['timestamp'])
     candles['timestamp'] = normalize_timestamp(candles['timestamp'])
 
     data_dir      = os.path.dirname(candles_path)

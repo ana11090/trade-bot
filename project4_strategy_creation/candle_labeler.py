@@ -48,19 +48,32 @@ def label_candles(
 
     # Load candles
     candles = pd.read_csv(candles_path)
-    candles['timestamp'] = pd.to_datetime(candles.iloc[:, 0])
+
+    # Auto-detect timestamp column — don't assume the name
+    ts_col = None
+    for col in candles.columns:
+        cl = col.lower().strip()
+        if cl in ('timestamp', 'time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
+            ts_col = col
+            break
+    if ts_col is None:
+        # Fallback: use first column
+        ts_col = candles.columns[0]
+
+    candles['timestamp'] = pd.to_datetime(candles[ts_col], errors='coerce')
+    candles = candles.dropna(subset=['timestamp'])
 
     # Find OHLC columns (different CSVs use different column names)
     col_map = {}
     for col in candles.columns:
-        cl = col.lower()
-        if 'open' in cl and 'time' not in cl:
+        cl = col.lower().strip()
+        if ('open' in cl or cl == 'o') and 'time' not in cl:
             col_map['open'] = col
-        elif 'high' in cl:
+        elif 'high' in cl or cl == 'h':
             col_map['high'] = col
-        elif 'low' in cl:
+        elif 'low' in cl or cl == 'l':
             col_map['low'] = col
-        elif 'close' in cl and 'time' not in cl:
+        elif ('close' in cl or cl == 'c') and 'time' not in cl:
             col_map['close'] = col
 
     opens      = candles[col_map['open']].values.astype(float)

@@ -79,6 +79,13 @@ def _build(parent):
     inner.bind("<Configure>", _on_inner_resize)
     canvas.bind("<Configure>", _on_canvas_resize)
 
+    # Mousewheel scrolling
+    def _on_mousewheel(e):
+        canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
     _build_inner(inner)
     return root
 
@@ -160,11 +167,19 @@ def _build_inner(inner):
 
     _widgets['candles_path'] = _candles_path
 
-    # ── Trade definition ──────────────────────────────────────────────────────
-    _section(inner, "Trade Definition — what counts as WIN / LOSS")
+    # ── Settings (multi-column layout) ────────────────────────────────────────
+    _section(inner, "Settings")
 
-    trade_frame = tk.Frame(inner, bg="#f0f2f5")
-    trade_frame.pack(fill="x", **pad)
+    # Container for 3-column layout
+    settings_container = tk.Frame(inner, bg="#f0f2f5")
+    settings_container.pack(fill="x", **pad)
+
+    # Left column — Trade Definition
+    left_col = tk.Frame(settings_container, bg="#f0f2f5")
+    left_col.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+    tk.Label(left_col, text="Trade Definition", bg="#f0f2f5", fg="#8e44ad",
+             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
 
     direction_var = tk.StringVar(value="BUY")
     sl_var        = tk.StringVar(value="150")
@@ -188,38 +203,39 @@ def _build_inner(inner):
     sl_var.trace_add("write", _update_rr)
     tp_var.trace_add("write", _update_rr)
 
-    rows = [
+    left_rows = [
         ("Direction:",          direction_var, "combo", ["BUY", "SELL", "BOTH"]),
-        ("Stop Loss (pips):",   sl_var,        "entry", None),
-        ("Take Profit (pips):", tp_var,        "entry", None),
-        ("Max hold (candles):", hold_var,      "entry", None),
-        ("Spread (pips):",      spread_var,    "entry", None),
+        ("SL (pips):",          sl_var,        "entry", None),
+        ("TP (pips):",          tp_var,        "entry", None),
+        ("Max hold:",           hold_var,      "entry", None),
+        ("Spread:",             spread_var,    "entry", None),
     ]
-    for lbl, var, kind, opts in rows:
-        row = tk.Frame(trade_frame, bg="#f0f2f5")
+    for lbl, var, kind, opts in left_rows:
+        row = tk.Frame(left_col, bg="#f0f2f5")
         row.pack(fill="x", pady=2)
         tk.Label(row, text=lbl, bg="#f0f2f5", fg="#333",
-                 font=("Segoe UI", 10), width=22, anchor="w").pack(side="left")
+                 font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
         if kind == "combo":
             cb = ttk.Combobox(row, textvariable=var, values=opts,
-                              state="readonly", width=12,
-                              font=("Segoe UI", 10))
+                              state="readonly", width=10,
+                              font=("Segoe UI", 9))
             cb.pack(side="left")
         else:
-            tk.Entry(row, textvariable=var, width=12,
-                     font=("Segoe UI", 10), bg="white", fg="#333",
+            tk.Entry(row, textvariable=var, width=10,
+                     font=("Segoe UI", 9), bg="white", fg="#333",
                      relief="solid", bd=1).pack(side="left")
 
-    rr_lbl = tk.Label(trade_frame, textvariable=rr_var,
+    rr_lbl = tk.Label(left_col, textvariable=rr_var,
                       bg="#f0f2f5", fg="#2ecc71",
-                      font=("Segoe UI", 10, "bold"))
+                      font=("Segoe UI", 9, "bold"))
     rr_lbl.pack(anchor="w", pady=(4, 0))
 
-    # ── ML Settings ───────────────────────────────────────────────────────────
-    _section(inner, "ML Settings")
+    # Middle column — ML Settings
+    mid_col = tk.Frame(settings_container, bg="#f0f2f5")
+    mid_col.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-    ml_frame = tk.Frame(inner, bg="#f0f2f5")
-    ml_frame.pack(fill="x", **pad)
+    tk.Label(mid_col, text="ML Settings", bg="#f0f2f5", fg="#8e44ad",
+             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
 
     smart_var   = tk.BooleanVar(value=True)
     rules_var   = tk.StringVar(value="25")
@@ -234,33 +250,34 @@ def _build_inner(inner):
                          cov_var=cov_var, minwr_var=minwr_var,
                          split_var=split_var))
 
-    ml_rows = [
-        ("Smart features:",         smart_var, "check", None),
-        ("Max rules:",              rules_var,  "entry", None),
-        ("XGBoost estimators:",     est_var,    "entry", None),
-        ("Max depth:",              depth_var,  "entry", None),
-        ("Min coverage (% candles):", cov_var,  "entry", None),
-        ("Min win rate (%):",       minwr_var,  "entry", None),
-        ("Train/test split (%):",   split_var,  "entry", None),
+    mid_rows = [
+        ("Smart features:", smart_var, "check", None),
+        ("Max rules:",      rules_var,  "entry", None),
+        ("Estimators:",     est_var,    "entry", None),
+        ("Max depth:",      depth_var,  "entry", None),
+        ("Min cov. (%):",   cov_var,    "entry", None),
+        ("Min WR (%):",     minwr_var,  "entry", None),
+        ("Train/test (%):", split_var,  "entry", None),
     ]
-    for lbl, var, kind, _ in ml_rows:
-        row = tk.Frame(ml_frame, bg="#f0f2f5")
+    for lbl, var, kind, _ in mid_rows:
+        row = tk.Frame(mid_col, bg="#f0f2f5")
         row.pack(fill="x", pady=2)
         tk.Label(row, text=lbl, bg="#f0f2f5", fg="#333",
-                 font=("Segoe UI", 10), width=26, anchor="w").pack(side="left")
+                 font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
         if kind == "check":
             tk.Checkbutton(row, variable=var, bg="#f0f2f5",
                            activebackground="#f0f2f5").pack(side="left")
         else:
             tk.Entry(row, textvariable=var, width=10,
-                     font=("Segoe UI", 10), bg="white", fg="#333",
+                     font=("Segoe UI", 9), bg="white", fg="#333",
                      relief="solid", bd=1).pack(side="left")
 
-    # ── Presets ───────────────────────────────────────────────────────────────
-    _section(inner, "Quick Presets")
+    # Right column — Presets
+    right_col = tk.Frame(settings_container, bg="#f0f2f5")
+    right_col.pack(side="left", fill="both", expand=True)
 
-    preset_row = tk.Frame(inner, bg="#f0f2f5")
-    preset_row.pack(fill="x", **pad)
+    tk.Label(right_col, text="Quick Presets", bg="#f0f2f5", fg="#8e44ad",
+             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
 
     def _apply_preset(sl, tp, hold, minwr):
         sl_var.set(str(sl))
@@ -269,16 +286,20 @@ def _build_inner(inner):
         minwr_var.set(str(minwr))
 
     for label, sl, tp, hold, minwr, color in [
-        ("[Conservative]", 200, 400, 100, 60, "#2980b9"),
-        ("[Balanced]",     150, 300,  50, 55, "#27ae60"),
-        ("[Aggressive]",   100, 150,  20, 55, "#e67e22"),
+        ("Conservative", 200, 400, 100, 60, "#2980b9"),
+        ("Balanced",     150, 300,  50, 55, "#27ae60"),
+        ("Aggressive",   100, 150,  20, 55, "#e67e22"),
     ]:
-        tk.Button(preset_row, text=label,
+        tk.Button(right_col, text=label,
                   bg=color, fg="white",
-                  font=("Segoe UI", 9, "bold"), bd=0, padx=10, pady=5,
+                  font=("Segoe UI", 9, "bold"), bd=0, padx=12, pady=6,
                   command=lambda s=sl, t=tp, h=hold, m=minwr:
                       _apply_preset(s, t, h, m)
-                  ).pack(side="left", padx=(0, 8))
+                  ).pack(fill="x", pady=2)
+
+    # ── Spacer ────────────────────────────────────────────────────────────────
+    tk.Frame(inner, bg="#f0f2f5", height=1).pack(fill="x", pady=(10, 0))
+
 
     # ── Run button + progress ─────────────────────────────────────────────────
     _section(inner, "Run")
