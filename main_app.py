@@ -33,6 +33,10 @@ from project2_backtesting.panels import (
     strategy_refiner_panel as p2_refiner,
     strategy_validator_panel as p2_validator,
 )
+from project3_live_trading.panels import (
+    ea_generator_panel as p3_generator,
+    live_monitor_panel as p3_monitor,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN WINDOW
@@ -108,6 +112,10 @@ state.all_panels["p2_prop_test"] = p2_prop_test.build_panel(content)
 state.all_panels["p2_refiner"]    = p2_refiner.build_panel(content)
 state.all_panels["p2_validator"]  = p2_validator.build_panel(content)
 
+# Project 3 - Live Trading
+state.all_panels["p3_generator"] = p3_generator.build_panel(content)
+state.all_panels["p3_monitor"]   = p3_monitor.build_panel(content)
+
 # New Project 0 extra panels
 state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
 state.all_panels["compare_histories"] = compare_histories.build_panel(content)
@@ -133,6 +141,8 @@ refresh_map = {
     "p2_prop_test": p2_prop_test.refresh,
     "p2_refiner":    p2_refiner.refresh,
     "p2_validator":  p2_validator.refresh,
+    "p3_generator":  p3_generator.refresh,
+    "p3_monitor":    p3_monitor.refresh,
     "prop_explorer":     prop_explorer.refresh,
     "compare_histories": compare_histories.refresh,
     "lifecycle_sim":     lifecycle_simulator.refresh,

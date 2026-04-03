@@ -103,6 +103,7 @@ def build_sidebar(window, canvas, refresh_map):
     prob_open     = [False]
     project1_open = [False]
     project2_open = [False]
+    project3_open = [False]
 
     # ── Frames ────────────────────────────────────────────────────────────────
     project0_extras = tk.Frame(sidebar, bg="#16213e")
@@ -110,6 +111,7 @@ def build_sidebar(window, canvas, refresh_map):
     prob_submenu    = tk.Frame(project0_extras, bg=state.COL_SUB)
     project1_extras = tk.Frame(sidebar, bg="#16213e")
     project2_extras = tk.Frame(sidebar, bg="#16213e")
+    project3_extras = tk.Frame(sidebar, bg="#16213e")
 
     # ── Button helpers ────────────────────────────────────────────────────────
     def _sidebar_btn(parent, text, cmd):
@@ -137,6 +139,7 @@ def build_sidebar(window, canvas, refresh_map):
         is_prob_sub     = name in state.PROB_SUB_PANELS
         is_project1_sub = name in state.PROJECT1_SUB_PANELS
         is_project2_sub = name in state.PROJECT2_SUB_PANELS
+        is_project3_sub = name in state.PROJECT3_SUB_PANELS
         is_p0_extra     = name in state.PROJECT0_EXTRA_PANELS
 
         # btn0 — active for pipeline + sub-panels + new extra panels
@@ -165,6 +168,14 @@ def build_sidebar(window, canvas, refresh_map):
                            activebackground=state.COL_PARENT, activeforeground="white")
         else:
             btn2.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
+                           activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+
+        # btn3
+        if is_project3_sub:
+            btn3.configure(bg=state.COL_PARENT, fg="white",
+                           activebackground=state.COL_PARENT, activeforeground="white")
+        else:
+            btn3.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
 
         # stats_btn
@@ -228,6 +239,15 @@ def build_sidebar(window, canvas, refresh_map):
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
+        # project3 sub-button colors
+        for pname, btn in PROJECT3_BUTTONS.items():
+            if pname == name:
+                btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
+                              activebackground=state.COL_ACTIVE, activeforeground=state.FG_ACTIVE)
+            else:
+                btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                              activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
+
         # auto-expand submenus when navigating directly
         if is_stats_sub and not stats_open[0]:
             stats_submenu.pack(fill="x", after=stats_btn)
@@ -241,6 +261,9 @@ def build_sidebar(window, canvas, refresh_map):
         if is_project2_sub and not project2_open[0]:
             project2_extras.pack(fill="x", after=btn2)
             project2_open[0] = True
+        if is_project3_sub and not project3_open[0]:
+            project3_extras.pack(fill="x", after=btn3)
+            project3_open[0] = True
         if is_p0_extra and not project0_extras.winfo_ismapped():
             project0_extras.pack(fill="x", after=btn0)
 
@@ -288,6 +311,15 @@ def build_sidebar(window, canvas, refresh_map):
             project2_extras.pack(fill="x", after=btn2)
             project2_open[0] = True
             show_panel("p2_config")
+
+    def _toggle_project3():
+        if project3_open[0]:
+            project3_extras.pack_forget()
+            project3_open[0] = False
+        else:
+            project3_extras.pack(fill="x", after=btn3)
+            project3_open[0] = True
+            show_panel("p3_generator")
 
     # ── Build buttons ─────────────────────────────────────────────────────────
     btn0 = _sidebar_btn(sidebar, "0 - Data Pipeline", _on_pipeline_click)
@@ -402,7 +434,17 @@ def build_sidebar(window, canvas, refresh_map):
         "p2_prop_test": btn_p2_prop,
     }
 
-    btn3 = _sidebar_btn(sidebar, "3 - Forward Bot", lambda: None)
+    btn3 = _sidebar_btn(sidebar, "3 - Live Trading", _toggle_project3)
     btn3.pack(fill="x")
+
+    btn_p3_generator = _sub_btn(project3_extras, "🤖 EA Generator",  lambda: show_panel("p3_generator"))
+    btn_p3_generator.pack(fill="x")
+    btn_p3_monitor   = _sub_btn(project3_extras, "📊 Live Monitor",   lambda: show_panel("p3_monitor"))
+    btn_p3_monitor.pack(fill="x")
+
+    PROJECT3_BUTTONS = {
+        "p3_generator": btn_p3_generator,
+        "p3_monitor":   btn_p3_monitor,
+    }
 
     return show_panel
