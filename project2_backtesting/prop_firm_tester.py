@@ -7,6 +7,7 @@ the prop firm lifecycle simulator to compute pass rates and expected ROI.
 
 import os
 import json
+import csv
 import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -209,3 +210,69 @@ def run_multi_firm_test(
 
     results.sort(key=lambda r: r.get('expected_roi_pct') or -999, reverse=True)
     return results
+
+
+def _fmt_hold_time(minutes):
+    """Format hold time in minutes to human-readable string like '2h 15m' or '45m'."""
+    if minutes is None:
+        return ""
+    minutes = int(round(minutes))
+    if minutes >= 60:
+        h = minutes // 60
+        m = minutes % 60
+        return f"{h}h {m}m" if m else f"{h}h"
+    return f"{minutes}m"
+
+
+def export_trades_csv(trades, filepath, account_size=None):
+    """
+    Export all individual trades to a CSV file with full details.
+
+    Columns: Trade #, Entry Time, Exit Time, Direction, Entry Price, Exit Price,
+             Gross Pips, Spread Cost, Commission Cost, Net Pips,
+             Profit/Loss $ (if account_size provided), P&L %,
+             Hold Time (min), Hold Time (readable), Exit Reason, Rule ID
+    """
+    rows = []
+    for i, t in enumerate(trades, 1):
+        entry_str = str(t.get('entry_time', ''))
+        exit_str  = str(t.get('exit_time', ''))
+        gross     = t.get('pnl_pips', 0)
+        spread    = t.get('cost_pips', 0)
+        commission = t.get('cost_pips', 0) - spread if 'commission_pips' in t else 0
+        net       = t.get('net_pips', 0)
+        dollar_pnl = t.get('dollar_pnl')
+        candles   = t.get('candles_held', 0)
+        # Estimate hold time: candles_held × 60 min (H1 assumption)
+        hold_min  = candles * 60 if candles else None
+
+        pnl_pct = None
+        if dollar_pnl is not None and account_size:
+            pnl_pct = round(dollar_pnl / account_size * 100, 4)
+
+        rows.append({
+            'Trade #':         i,
+            'Entry Time':      entry_str,
+            'Exit Time':       exit_str,
+            'Direction':       t.get('direction', ''),
+            'Entry Price':     t.get('entry_price', ''),
+            'Exit Price':      t.get('exit_price', ''),
+            'Gross Pips':      gross,
+            'Spread Cost':     spread,
+            'Commission Cost': commission,
+            'Net Pips':        net,
+            'Profit/Loss $':   dollar_pnl if dollar_pnl is not None else '',
+            'P&L %':           pnl_pct if pnl_pct is not None else '',
+            'Hold Time (min)': hold_min if hold_min is not None else '',
+            'Hold Time':       _fmt_hold_time(hold_min),
+            'Exit Reason':     t.get('exit_reason', ''),
+            'Rule ID':         t.get('rule_id', ''),
+        })
+
+    if not rows:
+        return
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)

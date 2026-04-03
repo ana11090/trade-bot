@@ -34,10 +34,16 @@
         "payout_frequency": "biweekly",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -48,7 +54,13 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null
+        },
         "fee_refundable": false
       }
     }

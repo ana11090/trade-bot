@@ -313,6 +313,7 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
     split_pct     = float(funded_cfg.get("profit_split_pct") or 80)
     payout_freq   = funded_cfg.get("payout_frequency", "biweekly")
     dd_reset      = funded_cfg.get("dd_reset_on_payout", False)
+    min_payout    = float(funded_cfg.get("min_payout_amount") or 0)
 
     payout_interval = _PAYOUT_FREQ_DAYS.get(payout_freq, 14)
 
@@ -376,12 +377,14 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         if (cur_date - last_payout_date).days >= payout_interval:
             profit = balance - account_size
             if profit > 0:
-                payout        = profit * split_pct / 100.0
-                total_payout += payout
-                payout_count += 1
-                balance      -= payout
-                if dd_reset:
-                    hwm = balance
+                payout = profit * split_pct / 100.0
+                if payout >= min_payout:
+                    total_payout += payout
+                    payout_count += 1
+                    balance      -= payout
+                    if dd_reset:
+                        hwm = balance
+                # If payout < min_payout, profit stays in account
             last_payout_date = cur_date
 
     final_cal = (trading_dates[-1] - funded_start).days + 1 if len(trading_dates) > start_idx else 0

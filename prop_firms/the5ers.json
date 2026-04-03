@@ -47,10 +47,17 @@
         "payout_frequency": "biweekly",
         "scaling_plan": "Account doubles every 10% profit milestone, up to $4M",
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
+      "account_sizes": [
+        6000,
+        10000,
+        20000,
+        40000,
+        60000,
+        100000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -61,7 +68,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"6000": 65, "10000": 95, "20000": 175, "40000": 235, "60000": 315, "100000": 495},
+        "challenge_fee_by_size": {
+          "6000": 65,
+          "10000": 95,
+          "20000": 175,
+          "40000": 235,
+          "60000": 315,
+          "100000": 495
+        },
         "fee_refundable": true
       }
     },
@@ -95,10 +109,17 @@
         "payout_frequency": "biweekly",
         "scaling_plan": "Account doubles every 10% profit milestone, up to $4M",
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [6000, 10000, 20000, 40000, 60000, 100000],
+      "account_sizes": [
+        6000,
+        10000,
+        20000,
+        40000,
+        60000,
+        100000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -109,7 +130,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"6000": 85, "10000": 135, "20000": 235, "40000": 355, "60000": 475, "100000": 595},
+        "challenge_fee_by_size": {
+          "6000": 85,
+          "10000": 135,
+          "20000": 235,
+          "40000": 355,
+          "60000": 475,
+          "100000": 595
+        },
         "fee_refundable": true
       }
     },
@@ -169,10 +197,15 @@
         "payout_frequency": "biweekly",
         "scaling_plan": "Account doubles every 10% profit milestone, up to $4M. Split scales to 100%.",
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 20000, 40000],
+      "account_sizes": [
+        5000,
+        10000,
+        20000,
+        40000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -183,7 +216,12 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": 39, "10000": 85, "20000": 175, "40000": 245},
+        "challenge_fee_by_size": {
+          "5000": 39,
+          "10000": 85,
+          "20000": 175,
+          "40000": 245
+        },
         "fee_refundable": true
       }
     }

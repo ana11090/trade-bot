@@ -1,12 +1,13 @@
 """
 Prop Firm Test Panel — Test backtested strategies against prop firm challenge rules.
 
-Pick a strategy from backtest results, pick which firms to test,
+Pick a strategy from backtest results, pick which firms/challenges to test,
 and see pass rates, expected income, and which firm is best for that strategy.
+Also shows the full trade history for the selected strategy with export.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import os
 import sys
 import threading
@@ -17,33 +18,39 @@ sys.path.insert(0, project_root)
 import state
 
 # Design tokens
-BG    = "#f0f2f5"
-WHITE = "white"
-GREEN = "#2d8a4e"
-RED   = "#e94560"
-AMBER = "#996600"
-DARK  = "#1a1a2a"
-GREY  = "#666666"
+BG      = "#f0f2f5"
+WHITE   = "white"
+GREEN   = "#2d8a4e"
+RED     = "#e94560"
+AMBER   = "#996600"
+DARK    = "#1a1a2a"
+GREY    = "#666666"
 MIDGREY = "#555566"
 
-# Module-level widget refs
-_strategy_var     = None
-_strategies       = []       # list of dicts from load_strategy_list()
-_firm_vars        = {}       # firm_id -> BooleanVar
-_firm_data        = []       # list from load_available_firms()
-_account_size_var = None
-_risk_var         = None
-_sl_pips_var      = None
-_pip_val_var      = None
-_run_btn          = None
-_progress_bar     = None
-_status_label     = None
-_results_frame    = None
-_strat_info_label = None
+# Module-level state
+_strategy_var      = None
+_strategies        = []        # list of dicts from load_strategy_list()
+_firm_data         = []        # list from load_available_firms()
+_firm_challenge_vars = {}      # (firm_id, challenge_id) -> BooleanVar
+_firm_frames       = {}        # firm_id -> expandable sub-frame
+_account_size_var  = None
+_risk_var          = None
+_sl_pips_var       = None
+_pip_val_var       = None
+_daily_dd_var      = None
+_spread_var        = None
+_commission_var    = None
+_run_btn           = None
+_progress_bar      = None
+_status_label      = None
+_results_frame     = None
+_trades_frame      = None
+_strat_info_label  = None
+_current_trades    = []        # trades for the currently selected strategy
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Data helpers
+# Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_strategies():
@@ -68,42 +75,24 @@ def _load_firms():
 
 
 def _get_unique_firms():
-    """Return unique firms (firm_id, firm_name) from _firm_data."""
+    """Return unique (firm_id, firm_name) pairs preserving order."""
     seen = {}
     for fc in _firm_data:
         if fc['firm_id'] not in seen:
             seen[fc['firm_id']] = fc['firm_name']
-    return list(seen.items())  # [(firm_id, firm_name), ...]
+    return list(seen.items())
+
+
+def _get_firm_challenges(firm_id):
+    """Return all challenge dicts for a given firm_id."""
+    return [fc for fc in _firm_data if fc['firm_id'] == firm_id]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UI helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _on_strategy_select(event=None):
-    """Update the strategy info label when selection changes."""
-    global _strat_info_label
-    if not _strat_info_label or not _strategies:
-        return
-    idx = _get_selected_index()
-    if idx is None:
-        _strat_info_label.configure(text="", fg=GREY)
-        return
-    s = _strategies[idx]
-    has_trades = s.get('has_trades', False)
-    if has_trades:
-        text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
-                f"net {s['net_total_pips']:+.0f} pips  |  PF {s['net_profit_factor']:.2f}")
-        _strat_info_label.configure(text=text, fg=MIDGREY)
-    else:
-        _strat_info_label.configure(
-            text="⚠ Trade details missing. Re-run the backtest to include them.",
-            fg=RED
-        )
-
-
 def _get_selected_index():
-    """Get the index into _strategies for the current dropdown value."""
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
@@ -113,14 +102,69 @@ def _get_selected_index():
     return None
 
 
-def _select_all_firms():
-    for var in _firm_vars.values():
+def _on_strategy_select(event=None):
+    global _strat_info_label, _spread_var, _commission_var, _current_trades
+    if not _strat_info_label or not _strategies:
+        return
+    idx = _get_selected_index()
+    if idx is None:
+        _strat_info_label.configure(text="", fg=GREY)
+        return
+    s = _strategies[idx]
+    has_trades = s.get('has_trades', False)
+
+    # Update spread/commission from backtest data
+    try:
+        from project2_backtesting.prop_firm_tester import load_strategy_list
+        from project2_backtesting.prop_firm_tester import BACKTEST_MATRIX_PATH
+        import json
+        with open(BACKTEST_MATRIX_PATH, encoding='utf-8') as f:
+            data = json.load(f)
+        r = data['results'][idx]
+        if _spread_var:
+            _spread_var.set(str(r.get('spread_pips', 2.5)))
+        if _commission_var:
+            _commission_var.set(str(r.get('commission_pips', 0.0)))
+    except Exception:
+        pass
+
+    if has_trades:
+        text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
+                f"net {s['net_total_pips']:+.0f} pips  |  PF {s['net_profit_factor']:.2f}")
+        _strat_info_label.configure(text=text, fg=MIDGREY)
+        # Load trades and display trade history
+        try:
+            from project2_backtesting.prop_firm_tester import load_strategy_trades
+            trades = load_strategy_trades(idx)
+            _current_trades.clear()
+            if trades:
+                _current_trades.extend(trades)
+            _display_trade_history(_current_trades)
+        except Exception as e:
+            print(f"[prop_firm_test] Could not load trades: {e}")
+    else:
+        _strat_info_label.configure(
+            text="⚠ Trade details missing. Re-run the backtest to include them.",
+            fg=RED
+        )
+        _current_trades.clear()
+        _display_trade_history([])
+
+
+def _select_all_challenges():
+    for var in _firm_challenge_vars.values():
         var.set(True)
 
 
-def _clear_all_firms():
-    for var in _firm_vars.values():
+def _clear_all_challenges():
+    for var in _firm_challenge_vars.values():
         var.set(False)
+
+
+def _closest_size(available, requested):
+    if not available:
+        return requested
+    return min(available, key=lambda s: abs(s - requested))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,9 +188,10 @@ def _run_test():
         )
         return
 
-    selected_firm_ids = [fid for fid, var in _firm_vars.items() if var.get()]
-    if not selected_firm_ids:
-        messagebox.showerror("No Firms", "Select at least one prop firm to test.")
+    # Collect selected (firm_id, challenge_id) pairs
+    selected = [(fid, cid) for (fid, cid), var in _firm_challenge_vars.items() if var.get()]
+    if not selected:
+        messagebox.showerror("No Challenges", "Select at least one challenge to test.")
         return
 
     try:
@@ -154,6 +199,7 @@ def _run_test():
         risk_pct     = float(_risk_var.get())
         sl_pips      = float(_sl_pips_var.get())
         pip_val      = float(_pip_val_var.get())
+        daily_dd_safety = float(_daily_dd_var.get())
     except ValueError:
         messagebox.showerror("Invalid Settings", "Check that all settings are valid numbers.")
         return
@@ -165,7 +211,7 @@ def _run_test():
     def _worker():
         try:
             from project2_backtesting.prop_firm_tester import (
-                load_strategy_trades, run_multi_firm_test, _closest_account_size
+                load_strategy_trades, run_multi_firm_test
             )
 
             trades = load_strategy_trades(idx)
@@ -174,17 +220,19 @@ def _run_test():
                     text="No trades found for selected strategy.", fg=RED))
                 return
 
-            # Build firm_challenges: all challenges for each selected firm
+            # Build firm_challenges from selected checkboxes
             firm_challenges = []
-            for fc in _firm_data:
-                if fc['firm_id'] in selected_firm_ids:
-                    closest = _closest_account_size(fc['account_sizes'], account_size)
+            fc_lookup = {(fc['firm_id'], fc['challenge_id']): fc for fc in _firm_data}
+            for fid, cid in selected:
+                fc = fc_lookup.get((fid, cid))
+                if fc:
+                    closest = _closest_size(fc['account_sizes'], account_size)
                     firm_challenges.append({
-                        'firm_id':       fc['firm_id'],
-                        'firm_name':     fc['firm_name'],
-                        'challenge_id':  fc['challenge_id'],
+                        'firm_id':        fid,
+                        'firm_name':      fc['firm_name'],
+                        'challenge_id':   cid,
                         'challenge_name': fc['challenge_name'],
-                        'account_size':  closest,
+                        'account_size':   closest,
                     })
 
             total = len(firm_challenges)
@@ -203,6 +251,7 @@ def _run_test():
                 risk_per_trade_pct=risk_pct,
                 default_sl_pips=sl_pips,
                 pip_value_per_lot=pip_val,
+                daily_dd_safety_pct=daily_dd_safety,
                 progress_callback=_progress,
             )
 
@@ -213,10 +262,8 @@ def _run_test():
 
         except Exception as e:
             import traceback
-            err = traceback.format_exc()
-            print(f"[prop_firm_test] Error:\n{err}")
-            state.window.after(0, lambda: _status_label.configure(
-                text=f"Error: {e}", fg=RED))
+            print(f"[prop_firm_test] Error:\n{traceback.format_exc()}")
+            state.window.after(0, lambda: _status_label.configure(text=f"Error: {e}", fg=RED))
         finally:
             state.window.after(0, lambda: _run_btn.configure(
                 state="normal", text="Run Prop Firm Test"))
@@ -241,7 +288,7 @@ def _display_results(results, strategy_label):
 
     # Strategy banner
     banner = tk.Frame(_results_frame, bg="#e8f5e9", padx=15, pady=8)
-    banner.pack(fill="x", padx=5, pady=(0, 8))
+    banner.pack(fill="x", padx=5, pady=(0, 6))
     tk.Label(banner, text=f"Strategy: {strategy_label}",
              font=("Segoe UI", 9, "bold"), bg="#e8f5e9", fg="#2e7d32").pack(anchor="w")
 
@@ -250,16 +297,10 @@ def _display_results(results, strategy_label):
     header_frame.pack(fill="x", padx=5)
 
     col_defs = [
-        ("#",            3),
-        ("Firm",        16),
-        ("Challenge",   18),
-        ("Size",         8),
-        ("Pass%",        6),
-        ("Sims",         5),
-        ("Avg Days",     9),
-        ("Max DD%",      8),
-        ("Monthly $",   10),
-        ("ROI%",         7),
+        ("#",          3), ("Firm",      16), ("Challenge", 18),
+        ("Size",       8), ("Pass%",      6), ("Sims",       5),
+        ("Avg Days",   9), ("Max DD%",    8), ("Monthly $", 10),
+        ("ROI%",       7), ("Fail Reasons", 30),
     ]
     for text, width in col_defs:
         tk.Label(header_frame, text=text, font=("Segoe UI", 8, "bold"),
@@ -272,45 +313,172 @@ def _display_results(results, strategy_label):
         monthly   = r.get('funded_avg_monthly') or 0
 
         if pass_rate >= 0.60:
-            row_color = "#f0fdf4"
+            row_bg = "#f0fdf4"
             rate_color = GREEN
         elif pass_rate >= 0.40:
-            row_color = "#fffbeb"
+            row_bg = "#fffbeb"
             rate_color = AMBER
         else:
-            row_color = "#fef2f2"
+            row_bg = "#fef2f2"
             rate_color = RED
 
-        row = tk.Frame(_results_frame, bg=row_color, padx=10, pady=4)
+        row = tk.Frame(_results_frame, bg=row_bg, padx=10, pady=4)
         row.pack(fill="x", padx=5)
 
         roi_color = GREEN if roi > 0 else (RED if roi < 0 else GREY)
 
-        tk.Label(row, text=f"{i}",
-                font=("Segoe UI", 8), bg=row_color, fg=GREY, width=3, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=r['firm_name'],
-                font=("Segoe UI", 8, "bold"), bg=row_color, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=r['challenge_name'],
-                font=("Segoe UI", 8), bg=row_color, fg=DARK, width=18, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"${r['account_size']:,}",
-                font=("Segoe UI", 8), bg=row_color, fg=GREY, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{pass_rate*100:.0f}%",
-                font=("Segoe UI", 8, "bold"), bg=row_color, fg=rate_color, width=6, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=str(r['num_simulations']),
-                font=("Segoe UI", 8), bg=row_color, fg=GREY, width=5, anchor="w").pack(side=tk.LEFT, padx=1)
-        avg_days = r['avg_days_to_pass'] or 0
-        tk.Label(row, text=f"{avg_days:.0f}d",
-                font=("Segoe UI", 8), bg=row_color, fg=DARK, width=9, anchor="w").pack(side=tk.LEFT, padx=1)
-        avg_dd = (r['avg_max_dd_pct'] or 0) * 100
-        tk.Label(row, text=f"{avg_dd:.1f}%",
-                font=("Segoe UI", 8), bg=row_color, fg=DARK, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
-        monthly_text = f"${monthly:,.0f}" if monthly else "—"
-        tk.Label(row, text=monthly_text,
-                font=("Segoe UI", 8, "bold"), bg=row_color, fg=GREEN if monthly else GREY,
-                width=10, anchor="w").pack(side=tk.LEFT, padx=1)
-        roi_text = f"{roi:+.0f}%" if roi else "—"
-        tk.Label(row, text=roi_text,
-                font=("Segoe UI", 8, "bold"), bg=row_color, fg=roi_color, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        # Fail reasons summary
+        fail_reasons = r.get('fail_reasons') or {}
+        reasons_str = "  ".join(
+            f"{k}:{v}" for k, v in sorted(fail_reasons.items(), key=lambda x: -x[1])
+        ) if fail_reasons else "—"
+
+        vals = [
+            (str(i),                    3,  GREY,      "Segoe UI"),
+            (r['firm_name'],            16, DARK,      "Segoe UI"),
+            (r['challenge_name'],       18, DARK,      "Segoe UI"),
+            (f"${r['account_size']:,}", 8,  GREY,      "Segoe UI"),
+            (f"{pass_rate*100:.0f}%",   6,  rate_color,"Segoe UI"),
+            (str(r['num_simulations']), 5,  GREY,      "Segoe UI"),
+            (f"{r['avg_days_to_pass'] or 0:.0f}d", 9, DARK, "Segoe UI"),
+            (f"{(r['avg_max_dd_pct'] or 0)*100:.1f}%", 8, DARK, "Segoe UI"),
+            (f"${monthly:,.0f}" if monthly else "—", 10, GREEN if monthly else GREY, "Segoe UI"),
+            (f"{roi:+.0f}%" if roi else "—", 7, roi_color, "Segoe UI"),
+        ]
+        for text, width, color, font_name in vals:
+            tk.Label(row, text=text, font=(font_name, 8, "bold" if color in (GREEN, RED, rate_color) else "normal"),
+                    bg=row_bg, fg=color, width=width, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=reasons_str, font=("Consolas", 7),
+                bg=row_bg, fg=GREY, anchor="w").pack(side=tk.LEFT, padx=(4, 0))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trade history display
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_hold(candles_held):
+    """Convert candles held (H1) to human-readable duration."""
+    if not candles_held:
+        return "—"
+    mins = candles_held * 60
+    if mins >= 60:
+        h = mins // 60
+        m = mins % 60
+        return f"{h}h {m}m" if m else f"{h}h"
+    return f"{mins}m"
+
+
+def _display_trade_history(trades):
+    global _trades_frame
+    if _trades_frame is None:
+        return
+
+    for widget in _trades_frame.winfo_children():
+        widget.destroy()
+
+    if not trades:
+        tk.Label(_trades_frame,
+                text="No trade data for this strategy. Re-run the backtest.",
+                font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY).pack(pady=10)
+        return
+
+    # Trade table header
+    th = tk.Frame(_trades_frame, bg="#f5f5f5", padx=8, pady=4)
+    th.pack(fill="x", padx=5)
+
+    trade_cols = [
+        ("#", 3), ("Entry", 17), ("Exit", 17), ("Dir", 5),
+        ("Entry$", 7), ("Exit$", 7), ("Gross", 7), ("Spread", 7),
+        ("Net", 7), ("Hold", 8), ("Reason", 14),
+    ]
+    for text, width in trade_cols:
+        tk.Label(th, text=text, font=("Segoe UI", 7, "bold"),
+                bg="#f5f5f5", fg=GREY, width=width, anchor="w").pack(side=tk.LEFT, padx=1)
+
+    winners = losers = 0
+    total_net = 0.0
+    total_hold = 0
+
+    for i, t in enumerate(trades, 1):
+        net = t.get('net_pips', 0)
+        total_net += net
+        candles = t.get('candles_held', 0)
+        total_hold += candles or 0
+        if net > 0:
+            winners += 1
+            row_bg = "#f0fdf4"
+        else:
+            losers += 1
+            row_bg = "#fef2f2"
+
+        row = tk.Frame(_trades_frame, bg=row_bg, padx=8, pady=2)
+        row.pack(fill="x", padx=5)
+
+        net_color  = GREEN if net > 0 else RED
+        entry_time = str(t.get('entry_time', ''))[:16]
+        exit_time  = str(t.get('exit_time',  ''))[:16]
+        direction  = t.get('direction', '')
+        dir_color  = GREEN if direction == 'BUY' else RED
+
+        tk.Label(row, text=str(i), font=("Segoe UI", 7), bg=row_bg, fg=GREY, width=3, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=entry_time, font=("Consolas", 7), bg=row_bg, fg=DARK, width=17, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=exit_time,  font=("Consolas", 7), bg=row_bg, fg=DARK, width=17, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=direction,  font=("Segoe UI", 7, "bold"), bg=row_bg, fg=dir_color, width=5, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{t.get('entry_price',0):.2f}", font=("Consolas", 7), bg=row_bg, fg=DARK, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{t.get('exit_price', 0):.2f}", font=("Consolas", 7), bg=row_bg, fg=DARK, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{t.get('pnl_pips',0):+.1f}", font=("Consolas", 7), bg=row_bg, fg=MIDGREY, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{t.get('cost_pips',0):.1f}", font=("Consolas", 7), bg=row_bg, fg=GREY, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{net:+.1f}", font=("Consolas", 7, "bold"), bg=row_bg, fg=net_color, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=_fmt_hold(candles), font=("Segoe UI", 7), bg=row_bg, fg=GREY, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=t.get('exit_reason', ''), font=("Segoe UI", 7), bg=row_bg, fg=MIDGREY, width=14, anchor="w").pack(side=tk.LEFT, padx=1)
+
+    # Summary footer
+    total = len(trades)
+    wr = winners / total * 100 if total else 0
+    avg_hold = _fmt_hold(total_hold // total) if total else "—"
+
+    footer = tk.Frame(_trades_frame, bg="#e8f4f8", padx=8, pady=6)
+    footer.pack(fill="x", padx=5, pady=(4, 0))
+    tk.Label(footer,
+             text=f"Total: {total} trades  |  Winners: {winners}  Losers: {losers}  "
+                  f"WR: {wr:.1f}%  |  Net pips: {total_net:+.1f}  |  Avg hold: {avg_hold}",
+             font=("Segoe UI", 9, "bold"), bg="#e8f4f8", fg=DARK).pack(anchor="w")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _export_trades():
+    if not _current_trades:
+        messagebox.showinfo("No Trades", "Load a strategy with trade data first.")
+        return
+
+    try:
+        account_size = int(_account_size_var.get()) if _account_size_var else None
+    except ValueError:
+        account_size = None
+
+    idx = _get_selected_index()
+    label = _strategies[idx]['label'].replace(' × ', '_').replace(' ', '_') if idx is not None else 'trades'
+    default_name = f"trades_{label}.csv"
+
+    filepath = filedialog.asksaveasfilename(
+        title="Export Trades to CSV",
+        defaultextension=".csv",
+        initialfile=default_name,
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+    if not filepath:
+        return
+
+    try:
+        from project2_backtesting.prop_firm_tester import export_trades_csv
+        export_trades_csv(_current_trades, filepath, account_size=account_size)
+        messagebox.showinfo("Export Complete",
+                            f"Exported {len(_current_trades)} trades to:\n{filepath}")
+    except Exception as e:
+        messagebox.showerror("Export Error", str(e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,11 +486,11 @@ def _display_results(results, strategy_label):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_panel(parent):
-    global _strategy_var, _firm_vars, _account_size_var, _risk_var
-    global _sl_pips_var, _pip_val_var, _run_btn, _progress_bar
-    global _status_label, _results_frame, _strat_info_label
+    global _strategy_var, _firm_challenge_vars, _account_size_var, _risk_var
+    global _sl_pips_var, _pip_val_var, _daily_dd_var, _spread_var, _commission_var
+    global _run_btn, _progress_bar, _status_label, _results_frame, _trades_frame
+    global _strat_info_label
 
-    # Load data
     _load_strategies()
     _load_firms()
 
@@ -331,11 +499,9 @@ def build_panel(parent):
     # ── Header ────────────────────────────────────────────────────────────────
     header = tk.Frame(panel, bg=WHITE, pady=20)
     header.pack(fill="x", padx=20, pady=(20, 10))
-
     tk.Label(header, text="🏦 Prop Firm Challenge Test",
              bg=WHITE, fg=DARK, font=("Segoe UI", 18, "bold")).pack()
-    tk.Label(header,
-             text="Test your backtested strategy against prop firm challenge rules",
+    tk.Label(header, text="Test your backtested strategy against prop firm challenge rules",
              bg=WHITE, fg=GREY, font=("Segoe UI", 11)).pack(pady=(5, 0))
 
     # ── Strategy selection ────────────────────────────────────────────────────
@@ -354,14 +520,13 @@ def build_panel(parent):
         _strategy_var = tk.StringVar(value=_strategies[0]['label'])
         labels = [s['label'] for s in _strategies]
         dropdown = ttk.Combobox(strat_frame, textvariable=_strategy_var,
-                                values=labels, state="readonly", width=60)
+                                values=labels, state="readonly", width=70)
         dropdown.pack(anchor="w")
         dropdown.bind("<<ComboboxSelected>>", _on_strategy_select)
 
     _strat_info_label = tk.Label(strat_frame, text="", font=("Segoe UI", 9),
                                   bg=WHITE, fg=MIDGREY)
     _strat_info_label.pack(anchor="w", pady=(4, 0))
-    _on_strategy_select()
 
     # ── Settings ──────────────────────────────────────────────────────────────
     settings_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
@@ -370,53 +535,76 @@ def build_panel(parent):
     tk.Label(settings_frame, text="Settings", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 8))
 
-    row1 = tk.Frame(settings_frame, bg=WHITE)
-    row1.pack(fill="x", pady=(0, 4))
-
-    def _setting(parent, label, default, width=10):
+    def _field(parent, label, default, width=9):
         var = tk.StringVar(value=default)
-        tk.Label(parent, text=label, font=("Segoe UI", 9),
-                 bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(0, 4))
-        tk.Entry(parent, textvariable=var, width=width).pack(side=tk.LEFT, padx=(0, 20))
+        tk.Label(parent, text=label, font=("Segoe UI", 9), bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(0, 3))
+        tk.Entry(parent, textvariable=var, width=width).pack(side=tk.LEFT, padx=(0, 15))
         return var
 
-    _account_size_var = _setting(row1, "Account size ($):", "100000", 10)
-    _risk_var         = _setting(row1, "Risk/trade (%):",  "1.0",    6)
-    _sl_pips_var      = _setting(row1, "Default SL (pips):", "150",  7)
-    _pip_val_var      = _setting(row1, "Pip value/lot ($):", "10.0", 7)
+    row1 = tk.Frame(settings_frame, bg=WHITE)
+    row1.pack(fill="x", pady=(0, 4))
+    _account_size_var = _field(row1, "Account size ($):", "100000", 10)
+    _risk_var         = _field(row1, "Risk/trade (%):", "1.0", 6)
+    _sl_pips_var      = _field(row1, "Default SL (pips):", "150", 6)
 
-    # ── Firm selection ────────────────────────────────────────────────────────
+    row2 = tk.Frame(settings_frame, bg=WHITE)
+    row2.pack(fill="x", pady=(0, 4))
+    _pip_val_var   = _field(row2, "Pip value/lot ($):", "10.0", 6)
+    _daily_dd_var  = _field(row2, "Daily DD safety (%):", "80", 5)
+    _spread_var    = _field(row2, "Spread (pips):", "2.5", 5)
+    _commission_var = _field(row2, "Commission (pips):", "0.0", 5)
+
+    # ── Firm / Challenge selection ─────────────────────────────────────────────
     firms_outer = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
     firms_outer.pack(fill="x", padx=20, pady=(0, 5))
 
-    header_row = tk.Frame(firms_outer, bg=WHITE)
-    header_row.pack(fill="x", pady=(0, 8))
-
-    tk.Label(header_row, text="Prop Firms", font=("Segoe UI", 11, "bold"),
+    hdr_row = tk.Frame(firms_outer, bg=WHITE)
+    hdr_row.pack(fill="x", pady=(0, 8))
+    tk.Label(hdr_row, text="Prop Firms & Challenges", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(side=tk.LEFT)
-
-    tk.Button(header_row, text="Select All", command=_select_all_firms,
+    tk.Button(hdr_row, text="Select All", command=_select_all_challenges,
               bg=GREEN, fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3).pack(side=tk.LEFT, padx=(15, 4))
-    tk.Button(header_row, text="Clear", command=_clear_all_firms,
+    tk.Button(hdr_row, text="Clear", command=_clear_all_challenges,
               bg=GREY, fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3).pack(side=tk.LEFT)
 
-    firms_grid = tk.Frame(firms_outer, bg=WHITE)
-    firms_grid.pack(fill="x")
-
+    _firm_challenge_vars.clear()
     unique_firms = _get_unique_firms()
-    _firm_vars.clear()
-    for col_i, (firm_id, firm_name) in enumerate(unique_firms):
-        var = tk.BooleanVar(value=True)
-        _firm_vars[firm_id] = var
-        cb = tk.Checkbutton(firms_grid, text=firm_name, variable=var,
-                            bg=WHITE, font=("Segoe UI", 9), anchor="w")
-        cb.grid(row=col_i // 4, column=col_i % 4, sticky="w", padx=10, pady=2)
 
     if not unique_firms:
-        tk.Label(firms_grid, text="No prop firms loaded.",
+        tk.Label(firms_outer, text="No prop firms loaded.",
                  font=("Segoe UI", 9, "italic"), bg=WHITE, fg=RED).pack(anchor="w")
+    else:
+        for firm_id, firm_name in unique_firms:
+            challenges = _get_firm_challenges(firm_id)
+
+            firm_box = tk.Frame(firms_outer, bg="#fafafa", pady=4,
+                                highlightbackground="#d0d0d0", highlightthickness=1)
+            firm_box.pack(fill="x", pady=3)
+
+            firm_label = tk.Label(firm_box, text=f"  {firm_name}",
+                                  font=("Segoe UI", 10, "bold"), bg="#fafafa", fg=DARK)
+            firm_label.pack(anchor="w", padx=8, pady=(4, 2))
+
+            for fc in challenges:
+                challenge_id = fc['challenge_id']
+                key = (firm_id, challenge_id)
+                var = tk.BooleanVar(value=True)
+                _firm_challenge_vars[key] = var
+
+                ch_row = tk.Frame(firm_box, bg="#fafafa")
+                ch_row.pack(fill="x", padx=20, pady=1)
+
+                cb = tk.Checkbutton(ch_row, text=fc['challenge_name'], variable=var,
+                                    bg="#fafafa", font=("Segoe UI", 9), anchor="w")
+                cb.pack(side=tk.LEFT)
+
+                # Key rules summary
+                sizes_str = "/".join(f"${s:,}" for s in fc['account_sizes'][:3])
+                rules_text = f"  sizes: {sizes_str}"
+                tk.Label(ch_row, text=rules_text,
+                         font=("Segoe UI", 8), bg="#fafafa", fg=GREY).pack(side=tk.LEFT, padx=(5, 0))
 
     # ── Run button + progress ─────────────────────────────────────────────────
     run_frame = tk.Frame(panel, bg=BG, pady=10)
@@ -436,23 +624,36 @@ def build_panel(parent):
                               font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY)
     _status_label.pack(pady=(0, 5))
 
-    # ── Results section header ────────────────────────────────────────────────
+    # ── Results section ───────────────────────────────────────────────────────
     results_header = tk.Frame(panel, bg=WHITE, padx=20, pady=8)
     results_header.pack(fill="x", padx=20, pady=(5, 0))
     tk.Label(results_header, text="Results (sorted by Expected ROI)",
              font=("Segoe UI", 11, "bold"), bg=WHITE, fg=DARK).pack(side=tk.LEFT)
 
-    # ── Scrollable results area ───────────────────────────────────────────────
+    # ── Trade history section ─────────────────────────────────────────────────
+    trades_header = tk.Frame(panel, bg=WHITE, padx=20, pady=8)
+    trades_header.pack(fill="x", padx=20, pady=(8, 0))
+
+    trades_title_row = tk.Frame(trades_header, bg=WHITE)
+    trades_title_row.pack(fill="x")
+    tk.Label(trades_title_row, text="📋 Trade History (selected strategy)",
+             font=("Segoe UI", 11, "bold"), bg=WHITE, fg=DARK).pack(side=tk.LEFT)
+
+    tk.Button(trades_title_row, text="📥 Export Trades to CSV",
+              command=_export_trades,
+              bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.RIGHT)
+
+    # ── Single scrollable canvas for Results + Trade History ──────────────────
     canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
     scrollbar = tk.Scrollbar(panel, orient="vertical", command=canvas.yview)
-    _results_frame = tk.Frame(canvas, bg=BG)
 
-    _results_frame.bind(
+    scroll_frame = tk.Frame(canvas, bg=BG)
+    scroll_frame.bind(
         "<Configure>",
         lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
-
-    content_window_id = canvas.create_window((0, 0), window=_results_frame, anchor="nw")
+    content_window_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
 
     canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
@@ -470,6 +671,18 @@ def build_panel(parent):
 
     canvas.bind("<Configure>", _on_canvas_resize)
 
+    # Results and trades live inside the shared scroll_frame
+    _results_frame = tk.Frame(scroll_frame, bg=BG)
+    _results_frame.pack(fill="x", pady=(0, 10))
+
+    tk.Frame(scroll_frame, bg="#d0d0d0", height=1).pack(fill="x", padx=5, pady=8)
+
+    _trades_frame = tk.Frame(scroll_frame, bg=BG)
+    _trades_frame.pack(fill="x")
+
+    # Initial load
+    _on_strategy_select()
+
     return panel
 
 
@@ -478,8 +691,7 @@ def refresh():
     global _strategies, _strategy_var, _strat_info_label
     _load_strategies()
     if _strategy_var is not None and _strategies:
-        current = _strategy_var.get()
         labels = [s['label'] for s in _strategies]
-        if current not in labels:
+        if _strategy_var.get() not in labels:
             _strategy_var.set(labels[0])
         _on_strategy_select()

@@ -17,3 +17,10 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Indicator cache files (large parquet, rebuilt automatically)
+data/.cache_*
+*.parquet
+
+# Large output files
+project1_reverse_engineering/outputs/strategy_search_results.json

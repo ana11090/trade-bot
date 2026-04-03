@@ -31,14 +31,16 @@
         "max_total_drawdown_pct": 6.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [25000],
+      "account_sizes": [
+        25000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -49,7 +51,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"25000": 167},
+        "challenge_fee_by_size": {
+          "25000": 167
+        },
         "fee_refundable": false
       }
     },
@@ -80,14 +84,16 @@
         "max_total_drawdown_pct": 5.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [50000],
+      "account_sizes": [
+        50000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -98,7 +104,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"50000": 167},
+        "challenge_fee_by_size": {
+          "50000": 167
+        },
         "fee_refundable": false
       }
     },
@@ -129,14 +137,16 @@
         "max_total_drawdown_pct": 3.0,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [100000],
+      "account_sizes": [
+        100000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -147,7 +157,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"100000": 297},
+        "challenge_fee_by_size": {
+          "100000": 297
+        },
         "fee_refundable": false
       }
     },
@@ -178,14 +190,16 @@
         "max_total_drawdown_pct": 3.3,
         "drawdown_type": "trailing_eod",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [150000],
+      "account_sizes": [
+        150000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -196,7 +210,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"150000": 297},
+        "challenge_fee_by_size": {
+          "150000": 297
+        },
         "fee_refundable": false
       }
     },
@@ -227,14 +243,16 @@
         "max_total_drawdown_pct": 6.0,
         "drawdown_type": "trailing",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [25000],
+      "account_sizes": [
+        25000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -245,7 +263,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"25000": 167},
+        "challenge_fee_by_size": {
+          "25000": 167
+        },
         "fee_refundable": false
       }
     },
@@ -276,14 +296,16 @@
         "max_total_drawdown_pct": 5.0,
         "drawdown_type": "trailing",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [50000],
+      "account_sizes": [
+        50000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -294,7 +316,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"50000": 167},
+        "challenge_fee_by_size": {
+          "50000": 167
+        },
         "fee_refundable": false
       }
     },
@@ -325,14 +349,16 @@
         "max_total_drawdown_pct": 3.0,
         "drawdown_type": "trailing",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [100000],
+      "account_sizes": [
+        100000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -343,7 +369,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"100000": 297},
+        "challenge_fee_by_size": {
+          "100000": 297
+        },
         "fee_refundable": false
       }
     },
@@ -374,14 +402,16 @@
         "max_total_drawdown_pct": 3.3,
         "drawdown_type": "trailing",
         "profit_target_pct": null,
-        "consistency_rule_pct": 50.0,
+        "consistency_rule_pct": 30.0,
         "payout_frequency": "weekly",
         "scaling_plan": "100% split after 5 payouts",
         "dd_reset_on_payout": true,
-        "min_payout_amount": 100,
-        "consistency_rule_type": null
+        "min_payout_amount": 500,
+        "consistency_rule_type": "best_day_vs_total"
       },
-      "account_sizes": [150000],
+      "account_sizes": [
+        150000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 0,
@@ -392,7 +422,9 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"150000": 297},
+        "challenge_fee_by_size": {
+          "150000": 297
+        },
         "fee_refundable": false
       }
     }

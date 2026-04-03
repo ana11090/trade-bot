@@ -34,10 +34,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": "Scale to 100% split over time",
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -48,7 +55,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": 49, "10000": 89, "25000": 189, "50000": 299, "100000": 499, "200000": 899},
+        "challenge_fee_by_size": {
+          "5000": 49,
+          "10000": 89,
+          "25000": 189,
+          "50000": 299,
+          "100000": 499,
+          "200000": 899
+        },
         "fee_refundable": true
       }
     },
@@ -82,10 +96,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -96,7 +117,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null,
+          "200000": null
+        },
         "fee_refundable": true
       }
     },
@@ -143,10 +171,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -157,7 +192,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null,
+          "200000": null
+        },
         "fee_refundable": true
       }
     },
@@ -204,10 +246,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -218,7 +267,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null,
+          "200000": null
+        },
         "fee_refundable": true
       }
     },
@@ -278,10 +334,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -292,7 +355,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null,
+          "200000": null
+        },
         "fee_refundable": true
       }
     },
@@ -326,10 +396,17 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -340,7 +417,14 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": 0, "10000": 0, "25000": 0, "50000": 0, "100000": 0, "200000": 0},
+        "challenge_fee_by_size": {
+          "5000": 0,
+          "10000": 0,
+          "25000": 0,
+          "50000": 0,
+          "100000": 0,
+          "200000": 0
+        },
         "fee_refundable": false
       }
     },
@@ -360,10 +444,18 @@
         "payout_frequency": "on_demand",
         "scaling_plan": null,
         "dd_reset_on_payout": false,
-        "min_payout_amount": 100,
+        "min_payout_amount": 50,
         "consistency_rule_type": null
       },
-      "account_sizes": [5000, 10000, 25000, 50000, 100000, 200000, 300000],
+      "account_sizes": [
+        5000,
+        10000,
+        25000,
+        50000,
+        100000,
+        200000,
+        300000
+      ],
       "restrictions": {
         "news_trading_allowed": true,
         "news_blackout_minutes": 5,
@@ -374,7 +466,15 @@
         "max_lots": null
       },
       "costs": {
-        "challenge_fee_by_size": {"5000": null, "10000": null, "25000": null, "50000": null, "100000": null, "200000": null, "300000": null},
+        "challenge_fee_by_size": {
+          "5000": null,
+          "10000": null,
+          "25000": null,
+          "50000": null,
+          "100000": null,
+          "200000": null,
+          "300000": null
+        },
         "fee_refundable": false
       }
     }
