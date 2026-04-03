@@ -64,6 +64,26 @@ class ExitStrategy:
             if tp_hit: return "TP"
         return None
 
+    @staticmethod
+    def _get_fill_price(candle, target_price, direction, is_sl=True):
+        """
+        Return actual fill price accounting for overnight/weekend gaps.
+        If the candle opens past the target price the real fill is at
+        candle open (which is always worse for SL, better for TP).
+        """
+        candle_open = float(candle["open"])
+        if is_sl:
+            if direction == "BUY"  and candle_open < target_price:
+                return candle_open   # gapped down past SL
+            if direction == "SELL" and candle_open > target_price:
+                return candle_open   # gapped up past SL
+        else:  # TP
+            if direction == "BUY"  and candle_open > target_price:
+                return candle_open   # gapped up past TP (lucky fill)
+            if direction == "SELL" and candle_open < target_price:
+                return candle_open   # gapped down past TP (lucky fill)
+        return target_price
+
 
 class FixedSLTP(ExitStrategy):
     """Fixed stop loss and take profit in pips."""
@@ -87,9 +107,13 @@ class FixedSLTP(ExitStrategy):
 
         result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
         if result == "SL":
-            return {"exit_price": sl_price, "reason": "STOP_LOSS"}
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+            return {"exit_price": fill, "reason": reason}
         if result == "TP":
-            return {"exit_price": tp_price, "reason": "TAKE_PROFIT"}
+            fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+            reason = "TAKE_PROFIT_GAP" if fill != tp_price else "TAKE_PROFIT"
+            return {"exit_price": fill, "reason": reason}
         return None
 
     def describe(self):
@@ -124,8 +148,13 @@ class TrailingStop(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["low"] <= effective_sl:
-                reason = "TRAILING_STOP" if effective_sl > fixed_sl else "STOP_LOSS"
-                return {"exit_price": effective_sl, "reason": reason}
+                fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
+                is_trailing = effective_sl > fixed_sl
+                if fill != effective_sl:
+                    reason = "TRAILING_STOP_GAP" if is_trailing else "STOP_LOSS_GAP"
+                else:
+                    reason = "TRAILING_STOP" if is_trailing else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
         else:  # SELL
             fixed_sl    = entry + self.sl_pips * self.pip_size
             profit_pips = (entry - lowest) / self.pip_size
@@ -136,8 +165,13 @@ class TrailingStop(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["high"] >= effective_sl:
-                reason = "TRAILING_STOP" if effective_sl < fixed_sl else "STOP_LOSS"
-                return {"exit_price": effective_sl, "reason": reason}
+                fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
+                is_trailing = effective_sl < fixed_sl
+                if fill != effective_sl:
+                    reason = "TRAILING_STOP_GAP" if is_trailing else "STOP_LOSS_GAP"
+                else:
+                    reason = "TRAILING_STOP" if is_trailing else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
 
         return None
 
@@ -178,9 +212,13 @@ class ATRBased(ExitStrategy):
 
         result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
         if result == "SL":
-            return {"exit_price": sl_price, "reason": "ATR_STOP_LOSS"}
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "ATR_STOP_LOSS_GAP" if fill != sl_price else "ATR_STOP_LOSS"
+            return {"exit_price": fill, "reason": reason}
         if result == "TP":
-            return {"exit_price": tp_price, "reason": "ATR_TAKE_PROFIT"}
+            fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+            reason = "ATR_TAKE_PROFIT_GAP" if fill != tp_price else "ATR_TAKE_PROFIT"
+            return {"exit_price": fill, "reason": reason}
         return None
 
     def describe(self):
@@ -201,11 +239,17 @@ class TimeBased(ExitStrategy):
         direction = pos["direction"]
 
         if direction == "BUY":
-            if candle["low"] <= entry - self.sl_pips * self.pip_size:
-                return {"exit_price": entry - self.sl_pips * self.pip_size, "reason": "STOP_LOSS"}
+            sl_price = entry - self.sl_pips * self.pip_size
+            if candle["low"] <= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
         else:
-            if candle["high"] >= entry + self.sl_pips * self.pip_size:
-                return {"exit_price": entry + self.sl_pips * self.pip_size, "reason": "STOP_LOSS"}
+            sl_price = entry + self.sl_pips * self.pip_size
+            if candle["high"] >= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
 
         if pos["candles_held"] >= self.max_candles:
             return {"exit_price": candle["close"], "reason": "TIME_EXIT"}
@@ -234,11 +278,17 @@ class IndicatorExit(ExitStrategy):
         direction = pos["direction"]
 
         if direction == "BUY":
-            if candle["low"] <= entry - self.sl_pips * self.pip_size:
-                return {"exit_price": entry - self.sl_pips * self.pip_size, "reason": "STOP_LOSS"}
+            sl_price = entry - self.sl_pips * self.pip_size
+            if candle["low"] <= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
         else:
-            if candle["high"] >= entry + self.sl_pips * self.pip_size:
-                return {"exit_price": entry + self.sl_pips * self.pip_size, "reason": "STOP_LOSS"}
+            sl_price = entry + self.sl_pips * self.pip_size
+            if candle["high"] >= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
 
         if pos["candles_held"] >= 1:
             indicator_value = candle.get(self.exit_indicator)
@@ -289,8 +339,13 @@ class HybridExit(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["low"] <= effective_sl:
-                reason = "TRAILING" if effective_sl > fixed_sl else "STOP_LOSS"
-                return {"exit_price": effective_sl, "reason": reason}
+                fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
+                is_trailing = effective_sl > fixed_sl
+                if fill != effective_sl:
+                    reason = "TRAILING_GAP" if is_trailing else "STOP_LOSS_GAP"
+                else:
+                    reason = "TRAILING" if is_trailing else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
         else:
             fixed_sl    = entry + self.sl_pips * self.pip_size
             profit_pips = (entry - lowest) / self.pip_size
@@ -302,8 +357,13 @@ class HybridExit(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["high"] >= effective_sl:
-                reason = "TRAILING" if effective_sl < fixed_sl else "STOP_LOSS"
-                return {"exit_price": effective_sl, "reason": reason}
+                fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
+                is_trailing = effective_sl < fixed_sl
+                if fill != effective_sl:
+                    reason = "TRAILING_GAP" if is_trailing else "STOP_LOSS_GAP"
+                else:
+                    reason = "TRAILING" if is_trailing else "STOP_LOSS"
+                return {"exit_price": fill, "reason": reason}
 
         if pos["candles_held"] >= self.max_candles:
             return {"exit_price": candle["close"], "reason": "TIME_EXIT"}

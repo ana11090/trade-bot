@@ -475,10 +475,151 @@ def monte_carlo_test(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Slippage Stress Test
+# ─────────────────────────────────────────────────────────────────────────────
+
+def slippage_stress_test(
+    trades,
+    rules,
+    candles_path,
+    exit_strategy_class,
+    exit_strategy_params,
+    slippage_levels=None,
+    pip_size=0.01,
+    spread_pips=2.5,
+    commission_pips=0.0,
+    account_size=100000,
+    n_runs_per_level=3,
+    progress_callback=None,
+):
+    """
+    Re-run the backtest at increasing slippage levels to find where the
+    strategy becomes unprofitable.
+
+    Returns dict with 'levels', 'max_safe_slippage', 'breakeven_slippage', 'verdict'.
+    """
+    if slippage_levels is None:
+        slippage_levels = [0, 1, 2, 3, 5]
+
+    _stop_flag.clear()
+    run_backtest, compute_stats, build_multi_tf_indicators = _load_backtester()
+
+    # Load candles
+    candles_df = pd.read_csv(candles_path)
+    ts_col = candles_df.columns[0]
+    candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
+
+    # Reuse cache if available, otherwise build
+    cache_path = candles_path.replace('.csv', '_indicators.parquet')
+    if os.path.exists(cache_path):
+        indicators_df = pd.read_parquet(cache_path)
+        if 'timestamp' in indicators_df.columns:
+            indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
+    else:
+        data_dir = os.path.dirname(candles_path)
+        indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
+
+    exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
+
+    levels_results = []
+    total_runs = len(slippage_levels) * n_runs_per_level
+    run_count = 0
+
+    for slip_pips in slippage_levels:
+        if _stop_flag.is_set():
+            break
+
+        level_wrs       = []
+        level_avg_pips  = []
+        level_total_pips = []
+
+        for run_i in range(n_runs_per_level):
+            if _stop_flag.is_set():
+                break
+            run_count += 1
+            if progress_callback:
+                progress_callback(run_count, total_runs,
+                                  f"Slippage {slip_pips} pips — run {run_i+1}/{n_runs_per_level}")
+            try:
+                run_trades = run_backtest(
+                    candles_df=candles_df,
+                    indicators_df=indicators_df,
+                    rules=rules,
+                    exit_strategy=exit_strat,
+                    pip_size=pip_size,
+                    spread_pips=spread_pips,
+                    commission_pips=commission_pips,
+                    slippage_pips=float(slip_pips),
+                    account_size=account_size,
+                )
+                stats = compute_stats(run_trades)
+                level_wrs.append(stats['win_rate'])
+                level_avg_pips.append(stats['net_avg_pips'])
+                level_total_pips.append(stats['net_total_pips'])
+            except Exception:
+                pass
+
+        if not level_wrs:
+            continue
+
+        avg_wr      = float(np.mean(level_wrs))
+        avg_pips    = float(np.mean(level_avg_pips))
+        total_pips  = float(np.mean(level_total_pips))
+
+        levels_results.append({
+            'slippage_pips': slip_pips,
+            'win_rate':      round(avg_wr, 1),        # already in 0-100
+            'avg_pips':      round(avg_pips, 1),
+            'total_pips':    round(total_pips, 0),
+            'profitable':    total_pips > 0,
+        })
+
+    if not levels_results:
+        return {'verdict': 'INSUFFICIENT_DATA', 'error': 'No runs completed'}
+
+    # Highest slippage level that remains profitable
+    max_safe = 0
+    for lvl in levels_results:
+        if lvl['profitable']:
+            max_safe = lvl['slippage_pips']
+
+    # Estimate breakeven by linear interpolation between last profitable and first unprofitable
+    breakeven_slip = None
+    for i in range(len(levels_results) - 1):
+        a = levels_results[i]
+        b = levels_results[i + 1]
+        if a['total_pips'] > 0 and b['total_pips'] <= 0:
+            denom = a['total_pips'] - b['total_pips']
+            if denom != 0:
+                t = a['total_pips'] / denom
+                breakeven_slip = round(a['slippage_pips'] + t * (b['slippage_pips'] - a['slippage_pips']), 1)
+            break
+    if breakeven_slip is None:
+        last = levels_results[-1]
+        breakeven_slip = last['slippage_pips'] * 2 if last['profitable'] else levels_results[0]['slippage_pips']
+
+    if max_safe >= 5:
+        verdict = 'ROBUST'
+    elif max_safe >= 3:
+        verdict = 'MODERATE'
+    elif max_safe >= 1:
+        verdict = 'FRAGILE'
+    else:
+        verdict = 'NO_EDGE'
+
+    return {
+        'levels':             levels_results,
+        'max_safe_slippage':  max_safe,
+        'breakeven_slippage': breakeven_slip,
+        'verdict':            verdict,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Combined Score
 # ─────────────────────────────────────────────────────────────────────────────
 
-def combined_score(walk_forward_result, monte_carlo_result=None):
+def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result=None):
     """
     Compute 0-100 confidence score from walk-forward + Monte Carlo results.
 
@@ -539,6 +680,25 @@ def combined_score(walk_forward_result, monte_carlo_result=None):
             warnings.append(f"{pct_worse*100:.0f}% of shuffles underperform original — sequence-dependent")
 
     verdicts['monte_carlo'] = mc_verdict
+
+    # Slippage stress test scoring
+    slip_verdict = 'N/A'
+    if slippage_result and slippage_result.get('verdict') not in (None, 'INSUFFICIENT_DATA'):
+        slip_verdict  = slippage_result.get('verdict', 'N/A')
+        max_safe      = slippage_result.get('max_safe_slippage', 0)
+        be_slip       = slippage_result.get('breakeven_slippage', 10)
+        verdicts['slippage'] = slip_verdict
+
+        if slip_verdict == 'ROBUST' and max_safe >= 5:
+            score += 10
+        elif max_safe < 3 and max_safe > 0:
+            score -= 15
+            warnings.append(f"Unprofitable above {max_safe} pip slippage — limited real-world buffer")
+        elif be_slip < 2:
+            score -= 25
+            warnings.append("Barely profitable edge — near breakeven at just 2 pip slippage")
+
+    verdicts['slippage'] = slip_verdict
 
     # Clamp
     score = max(0, min(100, score))
@@ -602,6 +762,7 @@ def run_full_validation(
     trades=None,
     wf_progress_callback=None,
     mc_progress_callback=None,
+    slippage_result=None,
 ):
     """
     Run walk-forward + Monte Carlo + combined score, save to validation_results.json.
@@ -638,13 +799,14 @@ def run_full_validation(
             progress_callback=mc_progress_callback,
         )
 
-    combined = combined_score(wf_result, mc_result)
+    combined = combined_score(wf_result, mc_result, slippage_result)
 
     result = {
         'strategy_index': strategy_index,
         'validated_at':   validated_at,
         'walk_forward':   wf_result,
         'monte_carlo':    mc_result,
+        'slippage':       slippage_result,
         'combined':       combined,
     }
 

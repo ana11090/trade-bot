@@ -196,6 +196,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  direction="BUY", start_date=None, end_date=None,
                  pip_size=0.01, max_open_trades=1,
                  spread_pips=2.5, commission_pips=0.0,
+                 slippage_pips=0.0,
                  account_size=None, risk_per_trade_pct=1.0,
                  default_sl_pips=150.0, pip_value_per_lot=10.0):
     """
@@ -283,14 +284,24 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if entry_pos_int + 1 >= len(df):
             continue
         next_candle = df.iloc[entry_pos_int + 1]
-        entry_price = float(next_candle["open"])
-        entry_time  = next_candle["timestamp"]
 
+        # Determine direction first (needed for slippage sign)
         if direction == "BOTH":
             rule_obj  = rules[rule_id] if rule_id < len(rules) else {}
             trade_dir = rule_obj.get("direction", "BUY")
         else:
             trade_dir = direction
+
+        entry_price = float(next_candle["open"])
+        # Apply random slippage against the trader (always a worse fill)
+        if slippage_pips > 0:
+            import random
+            slip = random.uniform(0, slippage_pips) * pip_size
+            if trade_dir == "BUY":
+                entry_price += slip   # buy fills higher
+            else:
+                entry_price -= slip   # sell fills lower
+        entry_time = next_candle["timestamp"]
 
         pos = {
             "entry_price":         entry_price,
@@ -448,6 +459,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           exit_strategies=None, direction="BUY",
                           start_date=None, end_date=None,
                           spread_pips=2.5, commission_pips=0.0,
+                          slippage_pips=0.0,
                           pip_size=0.01,
                           account_size=None, risk_per_trade_pct=1.0,
                           default_sl_pips=150.0, pip_value_per_lot=10.0,
@@ -550,6 +562,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 start_date=start_date, end_date=end_date,
                 pip_size=pip_size,
                 spread_pips=spread_pips, commission_pips=commission_pips,
+                slippage_pips=slippage_pips,
                 account_size=account_size,
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
@@ -604,6 +617,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             "elapsed_seconds": round(elapsed, 1),
             "spread_pips":     spread_pips,
             "commission_pips": commission_pips,
+            "slippage_pips":   slippage_pips,
             "results":         summary,
         }, f, indent=2, default=str)
     print(f"Saved: {summary_path}")

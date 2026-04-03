@@ -52,18 +52,20 @@ _sl_var         = None
 _pipval_var     = None
 
 # Widgets
-_strat_info_lbl = None
+_strat_info_lbl  = None
 _prev_result_lbl = None
-_start_wf_btn   = None
-_start_mc_btn   = None
-_start_full_btn = None
-_stop_btn       = None
-_status_lbl     = None
-_progress_bar   = None
-_scroll_canvas  = None
-_wf_frame       = None
-_mc_frame       = None
-_verdict_frame  = None
+_start_wf_btn    = None
+_start_mc_btn    = None
+_start_full_btn  = None
+_start_slip_btn  = None
+_stop_btn        = None
+_status_lbl      = None
+_progress_bar    = None
+_scroll_canvas   = None
+_wf_frame        = None
+_mc_frame        = None
+_slip_frame      = None
+_verdict_frame   = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ def _update_strat_info():
 
 
 def _set_buttons(running):
-    for btn in (_start_wf_btn, _start_mc_btn, _start_full_btn):
+    for btn in (_start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn):
         if btn:
             btn.configure(state="disabled" if running else "normal")
     if _stop_btn:
@@ -177,8 +179,66 @@ def _stop():
 # Display helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _display_slip_results(slip_result):
+    if _slip_frame is None:
+        return
+    for w in _slip_frame.winfo_children():
+        w.destroy()
+
+    tk.Label(_slip_frame, text="Slippage Stress Test",
+             font=("Segoe UI", 11, "bold"), bg=BG, fg=DARK).pack(anchor="w", padx=5, pady=(8, 4))
+
+    if not slip_result or slip_result.get('verdict') == 'INSUFFICIENT_DATA':
+        msg = slip_result.get('error', 'Not run.') if slip_result else 'Not run.'
+        tk.Label(_slip_frame, text=msg,
+                 font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY).pack(anchor="w", padx=5)
+        return
+
+    levels   = slip_result.get('levels', [])
+    max_safe = slip_result.get('max_safe_slippage', 0)
+    be_slip  = slip_result.get('breakeven_slippage', '?')
+    verdict  = slip_result.get('verdict', '?')
+
+    verdict_colors = {'ROBUST': GREEN, 'MODERATE': AMBER, 'FRAGILE': RED, 'NO_EDGE': RED}
+    verdict_icons  = {'ROBUST': '✅', 'MODERATE': '⚠️', 'FRAGILE': '❌', 'NO_EDGE': '❌'}
+
+    # Table header
+    hdr_frame = tk.Frame(_slip_frame, bg=WHITE, padx=12, pady=6)
+    hdr_frame.pack(fill="x", padx=5, pady=(0, 2))
+    tk.Label(hdr_frame,
+             text=f"{'Slippage':>10}  {'Win Rate':>10}  {'Avg Pips':>10}  {'Total Pips':>11}  {'Status':>10}",
+             font=("Consolas", 8, "bold"), bg=WHITE, fg=DARK).pack(anchor="w")
+
+    # Level rows
+    table_frame = tk.Frame(_slip_frame, bg=WHITE, padx=12, pady=4)
+    table_frame.pack(fill="x", padx=5, pady=(0, 4))
+    for lvl in levels:
+        sp     = lvl['slippage_pips']
+        wr     = lvl['win_rate']
+        ap     = lvl['avg_pips']
+        tp     = lvl['total_pips']
+        ok     = lvl['profitable']
+        color  = GREEN if ok else RED
+        status = "profitable" if ok else "loss"
+        line   = (f"{sp:>8.1f}p  {wr:>9.1f}%  {ap:>+9.1f}  {tp:>+10.0f}  {status:>10}")
+        tk.Label(table_frame, text=line,
+                 font=("Consolas", 8), bg=WHITE, fg=color).pack(anchor="w")
+
+    # Summary card
+    sum_card = tk.Frame(_slip_frame, bg="#1a1a2a", padx=14, pady=10)
+    sum_card.pack(fill="x", padx=5, pady=(0, 4))
+    tk.Label(sum_card,
+             text=f"Max safe slippage: {max_safe} pips  |  Estimated breakeven: ~{be_slip} pips",
+             font=("Consolas", 8), bg="#1a1a2a", fg="#aaaacc").pack(anchor="w")
+    tk.Label(sum_card,
+             text=f"Verdict: {verdict}  {verdict_icons.get(verdict, '')}",
+             font=("Segoe UI", 9, "bold"),
+             bg="#1a1a2a",
+             fg=verdict_colors.get(verdict, WHITE)).pack(anchor="w", pady=(6, 0))
+
+
 def _clear_results():
-    for frame in (_wf_frame, _mc_frame, _verdict_frame):
+    for frame in (_wf_frame, _mc_frame, _slip_frame, _verdict_frame):
         if frame:
             for w in frame.winfo_children():
                 w.destroy()
@@ -361,17 +421,18 @@ def _display_verdict(combined):
              bg=WHITE, fg=grade_color).pack(anchor="w", pady=(0, 8))
 
     # Verdicts
-    wf_v = verdicts.get('walk_forward', 'N/A')
-    mc_v = verdicts.get('monte_carlo', 'N/A')
+    wf_v   = verdicts.get('walk_forward', 'N/A')
+    mc_v   = verdicts.get('monte_carlo', 'N/A')
+    slip_v = verdicts.get('slippage', 'N/A')
     verdict_icons = {
         'LIKELY_REAL': '✅', 'INCONCLUSIVE': '⚠️',
         'LIKELY_OVERFITTING': '❌', 'INSUFFICIENT_DATA': '⚪',
-        'ROBUST': '✅', 'MODERATE': '⚠️', 'FRAGILE': '❌', 'N/A': '—',
+        'ROBUST': '✅', 'MODERATE': '⚠️', 'FRAGILE': '❌', 'NO_EDGE': '❌', 'N/A': '—',
     }
     verdict_colors = {
         'LIKELY_REAL': GREEN, 'INCONCLUSIVE': AMBER,
         'LIKELY_OVERFITTING': RED, 'INSUFFICIENT_DATA': GREY,
-        'ROBUST': GREEN, 'MODERATE': AMBER, 'FRAGILE': RED, 'N/A': GREY,
+        'ROBUST': GREEN, 'MODERATE': AMBER, 'FRAGILE': RED, 'NO_EDGE': RED, 'N/A': GREY,
     }
     tk.Label(card,
              text=f"Walk-Forward:  {wf_v.replace('_', ' ')}  {verdict_icons.get(wf_v, '')}",
@@ -380,7 +441,11 @@ def _display_verdict(combined):
     tk.Label(card,
              text=f"Monte Carlo:   {mc_v.replace('_', ' ')}  {verdict_icons.get(mc_v, '')}",
              font=("Segoe UI", 10), bg=WHITE,
-             fg=verdict_colors.get(mc_v, GREY)).pack(anchor="w", pady=(1, 8))
+             fg=verdict_colors.get(mc_v, GREY)).pack(anchor="w", pady=1)
+    tk.Label(card,
+             text=f"Slippage Test: {slip_v.replace('_', ' ')}  {verdict_icons.get(slip_v, '')}",
+             font=("Segoe UI", 10), bg=WHITE,
+             fg=verdict_colors.get(slip_v, GREY)).pack(anchor="w", pady=(1, 8))
 
     # Recommendation
     tk.Label(card, text=rec, font=("Segoe UI", 10),
@@ -435,14 +500,14 @@ def _make_progress_cb(label_text):
 
 
 def _run(mode):
-    """mode: 'wf' | 'mc' | 'full'"""
+    """mode: 'wf' | 'mc' | 'full' | 'slip'"""
     idx = _get_selected_index()
     if idx is None:
         messagebox.showerror("No Strategy", "Select a strategy first.")
         return
 
     candles_path = _get_candles_path()
-    if not candles_path and mode in ('wf', 'full'):
+    if not candles_path and mode in ('wf', 'full', 'slip'):
         messagebox.showerror("No Candle Data",
                              "H1 candle CSV not found in data/ folder.\n"
                              "Required for walk-forward validation.")
@@ -480,11 +545,12 @@ def _run(mode):
         try:
             from project2_backtesting.strategy_validator import (
                 walk_forward_validate, monte_carlo_test, combined_score,
-                run_full_validation, _save_validation,
+                slippage_stress_test, run_full_validation, _save_validation,
             )
 
-            wf_result = None
-            mc_result = None
+            wf_result   = None
+            mc_result   = None
+            slip_result = None
 
             if mode in ('wf', 'full') and candles_path:
                 wf_result = walk_forward_validate(
@@ -515,8 +581,25 @@ def _run(mode):
                 )
                 state.window.after(0, lambda r=mc_result: _display_mc_results(r))
 
-            if wf_result or mc_result:
-                combined = combined_score(wf_result, mc_result)
+            if mode in ('slip', 'full') and candles_path:
+                slip_result = slippage_stress_test(
+                    trades=trades,
+                    rules=rules,
+                    candles_path=candles_path,
+                    exit_strategy_class=exit_class,
+                    exit_strategy_params=exit_params,
+                    slippage_levels=[0, 1, 2, 3, 5],
+                    pip_size=0.01,
+                    spread_pips=spread_pips,
+                    commission_pips=comm_pips,
+                    account_size=account_size,
+                    n_runs_per_level=3,
+                    progress_callback=_make_progress_cb("Slippage Test"),
+                )
+                state.window.after(0, lambda r=slip_result: _display_slip_results(r))
+
+            if wf_result or mc_result or slip_result:
+                combined = combined_score(wf_result, mc_result, slip_result)
                 state.window.after(0, lambda c=combined: _display_verdict(c))
 
                 # Save
@@ -525,6 +608,7 @@ def _run(mode):
                     'validated_at':   __import__('datetime').datetime.now().isoformat(),
                     'walk_forward':   wf_result,
                     'monte_carlo':    mc_result,
+                    'slippage':       slip_result,
                     'combined':       combined,
                 }
                 _save_validation(idx, result)
@@ -552,9 +636,9 @@ def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _prev_result_lbl
     global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var
     global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var
-    global _start_wf_btn, _start_mc_btn, _start_full_btn, _stop_btn
+    global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
-    global _wf_frame, _mc_frame, _verdict_frame
+    global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
 
     _load_strategies()
 
@@ -673,6 +757,12 @@ def build_panel(parent):
                                 relief=tk.FLAT, cursor="hand2", padx=16, pady=7)
     _start_full_btn.pack(side=tk.LEFT, padx=(0, 6))
 
+    _start_slip_btn = tk.Button(btn_frame, text="Slippage Stress Test",
+                                command=lambda: _run('slip'),
+                                bg="#e67e00", fg="white", font=("Segoe UI", 9, "bold"),
+                                relief=tk.FLAT, cursor="hand2", padx=12, pady=7)
+    _start_slip_btn.pack(side=tk.LEFT, padx=(0, 6))
+
     _stop_btn = tk.Button(btn_frame, text="Stop",
                           command=_stop,
                           bg=RED, fg="white", font=("Segoe UI", 9, "bold"),
@@ -716,6 +806,11 @@ def build_panel(parent):
 
     _mc_frame      = tk.Frame(sf, bg=BG)
     _mc_frame.pack(fill="x", padx=5)
+
+    tk.Frame(sf, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
+
+    _slip_frame    = tk.Frame(sf, bg=BG)
+    _slip_frame.pack(fill="x", padx=5)
 
     tk.Frame(sf, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
 
