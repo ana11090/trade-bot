@@ -45,40 +45,64 @@ _min_coverage_var = None
 _min_wr_var = None
 
 
+_fm_cache = {"valid": None, "message": None, "checked": False}
+
+
 def _check_feature_matrix():
-    """Check if feature_matrix.csv exists and has real data."""
+    """Check if feature_matrix.csv exists and has real data. Result is cached."""
+    global _fm_cache
+
+    if _fm_cache["checked"]:
+        return _fm_cache["valid"], _fm_cache["message"]
+
     fm_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
         'outputs', 'feature_matrix.csv'
     )
 
     if not os.path.exists(fm_path):
-        return False, "Feature matrix file not found"
+        _fm_cache.update(valid=False, message="Feature matrix file not found", checked=True)
+        return False, _fm_cache["message"]
 
     try:
-        df = pd.read_csv(fm_path, nrows=10)
-        feature_cols = [c for c in df.columns
+        # Read only first 5 rows — enough to count columns and spot-check data
+        df_sample = pd.read_csv(fm_path, nrows=5)
+        feature_cols = [c for c in df_sample.columns
                        if any(c.startswith(p) for p in ['M5_', 'M15_', 'H1_', 'H4_', 'D1_'])]
 
         if len(feature_cols) < 100:
-            return False, f"Only {len(feature_cols)} features found (expected 620)"
+            _fm_cache.update(valid=False,
+                             message=f"Only {len(feature_cols)} features found (expected 620)",
+                             checked=True)
+            return False, _fm_cache["message"]
 
-        # Read full file to check for real data
-        df_full = pd.read_csv(fm_path)
-        non_null_counts = []
-        for col in feature_cols[:50]:  # Check first 50
-            non_null_pct = df_full[col].notna().sum() / len(df_full)
-            non_null_counts.append(non_null_pct)
+        has_data = sum(1 for c in feature_cols[:5] if df_sample[c].notna().sum() > 0)
+        if has_data == 0:
+            _fm_cache.update(valid=False,
+                             message="Feature matrix has empty columns — run Robot Analysis first",
+                             checked=True)
+            return False, _fm_cache["message"]
 
-        avg_non_null = sum(non_null_counts) / len(non_null_counts)
+        # Count rows without parsing the full CSV
+        try:
+            with open(fm_path, 'r', encoding='utf-8') as f:
+                row_count = sum(1 for _ in f) - 1  # minus header
+        except Exception:
+            row_count = "1000+"
 
-        if avg_non_null < 0.5:
-            return False, "Feature matrix has mostly empty columns"
-
-        return True, f"✓ {len(feature_cols)} features × {len(df_full)} trades ready"
+        msg = f"✓ {len(feature_cols)} features × {row_count} trades ready"
+        _fm_cache.update(valid=True, message=msg, checked=True)
+        return True, msg
 
     except Exception as e:
-        return False, f"Error reading feature matrix: {e}"
+        _fm_cache.update(valid=False, message=f"Error: {e}", checked=True)
+        return False, _fm_cache["message"]
+
+
+def _invalidate_cache():
+    """Call this after running analysis to force a re-check."""
+    global _fm_cache
+    _fm_cache = {"valid": None, "message": None, "checked": False}
 
 
 def _update_data_status():
@@ -194,6 +218,51 @@ def _load_results():
         messagebox.showerror("Error Loading Results", str(e))
 
 
+def _create_strategy_row(parent, index, strat):
+    """Create one compact strategy row in the results table."""
+    wr = strat['win_rate']
+    avg_pips = strat['avg_pips']
+    total_pips = strat['total_pips']
+    score = strat['score']
+    cov = strat['coverage']
+
+    row_bg = "#fafafa" if index % 2 == 0 else WHITE
+
+    if wr >= 0.65:
+        wr_color = GREEN
+    elif wr >= 0.55:
+        wr_color = AMBER
+    else:
+        wr_color = GREY
+
+    pips_color = GREEN if avg_pips > 0 else RED
+
+    row = tk.Frame(parent, bg=row_bg, padx=10, pady=3)
+    row.pack(fill="x", padx=5)
+
+    cond_parts = []
+    for cond in strat['conditions']:
+        feat = cond['feature']
+        short_feat = feat if len(feat) <= 25 else feat[:22] + "..."
+        cond_parts.append(f"{short_feat}{cond['operator']}{cond['value']:.2f}")
+    cond_text = " AND ".join(cond_parts)
+
+    tk.Label(row, text=f"{index}", font=("Segoe UI", 8),
+            bg=row_bg, fg=GREY, width=4, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=f"{wr*100:.1f}%", font=("Segoe UI", 8, "bold"),
+            bg=row_bg, fg=wr_color, width=6, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=f"{cov}", font=("Segoe UI", 8),
+            bg=row_bg, fg=DARK, width=5, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=f"{avg_pips:+.0f}", font=("Segoe UI", 8, "bold"),
+            bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=f"{total_pips:+.0f}", font=("Segoe UI", 8),
+            bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=f"{score:.1f}", font=("Segoe UI", 8),
+            bg=row_bg, fg=DARK, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+    tk.Label(row, text=cond_text, font=("Consolas", 8),
+            bg=row_bg, fg="#333333", anchor="w").pack(side=tk.LEFT, padx=(5, 0), fill="x", expand=True)
+
+
 def _display_results(results):
     """Display search results as a compact scrollable list."""
     global _results_frame
@@ -235,52 +304,30 @@ def _display_results(results):
         tk.Label(header_frame, text=text, font=("Segoe UI", 8, "bold"),
                 bg="#f5f5f5", fg=GREY, width=width, anchor="w").pack(side=tk.LEFT, padx=1)
 
-    # Table rows — compact, one line per strategy
-    for i, strat in enumerate(strategies, 1):
-        wr = strat['win_rate']
-        cov = strat['coverage']
-        avg_pips = strat['avg_pips']
-        total_pips = strat['total_pips']
-        score = strat['score']
+    # Render first 50 rows immediately; lazy-load the rest
+    MAX_DISPLAY = 50
+    total_strategies = len(strategies)
 
-        row_bg = "#fafafa" if i % 2 == 0 else WHITE
+    for i, strat in enumerate(strategies[:MAX_DISPLAY], 1):
+        _create_strategy_row(_results_frame, i, strat)
 
-        if wr >= 0.65:
-            wr_color = GREEN
-        elif wr >= 0.55:
-            wr_color = AMBER
-        else:
-            wr_color = GREY
+    if total_strategies > MAX_DISPLAY:
+        remaining = total_strategies - MAX_DISPLAY
 
-        pips_color = GREEN if avg_pips > 0 else RED
+        def _show_all(btn=None, strats=strategies, offset=MAX_DISPLAY):
+            if btn:
+                btn.destroy()
+            for i, strat in enumerate(strats[offset:], offset + 1):
+                _create_strategy_row(_results_frame, i, strat)
 
-        row = tk.Frame(_results_frame, bg=row_bg, padx=10, pady=3)
-        row.pack(fill="x", padx=5)
-
-        # Build compact condition string
-        cond_parts = []
-        for cond in strat['conditions']:
-            feat = cond['feature']
-            short_feat = feat if len(feat) <= 25 else feat[:22] + "..."
-            op = cond['operator']
-            val = cond['value']
-            cond_parts.append(f"{short_feat}{op}{val:.2f}")
-        cond_text = " AND ".join(cond_parts)
-
-        tk.Label(row, text=f"{i}", font=("Segoe UI", 8),
-                bg=row_bg, fg=GREY, width=4, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{wr*100:.1f}%", font=("Segoe UI", 8, "bold"),
-                bg=row_bg, fg=wr_color, width=6, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{cov}", font=("Segoe UI", 8),
-                bg=row_bg, fg=DARK, width=5, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{avg_pips:+.0f}", font=("Segoe UI", 8, "bold"),
-                bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{total_pips:+.0f}", font=("Segoe UI", 8),
-                bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=f"{score:.1f}", font=("Segoe UI", 8),
-                bg=row_bg, fg=DARK, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
-        tk.Label(row, text=cond_text, font=("Consolas", 8),
-                bg=row_bg, fg="#333333", anchor="w").pack(side=tk.LEFT, padx=(5, 0), fill="x", expand=True)
+        show_all_btn = tk.Button(
+            _results_frame,
+            text=f"Show {remaining} more strategies...",
+            command=lambda: _show_all(show_all_btn),
+            bg="#667eea", fg="white", font=("Segoe UI", 9, "bold"),
+            relief=tk.FLAT, cursor="hand2", padx=15, pady=8
+        )
+        show_all_btn.pack(pady=10)
 
 
 def build_panel(parent):
