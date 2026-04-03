@@ -24,6 +24,7 @@ from project0_data_pipeline.probabilities.panels import (
 from project1_reverse_engineering.panels import (
     configuration, run_scenarios, results, robot_analysis,
     strategy_builder as p1_strategy_builder,
+    xgboost_panel as p1_xgboost,
 )
 from project2_backtesting.panels import (
     configuration as p2_configuration,
@@ -102,6 +103,7 @@ state.all_panels["p1_config"]  = configuration.build_panel(content)
 state.all_panels["p1_run"]     = run_scenarios.build_panel(content)
 state.all_panels["p1_results"] = results.build_panel(content)
 state.all_panels["p1_analysis"] = robot_analysis.build_panel(content)
+state.all_panels["p1_xgboost"] = p1_xgboost.build_panel(content)
 state.all_panels["p1_search"]  = p1_strategy_builder.build_panel(content)
 
 # Project 2 - Backtesting
@@ -134,6 +136,7 @@ refresh_map = {
     "p1_run": run_scenarios.refresh,
     "p1_results": results.refresh,
     "p1_analysis": robot_analysis.refresh,
+    "p1_xgboost": p1_xgboost.refresh,
     "p1_search": p1_strategy_builder.refresh,
     "p2_config": p2_configuration.refresh,
     "p2_run": p2_run_backtest.refresh,

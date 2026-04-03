@@ -398,6 +398,8 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p1_results.pack(fill="x")
     btn_p1_analysis = _sub_btn(project1_extras, "🤖 Robot Analysis",       lambda: show_panel("p1_analysis"))
     btn_p1_analysis.pack(fill="x")
+    btn_p1_xgboost = _sub_btn(project1_extras, "🌲 XGBoost Discovery",     lambda: show_panel("p1_xgboost"))
+    btn_p1_xgboost.pack(fill="x")
     btn_p1_search = _sub_btn(project1_extras, "🔍 Strategy Search",        lambda: show_panel("p1_search"))
     btn_p1_search.pack(fill="x")
 
@@ -406,6 +408,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p1_run":      btn_p1_run,
         "p1_results":  btn_p1_results,
         "p1_analysis": btn_p1_analysis,
+        "p1_xgboost":  btn_p1_xgboost,
         "p1_search":   btn_p1_search,
     }
 
