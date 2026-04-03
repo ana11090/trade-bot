@@ -183,8 +183,24 @@ def run_scratch_discovery(
     # Now call build_multi_tf_indicators — all CSVs should have 'timestamp'
     _cb(2, f"Step 2/6: Building indicators for {n_candles} candles...")
 
+    # MUST pass required_indicators to force _load_tf_indicators to use
+    # compute_indicators (which sets timestamp as index) instead of
+    # compute_all_indicators (which doesn't — causing KeyError: 'timestamp').
+    # Passing all groups = still computes everything, but via the correct code path.
+    _ALL_GROUPS = [
+        'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
+        'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
+        'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
+        'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
+        'volume', 'vwap', 'williams_r',
+    ]
+    _ALL_TF_INDICATORS = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+
     try:
-        indicators_df = build_multi_tf_indicators(data_dir, candles['timestamp'])
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles['timestamp'],
+            required_indicators=_ALL_TF_INDICATORS,
+        )
         print(f"[DEBUG] Indicators built: {indicators_df.shape}")
     except Exception as e:
         print(f"[DEBUG] FAILED at build_multi_tf_indicators: {e}")
