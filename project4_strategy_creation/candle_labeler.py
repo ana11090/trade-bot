@@ -46,12 +46,8 @@ def label_candles(
         if len(cached) > 1000:
             return cached
 
-    # Load candles
-    candles = pd.read_csv(candles_path)
-
-    # Handle BOM (byte order mark) in first column name
-    if candles.columns[0].startswith('\ufeff'):
-        candles.columns = [c.lstrip('\ufeff') for c in candles.columns]
+    # Load candles (utf-8-sig automatically strips BOM)
+    candles = pd.read_csv(candles_path, encoding='utf-8-sig')
 
     # Auto-detect timestamp column — don't assume the name
     ts_col = None

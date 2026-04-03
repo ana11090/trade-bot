@@ -97,13 +97,8 @@ def run_scratch_discovery(
     from shared.data_utils import normalize_timestamp
 
     try:
-        candles = pd.read_csv(candles_path)
+        candles = pd.read_csv(candles_path, encoding='utf-8-sig')
         print(f"[DEBUG] CSV columns: {list(candles.columns)}")
-
-        # Handle BOM
-        if candles.columns[0].startswith('\ufeff'):
-            candles.columns = [c.lstrip('\ufeff') for c in candles.columns]
-            print(f"[DEBUG] BOM removed, columns now: {list(candles.columns)}")
 
         # Auto-detect timestamp column — don't assume the name
         ts_col = None
@@ -130,54 +125,63 @@ def run_scratch_discovery(
 
     data_dir = os.path.dirname(candles_path)
 
-    # CRITICAL FIX: The backtester's build_multi_tf_indicators expects ALL TF CSVs
-    # to have a column named 'timestamp'. Since we can't modify the backtester,
-    # we need to ensure all CSVs are standardized before calling it.
-    _cb(2, "Step 2/6: Checking timeframe CSVs for timestamp column...")
+    # ── Step 2b: Ensure ALL CSV files have 'timestamp' column ─────────────
+    # The backtester's _load_tf_indicators reads CSVs and expects 'timestamp'.
+    # We MUST rename the column in every CSV before calling it.
+    _cb(2, "Step 2/6: Standardizing CSV columns...")
 
     for tf in ['M5', 'M15', 'H1', 'H4', 'D1']:
-        # Try multiple path patterns
-        csv_candidates = [
-            os.path.join(data_dir, f'{tf}.csv'),
-            os.path.join(data_dir, f'xauusd_{tf}.csv'),
-        ]
+        for pattern in [f'{tf}.csv', f'xauusd_{tf}.csv']:
+            csv_file = os.path.join(data_dir, pattern)
+            if not os.path.exists(csv_file):
+                continue
 
-        for csv_path in csv_candidates:
-            if os.path.exists(csv_path):
-                # Check if it has 'timestamp' column
-                temp_df = pd.read_csv(csv_path, nrows=2)
+            # Read first line to check columns
+            with open(csv_file, 'r', encoding='utf-8-sig') as fh:
+                header = fh.readline().strip()
 
-                # Handle BOM in first column name
-                if temp_df.columns[0].startswith('\ufeff'):
-                    temp_df.columns = [c.lstrip('\ufeff') for c in temp_df.columns]
+            cols = [c.strip().strip('"').strip("'") for c in header.split(',')]
+            print(f"  [P4] {tf} ({pattern}): columns = {cols[:6]}")
 
-                if 'timestamp' not in temp_df.columns:
-                    # Find the time column
-                    time_col = None
-                    for col in temp_df.columns:
-                        cl = col.lower().strip()
-                        if cl in ('time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
-                            time_col = col
-                            break
-                    if time_col is None:
-                        time_col = temp_df.columns[0]
+            if 'timestamp' not in cols:
+                # Find which column is the time column
+                old_name = None
+                for c in cols:
+                    if c.lower() in ('time', 'date', 'datetime', 'open_time', 'opentime', 'open time'):
+                        old_name = c
+                        break
+                if old_name is None:
+                    old_name = cols[0]  # assume first column
 
-                    # Rename the column in the CSV
-                    print(f"  [P4] Standardizing {tf}: renaming '{time_col}' → 'timestamp'")
-                    full_df = pd.read_csv(csv_path)
+                print(f"  [P4] {tf}: renaming '{old_name}' → 'timestamp'")
 
-                    # Handle BOM
-                    if full_df.columns[0].startswith('\ufeff'):
-                        full_df.columns = [c.lstrip('\ufeff') for c in full_df.columns]
+                # Read entire file, rename header, write back
+                with open(csv_file, 'r', encoding='utf-8-sig') as fh:
+                    all_lines = fh.readlines()
 
-                    if time_col in full_df.columns and time_col != 'timestamp':
-                        full_df = full_df.rename(columns={time_col: 'timestamp'})
-                        full_df.to_csv(csv_path, index=False)
-                        print(f"  [P4] {tf} CSV updated with 'timestamp' column")
+                # Replace ONLY in the header line
+                old_header = all_lines[0]
+                new_header = old_header.replace(old_name, 'timestamp', 1)
+                all_lines[0] = new_header
 
-                break  # Found the CSV, move to next TF
+                with open(csv_file, 'w', encoding='utf-8', newline='') as fh:
+                    fh.writelines(all_lines)
 
-    _cb(2, f"Step 2/6: Loading indicators for {n_candles} candles...")
+                print(f"  [P4] {tf}: DONE — header is now: {new_header.strip()[:80]}")
+
+                # Also delete any parquet cache so it gets rebuilt with new column name
+                for cache_file in os.listdir(data_dir):
+                    if cache_file.startswith(f'.cache_{tf}') and cache_file.endswith('.parquet'):
+                        cache_path = os.path.join(data_dir, cache_file)
+                        os.remove(cache_path)
+                        print(f"  [P4] Deleted stale cache: {cache_file}")
+            else:
+                print(f"  [P4] {tf}: already has 'timestamp' ✓")
+
+            break  # found this TF's CSV, next TF
+
+    # Now call build_multi_tf_indicators — all CSVs should have 'timestamp'
+    _cb(2, f"Step 2/6: Building indicators for {n_candles} candles...")
 
     try:
         indicators_df = build_multi_tf_indicators(data_dir, candles['timestamp'])
