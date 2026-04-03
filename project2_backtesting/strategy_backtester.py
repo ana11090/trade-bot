@@ -119,6 +119,7 @@ def build_multi_tf_indicators(data_dir, h1_timestamps):
     prefixed indicator columns (e.g. M5_rsi_14, H4_adx_14, D1_kst, …).
     """
     h1_spine = pd.DataFrame({'timestamp': normalize_timestamp(pd.Series(h1_timestamps))})
+    h1_spine['timestamp'] = h1_spine['timestamp'].astype('datetime64[ns]')
     h1_spine = h1_spine.sort_values('timestamp').reset_index(drop=True)
 
     combined = h1_spine.copy()
@@ -129,6 +130,7 @@ def build_multi_tf_indicators(data_dir, h1_timestamps):
             continue
         assert len(tf_ind) > 0, \
             f"{tf} indicator DataFrame is empty after loading"
+        tf_ind['timestamp'] = tf_ind['timestamp'].astype('datetime64[ns]')
         tf_ind = tf_ind.sort_values('timestamp').reset_index(drop=True)
 
         merged = pd.merge_asof(
