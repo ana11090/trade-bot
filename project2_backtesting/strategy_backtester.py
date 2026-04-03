@@ -48,22 +48,43 @@ def load_rules_from_report(report_path=None):
     return entry_rules
 
 
-def _load_tf_indicators(tf, data_dir):
+def _extract_required_indicators(rules):
+    """
+    Get the set of indicator names needed by the rules, grouped by timeframe.
+    Returns dict: {"M5": ["aroon_down", "adx_14", ...], "H1": [...], ...}
+    """
+    required = {}
+    for rule in rules:
+        if rule.get('prediction') != 'WIN':
+            continue
+        for cond in rule.get('conditions', []):
+            feature = cond['feature']
+            parts = feature.split('_', 1)
+            if len(parts) == 2:
+                tf, indicator = parts[0], parts[1]
+                required.setdefault(tf, set()).add(indicator)
+    return {tf: sorted(list(inds)) for tf, inds in required.items()}
+
+
+def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     """
     Load candles for one timeframe, compute indicators with the TF prefix,
     and return a DataFrame with a 'timestamp' column plus all indicator columns.
     Uses a parquet cache in data_dir; rebuilds if the cache is older than the CSV.
+
+    needed_indicators: optional list of raw indicator names (e.g. ["adx_14", "aroon_down"]).
+        When provided, only the required groups are computed and a separate partial
+        cache file is used so full and partial caches never conflict.
     """
     # Try multiple path patterns to find the CSV file
     # 1. New format: data/{tf}.csv
     # 2. Legacy format with symbol: data/xauusd_{tf}.csv
     # 3. Parent dir format: ../xauusd_{tf}.csv
-    new_path   = os.path.join(data_dir, f"{tf}.csv")
+    new_path      = os.path.join(data_dir, f"{tf}.csv")
     legacy_xauusd = os.path.join(data_dir, f"xauusd_{tf}.csv")
-    parent_dir  = os.path.dirname(data_dir)
-    legacy_flat = os.path.join(parent_dir, f"xauusd_{tf}.csv")
+    parent_dir    = os.path.dirname(data_dir)
+    legacy_flat   = os.path.join(parent_dir, f"xauusd_{tf}.csv")
 
-    # Check all paths in order
     if os.path.exists(new_path):
         csv_path = new_path
     elif os.path.exists(legacy_xauusd):
@@ -72,7 +93,13 @@ def _load_tf_indicators(tf, data_dir):
         csv_path = legacy_flat
     else:
         csv_path = new_path   # will trigger "not found" warning below
-    cache_path = os.path.join(data_dir, f".cache_{tf}_indicators.parquet")
+
+    # Separate cache file for partial vs full builds — they must not conflict
+    if needed_indicators:
+        cache_suffix = "_" + "_".join(sorted(needed_indicators))[:50]
+        cache_path = os.path.join(data_dir, f".cache_{tf}_partial{cache_suffix}.parquet")
+    else:
+        cache_path = os.path.join(data_dir, f".cache_{tf}_indicators.parquet")
 
     if not os.path.exists(csv_path):
         print(f"  WARNING: {csv_path} not found — skipping {tf}")
@@ -91,15 +118,28 @@ def _load_tf_indicators(tf, data_dir):
         df = df.dropna(subset=['timestamp']).reset_index(drop=True)
         return df
 
-    print(f"  {tf}: computing indicators from {csv_path} ...")
+    if needed_indicators:
+        compute_groups = indicator_utils.map_rule_indicators_to_compute_groups(needed_indicators)
+        print(f"  {tf}: computing {len(needed_indicators)} indicators "
+              f"(groups: {', '.join(compute_groups)}) from {csv_path} ...")
+    else:
+        compute_groups = None
+        print(f"  {tf}: computing all indicators from {csv_path} ...")
+
     candles = pd.read_csv(csv_path)
     candles['timestamp'] = normalize_timestamp(candles['timestamp'])
     candles = candles.sort_values('timestamp').reset_index(drop=True)
 
-    ind = indicator_utils.compute_all_indicators(candles, prefix=f"{tf}_")
-    # compute_all_indicators uses candles['timestamp'] as the DataFrame index.
-    # reset_index() promotes it to a regular column named 'timestamp'.
-    ind = ind.reset_index()
+    if needed_indicators:
+        # compute_indicators sets timestamp as the DataFrame index
+        ind = indicator_utils.compute_indicators(candles, only=compute_groups, prefix=f"{tf}_")
+        ind = ind.reset_index()   # timestamp index → 'timestamp' column
+    else:
+        ind = indicator_utils.compute_all_indicators(candles, prefix=f"{tf}_")
+        # compute_all_indicators uses candles['timestamp'] as the DataFrame index.
+        # reset_index() promotes it to a regular column named 'timestamp'.
+        ind = ind.reset_index()
+
     ind['timestamp'] = normalize_timestamp(ind['timestamp'])
     ind = ind.dropna(subset=['timestamp']).reset_index(drop=True)
 
@@ -108,12 +148,17 @@ def _load_tf_indicators(tf, data_dir):
     return ind
 
 
-def build_multi_tf_indicators(data_dir, h1_timestamps):
+def build_multi_tf_indicators(data_dir, h1_timestamps, required_indicators=None):
     """
     Load and align all timeframe indicators onto the H1 timestamp spine.
 
     For each TF, uses merge_asof with direction='backward' so each H1 candle
     receives the most recent indicator values from that TF without look-ahead.
+
+    required_indicators: optional dict {"M5": ["adx_14", "aroon_down", ...], ...}
+        returned by _extract_required_indicators(). When provided, each TF only
+        computes the indicators its rules actually use — dramatically faster for
+        large datasets (e.g. M5 with 1.5M candles).
 
     Returns a single DataFrame indexed 0..len(h1_timestamps)-1 with all
     prefixed indicator columns (e.g. M5_rsi_14, H4_adx_14, D1_kst, …).
@@ -125,7 +170,8 @@ def build_multi_tf_indicators(data_dir, h1_timestamps):
     combined = h1_spine.copy()
 
     for tf in _TIMEFRAMES:
-        tf_ind = _load_tf_indicators(tf, data_dir)
+        needed = required_indicators.get(tf) if required_indicators else None
+        tf_ind = _load_tf_indicators(tf, data_dir, needed_indicators=needed)
         if tf_ind is None:
             continue
         assert len(tf_ind) > 0, \
@@ -139,7 +185,6 @@ def build_multi_tf_indicators(data_dir, h1_timestamps):
             on='timestamp',
             direction='backward',
         )
-        # Drop the timestamp column that merge_asof carries along
         ind_cols = [c for c in merged.columns if c != 'timestamp']
         combined = pd.concat([combined, merged[ind_cols]], axis=1)
 
@@ -437,18 +482,27 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             print(f"  [{w['severity'].upper()}] {w['message']}")
         print()
 
-    # ── Build multi-timeframe indicator DataFrame ────────────────────────────
-    # Each TF CSV is loaded, indicators computed with prefix (e.g. H4_adx_14),
-    # then merged onto the H1 spine via merge_asof (no look-ahead bias).
-    # Results are cached as parquet; cache is invalidated when the source CSV changes.
-    print(f"\nBuilding multi-timeframe indicators (M5 / M15 / H1 / H4 / D1)...")
-    indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
-    print(f"  Total indicator columns: {len(indicators_df.columns)}")
-
-    # ── Load rules and report feature coverage ───────────────────────────────
+    # ── Load rules first — needed to extract required indicators ────────────
     all_rules = load_rules_from_report(report_path)
     rules = ([all_rules[i] for i in rule_indices if i < len(all_rules)]
              if rule_indices is not None else all_rules)
+
+    # Extract which indicators each TF actually needs — skips the other ~575
+    required_indicators = _extract_required_indicators(all_rules)
+    total_needed = sum(len(v) for v in required_indicators.values())
+    print(f"\n[BACKTESTER] Required indicators per TF ({total_needed} total vs 595 full):")
+    for tf, inds in required_indicators.items():
+        preview = ', '.join(inds[:5]) + ('...' if len(inds) > 5 else '')
+        print(f"  {tf}: {len(inds)} indicators — {preview}")
+
+    # ── Build multi-timeframe indicator DataFrame ────────────────────────────
+    # Each TF CSV is loaded, only the needed indicators are computed (prefixed
+    # e.g. H4_adx_14), then merged onto the H1 spine via merge_asof.
+    # Results are cached as parquet; separate cache files for partial vs full builds.
+    print(f"\nBuilding multi-timeframe indicators (M5 / M15 / H1 / H4 / D1)...")
+    indicators_df = build_multi_tf_indicators(
+        data_dir, candles_df['timestamp'], required_indicators=required_indicators)
+    print(f"  Total indicator columns: {len(indicators_df.columns)}")
 
     needed    = {c["feature"] for r in rules for c in r.get("conditions", [])}
     available = set(indicators_df.columns)
