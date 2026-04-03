@@ -31,6 +31,7 @@ from project2_backtesting.panels import (
     view_results as p2_view_results,
     prop_firm_test as p2_prop_test,
     strategy_refiner_panel as p2_refiner,
+    strategy_validator_panel as p2_validator,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +105,8 @@ state.all_panels["p2_config"]    = p2_configuration.build_panel(content)
 state.all_panels["p2_run"]       = p2_run_backtest.build_panel(content)
 state.all_panels["p2_results"]   = p2_view_results.build_panel(content)
 state.all_panels["p2_prop_test"] = p2_prop_test.build_panel(content)
-state.all_panels["p2_refiner"]   = p2_refiner.build_panel(content)
+state.all_panels["p2_refiner"]    = p2_refiner.build_panel(content)
+state.all_panels["p2_validator"]  = p2_validator.build_panel(content)
 
 # New Project 0 extra panels
 state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
@@ -129,7 +131,8 @@ refresh_map = {
     "p2_run": p2_run_backtest.refresh,
     "p2_results": p2_view_results.refresh,
     "p2_prop_test": p2_prop_test.refresh,
-    "p2_refiner":   p2_refiner.refresh,
+    "p2_refiner":    p2_refiner.refresh,
+    "p2_validator":  p2_validator.refresh,
     "prop_explorer":     prop_explorer.refresh,
     "compare_histories": compare_histories.refresh,
     "lifecycle_sim":     lifecycle_simulator.refresh,

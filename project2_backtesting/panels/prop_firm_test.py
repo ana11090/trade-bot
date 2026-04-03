@@ -27,8 +27,33 @@ DARK    = "#1a1a2a"
 GREY    = "#666666"
 MIDGREY = "#555566"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Validation badge helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_validation_badge(strategy_index):
+    """Get validation status for display."""
+    try:
+        from project2_backtesting.strategy_validator import get_validation_for_strategy
+        result = get_validation_for_strategy(strategy_index)
+        if result is None:
+            return "⚪ Not validated", "#999999"
+        combined = result.get('combined', {})
+        grade = combined.get('grade', '?')
+        score = combined.get('confidence_score', 0)
+        if grade in ('A', 'B'):
+            return f"✅ Validated: Grade {grade} ({score}/100)", "#2d8a4e"
+        elif grade == 'C':
+            return f"⚠️ Validated: Grade {grade} ({score}/100)", "#996600"
+        else:
+            return f"❌ Validated: Grade {grade} ({score}/100)", "#e94560"
+    except Exception:
+        return "⚪ Not validated", "#999999"
+
+
 # Module-level state
 _strategy_var      = None
+_validation_label  = None
 _strategies        = []        # list of dicts from load_strategy_list()
 _firm_data         = []        # list from load_available_firms()
 _firm_challenge_vars = {}      # (firm_id, challenge_id) -> BooleanVar
@@ -103,10 +128,13 @@ def _get_selected_index():
 
 
 def _on_strategy_select(event=None):
-    global _strat_info_label, _spread_var, _commission_var, _current_trades
+    global _strat_info_label, _spread_var, _commission_var, _current_trades, _validation_label
     if not _strat_info_label or not _strategies:
         return
     idx = _get_selected_index()
+    if _validation_label and idx is not None:
+        badge_text, badge_color = _get_validation_badge(idx)
+        _validation_label.configure(text=badge_text, fg=badge_color)
     if idx is None:
         _strat_info_label.configure(text="", fg=GREY)
         return
@@ -187,6 +215,20 @@ def _run_test():
             "Re-run the backtest to include trades in backtest_matrix.json."
         )
         return
+
+    # Validation check
+    badge_text, _ = _get_validation_badge(idx)
+    if "Not validated" in badge_text:
+        if not messagebox.askyesno("Not Validated",
+                "This strategy hasn't been validated.\n\n"
+                "Run Strategy Validator first to check if the edge is real.\n\n"
+                "Proceed anyway?"):
+            return
+    elif "❌" in badge_text:
+        if not messagebox.askyesno("Low Confidence",
+                f"Validation result: {badge_text}\n\n"
+                "This strategy may be overfitting.\n\nProceed anyway?"):
+            return
 
     # Collect selected (firm_id, challenge_id) pairs
     selected = [(fid, cid) for (fid, cid), var in _firm_challenge_vars.items() if var.get()]
@@ -489,7 +531,7 @@ def build_panel(parent):
     global _strategy_var, _firm_challenge_vars, _account_size_var, _risk_var
     global _sl_pips_var, _pip_val_var, _daily_dd_var, _spread_var, _commission_var
     global _run_btn, _progress_bar, _status_label, _results_frame, _trades_frame
-    global _strat_info_label
+    global _strat_info_label, _validation_label
 
     _load_strategies()
     _load_firms()
@@ -527,6 +569,10 @@ def build_panel(parent):
     _strat_info_label = tk.Label(strat_frame, text="", font=("Segoe UI", 9),
                                   bg=WHITE, fg=MIDGREY)
     _strat_info_label.pack(anchor="w", pady=(4, 0))
+
+    _validation_label = tk.Label(strat_frame, text="⚪ Not validated",
+                                  font=("Segoe UI", 9, "italic"), bg=WHITE, fg="#999999")
+    _validation_label.pack(anchor="w", padx=0)
 
     # ── Settings ──────────────────────────────────────────────────────────────
     settings_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
@@ -680,7 +726,7 @@ def build_panel(parent):
     _trades_frame = tk.Frame(scroll_frame, bg=BG)
     _trades_frame.pack(fill="x")
 
-    # Initial load
+    # Initial load (also sets validation badge)
     _on_strategy_select()
 
     return panel

@@ -386,17 +386,20 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p2_run.pack(fill="x")
     btn_p2_results = _sub_btn(project2_extras, "📊 View Results",   lambda: show_panel("p2_results"))
     btn_p2_results.pack(fill="x")
-    btn_p2_prop = _sub_btn(project2_extras, "🏦 Prop Firm Test", lambda: show_panel("p2_prop_test"))
-    btn_p2_prop.pack(fill="x")
     btn_p2_refiner = _sub_btn(project2_extras, "✂️ Strategy Refiner", lambda: show_panel("p2_refiner"))
     btn_p2_refiner.pack(fill="x")
+    btn_p2_validator = _sub_btn(project2_extras, "✅ Strategy Validator", lambda: show_panel("p2_validator"))
+    btn_p2_validator.pack(fill="x")
+    btn_p2_prop = _sub_btn(project2_extras, "🏦 Prop Firm Test", lambda: show_panel("p2_prop_test"))
+    btn_p2_prop.pack(fill="x")
 
     PROJECT2_BUTTONS = {
         "p2_config":    btn_p2_config,
         "p2_run":       btn_p2_run,
         "p2_results":   btn_p2_results,
-        "p2_prop_test": btn_p2_prop,
         "p2_refiner":   btn_p2_refiner,
+        "p2_validator": btn_p2_validator,
+        "p2_prop_test": btn_p2_prop,
     }
 
     btn3 = _sidebar_btn(sidebar, "3 - Forward Bot", lambda: None)

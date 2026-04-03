@@ -31,7 +31,7 @@ active_panel = [None]
 SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}
 PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_search"}
-PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results", "p2_prop_test", "p2_refiner"}
+PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results", "p2_refiner", "p2_validator", "p2_prop_test"}
 PROJECT0_EXTRA_PANELS = {"prop_explorer", "compare_histories", "lifecycle_sim"}
 submenu_open = [False]
 
