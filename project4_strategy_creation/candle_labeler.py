@@ -49,6 +49,10 @@ def label_candles(
     # Load candles
     candles = pd.read_csv(candles_path)
 
+    # Handle BOM (byte order mark) in first column name
+    if candles.columns[0].startswith('\ufeff'):
+        candles.columns = [c.lstrip('\ufeff') for c in candles.columns]
+
     # Auto-detect timestamp column — don't assume the name
     ts_col = None
     for col in candles.columns:

@@ -69,19 +69,26 @@ def run_scratch_discovery(
 
     from project4_strategy_creation.candle_labeler import label_candles
 
-    labels_df = label_candles(
-        candles_path=candles_path,
-        sl_pips=sl_pips,
-        tp_pips=tp_pips,
-        pip_size=pip_size,
-        direction=direction,
-        max_hold_candles=max_hold_candles,
-        spread_pips=spread_pips,
-        progress_callback=lambda cur, tot, msg: _cb(1, f"Labeling: {msg}"),
-    )
+    try:
+        labels_df = label_candles(
+            candles_path=candles_path,
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            pip_size=pip_size,
+            direction=direction,
+            max_hold_candles=max_hold_candles,
+            spread_pips=spread_pips,
+            progress_callback=lambda cur, tot, msg: _cb(1, f"Labeling: {msg}"),
+        )
 
-    n_candles     = len(labels_df)
-    win_rate_base = labels_df['label'].mean()
+        n_candles     = len(labels_df)
+        win_rate_base = labels_df['label'].mean()
+        print(f"[DEBUG] Labeling done: {n_candles} rows, base WR: {win_rate_base:.1%}")
+    except Exception as e:
+        print(f"[DEBUG] FAILED at labeling: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
     # ── Step 2: Load indicators for ALL candles ───────────────────────────────
     _cb(2, f"Step 2/6: Loading indicators for {n_candles} candles...")
@@ -89,25 +96,97 @@ def run_scratch_discovery(
     from project2_backtesting.strategy_backtester import build_multi_tf_indicators
     from shared.data_utils import normalize_timestamp
 
-    candles = pd.read_csv(candles_path)
+    try:
+        candles = pd.read_csv(candles_path)
+        print(f"[DEBUG] CSV columns: {list(candles.columns)}")
 
-    # Auto-detect timestamp column — don't assume the name
-    ts_col = None
-    for col in candles.columns:
-        cl = col.lower().strip()
-        if cl in ('timestamp', 'time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
-            ts_col = col
-            break
-    if ts_col is None:
-        # Fallback: use first column
-        ts_col = candles.columns[0]
+        # Handle BOM
+        if candles.columns[0].startswith('\ufeff'):
+            candles.columns = [c.lstrip('\ufeff') for c in candles.columns]
+            print(f"[DEBUG] BOM removed, columns now: {list(candles.columns)}")
 
-    candles['timestamp'] = pd.to_datetime(candles[ts_col], errors='coerce')
-    candles = candles.dropna(subset=['timestamp'])
-    candles['timestamp'] = normalize_timestamp(candles['timestamp'])
+        # Auto-detect timestamp column — don't assume the name
+        ts_col = None
+        for col in candles.columns:
+            cl = col.lower().strip()
+            if cl in ('timestamp', 'time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
+                ts_col = col
+                break
+        if ts_col is None:
+            # Fallback: use first column
+            ts_col = candles.columns[0]
 
-    data_dir      = os.path.dirname(candles_path)
-    indicators_df = build_multi_tf_indicators(data_dir, candles['timestamp'])
+        print(f"[DEBUG] Timestamp column detected: '{ts_col}'")
+
+        candles['timestamp'] = pd.to_datetime(candles[ts_col], errors='coerce')
+        candles = candles.dropna(subset=['timestamp'])
+        candles['timestamp'] = normalize_timestamp(candles['timestamp'])
+        print(f"[DEBUG] Timestamp normalized, {len(candles)} valid rows")
+    except Exception as e:
+        print(f"[DEBUG] FAILED at CSV loading: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+    data_dir = os.path.dirname(candles_path)
+
+    # CRITICAL FIX: The backtester's build_multi_tf_indicators expects ALL TF CSVs
+    # to have a column named 'timestamp'. Since we can't modify the backtester,
+    # we need to ensure all CSVs are standardized before calling it.
+    _cb(2, "Step 2/6: Checking timeframe CSVs for timestamp column...")
+
+    for tf in ['M5', 'M15', 'H1', 'H4', 'D1']:
+        # Try multiple path patterns
+        csv_candidates = [
+            os.path.join(data_dir, f'{tf}.csv'),
+            os.path.join(data_dir, f'xauusd_{tf}.csv'),
+        ]
+
+        for csv_path in csv_candidates:
+            if os.path.exists(csv_path):
+                # Check if it has 'timestamp' column
+                temp_df = pd.read_csv(csv_path, nrows=2)
+
+                # Handle BOM in first column name
+                if temp_df.columns[0].startswith('\ufeff'):
+                    temp_df.columns = [c.lstrip('\ufeff') for c in temp_df.columns]
+
+                if 'timestamp' not in temp_df.columns:
+                    # Find the time column
+                    time_col = None
+                    for col in temp_df.columns:
+                        cl = col.lower().strip()
+                        if cl in ('time', 'date', 'datetime', 'open_time', 'open time', 'opentime'):
+                            time_col = col
+                            break
+                    if time_col is None:
+                        time_col = temp_df.columns[0]
+
+                    # Rename the column in the CSV
+                    print(f"  [P4] Standardizing {tf}: renaming '{time_col}' → 'timestamp'")
+                    full_df = pd.read_csv(csv_path)
+
+                    # Handle BOM
+                    if full_df.columns[0].startswith('\ufeff'):
+                        full_df.columns = [c.lstrip('\ufeff') for c in full_df.columns]
+
+                    if time_col in full_df.columns and time_col != 'timestamp':
+                        full_df = full_df.rename(columns={time_col: 'timestamp'})
+                        full_df.to_csv(csv_path, index=False)
+                        print(f"  [P4] {tf} CSV updated with 'timestamp' column")
+
+                break  # Found the CSV, move to next TF
+
+    _cb(2, f"Step 2/6: Loading indicators for {n_candles} candles...")
+
+    try:
+        indicators_df = build_multi_tf_indicators(data_dir, candles['timestamp'])
+        print(f"[DEBUG] Indicators built: {indicators_df.shape}")
+    except Exception as e:
+        print(f"[DEBUG] FAILED at build_multi_tf_indicators: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
     # ── Step 3: Compute smart features ────────────────────────────────────────
     if use_smart_features:
