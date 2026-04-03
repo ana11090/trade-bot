@@ -36,6 +36,9 @@ from project3_live_trading.panels import (
     ea_generator_panel as p3_generator,
     live_monitor_panel as p3_monitor,
 )
+from project4_strategy_creation.panels import (
+    scratch_panel as p4_scratch,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN WINDOW
@@ -183,6 +186,7 @@ state.panel_builders = {
     "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content)),
     "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content)),
     "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content)),
+    "p4_scratch":        _make_builder(lambda: p4_scratch.build_panel(content)),
     "prop_explorer":     _make_builder(lambda: prop_explorer.build_panel(content)),
     "compare_histories": _make_builder(lambda: compare_histories.build_panel(content)),
     "lifecycle_sim":     _make_builder(lambda: lifecycle_simulator.build_panel(content)),
@@ -211,6 +215,7 @@ refresh_map = {
     "p2_validator":  p2_validator.refresh,
     "p3_generator":  p3_generator.refresh,
     "p3_monitor":    p3_monitor.refresh,
+    "p4_scratch":    p4_scratch.refresh,
     "prop_explorer":     prop_explorer.refresh,
     "compare_histories": compare_histories.refresh,
     "lifecycle_sim":     lifecycle_simulator.refresh,

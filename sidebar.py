@@ -104,6 +104,7 @@ def build_sidebar(window, canvas, refresh_map):
     project1_open = [False]
     project2_open = [False]
     project3_open = [False]
+    project4_open = [False]
 
     # ── Frames ────────────────────────────────────────────────────────────────
     project0_extras = tk.Frame(sidebar, bg="#16213e")
@@ -112,6 +113,7 @@ def build_sidebar(window, canvas, refresh_map):
     project1_extras = tk.Frame(sidebar, bg="#16213e")
     project2_extras = tk.Frame(sidebar, bg="#16213e")
     project3_extras = tk.Frame(sidebar, bg="#16213e")
+    project4_extras = tk.Frame(sidebar, bg="#16213e")
 
     # ── Button helpers ────────────────────────────────────────────────────────
     def _sidebar_btn(parent, text, cmd):
@@ -150,6 +152,7 @@ def build_sidebar(window, canvas, refresh_map):
         is_project1_sub = name in state.PROJECT1_SUB_PANELS
         is_project2_sub = name in state.PROJECT2_SUB_PANELS
         is_project3_sub = name in state.PROJECT3_SUB_PANELS
+        is_project4_sub = name in state.PROJECT4_SUB_PANELS
         is_p0_extra     = name in state.PROJECT0_EXTRA_PANELS
 
         # btn0 — active for pipeline + sub-panels + new extra panels
@@ -186,6 +189,14 @@ def build_sidebar(window, canvas, refresh_map):
                            activebackground=state.COL_PARENT, activeforeground="white")
         else:
             btn3.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
+                           activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+
+        # btn4
+        if is_project4_sub:
+            btn4.configure(bg=state.COL_PARENT, fg="white",
+                           activebackground=state.COL_PARENT, activeforeground="white")
+        else:
+            btn4.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
 
         # stats_btn
@@ -258,6 +269,15 @@ def build_sidebar(window, canvas, refresh_map):
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
+        # project4 sub-button colors
+        for pname, btn in PROJECT4_BUTTONS.items():
+            if pname == name:
+                btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
+                              activebackground=state.COL_ACTIVE, activeforeground=state.FG_ACTIVE)
+            else:
+                btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                              activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
+
         # auto-expand submenus when navigating directly
         if is_stats_sub and not stats_open[0]:
             stats_submenu.pack(fill="x", after=stats_btn)
@@ -274,6 +294,9 @@ def build_sidebar(window, canvas, refresh_map):
         if is_project3_sub and not project3_open[0]:
             project3_extras.pack(fill="x", after=btn3)
             project3_open[0] = True
+        if is_project4_sub and not project4_open[0]:
+            project4_extras.pack(fill="x", after=btn4)
+            project4_open[0] = True
         if is_p0_extra and not project0_extras.winfo_ismapped():
             project0_extras.pack(fill="x", after=btn0)
 
@@ -330,6 +353,15 @@ def build_sidebar(window, canvas, refresh_map):
             project3_extras.pack(fill="x", after=btn3)
             project3_open[0] = True
             show_panel("p3_generator")
+
+    def _toggle_project4():
+        if project4_open[0]:
+            project4_extras.pack_forget()
+            project4_open[0] = False
+        else:
+            project4_extras.pack(fill="x", after=btn4)
+            project4_open[0] = True
+            show_panel("p4_scratch")
 
     # ── Build buttons ─────────────────────────────────────────────────────────
     btn0 = _sidebar_btn(sidebar, "0 - Data Pipeline", _on_pipeline_click)
@@ -458,6 +490,16 @@ def build_sidebar(window, canvas, refresh_map):
     PROJECT3_BUTTONS = {
         "p3_generator": btn_p3_generator,
         "p3_monitor":   btn_p3_monitor,
+    }
+
+    btn4 = _sidebar_btn(sidebar, "4 - Strategy Creation", _toggle_project4)
+    btn4.pack(fill="x")
+
+    btn_p4_scratch = _sub_btn(project4_extras, "🎯 Build from Scratch", lambda: show_panel("p4_scratch"))
+    btn_p4_scratch.pack(fill="x")
+
+    PROJECT4_BUTTONS = {
+        "p4_scratch": btn_p4_scratch,
     }
 
     return show_panel

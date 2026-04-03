@@ -34,6 +34,7 @@ PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "
 PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_xgboost", "p1_search"}
 PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results", "p2_refiner", "p2_validator", "p2_prop_test"}
 PROJECT3_SUB_PANELS = {"p3_generator", "p3_monitor"}
+PROJECT4_SUB_PANELS = {"p4_scratch"}
 PROJECT0_EXTRA_PANELS = {"prop_explorer", "compare_histories", "lifecycle_sim"}
 submenu_open = [False]
 
