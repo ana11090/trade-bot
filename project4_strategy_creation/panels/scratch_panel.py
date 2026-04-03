@@ -51,6 +51,11 @@ def refresh():
     _render_results()
     _update_comparison()
 
+    # Update canvas scrollregion after refresh
+    canvas = _widgets.get('canvas')
+    if canvas:
+        canvas.after(100, lambda: canvas.configure(scrollregion=canvas.bbox("all")))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BUILD
@@ -170,13 +175,18 @@ def _build_inner(inner):
     # ── Settings (multi-column layout) ────────────────────────────────────────
     _section(inner, "Settings")
 
-    # Container for 3-column layout
+    # Container for 3-column layout with grid
     settings_container = tk.Frame(inner, bg="#f0f2f5")
     settings_container.pack(fill="x", **pad)
 
+    # Configure grid columns with equal weight
+    settings_container.columnconfigure(0, weight=1)
+    settings_container.columnconfigure(1, weight=1)
+    settings_container.columnconfigure(2, weight=1)
+
     # Left column — Trade Definition
     left_col = tk.Frame(settings_container, bg="#f0f2f5")
-    left_col.pack(side="left", fill="both", expand=True, padx=(0, 10))
+    left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=5)
 
     tk.Label(left_col, text="Trade Definition", bg="#f0f2f5", fg="#8e44ad",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
@@ -232,7 +242,7 @@ def _build_inner(inner):
 
     # Middle column — ML Settings
     mid_col = tk.Frame(settings_container, bg="#f0f2f5")
-    mid_col.pack(side="left", fill="both", expand=True, padx=(0, 10))
+    mid_col.grid(row=0, column=1, sticky="nsew", padx=(0, 10), pady=5)
 
     tk.Label(mid_col, text="ML Settings", bg="#f0f2f5", fg="#8e44ad",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
@@ -274,7 +284,7 @@ def _build_inner(inner):
 
     # Right column — Presets
     right_col = tk.Frame(settings_container, bg="#f0f2f5")
-    right_col.pack(side="left", fill="both", expand=True)
+    right_col.grid(row=0, column=2, sticky="nsew", pady=5)
 
     tk.Label(right_col, text="Quick Presets", bg="#f0f2f5", fg="#8e44ad",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
@@ -386,6 +396,11 @@ def _build_inner(inner):
     _load_existing_result()
     _render_results()
     _update_comparison()
+
+    # Schedule scrollregion update after widgets are rendered
+    canvas = _widgets.get('canvas')
+    if canvas:
+        inner.after(100, lambda: canvas.configure(scrollregion=canvas.bbox("all")))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -704,6 +719,11 @@ def _on_done():
     _status_var[0].set(f"Done! {n_rules} rules found.")
     _render_results()
     _update_comparison()
+
+    # Update canvas scrollregion to include new results
+    canvas = _widgets.get('canvas')
+    if canvas:
+        canvas.configure(scrollregion=canvas.bbox("all"))
 
 
 def _on_error(msg, tb):
