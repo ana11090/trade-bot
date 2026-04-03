@@ -67,6 +67,11 @@ _condition_vars   = []
 # Exit vars
 _sl_var = _tp_var = _trail_var = None
 
+# Test script state
+_test_script_text  = None   # ScrolledText showing generated test script
+_test_generated    = False  # True once Step 1 is done
+_step2_btn         = None   # Full EA button (only enabled after Step 1)
+
 
 def _load_strategies():
     global _strategies
@@ -188,6 +193,72 @@ def _apply_firm_preset(firm_name):
     if _safety_var:    _safety_var.set(str(preset['safety_pct']))
     if _consistency_var: _consistency_var.set(str(preset['consistency_pct']))
     if _max_day_var:   _max_day_var.set(str(preset['max_per_day']))
+
+
+def _generate_test():
+    """Step 1 — generate test script."""
+    global _test_generated
+
+    idx = _get_selected_index()
+    if idx is None:
+        messagebox.showerror("No Strategy", "Select a strategy first.")
+        return
+
+    strat_data = _get_strategy_data(idx)
+    if not strat_data:
+        messagebox.showerror("No Data", "Strategy data not found. Run the backtest first.")
+        return
+
+    platform = _platform_var.get() if _platform_var else 'mt5'
+    strategy = {
+        'rules':    strat_data.get('rules', []),
+        'exit_name': strat_data.get('exit_name', 'Strategy'),
+    }
+
+    try:
+        from project3_live_trading.test_script_generator import generate_test_script
+        code = generate_test_script(strategy, platform=platform)
+    except Exception as e:
+        messagebox.showerror("Test Script Error", str(e))
+        return
+
+    if _test_script_text:
+        _test_script_text.configure(state="normal")
+        _test_script_text.delete("1.0", "end")
+        _test_script_text.insert("end", code)
+        _test_script_text.configure(state="disabled")
+
+    if _status_lbl:
+        _status_lbl.configure(
+            text=f"Test script generated ({len(code)} chars). Run it in MT5, then use Step 2.",
+            fg="#2980b9")
+
+    # Enable Step 2
+    _test_generated = True
+    if _step2_btn:
+        _step2_btn.configure(state="normal", bg=GREEN)
+
+
+def _save_test_script():
+    if not _test_script_text:
+        return
+    code = _test_script_text.get("1.0", "end-1c")
+    if not code.strip():
+        messagebox.showinfo("No Code", "Generate the test script first (Step 1).")
+        return
+    platform = _platform_var.get() if _platform_var else 'mt5'
+    ext   = ".mq5" if platform == 'mt5' else ".py"
+    ftype = [("MQL5 Script", "*.mq5")] if platform == 'mt5' else [("Python files", "*.py")]
+    path  = filedialog.asksaveasfilename(
+        title="Save Test Script",
+        defaultextension=ext,
+        filetypes=ftype + [("All files", "*.*")],
+        initialfile=f"test_indicators{ext}",
+    )
+    if path:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(code)
+        messagebox.showinfo("Saved", f"Test script saved to:\n{path}")
 
 
 def _generate():
@@ -350,6 +421,7 @@ def build_panel(parent):
     global _daily_dd_var, _total_dd_var, _safety_var, _consistency_var, _max_day_var
     global _session_vars, _day_vars, _condition_frame
     global _sl_var, _tp_var, _trail_var
+    global _test_script_text, _step2_btn
 
     _load_strategies()
 
@@ -523,27 +595,87 @@ def build_panel(parent):
     tk.Label(_condition_frame, text="Load a strategy to see conditions.",
              font=("Segoe UI", 9, "italic"), bg=WHITE, fg=GREY).pack(anchor="w")
 
-    # Generate button
-    gen_frame = tk.Frame(sf, bg=BG, pady=8)
+    # ── Step 1: Test Script ───────────────────────────────────────────────────
+    step1_section = tk.Frame(sf, bg=WHITE, padx=20, pady=12)
+    step1_section.pack(fill="x", padx=5, pady=(5, 0))
+
+    step1_hdr = tk.Frame(step1_section, bg=WHITE)
+    step1_hdr.pack(fill="x", pady=(0, 6))
+    tk.Label(step1_hdr, text="Step 1: Generate & Run Test Script",
+             font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#2980b9").pack(side=tk.LEFT)
+
+    step1_btn_row = tk.Frame(step1_section, bg=WHITE)
+    step1_btn_row.pack(fill="x", pady=(0, 6))
+    tk.Button(step1_btn_row, text="Generate Test Script",
+              command=_generate_test,
+              bg="#2980b9", fg="white", font=("Segoe UI", 10, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=16, pady=8).pack(side=tk.LEFT, padx=(0, 8))
+    tk.Button(step1_btn_row, text="Save Test Script",
+              command=_save_test_script,
+              bg=MIDGREY, fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT)
+
+    _test_script_text = tk.Text(step1_section, height=10, font=("Consolas", 7),
+                                 bg="#1a1a2a", fg="#e0e0e0", wrap="none", state="disabled")
+    _test_script_text.pack(fill="x", pady=(4, 6))
+
+    # Instructions box
+    inst_bg = "#eaf4fb"
+    inst_frame = tk.Frame(step1_section, bg=inst_bg, padx=12, pady=8)
+    inst_frame.pack(fill="x")
+    tk.Label(inst_frame, text="How to use the test script:", font=("Segoe UI", 9, "bold"),
+             bg=inst_bg, fg=DARK).pack(anchor="w")
+    instructions = (
+        "For MT5:\n"
+        "  1. Save the file to: [MT5 Data Folder]/MQL5/Scripts/\n"
+        "  2. Open MetaEditor (press F4 in MT5) and compile (F7)\n"
+        "  3. If compile fails -> install the listed custom indicators\n"
+        "  4. If compile succeeds -> drag the script onto a chart\n"
+        "  5. Open the Experts tab (Ctrl+E) -> read OK / FAIL results\n"
+        "  6. All OK? -> proceed to Step 2\n\n"
+        "For Tradovate:\n"
+        "  1. Save the test file\n"
+        "  2. Install requirements: pip install pandas-ta\n"
+        "  3. Run: python test_indicators.py\n"
+        "  4. Check output for OK and FAIL lines"
+    )
+    tk.Label(inst_frame, text=instructions, font=("Segoe UI", 8),
+             bg=inst_bg, fg=MIDGREY, justify="left", anchor="w").pack(anchor="w")
+
+    # ── Step 2: Full EA ────────────────────────────────────────────────────────
+    step2_section = tk.Frame(sf, bg=WHITE, padx=20, pady=12)
+    step2_section.pack(fill="x", padx=5, pady=(5, 0))
+
+    step2_hdr = tk.Frame(step2_section, bg=WHITE)
+    step2_hdr.pack(fill="x", pady=(0, 6))
+    tk.Label(step2_hdr, text="Step 2: Generate Full Expert Advisor",
+             font=("Segoe UI", 10, "bold"), bg=WHITE, fg=GREEN).pack(side=tk.LEFT)
+
+    step2_btn_row = tk.Frame(step2_section, bg=WHITE)
+    step2_btn_row.pack(fill="x", pady=(0, 4))
+
+    _step2_btn = tk.Button(step2_btn_row, text="Generate Full EA  (run test script first)",
+                           command=_generate,
+                           bg="#a0a0a0", fg="white", font=("Segoe UI", 10, "bold"),
+                           relief=tk.FLAT, cursor="hand2", padx=16, pady=8,
+                           state="normal")  # always clickable, but visually grey until step 1 done
+    _step2_btn.pack(side=tk.LEFT)
+
+    _generate_btn = _step2_btn  # alias for external disable/enable
+
+    gen_frame = tk.Frame(sf, bg=BG, pady=4)
     gen_frame.pack(fill="x", padx=5)
-
-    _generate_btn = tk.Button(gen_frame, text="⚙️ Generate Expert Advisor",
-                              command=_generate,
-                              bg="#667eea", fg="white", font=("Segoe UI", 11, "bold"),
-                              relief=tk.FLAT, cursor="hand2", padx=20, pady=10)
-    _generate_btn.pack(side=tk.LEFT, padx=(5, 8))
-
-    _status_lbl = tk.Label(gen_frame, text="Ready",
+    _status_lbl = tk.Label(gen_frame, text="Ready — generate test script first (Step 1)",
                             font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY)
-    _status_lbl.pack(side=tk.LEFT)
+    _status_lbl.pack(side=tk.LEFT, padx=5)
 
-    # Output code area
+    # Output code area (Step 2 result)
     out_frame = tk.Frame(sf, bg=WHITE, padx=10, pady=8)
     out_frame.pack(fill="x", padx=5, pady=(5, 0))
 
     out_hdr = tk.Frame(out_frame, bg=WHITE)
     out_hdr.pack(fill="x", pady=(0, 6))
-    tk.Label(out_hdr, text="Generated Code", font=("Segoe UI", 10, "bold"),
+    tk.Label(out_hdr, text="Generated EA Code", font=("Segoe UI", 10, "bold"),
              bg=WHITE, fg=DARK).pack(side=tk.LEFT)
     tk.Button(out_hdr, text="Save File", command=_save_file,
               bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
