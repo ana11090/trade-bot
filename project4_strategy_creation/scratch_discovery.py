@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..')))
 
 
 def run_scratch_discovery(
-    candles_path,
+    candles_path=None,
     sl_pips=150,
     tp_pips=300,
     direction="BUY",
@@ -53,6 +53,16 @@ def run_scratch_discovery(
     def _cb(step, msg):
         if progress_callback:
             progress_callback(step, total_steps, msg)
+
+    # Auto-detect candle data path if not provided
+    if candles_path is None:
+        project_root = os.path.abspath(os.path.join(_HERE, '..'))
+        candles_path = os.path.join(project_root, 'data', 'xauusd_H1.csv')
+        if not os.path.exists(candles_path):
+            raise FileNotFoundError(
+                f"H1 candle data not found at {candles_path}\n"
+                "Run the Data Pipeline first to load your candle history."
+            )
 
     # ── Step 1: Label candles ─────────────────────────────────────────────────
     _cb(1, "Step 1/6: Labeling candles (WIN/LOSS)...")

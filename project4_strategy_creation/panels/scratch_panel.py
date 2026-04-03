@@ -113,29 +113,52 @@ def _build_inner(inner):
              font=("Segoe UI", 10), justify="left",
              padx=14, pady=12).pack(anchor="w")
 
-    # ── Candles file picker ───────────────────────────────────────────────────
-    _section(inner, "Candles File (H1 CSV)")
-    file_row = tk.Frame(inner, bg="#f0f2f5")
-    file_row.pack(fill="x", **pad)
+    # ── Data status (auto-detected) ───────────────────────────────────────────
+    _section(inner, "Data Status")
 
-    candles_var = tk.StringVar(value="")
-    _widgets['candles_var'] = candles_var
+    # Resolve paths relative to project root
+    _project_root = os.path.abspath(os.path.join(_HERE, '..', '..'))
+    _candles_path = os.path.join(_project_root, 'data', 'xauusd_H1.csv')
+    _data_dir     = os.path.join(_project_root, 'data')
 
-    tk.Entry(file_row, textvariable=candles_var,
-             font=("Segoe UI", 9), bg="white", fg="#333",
-             relief="solid", bd=1).pack(side="left", fill="x", expand=True)
+    status_frame = tk.Frame(inner, bg="#f0f2f5")
+    status_frame.pack(fill="x", **pad)
 
-    def _browse():
-        p = filedialog.askopenfilename(
-            title="Select H1 candles CSV",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
-        if p:
-            candles_var.set(p)
+    # H1 candle file
+    if os.path.exists(_candles_path):
+        try:
+            import pandas as _pd
+            _nc = sum(1 for _ in open(_candles_path)) - 1
+            candle_status = f"\u2705 Found H1 candles: {_nc:,} candles  ({_candles_path})"
+            candle_color  = "#1e8449"
+        except Exception:
+            candle_status = f"\u2705 Found H1 candles  ({_candles_path})"
+            candle_color  = "#1e8449"
+    else:
+        candle_status = f"\u274c No H1 candle data found at data/xauusd_H1.csv"
+        candle_color  = "#922b21"
 
-    tk.Button(file_row, text="Browse...",
-              bg="#1e2d4e", fg="white",
-              font=("Segoe UI", 9), bd=0, padx=10,
-              command=_browse).pack(side="left", padx=(6, 0))
+    tk.Label(status_frame, text=candle_status,
+             bg="#f0f2f5", fg=candle_color,
+             font=("Segoe UI", 9), anchor="w", wraplength=600,
+             justify="left").pack(fill="x")
+
+    # Indicator cache check
+    _parquet_files = [f for f in os.listdir(_data_dir)
+                      if f.endswith('.parquet')] if os.path.isdir(_data_dir) else []
+    if _parquet_files:
+        cache_status = f"\u2705 Indicator cache ready ({len(_parquet_files)} parquet files) — fast mode (~5 min total)"
+        cache_color  = "#1e8449"
+    else:
+        cache_status = "\u26a0\ufe0f No indicator cache — first run will compute all indicators (may take longer)"
+        cache_color  = "#d35400"
+
+    tk.Label(status_frame, text=cache_status,
+             bg="#f0f2f5", fg=cache_color,
+             font=("Segoe UI", 9), anchor="w", wraplength=600,
+             justify="left").pack(fill="x", pady=(2, 0))
+
+    _widgets['candles_path'] = _candles_path
 
     # ── Trade definition ──────────────────────────────────────────────────────
     _section(inner, "Trade Definition — what counts as WIN / LOSS")
@@ -474,11 +497,11 @@ def _update_comparison():
     # Gather available results from other projects
     rows = []
 
+    _root = os.path.abspath(os.path.join(_HERE, '..', '..'))
+
     # Project 1 — DT results
-    p1_dt_path = os.path.join(
-        os.path.dirname(_HERE), '..', '..', '..', '..', 'project1_reverse_engineering',
-        'outputs', 'analysis_report.json')
-    p1_dt_path = os.path.normpath(p1_dt_path)
+    p1_dt_path = os.path.join(_root, 'project1_reverse_engineering',
+                              'outputs', 'analysis_report.json')
     if os.path.exists(p1_dt_path):
         try:
             with open(p1_dt_path, encoding='utf-8') as f:
@@ -492,10 +515,8 @@ def _update_comparison():
             pass
 
     # Project 1 — XGBoost results
-    p1_xgb_path = os.path.join(
-        os.path.dirname(_HERE), '..', '..', '..', '..', 'project1_reverse_engineering',
-        'outputs', 'xgboost_result.json')
-    p1_xgb_path = os.path.normpath(p1_xgb_path)
+    p1_xgb_path = os.path.join(_root, 'project1_reverse_engineering',
+                               'outputs', 'xgboost_result.json')
     if os.path.exists(p1_xgb_path):
         try:
             with open(p1_xgb_path, encoding='utf-8') as f:
@@ -563,10 +584,11 @@ def _on_run():
                             "Discovery is already running. Please wait.")
         return
 
-    candles_path = _widgets['candles_var'].get().strip()
+    candles_path = _widgets.get('candles_path', '')
     if not candles_path or not os.path.exists(candles_path):
-        messagebox.showerror("Missing File",
-                             "Please select a valid H1 candles CSV file.")
+        messagebox.showerror("Missing Data",
+                             "H1 candle data not found at data/xauusd_H1.csv\n\n"
+                             "Please run the Data Pipeline first to load your candle history.")
         return
 
     try:
