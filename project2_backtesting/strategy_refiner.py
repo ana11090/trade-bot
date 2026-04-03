@@ -9,6 +9,7 @@ import os
 import json
 import time
 import threading
+import copy
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -534,3 +535,276 @@ def deep_optimize(
         )
 
     return candidates[:20]  # top 20
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep Optimizer — Generate New Trades (modifies rules, re-runs backtests)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def deep_optimize_generate(
+    trades,
+    base_rules,
+    candles_path,
+    timeframe='H1',
+    pip_size=0.01,
+    spread_pips=2.5,
+    commission_pips=0.0,
+    target_firm=None,
+    account_size=100000,
+    filters=None,
+    progress_callback=None,
+    feature_matrix_path=None,
+):
+    """
+    Deep optimization — modifies rules and re-runs backtests to find NEW trades.
+
+    Unlike Mode 1 (filtering), this actually changes the strategy:
+    - Shifts condition thresholds to find better entry points
+    - Adds new indicator conditions that improve the edge
+    - Removes weak conditions that aren't helping
+    - Tests different exit strategies with each modified rule set
+    - Scores everything by prop firm pass rate + profitability
+
+    The output trades will be DIFFERENT from the input trades.
+    """
+    _stop_flag.clear()
+    start_time = time.time()
+    candidates = []
+
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from project2_backtesting.strategy_backtester import run_backtest, compute_stats
+    from project2_backtesting.exit_strategies import (
+        FixedSLTP, TrailingStop,
+    )
+
+    candles_df = pd.read_csv(candles_path)
+    ts_col = candles_df.columns[0]
+    candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
+
+    cache_path = candles_path.replace('.csv', '_indicators.parquet')
+    if os.path.exists(cache_path):
+        indicators_df = pd.read_parquet(cache_path)
+        if 'timestamp' in indicators_df.columns:
+            indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
+    else:
+        from project2_backtesting.strategy_backtester import build_multi_tf_indicators
+        data_dir = os.path.dirname(candles_path)
+        indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
+
+    top_features = []
+    if feature_matrix_path and os.path.exists(feature_matrix_path):
+        try:
+            report_path = os.path.join(
+                os.path.dirname(feature_matrix_path), 'analysis_report.json'
+            )
+            if os.path.exists(report_path):
+                with open(report_path) as f:
+                    report = json.load(f)
+                top_features = [
+                    feat for feat, _score
+                    in report.get('feature_importance', {}).get('top_20', [])
+                ]
+        except Exception:
+            pass
+
+    available_indicators = [c for c in indicators_df.columns if c != 'timestamp']
+
+    default_sl = 150.0
+    default_tp = 300.0
+    exit_strategies = [
+        FixedSLTP(sl_pips=default_sl, tp_pips=default_tp, pip_size=pip_size),
+        FixedSLTP(sl_pips=100, tp_pips=200, pip_size=pip_size),
+        FixedSLTP(sl_pips=200, tp_pips=400, pip_size=pip_size),
+        TrailingStop(sl_pips=default_sl, trail_pips=100, pip_size=pip_size),
+        TrailingStop(sl_pips=default_sl, trail_pips=50, pip_size=pip_size),
+    ]
+
+    base_stats = compute_stats_summary(trades)
+    base_score = _score_trades(trades, target_firm)
+    best_so_far = {
+        'name':           'Base (original)',
+        'trades':         len(trades),
+        'win_rate':       base_stats['win_rate'],
+        'avg_pips':       base_stats['avg_pips'],
+        'trades_per_day': base_stats['trades_per_day'],
+        'score':          base_score,
+    }
+
+    total_steps = 4
+
+    def _report(step, msg):
+        if _stop_flag.is_set():
+            return False
+        if progress_callback:
+            elapsed = int(time.time() - start_time)
+            mins, secs = divmod(elapsed, 60)
+            progress_callback(
+                step=step, total=total_steps, message=msg,
+                current_best=best_so_far,
+                elapsed_str=f"{mins}m {secs}s",
+                candidates_tested=len(candidates),
+                improvements_found=sum(1 for c in candidates if c['score'] > base_score),
+            )
+        return True
+
+    def _test_rules(name, rules, exit_strat, changes_desc):
+        nonlocal best_so_far
+        try:
+            new_trades = run_backtest(
+                candles_df=candles_df,
+                indicators_df=indicators_df,
+                rules=rules,
+                exit_strategy=exit_strat,
+                direction="BUY",
+                pip_size=pip_size,
+                spread_pips=spread_pips,
+                commission_pips=commission_pips,
+                account_size=account_size,
+            )
+        except Exception:
+            return None
+
+        if not new_trades or len(new_trades) < 5:
+            return None
+
+        enriched = enrich_trades(new_trades)
+        if filters:
+            kept, _ = apply_filters(enriched, filters)
+            if len(kept) < 5:
+                return None
+            final_trades = kept
+        else:
+            final_trades = enriched
+
+        stats = compute_stats_summary(final_trades)
+        score = _score_trades(final_trades, target_firm)
+
+        exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
+        exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name
+
+        candidate = {
+            'name':              name,
+            'rules':             rules,
+            'exit_strategy':     exit_desc,
+            'exit_name':         exit_name,
+            'filters_applied':   filters or {},
+            'trades':            final_trades,
+            'stats':             stats,
+            'score':             score,
+            'changes_from_base': changes_desc,
+        }
+        candidates.append(candidate)
+
+        if score > best_so_far['score']:
+            best_so_far = {
+                'name':           name,
+                'trades':         stats['count'],
+                'win_rate':       stats['win_rate'],
+                'avg_pips':       stats['avg_pips'],
+                'trades_per_day': stats['trades_per_day'],
+                'score':          score,
+            }
+
+        return candidate
+
+    win_rules = [r for r in base_rules if r.get('prediction') == 'WIN']
+
+    # ── STEP 1: Threshold shifts ──────────────────────────────────────────────
+    if not _report(1, "Step 1: Testing threshold shifts..."):
+        return candidates
+
+    shifts = [0.7, 0.8, 0.9, 1.1, 1.2, 1.3]
+    for rule_idx, rule in enumerate(win_rules):
+        for cond_idx, cond in enumerate(rule.get('conditions', [])):
+            original_val = cond['value']
+            if original_val == 0:
+                continue
+            for shift in shifts:
+                if _stop_flag.is_set():
+                    break
+                new_val = original_val * shift
+                modified_rules = copy.deepcopy(win_rules)
+                modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
+                feat = cond['feature']
+                change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
+                _test_rules(f"Threshold shift: {change}", modified_rules, exit_strategies[0], change)
+                _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
+
+    # ── STEP 2: Add new indicator conditions ──────────────────────────────────
+    if not _report(2, "Step 2: Testing additional indicators..."):
+        return candidates
+
+    test_indicators = top_features[:30] if top_features else available_indicators[:30]
+    for ind_name in test_indicators:
+        if _stop_flag.is_set():
+            break
+        if ind_name not in indicators_df.columns:
+            continue
+        col = indicators_df[ind_name].dropna()
+        if len(col) < 100:
+            continue
+        for pct in [25, 50, 75]:
+            threshold = col.quantile(pct / 100.0)
+            for operator in ['>', '<']:
+                modified_rules = copy.deepcopy(win_rules)
+                if not modified_rules:
+                    continue
+                modified_rules[0]['conditions'].append({
+                    'feature':  ind_name,
+                    'operator': operator,
+                    'value':    float(threshold),
+                })
+                change = f"Added {ind_name} {operator} {threshold:.4f} to Rule 1"
+                _test_rules(f"+ {ind_name} {operator} {threshold:.2f}", modified_rules, exit_strategies[0], change)
+        _report(2, f"Testing indicator: {ind_name}")
+
+    # ── STEP 3: Remove weak conditions ────────────────────────────────────────
+    if not _report(3, "Step 3: Testing condition removal..."):
+        return candidates
+
+    for rule_idx, rule in enumerate(win_rules):
+        conditions = rule.get('conditions', [])
+        if len(conditions) <= 1:
+            continue
+        for cond_idx, cond in enumerate(conditions):
+            if _stop_flag.is_set():
+                break
+            modified_rules = copy.deepcopy(win_rules)
+            removed_cond = modified_rules[rule_idx]['conditions'].pop(cond_idx)
+            feat = removed_cond['feature']
+            change = f"Removed {feat} from Rule {rule_idx+1}"
+            _test_rules(f"- {feat} from R{rule_idx+1}", modified_rules, exit_strategies[0], change)
+            _report(3, f"Remove: {feat} from R{rule_idx+1}")
+
+    # ── STEP 4: Exit strategy scan on top candidates ──────────────────────────
+    if not _report(4, "Step 4: Testing exit strategies on best candidates..."):
+        return candidates
+
+    top_rule_sets = sorted(candidates, key=lambda c: c['score'], reverse=True)[:5]
+    for rank, top_cand in enumerate(top_rule_sets):
+        for exit_strat in exit_strategies:
+            if _stop_flag.is_set():
+                break
+            exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
+            name = f"{top_cand['name']} × {exit_name}"
+            change = f"{top_cand['changes_from_base']} + {exit_name}"
+            _test_rules(name, top_cand['rules'], exit_strat, change)
+            _report(4, f"Exit test: {exit_name} on #{rank+1}")
+
+    candidates.sort(key=lambda c: c['score'], reverse=True)
+
+    elapsed = time.time() - start_time
+    if progress_callback:
+        progress_callback(
+            step=total_steps, total=total_steps,
+            message=f"Done! {len(candidates)} candidates in {elapsed:.0f}s",
+            current_best=best_so_far,
+            elapsed_str=f"{int(elapsed//60)}m {int(elapsed%60)}s",
+            candidates_tested=len(candidates),
+            improvements_found=sum(1 for c in candidates if c['score'] > base_score),
+        )
+
+    return candidates

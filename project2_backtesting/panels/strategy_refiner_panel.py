@@ -373,7 +373,8 @@ def _export_csv(trades=None):
 # Deep optimizer
 # ─────────────────────────────────────────────────────────────────────────────
 
-_opt_target_var = None
+_opt_target_var    = None
+_generate_new_var  = None
 
 
 def _start_optimization():
@@ -421,17 +422,80 @@ def _start_optimization():
 
     def _worker():
         try:
-            from project2_backtesting.strategy_refiner import deep_optimize
-            results = deep_optimize(
-                trades=_base_trades,
-                candles_df=None,
-                indicators_df=None,
-                base_rules=[],
-                exit_strategies=[],
-                target_firm=target_firm,
-                account_size=100000,
-                progress_callback=_cb,
-            )
+            current_trades = list(_base_trades)
+            current_filters = _get_current_filters()
+
+            # Spread/commission from selected strategy metadata
+            spread_pips = 2.5
+            commission_pips = 0.0
+            idx = _get_selected_index()
+            if idx is not None:
+                for s in _strategies:
+                    if s['index'] == idx:
+                        spread_pips = s.get('spread_pips', 2.5)
+                        commission_pips = s.get('commission_pips', 0.0)
+                        break
+
+            if _generate_new_var and _generate_new_var.get():
+                import json as _json
+                from project2_backtesting.strategy_refiner import deep_optimize_generate
+
+                rules_path = os.path.join(
+                    project_root, 'project1_reverse_engineering', 'outputs', 'analysis_report.json'
+                )
+                if not os.path.exists(rules_path):
+                    state.window.after(0, lambda: _opt_status_lbl.configure(
+                        text="Error: analysis_report.json not found. Run project 1 first.", fg=RED))
+                    return
+
+                with open(rules_path) as f:
+                    report = _json.load(f)
+                base_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+
+                candles_path = None
+                for p in [
+                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
+                    os.path.join(project_root, 'data', 'xauusd', 'H1.csv'),
+                ]:
+                    if os.path.exists(p):
+                        candles_path = p
+                        break
+
+                if not candles_path:
+                    state.window.after(0, lambda: _opt_status_lbl.configure(
+                        text="Error: H1 candle CSV not found in data/ folder.", fg=RED))
+                    return
+
+                feature_matrix_path = os.path.join(
+                    project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
+                )
+
+                results = deep_optimize_generate(
+                    trades=current_trades,
+                    base_rules=base_rules,
+                    candles_path=candles_path,
+                    timeframe='H1',
+                    spread_pips=spread_pips,
+                    commission_pips=commission_pips,
+                    target_firm=target_firm,
+                    account_size=100000,
+                    filters=current_filters if current_filters else None,
+                    progress_callback=_cb,
+                    feature_matrix_path=feature_matrix_path,
+                )
+            else:
+                from project2_backtesting.strategy_refiner import deep_optimize
+                results = deep_optimize(
+                    trades=current_trades,
+                    candles_df=None,
+                    indicators_df=None,
+                    base_rules=[],
+                    exit_strategies=[],
+                    target_firm=target_firm,
+                    account_size=100000,
+                    progress_callback=_cb,
+                )
+
             state.window.after(0, lambda: _show_opt_results(results))
             state.window.after(0, lambda: _opt_status_lbl.configure(
                 text=f"Complete — {len(results)} candidates found", fg=GREEN))
@@ -530,7 +594,7 @@ def build_panel(parent):
     global _session_vars, _day_vars, _results_card, _trade_list_frame
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var
-    global _scroll_canvas
+    global _scroll_canvas, _generate_new_var
 
     _load_strategies()
 
@@ -752,6 +816,16 @@ def build_panel(parent):
 
     opt_controls = tk.Frame(sf, bg=WHITE, padx=20, pady=8)
     opt_controls.pack(fill="x", padx=5, pady=(0, 5))
+
+    _generate_new_var = tk.BooleanVar(value=False)
+    generate_cb = tk.Checkbutton(
+        opt_controls,
+        text="Generate new trades (modifies rules, runs new backtests — slower but finds new entries)",
+        variable=_generate_new_var,
+        bg=WHITE, font=("Segoe UI", 9),
+        anchor="w",
+    )
+    generate_cb.pack(fill="x", pady=(0, 10))
 
     ctrl_row = tk.Frame(opt_controls, bg=WHITE)
     ctrl_row.pack(fill="x", pady=(0, 8))
