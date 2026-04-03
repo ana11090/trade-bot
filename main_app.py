@@ -28,7 +28,8 @@ from project1_reverse_engineering.panels import (
 from project2_backtesting.panels import (
     configuration as p2_configuration,
     run_backtest_panel as p2_run_backtest,
-    view_results as p2_view_results
+    view_results as p2_view_results,
+    prop_firm_test as p2_prop_test,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,9 +99,10 @@ state.all_panels["p1_analysis"] = robot_analysis.build_panel(content)
 state.all_panels["p1_search"]  = p1_strategy_builder.build_panel(content)
 
 # Project 2 - Backtesting
-state.all_panels["p2_config"]  = p2_configuration.build_panel(content)
-state.all_panels["p2_run"]     = p2_run_backtest.build_panel(content)
-state.all_panels["p2_results"] = p2_view_results.build_panel(content)
+state.all_panels["p2_config"]    = p2_configuration.build_panel(content)
+state.all_panels["p2_run"]       = p2_run_backtest.build_panel(content)
+state.all_panels["p2_results"]   = p2_view_results.build_panel(content)
+state.all_panels["p2_prop_test"] = p2_prop_test.build_panel(content)
 
 # New Project 0 extra panels
 state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
@@ -124,6 +126,7 @@ refresh_map = {
     "p2_config": p2_configuration.refresh,
     "p2_run": p2_run_backtest.refresh,
     "p2_results": p2_view_results.refresh,
+    "p2_prop_test": p2_prop_test.refresh,
     "prop_explorer":     prop_explorer.refresh,
     "compare_histories": compare_histories.refresh,
     "lifecycle_sim":     lifecycle_simulator.refresh,

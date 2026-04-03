@@ -537,6 +537,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         "spread_pips":     spread_pips,
         "commission_pips": commission_pips,
         **m["stats"],
+        "trades": m["trades"],  # Include individual trades for prop firm testing
     } for m in matrix]
 
     summary_path = os.path.join(output_dir, 'backtest_matrix.json')
