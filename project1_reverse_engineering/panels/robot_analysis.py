@@ -101,7 +101,7 @@ def _load_and_display():
 
     # File info banner
     info_frame = tk.Frame(_content_frame, bg="#e8f4f8", padx=15, pady=10)
-    info_frame.pack(fill="both", expand=True, padx=5, pady=(0, 10))
+    info_frame.pack(fill="x", padx=5, pady=(0, 10))
 
     tk.Label(
         info_frame,
@@ -137,7 +137,7 @@ def _load_and_display():
 def _display_profile(profile, trade_count):
     """Section 1: Robot Profile"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text="1️⃣ Robot Profile",
@@ -193,7 +193,7 @@ def _display_profile(profile, trade_count):
 def _display_feature_importance(fi):
     """Section 2: Feature Importance"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text="2️⃣ Feature Importance (Top 20)",
@@ -223,25 +223,20 @@ def _display_feature_importance(fi):
 
 
 def _display_rules(rules):
-    """Section 3: Trading Rules - ALL 20 with full details"""
+    """Section 3: Trading Rules - compact view with all details"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=15, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text=f"3️⃣ Trading Rules ({len(rules)} discovered)",
-        font=("Segoe UI", 16, "bold"), bg=WHITE, fg=DARK
-    ).pack(anchor="w", pady=(0, 10))
+        font=("Segoe UI", 13, "bold"), bg=WHITE, fg=DARK
+    ).pack(anchor="w", pady=(0, 8))
 
     if not rules:
-        tk.Label(
-            frame, text="No rules found in report",
-            font=("Segoe UI", 11, "italic"), bg=WHITE, fg=GREY
-        ).pack(anchor="w", pady=5)
+        tk.Label(frame, text="No rules found", font=("Segoe UI", 10, "italic"),
+                bg=WHITE, fg=GREY).pack(anchor="w")
         return
 
-    print(f"[robot_analysis] Displaying {len(rules)} rules")
-
-    # Display ALL rules
     for i, rule in enumerate(rules, 1):
         pred = rule.get('prediction', '?')
         conf = rule.get('confidence', 0)
@@ -250,63 +245,60 @@ def _display_rules(rules):
         pips = rule.get('avg_pips', 0)
         conditions = rule.get('conditions', [])
 
-        print(f"  Rule {i}: {pred}, {len(conditions)} conditions, {cov} trades")
-
-        # Determine color
+        # Color
         if pred == 'WIN' and conf >= 0.65:
             header_color = GREEN
-            card_bg = "#f0fdf4"  # Light green background
+            card_bg = "#f0fdf4"
         elif pred == 'LOSS':
             header_color = RED
-            card_bg = "#fef2f2"  # Light red background
+            card_bg = "#fef2f2"
         else:
             header_color = AMBER
-            card_bg = "#fffbeb"  # Light amber background
+            card_bg = "#fffbeb"
 
-        # Rule card - FULL WIDTH
+        # Separator line between rules (not before first)
+        if i > 1:
+            sep = tk.Frame(frame, bg="#e0e0e0", height=1)
+            sep.pack(fill="x", pady=4)
+
+        # Compact card — thin border, less padding
         card = tk.Frame(frame, bg=card_bg, highlightbackground=header_color,
-                       highlightthickness=3, padx=20, pady=12)
-        card.pack(fill="both", expand=True, pady=8)
+                       highlightthickness=1, padx=10, pady=6)
+        card.pack(fill="x", pady=2)
 
-        # Header
-        header_text = (f"Rule {i}: {pred} — "
-                      f"confidence {conf*100:.1f}% | "
-                      f"{cov} trades | "
-                      f"WR {wr*100:.1f}% | "
+        # Header line — all key stats on one line
+        header_text = (f"Rule {i}: {pred}  |  "
+                      f"conf {conf*100:.0f}%  |  "
+                      f"WR {wr*100:.0f}%  |  "
+                      f"{cov} trades  |  "
                       f"avg {pips:+.0f} pips")
         tk.Label(
             card, text=header_text,
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 10, "bold"),
             bg=card_bg, fg=header_color
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w")
 
-        # Conditions label
-        if conditions:
-            tk.Label(
-                card, text=f"Conditions ({len(conditions)}):",
-                font=("Segoe UI", 11, "bold"),
-                bg=card_bg, fg=DARK
-            ).pack(anchor="w", pady=(5, 5))
-
-        # Conditions - larger font, full width
-        for j, cond in enumerate(conditions, 1):
+        # Conditions — compact, all on fewer lines
+        cond_parts = []
+        for cond in conditions:
             feat = cond.get('feature', '?')
             op = cond.get('operator', '?')
             val = cond.get('value', 0)
-            cond_text = f"  {j}. {feat} {op} {val:.4f}"
+            cond_parts.append(f"{feat} {op} {val:.4f}")
 
-            tk.Label(
-                card, text=cond_text,
-                font=("Consolas", 10, "normal"),
-                bg=card_bg, fg="#1a1a1a",
-                anchor="w"
-            ).pack(fill="x", padx=(20, 0), pady=2)
+        cond_text = "  AND  ".join(cond_parts)
+        tk.Label(
+            card, text=cond_text,
+            font=("Consolas", 9),
+            bg=card_bg, fg="#333333",
+            anchor="w", wraplength=800, justify=tk.LEFT
+        ).pack(fill="x", padx=(10, 0), pady=(2, 0))
 
 
 def _display_clusters(clusters):
     """Section 4: Trade Clusters"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text=f"4️⃣ Trade Clusters ({len(clusters)} groups)",
@@ -341,7 +333,7 @@ def _display_clusters(clusters):
 def _display_regimes(regimes):
     """Section 5: Market Regimes"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text="5️⃣ Market Regime Performance",
@@ -381,7 +373,7 @@ def _display_regimes(regimes):
 def _display_evolution(evolution):
     """Section 6: Time Period Evolution"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text="6️⃣ Time Period Evolution",
@@ -414,7 +406,7 @@ def _display_evolution(evolution):
 def _display_anomalies(anomalies):
     """Section 7: Anomalies"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     count = anomalies.get('count', 0)
     pct = anomalies.get('pct', 0)
@@ -436,7 +428,7 @@ def _display_anomalies(anomalies):
 def _display_suggestions(suggestions):
     """Section 8: Improvement Suggestions"""
     frame = tk.Frame(_content_frame, bg=WHITE, padx=20, pady=15)
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
+    frame.pack(fill="x", padx=5, pady=5)
 
     tk.Label(
         frame, text=f"8️⃣ Improvement Suggestions ({len(suggestions)} found)",
@@ -580,11 +572,23 @@ def build_panel(parent):
         lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
 
-    canvas.create_window((0, 0), window=_content_frame, anchor="nw")
+    content_window_id = canvas.create_window((0, 0), window=_content_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
 
     canvas.pack(side="left", fill="both", expand=True, padx=(5, 0))
     scrollbar.pack(side="right", fill="y", padx=(0, 5))
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
+    def _on_canvas_resize(event):
+        canvas.itemconfig(content_window_id, width=event.width)
+
+    canvas.bind("<Configure>", _on_canvas_resize)
 
     # Initial load
     _load_and_display()

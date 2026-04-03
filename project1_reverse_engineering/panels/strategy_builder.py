@@ -195,127 +195,92 @@ def _load_results():
 
 
 def _display_results(results):
-    """Display search results."""
+    """Display search results as a compact scrollable list."""
     global _results_frame
 
-    # Clear existing results
     for widget in _results_frame.winfo_children():
         widget.destroy()
 
-    # Summary section
-    summary_frame = tk.Frame(_results_frame, bg=WHITE, padx=20, pady=15)
-    summary_frame.pack(fill="x", padx=10, pady=(0, 10))
+    strategies = results.get('strategies', [])
 
-    tk.Label(
-        summary_frame,
-        text="Search Results Summary",
-        font=("Segoe UI", 13, "bold"),
-        bg=WHITE, fg=DARK
-    ).pack(anchor="w", pady=(0, 10))
+    # Summary bar
+    summary = tk.Frame(_results_frame, bg="#e8f5e9", padx=15, pady=8)
+    summary.pack(fill="x", padx=5, pady=(0, 8))
 
-    summary_grid = tk.Frame(summary_frame, bg=WHITE)
-    summary_grid.pack(fill="x")
+    mode = results.get('search_mode', '?').upper()
+    time_s = results.get('search_time_s', 0)
+    n_feat = results.get('features_tested', 0)
+    n_singles = results.get('total_singles_tested', 0)
+    n_pairs = results.get('total_pairs_tested', 0)
+    n_found = results.get('strategies_found', 0)
 
-    summary_items = [
-        ("Search Mode", results['search_mode'].upper()),
-        ("Time Elapsed", f"{results['search_time_s']:.0f}s ({results['search_time_s']/60:.1f} min)"),
-        ("Features Tested", str(results['features_tested'])),
-        ("Singles Tested", f"{results['total_singles_tested']:,}"),
-        ("Pairs Tested", f"{results['total_pairs_tested']:,}"),
-        ("Strategies Found", str(results['strategies_found'])),
-    ]
+    tk.Label(summary,
+        text=f"{mode} search: {n_found} strategies found  |  "
+             f"{n_feat} features  |  {n_singles:,} singles + {n_pairs:,} pairs  |  "
+             f"{time_s:.0f}s",
+        font=("Segoe UI", 9, "bold"), bg="#e8f5e9", fg="#2e7d32"
+    ).pack(anchor="w")
 
-    for i, (label, value) in enumerate(summary_items):
-        row = i // 3
-        col = i % 3
-
-        item = tk.Frame(summary_grid, bg=WHITE)
-        item.grid(row=row, column=col, sticky="w", padx=15, pady=3)
-
-        tk.Label(item, text=f"{label}:", font=("Segoe UI", 9),
-                bg=WHITE, fg=GREY).pack(side=tk.LEFT)
-        tk.Label(item, text=value, font=("Segoe UI", 9, "bold"),
-                bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(5, 0))
-
-    # Strategies section
-    strategies_frame = tk.Frame(_results_frame, bg=WHITE, padx=20, pady=15)
-    strategies_frame.pack(fill="both", expand=True, padx=10, pady=5)
-
-    tk.Label(
-        strategies_frame,
-        text=f"Strategies ({len(results['strategies'])} found, sorted by score)",
-        font=("Segoe UI", 13, "bold"),
-        bg=WHITE, fg=DARK
-    ).pack(anchor="w", pady=(0, 10))
-
-    if not results['strategies']:
-        tk.Label(
-            strategies_frame,
-            text="No strategies found matching criteria.\n\nTry lowering min_win_rate or min_coverage.",
-            font=("Segoe UI", 10, "italic"),
-            bg=WHITE, fg=GREY,
-            justify=tk.CENTER
-        ).pack(pady=20)
+    if not strategies:
+        tk.Label(_results_frame, text="No strategies found. Try lower thresholds.",
+                font=("Segoe UI", 10, "italic"), bg=BG, fg=GREY).pack(pady=20)
         return
 
-    # Display each strategy
-    for i, strat in enumerate(results['strategies'], 1):
+    # Table header
+    header_frame = tk.Frame(_results_frame, bg="#f5f5f5", padx=10, pady=5)
+    header_frame.pack(fill="x", padx=5)
+
+    headers = [("#", 4), ("WR%", 6), ("Cov", 5), ("Avg Pips", 8), ("Total", 8), ("Score", 7), ("Conditions", 60)]
+    for text, width in headers:
+        tk.Label(header_frame, text=text, font=("Segoe UI", 8, "bold"),
+                bg="#f5f5f5", fg=GREY, width=width, anchor="w").pack(side=tk.LEFT, padx=1)
+
+    # Table rows — compact, one line per strategy
+    for i, strat in enumerate(strategies, 1):
         wr = strat['win_rate']
         cov = strat['coverage']
         avg_pips = strat['avg_pips']
         total_pips = strat['total_pips']
         score = strat['score']
-        num_conds = strat['num_conditions']
 
-        # Color based on win rate
+        row_bg = "#fafafa" if i % 2 == 0 else WHITE
+
         if wr >= 0.65:
-            card_bg = "#f0fdf4"
-            header_color = GREEN
+            wr_color = GREEN
         elif wr >= 0.55:
-            card_bg = "#fffbeb"
-            header_color = AMBER
+            wr_color = AMBER
         else:
-            card_bg = WHITE
-            header_color = GREY
+            wr_color = GREY
 
-        # Strategy card
-        card = tk.Frame(strategies_frame, bg=card_bg,
-                       highlightbackground=header_color,
-                       highlightthickness=3, padx=20, pady=12)
-        card.pack(fill="x", pady=5)
+        pips_color = GREEN if avg_pips > 0 else RED
 
-        # Header
-        header_text = (f"#{i}: {num_conds}-condition strategy — "
-                      f"WR {wr*100:.1f}% | {cov} trades | "
-                      f"avg {avg_pips:+.0f} pips | "
-                      f"total {total_pips:+.0f} pips | "
-                      f"score {score:.1f}")
+        row = tk.Frame(_results_frame, bg=row_bg, padx=10, pady=3)
+        row.pack(fill="x", padx=5)
 
-        tk.Label(
-            card, text=header_text,
-            font=("Segoe UI", 11, "bold"),
-            bg=card_bg, fg=header_color
-        ).pack(anchor="w", pady=(0, 8))
-
-        # Conditions
-        tk.Label(
-            card, text=f"Conditions ({len(strat['conditions'])}):",
-            font=("Segoe UI", 10, "bold"),
-            bg=card_bg, fg=DARK
-        ).pack(anchor="w", pady=(5, 3))
-
-        for j, cond in enumerate(strat['conditions'], 1):
+        # Build compact condition string
+        cond_parts = []
+        for cond in strat['conditions']:
             feat = cond['feature']
+            short_feat = feat if len(feat) <= 25 else feat[:22] + "..."
             op = cond['operator']
             val = cond['value']
-            cond_text = f"  {j}. {feat} {op} {val:.4f}"
+            cond_parts.append(f"{short_feat}{op}{val:.2f}")
+        cond_text = " AND ".join(cond_parts)
 
-            tk.Label(
-                card, text=cond_text,
-                font=("Consolas", 9, "normal"),
-                bg=card_bg, fg="#1a1a1a",
-                anchor="w"
-            ).pack(fill="x", padx=(20, 0), pady=1)
+        tk.Label(row, text=f"{i}", font=("Segoe UI", 8),
+                bg=row_bg, fg=GREY, width=4, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{wr*100:.1f}%", font=("Segoe UI", 8, "bold"),
+                bg=row_bg, fg=wr_color, width=6, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{cov}", font=("Segoe UI", 8),
+                bg=row_bg, fg=DARK, width=5, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{avg_pips:+.0f}", font=("Segoe UI", 8, "bold"),
+                bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{total_pips:+.0f}", font=("Segoe UI", 8),
+                bg=row_bg, fg=pips_color, width=8, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=f"{score:.1f}", font=("Segoe UI", 8),
+                bg=row_bg, fg=DARK, width=7, anchor="w").pack(side=tk.LEFT, padx=1)
+        tk.Label(row, text=cond_text, font=("Consolas", 8),
+                bg=row_bg, fg="#333333", anchor="w").pack(side=tk.LEFT, padx=(5, 0), fill="x", expand=True)
 
 
 def build_panel(parent):
@@ -520,11 +485,23 @@ def build_panel(parent):
         lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
 
-    canvas.create_window((0, 0), window=_results_frame, anchor="nw")
+    content_window_id = canvas.create_window((0, 0), window=_results_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
 
     canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
     scrollbar.pack(side="right", fill="y", padx=(0, 20))
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
+    def _on_canvas_resize(event):
+        canvas.itemconfig(content_window_id, width=event.width)
+
+    canvas.bind("<Configure>", _on_canvas_resize)
 
     # Initial data check
     _update_data_status()
