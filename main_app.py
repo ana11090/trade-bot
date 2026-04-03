@@ -1,8 +1,6 @@
 import sys
 import os
 
-# Ensure the folder containing this file is on the Python path
-# so that "import state", "import helpers" etc. work from anywhere
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import tkinter as tk
@@ -63,65 +61,132 @@ content        = tk.Frame(canvas, bg="#f0f2f5")
 content_window = canvas.create_window((0, 0), window=content, anchor="nw")
 
 
-def on_content_resize(event):
-    canvas.configure(scrollregion=canvas.bbox("all"))
+# Throttled resize — avoid recalculating scrollregion on every widget create
+_resize_after = [None]
 
+def _update_scrollregion():
+    canvas.configure(scrollregion=canvas.bbox("all"))
+    _resize_after[0] = None
+
+def on_content_resize(event):
+    if _resize_after[0]:
+        window.after_cancel(_resize_after[0])
+    _resize_after[0] = window.after(16, _update_scrollregion)
 
 def on_canvas_resize(event):
     canvas.itemconfig(content_window, width=event.width)
-
 
 content.bind("<Configure>", on_content_resize)
 canvas.bind("<Configure>",  on_canvas_resize)
 
 
-def scroll_canvas(event):
-    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+# ─────────────────────────────────────────────────────────────────────────────
+# SMART SCROLL ROUTER — one handler, routes to nearest scrollable Canvas
+# ─────────────────────────────────────────────────────────────────────────────
+def _route_scroll(event):
+    """Walk widget hierarchy to find the innermost scrollable Canvas."""
+    delta = int(-1 * (event.delta / 120)) if event.delta else 0
+    if not delta:
+        return
+    w = event.widget
+    while w is not None:
+        if isinstance(w, tk.Canvas):
+            try:
+                y0, y1 = w.yview()
+                if y0 > 0.0 or y1 < 1.0:
+                    w.yview_scroll(delta, "units")
+                    return
+            except tk.TclError:
+                pass
+        w = getattr(w, 'master', None)
+    canvas.yview_scroll(delta, "units")
 
+def _route_scroll_up(event):
+    w = event.widget
+    while w is not None:
+        if isinstance(w, tk.Canvas):
+            try:
+                y0, y1 = w.yview()
+                if y0 > 0.0 or y1 < 1.0:
+                    w.yview_scroll(-3, "units"); return
+            except tk.TclError:
+                pass
+        w = getattr(w, 'master', None)
+    canvas.yview_scroll(-3, "units")
 
-canvas.bind("<MouseWheel>", scroll_canvas)
-content.bind("<MouseWheel>", scroll_canvas)
+def _route_scroll_down(event):
+    w = event.widget
+    while w is not None:
+        if isinstance(w, tk.Canvas):
+            try:
+                y0, y1 = w.yview()
+                if y0 > 0.0 or y1 < 1.0:
+                    w.yview_scroll(3, "units"); return
+            except tk.TclError:
+                pass
+        w = getattr(w, 'master', None)
+    canvas.yview_scroll(3, "units")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BUILD ALL PANELS
+# COPYABLE LABELS — applied per-panel when built, not all upfront
 # ─────────────────────────────────────────────────────────────────────────────
-state.all_panels["pipeline"]      = pipeline.build_panel(content)
-state.all_panels["panel4"]        = performance.build_panel(content)
-state.all_panels["panel5"]        = statistics.build_panel(content)
-state.all_panels["panel6"]        = risk_flags.build_panel(content)
-state.all_panels["panel7"]        = prop_compliance.build_panel(content)
-state.all_panels["panel8"]        = cost_spread.build_panel(content)
-state.all_panels["account_survival"]  = account_survival.build_panel(content)
-state.all_panels["expected_value"]    = expected_value.build_panel(content)
-state.all_panels["breakeven"]         = breakeven.build_panel(content)
-state.all_panels["kelly"]             = kelly.build_panel(content)
-state.all_panels["streaks"]           = streaks.build_panel(content)
-state.all_panels["drawdown_recovery"] = drawdown_recovery.build_panel(content)
+def _apply_copyable(widget):
+    if isinstance(widget, tk.Label):
+        make_copyable(widget)
+    for child in widget.winfo_children():
+        _apply_copyable(child)
 
-# Project 1 - Reverse Engineering
-state.all_panels["p1_config"]  = configuration.build_panel(content)
-state.all_panels["p1_run"]     = run_scenarios.build_panel(content)
-state.all_panels["p1_results"] = results.build_panel(content)
-state.all_panels["p1_analysis"] = robot_analysis.build_panel(content)
-state.all_panels["p1_xgboost"] = p1_xgboost.build_panel(content)
-state.all_panels["p1_search"]  = p1_strategy_builder.build_panel(content)
 
-# Project 2 - Backtesting
-state.all_panels["p2_config"]    = p2_configuration.build_panel(content)
-state.all_panels["p2_run"]       = p2_run_backtest.build_panel(content)
-state.all_panels["p2_results"]   = p2_view_results.build_panel(content)
-state.all_panels["p2_prop_test"] = p2_prop_test.build_panel(content)
-state.all_panels["p2_refiner"]    = p2_refiner.build_panel(content)
-state.all_panels["p2_validator"]  = p2_validator.build_panel(content)
+# ─────────────────────────────────────────────────────────────────────────────
+# LAZY PANEL BUILDER — wraps each builder to apply copyable + re-assert scroll
+# ─────────────────────────────────────────────────────────────────────────────
+def _make_builder(build_fn):
+    def _build():
+        panel = build_fn()
+        _apply_copyable(panel)
+        # Re-assert smart scroll router: panel's build_panel may call bind_all
+        window.bind_all("<MouseWheel>", _route_scroll)
+        window.bind_all("<Button-4>", _route_scroll_up)
+        window.bind_all("<Button-5>", _route_scroll_down)
+        return panel
+    return _build
 
-# Project 3 - Live Trading
-state.all_panels["p3_generator"] = p3_generator.build_panel(content)
-state.all_panels["p3_monitor"]   = p3_monitor.build_panel(content)
 
-# New Project 0 extra panels
-state.all_panels["prop_explorer"]     = prop_explorer.build_panel(content)
-state.all_panels["compare_histories"] = compare_histories.build_panel(content)
-state.all_panels["lifecycle_sim"]     = lifecycle_simulator.build_panel(content)
+# ─────────────────────────────────────────────────────────────────────────────
+# REGISTER LAZY PANEL BUILDERS — panels built on first access
+# ─────────────────────────────────────────────────────────────────────────────
+state.panel_builders = {
+    "pipeline":          _make_builder(lambda: pipeline.build_panel(content)),
+    "panel4":            _make_builder(lambda: performance.build_panel(content)),
+    "panel5":            _make_builder(lambda: statistics.build_panel(content)),
+    "panel6":            _make_builder(lambda: risk_flags.build_panel(content)),
+    "panel7":            _make_builder(lambda: prop_compliance.build_panel(content)),
+    "panel8":            _make_builder(lambda: cost_spread.build_panel(content)),
+    "account_survival":  _make_builder(lambda: account_survival.build_panel(content)),
+    "expected_value":    _make_builder(lambda: expected_value.build_panel(content)),
+    "breakeven":         _make_builder(lambda: breakeven.build_panel(content)),
+    "kelly":             _make_builder(lambda: kelly.build_panel(content)),
+    "streaks":           _make_builder(lambda: streaks.build_panel(content)),
+    "drawdown_recovery": _make_builder(lambda: drawdown_recovery.build_panel(content)),
+    "p1_config":         _make_builder(lambda: configuration.build_panel(content)),
+    "p1_run":            _make_builder(lambda: run_scenarios.build_panel(content)),
+    "p1_results":        _make_builder(lambda: results.build_panel(content)),
+    "p1_analysis":       _make_builder(lambda: robot_analysis.build_panel(content)),
+    "p1_xgboost":        _make_builder(lambda: p1_xgboost.build_panel(content)),
+    "p1_search":         _make_builder(lambda: p1_strategy_builder.build_panel(content)),
+    "p2_config":         _make_builder(lambda: p2_configuration.build_panel(content)),
+    "p2_run":            _make_builder(lambda: p2_run_backtest.build_panel(content)),
+    "p2_results":        _make_builder(lambda: p2_view_results.build_panel(content)),
+    "p2_prop_test":      _make_builder(lambda: p2_prop_test.build_panel(content)),
+    "p2_refiner":        _make_builder(lambda: p2_refiner.build_panel(content)),
+    "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content)),
+    "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content)),
+    "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content)),
+    "prop_explorer":     _make_builder(lambda: prop_explorer.build_panel(content)),
+    "compare_histories": _make_builder(lambda: compare_histories.build_panel(content)),
+    "lifecycle_sim":     _make_builder(lambda: lifecycle_simulator.build_panel(content)),
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -152,16 +217,10 @@ refresh_map = {
 }
 show_panel = build_sidebar(window, canvas, refresh_map)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAKE ALL LABELS COPYABLE
-# ─────────────────────────────────────────────────────────────────────────────
-def _apply_copyable(widget):
-    if isinstance(widget, tk.Label):
-        make_copyable(widget)
-    for child in widget.winfo_children():
-        _apply_copyable(child)
-
-_apply_copyable(window)
+# Register smart scroll router AFTER sidebar (overrides any bind_all from panels)
+window.bind_all("<MouseWheel>", _route_scroll)
+window.bind_all("<Button-4>", _route_scroll_up)
+window.bind_all("<Button-5>", _route_scroll_down)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # START

@@ -28,6 +28,7 @@ FG_SUB       = "#5a7a99"   # sub-button inactive text
 # Panel registry
 all_panels   = {}
 active_panel = [None]
+panel_builders   = {}          # lazy builders: name -> callable, populated in main_app.py
 SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}
 PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_xgboost", "p1_search"}

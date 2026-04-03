@@ -130,8 +130,18 @@ def build_sidebar(window, canvas, refresh_map):
 
     # ── show_panel ────────────────────────────────────────────────────────────
     def show_panel(name):
-        for pframe in state.all_panels.values():
-            pframe.pack_forget()
+        # Lazy-build panel on first access
+        if name not in state.all_panels and name in state.panel_builders:
+            state.all_panels[name] = state.panel_builders[name]()
+
+        # O(1) panel switch: only hide the currently active panel
+        current = state.active_panel[0]
+        if current and current != name and current in state.all_panels:
+            state.all_panels[current].pack_forget()
+        elif current is None:
+            for pframe in state.all_panels.values():
+                pframe.pack_forget()
+
         if name in state.all_panels:
             state.all_panels[name].pack(fill="both", expand=True)
 
