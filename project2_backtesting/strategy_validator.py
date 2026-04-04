@@ -175,7 +175,16 @@ def walk_forward_validate(
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
     else:
         data_dir = os.path.dirname(candles_path)
-        indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
+        _ALL_GROUPS = [
+            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
+            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
+            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
+            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
+            'volume', 'vwap', 'williams_r',
+        ]
+        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
 
     exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
 
@@ -517,7 +526,16 @@ def slippage_stress_test(
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
     else:
         data_dir = os.path.dirname(candles_path)
-        indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
+        _ALL_GROUPS = [
+            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
+            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
+            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
+            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
+            'volume', 'vwap', 'williams_r',
+        ]
+        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
 
     exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
 

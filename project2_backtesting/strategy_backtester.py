@@ -114,9 +114,19 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     if cache_valid:
         print(f"  {tf}: loading from cache ({cache_path})")
         df = pd.read_parquet(cache_path)
-        df['timestamp'] = normalize_timestamp(df['timestamp'])
-        df = df.dropna(subset=['timestamp']).reset_index(drop=True)
-        return df
+        # Handle old caches that may have 'index' instead of 'timestamp'
+        if 'timestamp' not in df.columns:
+            if 'index' in df.columns:
+                df = df.rename(columns={'index': 'timestamp'})
+            else:
+                # Cache is corrupt — delete and recompute
+                print(f"  {tf}: cache missing timestamp column — deleting and recomputing")
+                os.remove(cache_path)
+                cache_valid = False
+        if cache_valid:
+            df['timestamp'] = normalize_timestamp(df['timestamp'])
+            df = df.dropna(subset=['timestamp']).reset_index(drop=True)
+            return df
 
     if needed_indicators:
         compute_groups = indicator_utils.map_rule_indicators_to_compute_groups(needed_indicators)
@@ -126,7 +136,19 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
         compute_groups = None
         print(f"  {tf}: computing all indicators from {csv_path} ...")
 
-    candles = pd.read_csv(csv_path)
+    candles = pd.read_csv(csv_path, encoding='utf-8-sig')
+
+    # Auto-detect timestamp column
+    if 'timestamp' not in candles.columns:
+        ts_col = None
+        for col in candles.columns:
+            if col.lower().strip() in ('time', 'date', 'datetime', 'open_time', 'opentime'):
+                ts_col = col
+                break
+        if ts_col is None:
+            ts_col = candles.columns[0]
+        candles = candles.rename(columns={ts_col: 'timestamp'})
+
     candles['timestamp'] = normalize_timestamp(candles['timestamp'])
     candles = candles.sort_values('timestamp').reset_index(drop=True)
 
@@ -139,6 +161,17 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
         # compute_all_indicators uses candles['timestamp'] as the DataFrame index.
         # reset_index() promotes it to a regular column named 'timestamp'.
         ind = ind.reset_index()
+
+    # Defensive: ensure 'timestamp' column exists after reset_index
+    # compute_all_indicators may use integer index → reset_index creates 'index' not 'timestamp'
+    if 'timestamp' not in ind.columns:
+        if 'index' in ind.columns:
+            ind = ind.rename(columns={'index': 'timestamp'})
+        elif len(candles) == len(ind):
+            ind['timestamp'] = candles['timestamp'].values
+        else:
+            raise KeyError(f"Cannot find timestamp column after computing {tf} indicators. "
+                           f"Columns: {list(ind.columns)[:10]}")
 
     ind['timestamp'] = normalize_timestamp(ind['timestamp'])
     ind = ind.dropna(subset=['timestamp']).reset_index(drop=True)
@@ -505,7 +538,19 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     data_dir     = os.path.dirname(candles_path)
 
     print(f"\nLoading candle data: {candles_path}")
-    candles_df = pd.read_csv(candles_path)
+    candles_df = pd.read_csv(candles_path, encoding='utf-8-sig')
+
+    # Auto-detect timestamp column
+    if 'timestamp' not in candles_df.columns:
+        ts_col = None
+        for col in candles_df.columns:
+            if col.lower().strip() in ('time', 'date', 'datetime', 'open_time', 'opentime'):
+                ts_col = col
+                break
+        if ts_col is None:
+            ts_col = candles_df.columns[0]
+        candles_df = candles_df.rename(columns={ts_col: 'timestamp'})
+
     candles_df['timestamp'] = normalize_timestamp(candles_df['timestamp'])
     candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
     print(f"  {len(candles_df)} candles "

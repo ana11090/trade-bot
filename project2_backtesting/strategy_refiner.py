@@ -592,7 +592,18 @@ def deep_optimize_generate(
     else:
         from project2_backtesting.strategy_backtester import build_multi_tf_indicators
         data_dir = os.path.dirname(candles_path)
-        indicators_df = build_multi_tf_indicators(data_dir, candles_df['timestamp'])
+        # Pass all indicator groups to force compute_indicators code path
+        # (compute_all_indicators has integer index bug)
+        _ALL_GROUPS = [
+            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
+            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
+            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
+            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
+            'volume', 'vwap', 'williams_r',
+        ]
+        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
 
     top_features = []
     if feature_matrix_path and os.path.exists(feature_matrix_path):

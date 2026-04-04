@@ -386,6 +386,12 @@ def compute_all_indicators(candles_df, prefix=""):
 
     print(f"  Computed {len(indicators.columns)} indicators")
 
+    # Set timestamp as index so reset_index() yields a named 'timestamp' column
+    # (matches compute_indicators behavior)
+    if 'timestamp' in candles_df.columns:
+        indicators.index = candles_df['timestamp'].values
+        indicators.index.name = 'timestamp'
+
     return indicators
 
 
