@@ -52,6 +52,9 @@ def _extract_required_indicators(rules):
     """
     Get the set of indicator names needed by the rules, grouped by timeframe.
     Returns dict: {"M5": ["aroon_down", "adx_14", ...], "H1": [...], ...}
+
+    SMART features (starting with SMART_) are skipped — they're computed after
+    indicators via the smart_features module.
     """
     required = {}
     for rule in rules:
@@ -59,10 +62,14 @@ def _extract_required_indicators(rules):
             continue
         for cond in rule.get('conditions', []):
             feature = cond['feature']
+            # Skip SMART features — they're computed separately after indicators
+            if feature.startswith('SMART_'):
+                continue
             parts = feature.split('_', 1)
             if len(parts) == 2:
                 tf, indicator = parts[0], parts[1]
-                required.setdefault(tf, set()).add(indicator)
+                if tf in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    required.setdefault(tf, set()).add(indicator)
     return {tf: sorted(list(inds)) for tf, inds in required.items()}
 
 
@@ -264,6 +271,42 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     if len(df) == 0:
         return trades
+
+    # ── Compute SMART features if rules need them and they're not already present ───
+    smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
+                    if c['feature'].startswith('SMART_')}
+    if smart_needed:
+        smart_present = {feat for feat in smart_needed if feat in ind.columns}
+        smart_missing = smart_needed - smart_present
+        if smart_missing:
+            # SMART features needed but not in indicators_df — compute them now
+            try:
+                from project1_reverse_engineering.smart_features import (
+                    _add_tf_divergences, _add_indicator_dynamics,
+                    _add_alignment_scores, _add_session_intelligence,
+                    _add_volatility_regimes, _add_price_action,
+                    _add_momentum_quality,
+                )
+                # SMART features need hour_of_day and open_time columns
+                if 'hour_of_day' not in ind.columns:
+                    ind['hour_of_day'] = df['timestamp'].dt.hour
+                if 'open_time' not in ind.columns:
+                    ind['open_time'] = df['timestamp'].astype(str)
+
+                ind = _add_tf_divergences(ind)
+                ind = _add_indicator_dynamics(ind)
+                ind = _add_alignment_scores(ind)
+                ind = _add_session_intelligence(ind)
+                ind = _add_volatility_regimes(ind)
+                ind = _add_price_action(ind)
+                ind = _add_momentum_quality(ind)
+
+                smart_cols = [c for c in ind.columns if c.startswith('SMART_')]
+                print(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
+            except ImportError:
+                print("  WARNING: smart_features module not found — SMART conditions will not match")
+            except Exception as e:
+                print(f"  WARNING: Failed to compute SMART features: {e}")
 
     # ── VECTORIZED: build entry signal mask ──────────────────────────────────
     signal_mask     = pd.Series(False, index=ind.index)
@@ -586,12 +629,68 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         data_dir, candles_df['timestamp'], required_indicators=required_indicators)
     print(f"  Total indicator columns: {len(indicators_df.columns)}")
 
+    # ── Compute SMART features if any rules reference them ───────────────
+    smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
+                    if c['feature'].startswith('SMART_')}
+    if smart_needed:
+        print(f"\n[BACKTESTER] Rules use {len(smart_needed)} SMART features — computing...")
+        try:
+            from project1_reverse_engineering.smart_features import (
+                _add_tf_divergences, _add_indicator_dynamics,
+                _add_alignment_scores, _add_session_intelligence,
+                _add_volatility_regimes, _add_price_action,
+                _add_momentum_quality,
+            )
+            # SMART features need hour_of_day and open_time columns
+            if 'hour_of_day' not in indicators_df.columns:
+                indicators_df['hour_of_day'] = candles_df['timestamp'].dt.hour
+            if 'open_time' not in indicators_df.columns:
+                indicators_df['open_time'] = candles_df['timestamp'].astype(str)
+
+            indicators_df = _add_tf_divergences(indicators_df)
+            indicators_df = _add_indicator_dynamics(indicators_df)
+            indicators_df = _add_alignment_scores(indicators_df)
+            indicators_df = _add_session_intelligence(indicators_df)
+            indicators_df = _add_volatility_regimes(indicators_df)
+            indicators_df = _add_price_action(indicators_df)
+            indicators_df = _add_momentum_quality(indicators_df)
+
+            smart_cols = [c for c in indicators_df.columns if c.startswith('SMART_')]
+            print(f"  Added {len(smart_cols)} SMART features")
+        except ImportError:
+            print("  WARNING: smart_features module not found — SMART conditions will not match")
+        except Exception as e:
+            print(f"  WARNING: Failed to compute SMART features: {e}")
+
+    # ── Verify all rule features are available ──────────────────────────────
     needed    = {c["feature"] for r in rules for c in r.get("conditions", [])}
     available = set(indicators_df.columns)
     found     = needed & available
     missing   = needed - available
-    print(f"Rule features: {len(found)}/{len(needed)} found"
-          + (f", {len(missing)} missing: {sorted(missing)}" if missing else ", all present"))
+
+    # Separate SMART features from regular indicators for clearer reporting
+    smart_features = {f for f in needed if f.startswith('SMART_')}
+    regular_features = needed - smart_features
+    smart_found = smart_features & available
+    smart_missing = smart_features - available
+    regular_found = regular_features & available
+    regular_missing = regular_features - available
+
+    print(f"\n[BACKTESTER] Feature availability check:")
+    print(f"  Regular indicators: {len(regular_found)}/{len(regular_features)} found"
+          + (f" — MISSING: {sorted(regular_missing)[:5]}" + ("..." if len(regular_missing) > 5 else "")
+             if regular_missing else " ✓"))
+    if smart_features:
+        print(f"  SMART features:     {len(smart_found)}/{len(smart_features)} found"
+              + (f" — MISSING: {sorted(smart_missing)[:5]}" + ("..." if len(smart_missing) > 5 else "")
+                 if smart_missing else " ✓"))
+
+    if missing:
+        print(f"  WARNING: {len(missing)} features missing — rules using them will match 0 trades")
+        if regular_missing and not smart_missing:
+            print(f"  → Regular indicators missing — check that CSV files contain OHLCV data")
+        elif smart_missing and not regular_missing:
+            print(f"  → SMART features missing — ensure smart_features module is available")
 
     # ── Build rule combos ────────────────────────────────────────────────────
     rule_combos = [{"name": f"Rule {i+1}", "rules": [r], "indices": [i]}
