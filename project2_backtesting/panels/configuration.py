@@ -192,6 +192,51 @@ def _field_row(parent, label_text, var, description="", bg="#ffffff"):
     return entry
 
 
+def _auto_detect_dates(entries):
+    """Read H1 CSV and auto-fill date period fields."""
+    import pandas as pd
+
+    cfg = {k: v.get() for k, v in entries.items()}
+    symbol = cfg.get('symbol', 'XAUUSD').lower()
+    scenario = cfg.get('winning_scenario', 'H1')
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    csv_path = os.path.join(project_root, f'data/{symbol}_{scenario}.csv')
+
+    if not os.path.exists(csv_path):
+        messagebox.showwarning("No Data", f"CSV not found:\n{csv_path}")
+        return
+
+    try:
+        df = pd.read_csv(csv_path, usecols=[0], encoding='utf-8-sig')
+        ts_col = df.columns[0]
+        dates = pd.to_datetime(df[ts_col], errors='coerce').dropna()
+
+        if len(dates) == 0:
+            messagebox.showwarning("No Data", "No valid dates found in CSV.")
+            return
+
+        min_date = dates.min()
+        max_date = dates.max()
+        total_days = (max_date - min_date).days
+
+        # Split: 70% in-sample, 30% out-of-sample
+        split_date = min_date + pd.Timedelta(days=int(total_days * 0.7))
+
+        entries['insample_start'].set(min_date.strftime('%Y-%m-%d'))
+        entries['insample_end'].set(split_date.strftime('%Y-%m-%d'))
+        entries['outsample_start'].set((split_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
+        entries['outsample_end'].set(max_date.strftime('%Y-%m-%d'))
+
+        messagebox.showinfo("Dates Auto-Filled",
+            f"Data range: {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}\n"
+            f"Total: {total_days} days ({len(dates):,} candles)\n\n"
+            f"In-sample (70%): {min_date.strftime('%Y-%m-%d')} to {split_date.strftime('%Y-%m-%d')}\n"
+            f"Out-of-sample (30%): {(split_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not read dates:\n{e}")
+
+
 def build_panel(parent):
     """Build the configuration panel"""
     global _rules_status_label, _price_status_label, _output_text
@@ -265,6 +310,18 @@ def build_panel(parent):
                "First date of the validation period — data the model has never seen.")
     _field_row(period_frame, "Out-of-Sample End   (YYYY-MM-DD)", _make_var('outsample_end'),
                "Last date of the validation period.")
+
+    # Auto-detect dates button
+    auto_btn_frame = tk.Frame(period_frame, bg="#ffffff")
+    auto_btn_frame.pack(fill="x", pady=(8, 0))
+
+    tk.Button(auto_btn_frame, text="📅 Auto-Detect from Data (70/30 split)",
+              command=lambda: _auto_detect_dates(entries),
+              bg="#667eea", fg="white", font=("Arial", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=15, pady=6).pack(side=tk.LEFT)
+
+    tk.Label(auto_btn_frame, text="Reads your CSV and fills dates automatically",
+             font=("Arial", 8), bg="#ffffff", fg="#888888").pack(side=tk.LEFT, padx=(10, 0))
 
     # Capital & Risk
     risk_frame = tk.LabelFrame(config_frame, text="💰 Capital & Risk",
