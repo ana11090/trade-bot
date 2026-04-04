@@ -30,19 +30,21 @@ _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 
 def compute_monthly_pnl(trades):
     """
-    Group trades by month, return monthly P&L breakdown.
-    Returns list of dicts: [{month: '2020-01', pnl_pips: +340, trades: 12, wins: 8}, ...]
+    Group trades by month, return monthly P&L breakdown with daily trade frequency stats.
+    Returns list of dicts: [{month: '2020-01', pnl_pips: +340, trades: 12, wins: 8,
+                             avg_trades_per_day: 2.4, min_trades_per_day: 1, max_trades_per_day: 5}, ...]
     """
     monthly = {}
     for t in trades:
         try:
             dt = pd.to_datetime(t.get('entry_time', ''))
             key = dt.strftime('%Y-%m')
+            day = dt.strftime('%Y-%m-%d')
         except Exception:
             continue
 
         if key not in monthly:
-            monthly[key] = {'month': key, 'pnl_pips': 0, 'trades': 0, 'wins': 0, 'losses': 0}
+            monthly[key] = {'month': key, 'pnl_pips': 0, 'trades': 0, 'wins': 0, 'losses': 0, 'daily_counts': {}}
 
         pnl = t.get('net_pips', 0)
         monthly[key]['pnl_pips'] += pnl
@@ -51,6 +53,17 @@ def compute_monthly_pnl(trades):
             monthly[key]['wins'] += 1
         else:
             monthly[key]['losses'] += 1
+
+        monthly[key]['daily_counts'][day] = monthly[key]['daily_counts'].get(day, 0) + 1
+
+    # Compute daily trade frequency stats
+    for m in monthly.values():
+        counts = list(m['daily_counts'].values()) if m['daily_counts'] else [0]
+        m['trading_days'] = len(m['daily_counts'])
+        m['avg_trades_per_day'] = round(m['trades'] / max(m['trading_days'], 1), 1)
+        m['min_trades_per_day'] = min(counts) if counts else 0
+        m['max_trades_per_day'] = max(counts) if counts else 0
+        del m['daily_counts']
 
     return sorted(monthly.values(), key=lambda x: x['month'])
 

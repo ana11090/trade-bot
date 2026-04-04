@@ -671,9 +671,12 @@ def _draw_monthly_chart(canvas, tooltip, trades):
             if coords and coords[0] <= event.x <= coords[2]:
                 pnl = m['pnl_pips']
                 text = (f"{m['month']}: {pnl:+,.0f} pips\n"
-                        f"{m['trades']} trades ({m['wins']}W / {m['losses']}L)")
+                        f"{m['trades']} trades ({m['wins']}W / {m['losses']}L)\n"
+                        f"Avg: {m.get('avg_trades_per_day', 0)}/day  "
+                        f"Min: {m.get('min_trades_per_day', 0)}/day  "
+                        f"Max: {m.get('max_trades_per_day', 0)}/day")
                 tooltip.config(text=text)
-                tooltip.place(x=event.x + 10, y=event.y - 30)
+                tooltip.place(x=event.x + 10, y=event.y - 50)
                 return
         tooltip.place_forget()
 
