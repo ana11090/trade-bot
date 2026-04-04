@@ -50,9 +50,12 @@ def run_scratch_discovery(
     start       = time.time()
     total_steps = 6
 
-    def _cb(step, msg):
+    def _cb(*args):
         if progress_callback:
-            progress_callback(step, total_steps, msg)
+            if len(args) == 2:
+                progress_callback(args[0], total_steps, args[1])
+            elif len(args) == 3:
+                progress_callback(args[0], args[1], args[2])
 
     # Auto-detect candle data path if not provided
     if candles_path is None:
