@@ -15,6 +15,8 @@ from helpers import make_copyable
 # Module-level variables
 _output_text = None
 _summary_frame = None
+_sort_key = ['net_total_pips']  # default sort
+_sort_reverse = [True]
 
 
 def load_summary_stats():
@@ -87,26 +89,16 @@ def open_output_folder():
 
 
 def display_summary(output_text, summary_frame):
-    """Display backtest comparison matrix results"""
-    # Clear existing summary
+    """Display ALL backtest results as sortable cards."""
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
     data = load_summary_stats()
-
     if data is None:
-        no_data_label = tk.Label(
-            summary_frame,
-            text="No backtest results found. Run the backtest first.",
-            font=("Arial", 10, "italic"),
-            bg="#ffffff",
-            fg="#999999"
-        )
-        no_data_label.pack(pady=20)
-
+        tk.Label(summary_frame, text="No backtest results found. Run the backtest first.",
+                 font=("Arial", 10, "italic"), bg="#ffffff", fg="#999").pack(pady=20)
         output_text.delete(1.0, tk.END)
-        output_text.insert(tk.END, "No backtest results available.\n\n")
-        output_text.insert(tk.END, "Please run the backtest first to see results.")
+        output_text.insert(tk.END, "No backtest results available.\n\nRun the backtest first.")
         return
 
     results = data.get('results', [])
@@ -115,79 +107,170 @@ def display_summary(output_text, summary_frame):
         output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
         return
 
-    # Summary header
+    # ── Header info ──
     info_frame = tk.Frame(summary_frame, bg="#e8f5e9", padx=15, pady=10)
-    info_frame.pack(fill="x", padx=10, pady=(0, 10))
+    info_frame.pack(fill="x", padx=10, pady=(0, 5))
 
-    combos = data.get('combinations', 0)
+    combos = data.get('combinations', len(results))
     elapsed = data.get('elapsed_seconds', 0)
     spread = data.get('spread_pips', 0)
     gen_at = data.get('generated_at', '?')
+    with_trades = sum(1 for r in results if r.get('total_trades', 0) > 0)
 
-    tk.Label(info_frame, text=f"Backtest Matrix — {combos} combinations tested",
+    tk.Label(info_frame, text=f"Backtest Matrix — {combos} combinations ({with_trades} with trades)",
              bg="#e8f5e9", fg="#2e7d32", font=("Arial", 11, "bold")).pack(anchor="w")
     tk.Label(info_frame, text=f"Generated: {gen_at}  |  Spread: {spread} pips  |  Time: {elapsed:.0f}s",
-             bg="#e8f5e9", fg="#555555", font=("Arial", 9)).pack(anchor="w")
+             bg="#e8f5e9", fg="#555", font=("Arial", 9)).pack(anchor="w")
 
-    # Top results as cards
-    for i, r in enumerate(results[:10]):
-        # Determine colors
+    # ── Sort buttons ──
+    sort_frame = tk.Frame(summary_frame, bg="#ffffff")
+    sort_frame.pack(fill="x", padx=10, pady=(5, 5))
+
+    tk.Label(sort_frame, text="Sort by:", font=("Arial", 9, "bold"),
+             bg="#ffffff", fg="#555").pack(side=tk.LEFT)
+
+    def _resort(key, reverse=True):
+        _sort_key[0] = key
+        _sort_reverse[0] = reverse
+        display_summary(output_text, summary_frame)
+
+    for label, key, rev in [
+        ("Net Pips ↓", "net_total_pips", True),
+        ("Win Rate ↓", "win_rate", True),
+        ("Profit Factor ↓", "net_profit_factor", True),
+        ("Max DD ↑ (lowest first)", "max_dd_pips", False),
+        ("Trades ↓", "total_trades", True),
+        ("Avg Pips ↓", "net_avg_pips", True),
+    ]:
+        tk.Button(sort_frame, text=label, font=("Arial", 8),
+                  bg="#667eea", fg="white", relief=tk.FLAT, padx=6, pady=2,
+                  command=lambda k=key, r=rev: _resort(k, r)).pack(side=tk.LEFT, padx=2)
+
+    # ── Filter: hide 0-trade results ──
+    show_zero_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(sort_frame, text="Show 0-trade results", variable=show_zero_var,
+                    bg="#ffffff", font=("Arial", 8),
+                    command=lambda: display_summary(output_text, summary_frame)).pack(side=tk.RIGHT)
+
+    # ── Sort results ──
+    sorted_results = sorted(results, key=lambda r: r.get(_sort_key[0], 0), reverse=_sort_reverse[0])
+
+    # Filter 0-trade if checkbox unchecked
+    if not show_zero_var.get():
+        sorted_results = [r for r in sorted_results if r.get('total_trades', 0) > 0]
+
+    # ── Scrollable results area ──
+    results_canvas = tk.Canvas(summary_frame, bg="#ffffff", highlightthickness=0)
+    results_scroll = tk.Scrollbar(summary_frame, orient="vertical", command=results_canvas.yview)
+    results_canvas.configure(yscrollcommand=results_scroll.set)
+    results_scroll.pack(side=tk.RIGHT, fill="y")
+    results_canvas.pack(fill="both", expand=True, padx=10)
+
+    results_inner = tk.Frame(results_canvas, bg="#ffffff")
+    results_wid = results_canvas.create_window((0, 0), window=results_inner, anchor="nw")
+    results_inner.bind("<Configure>", lambda e: results_canvas.configure(scrollregion=results_canvas.bbox("all")))
+    results_canvas.bind("<Configure>", lambda e: results_canvas.itemconfig(results_wid, width=e.width))
+
+    # Mousewheel
+    def _mw(event):
+        results_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    results_canvas.bind("<Enter>", lambda e: results_canvas.bind_all("<MouseWheel>", _mw))
+    results_canvas.bind("<Leave>", lambda e: results_canvas.unbind_all("<MouseWheel>"))
+
+    # Count label
+    count_text = f"Showing {len(sorted_results)} of {len(results)} results"
+    if _sort_key[0] == 'max_dd_pips' and not _sort_reverse[0]:
+        count_text += " (sorted by lowest drawdown — safer strategies first)"
+    tk.Label(results_inner, text=count_text, font=("Arial", 9),
+             bg="#ffffff", fg="#888").pack(anchor="w", pady=(0, 5))
+
+    # ── Result cards ──
+    for i, r in enumerate(sorted_results):
         net_pips = r.get('net_total_pips', 0)
         wr = r.get('win_rate', 0)
         pf = r.get('net_profit_factor', 0)
-        is_profitable = net_pips > 0
-
-        bg_color = "#f8fff8" if is_profitable else "#fff8f8"
-        border_color = "#28a745" if is_profitable else "#dc3545"
-
-        card = tk.Frame(summary_frame, bg=bg_color, highlightbackground=border_color,
-                       highlightthickness=1, padx=12, pady=8)
-        card.pack(fill="x", padx=10, pady=3)
-
-        # Row 1: rank + strategy name
-        header = f"#{i+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
-        tk.Label(card, text=header, bg=bg_color, fg="#333333",
-                font=("Arial", 10, "bold")).pack(anchor="w")
-
-        # Row 2: key metrics
         trades = r.get('total_trades', 0)
-        net = r.get('net_total_pips', 0)
         avg = r.get('net_avg_pips', 0)
         dd = r.get('max_dd_pips', 0)
+        best = r.get('best_trade', 0)
+        worst = r.get('worst_trade', 0)
 
-        wr_color = "#28a745" if wr >= 55 else "#dc3545" if wr < 45 else "#ff8f00"
-        pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
-        net_color = "#28a745" if net > 0 else "#dc3545"
+        is_profitable = net_pips > 0 and trades > 0
+        bg_color = "#f8fff8" if is_profitable else "#fff8f8" if trades > 0 else "#f5f5f5"
+        border_color = "#28a745" if is_profitable else "#dc3545" if trades > 0 else "#ccc"
 
-        metrics_frame = tk.Frame(card, bg=bg_color)
-        metrics_frame.pack(fill="x", pady=(3, 0))
+        card = tk.Frame(results_inner, bg=bg_color, highlightbackground=border_color,
+                         highlightthickness=1, padx=12, pady=6)
+        card.pack(fill="x", pady=2)
 
-        for label, value, color in [
-            ("Trades", str(trades), "#333333"),
-            ("WR", f"{wr:.1f}%", wr_color),
-            ("PF", f"{pf:.2f}", pf_color),
-            ("Net", f"{net:+.0f} pips", net_color),
-            ("Avg", f"{avg:+.1f} pips", net_color),
-            ("MaxDD", f"{dd:.0f} pips", "#dc3545"),
-        ]:
-            tk.Label(metrics_frame, text=f"{label}: ", bg=bg_color, fg="#888888",
-                    font=("Arial", 8)).pack(side=tk.LEFT)
-            tk.Label(metrics_frame, text=value, bg=bg_color, fg=color,
-                    font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
+        # Row 1: rank + strategy name + save button
+        header_row = tk.Frame(card, bg=bg_color)
+        header_row.pack(fill="x")
 
-    # Detailed text output
+        rank_label = f"#{i+1}"
+        header_text = f"{rank_label}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
+        tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
+                 font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+
+        # Save button
+        try:
+            from shared.saved_rules import build_save_button
+            # Save the result metadata
+            save_data = {
+                'rule_combo': r.get('rule_combo', '?'),
+                'exit_strategy': r.get('exit_strategy', '?'),
+                'exit_name': r.get('exit_name', '?'),
+                'prediction': 'WIN',
+                'win_rate': wr,
+                'net_total_pips': net_pips,
+                'net_profit_factor': pf,
+                'total_trades': trades,
+                'max_dd_pips': dd,
+            }
+            sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
+            sb.pack(side=tk.RIGHT, padx=3)
+        except Exception:
+            pass
+
+        # Row 2: metrics
+        if trades > 0:
+            # Format win rate correctly
+            wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+            wr_color = "#28a745" if (wr if wr > 1 else wr*100) >= 55 else "#dc3545"
+            pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
+            net_color = "#28a745" if net_pips > 0 else "#dc3545"
+
+            metrics_row = tk.Frame(card, bg=bg_color)
+            metrics_row.pack(fill="x", pady=(2, 0))
+
+            for label, value, color in [
+                ("Trades", str(trades), "#333"),
+                ("WR", wr_str, wr_color),
+                ("PF", f"{pf:.2f}", pf_color),
+                ("Net", f"{net_pips:+,.0f} pips", net_color),
+                ("Avg", f"{avg:+.1f} pips", net_color),
+                ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
+                ("Best", f"{best:+.0f}", "#28a745"),
+                ("Worst", f"{worst:+.0f}", "#dc3545"),
+            ]:
+                tk.Label(metrics_row, text=f"{label}: ", bg=bg_color, fg="#888",
+                         font=("Arial", 8)).pack(side=tk.LEFT)
+                tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
+                         font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+        else:
+            tk.Label(card, text="0 trades — rule conditions never triggered",
+                     bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
+
+    # ── Update detailed text output too ──
     output_text.delete(1.0, tk.END)
-    output_text.insert(tk.END, f"=== BACKTEST COMPARISON MATRIX ===\n")
-    output_text.insert(tk.END, f"Generated: {gen_at}\n")
-    output_text.insert(tk.END, f"Combinations: {combos}  |  Spread: {spread} pips\n\n")
-
     output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
-                                f"{'Trades':>6} {'WR%':>6} {'PF':>6} {'Net Pips':>10} {'Avg':>8} {'MaxDD':>8}\n")
+                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Avg':>8} {'MaxDD':>8}\n")
     output_text.insert(tk.END, "-" * 110 + "\n")
 
-    for i, r in enumerate(results):
+    for i, r in enumerate(sorted_results):
         trades = r.get('total_trades', 0)
         wr = r.get('win_rate', 0)
+        wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
         pf = r.get('net_profit_factor', 0)
         net = r.get('net_total_pips', 0)
         avg = r.get('net_avg_pips', 0)
@@ -196,7 +279,7 @@ def display_summary(output_text, summary_frame):
         exit_s = r.get('exit_strategy', '?')[:26]
 
         output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
-                                    f"{trades:>6} {wr:>5.1f}% {pf:>5.2f} {net:>+10.0f} {avg:>+7.1f} {dd:>8.0f}\n")
+                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} {avg:>+7.1f} {dd:>8,.0f}\n")
 
     output_text.see("1.0")
 
@@ -274,7 +357,7 @@ def build_panel(parent):
 
     # Summary frame (for key metrics)
     _summary_frame = tk.Frame(panel, bg="#ffffff")
-    _summary_frame.pack(fill="x", padx=20, pady=10)
+    _summary_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
     # Output text (for detailed stats)
     output_frame = tk.LabelFrame(
@@ -290,7 +373,7 @@ def build_panel(parent):
 
     _output_text = scrolledtext.ScrolledText(
         output_frame,
-        height=15,
+        height=8,
         font=("Courier", 9),
         bg="#f8f9fa",
         fg="#333333",
