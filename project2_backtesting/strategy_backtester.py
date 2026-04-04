@@ -198,7 +198,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  spread_pips=2.5, commission_pips=0.0,
                  slippage_pips=0.0,
                  account_size=None, risk_per_trade_pct=1.0,
-                 default_sl_pips=150.0, pip_value_per_lot=10.0):
+                 default_sl_pips=150.0, pip_value_per_lot=10.0,
+                 swap_cost_per_lot_per_night=0.0,
+                 news_blackout_minutes=0):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -285,6 +287,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             continue
         next_candle = df.iloc[entry_pos_int + 1]
 
+        # News blackout filter
+        if news_blackout_minutes > 0:
+            from project2_backtesting.news_calendar import is_news_blackout
+            entry_time = next_candle['timestamp']
+            if is_news_blackout(entry_time, news_blackout_minutes):
+                continue  # skip this entry
+
         # Determine direction first (needed for slippage sign)
         if direction == "BOTH":
             rule_obj  = rules[rule_id] if rule_id < len(rules) else {}
@@ -366,6 +375,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         cost     = spread_pips + commission_pips
         net_pips = pnl_pips - cost
 
+        # Swap costs for overnight holds
+        swap_nights = 0
+        swap_cost_pips = 0.0
+        if swap_cost_per_lot_per_night > 0:
+            # Count how many midnight boundaries the trade crosses
+            entry_dt = pd.to_datetime(entry_time)
+            exit_dt = pd.to_datetime(exit_time)
+            swap_nights = (exit_dt.date() - entry_dt.date()).days
+            if swap_nights > 0:
+                # Convert swap cost to pips (swap is $/lot/night, pip_value is $/pip/lot)
+                swap_total_per_lot = swap_nights * swap_cost_per_lot_per_night
+                swap_cost_pips = swap_total_per_lot / pip_value_per_lot
+                net_pips -= swap_cost_pips
+
         # Position sizing and dollar P&L (optional, when account_size is provided)
         if account_size is not None:
             risk_dollars = account_size * (risk_per_trade_pct / 100.0)
@@ -390,6 +413,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "rule_id":      rule_id,
             "lot_size":     lot_size,
             "dollar_pnl":   dollar_pnl,
+            "swap_nights":  swap_nights,
+            "swap_cost_pips": round(swap_cost_pips, 1),
         })
 
     return trades

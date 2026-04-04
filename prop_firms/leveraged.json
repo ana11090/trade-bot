@@ -3,6 +3,8 @@
   "firm_name": "Get Leveraged",
   "website": "https://getleveraged.com",
   "market_type": "forex_cfd",
+  "dd_reset_timezone": "UTC",
+  "typical_swap_xauusd_per_lot_per_night": 30.0,
   "challenges": [
     {
       "challenge_id": "leveraged_standard",

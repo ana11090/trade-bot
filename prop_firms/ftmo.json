@@ -3,6 +3,8 @@
   "firm_name": "FTMO",
   "website": "https://ftmo.com",
   "market_type": "forex_cfd",
+  "dd_reset_timezone": "CET",
+  "typical_swap_xauusd_per_lot_per_night": 30.0,
   "challenges": [
     {
       "challenge_id": "ftmo_2step_standard",

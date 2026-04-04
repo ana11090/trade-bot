@@ -3,6 +3,8 @@
   "firm_name": "The 5%ers",
   "website": "https://the5ers.com",
   "market_type": "forex_cfd",
+  "dd_reset_timezone": "UTC",
+  "typical_swap_xauusd_per_lot_per_night": 25.0,
   "challenges": [
     {
       "challenge_id": "the5ers_high_stakes",

@@ -1,0 +1,22 @@
+{
+  "symbol": "XAUUSD",
+  "winning_scenario": "H1",
+  "pip_value_per_lot": "10.0",
+  "insample_start": "2022-01-01",
+  "insample_end": "2023-12-31",
+  "outsample_start": "2024-01-01",
+  "outsample_end": "2024-12-31",
+  "starting_capital": "10000",
+  "risk_pct": "1.0",
+  "lot_size_calc": "DYNAMIC",
+  "fixed_lot_size": "0.22",
+  "sl_atr": "1.5",
+  "tp1_atr": "1.5",
+  "tp2_atr": "3.0",
+  "commission": "4.0",
+  "spread": "0.3",
+  "hard_close_hour": "23",
+  "warmup_candles": "200",
+  "max_one_trade": "True",
+  "same_candle_sl_rule": "LOSS"
+}

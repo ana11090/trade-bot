@@ -201,7 +201,18 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
         if drawdown_type in ("trailing", "trailing_eod"):
             hwm = max(hwm, balance)
 
-        daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+        # Daily DD calculation based on drawdown_basis
+        drawdown_basis = phase.get("drawdown_basis", "balance")
+        if drawdown_basis == "balance_or_equity_higher":
+            # DD measured from the higher of balance or equity at start of day
+            # Since we don't track floating P&L intraday in the simulator,
+            # use balance as the reference (conservative approximation)
+            dd_reference = max(account_size, balance)
+            daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
+        elif drawdown_basis == "equity":
+            daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+        else:  # "balance" (default)
+            daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
 
         if drawdown_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -350,7 +361,15 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         if dd_type in ("trailing", "trailing_eod"):
             hwm = max(hwm, balance)
 
-        daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+        # Daily DD calculation based on drawdown_basis
+        drawdown_basis = funded_cfg.get("drawdown_basis", "balance")
+        if drawdown_basis == "balance_or_equity_higher":
+            dd_reference = max(account_size, balance)
+            daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
+        elif drawdown_basis == "equity":
+            daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+        else:  # "balance" (default)
+            daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
 
         if dd_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -586,6 +605,24 @@ def simulate_challenge(
     # ── Prepare trades ────────────────────────────────────────────────────────
     df = trades_df.copy()
     df["_close_dt"]   = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
+
+    # Convert to firm's DD reset timezone for accurate daily grouping
+    dd_reset_tz = firm.config.get("dd_reset_timezone", "UTC")
+    if dd_reset_tz != "UTC":
+        try:
+            import pytz
+            tz_map = {
+                'CET': 'Europe/Berlin',
+                'CT': 'US/Central',
+                'ET': 'US/Eastern',
+                'UTC': 'UTC',
+            }
+            tz_name = tz_map.get(dd_reset_tz, dd_reset_tz)
+            # Localize to UTC first, then convert to firm's timezone
+            df["_close_dt"] = df["_close_dt"].dt.tz_localize('UTC').dt.tz_convert(tz_name)
+        except Exception:
+            pass  # fallback to UTC if timezone conversion fails
+
     df["_close_date"] = df["_close_dt"].dt.date
     df = df.dropna(subset=["_close_dt"]).sort_values("_close_dt").reset_index(drop=True)
 

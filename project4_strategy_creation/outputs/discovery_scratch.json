@@ -1,0 +1,218 @@
+{
+  "method": "scratch_xgboost",
+  "generated_at": "2026-04-04T10:13:42.567955",
+  "computation_time_s": 52.1,
+  "candles_analyzed": 128315,
+  "base_win_rate": 0.312,
+  "sl_pips": 150.0,
+  "tp_pips": 300.0,
+  "direction": "BUY",
+  "max_hold_candles": 50,
+  "spread_pips": 2.5,
+  "features_used": 625,
+  "original_features": 570,
+  "smart_features": 55,
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 0.8158
+        },
+        {
+          "feature": "SMART_H1_rsi_14_direction",
+          "operator": "<=",
+          "value": 1.7188
+        },
+        {
+          "feature": "H1_atr_7",
+          "operator": "<=",
+          "value": 6.7638
+        },
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 2.3737
+        },
+        {
+          "feature": "H1_roc_1",
+          "operator": "<=",
+          "value": 0.0855
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.711,
+      "coverage": 5077,
+      "coverage_pct": 4.0,
+      "win_rate": 0.711,
+      "avg_pips": 172.9,
+      "score": 94.45730929455195
+    },
+    {
+      "conditions": [
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 0.8158
+        },
+        {
+          "feature": "SMART_H1_rsi_14_direction",
+          "operator": ">",
+          "value": 1.7188
+        },
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 4.174
+        },
+        {
+          "feature": "H1_macd_fast_diff",
+          "operator": "<=",
+          "value": 0.8167
+        },
+        {
+          "feature": "D1_roc_1",
+          "operator": ">",
+          "value": 0.1144
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.631,
+      "coverage": 4575,
+      "coverage_pct": 3.6,
+      "win_rate": 0.631,
+      "avg_pips": 143.0,
+      "score": 73.1962838814538
+    },
+    {
+      "conditions": [
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 0.8158
+        },
+        {
+          "feature": "SMART_H1_rsi_14_direction",
+          "operator": "<=",
+          "value": 1.7188
+        },
+        {
+          "feature": "H1_atr_7",
+          "operator": "<=",
+          "value": 6.7638
+        },
+        {
+          "feature": "SMART_H4_rsi_14_direction",
+          "operator": ">",
+          "value": 2.3737
+        },
+        {
+          "feature": "H1_roc_1",
+          "operator": ">",
+          "value": 0.0855
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.576,
+      "coverage": 1554,
+      "coverage_pct": 1.2,
+      "win_rate": 0.576,
+      "avg_pips": 109.4,
+      "score": 35.12677705785056
+    }
+  ],
+  "model_metrics": {
+    "train_accuracy": 0.7487,
+    "test_accuracy": 0.7407,
+    "n_estimators": 300,
+    "max_depth": 4,
+    "feature_importance_top_20": [
+      [
+        "SMART_H4_rsi_14_direction",
+        0.041061438620090485
+      ],
+      [
+        "SMART_H1_rsi_14_direction",
+        0.022562822327017784
+      ],
+      [
+        "M15_std_dev_50",
+        0.017046190798282623
+      ],
+      [
+        "M15_atr_21",
+        0.01604333706200123
+      ],
+      [
+        "D1_roc_1",
+        0.014435906894505024
+      ],
+      [
+        "H4_roc_1",
+        0.013757297769188881
+      ],
+      [
+        "H1_std_dev_20",
+        0.012401193380355835
+      ],
+      [
+        "H1_atr_21",
+        0.011822434142231941
+      ],
+      [
+        "H1_macd_fast_diff",
+        0.011551152914762497
+      ],
+      [
+        "SMART_rsi_h4_minus_h1",
+        0.011403070762753487
+      ],
+      [
+        "H4_macd_std_signal",
+        0.01123466994613409
+      ],
+      [
+        "H1_roc_5",
+        0.011161236092448235
+      ],
+      [
+        "H1_ema_50_above_200",
+        0.010904598981142044
+      ],
+      [
+        "H1_roc_10",
+        0.010774546302855015
+      ],
+      [
+        "M5_bb_20_2_width",
+        0.01067288313060999
+      ],
+      [
+        "H1_rsi_7",
+        0.010374887846410275
+      ],
+      [
+        "M15_atr_28",
+        0.01031864620745182
+      ],
+      [
+        "SMART_near_swing_high",
+        0.010224229656159878
+      ],
+      [
+        "H1_roc_1",
+        0.01014332752674818
+      ],
+      [
+        "H1_ema_20_distance",
+        0.009959845803678036
+      ]
+    ]
+  },
+  "profile": {
+    "method": "Scratch Discovery (no robot needed)",
+    "candles_analyzed": 128315,
+    "feature_count": 625
+  }
+}

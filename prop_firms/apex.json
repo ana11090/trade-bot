@@ -3,6 +3,8 @@
   "firm_name": "Apex Trader Funding",
   "website": "https://apextraderfunding.com",
   "market_type": "futures",
+  "dd_reset_timezone": "CT",
+  "typical_swap_xauusd_per_lot_per_night": 0.0,
   "challenges": [
     {
       "challenge_id": "apex_25k_eod",
