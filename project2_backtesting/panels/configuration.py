@@ -237,6 +237,46 @@ def _auto_detect_dates(entries):
         messagebox.showerror("Error", f"Could not read dates:\n{e}")
 
 
+def _calculate_lot_size(entries):
+    """Calculate lot size from capital, risk %, and SL ATR."""
+    try:
+        capital = float(entries['starting_capital'].get())
+        risk_pct = float(entries['risk_pct'].get())
+        sl_atr = float(entries['sl_atr'].get())
+        pip_value = float(entries['pip_value_per_lot'].get())
+    except ValueError:
+        messagebox.showwarning("Missing Values",
+            "Fill in Starting Capital, Risk %, SL ATR multiplier, and Pip Value first.")
+        return
+
+    # Estimate SL in pips using average ATR for XAUUSD H1 (~30 pips)
+    # User can adjust — this is a reasonable estimate
+    avg_atr_pips = 30  # typical H1 ATR for XAUUSD in pips
+    sl_pips = avg_atr_pips * sl_atr
+
+    risk_dollars = capital * (risk_pct / 100.0)
+    sl_value_per_lot = sl_pips * pip_value  # how much $ you lose per lot at SL
+
+    if sl_value_per_lot <= 0:
+        messagebox.showwarning("Invalid", "SL value per lot is zero — check your settings.")
+        return
+
+    lots = risk_dollars / sl_value_per_lot
+    lots = round(lots, 2)
+
+    entries['fixed_lot_size'].set(str(lots))
+
+    messagebox.showinfo("Lot Size Calculated",
+        f"Capital: ${capital:,.0f}\n"
+        f"Risk: {risk_pct}% = ${risk_dollars:,.0f}\n"
+        f"Estimated SL: {sl_pips:.0f} pips (ATR ~{avg_atr_pips} × {sl_atr})\n"
+        f"Pip value: ${pip_value}/pip/lot\n"
+        f"SL cost per lot: ${sl_value_per_lot:,.0f}\n\n"
+        f"Lot size: {lots}\n\n"
+        f"Note: DYNAMIC mode recalculates this every trade\n"
+        f"based on current equity. Recommended over FIXED.")
+
+
 def build_panel(parent):
     """Build the configuration panel"""
     global _rules_status_label, _price_status_label, _output_text
@@ -370,6 +410,14 @@ def build_panel(parent):
                "FIXED = always use the Fixed Lot Size below regardless of balance.")
     _field_row(risk_frame, "Fixed Lot Size", _make_var('fixed_lot_size'),
                "Lot size to use when Lot Size Calculation = FIXED. Example: 0.01 = micro lot.")
+
+    # Calculate button
+    calc_btn_frame = tk.Frame(risk_frame, bg="#ffffff")
+    calc_btn_frame.pack(fill="x", pady=(2, 6))
+    tk.Button(calc_btn_frame, text="🧮 Calculate from Capital & Risk",
+              command=lambda: _calculate_lot_size(entries),
+              bg="#667eea", fg="white", font=("Arial", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT, padx=(35, 0))
 
     # SL / TP
     sltp_frame = tk.LabelFrame(config_frame, text="🎯 Stop Loss & Take Profit  (ATR multipliers)",
