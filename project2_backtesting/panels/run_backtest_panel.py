@@ -124,16 +124,26 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         net = result_dict.get('net_total_pips', 0)
                         pf = result_dict.get('net_profit_factor', 0)
 
+                        # Fix: handle win_rate that might be decimal (0.82) or already percent (82.3)
+                        if wr > 1:
+                            wr_display = f"{wr:.1f}%"  # already in percent
+                        else:
+                            wr_display = f"{wr*100:.1f}%"  # convert decimal to percent
+
+                        # Calculate approximate P&L in % (assuming $100K account, 1% risk, 150 pip SL)
+                        # Each pip ≈ $6.67 at 1% risk on $100K with 150 pip SL
+                        approx_pnl_pct = (net * 6.67) / 1000  # rough % of $100K
+
                         # Color code: green if profitable, red if not, gray if 0 trades
                         if trades == 0:
                             color = "#888888"
                             line = f"  [{cur}/{tot}] {name}: 0 trades\n"
                         elif net > 0:
                             color = "#28a745"
-                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr:.0%}, PF {pf:.2f}, {net:+.0f} pips\n"
+                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
                         else:
                             color = "#dc3545"
-                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr:.0%}, PF {pf:.2f}, {net:+.0f} pips\n"
+                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
 
                         output_text.insert(tk.END, line)
                         # Apply color to the last line
@@ -159,10 +169,19 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 global _best_result, _best_label
                 if _best_result[0] and _best_label:
                     b = _best_result[0]
+                    # Fix win rate display
+                    wr = b['win_rate']
+                    if wr > 1:
+                        wr_display = f"{wr:.1f}%"
+                    else:
+                        wr_display = f"{wr*100:.1f}%"
+                    # Add P&L %
+                    net = b['net_total_pips']
+                    approx_pnl_pct = (net * 6.67) / 1000
                     _best_label.config(
                         text=f"🏆 {b['rule_combo']} × {b['exit_name']}\n"
-                             f"   {b['total_trades']} trades | WR {b['win_rate']:.0%} | "
-                             f"PF {b['net_profit_factor']:.2f} | {b['net_total_pips']:+,.0f} pips",
+                             f"   {b['total_trades']} trades | WR {wr_display} | "
+                             f"PF {b['net_profit_factor']:.2f} | {b['net_total_pips']:+,.0f} pips (~{approx_pnl_pct:+.1f}%)",
                         fg="#28a745"
                     )
 

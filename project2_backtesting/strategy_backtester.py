@@ -787,8 +787,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     print(f"\nTop 5 by net pips (after {spread_pips} pip spread):")
     for m in matrix[:5]:
         s = m["stats"]
+        # Fix win rate display
+        wr = s['win_rate']
+        wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
         print(f"  {m['rule_combo']:20s} x {m['exit_name']:15s}: "
-              f"{s['total_trades']:>4d} trades, WR {s['win_rate']:>5.1f}%, "
+              f"{s['total_trades']:>4d} trades, WR {wr_str:>6s}, "
               f"Net PF {s['net_profit_factor']:>5.2f}, "
               f"Net {s['net_total_pips']:>+8.0f} pips  (gross {s['total_pips']:>+8.0f})")
     print("=" * 70)

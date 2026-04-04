@@ -51,6 +51,9 @@ _base_stats_frame = None
 _impact_labels    = {}       # filter_name -> tk.Label for impact text
 _results_card     = None
 _trade_list_frame = None
+_monthly_chart_canvas = None
+_monthly_tooltip      = None
+_dd_label             = None
 _opt_progress_frame = None
 _opt_results_frame  = None
 _opt_live_labels    = {}
@@ -198,6 +201,10 @@ def _do_update():
         kept, removed = apply_filters(_base_trades, filters)
         _filtered_trades = kept
         _update_results_card(kept, removed)
+        # Update monthly chart and drawdown display
+        if _monthly_chart_canvas:
+            _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, kept)
+        _update_drawdown_display(kept)
     except Exception as e:
         print(f"[refiner_panel] update error: {e}")
 
@@ -584,6 +591,138 @@ def _show_candidate_trades(trades):
         _scroll_canvas.yview_moveto(0.5)
 
 
+def _draw_monthly_chart(canvas, tooltip, trades):
+    """Draw monthly P&L bar chart with hover tooltips."""
+    from project2_backtesting.strategy_refiner import compute_monthly_pnl
+
+    canvas.delete("all")
+    monthly = compute_monthly_pnl(trades)
+
+    if not monthly:
+        canvas.create_text(200, 100, text="No trade data", font=("Arial", 11), fill="#888")
+        return
+
+    w = canvas.winfo_width() or 800
+    h = canvas.winfo_height() or 200
+
+    n = len(monthly)
+    if n == 0:
+        return
+
+    margin_left = 60
+    margin_right = 20
+    margin_top = 20
+    margin_bottom = 40
+    chart_w = w - margin_left - margin_right
+    chart_h = h - margin_top - margin_bottom
+
+    bar_width = max(2, min(20, chart_w // n - 2))
+
+    pnls = [m['pnl_pips'] for m in monthly]
+    max_pnl = max(max(pnls), 1)
+    min_pnl = min(min(pnls), -1)
+    pnl_range = max_pnl - min_pnl
+
+    # Zero line position
+    zero_y = margin_top + int(chart_h * max_pnl / pnl_range)
+
+    # Draw zero line
+    canvas.create_line(margin_left, zero_y, w - margin_right, zero_y,
+                        fill="#aaa", dash=(3, 3))
+    canvas.create_text(margin_left - 5, zero_y, text="0", anchor="e",
+                        font=("Arial", 7), fill="#888")
+
+    # Draw bars
+    bar_items = []  # (rect_id, month_data)
+
+    for i, m in enumerate(monthly):
+        x = margin_left + int(i * chart_w / n) + 1
+        pnl = m['pnl_pips']
+
+        if pnl >= 0:
+            bar_top = zero_y - int((pnl / pnl_range) * chart_h)
+            bar_bottom = zero_y
+            color = "#28a745"
+        else:
+            bar_top = zero_y
+            bar_bottom = zero_y + int((abs(pnl) / pnl_range) * chart_h)
+            color = "#dc3545"
+
+        rect = canvas.create_rectangle(x, bar_top, x + bar_width, bar_bottom,
+                                        fill=color, outline=color, width=0)
+        bar_items.append((rect, m))
+
+        # Month label (every 3rd or 6th month to avoid crowding)
+        if n <= 36 or i % 3 == 0:
+            label = m['month'][2:]  # '2020-01' → '20-01'
+            canvas.create_text(x + bar_width // 2, h - 10, text=label,
+                                font=("Arial", 6), fill="#888", angle=45)
+
+    # Y-axis labels
+    for val in [max_pnl, max_pnl // 2, min_pnl // 2, min_pnl]:
+        y = zero_y - int((val / pnl_range) * chart_h)
+        canvas.create_text(margin_left - 5, y, text=f"{val:+.0f}",
+                            anchor="e", font=("Arial", 7), fill="#888")
+
+    # Hover tooltips
+    def _on_motion(event):
+        for rect, m in bar_items:
+            coords = canvas.coords(rect)
+            if coords and coords[0] <= event.x <= coords[2]:
+                pnl = m['pnl_pips']
+                text = (f"{m['month']}: {pnl:+,.0f} pips\n"
+                        f"{m['trades']} trades ({m['wins']}W / {m['losses']}L)")
+                tooltip.config(text=text)
+                tooltip.place(x=event.x + 10, y=event.y - 30)
+                return
+        tooltip.place_forget()
+
+    def _on_leave(event):
+        tooltip.place_forget()
+
+    canvas.bind("<Motion>", _on_motion)
+    canvas.bind("<Leave>", _on_leave)
+
+
+def _update_drawdown_display(trades):
+    """Update drawdown analysis display."""
+    from project2_backtesting.strategy_refiner import compute_three_drawdowns
+    global _dd_label
+
+    if _dd_label is None:
+        return
+
+    if not trades:
+        _dd_label.config(text="No trade data", fg="#888")
+        return
+
+    dd = compute_three_drawdowns(trades, account_size=100000)
+
+    dd_text = (
+        f"┌─────────────────────────────────────────────────────────┐\n"
+        f"│ 🔴 End-of-Day DD:    {dd['eod_dd_pips']:>8,.0f} pips  ({dd['eod_dd_pct']:>5.1f}%)  │  ← PROP FIRM MEASURES THIS\n"
+        f"│    Worst day:        {dd['daily_dd_worst_pips']:>8,.0f} pips  ({dd['daily_dd_worst_pct']:>5.1f}%)  │  date: {dd['daily_dd_worst_date'] or '?'}\n"
+        f"│                                                         │\n"
+        f"│ 🟡 Realized DD:      {dd['realized_dd_pips']:>8,.0f} pips  ({dd['realized_dd_pct']:>5.1f}%)  │  after trades close\n"
+        f"│                                                         │\n"
+        f"│ 🟠 Floating DD:      {dd['floating_dd_pips']:>8,.0f} pips  ({dd['floating_dd_pct']:>5.1f}%)  │  during open trades\n"
+        f"└─────────────────────────────────────────────────────────┘\n"
+    )
+
+    # Color based on prop firm limits
+    if dd['daily_dd_worst_pct'] >= 5.0:
+        dd_text += "\n⚠️  Worst single day exceeds FTMO 5% daily DD limit!"
+        _dd_label.config(fg="#dc3545")
+    elif dd['eod_dd_pct'] >= 10.0:
+        dd_text += "\n⚠️  Total EOD drawdown exceeds FTMO 10% limit!"
+        _dd_label.config(fg="#dc3545")
+    else:
+        dd_text += f"\n✅  Within FTMO limits (daily: {dd['daily_dd_worst_pct']:.1f}%/5%, total: {dd['eod_dd_pct']:.1f}%/10%)"
+        _dd_label.config(fg="#28a745")
+
+    _dd_label.config(text=dd_text)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Panel builder
 # ─────────────────────────────────────────────────────────────────────────────
@@ -592,6 +731,7 @@ def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _base_stats_frame
     global _min_hold_var, _max_hold_var, _max_per_day_var, _min_pips_var, _cooldown_var
     global _session_vars, _day_vars, _results_card, _trade_list_frame
+    global _monthly_chart_canvas, _monthly_tooltip, _dd_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var
     global _scroll_canvas, _generate_new_var
@@ -789,6 +929,39 @@ def build_panel(parent):
               command=lambda: _export_csv(_filtered_trades),
               bg=GREEN, fg="white", font=("Segoe UI", 10, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=18, pady=8).pack(side=tk.LEFT)
+
+    # ── Monthly P&L Chart ─────────────────────────────────────────────────────
+    chart_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
+    chart_outer.pack(fill="x", padx=5, pady=(10, 5))
+    tk.Label(chart_outer, text="📊 Monthly P&L", font=("Segoe UI", 10, "bold"),
+             bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
+
+    _monthly_chart_canvas = tk.Canvas(chart_outer, bg="#ffffff", height=200,
+                                       highlightthickness=1, highlightbackground="#ddd")
+    _monthly_chart_canvas.pack(fill="x", pady=5)
+
+    # Tooltip label (hidden until hover)
+    _monthly_tooltip = tk.Label(chart_outer, text="", font=("Arial", 9, "bold"),
+                                 bg="#333333", fg="white", padx=8, pady=4)
+
+    # Draw placeholder
+    _monthly_chart_canvas.create_text(200, 100, text="Load a strategy to see monthly P&L chart",
+                                       font=("Arial", 11), fill="#888")
+
+    # Redraw chart on canvas resize
+    _monthly_chart_canvas.bind("<Configure>",
+                                lambda e: _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, _filtered_trades))
+
+    # ── Drawdown Analysis ─────────────────────────────────────────────────────
+    dd_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
+    dd_outer.pack(fill="x", padx=5, pady=(5, 5))
+    tk.Label(dd_outer, text="📉 Drawdown Analysis", font=("Segoe UI", 10, "bold"),
+             bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
+
+    _dd_label = tk.Label(dd_outer, text="Load a strategy to see drawdown analysis",
+                          font=("Courier", 9), bg=WHITE, fg="#333",
+                          justify=tk.LEFT, anchor="nw")
+    _dd_label.pack(fill="x")
 
     # ── Trade list ────────────────────────────────────────────────────────────
     tl_hdr = tk.Frame(sf, bg=WHITE, padx=20, pady=6)

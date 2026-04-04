@@ -28,6 +28,172 @@ _SESSIONS = {
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
+def compute_monthly_pnl(trades):
+    """
+    Group trades by month, return monthly P&L breakdown.
+    Returns list of dicts: [{month: '2020-01', pnl_pips: +340, trades: 12, wins: 8}, ...]
+    """
+    monthly = {}
+    for t in trades:
+        try:
+            dt = pd.to_datetime(t.get('entry_time', ''))
+            key = dt.strftime('%Y-%m')
+        except Exception:
+            continue
+
+        if key not in monthly:
+            monthly[key] = {'month': key, 'pnl_pips': 0, 'trades': 0, 'wins': 0, 'losses': 0}
+
+        pnl = t.get('net_pips', 0)
+        monthly[key]['pnl_pips'] += pnl
+        monthly[key]['trades'] += 1
+        if pnl > 0:
+            monthly[key]['wins'] += 1
+        else:
+            monthly[key]['losses'] += 1
+
+    return sorted(monthly.values(), key=lambda x: x['month'])
+
+
+def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
+                             daily_reset_hour=0):
+    """
+    Compute three types of drawdown:
+
+    1. Floating DD (intra-trade): worst equity drop DURING open trades
+       - Includes unrealized P&L from highest_since_entry / lowest_since_entry
+
+    2. Realized DD (trade-to-trade): worst equity drop between closed trade results
+       - Standard: cumulative P&L peak to trough
+
+    3. End-of-Day DD: worst equity drop measured at end of each trading day
+       - This is what prop firms actually measure
+       - Most important for passing challenges
+
+    Returns dict with all three DD values in pips and % of account.
+    """
+    if not trades:
+        return {
+            'floating_dd_pips': 0, 'floating_dd_pct': 0,
+            'realized_dd_pips': 0, 'realized_dd_pct': 0,
+            'eod_dd_pips': 0, 'eod_dd_pct': 0,
+            'daily_dd_worst_pips': 0, 'daily_dd_worst_pct': 0,
+            'daily_dd_worst_date': None,
+        }
+
+    net_pips = [t.get('net_pips', 0) for t in trades]
+
+    # ── 1. Realized DD (standard: closed trade equity curve) ──
+    cum = np.cumsum(net_pips)
+    peak = np.maximum.accumulate(cum)
+    dd = peak - cum
+    realized_dd_pips = float(dd.max())
+
+    # Convert to account %
+    # Each pip value depends on lot size. Approximate:
+    sl_pips = 150  # default assumption
+    risk_dollars = account_size * (risk_pct / 100)
+    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+    realized_dd_dollars = realized_dd_pips * pip_value * lot_size
+    realized_dd_pct = (realized_dd_dollars / account_size) * 100
+
+    # ── 2. Floating DD (intra-trade: includes unrealized P&L) ──
+    floating_dd_pips = realized_dd_pips  # start with realized
+
+    # If trades have highest/lowest since entry, we can compute floating DD
+    equity = 0
+    equity_peak = 0
+    worst_floating = 0
+
+    for t in trades:
+        # Worst point during this trade
+        if t.get('direction') == 'BUY':
+            worst_during = t.get('lowest_since_entry', t.get('entry_price', 0))
+            entry = t.get('entry_price', 0)
+            if entry > 0 and worst_during > 0:
+                worst_unrealized = (worst_during - entry) / 0.01  # pip_size
+                temp_equity = equity + worst_unrealized
+                if equity_peak - temp_equity > worst_floating:
+                    worst_floating = equity_peak - temp_equity
+
+        # After trade closes
+        pnl = t.get('net_pips', 0)
+        equity += pnl
+        equity_peak = max(equity_peak, equity)
+
+    floating_dd_pips = max(realized_dd_pips, worst_floating)
+    floating_dd_dollars = floating_dd_pips * pip_value * lot_size
+    floating_dd_pct = (floating_dd_dollars / account_size) * 100
+
+    # ── 3. End-of-Day DD (what prop firms measure) ──
+    # Group trades by day, compute daily equity at close
+    daily_equity = {}
+    running_equity = 0
+
+    for t in trades:
+        try:
+            dt = pd.to_datetime(t.get('exit_time', t.get('entry_time', '')))
+            day = dt.strftime('%Y-%m-%d')
+        except Exception:
+            continue
+
+        pnl = t.get('net_pips', 0)
+        running_equity += pnl
+        daily_equity[day] = running_equity  # last trade of the day sets EOD equity
+
+    if daily_equity:
+        days = sorted(daily_equity.keys())
+        eod_values = [daily_equity[d] for d in days]
+        eod_cum = np.array(eod_values)
+        eod_peak = np.maximum.accumulate(eod_cum)
+        eod_dd = eod_peak - eod_cum
+        eod_dd_pips = float(eod_dd.max())
+        worst_day_idx = int(eod_dd.argmax())
+        worst_day = days[worst_day_idx] if worst_day_idx < len(days) else None
+
+        # Daily DD: worst single-day loss
+        daily_pnls = {}
+        for t in trades:
+            try:
+                dt = pd.to_datetime(t.get('entry_time', ''))
+                day = dt.strftime('%Y-%m-%d')
+            except Exception:
+                continue
+            daily_pnls.setdefault(day, 0)
+            daily_pnls[day] += t.get('net_pips', 0)
+
+        if daily_pnls:
+            worst_daily_pnl = min(daily_pnls.values())
+            worst_daily_date = min(daily_pnls, key=daily_pnls.get)
+            daily_dd_worst_pips = abs(worst_daily_pnl)
+        else:
+            daily_dd_worst_pips = 0
+            worst_daily_date = None
+    else:
+        eod_dd_pips = 0
+        worst_day = None
+        daily_dd_worst_pips = 0
+        worst_daily_date = None
+
+    eod_dd_dollars = eod_dd_pips * pip_value * lot_size
+    eod_dd_pct = (eod_dd_dollars / account_size) * 100
+    daily_dd_dollars = daily_dd_worst_pips * pip_value * lot_size
+    daily_dd_worst_pct = (daily_dd_dollars / account_size) * 100
+
+    return {
+        'floating_dd_pips': round(floating_dd_pips, 1),
+        'floating_dd_pct': round(floating_dd_pct, 2),
+        'realized_dd_pips': round(realized_dd_pips, 1),
+        'realized_dd_pct': round(realized_dd_pct, 2),
+        'eod_dd_pips': round(eod_dd_pips, 1),
+        'eod_dd_pct': round(eod_dd_pct, 2),
+        'eod_worst_date': worst_day,
+        'daily_dd_worst_pips': round(daily_dd_worst_pips, 1),
+        'daily_dd_worst_pct': round(daily_dd_worst_pct, 2),
+        'daily_dd_worst_date': worst_daily_date,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
