@@ -240,6 +240,18 @@ def display_summary(output_text, summary_frame):
             pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
             net_color = "#28a745" if net_pips > 0 else "#dc3545"
 
+            # Quick DD breach check
+            dd_warning = ""
+            if dd > 0:
+                # Simple heuristic: daily DD worst-case is ~20% of max DD, total is full DD
+                # If max DD > 10% of account, likely would have breached
+                # Assume 100k account, 1% risk, $10/pip
+                dd_pct = (dd * 10 * 0.01) / 1000  # rough approximation
+                if dd_pct > 10:
+                    dd_warning = "⚠️"
+                elif dd_pct > 5:
+                    dd_warning = "⚡"
+
             metrics_row = tk.Frame(card, bg=bg_color)
             metrics_row.pack(fill="x", pady=(2, 0))
 
@@ -249,7 +261,7 @@ def display_summary(output_text, summary_frame):
                 ("PF", f"{pf:.2f}", pf_color),
                 ("Net", f"{net_pips:+,.0f} pips", net_color),
                 ("Avg", f"{avg:+.1f} pips", net_color),
-                ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
+                ("MaxDD", f"{dd:,.0f} pips {dd_warning}", "#dc3545"),
                 ("Best", f"{best:+.0f}", "#28a745"),
                 ("Worst", f"{worst:+.0f}", "#dc3545"),
             ]:

@@ -54,6 +54,7 @@ _trade_list_frame = None
 _monthly_chart_canvas = None
 _monthly_tooltip      = None
 _dd_label             = None
+_breach_label         = None
 _opt_progress_frame = None
 _opt_results_frame  = None
 _opt_live_labels    = {}
@@ -205,6 +206,7 @@ def _do_update():
         if _monthly_chart_canvas:
             _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, kept)
         _update_drawdown_display(kept)
+        _update_breach_display(kept)
     except Exception as e:
         print(f"[refiner_panel] update error: {e}")
 
@@ -726,6 +728,60 @@ def _update_drawdown_display(trades):
     _dd_label.config(text=dd_text)
 
 
+def _update_breach_display(trades):
+    """Update DD breach counter display."""
+    from project2_backtesting.strategy_refiner import count_dd_breaches
+    global _breach_label
+
+    if _breach_label is None:
+        return
+
+    if not trades:
+        _breach_label.config(text="No trade data", fg="#888")
+        return
+
+    breach = count_dd_breaches(trades, daily_limit_pct=5.0, total_limit_pct=10.0, account_size=100000)
+
+    total_breaches = breach['total_breaches']
+    daily_breaches = breach['daily_breaches']
+    total_dd_breaches = breach['total_dd_breaches']
+    survival_rate = breach['survival_rate']
+    avg_days = breach['avg_days_between_breaches']
+    longest = breach['longest_survival_days']
+    total_days = breach['total_trading_days']
+
+    breach_text = (
+        f"┌──────────────────────────────────────────────────────────────────┐\n"
+        f"│ 💀 Total Account Blows:  {total_breaches:>3}  ({100-survival_rate:>5.1f}% of trading days)     │\n"
+        f"│                                                                  │\n"
+        f"│    Daily DD breaches:    {daily_breaches:>3}  (exceeded 5% in a single day)    │\n"
+        f"│    Total DD breaches:    {total_dd_breaches:>3}  (exceeded 10% cumulative)      │\n"
+        f"│                                                                  │\n"
+        f"│ ✅ Survival rate:        {survival_rate:>5.1f}%  ({int(total_days * survival_rate / 100)}/{total_days} days clean)           │\n"
+        f"│ ⏱️  Avg days between blows: {avg_days:>5.1f} days                                │\n"
+        f"│ 🏆 Longest survival run: {longest:>5} days                                │\n"
+        f"└──────────────────────────────────────────────────────────────────┘\n"
+    )
+
+    if total_breaches == 0:
+        breach_text += "\n🎉  NEVER BLOWN! This strategy would have passed every challenge!"
+        _breach_label.config(fg="#28a745")
+    elif total_breaches <= 2:
+        breach_text += f"\n⚠️  Low risk — blown only {total_breaches} time(s) over {total_days} trading days"
+        _breach_label.config(fg="#ff8f00")
+    else:
+        breach_text += f"\n🚨  HIGH RISK — blown {total_breaches} times! Avg only {avg_days:.0f} days between blows"
+        _breach_label.config(fg="#dc3545")
+
+    # Add breach details if any
+    if breach['breach_dates'] and total_breaches <= 5:
+        breach_text += "\n\nBreach details:"
+        for b in breach['breach_dates']:
+            breach_text += f"\n  • {b['date']}: {b['type']} (survived {b['days_survived']} days before blow)"
+
+    _breach_label.config(text=breach_text)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Panel builder
 # ─────────────────────────────────────────────────────────────────────────────
@@ -734,7 +790,7 @@ def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _base_stats_frame
     global _min_hold_var, _max_hold_var, _max_per_day_var, _min_pips_var, _cooldown_var
     global _session_vars, _day_vars, _results_card, _trade_list_frame
-    global _monthly_chart_canvas, _monthly_tooltip, _dd_label
+    global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var
     global _scroll_canvas, _generate_new_var
@@ -965,6 +1021,17 @@ def build_panel(parent):
                           font=("Courier", 9), bg=WHITE, fg="#333",
                           justify=tk.LEFT, anchor="nw")
     _dd_label.pack(fill="x")
+
+    # ── DD Breach Counter ─────────────────────────────────────────────────────
+    breach_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
+    breach_outer.pack(fill="x", padx=5, pady=(5, 5))
+    tk.Label(breach_outer, text="💀 Prop Firm Breach Counter", font=("Segoe UI", 10, "bold"),
+             bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
+
+    _breach_label = tk.Label(breach_outer, text="Load a strategy to see breach analysis",
+                              font=("Courier", 9), bg=WHITE, fg="#333",
+                              justify=tk.LEFT, anchor="nw")
+    _breach_label.pack(fill="x")
 
     # ── Trade list ────────────────────────────────────────────────────────────
     tl_hdr = tk.Frame(sf, bg=WHITE, padx=20, pady=6)

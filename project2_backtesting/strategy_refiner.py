@@ -207,6 +207,145 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
     }
 
 
+def count_dd_breaches(trades, daily_limit_pct=5.0, total_limit_pct=10.0,
+                       account_size=100000, risk_pct=1.0, pip_value=10.0):
+    """
+    Count how many times strategy would have blown a prop firm account.
+
+    Simulates equity curve day by day and counts breaches of:
+    - Daily DD limit (default 5%)
+    - Total DD limit (default 10%)
+
+    When account is blown, it resets (simulates starting new challenge).
+
+    Returns dict with:
+        - total_breaches: number of times account was blown
+        - breach_dates: list of dates when limits were exceeded
+        - survival_rate: % of days without breach
+        - avg_days_between_breaches: average lifespan before blow
+        - daily_breaches: count of daily DD limit breaches
+        - total_breaches: count of total DD limit breaches
+        - longest_survival_days: best run before blow
+    """
+    if not trades:
+        return {
+            'total_breaches': 0,
+            'breach_dates': [],
+            'survival_rate': 100.0,
+            'avg_days_between_breaches': 0,
+            'daily_breaches': 0,
+            'total_dd_breaches': 0,
+            'longest_survival_days': 0,
+        }
+
+    # Sort trades by date
+    sorted_trades = sorted(trades, key=lambda t: str(t.get('entry_time', '')))
+
+    # Group trades by day
+    daily_equity = {}
+    for t in sorted_trades:
+        try:
+            dt = pd.to_datetime(t.get('entry_time', ''))
+            day = dt.strftime('%Y-%m-%d')
+        except Exception:
+            continue
+
+        if day not in daily_equity:
+            daily_equity[day] = {'pnl': 0, 'trades': []}
+
+        pnl = t.get('net_pips', 0)
+        daily_equity[day]['pnl'] += pnl
+        daily_equity[day]['trades'].append(t)
+
+    # Simulate account resets when blown
+    breach_dates = []
+    daily_breach_count = 0
+    total_breach_count = 0
+    survival_periods = []  # list of days survived per run
+
+    # Track current run
+    equity = 0
+    equity_peak = 0
+    run_start_date = None
+    days_in_run = 0
+
+    sorted_days = sorted(daily_equity.keys())
+
+    for day in sorted_days:
+        days_in_run += 1
+        if run_start_date is None:
+            run_start_date = day
+
+        daily_pnl = daily_equity[day]['pnl']
+
+        # Check daily DD limit BEFORE applying the day's P&L
+        # Daily DD is measured as worst single-day loss
+        sl_pips = 150  # default assumption
+        risk_dollars = account_size * (risk_pct / 100)
+        lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+
+        daily_loss_dollars = abs(daily_pnl) * pip_value * lot_size if daily_pnl < 0 else 0
+        daily_loss_pct = (daily_loss_dollars / account_size) * 100
+
+        # Check total DD limit (peak to current)
+        equity += daily_pnl
+        if equity > equity_peak:
+            equity_peak = equity
+
+        dd_pips = equity_peak - equity
+        dd_dollars = dd_pips * pip_value * lot_size
+        dd_pct = (dd_dollars / account_size) * 100
+
+        # Check for breaches
+        daily_breach = daily_loss_pct > daily_limit_pct if daily_pnl < 0 else False
+        total_breach = dd_pct > total_limit_pct
+
+        if daily_breach or total_breach:
+            breach_type = []
+            if daily_breach:
+                daily_breach_count += 1
+                breach_type.append(f"daily {daily_loss_pct:.1f}%")
+            if total_breach:
+                total_breach_count += 1
+                breach_type.append(f"total {dd_pct:.1f}%")
+
+            breach_dates.append({
+                'date': day,
+                'type': ' + '.join(breach_type),
+                'daily_loss_pct': round(daily_loss_pct, 2) if daily_breach else 0,
+                'total_dd_pct': round(dd_pct, 2),
+                'days_survived': days_in_run,
+            })
+
+            # Account blown — reset
+            survival_periods.append(days_in_run)
+            equity = 0
+            equity_peak = 0
+            days_in_run = 0
+            run_start_date = None
+
+    # Add final survival period if didn't end with breach
+    if days_in_run > 0:
+        survival_periods.append(days_in_run)
+
+    total_breaches = len(breach_dates)
+    total_days = len(sorted_days)
+    survival_rate = ((total_days - total_breaches) / max(total_days, 1)) * 100
+    avg_days_between = sum(survival_periods) / max(len(survival_periods), 1)
+    longest_survival = max(survival_periods) if survival_periods else 0
+
+    return {
+        'total_breaches': total_breaches,
+        'breach_dates': breach_dates,
+        'survival_rate': round(survival_rate, 1),
+        'avg_days_between_breaches': round(avg_days_between, 1),
+        'daily_breaches': daily_breach_count,
+        'total_dd_breaches': total_breach_count,
+        'longest_survival_days': longest_survival,
+        'total_trading_days': total_days,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
