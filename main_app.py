@@ -46,6 +46,9 @@ from project4_strategy_creation.panels import (
 window = tk.Tk()
 window.title("Trade Bot")
 window.geometry("900x680")
+window.lift()  # Bring window to front
+window.attributes('-topmost', True)  # Make window appear on top
+window.after_idle(window.attributes, '-topmost', False)  # Disable topmost after appearing
 state.window = window
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -142,9 +145,16 @@ def _apply_copyable(widget):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POP-OUT CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+# Mapping of panel keys to their display titles and raw builder functions (for pop-out)
+_POPOUT_CONFIG = {}  # Will be populated below
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LAZY PANEL BUILDER — wraps each builder to apply copyable + re-assert scroll
 # ─────────────────────────────────────────────────────────────────────────────
-def _make_builder(build_fn):
+def _make_builder(build_fn, panel_key=None):
     def _build():
         panel = build_fn()
         _apply_copyable(panel)
@@ -152,6 +162,16 @@ def _make_builder(build_fn):
         window.bind_all("<MouseWheel>", _route_scroll)
         window.bind_all("<Button-4>", _route_scroll_up)
         window.bind_all("<Button-5>", _route_scroll_down)
+
+        # Add pop-out button if configured
+        if panel_key and panel_key in _POPOUT_CONFIG:
+            from shared.popout import add_popout_button
+            config = _POPOUT_CONFIG[panel_key]
+            try:
+                add_popout_button(panel, config['title'], config['builder'])
+            except Exception:
+                pass  # Some panels may not support it
+
         return panel
     return _build
 
@@ -159,37 +179,65 @@ def _make_builder(build_fn):
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTER LAZY PANEL BUILDERS — panels built on first access
 # ─────────────────────────────────────────────────────────────────────────────
+# Configure pop-out for selected panels (title and raw builder function)
+_POPOUT_CONFIG = {
+    "pipeline":          {"title": "Data Pipeline",       "builder": pipeline.build_panel},
+    "panel4":            {"title": "Performance",         "builder": performance.build_panel},
+    "panel5":            {"title": "Statistics",          "builder": statistics.build_panel},
+    "panel6":            {"title": "Risk & Flags",        "builder": risk_flags.build_panel},
+    "panel7":            {"title": "Prop Compliance",     "builder": prop_compliance.build_panel},
+    "panel8":            {"title": "Cost & Spread",       "builder": cost_spread.build_panel},
+    "p1_config":         {"title": "P1 Configuration",    "builder": configuration.build_panel},
+    "p1_run":            {"title": "P1 Run Scenarios",    "builder": run_scenarios.build_panel},
+    "p1_results":        {"title": "P1 Results",          "builder": results.build_panel},
+    "p1_analysis":       {"title": "Robot Analysis",      "builder": robot_analysis.build_panel},
+    "p1_xgboost":        {"title": "P1 XGBoost",          "builder": p1_xgboost.build_panel},
+    "p1_search":         {"title": "Strategy Search",     "builder": p1_strategy_builder.build_panel},
+    "p2_config":         {"title": "P2 Configuration",    "builder": p2_configuration.build_panel},
+    "p2_run":            {"title": "Run Backtest",        "builder": p2_run_backtest.build_panel},
+    "p2_results":        {"title": "View Results",        "builder": p2_view_results.build_panel},
+    "p2_prop_test":      {"title": "Prop Firm Test",      "builder": p2_prop_test.build_panel},
+    "p2_refiner":        {"title": "Strategy Refiner",    "builder": p2_refiner.build_panel},
+    "p2_validator":      {"title": "Strategy Validator",  "builder": p2_validator.build_panel},
+    "p3_generator":      {"title": "EA Generator",        "builder": p3_generator.build_panel},
+    "p3_monitor":        {"title": "Live Monitor",        "builder": p3_monitor.build_panel},
+    "p4_scratch":        {"title": "Build from Scratch",  "builder": p4_scratch.build_panel},
+    "prop_explorer":     {"title": "Prop Explorer",       "builder": prop_explorer.build_panel},
+    "compare_histories": {"title": "Compare Histories",   "builder": compare_histories.build_panel},
+    "lifecycle_sim":     {"title": "Lifecycle Simulator", "builder": lifecycle_simulator.build_panel},
+}
+
 state.panel_builders = {
-    "pipeline":          _make_builder(lambda: pipeline.build_panel(content)),
-    "panel4":            _make_builder(lambda: performance.build_panel(content)),
-    "panel5":            _make_builder(lambda: statistics.build_panel(content)),
-    "panel6":            _make_builder(lambda: risk_flags.build_panel(content)),
-    "panel7":            _make_builder(lambda: prop_compliance.build_panel(content)),
-    "panel8":            _make_builder(lambda: cost_spread.build_panel(content)),
+    "pipeline":          _make_builder(lambda: pipeline.build_panel(content), "pipeline"),
+    "panel4":            _make_builder(lambda: performance.build_panel(content), "panel4"),
+    "panel5":            _make_builder(lambda: statistics.build_panel(content), "panel5"),
+    "panel6":            _make_builder(lambda: risk_flags.build_panel(content), "panel6"),
+    "panel7":            _make_builder(lambda: prop_compliance.build_panel(content), "panel7"),
+    "panel8":            _make_builder(lambda: cost_spread.build_panel(content), "panel8"),
     "account_survival":  _make_builder(lambda: account_survival.build_panel(content)),
     "expected_value":    _make_builder(lambda: expected_value.build_panel(content)),
     "breakeven":         _make_builder(lambda: breakeven.build_panel(content)),
     "kelly":             _make_builder(lambda: kelly.build_panel(content)),
     "streaks":           _make_builder(lambda: streaks.build_panel(content)),
     "drawdown_recovery": _make_builder(lambda: drawdown_recovery.build_panel(content)),
-    "p1_config":         _make_builder(lambda: configuration.build_panel(content)),
-    "p1_run":            _make_builder(lambda: run_scenarios.build_panel(content)),
-    "p1_results":        _make_builder(lambda: results.build_panel(content)),
-    "p1_analysis":       _make_builder(lambda: robot_analysis.build_panel(content)),
-    "p1_xgboost":        _make_builder(lambda: p1_xgboost.build_panel(content)),
-    "p1_search":         _make_builder(lambda: p1_strategy_builder.build_panel(content)),
-    "p2_config":         _make_builder(lambda: p2_configuration.build_panel(content)),
-    "p2_run":            _make_builder(lambda: p2_run_backtest.build_panel(content)),
-    "p2_results":        _make_builder(lambda: p2_view_results.build_panel(content)),
-    "p2_prop_test":      _make_builder(lambda: p2_prop_test.build_panel(content)),
-    "p2_refiner":        _make_builder(lambda: p2_refiner.build_panel(content)),
-    "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content)),
-    "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content)),
-    "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content)),
-    "p4_scratch":        _make_builder(lambda: p4_scratch.build_panel(content)),
-    "prop_explorer":     _make_builder(lambda: prop_explorer.build_panel(content)),
-    "compare_histories": _make_builder(lambda: compare_histories.build_panel(content)),
-    "lifecycle_sim":     _make_builder(lambda: lifecycle_simulator.build_panel(content)),
+    "p1_config":         _make_builder(lambda: configuration.build_panel(content), "p1_config"),
+    "p1_run":            _make_builder(lambda: run_scenarios.build_panel(content), "p1_run"),
+    "p1_results":        _make_builder(lambda: results.build_panel(content), "p1_results"),
+    "p1_analysis":       _make_builder(lambda: robot_analysis.build_panel(content), "p1_analysis"),
+    "p1_xgboost":        _make_builder(lambda: p1_xgboost.build_panel(content), "p1_xgboost"),
+    "p1_search":         _make_builder(lambda: p1_strategy_builder.build_panel(content), "p1_search"),
+    "p2_config":         _make_builder(lambda: p2_configuration.build_panel(content), "p2_config"),
+    "p2_run":            _make_builder(lambda: p2_run_backtest.build_panel(content), "p2_run"),
+    "p2_results":        _make_builder(lambda: p2_view_results.build_panel(content), "p2_results"),
+    "p2_prop_test":      _make_builder(lambda: p2_prop_test.build_panel(content), "p2_prop_test"),
+    "p2_refiner":        _make_builder(lambda: p2_refiner.build_panel(content), "p2_refiner"),
+    "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content), "p2_validator"),
+    "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content), "p3_generator"),
+    "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content), "p3_monitor"),
+    "p4_scratch":        _make_builder(lambda: p4_scratch.build_panel(content), "p4_scratch"),
+    "prop_explorer":     _make_builder(lambda: prop_explorer.build_panel(content), "prop_explorer"),
+    "compare_histories": _make_builder(lambda: compare_histories.build_panel(content), "compare_histories"),
+    "lifecycle_sim":     _make_builder(lambda: lifecycle_simulator.build_panel(content), "lifecycle_sim"),
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

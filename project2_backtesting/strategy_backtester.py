@@ -48,28 +48,52 @@ def load_rules_from_report(report_path=None):
     return entry_rules
 
 
+# Base indicators required by SMART features (from smart_features.py)
+# These MUST be loaded whenever any SMART feature is used in a rule
+_SMART_DEPENDENCIES = {
+    'M5':  ['rsi_14', 'adx_14'],
+    'M15': ['rsi_14', 'adx_14', 'ema_9_above_20'],
+    'H1':  ['rsi_14', 'adx_14', 'atr_14', 'atr_50', 'atr_100',
+            'macd_fast_diff', 'cci_14', 'bb_20_2_width',
+            'ema_200_distance', 'ema_9_above_20',
+            'keltner_width', 'std_dev_20', 'std_dev_50',
+            'pivot_point', 'candle_range', 'body_to_range_ratio',
+            'position_in_swing_range', 'stoch_14_k', 'williams_r_14', 'tsi'],
+    'H4':  ['rsi_14', 'adx_14', 'atr_14', 'atr_50',
+            'macd_fast_diff', 'ema_200_distance', 'ema_9_above_20',
+            'position_in_swing_range'],
+    'D1':  ['rsi_14', 'adx_14', 'atr_14', 'ema_200_distance'],
+}
+
+
 def _extract_required_indicators(rules):
     """
     Get the set of indicator names needed by the rules, grouped by timeframe.
-    Returns dict: {"M5": ["aroon_down", "adx_14", ...], "H1": [...], ...}
-
-    SMART features (starting with SMART_) are skipped — they're computed after
-    indicators via the smart_features module.
+    When rules use SMART features, also includes all base indicators that
+    SMART features depend on.
     """
     required = {}
+    has_smart = False
+
     for rule in rules:
         if rule.get('prediction') != 'WIN':
             continue
         for cond in rule.get('conditions', []):
             feature = cond['feature']
-            # Skip SMART features — they're computed separately after indicators
             if feature.startswith('SMART_'):
-                continue
+                has_smart = True
+                continue  # SMART features computed separately
             parts = feature.split('_', 1)
             if len(parts) == 2:
                 tf, indicator = parts[0], parts[1]
                 if tf in ('M5', 'M15', 'H1', 'H4', 'D1'):
                     required.setdefault(tf, set()).add(indicator)
+
+    # If any rule uses SMART features, add all their base dependencies
+    if has_smart:
+        for tf, deps in _SMART_DEPENDENCIES.items():
+            required.setdefault(tf, set()).update(deps)
+
     return {tf: sorted(list(inds)) for tf, inds in required.items()}
 
 
@@ -275,38 +299,36 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     # ── Compute SMART features if rules need them and they're not already present ───
     smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
                     if c['feature'].startswith('SMART_')}
-    if smart_needed:
-        smart_present = {feat for feat in smart_needed if feat in ind.columns}
-        smart_missing = smart_needed - smart_present
-        if smart_missing:
-            # SMART features needed but not in indicators_df — compute them now
-            try:
-                from project1_reverse_engineering.smart_features import (
-                    _add_tf_divergences, _add_indicator_dynamics,
-                    _add_alignment_scores, _add_session_intelligence,
-                    _add_volatility_regimes, _add_price_action,
-                    _add_momentum_quality,
-                )
-                # SMART features need hour_of_day and open_time columns
-                if 'hour_of_day' not in ind.columns:
-                    ind['hour_of_day'] = df['timestamp'].dt.hour
-                if 'open_time' not in ind.columns:
-                    ind['open_time'] = df['timestamp'].astype(str)
+    # Only compute SMART features if not already present (computed once in run_comparison_matrix)
+    if smart_needed and not any(c.startswith('SMART_') for c in ind.columns):
+        # SMART features needed but not in indicators_df — compute them now
+        try:
+            from project1_reverse_engineering.smart_features import (
+                _add_tf_divergences, _add_indicator_dynamics,
+                _add_alignment_scores, _add_session_intelligence,
+                _add_volatility_regimes, _add_price_action,
+                _add_momentum_quality,
+            )
+            # SMART features need hour_of_day and open_time columns
+            if 'hour_of_day' not in ind.columns:
+                ind['hour_of_day'] = df['timestamp'].dt.hour
+            if 'open_time' not in ind.columns:
+                ind['open_time'] = df['timestamp'].astype(str)
 
-                ind = _add_tf_divergences(ind)
-                ind = _add_indicator_dynamics(ind)
-                ind = _add_alignment_scores(ind)
-                ind = _add_session_intelligence(ind)
-                ind = _add_volatility_regimes(ind)
-                ind = _add_price_action(ind)
-                ind = _add_momentum_quality(ind)
+            ind = _add_tf_divergences(ind)
+            ind = _add_indicator_dynamics(ind)
+            ind = _add_alignment_scores(ind)
+            ind = _add_session_intelligence(ind)
+            ind = _add_volatility_regimes(ind)
+            ind = _add_price_action(ind)
+            ind = _add_momentum_quality(ind)
 
-                smart_cols = [c for c in ind.columns if c.startswith('SMART_')]
-                print(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
-            except ImportError:
-                print("  WARNING: smart_features module not found — SMART conditions will not match")
-            except Exception as e:
-                print(f"  WARNING: Failed to compute SMART features: {e}")
+            smart_cols = [c for c in ind.columns if c.startswith('SMART_')]
+            print(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
+        except ImportError:
+            print("  WARNING: smart_features module not found — SMART conditions will not match")
+        except Exception as e:
+            print(f"  WARNING: Failed to compute SMART features: {e}")
 
     # ── VECTORIZED: build entry signal mask ──────────────────────────────────
     signal_mask     = pd.Series(False, index=ind.index)

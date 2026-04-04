@@ -1,7 +1,7 @@
 {
   "method": "scratch_xgboost",
-  "generated_at": "2026-04-04T10:13:42.567955",
-  "computation_time_s": 52.1,
+  "generated_at": "2026-04-04T13:52:06.896248",
+  "computation_time_s": 1178.7,
   "candles_analyzed": 128315,
   "base_win_rate": 0.312,
   "sl_pips": 150.0,
@@ -9,210 +9,174 @@
   "direction": "BUY",
   "max_hold_candles": 50,
   "spread_pips": 2.5,
-  "features_used": 625,
+  "features_used": 570,
   "original_features": 570,
-  "smart_features": 55,
+  "smart_features": 0,
   "rules": [
     {
       "conditions": [
         {
-          "feature": "SMART_H4_rsi_14_direction",
+          "feature": "H4_roc_1",
           "operator": ">",
-          "value": 0.8158
-        },
-        {
-          "feature": "SMART_H1_rsi_14_direction",
-          "operator": "<=",
-          "value": 1.7188
-        },
-        {
-          "feature": "H1_atr_7",
-          "operator": "<=",
-          "value": 6.7638
-        },
-        {
-          "feature": "SMART_H4_rsi_14_direction",
-          "operator": ">",
-          "value": 2.3737
-        },
-        {
-          "feature": "H1_roc_1",
-          "operator": "<=",
-          "value": 0.0855
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.711,
-      "coverage": 5077,
-      "coverage_pct": 4.0,
-      "win_rate": 0.711,
-      "avg_pips": 172.9,
-      "score": 94.45730929455195
-    },
-    {
-      "conditions": [
-        {
-          "feature": "SMART_H4_rsi_14_direction",
-          "operator": ">",
-          "value": 0.8158
-        },
-        {
-          "feature": "SMART_H1_rsi_14_direction",
-          "operator": ">",
-          "value": 1.7188
-        },
-        {
-          "feature": "SMART_H4_rsi_14_direction",
-          "operator": ">",
-          "value": 4.174
-        },
-        {
-          "feature": "H1_macd_fast_diff",
-          "operator": "<=",
-          "value": 0.8167
+          "value": -0.007
         },
         {
           "feature": "D1_roc_1",
           "operator": ">",
-          "value": 0.1144
+          "value": 0.1169
+        },
+        {
+          "feature": "H1_ema_9_distance",
+          "operator": "<=",
+          "value": 0.1228
+        },
+        {
+          "feature": "H4_roc_1",
+          "operator": ">",
+          "value": 0.1476
+        },
+        {
+          "feature": "M15_atr_50",
+          "operator": "<=",
+          "value": 2.1916
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.631,
-      "coverage": 4575,
-      "coverage_pct": 3.6,
-      "win_rate": 0.631,
-      "avg_pips": 143.0,
-      "score": 73.1962838814538
+      "confidence": 0.681,
+      "coverage": 6044,
+      "coverage_pct": 4.7,
+      "win_rate": 0.681,
+      "avg_pips": 156.3,
+      "score": 94.3181267006295
     },
     {
       "conditions": [
         {
-          "feature": "SMART_H4_rsi_14_direction",
+          "feature": "H4_roc_1",
           "operator": ">",
-          "value": 0.8158
+          "value": -0.007
         },
         {
-          "feature": "SMART_H1_rsi_14_direction",
+          "feature": "D1_roc_1",
           "operator": "<=",
-          "value": 1.7188
+          "value": 0.1169
         },
         {
-          "feature": "H1_atr_7",
+          "feature": "H1_ema_9_distance",
           "operator": "<=",
-          "value": 6.7638
+          "value": 0.0021
         },
         {
-          "feature": "SMART_H4_rsi_14_direction",
+          "feature": "H4_roc_1",
           "operator": ">",
-          "value": 2.3737
+          "value": 0.117
         },
         {
-          "feature": "H1_roc_1",
-          "operator": ">",
-          "value": 0.0855
+          "feature": "M5_distance_to_swing_low",
+          "operator": "<=",
+          "value": 0.1711
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.576,
-      "coverage": 1554,
-      "coverage_pct": 1.2,
-      "win_rate": 0.576,
-      "avg_pips": 109.4,
-      "score": 35.12677705785056
+      "confidence": 0.61,
+      "coverage": 1993,
+      "coverage_pct": 1.6,
+      "win_rate": 0.61,
+      "avg_pips": 123.7,
+      "score": 44.0753924628179
     }
   ],
   "model_metrics": {
-    "train_accuracy": 0.7487,
-    "test_accuracy": 0.7407,
+    "train_accuracy": 0.7474,
+    "test_accuracy": 0.7382,
     "n_estimators": 300,
     "max_depth": 4,
     "feature_importance_top_20": [
       [
-        "SMART_H4_rsi_14_direction",
-        0.041061438620090485
-      ],
-      [
-        "SMART_H1_rsi_14_direction",
-        0.022562822327017784
-      ],
-      [
-        "M15_std_dev_50",
-        0.017046190798282623
-      ],
-      [
-        "M15_atr_21",
-        0.01604333706200123
-      ],
-      [
-        "D1_roc_1",
-        0.014435906894505024
-      ],
-      [
         "H4_roc_1",
-        0.013757297769188881
-      ],
-      [
-        "H1_std_dev_20",
-        0.012401193380355835
-      ],
-      [
-        "H1_atr_21",
-        0.011822434142231941
-      ],
-      [
-        "H1_macd_fast_diff",
-        0.011551152914762497
-      ],
-      [
-        "SMART_rsi_h4_minus_h1",
-        0.011403070762753487
-      ],
-      [
-        "H4_macd_std_signal",
-        0.01123466994613409
+        0.030601434409618378
       ],
       [
         "H1_roc_5",
-        0.011161236092448235
-      ],
-      [
-        "H1_ema_50_above_200",
-        0.010904598981142044
-      ],
-      [
-        "H1_roc_10",
-        0.010774546302855015
-      ],
-      [
-        "M5_bb_20_2_width",
-        0.01067288313060999
-      ],
-      [
-        "H1_rsi_7",
-        0.010374887846410275
+        0.022894376888871193
       ],
       [
         "M15_atr_28",
-        0.01031864620745182
+        0.020951194688677788
       ],
       [
-        "SMART_near_swing_high",
-        0.010224229656159878
+        "M5_cci_50",
+        0.019169937819242477
+      ],
+      [
+        "D1_roc_1",
+        0.01723441295325756
+      ],
+      [
+        "H1_macd_fast_diff",
+        0.0167820043861866
+      ],
+      [
+        "H1_sma_20_distance",
+        0.01675676926970482
+      ],
+      [
+        "M15_ema_9_distance",
+        0.01558810193091631
+      ],
+      [
+        "H1_ema_9_distance",
+        0.015437925234436989
+      ],
+      [
+        "M15_atr_50",
+        0.01494549959897995
+      ],
+      [
+        "H1_rsi_7",
+        0.014005330391228199
+      ],
+      [
+        "M15_roc_10",
+        0.012185752391815186
+      ],
+      [
+        "M5_distance_to_fib_236",
+        0.011899598874151707
+      ],
+      [
+        "H1_std_dev_20",
+        0.011364673264324665
+      ],
+      [
+        "M5_sma_50_distance",
+        0.01101948693394661
+      ],
+      [
+        "M5_distance_to_swing_low",
+        0.010781556367874146
+      ],
+      [
+        "M15_cci_14",
+        0.010759429074823856
+      ],
+      [
+        "M15_macd_fast_diff",
+        0.010166657157242298
+      ],
+      [
+        "H1_williams_r_14",
+        0.009984315373003483
       ],
       [
         "H1_roc_1",
-        0.01014332752674818
-      ],
-      [
-        "H1_ema_20_distance",
-        0.009959845803678036
+        0.009900102391839027
       ]
     ]
   },
   "profile": {
     "method": "Scratch Discovery (no robot needed)",
     "candles_analyzed": 128315,
-    "feature_count": 625
+    "feature_count": 570
   }
 }
