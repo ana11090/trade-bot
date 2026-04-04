@@ -188,11 +188,11 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     return ind
 
 
-def build_multi_tf_indicators(data_dir, h1_timestamps, required_indicators=None):
+def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=None):
     """
-    Load and align all timeframe indicators onto the H1 timestamp spine.
+    Load and align all timeframe indicators onto the entry timeframe's timestamp spine.
 
-    For each TF, uses merge_asof with direction='backward' so each H1 candle
+    For each TF, uses merge_asof with direction='backward' so each entry candle
     receives the most recent indicator values from that TF without look-ahead.
 
     required_indicators: optional dict {"M5": ["adx_14", "aroon_down", ...], ...}
@@ -200,10 +200,10 @@ def build_multi_tf_indicators(data_dir, h1_timestamps, required_indicators=None)
         computes the indicators its rules actually use — dramatically faster for
         large datasets (e.g. M5 with 1.5M candles).
 
-    Returns a single DataFrame indexed 0..len(h1_timestamps)-1 with all
+    Returns a single DataFrame indexed 0..len(entry_timestamps)-1 with all
     prefixed indicator columns (e.g. M5_rsi_14, H4_adx_14, D1_kst, …).
     """
-    h1_spine = pd.DataFrame({'timestamp': normalize_timestamp(pd.Series(h1_timestamps))})
+    h1_spine = pd.DataFrame({'timestamp': normalize_timestamp(pd.Series(entry_timestamps))})
     h1_spine['timestamp'] = h1_spine['timestamp'].astype('datetime64[ns]')
     h1_spine = h1_spine.sort_values('timestamp').reset_index(drop=True)
 

@@ -37,7 +37,7 @@ INSTRUMENT_SPECS = {
 DEFAULTS = {
     # Instrument
     'symbol':              'XAUUSD',
-    'winning_scenario':    'H1',
+    'winning_scenario':    'H1',  # Entry timeframe: M5, M15, H1, H4
     'pip_value_per_lot':   '10.0',
     # Date periods
     'insample_start':      '2022-01-01',
@@ -432,9 +432,24 @@ def build_panel(parent):
               bg="#667eea", fg="white", font=("Arial", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(anchor="w", padx=4, pady=(0, 4))
 
-    _field_row(instr_frame, "Winning Scenario", _make_var('winning_scenario'),
-               "Which Project 1 scenario's rules to use. Must match a folder in project1/outputs/.\n"
-               "Options: M5, M15, H1, H4, H1_M15")
+    # Entry Timeframe dropdown
+    from tkinter import ttk
+    tf_row = tk.Frame(instr_frame, bg="#ffffff")
+    tf_row.pack(fill="x", pady=(4, 0))
+    tk.Label(tf_row, text="Entry Timeframe", font=("Arial", 9, "bold"), bg="#ffffff",
+             fg="#333333", width=30, anchor="w").pack(side=tk.LEFT)
+
+    tf_combo = ttk.Combobox(tf_row, textvariable=_make_var('winning_scenario'),
+                             values=["M5", "M15", "H1", "H4"], width=14, state="readonly")
+    tf_combo.pack(side=tk.LEFT, padx=(5, 0))
+
+    tk.Label(instr_frame,
+             text="How often the bot checks for entry signals.\n"
+                  "M5 = every 5 min (most trades, most noise)  |  M15 = every 15 min\n"
+                  "H1 = every hour (balanced)  |  H4 = every 4 hours (fewest trades, cleanest)",
+             font=("Arial", 8), bg="#ffffff", fg="#888888", justify=tk.LEFT,
+             wraplength=520).pack(fill="x", padx=(4, 0), pady=(1, 4))
+
     _field_row(instr_frame, "Pip Value per Lot ($)", _make_var('pip_value_per_lot'),
                "Auto-filled from symbol lookup. Override only if your broker differs.")
 

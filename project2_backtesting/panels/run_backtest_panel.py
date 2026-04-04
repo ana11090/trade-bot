@@ -70,25 +70,34 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             import io
             import contextlib
 
-            # Find candle data
-            h1_path = None
-            for p in [
-                os.path.join(project_root, 'data', 'xauusd_H1.csv'),
-                os.path.join(project_root, 'data', 'xauusd', 'H1.csv'),
-            ]:
+            # Read entry timeframe from config
+            from project2_backtesting.panels.configuration import load_config
+            cfg = load_config()
+            entry_tf = cfg.get('winning_scenario', 'H1')
+            symbol = cfg.get('symbol', 'XAUUSD').lower()
+
+            output_text.insert(tk.END, f"Entry timeframe: {entry_tf}\n")
+
+            # Find candle data for the selected timeframe
+            candle_path = None
+            candidates = [
+                os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
+                os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
+            ]
+            for p in candidates:
                 if os.path.exists(p):
-                    h1_path = p
+                    candle_path = p
                     break
 
-            if h1_path is None:
-                output_text.insert(tk.END, "ERROR: H1 candle data not found!\n")
-                output_text.insert(tk.END, "Looked in:\n")
-                output_text.insert(tk.END, "  data/xauusd_H1.csv\n")
-                output_text.insert(tk.END, "  data/xauusd/H1.csv\n")
-                progress_label.config(text="Error: price data not found", fg="#dc3545")
+            if candle_path is None:
+                output_text.insert(tk.END, f"ERROR: {entry_tf} candle data not found!\n")
+                output_text.insert(tk.END, f"Looked in:\n")
+                for p in candidates:
+                    output_text.insert(tk.END, f"  {p}\n")
+                progress_label.config(text="Error: candle data not found", fg="#dc3545")
                 return
 
-            output_text.insert(tk.END, f"Candle data: {h1_path}\n\n")
+            output_text.insert(tk.END, f"Candle data: {candle_path}\n\n")
             output_text.see(tk.END)
 
             # Progress callback for the backtester
@@ -106,8 +115,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 sys.path.insert(0, project_root)
                 from project2_backtesting.strategy_backtester import run_comparison_matrix
                 results = run_comparison_matrix(
-                    candles_path=h1_path,
-                    timeframe='H1',
+                    candles_path=candle_path,
+                    timeframe=entry_tf,
                     progress_callback=_progress,
                 )
 
@@ -152,8 +161,12 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     # New backtester uses analysis_report.json
+    from project2_backtesting.panels.configuration import load_config
+    cfg = load_config()
+    symbol = cfg.get('symbol', 'XAUUSD').lower()
+    entry_tf = cfg.get('winning_scenario', 'H1')
     rules_file = os.path.join(project_root, 'project1_reverse_engineering/outputs/analysis_report.json')
-    price_file = os.path.join(project_root, 'data/xauusd_H1.csv')
+    price_file = os.path.join(project_root, f'data/{symbol}_{entry_tf}.csv')
 
     if not os.path.exists(rules_file):
         messagebox.showerror("Rules File Missing",
