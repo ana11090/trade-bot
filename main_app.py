@@ -77,7 +77,7 @@ def on_content_resize(event):
     _resize_after[0] = window.after(16, _update_scrollregion)
 
 def on_canvas_resize(event):
-    canvas.itemconfig(content_window, width=event.width)
+    canvas.itemconfig(content_window, width=event.width, height=event.height)
 
 content.bind("<Configure>", on_content_resize)
 canvas.bind("<Configure>",  on_canvas_resize)

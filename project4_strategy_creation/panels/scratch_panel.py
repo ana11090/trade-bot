@@ -62,14 +62,20 @@ def refresh():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build(parent):
+    # Root frame fills parent via pack(fill="both", expand=True) in sidebar.py
     root = tk.Frame(parent, bg="#f0f2f5")
 
-    # Scrollable canvas
+    # Use grid layout to ensure proper height filling
+    root.grid_rowconfigure(0, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+
+    # Scrollable canvas - fills entire root frame height
     canvas = tk.Canvas(root, bg="#f0f2f5", highlightthickness=0)
     vsb    = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
     canvas.configure(yscrollcommand=vsb.set)
-    vsb.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
+
+    canvas.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
     _widgets['canvas'] = canvas
 
     inner = tk.Frame(canvas, bg="#f0f2f5")
