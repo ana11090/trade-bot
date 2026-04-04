@@ -27,6 +27,7 @@ if _repo_root not in sys.path:
 from shared import indicator_utils
 from shared.data_utils import normalize_timestamp
 from project2_backtesting.exit_strategies import get_default_exit_strategies
+from project2_backtesting.strategy_refiner import count_dd_breaches
 
 # Timeframes to load, in order: smallest first so merge_asof steps up cleanly
 _TIMEFRAMES = ["M5", "M15", "H1", "H4", "D1"]
@@ -800,15 +801,27 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     output_dir = os.path.join(_here, 'outputs')
     os.makedirs(output_dir, exist_ok=True)
 
-    summary = [{
-        "rule_combo":      m["rule_combo"],
-        "exit_strategy":   m["exit_strategy"],
-        "exit_name":       m["exit_name"],
-        "spread_pips":     spread_pips,
-        "commission_pips": commission_pips,
-        **m["stats"],
-        "trades": m["trades"],  # Include individual trades for prop firm testing
-    } for m in matrix]
+    summary = []
+    for m in matrix:
+        # Compute breach stats for this strategy
+        breaches = count_dd_breaches(
+            m["trades"],
+            account_size=100000,
+            daily_dd_limit_pct=5.0,
+            total_dd_limit_pct=10.0
+        )
+
+        result = {
+            "rule_combo":      m["rule_combo"],
+            "exit_strategy":   m["exit_strategy"],
+            "exit_name":       m["exit_name"],
+            "spread_pips":     spread_pips,
+            "commission_pips": commission_pips,
+            **m["stats"],
+            "trades": m["trades"],  # Include individual trades for prop firm testing
+            "breaches": breaches,   # Precomputed breach data
+        }
+        summary.append(result)
 
     summary_path = os.path.join(output_dir, 'backtest_matrix.json')
     with open(summary_path, 'w', encoding='utf-8') as f:

@@ -90,8 +90,6 @@ def open_output_folder():
 
 def display_summary(output_text, summary_frame):
     """Display ALL backtest results as sortable cards."""
-    from project2_backtesting.strategy_refiner import count_dd_breaches
-
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
@@ -260,11 +258,10 @@ def display_summary(output_text, summary_frame):
                 tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
                          font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
 
-            # Breach counter
-            if 'trades' in r and r['trades']:
-                breaches = count_dd_breaches(r['trades'], account_size=100000,
-                                              daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
-                blown = breaches['blown_count']
+            # Breach counter (from precomputed data)
+            breaches = r.get('breaches', {})
+            if breaches:
+                blown = breaches.get('blown_count', 0)
 
                 breach_row = tk.Frame(card, bg=bg_color)
                 breach_row.pack(fill="x", pady=(2, 0))
@@ -273,11 +270,11 @@ def display_summary(output_text, summary_frame):
                     tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
                              bg=bg_color, fg="#28a745", font=("Arial", 8, "bold")).pack(side=tk.LEFT)
                 else:
-                    daily_b = breaches['daily_breaches']
-                    total_b = breaches['total_breaches']
-                    surv = breaches['survival_rate_per_month']
-                    wd = breaches['worst_daily_pct']
-                    wt = breaches['worst_total_pct']
+                    daily_b = breaches.get('daily_breaches', 0)
+                    total_b = breaches.get('total_breaches', 0)
+                    surv = breaches.get('survival_rate_per_month', 0)
+                    wd = breaches.get('worst_daily_pct', 0)
+                    wt = breaches.get('worst_total_pct', 0)
                     color = "#dc3545" if blown > 3 else "#e67e22"
                     tk.Label(breach_row,
                              text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
@@ -308,12 +305,11 @@ def display_summary(output_text, summary_frame):
         blown_str = "-"
         wd_str = "-"
         wt_str = "-"
-        if trades > 0 and 'trades' in r and r['trades']:
-            b = count_dd_breaches(r['trades'], account_size=100000,
-                                   daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
-            blown_str = str(b['blown_count'])
-            wd_str = f"{b['worst_daily_pct']:.1f}%"
-            wt_str = f"{b['worst_total_pct']:.1f}%"
+        breaches = r.get('breaches', {})
+        if breaches:
+            blown_str = str(breaches.get('blown_count', 0))
+            wd_str = f"{breaches.get('worst_daily_pct', 0):.1f}%"
+            wt_str = f"{breaches.get('worst_total_pct', 0):.1f}%"
 
         output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
                                     f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} {dd:>8,.0f} "
