@@ -218,16 +218,19 @@ def load_strategy_list():
         data = json.load(f)
     results = []
     for i, r in enumerate(data.get('results', [])):
+        stats = r.get('stats', r)  # stats might be nested or at top level
         results.append({
             'index':             i,
             'label':             f"{r.get('rule_combo','?')} × {r.get('exit_name','?')}",
             'rule_combo':        r.get('rule_combo', '?'),
             'exit_strategy':     r.get('exit_strategy', '?'),
             'exit_name':         r.get('exit_name', '?'),
-            'total_trades':      r.get('total_trades', 0),
-            'win_rate':          r.get('win_rate', 0),
-            'net_total_pips':    r.get('net_total_pips', 0),
-            'net_profit_factor': r.get('net_profit_factor', 0),
+            'total_trades':      stats.get('total_trades', r.get('total_trades', 0)),
+            'win_rate':          stats.get('win_rate', r.get('win_rate', 0)),
+            'net_total_pips':    stats.get('net_total_pips', r.get('net_total_pips', 0)),
+            'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
+            'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
+            'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
             'spread_pips':       r.get('spread_pips', 2.5),
             'commission_pips':   r.get('commission_pips', 0.0),
             'has_trades':        'trades' in r and bool(r.get('trades')),

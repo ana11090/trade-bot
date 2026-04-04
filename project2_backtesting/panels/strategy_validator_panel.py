@@ -37,6 +37,8 @@ GRADE_COLORS = {
 # ── Module-level state ────────────────────────────────────────────────────────
 _strategy_var   = None
 _strategies     = []
+_tree           = None
+_selected_count = None
 
 # Settings vars
 _train_var      = None
@@ -83,6 +85,7 @@ def _load_strategies():
 
 
 def _get_selected_index():
+    """Get the first selected strategy index."""
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
@@ -90,6 +93,20 @@ def _get_selected_index():
         if s['label'] == val:
             return s['index']
     return None
+
+
+def _get_all_selected_indices():
+    """Get all selected strategy indices (from treeview)."""
+    global _tree
+    try:
+        if _tree is None:
+            idx = _get_selected_index()
+            return [idx] if idx is not None else []
+        selected = _tree.selection()
+        return [int(s) for s in selected]
+    except Exception:
+        idx = _get_selected_index()
+        return [idx] if idx is not None else []
 
 
 def _get_strategy_meta(idx):
@@ -499,6 +516,57 @@ def _make_progress_cb(label_text):
     return _cb
 
 
+def _run_multi(mode):
+    """Run validation on all selected strategies, one at a time."""
+    indices = _get_all_selected_indices()
+    if not indices:
+        messagebox.showwarning("No Selection", "Select at least one strategy from the table.")
+        return
+
+    if len(indices) == 1:
+        # Single selection — run as before using original _run
+        _run(mode)
+        return
+
+    # Multiple selection — confirm first
+    if not messagebox.askyesno("Batch Validation",
+                               f"Run {mode} validation on {len(indices)} selected strategies?\n\n"
+                               f"This may take several minutes."):
+        return
+
+    # Run sequentially - temporarily override _strategy_var for each
+    def _worker():
+        _set_buttons(True)
+        original_val = _strategy_var.get()
+        try:
+            for i, idx in enumerate(indices):
+                strat = next((s for s in _strategies if s['index'] == idx), None)
+                if not strat:
+                    continue
+
+                # Temporarily set this as the selected strategy
+                _strategy_var.set(strat['label'])
+
+                if _status_lbl:
+                    state.window.after(0, lambda lbl=strat['label'], i=i, total=len(indices):
+                                        _status_lbl.config(text=f"[{i+1}/{total}] {lbl}..."))
+
+                # Run validation for this strategy
+                _run(mode)
+
+                # Wait for completion (hacky but works)
+                import time
+                time.sleep(2)
+
+            if _status_lbl:
+                state.window.after(0, lambda: _status_lbl.config(text=f"✅ Done — validated {len(indices)} strategies"))
+        finally:
+            _strategy_var.set(original_val)
+            _set_buttons(False)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _run(mode):
     """mode: 'wf' | 'mc' | 'full' | 'slip'"""
     idx = _get_selected_index()
@@ -634,6 +702,7 @@ def _run(mode):
 
 def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _prev_result_lbl
+    global _tree, _selected_count
     global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var
     global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
@@ -659,18 +728,124 @@ def build_panel(parent):
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
 
+    _strategy_var = tk.StringVar(value="")
+
     if not _strategies:
         tk.Label(sel_frame,
                  text="No backtest results. Run the backtest first.",
                  font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(anchor="w")
-        _strategy_var = tk.StringVar(value="")
     else:
-        _strategy_var = tk.StringVar(value=_strategies[0]['label'])
-        labels = [s['label'] for s in _strategies]
-        dd = ttk.Combobox(sel_frame, textvariable=_strategy_var,
-                          values=labels, state="readonly", width=70)
-        dd.pack(anchor="w")
-        dd.bind("<<ComboboxSelected>>", lambda e: _update_strat_info())
+        # Sort buttons
+        sort_frame = tk.Frame(sel_frame, bg=WHITE)
+        sort_frame.pack(fill="x", pady=(0, 5))
+        tk.Label(sort_frame, text="Sort by:", font=("Segoe UI", 9),
+                 bg=WHITE, fg=GREY).pack(side=tk.LEFT)
+
+        _sort_key = [None]  # current sort column
+
+        def _sort_strategies(key, reverse=True):
+            _sort_key[0] = key
+            _strategies.sort(key=lambda s: s.get(key, 0), reverse=reverse)
+            _rebuild_tree()
+
+        for label, key, rev in [
+            ("Profit ↓", "net_total_pips", True),
+            ("Win Rate ↓", "win_rate", True),
+            ("PF ↓", "net_profit_factor", True),
+            ("DD ↑ (lowest)", "max_dd_pips", False),
+            ("Trades ↓", "total_trades", True),
+        ]:
+            tk.Button(sort_frame, text=label, font=("Arial", 8),
+                      bg="#667eea", fg="white", relief=tk.FLAT, padx=6, pady=2,
+                      command=lambda k=key, r=rev: _sort_strategies(k, r)).pack(side=tk.LEFT, padx=2)
+
+        # Strategy table with Treeview
+        tree_frame = tk.Frame(sel_frame, bg=WHITE)
+        tree_frame.pack(fill="x", pady=5)
+
+        columns = ("rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
+        _tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
+                             height=min(len(_strategies), 10), selectmode="extended")
+
+        _tree.heading("rule",      text="Rule")
+        _tree.heading("exit",      text="Exit Strategy")
+        _tree.heading("trades",    text="Trades")
+        _tree.heading("wr",        text="Win Rate")
+        _tree.heading("pf",        text="PF")
+        _tree.heading("net_pips",  text="Net Pips")
+        _tree.heading("dd",        text="Max DD")
+        _tree.heading("avg_pips",  text="Avg Pips")
+
+        _tree.column("rule",      width=100, anchor="w")
+        _tree.column("exit",      width=130, anchor="w")
+        _tree.column("trades",    width=60,  anchor="center")
+        _tree.column("wr",        width=70,  anchor="center")
+        _tree.column("pf",        width=60,  anchor="center")
+        _tree.column("net_pips",  width=90,  anchor="e")
+        _tree.column("dd",        width=80,  anchor="e")
+        _tree.column("avg_pips",  width=70,  anchor="e")
+
+        # Scrollbar
+        tree_scroll = tk.Scrollbar(tree_frame, orient="vertical", command=_tree.yview)
+        _tree.configure(yscrollcommand=tree_scroll.set)
+        tree_scroll.pack(side=tk.RIGHT, fill="y")
+        _tree.pack(fill="x")
+
+        # Style rows with colors
+        _tree.tag_configure("profitable", foreground="#28a745")
+        _tree.tag_configure("losing", foreground="#dc3545")
+        _tree.tag_configure("no_trades", foreground="#888888")
+
+        def _rebuild_tree():
+            _tree.delete(*_tree.get_children())
+            for s in _strategies:
+                wr = s.get('win_rate', 0)
+                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                net = s.get('net_total_pips', 0)
+                dd = s.get('max_dd_pips', 0)
+                trades = s.get('total_trades', 0)
+
+                if trades == 0:
+                    tag = "no_trades"
+                elif net > 0:
+                    tag = "profitable"
+                else:
+                    tag = "losing"
+
+                _tree.insert("", "end", iid=str(s['index']), values=(
+                    s.get('rule_combo', '?'),
+                    s.get('exit_name', '?'),
+                    trades,
+                    wr_str,
+                    f"{s.get('net_profit_factor', 0):.2f}",
+                    f"{net:+,.0f}",
+                    f"{dd:,.0f}",
+                    f"{s.get('net_avg_pips', s.get('avg_pips', 0)):+.1f}",
+                ), tags=(tag,))
+
+        _rebuild_tree()
+
+        # Selection info
+        sel_info = tk.Label(sel_frame, text="Click a row to select. Ctrl+Click for multiple. Shift+Click for range.",
+                             font=("Segoe UI", 8), bg=WHITE, fg=GREY)
+        sel_info.pack(anchor="w", pady=(2, 0))
+
+        _selected_count = tk.Label(sel_frame, text="0 selected",
+                                    font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#667eea")
+        _selected_count.pack(anchor="w")
+
+        def _on_select(event):
+            selected = _tree.selection()
+            count = len(selected)
+            _selected_count.config(text=f"{count} selected")
+
+            if count == 1:
+                idx = int(selected[0])
+                label = next((s['label'] for s in _strategies if s['index'] == idx), "")
+                _strategy_var.set(label)
+                _update_strat_info()
+
+        _tree.bind("<<TreeviewSelect>>", _on_select)
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
@@ -740,25 +915,25 @@ def build_panel(parent):
     btn_frame.pack(fill="x", padx=20)
 
     _start_wf_btn = tk.Button(btn_frame, text="Run Walk-Forward Only",
-                              command=lambda: _run('wf'),
+                              command=lambda: _run_multi('wf'),
                               bg="#2d8a4e", fg="white", font=("Segoe UI", 9, "bold"),
                               relief=tk.FLAT, cursor="hand2", padx=12, pady=7)
     _start_wf_btn.pack(side=tk.LEFT, padx=(0, 6))
 
     _start_mc_btn = tk.Button(btn_frame, text="Run Monte Carlo Only",
-                              command=lambda: _run('mc'),
+                              command=lambda: _run_multi('mc'),
                               bg="#764ba2", fg="white", font=("Segoe UI", 9, "bold"),
                               relief=tk.FLAT, cursor="hand2", padx=12, pady=7)
     _start_mc_btn.pack(side=tk.LEFT, padx=(0, 6))
 
     _start_full_btn = tk.Button(btn_frame, text="Run Full Validation",
-                                command=lambda: _run('full'),
+                                command=lambda: _run_multi('full'),
                                 bg="#667eea", fg="white", font=("Segoe UI", 10, "bold"),
                                 relief=tk.FLAT, cursor="hand2", padx=16, pady=7)
     _start_full_btn.pack(side=tk.LEFT, padx=(0, 6))
 
     _start_slip_btn = tk.Button(btn_frame, text="Slippage Stress Test",
-                                command=lambda: _run('slip'),
+                                command=lambda: _run_multi('slip'),
                                 bg="#e67e00", fg="white", font=("Segoe UI", 9, "bold"),
                                 relief=tk.FLAT, cursor="hand2", padx=12, pady=7)
     _start_slip_btn.pack(side=tk.LEFT, padx=(0, 6))
