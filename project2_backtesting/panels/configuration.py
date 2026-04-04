@@ -241,16 +241,48 @@ def build_panel(parent):
     """Build the configuration panel"""
     global _rules_status_label, _price_status_label, _output_text
 
+    # Outer frame
     panel = tk.Frame(parent, bg="#ffffff")
 
+    # Scrollable canvas
+    canvas = tk.Canvas(panel, bg="#ffffff", highlightthickness=0)
+    scrollbar = tk.Scrollbar(panel, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    scrollbar.pack(side=tk.RIGHT, fill="y")
+    canvas.pack(side=tk.LEFT, fill="both", expand=True)
+
+    inner = tk.Frame(canvas, bg="#ffffff")
+    window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def _on_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    inner.bind("<Configure>", _on_configure)
+
+    def _on_canvas_resize(event):
+        canvas.itemconfig(window_id, width=event.width)
+    canvas.bind("<Configure>", _on_canvas_resize)
+
+    # Mousewheel scrolling
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _bind_wheel(event):
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    def _unbind_wheel(event):
+        canvas.unbind_all("<MouseWheel>")
+
+    canvas.bind("<Enter>", _bind_wheel)
+    canvas.bind("<Leave>", _unbind_wheel)
+
     # Title
-    tk.Label(panel, text="Project 2 - Backtesting Configuration",
+    tk.Label(inner, text="Project 2 - Backtesting Configuration",
              font=("Arial", 16, "bold"), bg="#ffffff", fg="#333333").pack(pady=(20, 5))
-    tk.Label(panel, text="Validate discovered rules on in-sample and out-of-sample data",
+    tk.Label(inner, text="Validate discovered rules on in-sample and out-of-sample data",
              font=("Arial", 10), bg="#ffffff", fg="#666666").pack(pady=(0, 15))
 
     # ── Prerequisites ────────────────────────────────────────────────────────
-    status_frame = tk.LabelFrame(panel, text="Prerequisites Status",
+    status_frame = tk.LabelFrame(inner, text="Prerequisites Status",
                                  font=("Arial", 11, "bold"), bg="#ffffff", fg="#333333",
                                  padx=20, pady=15)
     status_frame.pack(fill="x", padx=20, pady=8)
@@ -277,7 +309,7 @@ def build_panel(parent):
         entries[key] = v
         return v
 
-    config_frame = tk.LabelFrame(panel, text="Backtest Configuration",
+    config_frame = tk.LabelFrame(inner, text="Backtest Configuration",
                                  font=("Arial", 11, "bold"), bg="#ffffff", fg="#333333",
                                  padx=20, pady=15)
     config_frame.pack(fill="x", padx=20, pady=8)
@@ -311,17 +343,17 @@ def build_panel(parent):
     _field_row(period_frame, "Out-of-Sample End   (YYYY-MM-DD)", _make_var('outsample_end'),
                "Last date of the validation period.")
 
-    # Auto-detect dates button
-    auto_btn_frame = tk.Frame(period_frame, bg="#ffffff")
-    auto_btn_frame.pack(fill="x", pady=(8, 0))
+    # Auto-detect dates button — prominent, full width
+    auto_btn_frame = tk.Frame(period_frame, bg="#e8f5e9")  # light green background
+    auto_btn_frame.pack(fill="x", pady=(10, 4), padx=2)
 
-    tk.Button(auto_btn_frame, text="📅 Auto-Detect from Data (70/30 split)",
+    tk.Button(auto_btn_frame, text="📅 Auto-Detect Dates from CSV (70/30 split)",
               command=lambda: _auto_detect_dates(entries),
-              bg="#667eea", fg="white", font=("Arial", 9, "bold"),
-              relief=tk.FLAT, cursor="hand2", padx=15, pady=6).pack(side=tk.LEFT)
+              bg="#28a745", fg="white", font=("Arial", 10, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=20, pady=8).pack(side=tk.LEFT, padx=5, pady=5)
 
-    tk.Label(auto_btn_frame, text="Reads your CSV and fills dates automatically",
-             font=("Arial", 8), bg="#ffffff", fg="#888888").pack(side=tk.LEFT, padx=(10, 0))
+    tk.Label(auto_btn_frame, text="Reads your price data and fills all 4 dates automatically",
+             font=("Arial", 9), bg="#e8f5e9", fg="#555555").pack(side=tk.LEFT, padx=(10, 0))
 
     # Capital & Risk
     risk_frame = tk.LabelFrame(config_frame, text="💰 Capital & Risk",
@@ -395,7 +427,7 @@ def build_panel(parent):
               relief=tk.FLAT, cursor="hand2", padx=20, pady=8).pack(side=tk.LEFT)
 
     # ── Output ───────────────────────────────────────────────────────────────
-    output_frame = tk.LabelFrame(panel, text="Status Output",
+    output_frame = tk.LabelFrame(inner, text="Status Output",
                                  font=("Arial", 11, "bold"), bg="#ffffff", fg="#333333",
                                  padx=10, pady=10)
     output_frame.pack(fill="both", expand=True, padx=20, pady=8)
