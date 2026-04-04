@@ -471,6 +471,8 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p2_prop.pack(fill="x")
     btn_p2_saved = _sub_btn(project2_extras, "💾 Saved Rules", lambda: show_panel("p2_saved"))
     btn_p2_saved.pack(fill="x")
+    btn_p2_playground = _sub_btn(project2_extras, "🎮 Strategy Playground", lambda: show_panel("p2_playground"))
+    btn_p2_playground.pack(fill="x")
 
     PROJECT2_BUTTONS = {
         "p2_config":    btn_p2_config,
@@ -480,6 +482,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p2_validator": btn_p2_validator,
         "p2_prop_test": btn_p2_prop,
         "p2_saved":     btn_p2_saved,
+        "p2_playground": btn_p2_playground,
     }
 
     btn3 = _sidebar_btn(sidebar, "3 - Live Trading", _toggle_project3)
