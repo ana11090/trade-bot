@@ -740,44 +740,51 @@ def _update_breach_display(trades):
         _breach_label.config(text="No trade data", fg="#888")
         return
 
-    breach = count_dd_breaches(trades, daily_limit_pct=5.0, total_limit_pct=10.0, account_size=100000)
+    breaches = count_dd_breaches(trades, account_size=100000,
+                                  daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
 
-    total_breaches = breach['total_breaches']
-    daily_breaches = breach['daily_breaches']
-    total_dd_breaches = breach['total_dd_breaches']
-    survival_rate = breach['survival_rate']
-    avg_days = breach['avg_days_between_breaches']
-    longest = breach['longest_survival_days']
-    total_days = breach['total_trading_days']
+    blown = breaches['blown_count']
+    daily_dd_limit = 5.0
+    total_dd_limit = 10.0
 
-    breach_text = (
-        f"┌──────────────────────────────────────────────────────────────────┐\n"
-        f"│ 💀 Total Account Blows:  {total_breaches:>3}  ({100-survival_rate:>5.1f}% of trading days)     │\n"
-        f"│                                                                  │\n"
-        f"│    Daily DD breaches:    {daily_breaches:>3}  (exceeded 5% in a single day)    │\n"
-        f"│    Total DD breaches:    {total_dd_breaches:>3}  (exceeded 10% cumulative)      │\n"
-        f"│                                                                  │\n"
-        f"│ ✅ Survival rate:        {survival_rate:>5.1f}%  ({int(total_days * survival_rate / 100)}/{total_days} days clean)           │\n"
-        f"│ ⏱️  Avg days between blows: {avg_days:>5.1f} days                                │\n"
-        f"│ 🏆 Longest survival run: {longest:>5} days                                │\n"
-        f"└──────────────────────────────────────────────────────────────────┘\n"
-    )
-
-    if total_breaches == 0:
-        breach_text += "\n🎉  NEVER BLOWN! This strategy would have passed every challenge!"
+    if blown == 0:
+        breach_text = (
+            f"  ✅ ZERO BREACHES across {breaches['total_months']} months!\n"
+            f"     Never exceeded daily {daily_dd_limit}% or total {total_dd_limit}% DD limit.\n"
+            f"     Survival rate: {breaches['survival_rate_per_month']}%"
+        )
         _breach_label.config(fg="#28a745")
-    elif total_breaches <= 2:
-        breach_text += f"\n⚠️  Low risk — blown only {total_breaches} time(s) over {total_days} trading days"
-        _breach_label.config(fg="#ff8f00")
     else:
-        breach_text += f"\n🚨  HIGH RISK — blown {total_breaches} times! Avg only {avg_days:.0f} days between blows"
-        _breach_label.config(fg="#dc3545")
+        breach_text = (
+            f"  💀 BLOWN {blown} times in {breaches['total_months']} months\n"
+            f"\n"
+            f"     Daily DD breaches (≥{daily_dd_limit}%):  {breaches['daily_breaches']} times\n"
+            f"     Total DD breaches (≥{total_dd_limit}%): {breaches['total_breaches']} times\n"
+            f"\n"
+            f"     Worst daily DD:           {breaches['worst_daily_pct']:.1f}%  (limit: {daily_dd_limit}%)\n"
+            f"     Worst total DD:           {breaches['worst_total_pct']:.1f}%  (limit: {total_dd_limit}%)\n"
+            f"\n"
+            f"     Avg days between blows:   {breaches['avg_days_between_blows']} days\n"
+            f"     Monthly survival rate:    {breaches['survival_rate_per_month']}%\n"
+            f"     Months with blowup:       {breaches['months_blown']} / {breaches['total_months']}\n"
+        )
 
-    # Add breach details if any
-    if breach['breach_dates'] and total_breaches <= 5:
-        breach_text += "\n\nBreach details:"
-        for b in breach['breach_dates']:
-            breach_text += f"\n  • {b['date']}: {b['type']} (survived {b['days_survived']} days before blow)"
+        if breaches['daily_breach_dates']:
+            breach_text += f"\n     Daily breach dates: {', '.join(breaches['daily_breach_dates'][:5])}"
+            if len(breaches['daily_breach_dates']) > 5:
+                breach_text += f" +{len(breaches['daily_breach_dates'])-5} more"
+
+        if breaches['total_breach_dates']:
+            breach_text += f"\n     Total DD breach dates: {', '.join(breaches['total_breach_dates'][:5])}"
+            if len(breaches['total_breach_dates']) > 5:
+                breach_text += f" +{len(breaches['total_breach_dates'])-5} more"
+
+        if blown <= 3:
+            breach_text += f"\n\n     🟡 Occasional blows — might pass with good timing"
+            _breach_label.config(fg="#e67e22")
+        else:
+            breach_text += f"\n\n     🔴 Too many blows — not prop-firm safe"
+            _breach_label.config(fg="#dc3545")
 
     _breach_label.config(text=breach_text)
 

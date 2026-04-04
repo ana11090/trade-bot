@@ -207,142 +207,120 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
     }
 
 
-def count_dd_breaches(trades, daily_limit_pct=5.0, total_limit_pct=10.0,
-                       account_size=100000, risk_pct=1.0, pip_value=10.0):
+def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
+                       daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0):
     """
-    Count how many times strategy would have blown a prop firm account.
-
-    Simulates equity curve day by day and counts breaches of:
-    - Daily DD limit (default 5%)
-    - Total DD limit (default 10%)
-
-    When account is blown, it resets (simulates starting new challenge).
-
-    Returns dict with:
-        - total_breaches: number of times account was blown
-        - breach_dates: list of dates when limits were exceeded
-        - survival_rate: % of days without breach
-        - avg_days_between_breaches: average lifespan before blow
-        - daily_breaches: count of daily DD limit breaches
-        - total_breaches: count of total DD limit breaches
-        - longest_survival_days: best run before blow
+    Simulate equity curve, count prop firm DD breaches.
+    After each breach, resets account (like restarting a challenge).
     """
     if not trades:
         return {
-            'total_breaches': 0,
-            'breach_dates': [],
-            'survival_rate': 100.0,
-            'avg_days_between_breaches': 0,
-            'daily_breaches': 0,
-            'total_dd_breaches': 0,
-            'longest_survival_days': 0,
+            'daily_breaches': 0, 'total_breaches': 0, 'blown_count': 0,
+            'daily_breach_dates': [], 'total_breach_dates': [],
+            'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
+            'total_months': 0, 'months_blown': 0,
+            'worst_daily_pct': 0, 'worst_total_pct': 0,
         }
 
-    # Sort trades by date
-    sorted_trades = sorted(trades, key=lambda t: str(t.get('entry_time', '')))
+    sl_pips = 150
+    risk_dollars = account_size * (risk_pct / 100)
+    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
 
-    # Group trades by day
-    daily_equity = {}
-    for t in sorted_trades:
+    daily_pnls = {}
+    for t in trades:
         try:
             dt = pd.to_datetime(t.get('entry_time', ''))
             day = dt.strftime('%Y-%m-%d')
         except Exception:
             continue
+        pnl_dollars = t.get('net_pips', 0) * pip_value * lot_size
+        daily_pnls.setdefault(day, 0)
+        daily_pnls[day] += pnl_dollars
 
-        if day not in daily_equity:
-            daily_equity[day] = {'pnl': 0, 'trades': []}
+    if not daily_pnls:
+        return {
+            'daily_breaches': 0, 'total_breaches': 0, 'blown_count': 0,
+            'daily_breach_dates': [], 'total_breach_dates': [],
+            'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
+            'total_months': 0, 'months_blown': 0,
+            'worst_daily_pct': 0, 'worst_total_pct': 0,
+        }
 
-        pnl = t.get('net_pips', 0)
-        daily_equity[day]['pnl'] += pnl
-        daily_equity[day]['trades'].append(t)
+    days = sorted(daily_pnls.keys())
+    daily_dd_limit = account_size * (daily_dd_limit_pct / 100)
+    total_dd_limit = account_size * (total_dd_limit_pct / 100)
 
-    # Simulate account resets when blown
-    breach_dates = []
-    daily_breach_count = 0
-    total_breach_count = 0
-    survival_periods = []  # list of days survived per run
+    balance = account_size
+    high_water = account_size
+    blown_count = 0
+    daily_breach_dates = []
+    total_breach_dates = []
+    last_blown_day = None
+    days_between_blows = []
+    worst_daily_pct = 0.0
+    worst_total_pct = 0.0
 
-    # Track current run
-    equity = 0
-    equity_peak = 0
-    run_start_date = None
-    days_in_run = 0
+    for day in days:
+        day_pnl = daily_pnls[day]
 
-    sorted_days = sorted(daily_equity.keys())
+        if day_pnl < 0:
+            daily_pct = abs(day_pnl) / account_size * 100
+            worst_daily_pct = max(worst_daily_pct, daily_pct)
 
-    for day in sorted_days:
-        days_in_run += 1
-        if run_start_date is None:
-            run_start_date = day
+        if day_pnl < 0 and abs(day_pnl) >= daily_dd_limit:
+            daily_breach_dates.append(day)
+            blown_count += 1
+            if last_blown_day:
+                try:
+                    gap = (pd.to_datetime(day) - pd.to_datetime(last_blown_day)).days
+                    days_between_blows.append(gap)
+                except Exception:
+                    pass
+            last_blown_day = day
+            balance = account_size
+            high_water = account_size
+            continue
 
-        daily_pnl = daily_equity[day]['pnl']
+        balance += day_pnl
+        high_water = max(high_water, balance)
 
-        # Check daily DD limit BEFORE applying the day's P&L
-        # Daily DD is measured as worst single-day loss
-        sl_pips = 150  # default assumption
-        risk_dollars = account_size * (risk_pct / 100)
-        lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+        total_dd = high_water - balance
+        total_dd_pct = total_dd / account_size * 100
+        worst_total_pct = max(worst_total_pct, total_dd_pct)
 
-        daily_loss_dollars = abs(daily_pnl) * pip_value * lot_size if daily_pnl < 0 else 0
-        daily_loss_pct = (daily_loss_dollars / account_size) * 100
+        if total_dd >= total_dd_limit:
+            total_breach_dates.append(day)
+            blown_count += 1
+            if last_blown_day:
+                try:
+                    gap = (pd.to_datetime(day) - pd.to_datetime(last_blown_day)).days
+                    days_between_blows.append(gap)
+                except Exception:
+                    pass
+            last_blown_day = day
+            balance = account_size
+            high_water = account_size
 
-        # Check total DD limit (peak to current)
-        equity += daily_pnl
-        if equity > equity_peak:
-            equity_peak = equity
+    total_days = (pd.to_datetime(days[-1]) - pd.to_datetime(days[0])).days if len(days) > 1 else 1
+    total_months = max(total_days / 30, 1)
+    avg_gap = round(sum(days_between_blows) / len(days_between_blows), 0) if days_between_blows else total_days
 
-        dd_pips = equity_peak - equity
-        dd_dollars = dd_pips * pip_value * lot_size
-        dd_pct = (dd_dollars / account_size) * 100
-
-        # Check for breaches
-        daily_breach = daily_loss_pct > daily_limit_pct if daily_pnl < 0 else False
-        total_breach = dd_pct > total_limit_pct
-
-        if daily_breach or total_breach:
-            breach_type = []
-            if daily_breach:
-                daily_breach_count += 1
-                breach_type.append(f"daily {daily_loss_pct:.1f}%")
-            if total_breach:
-                total_breach_count += 1
-                breach_type.append(f"total {dd_pct:.1f}%")
-
-            breach_dates.append({
-                'date': day,
-                'type': ' + '.join(breach_type),
-                'daily_loss_pct': round(daily_loss_pct, 2) if daily_breach else 0,
-                'total_dd_pct': round(dd_pct, 2),
-                'days_survived': days_in_run,
-            })
-
-            # Account blown — reset
-            survival_periods.append(days_in_run)
-            equity = 0
-            equity_peak = 0
-            days_in_run = 0
-            run_start_date = None
-
-    # Add final survival period if didn't end with breach
-    if days_in_run > 0:
-        survival_periods.append(days_in_run)
-
-    total_breaches = len(breach_dates)
-    total_days = len(sorted_days)
-    survival_rate = ((total_days - total_breaches) / max(total_days, 1)) * 100
-    avg_days_between = sum(survival_periods) / max(len(survival_periods), 1)
-    longest_survival = max(survival_periods) if survival_periods else 0
+    months_blown = len(set(d[:7] for d in daily_breach_dates + total_breach_dates))
+    total_unique_months = len(set(d[:7] for d in days))
+    survival_rate = round((1 - months_blown / max(total_unique_months, 1)) * 100, 1)
 
     return {
-        'total_breaches': total_breaches,
-        'breach_dates': breach_dates,
-        'survival_rate': round(survival_rate, 1),
-        'avg_days_between_breaches': round(avg_days_between, 1),
-        'daily_breaches': daily_breach_count,
-        'total_dd_breaches': total_breach_count,
-        'longest_survival_days': longest_survival,
-        'total_trading_days': total_days,
+        'daily_breaches': len(daily_breach_dates),
+        'total_breaches': len(total_breach_dates),
+        'blown_count': blown_count,
+        'daily_breach_dates': daily_breach_dates[:10],
+        'total_breach_dates': total_breach_dates[:10],
+        'avg_days_between_blows': int(avg_gap),
+        'survival_rate_per_month': survival_rate,
+        'total_months': int(total_months),
+        'months_blown': months_blown,
+        'worst_daily_pct': round(worst_daily_pct, 1),
+        'worst_total_pct': round(worst_total_pct, 1),
     }
 
 

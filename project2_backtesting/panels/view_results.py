@@ -90,6 +90,8 @@ def open_output_folder():
 
 def display_summary(output_text, summary_frame):
     """Display ALL backtest results as sortable cards."""
+    from project2_backtesting.strategy_refiner import count_dd_breaches
+
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
@@ -240,18 +242,6 @@ def display_summary(output_text, summary_frame):
             pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
             net_color = "#28a745" if net_pips > 0 else "#dc3545"
 
-            # Quick DD breach check
-            dd_warning = ""
-            if dd > 0:
-                # Simple heuristic: daily DD worst-case is ~20% of max DD, total is full DD
-                # If max DD > 10% of account, likely would have breached
-                # Assume 100k account, 1% risk, $10/pip
-                dd_pct = (dd * 10 * 0.01) / 1000  # rough approximation
-                if dd_pct > 10:
-                    dd_warning = "⚠️"
-                elif dd_pct > 5:
-                    dd_warning = "⚡"
-
             metrics_row = tk.Frame(card, bg=bg_color)
             metrics_row.pack(fill="x", pady=(2, 0))
 
@@ -261,7 +251,7 @@ def display_summary(output_text, summary_frame):
                 ("PF", f"{pf:.2f}", pf_color),
                 ("Net", f"{net_pips:+,.0f} pips", net_color),
                 ("Avg", f"{avg:+.1f} pips", net_color),
-                ("MaxDD", f"{dd:,.0f} pips {dd_warning}", "#dc3545"),
+                ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
                 ("Best", f"{best:+.0f}", "#28a745"),
                 ("Worst", f"{worst:+.0f}", "#dc3545"),
             ]:
@@ -269,6 +259,30 @@ def display_summary(output_text, summary_frame):
                          font=("Arial", 8)).pack(side=tk.LEFT)
                 tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
                          font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+
+            # Breach counter
+            if 'trades' in r and r['trades']:
+                breaches = count_dd_breaches(r['trades'], account_size=100000,
+                                              daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
+                blown = breaches['blown_count']
+
+                breach_row = tk.Frame(card, bg=bg_color)
+                breach_row.pack(fill="x", pady=(2, 0))
+
+                if blown == 0:
+                    tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
+                             bg=bg_color, fg="#28a745", font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+                else:
+                    daily_b = breaches['daily_breaches']
+                    total_b = breaches['total_breaches']
+                    surv = breaches['survival_rate_per_month']
+                    wd = breaches['worst_daily_pct']
+                    wt = breaches['worst_total_pct']
+                    color = "#dc3545" if blown > 3 else "#e67e22"
+                    tk.Label(breach_row,
+                             text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
+                                  f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
+                             bg=bg_color, fg=color, font=("Arial", 8, "bold")).pack(side=tk.LEFT)
         else:
             tk.Label(card, text="0 trades — rule conditions never triggered",
                      bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
@@ -276,8 +290,9 @@ def display_summary(output_text, summary_frame):
     # ── Update detailed text output too ──
     output_text.delete(1.0, tk.END)
     output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
-                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Avg':>8} {'MaxDD':>8}\n")
-    output_text.insert(tk.END, "-" * 110 + "\n")
+                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'MaxDD':>8} "
+                                f"{'Blows':>6} {'DailyDD%':>8} {'TotalDD%':>8}\n")
+    output_text.insert(tk.END, "-" * 130 + "\n")
 
     for i, r in enumerate(sorted_results):
         trades = r.get('total_trades', 0)
@@ -290,8 +305,19 @@ def display_summary(output_text, summary_frame):
         rule = r.get('rule_combo', '?')[:20]
         exit_s = r.get('exit_strategy', '?')[:26]
 
+        blown_str = "-"
+        wd_str = "-"
+        wt_str = "-"
+        if trades > 0 and 'trades' in r and r['trades']:
+            b = count_dd_breaches(r['trades'], account_size=100000,
+                                   daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
+            blown_str = str(b['blown_count'])
+            wd_str = f"{b['worst_daily_pct']:.1f}%"
+            wt_str = f"{b['worst_total_pct']:.1f}%"
+
         output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
-                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} {avg:>+7.1f} {dd:>8,.0f}\n")
+                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} {dd:>8,.0f} "
+                                    f"{blown_str:>6} {wd_str:>8} {wt_str:>8}\n")
 
     output_text.see("1.0")
 
