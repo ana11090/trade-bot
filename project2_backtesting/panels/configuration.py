@@ -17,6 +17,23 @@ _output_text = None
 # Config file location
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'backtest_config.json')
 
+# Known instrument specs — pip value per standard lot, pip size, typical spread
+INSTRUMENT_SPECS = {
+    'XAUUSD': {'pip_value': 10.0, 'pip_size': 0.01, 'typical_spread': 2.5, 'name': 'Gold'},
+    'EURUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 0.8, 'name': 'EUR/USD'},
+    'GBPUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'GBP/USD'},
+    'USDJPY': {'pip_value': 6.7,  'pip_size': 0.01, 'typical_spread': 0.9, 'name': 'USD/JPY'},
+    'GBPJPY': {'pip_value': 6.7,  'pip_size': 0.01, 'typical_spread': 1.5, 'name': 'GBP/JPY'},
+    'AUDUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 0.8, 'name': 'AUD/USD'},
+    'USDCAD': {'pip_value': 7.3,  'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CAD'},
+    'USDCHF': {'pip_value': 11.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CHF'},
+    'NZDUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.2, 'name': 'NZD/USD'},
+    'XAGUSD': {'pip_value': 50.0, 'pip_size': 0.001, 'typical_spread': 2.0, 'name': 'Silver'},
+    'US30':   {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 2.0, 'name': 'Dow Jones'},
+    'NAS100': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 1.5, 'name': 'Nasdaq'},
+    'BTCUSD': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 30.0, 'name': 'Bitcoin'},
+}
+
 DEFAULTS = {
     # Instrument
     'symbol':              'XAUUSD',
@@ -28,17 +45,13 @@ DEFAULTS = {
     'outsample_start':     '2024-01-01',
     'outsample_end':       '2024-12-31',
     # Capital & risk
-    'starting_capital':    '10000',
+    'starting_capital':    '100000',
     'risk_pct':            '1.0',
     'lot_size_calc':       'DYNAMIC',
-    'fixed_lot_size':      '0.01',
-    # SL / TP
-    'sl_atr':              '1.5',
-    'tp1_atr':             '1.5',
-    'tp2_atr':             '3.0',
+    'fixed_lot_size':      '0.66',
     # Costs
     'commission':          '4.0',
-    'spread':              '0.3',
+    'spread':              '2.5',
     # Engine
     'hard_close_hour':     '21',
     'warmup_candles':      '200',
@@ -74,7 +87,7 @@ def save_config(entries, output_text):
             return
 
     float_keys = ['pip_value_per_lot', 'starting_capital', 'risk_pct', 'fixed_lot_size',
-                  'sl_atr', 'tp1_atr', 'tp2_atr', 'commission', 'spread']
+                  'commission', 'spread']
     for k in float_keys:
         try:
             float(values[k])
@@ -277,6 +290,53 @@ def _calculate_lot_size(entries):
         f"based on current equity. Recommended over FIXED.")
 
 
+def _on_symbol_change(entries, info_label):
+    """When symbol changes, auto-fill pip value, spread, and show instrument info."""
+    symbol = entries['symbol'].get().strip().upper()
+
+    if symbol in INSTRUMENT_SPECS:
+        spec = INSTRUMENT_SPECS[symbol]
+        entries['pip_value_per_lot'].set(str(spec['pip_value']))
+        entries['spread'].set(str(spec['typical_spread']))
+        info_label.config(
+            text=f"✅ {spec['name']} — Pip value: ${spec['pip_value']}/pip/lot, "
+                 f"Typical spread: {spec['typical_spread']} pips",
+            fg="#28a745"
+        )
+    else:
+        info_label.config(
+            text=f"⚠️ Unknown symbol '{symbol}' — fill pip value and spread manually",
+            fg="#e67e22"
+        )
+
+    # Recalculate lot size
+    _recalculate_lot_size(entries)
+
+
+def _recalculate_lot_size(entries):
+    """Auto-recalculate lot size whenever capital, risk, or pip value changes."""
+    try:
+        capital = float(entries['starting_capital'].get())
+        risk_pct = float(entries['risk_pct'].get())
+        pip_value = float(entries['pip_value_per_lot'].get())
+
+        symbol = entries['symbol'].get().strip().upper()
+        spec = INSTRUMENT_SPECS.get(symbol, {})
+
+        # Use default SL of 150 pips for calculation (backtester will use actual SL from exit strategies)
+        default_sl_pips = 150
+
+        risk_dollars = capital * (risk_pct / 100.0)
+        sl_cost_per_lot = default_sl_pips * pip_value
+
+        if sl_cost_per_lot > 0:
+            lots = risk_dollars / sl_cost_per_lot
+            lots = round(lots, 2)
+            entries['fixed_lot_size'].set(str(lots))
+    except (ValueError, ZeroDivisionError):
+        pass  # fields not filled yet, ignore
+
+
 def build_panel(parent):
     """Build the configuration panel"""
     global _rules_status_label, _price_status_label, _output_text
@@ -360,14 +420,23 @@ def build_panel(parent):
                                 padx=10, pady=8)
     instr_frame.pack(fill="x", pady=(0, 8))
     _field_row(instr_frame, "Symbol", _make_var('symbol'),
-               "Trading symbol to backtest. Must match the price data filename prefix.\n"
-               "Example: XAUUSD → looks for data/xauusd_H1.csv")
+               "Trading symbol. Type and click Lookup to auto-fill pip value and spread.")
+
+    # Instrument info label (auto-updates)
+    instrument_info = tk.Label(instr_frame, text="", font=("Arial", 9),
+                                bg="#ffffff", fg="#666666")
+    instrument_info.pack(fill="x", padx=4, pady=(0, 4))
+
+    tk.Button(instr_frame, text="🔍 Lookup Symbol",
+              command=lambda: _on_symbol_change(entries, instrument_info),
+              bg="#667eea", fg="white", font=("Arial", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(anchor="w", padx=4, pady=(0, 4))
+
     _field_row(instr_frame, "Winning Scenario", _make_var('winning_scenario'),
                "Which Project 1 scenario's rules to use. Must match a folder in project1/outputs/.\n"
                "Options: M5, M15, H1, H4, H1_M15")
     _field_row(instr_frame, "Pip Value per Lot ($)", _make_var('pip_value_per_lot'),
-               "USD profit/loss per pip per standard lot. Used to calculate trade P&L.\n"
-               "XAUUSD = 10.0  |  EURUSD = 10.0  |  GBPJPY ≈ 7.0  (check broker contract spec)")
+               "Auto-filled from symbol lookup. Override only if your broker differs.")
 
     # Date periods
     period_frame = tk.LabelFrame(config_frame, text="📅 Date Periods",
@@ -406,30 +475,23 @@ def build_panel(parent):
                "Percentage of current balance risked on each trade.\n"
                "1.0 = 1% risk per trade. Only used when Lot Size = DYNAMIC.")
     _field_row(risk_frame, "Lot Size Calculation", _make_var('lot_size_calc'),
-               "DYNAMIC = lot size calculated from risk % each trade (recommended).\n"
-               "FIXED = always use the Fixed Lot Size below regardless of balance.")
-    _field_row(risk_frame, "Fixed Lot Size", _make_var('fixed_lot_size'),
-               "Lot size to use when Lot Size Calculation = FIXED. Example: 0.01 = micro lot.")
+               "DYNAMIC = auto-calculates lot size each trade based on current equity and risk %.\n"
+               "FIXED = always uses the calculated lot size below. DYNAMIC is recommended.")
+    _field_row(risk_frame, "Calculated Lot Size", _make_var('fixed_lot_size'),
+               "Auto-calculated from your capital, risk %, and pip value.\n"
+               "Used when Lot Size = FIXED. Updates automatically when you change capital or risk.")
 
-    # Calculate button
-    calc_btn_frame = tk.Frame(risk_frame, bg="#ffffff")
-    calc_btn_frame.pack(fill="x", pady=(2, 6))
-    tk.Button(calc_btn_frame, text="🧮 Calculate from Capital & Risk",
-              command=lambda: _calculate_lot_size(entries),
-              bg="#667eea", fg="white", font=("Arial", 9, "bold"),
-              relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT, padx=(35, 0))
-
-    # SL / TP
-    sltp_frame = tk.LabelFrame(config_frame, text="🎯 Stop Loss & Take Profit  (ATR multipliers)",
-                               font=("Arial", 9, "bold"), bg="#ffffff", fg="#555555",
-                               padx=10, pady=8)
-    sltp_frame.pack(fill="x", pady=(0, 8))
-    _field_row(sltp_frame, "Stop Loss ATR multiplier", _make_var('sl_atr'),
-               "Stop loss distance = ATR × this value. 1.5 = 1.5× the average true range.")
-    _field_row(sltp_frame, "Take Profit 1 ATR multiplier", _make_var('tp1_atr'),
-               "TP1 distance = ATR × this value. 50% of the position closes at TP1.")
-    _field_row(sltp_frame, "Take Profit 2 ATR multiplier", _make_var('tp2_atr'),
-               "TP2 distance = ATR × this value. Remaining 50% closes at TP2.")
+    # SL/TP info (backtester handles this automatically)
+    sltp_info = tk.Frame(config_frame, bg="#e3f2fd", padx=10, pady=8)
+    sltp_info.pack(fill="x", pady=(0, 8))
+    tk.Label(sltp_info, text="🎯 Stop Loss & Take Profit",
+             font=("Arial", 9, "bold"), bg="#e3f2fd", fg="#1565c0").pack(anchor="w")
+    tk.Label(sltp_info,
+             text="The backtester automatically tests 12 different exit strategies:\n"
+                  "Fixed SL/TP (100/200, 150/300, 200/400), Trailing Stop, ATR-based,\n"
+                  "Time-based, Indicator Exit, and Hybrid combinations.\n"
+                  "You don't need to set SL/TP here — the best one is found automatically.",
+             font=("Arial", 9), bg="#e3f2fd", fg="#333333", justify=tk.LEFT).pack(anchor="w", pady=(4, 0))
 
     # Costs
     cost_frame = tk.LabelFrame(config_frame, text="💸 Costs",
@@ -484,6 +546,14 @@ def build_panel(parent):
                                              font=("Courier", 9), bg="#f8f9fa",
                                              fg="#333333", wrap=tk.WORD)
     _output_text.pack(fill="both", expand=True)
+
+    # Auto-recalculate when dependencies change
+    entries['starting_capital'].trace_add('write', lambda *_: _recalculate_lot_size(entries))
+    entries['risk_pct'].trace_add('write', lambda *_: _recalculate_lot_size(entries))
+    entries['pip_value_per_lot'].trace_add('write', lambda *_: _recalculate_lot_size(entries))
+
+    # Auto-fill instrument info on load
+    _on_symbol_change(entries, instrument_info)
 
     check_prerequisites(_output_text, _rules_status_label, _price_status_label, silent=False)
 
