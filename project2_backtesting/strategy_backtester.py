@@ -741,11 +741,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         for exit_strat in exit_strategies:
             count += 1
 
-            if progress_callback:
-                progress_callback(count, total, f"{combo['name']} x {exit_strat.name}")
-            elif count % 10 == 0 or count == total:
-                print(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
-
             trades = run_backtest(
                 candles_df, indicators_df,
                 combo["rules"], exit_strat,
@@ -761,14 +756,26 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             )
             stats = compute_stats(trades)
 
-            matrix.append({
+            result = {
                 "rule_combo":   combo["name"],
                 "rule_indices": combo["indices"],
                 "exit_strategy": exit_strat.describe(),
                 "exit_name":    exit_strat.name,
                 "stats":        stats,
                 "trades":       trades,
-            })
+            }
+            matrix.append(result)
+
+            # Call progress callback with result dict (backward compatible)
+            if progress_callback:
+                try:
+                    # Try new signature with result_dict parameter
+                    progress_callback(count, total, f"{combo['name']} x {exit_strat.name}", stats)
+                except TypeError:
+                    # Fall back to old 3-parameter signature
+                    progress_callback(count, total, f"{combo['name']} x {exit_strat.name}")
+            elif count % 10 == 0 or count == total:
+                print(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
 
     # Sort by net total pips descending (real profitability after costs)
     matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)

@@ -16,7 +16,9 @@ _progress_label = None
 _progress_bar  = None
 _step_label    = None
 _run_button    = None
+_best_label    = None
 _running       = False
+_best_result   = [None]  # Track best result
 
 # Step weights: loading data, running matrix, completion
 _STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
@@ -100,12 +102,62 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             output_text.insert(tk.END, f"Candle data: {candle_path}\n\n")
             output_text.see(tk.END)
 
-            # Progress callback for the backtester
-            def _progress(cur, tot, name):
+            # Progress callback for the backtester - shows real-time results
+            def _progress(cur, tot, name, result_dict=None):
+                """Called after each rule × exit combination completes."""
                 pct = 10 + int(cur / max(tot, 1) * 75)
-                ui(lambda p=pct, n=name: _set_progress(
-                    progress_bar, step_label, p, f"Testing {cur}/{tot}: {n}"
-                ))
+
+                def _update():
+                    progress_bar['value'] = pct
+                    step_label.config(text=f"{cur}/{tot}: {name}")
+
+                    if result_dict:
+                        trades = result_dict.get('total_trades', 0)
+                        wr = result_dict.get('win_rate', 0)
+                        net = result_dict.get('net_total_pips', 0)
+                        pf = result_dict.get('net_profit_factor', 0)
+
+                        # Color code: green if profitable, red if not, gray if 0 trades
+                        if trades == 0:
+                            color = "#888888"
+                            line = f"  [{cur}/{tot}] {name}: 0 trades\n"
+                        elif net > 0:
+                            color = "#28a745"
+                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr:.0%}, PF {pf:.2f}, {net:+.0f} pips\n"
+                        else:
+                            color = "#dc3545"
+                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr:.0%}, PF {pf:.2f}, {net:+.0f} pips\n"
+
+                        output_text.insert(tk.END, line)
+                        # Apply color to the last line
+                        line_count = int(output_text.index('end-1c').split('.')[0])
+                        output_text.tag_add(f"line_{cur}", f"{line_count}.0", f"{line_count}.end")
+                        output_text.tag_config(f"line_{cur}", foreground=color)
+                        output_text.see(tk.END)
+
+                        # Update best result
+                        global _best_result
+                        if trades > 0:
+                            if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
+                                _best_result[0] = result_dict
+                                _update_best()
+
+                try:
+                    progress_bar.after(0, _update)
+                except Exception:
+                    pass
+
+            def _update_best():
+                """Update the best result display."""
+                global _best_result, _best_label
+                if _best_result[0] and _best_label:
+                    b = _best_result[0]
+                    _best_label.config(
+                        text=f"🏆 {b['rule_combo']} × {b['exit_name']}\n"
+                             f"   {b['total_trades']} trades | WR {b['win_rate']:.0%} | "
+                             f"PF {b['net_profit_factor']:.2f} | {b['net_total_pips']:+,.0f} pips",
+                        fg="#28a745"
+                    )
 
             # Run the backtest with captured output
             ui(lambda: _set_progress(progress_bar, step_label, 10, "Running comparison matrix..."))
@@ -153,7 +205,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
 
 def start_backtest(output_text, progress_label, progress_bar, step_label, run_button):
-    global _running
+    global _running, _best_result, _best_label
 
     if _running:
         messagebox.showwarning("Already Running", "Backtest is already running!")
@@ -186,15 +238,18 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
                            "  2. Calculate performance statistics\n"
                            "  3. Generate HTML report\n\n"
                            "Estimated time: 2–5 minutes."):
-        # Reset bar
+        # Reset bar and best result
         progress_bar['value'] = 0
         progress_bar.config(style="Horizontal.TProgressbar")
         step_label.config(text="")
+        _best_result[0] = None
+        if _best_label:
+            _best_label.config(text="Waiting for results...", fg="#666666")
         run_backtest_threaded(output_text, progress_label, progress_bar, step_label, run_button)
 
 
 def build_panel(parent):
-    global _output_text, _progress_label, _progress_bar, _step_label, _run_button
+    global _output_text, _progress_label, _progress_bar, _step_label, _run_button, _best_label
 
     panel = tk.Frame(parent, bg="#ffffff")
 
@@ -241,6 +296,17 @@ def build_panel(parent):
     _step_label = tk.Label(pct_row, text="",
                            font=("Arial", 9), bg="#ffffff", fg="#999999", anchor="e")
     _step_label.pack(side=tk.RIGHT)
+
+    # ── Best result so far ────────────────────────────────────────────────────
+    best_frame = tk.LabelFrame(panel, text="Best Result So Far",
+                                font=("Arial", 10, "bold"), bg="#ffffff", fg="#333333",
+                                padx=10, pady=5)
+    best_frame.pack(fill="x", padx=40, pady=(5, 0))
+
+    _best_label = tk.Label(best_frame, text="Waiting for results...",
+                           font=("Courier", 9), bg="#ffffff", fg="#666666",
+                           anchor="w", justify=tk.LEFT)
+    _best_label.pack(fill="x")
 
     # ── Output console ────────────────────────────────────────────────────────
     output_frame = tk.LabelFrame(panel, text="Backtest Output",

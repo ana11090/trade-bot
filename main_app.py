@@ -31,6 +31,7 @@ from project2_backtesting.panels import (
     prop_firm_test as p2_prop_test,
     strategy_refiner_panel as p2_refiner,
     strategy_validator_panel as p2_validator,
+    saved_rules_panel as p2_saved,
 )
 from project3_live_trading.panels import (
     ea_generator_panel as p3_generator,
@@ -199,6 +200,7 @@ _POPOUT_CONFIG = {
     "p2_prop_test":      {"title": "Prop Firm Test",      "builder": p2_prop_test.build_panel},
     "p2_refiner":        {"title": "Strategy Refiner",    "builder": p2_refiner.build_panel},
     "p2_validator":      {"title": "Strategy Validator",  "builder": p2_validator.build_panel},
+    "p2_saved":          {"title": "Saved Rules",         "builder": p2_saved.build_panel},
     "p3_generator":      {"title": "EA Generator",        "builder": p3_generator.build_panel},
     "p3_monitor":        {"title": "Live Monitor",        "builder": p3_monitor.build_panel},
     "p4_scratch":        {"title": "Build from Scratch",  "builder": p4_scratch.build_panel},
@@ -232,6 +234,7 @@ state.panel_builders = {
     "p2_prop_test":      _make_builder(lambda: p2_prop_test.build_panel(content), "p2_prop_test"),
     "p2_refiner":        _make_builder(lambda: p2_refiner.build_panel(content), "p2_refiner"),
     "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content), "p2_validator"),
+    "p2_saved":          _make_builder(lambda: p2_saved.build_panel(content), "p2_saved"),
     "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content), "p3_generator"),
     "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content), "p3_monitor"),
     "p4_scratch":        _make_builder(lambda: p4_scratch.build_panel(content), "p4_scratch"),
@@ -261,6 +264,7 @@ refresh_map = {
     "p2_prop_test": p2_prop_test.refresh,
     "p2_refiner":    p2_refiner.refresh,
     "p2_validator":  p2_validator.refresh,
+    "p2_saved":      p2_saved.refresh,
     "p3_generator":  p3_generator.refresh,
     "p3_monitor":    p3_monitor.refresh,
     "p4_scratch":    p4_scratch.refresh,
