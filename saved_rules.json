@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1,
+    "saved_at": "2026-04-05T00:04:16.440789",
+    "source": "Backtest Result",
+    "notes": "first rule saved",
+    "rule": {
+      "rule_combo": "Rule 1",
+      "exit_strategy": "Fixed SL 150 pips / TP 200 pips",
+      "exit_name": "Fixed SL/TP",
+      "prediction": "WIN",
+      "win_rate": 82.3,
+      "net_total_pips": 611677.0,
+      "net_profit_factor": 6.58,
+      "total_trades": 3014,
+      "max_dd_pips": 1696.0
+    }
+  },
+  {
+    "id": 2,
+    "saved_at": "2026-04-05T09:29:27.444596",
+    "source": "Backtest Result",
+    "notes": "5 blows account",
+    "rule": {
+      "rule_combo": "Rule 1",
+      "exit_strategy": "SL 150 pips, close after 6 candles",
+      "exit_name": "Time-Based",
+      "prediction": "WIN",
+      "win_rate": 72.4,
+      "net_total_pips": 1088846.0,
+      "net_profit_factor": 9.94,
+      "total_trades": 2514,
+      "max_dd_pips": 2050.0
+    }
+  }
+]

@@ -629,9 +629,40 @@ def build_panel(parent):
                                 highlightbackground="#d0d0d0", highlightthickness=1)
             firm_box.pack(fill="x", pady=3)
 
-            firm_label = tk.Label(firm_box, text=f"  {firm_name}",
+            # Check if firm has special trading rules
+            import json
+            import glob
+            prop_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
+            rule_count = 0
+            firm_data = None
+            for fp in glob.glob(os.path.join(prop_dir, '*.json')):
+                try:
+                    with open(fp, encoding='utf-8') as f:
+                        fd = json.load(f)
+                    if fd.get('firm_id') == firm_id or fd.get('firm_name') == firm_name:
+                        rule_count = len(fd.get('trading_rules', []))
+                        firm_data = fd
+                        break
+                except Exception:
+                    pass
+
+            name_text = f"  {firm_name}"
+            if rule_count > 0:
+                name_text += f"  ⚠️ {rule_count} special rules"
+
+            firm_label = tk.Label(firm_box, text=name_text,
                                   font=("Segoe UI", 10, "bold"), bg="#fafafa", fg=DARK)
             firm_label.pack(anchor="w", padx=8, pady=(4, 2))
+
+            # Add tooltip showing rule details
+            if rule_count > 0 and firm_data:
+                from shared.tooltip import add_tooltip
+                rules = firm_data.get('trading_rules', [])
+                tooltip_text = f"⚠️ {firm_name} — Special Trading Rules:\n\n"
+                for r in rules:
+                    tooltip_text += f"  • {r['name']}\n"
+                    tooltip_text += f"    {r['description']}\n\n"
+                add_tooltip(firm_label, tooltip_text, wraplength=450)
 
             for fc in challenges:
                 challenge_id = fc['challenge_id']
