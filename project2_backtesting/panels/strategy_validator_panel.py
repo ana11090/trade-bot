@@ -74,11 +74,29 @@ _verdict_frame   = None
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Cache to prevent reloading 43MB file every time panel is shown
+_strategies_cache = []
+_cache_mtime = 0
+
 def _load_strategies():
-    global _strategies
+    global _strategies, _strategies_cache, _cache_mtime
     try:
-        from project2_backtesting.strategy_refiner import load_strategy_list
-        _strategies = load_strategy_list()
+        # Check if backtest_matrix.json has been modified
+        backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
+        if os.path.exists(backtest_path):
+            current_mtime = os.path.getmtime(backtest_path)
+            if current_mtime == _cache_mtime and _strategies_cache:
+                # Use cached data — file hasn't changed
+                _strategies = _strategies_cache
+                return
+
+            # File changed or no cache — reload
+            from project2_backtesting.strategy_refiner import load_strategy_list
+            _strategies = load_strategy_list()
+            _strategies_cache = _strategies
+            _cache_mtime = current_mtime
+        else:
+            _strategies = []
     except Exception as e:
         print(f"[validator_panel] {e}")
         _strategies = []
