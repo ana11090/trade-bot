@@ -937,7 +937,7 @@ def _show_opt_results(candidates):
 
     # Results container (separate from filters so we can clear just the cards)
     cards_frame = tk.Frame(_opt_results_frame, bg=BG)
-    cards_frame.pack(fill="x")
+    cards_frame.pack(fill="both", expand=True)
 
     _all_candidates = list(candidates)
 
