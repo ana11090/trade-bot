@@ -39,6 +39,7 @@ _strategy_var   = None
 _strategies     = []
 _tree           = None
 _selected_count = None
+_check_vars     = {}  # index -> bool (checkbox state)
 
 # Settings vars
 _train_var      = None
@@ -52,6 +53,11 @@ _comm_var       = None
 _risk_var       = None
 _sl_var         = None
 _pipval_var     = None
+
+# Filter vars
+_filt_wr        = None
+_filt_pf        = None
+_filt_trades    = None
 
 # Widgets
 _strat_info_lbl  = None
@@ -116,17 +122,14 @@ def _get_selected_index():
 
 
 def _get_all_selected_indices():
-    """Get all selected strategy indices (from treeview)."""
-    global _tree
+    """Get all checked strategy indices (from checkboxes)."""
+    global _check_vars
     try:
-        if _tree is None:
-            idx = _get_selected_index()
-            return [idx] if idx is not None else []
-        selected = _tree.selection()
-        return [int(s) for s in selected]
+        # Return all checked indices
+        checked = [int(idx) for idx, is_checked in _check_vars.items() if is_checked]
+        return checked if checked else []
     except Exception:
-        idx = _get_selected_index()
-        return [idx] if idx is not None else []
+        return []
 
 
 def _get_strategy_meta(idx):
@@ -158,18 +161,29 @@ def _get_candles_path():
 
 
 def _update_strat_info():
-    global _strat_info_lbl, _prev_result_lbl
+    global _strat_info_lbl, _prev_result_lbl, _check_vars
     if not _strat_info_lbl:
         return
-    idx = _get_selected_index()
+
+    # Show info for last checked item (or first selected)
+    checked_indices = [int(idx) for idx, is_checked in _check_vars.items() if is_checked]
+    idx = checked_indices[-1] if checked_indices else None
+
     if idx is None:
         _strat_info_lbl.configure(text="")
         return
-    # Strategy stats
+
+    # Strategy stats - show combined name like View Results
     for s in _strategies:
         if s['index'] == idx:
-            text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
-                    f"net {s['net_total_pips']:+.0f} pips  |  PF {s['net_profit_factor']:.2f}")
+            rule_name = s.get('rule_combo', '?')
+            exit_name = s.get('exit_name', '?')
+            combined_name = f"{rule_name} × {exit_name}"
+
+            text = (f"{combined_name} [{s['total_trades']} trades, "
+                    f"WR {s['win_rate']:.1f}%, "
+                    f"PF {s['net_profit_factor']:.2f}, "
+                    f"{s['net_total_pips']:+,.0f} pips]")
             _strat_info_lbl.configure(text=text, fg=MIDGREY)
             break
     # Previous validation result
@@ -755,9 +769,45 @@ def build_panel(parent):
                  text="No backtest results. Run the backtest first.",
                  font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(anchor="w")
     else:
+        # Filter row
+        global _filt_wr, _filt_pf, _filt_trades
+
+        filter_frame = tk.Frame(sel_frame, bg=WHITE)
+        filter_frame.pack(fill="x", pady=(0, 5))
+
+        tk.Label(filter_frame, text="Filters:", font=("Segoe UI", 9, "bold"),
+                 bg=WHITE, fg="#333").pack(side=tk.LEFT)
+
+        tk.Label(filter_frame, text="Min WR:", font=("Segoe UI", 8),
+                 bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+        _filt_wr = tk.StringVar(value="0")
+        tk.Entry(filter_frame, textvariable=_filt_wr, width=4, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        tk.Label(filter_frame, text="%", font=("Segoe UI", 8), bg=WHITE, fg="#555").pack(side=tk.LEFT)
+
+        tk.Label(filter_frame, text="Min PF:", font=("Segoe UI", 8),
+                 bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+        _filt_pf = tk.StringVar(value="0")
+        tk.Entry(filter_frame, textvariable=_filt_pf, width=4, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+        tk.Label(filter_frame, text="Min Trades:", font=("Segoe UI", 8),
+                 bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+        _filt_trades = tk.StringVar(value="0")
+        tk.Entry(filter_frame, textvariable=_filt_trades, width=5, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+        def _apply_filters():
+            _rebuild_tree()
+
+        tk.Button(filter_frame, text="Apply", font=("Segoe UI", 8, "bold"),
+                  bg="#667eea", fg="white", relief=tk.FLAT, padx=8,
+                  command=_apply_filters).pack(side=tk.LEFT, padx=(10, 2))
+
+        tk.Button(filter_frame, text="Reset", font=("Segoe UI", 8),
+                  bg="#6c757d", fg="white", relief=tk.FLAT, padx=8,
+                  command=lambda: [_filt_wr.set("0"), _filt_pf.set("0"), _filt_trades.set("0"), _rebuild_tree()]).pack(side=tk.LEFT, padx=2)
+
         # Sort buttons
         sort_frame = tk.Frame(sel_frame, bg=WHITE)
-        sort_frame.pack(fill="x", pady=(0, 5))
+        sort_frame.pack(fill="x", pady=(5, 5))
         tk.Label(sort_frame, text="Sort by:", font=("Segoe UI", 9),
                  bg=WHITE, fg=GREY).pack(side=tk.LEFT)
 
@@ -783,10 +833,11 @@ def build_panel(parent):
         tree_frame = tk.Frame(sel_frame, bg=WHITE)
         tree_frame.pack(fill="x", pady=5)
 
-        columns = ("rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
+        columns = ("select", "rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
         _tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                              height=min(len(_strategies), 10), selectmode="extended")
 
+        _tree.heading("select",    text="✓")
         _tree.heading("rule",      text="Rule")
         _tree.heading("exit",      text="Exit Strategy")
         _tree.heading("trades",    text="Trades")
@@ -796,6 +847,7 @@ def build_panel(parent):
         _tree.heading("dd",        text="Max DD")
         _tree.heading("avg_pips",  text="Avg Pips")
 
+        _tree.column("select",    width=30,  anchor="center")
         _tree.column("rule",      width=100, anchor="w")
         _tree.column("exit",      width=130, anchor="w")
         _tree.column("trades",    width=60,  anchor="center")
@@ -817,13 +869,41 @@ def build_panel(parent):
         _tree.tag_configure("no_trades", foreground="#888888")
 
         def _rebuild_tree():
+            global _check_vars, _selected_count
             _tree.delete(*_tree.get_children())
+
+            # Get filter values
+            try:
+                min_wr = float(_filt_wr.get()) / 100
+            except:
+                min_wr = 0
+            try:
+                min_pf = float(_filt_pf.get())
+            except:
+                min_pf = 0
+            try:
+                min_trades = int(_filt_trades.get())
+            except:
+                min_trades = 0
+
+            visible = 0
             for s in _strategies:
                 wr = s.get('win_rate', 0)
+                wr_val = wr if wr <= 1 else wr / 100
+                pf = s.get('net_profit_factor', 0)
+                trades = s.get('total_trades', 0)
+
+                # Apply filters
+                if wr_val < min_wr:
+                    continue
+                if pf < min_pf:
+                    continue
+                if trades < min_trades:
+                    continue
+
                 wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
                 net = s.get('net_total_pips', 0)
                 dd = s.get('max_dd_pips', 0)
-                trades = s.get('total_trades', 0)
 
                 if trades == 0:
                     tag = "no_trades"
@@ -832,40 +912,93 @@ def build_panel(parent):
                 else:
                     tag = "losing"
 
-                _tree.insert("", "end", iid=str(s['index']), values=(
+                idx = str(s['index'])
+                checked = _check_vars.get(idx, False)
+                check_mark = "☑" if checked else "☐"
+
+                _tree.insert("", "end", iid=idx, values=(
+                    check_mark,
                     s.get('rule_combo', '?'),
                     s.get('exit_name', '?'),
                     trades,
                     wr_str,
-                    f"{s.get('net_profit_factor', 0):.2f}",
+                    f"{pf:.2f}",
                     f"{net:+,.0f}",
                     f"{dd:,.0f}",
                     f"{s.get('net_avg_pips', s.get('avg_pips', 0)):+.1f}",
                 ), tags=(tag,))
+                visible += 1
+
+            if _selected_count:
+                checked_count = sum(1 for v in _check_vars.values() if v)
+                _selected_count.config(text=f"{checked_count} selected of {visible} shown ({len(_strategies)} total)")
 
         _rebuild_tree()
 
-        # Selection info
-        sel_info = tk.Label(sel_frame, text="Click a row to select. Ctrl+Click for multiple. Shift+Click for range.",
-                             font=("Segoe UI", 8), bg=WHITE, fg=GREY)
-        sel_info.pack(anchor="w", pady=(2, 0))
+        # Checkbox click handler
+        def _on_click(event):
+            global _check_vars, _selected_count
+            region = _tree.identify_region(event.x, event.y)
+            if region == "cell":
+                col = _tree.identify_column(event.x)
+                item = _tree.identify_row(event.y)
+                if col == "#1" and item:  # first column = checkbox
+                    current = _check_vars.get(item, False)
+                    _check_vars[item] = not current
+                    # Update the display
+                    values = list(_tree.item(item, "values"))
+                    values[0] = "☑" if _check_vars[item] else "☐"
+                    _tree.item(item, values=values)
+                    # Update count and info
+                    checked_count = sum(1 for v in _check_vars.values() if v)
+                    visible = len(_tree.get_children())
+                    _selected_count.config(text=f"{checked_count} selected of {visible} shown ({len(_strategies)} total)")
+                    _update_strat_info()
 
-        _selected_count = tk.Label(sel_frame, text="0 selected",
+        _tree.bind("<Button-1>", _on_click)
+
+        # Select All / Deselect All buttons
+        btn_frame = tk.Frame(sel_frame, bg=WHITE)
+        btn_frame.pack(fill="x", pady=(5, 0))
+
+        def _select_all():
+            global _check_vars, _selected_count
+            for item in _tree.get_children():
+                _check_vars[item] = True
+                values = list(_tree.item(item, "values"))
+                values[0] = "☑"
+                _tree.item(item, values=values)
+            checked = sum(1 for v in _check_vars.values() if v)
+            visible = len(_tree.get_children())
+            _selected_count.config(text=f"{checked} selected of {visible} shown ({len(_strategies)} total)")
+            _update_strat_info()
+
+        def _deselect_all():
+            global _check_vars, _selected_count
+            for item in _tree.get_children():
+                _check_vars[item] = False
+                values = list(_tree.item(item, "values"))
+                values[0] = "☐"
+                _tree.item(item, values=values)
+            _selected_count.config(text=f"0 selected of {len(_tree.get_children())} shown ({len(_strategies)} total)")
+            _update_strat_info()
+
+        tk.Button(btn_frame, text="Select All Visible", font=("Segoe UI", 8),
+                  bg="#28a745", fg="white", relief=tk.FLAT, padx=8,
+                  command=_select_all).pack(side=tk.LEFT, padx=(0, 5))
+
+        tk.Button(btn_frame, text="Deselect All", font=("Segoe UI", 8),
+                  bg="#6c757d", fg="white", relief=tk.FLAT, padx=8,
+                  command=_deselect_all).pack(side=tk.LEFT)
+
+        # Selection info
+        sel_info = tk.Label(sel_frame, text="Click the checkbox (✓) column to select strategies for validation.",
+                             font=("Segoe UI", 8), bg=WHITE, fg=GREY)
+        sel_info.pack(anchor="w", pady=(5, 0))
+
+        _selected_count = tk.Label(sel_frame, text="0 selected of 0 shown (0 total)",
                                     font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#667eea")
         _selected_count.pack(anchor="w")
-
-        def _on_select(event):
-            selected = _tree.selection()
-            count = len(selected)
-            _selected_count.config(text=f"{count} selected")
-
-            if count == 1:
-                idx = int(selected[0])
-                label = next((s['label'] for s in _strategies if s['index'] == idx), "")
-                _strategy_var.set(label)
-                _update_strat_info()
-
-        _tree.bind("<<TreeviewSelect>>", _on_select)
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
