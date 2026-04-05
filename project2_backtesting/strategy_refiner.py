@@ -860,12 +860,13 @@ def stop_optimization():
     _stop_flag.set()
 
 
-def _score_trades(trades, target_firm=None, stage="funded"):
+def _score_trades(trades, target_firm=None, stage="funded", account_size=100000):
     """
     Score trades for prop firm suitability.
 
     stage="evaluation": maximize profit speed, ignore consistency
     stage="funded": maximize consistency + survival, penalize spiky days
+    account_size: account size for proper DD% calculation
     """
     if not trades or len(trades) < 5:
         return -999.0
@@ -918,7 +919,15 @@ def _score_trades(trades, target_firm=None, stage="funded"):
 
         score += min(total_pips / 1000, 20)
 
-        dd_pct_approx = max_dd * 0.067
+        # Calculate actual DD% using lot size from risk settings
+        sl_pips = 150
+        pip_value = 10.0
+        risk_dollars = account_size * 0.01  # assume 1% risk
+        lot_size = risk_dollars / (sl_pips * pip_value)
+        dollar_per_pip = pip_value * lot_size
+        dd_dollars = max_dd * dollar_per_pip
+        dd_pct_approx = (dd_dollars / account_size) * 100
+
         if dd_pct_approx > 6:
             score -= (dd_pct_approx - 6) * 3
 
@@ -943,8 +952,15 @@ def _score_trades(trades, target_firm=None, stage="funded"):
         elif tpd > 5:
             score -= (tpd - 5) * 3
 
-        # DD penalty
-        dd_pct_approx = max_dd * 0.067
+        # DD penalty - calculate actual DD% using lot size from risk settings
+        sl_pips = 150
+        pip_value = 10.0
+        risk_dollars = account_size * 0.01  # assume 1% risk
+        lot_size = risk_dollars / (sl_pips * pip_value)
+        dollar_per_pip = pip_value * lot_size
+        dd_dollars = max_dd * dollar_per_pip
+        dd_pct_approx = (dd_dollars / account_size) * 100
+
         if dd_pct_approx > 10:
             score -= (dd_pct_approx - 10) * 5
         elif dd_pct_approx > 8:
@@ -1008,7 +1024,7 @@ def deep_optimize(
         stage = target_firm_data.get('stage', 'funded')
 
     base_stats  = compute_stats_summary(trades)
-    base_score  = _score_trades(trades, target_firm_data, stage)
+    base_score  = _score_trades(trades, target_firm_data, stage, account_size)
     best_so_far = {
         'name':           'Base (no changes)',
         'trades':         len(trades),
@@ -1040,7 +1056,7 @@ def deep_optimize(
         if len(kept_trades) < 5:
             return
         s = compute_stats_summary(kept_trades)
-        score = _score_trades(kept_trades, target_firm_data, stage)
+        score = _score_trades(kept_trades, target_firm_data, stage, account_size)
         candidate = {
             'name':             name,
             'rules':            base_rules,
@@ -1273,8 +1289,8 @@ def deep_optimize_generate(
         FixedSLTP(sl_pips=default_sl, tp_pips=default_tp, pip_size=pip_size),
         FixedSLTP(sl_pips=100, tp_pips=200, pip_size=pip_size),
         FixedSLTP(sl_pips=200, tp_pips=400, pip_size=pip_size),
-        TrailingStop(sl_pips=default_sl, trail_pips=100, pip_size=pip_size),
-        TrailingStop(sl_pips=default_sl, trail_pips=50, pip_size=pip_size),
+        TrailingStop(sl_pips=default_sl, trail_distance_pips=100, pip_size=pip_size),
+        TrailingStop(sl_pips=default_sl, trail_distance_pips=50, pip_size=pip_size),
     ]
 
     # Resolve target firm
@@ -1292,7 +1308,7 @@ def deep_optimize_generate(
         stage = target_firm_data.get('stage', 'funded')
 
     base_stats = compute_stats_summary(trades)
-    base_score = _score_trades(trades, target_firm_data, stage)
+    base_score = _score_trades(trades, target_firm_data, stage, account_size)
     best_so_far = {
         'name':           'Base (original)',
         'trades':         len(trades),
@@ -1349,7 +1365,7 @@ def deep_optimize_generate(
             final_trades = enriched
 
         stats = compute_stats_summary(final_trades)
-        score = _score_trades(final_trades, target_firm_data, stage)
+        score = _score_trades(final_trades, target_firm_data, stage, account_size)
 
         exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
         exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name
