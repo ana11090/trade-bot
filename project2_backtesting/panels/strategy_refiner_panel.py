@@ -771,21 +771,30 @@ def _update_breach_display(trades):
             f"     Months with blowup:       {breaches['months_blown']} / {breaches['total_months']}\n"
         )
 
-        if breaches['daily_breach_dates']:
-            breach_text += f"\n     Daily breach dates: {', '.join(breaches['daily_breach_dates'][:5])}"
-            if len(breaches['daily_breach_dates']) > 5:
-                breach_text += f" +{len(breaches['daily_breach_dates'])-5} more"
+        # Format blow dates as month/year
+        import datetime
+        all_blow_dates = sorted(set(
+            breaches.get('daily_breach_dates', []) +
+            breaches.get('total_breach_dates', [])
+        ))
 
-        if breaches['total_breach_dates']:
-            breach_text += f"\n     Total DD breach dates: {', '.join(breaches['total_breach_dates'][:5])}"
-            if len(breaches['total_breach_dates']) > 5:
-                breach_text += f" +{len(breaches['total_breach_dates'])-5} more"
+        if all_blow_dates:
+            breach_text += f"\n\n     Blow timeline:\n"
+            for d in all_blow_dates:
+                try:
+                    dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                    month_str = dt.strftime('%B %Y')  # "October 2008"
+                    # Check if daily or total breach
+                    breach_type = "daily" if d in breaches.get('daily_breach_dates', []) else "total"
+                    breach_text += f"       • {month_str} ({breach_type} DD breach)\n"
+                except Exception:
+                    breach_text += f"       • {d} (breach)\n"
 
         if blown <= 3:
-            breach_text += f"\n\n     🟡 Occasional blows — might pass with good timing"
+            breach_text += f"\n     🟡 Occasional blows — might pass with good timing"
             _breach_label.config(fg="#e67e22")
         else:
-            breach_text += f"\n\n     🔴 Too many blows — not prop-firm safe"
+            breach_text += f"\n     🔴 Too many blows — not prop-firm safe"
             _breach_label.config(fg="#dc3545")
 
     _breach_label.config(text=breach_text)

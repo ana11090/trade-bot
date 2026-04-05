@@ -282,6 +282,28 @@ def display_summary(output_text, summary_frame):
                     surv = breaches.get('survival_rate_per_month', 0)
                     wd = breaches.get('worst_daily_pct', 0)
                     wt = breaches.get('worst_total_pct', 0)
+
+                    # Build date list for tooltip
+                    import datetime
+                    all_blow_dates = sorted(set(
+                        breaches.get('daily_breach_dates', []) +
+                        breaches.get('total_breach_dates', [])
+                    ))
+                    # Format as month/year: "2008-10-15" → "Oct 2008"
+                    blow_months = []
+                    for d in all_blow_dates:
+                        try:
+                            dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                            blow_months.append(dt.strftime('%b %Y'))
+                        except Exception:
+                            blow_months.append(d[:7])
+
+                    dates_text = ""
+                    if blow_months:
+                        dates_text = "\n\nBlown in:\n"
+                        for bm in blow_months:
+                            dates_text += f"  • {bm}\n"
+
                     color = "#dc3545" if blown > 3 else "#e67e22"
                     breach_lbl = tk.Label(breach_row,
                                           text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
@@ -292,12 +314,11 @@ def display_summary(output_text, summary_frame):
                                 f"💀 {blown} blows = account blown {blown} times\n"
                                 f"  Each blow = 1 failed challenge = 1 fee lost\n\n"
                                 f"daily:{daily_b} = {daily_b} times lost ≥5% in a single day\n"
-                                f"  (FTMO resets daily DD at midnight CET)\n\n"
-                                f"total:{total_b} = {total_b} times equity dropped ≥10%\n"
-                                f"  from its peak (trailing or static depending on firm)\n\n"
-                                f"worst daily: {wd:.1f}% = biggest single-day loss\n"
-                                f"worst total: {wt:.1f}% = deepest peak-to-trough drop\n\n"
-                                f"survival {surv}%/mo = {surv}% of months had no blowup")
+                                f"total:{total_b} = {total_b} times equity dropped ≥10% from peak\n\n"
+                                f"worst daily: {wd:.1f}% (limit: 5%)\n"
+                                f"worst total: {wt:.1f}% (limit: 10%)\n\n"
+                                f"survival {surv}%/mo = {surv}% of months had no blowup"
+                                f"{dates_text}")
         else:
             tk.Label(card, text="0 trades — rule conditions never triggered",
                      bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
