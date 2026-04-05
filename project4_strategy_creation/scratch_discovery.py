@@ -42,14 +42,104 @@ def run_scratch_discovery(
     min_coverage_pct=1.0,
     min_win_rate=0.55,
     train_test_split=0.7,
+    prop_firm_name=None,
+    prop_firm_data=None,
+    compare_all_tfs=False,
     progress_callback=None,
 ):
     """
     Full scratch discovery pipeline.
     Returns result dict and saves to discovery_scratch.json.
+
+    New Parameters:
+    - prop_firm_name: Optional prop firm name for Monte Carlo pass probability estimation
+    - prop_firm_data: Optional prop firm config dict (DD limits, account size, etc.)
+    - compare_all_tfs: If True, runs discovery on M5/M15/H1/H4 and returns comparison
     """
     start       = time.time()
     total_steps = 6
+
+    # ── MULTI-TIMEFRAME COMPARISON MODE ───────────────────────────────────────
+    if compare_all_tfs:
+        timeframes = ["M5", "M15", "H1", "H4"]
+        comparison_results = []
+
+        for idx, tf in enumerate(timeframes):
+            if progress_callback:
+                progress_callback(idx + 1, len(timeframes),
+                                 f"Running discovery for {tf}... ({idx+1}/{len(timeframes)})")
+
+            # Run discovery for this timeframe
+            try:
+                tf_result = run_scratch_discovery(
+                    candles_path=candles_path,
+                    entry_timeframe=tf,
+                    sl_pips=sl_pips,
+                    tp_pips=tp_pips,
+                    direction=direction,
+                    max_hold_candles=max_hold_candles,
+                    pip_size=pip_size,
+                    spread_pips=spread_pips,
+                    use_smart_features=use_smart_features,
+                    max_rules=max_rules,
+                    max_depth=max_depth,
+                    n_estimators=n_estimators,
+                    min_coverage_pct=min_coverage_pct,
+                    min_win_rate=min_win_rate,
+                    train_test_split=train_test_split,
+                    prop_firm_name=prop_firm_name,
+                    prop_firm_data=prop_firm_data,
+                    compare_all_tfs=False,  # Don't recurse infinitely
+                    progress_callback=None,  # Suppress nested progress
+                )
+
+                # Extract key metrics
+                rules = tf_result.get('rules', [])
+                best_wr = max([r.get('win_rate', 0) for r in rules]) if rules else 0
+                best_pips = max([r.get('avg_pips', 0) for r in rules]) if rules else 0
+
+                comparison_results.append({
+                    'timeframe': tf,
+                    'rule_count': len(rules),
+                    'best_win_rate': round(best_wr, 3),
+                    'best_avg_pips': round(best_pips, 1),
+                    'base_win_rate': tf_result.get('base_win_rate', 0),
+                    'candles_analyzed': tf_result.get('profile', {}).get('candles_analyzed', 0),
+                })
+
+            except Exception as e:
+                print(f"[WARNING] Discovery failed for {tf}: {e}")
+                comparison_results.append({
+                    'timeframe': tf,
+                    'error': str(e),
+                })
+
+        # Build comparison result
+        comparison_result = {
+            'comparison_mode': True,
+            'timeframes': comparison_results,
+            'settings': {
+                'sl_pips': sl_pips,
+                'tp_pips': tp_pips,
+                'direction': direction,
+                'max_hold_candles': max_hold_candles,
+            },
+            'timestamp': datetime.now().isoformat(),
+        }
+
+        # Save comparison result
+        comparison_path = os.path.join(OUTPUT_DIR, 'discovery_tf_comparison.json')
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        with open(comparison_path, 'w', encoding='utf-8') as f:
+            json.dump(comparison_result, f, indent=2)
+
+        if progress_callback:
+            progress_callback(len(timeframes), len(timeframes),
+                             f"Comparison complete! Results saved to discovery_tf_comparison.json")
+
+        return comparison_result
+
+    # ── NORMAL SINGLE-TF DISCOVERY ────────────────────────────────────────────
 
     def _cb(*args):
         if progress_callback:

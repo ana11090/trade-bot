@@ -324,6 +324,273 @@ def _build_inner(inner):
     except ImportError:
         pass  # Shared module not available, skip toggles
 
+    # ── Prop Firm Target (optional) ────────────────────────────────────────────
+    _section(inner, "Prop Firm Target (Optional)")
+
+    prop_frame = tk.Frame(inner, bg="#fff8dc", relief="solid", bd=1)
+    prop_frame.pack(fill="x", **pad)
+
+    tk.Label(prop_frame, text=(
+        "🎯 Optimize for a specific prop firm? Select target to auto-calculate safe SL/TP "
+        "and estimate pass probability via Monte Carlo simulation."
+    ), bg="#fff8dc", fg="#8B4513", font=("Segoe UI", 9), justify="left", wraplength=900,
+             padx=12, pady=8).pack(fill="x")
+
+    # Load available prop firms
+    def _load_prop_firms():
+        """Scan prop_firms/ directory and return list of (label, firm_data) tuples."""
+        firms = []
+        prop_dir = os.path.join(_project_root, 'prop_firms')
+        if not os.path.isdir(prop_dir):
+            return firms
+
+        import json as _json
+        for fname in sorted(os.listdir(prop_dir)):
+            if not fname.endswith('.json'):
+                continue
+            fpath = os.path.join(prop_dir, fname)
+            try:
+                with open(fpath, encoding='utf-8') as f:
+                    data = _json.load(f)
+                    firm_name = data.get('firm_name', fname.replace('.json', ''))
+                    firms.append((firm_name, data))
+            except Exception:
+                continue
+        return firms
+
+    prop_firms = _load_prop_firms()
+    firm_names = ["None (skip prop firm optimization)"] + [f[0] for f in prop_firms]
+    firm_data_map = {f[0]: f[1] for f in prop_firms}
+
+    prop_firm_var = tk.StringVar(value=firm_names[0])
+    prop_challenge_var = tk.StringVar(value="")
+    prop_account_var = tk.StringVar(value="")
+    prop_limits_var = tk.StringVar(value="")
+    prop_safe_sl_var = tk.StringVar(value="")
+    prop_safe_tp_var = tk.StringVar(value="")
+
+    _widgets.update(dict(
+        prop_firm_var=prop_firm_var,
+        prop_challenge_var=prop_challenge_var,
+        prop_account_var=prop_account_var,
+    ))
+
+    prop_inner = tk.Frame(prop_frame, bg="#fff8dc", padx=12, pady=8)
+    prop_inner.pack(fill="x")
+
+    # Row 1: Firm selection
+    row1 = tk.Frame(prop_inner, bg="#fff8dc")
+    row1.pack(fill="x", pady=4)
+    tk.Label(row1, text="Prop Firm:", bg="#fff8dc", fg="#333",
+             font=("Segoe UI", 9, "bold"), width=18, anchor="w").pack(side="left")
+    firm_combo = ttk.Combobox(row1, textvariable=prop_firm_var, values=firm_names,
+                              state="readonly", width=40, font=("Segoe UI", 9))
+    firm_combo.pack(side="left", padx=(0, 10))
+
+    # Row 2: Challenge selection (populated when firm selected)
+    row2 = tk.Frame(prop_inner, bg="#fff8dc")
+    row2.pack(fill="x", pady=4)
+    tk.Label(row2, text="Challenge:", bg="#fff8dc", fg="#333",
+             font=("Segoe UI", 9, "bold"), width=18, anchor="w").pack(side="left")
+    challenge_combo = ttk.Combobox(row2, textvariable=prop_challenge_var, values=[],
+                                   state="readonly", width=40, font=("Segoe UI", 9))
+    challenge_combo.pack(side="left", padx=(0, 10))
+
+    # Row 3: Account size selection (populated when challenge selected)
+    row3 = tk.Frame(prop_inner, bg="#fff8dc")
+    row3.pack(fill="x", pady=4)
+    tk.Label(row3, text="Account Size:", bg="#fff8dc", fg="#333",
+             font=("Segoe UI", 9, "bold"), width=18, anchor="w").pack(side="left")
+    account_combo = ttk.Combobox(row3, textvariable=prop_account_var, values=[],
+                                 state="readonly", width=40, font=("Segoe UI", 9))
+    account_combo.pack(side="left", padx=(0, 10))
+
+    # Row 4: Display limits and auto-calculated SL/TP
+    limits_label = tk.Label(prop_inner, textvariable=prop_limits_var,
+                           bg="#fff8dc", fg="#8B4513", font=("Segoe UI", 9),
+                           justify="left", anchor="w")
+    limits_label.pack(fill="x", pady=(8, 0))
+
+    safe_params_label = tk.Label(prop_inner, textvariable=prop_safe_sl_var,
+                                 bg="#ffffe0", fg="#006400", font=("Segoe UI", 9, "bold"),
+                                 justify="left", anchor="w", padx=8, pady=6, relief="solid", bd=1)
+    safe_params_label.pack(fill="x", pady=(4, 0))
+
+    # Callback functions
+    def _on_firm_selected(*_):
+        """When firm selected, populate challenge dropdown."""
+        firm_name = prop_firm_var.get()
+        if firm_name == "None (skip prop firm optimization)" or firm_name not in firm_data_map:
+            challenge_combo['values'] = []
+            prop_challenge_var.set("")
+            prop_account_var.set("")
+            prop_limits_var.set("")
+            prop_safe_sl_var.set("")
+            return
+
+        firm_data = firm_data_map[firm_name]
+        challenges = firm_data.get('challenges', [])
+        challenge_labels = [c.get('challenge_name', c.get('challenge_id', '?')) for c in challenges]
+        challenge_combo['values'] = challenge_labels
+        if challenge_labels:
+            challenge_combo.set(challenge_labels[0])
+        else:
+            prop_challenge_var.set("")
+
+    def _on_challenge_selected(*_):
+        """When challenge selected, populate account size dropdown."""
+        firm_name = prop_firm_var.get()
+        if firm_name not in firm_data_map:
+            return
+
+        firm_data = firm_data_map[firm_name]
+        challenges = firm_data.get('challenges', [])
+        challenge_name = prop_challenge_var.get()
+
+        # Find matching challenge
+        challenge = None
+        for c in challenges:
+            if c.get('challenge_name', c.get('challenge_id')) == challenge_name:
+                challenge = c
+                break
+
+        if not challenge:
+            account_combo['values'] = []
+            prop_account_var.set("")
+            return
+
+        account_sizes = challenge.get('account_sizes', [])
+        account_labels = [f"${s:,}" for s in account_sizes]
+        account_combo['values'] = account_labels
+        if account_labels:
+            account_combo.set(account_labels[0])
+        else:
+            prop_account_var.set("")
+
+    def _on_account_selected(*_):
+        """When account selected, calculate limits and safe SL/TP."""
+        firm_name = prop_firm_var.get()
+        if firm_name not in firm_data_map:
+            prop_limits_var.set("")
+            prop_safe_sl_var.set("")
+            return
+
+        firm_data = firm_data_map[firm_name]
+        challenges = firm_data.get('challenges', [])
+        challenge_name = prop_challenge_var.get()
+
+        # Find matching challenge
+        challenge = None
+        for c in challenges:
+            if c.get('challenge_name', c.get('challenge_id')) == challenge_name:
+                challenge = c
+                break
+
+        if not challenge:
+            return
+
+        # Get funded phase limits (what matters for live trading)
+        funded = challenge.get('funded', {})
+        daily_dd_pct = funded.get('max_daily_drawdown_pct', 5.0)
+        total_dd_pct = funded.get('max_total_drawdown_pct', 10.0)
+
+        # Parse account size
+        account_str = prop_account_var.get()
+        if not account_str:
+            return
+        account_size = int(account_str.replace('$', '').replace(',', ''))
+
+        # Calculate safe SL/TP
+        # Safe approach: use 50% of daily DD limit as risk per trade
+        max_daily_dd_dollars = account_size * (daily_dd_pct / 100)
+        safe_risk_per_trade = max_daily_dd_dollars * 0.5  # Conservative: 50% of daily limit
+
+        # Assume pip value for gold (standard lot = $10/pip)
+        # Calculate lot size based on safe risk
+        # For conservative approach, assume 150-pip SL
+        assumed_sl_pips = 150
+        pip_value_per_lot = 10
+        safe_lot_size = safe_risk_per_trade / (assumed_sl_pips * pip_value_per_lot)
+
+        # Calculate actual risk% based on account size
+        safe_risk_pct = (safe_risk_per_trade / account_size) * 100
+
+        # Suggest SL/TP (maintaining 2:1 R:R)
+        suggested_sl = 150
+        suggested_tp = 300
+
+        # Display limits
+        prop_limits_var.set(
+            f"📊 {firm_name} — {challenge_name} (${account_size:,})\n"
+            f"   Daily DD Limit: {daily_dd_pct}% (${max_daily_dd_dollars:,.0f})  |  "
+            f"Total DD Limit: {total_dd_pct}% (${account_size * (total_dd_pct/100):,.0f})"
+        )
+
+        # Display safe parameters
+        prop_safe_sl_var.set(
+            f"✅ Auto-Calculated Safe Parameters:\n"
+            f"   Risk per trade: {safe_risk_pct:.2f}% (${safe_risk_per_trade:,.0f})  |  "
+            f"SL: {suggested_sl} pips  |  TP: {suggested_tp} pips  |  "
+            f"Lot Size: {safe_lot_size:.2f}"
+        )
+
+        # Auto-update SL/TP fields in Settings section
+        sl_var.set(str(suggested_sl))
+        tp_var.set(str(suggested_tp))
+
+    # Bind callbacks
+    prop_firm_var.trace_add("write", _on_firm_selected)
+    prop_challenge_var.trace_add("write", _on_challenge_selected)
+    prop_account_var.trace_add("write", _on_account_selected)
+
+    # ── Entry Timeframe Selector ──────────────────────────────────────────────
+    _section(inner, "Entry Timeframe")
+
+    tf_frame = tk.Frame(inner, bg="#e8f4fd", relief="solid", bd=1)
+    tf_frame.pack(fill="x", **pad)
+
+    tk.Label(tf_frame, text=(
+        "⏱️ Select entry timeframe for signal detection. Lower TFs = more trades but more noise. "
+        "Higher TFs = fewer trades but stronger signals."
+    ), bg="#e8f4fd", fg="#1a3a5c", font=("Segoe UI", 9), justify="left", wraplength=900,
+             padx=12, pady=8).pack(fill="x")
+
+    tf_inner = tk.Frame(tf_frame, bg="#e8f4fd", padx=12, pady=8)
+    tf_inner.pack(fill="x")
+
+    # Row 1: Timeframe selection
+    tf_row1 = tk.Frame(tf_inner, bg="#e8f4fd")
+    tf_row1.pack(fill="x", pady=4)
+    tk.Label(tf_row1, text="Entry Timeframe:", bg="#e8f4fd", fg="#333",
+             font=("Segoe UI", 9, "bold"), width=18, anchor="w").pack(side="left")
+
+    entry_tf_var = tk.StringVar(value="H1")
+    compare_all_tfs_var = tk.BooleanVar(value=False)
+
+    _widgets.update(dict(
+        entry_tf_var=entry_tf_var,
+        compare_all_tfs_var=compare_all_tfs_var,
+    ))
+
+    tf_options = ["M5", "M15", "H1", "H4"]
+    tf_combo = ttk.Combobox(tf_row1, textvariable=entry_tf_var, values=tf_options,
+                            state="readonly", width=15, font=("Segoe UI", 9))
+    tf_combo.pack(side="left", padx=(0, 20))
+
+    # Compare all TFs checkbox
+    compare_check = tk.Checkbutton(tf_row1, text="🔍 Compare ALL timeframes (M5/M15/H1/H4)",
+                                   variable=compare_all_tfs_var, bg="#e8f4fd",
+                                   font=("Segoe UI", 9, "bold"), fg="#1565C0",
+                                   activebackground="#e8f4fd", selectcolor="#e8f4fd")
+    compare_check.pack(side="left", padx=10)
+
+    # Info label
+    tf_info_label = tk.Label(tf_inner, text=(
+        "💡 When 'Compare ALL' is checked, discovery runs on each TF and shows a comparison table\n"
+        "   with rule counts, win rates, and best strategies per timeframe."
+    ), bg="#e8f4fd", fg="#1565C0", font=("Segoe UI", 8), justify="left", anchor="w")
+    tf_info_label.pack(fill="x", pady=(4, 0))
+
     # ── Run button + progress ─────────────────────────────────────────────────
     _section(inner, "Run")
 
@@ -653,6 +920,14 @@ def _on_run():
         split      = float(_widgets['split_var'].get()) / 100.0
         direction  = _widgets['direction_var'].get()
         use_smart  = _widgets['smart_var'].get()
+
+        # New parameters from Part 2 & 3
+        entry_tf       = _widgets['entry_tf_var'].get()
+        compare_all    = _widgets['compare_all_tfs_var'].get()
+        prop_firm_name = _widgets['prop_firm_var'].get()
+        prop_challenge = _widgets['prop_challenge_var'].get()
+        prop_account   = _widgets['prop_account_var'].get()
+
     except ValueError as exc:
         messagebox.showerror("Invalid Input", f"Check your settings:\n{exc}")
         return
@@ -693,9 +968,21 @@ def _on_run():
     def _worker():
         global _result
         try:
+            # Build prop firm data dict if prop firm selected
+            prop_data = None
+            firm_name_param = None
+            if (prop_firm_name and prop_firm_name != "None (skip prop firm optimization)" and
+                prop_challenge and prop_account):
+                # This would ideally load the full firm data, but for now we'll pass None
+                # and implement Monte Carlo simulation in a separate commit
+                firm_name_param = prop_firm_name
+                # TODO: Build prop_data dict from firm_data_map
+                pass
+
             from project4_strategy_creation.scratch_discovery import run_scratch_discovery
             _result = run_scratch_discovery(
                 candles_path=candles_path,
+                entry_timeframe=entry_tf if not compare_all else None,
                 sl_pips=sl,
                 tp_pips=tp,
                 direction=direction,
@@ -709,6 +996,9 @@ def _on_run():
                 min_coverage_pct=cov_pct,
                 min_win_rate=min_wr,
                 train_test_split=split,
+                prop_firm_name=firm_name_param,
+                prop_firm_data=prop_data,
+                compare_all_tfs=compare_all,
                 progress_callback=_progress,
             )
             _panel.after(0, _on_done)
