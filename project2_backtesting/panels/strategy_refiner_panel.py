@@ -1063,7 +1063,8 @@ def _update_breach_display(trades):
         return
 
     breaches = count_dd_breaches(trades, account_size=100000,
-                                  daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0)
+                                  daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0,
+                                  daily_dd_safety_pct=4.0, total_dd_safety_pct=8.0)
 
     blown = breaches['blown_count']
     daily_dd_limit = 5.0
@@ -1109,6 +1110,33 @@ def _update_breach_display(trades):
                     breach_text += f"       • {month_str} ({breach_type} DD breach)\n"
                 except Exception:
                     breach_text += f"       • {d} (breach)\n"
+
+        # Add safety stops info
+        daily_safety = breaches.get('daily_safety_stops', 0)
+        total_safety = breaches.get('total_safety_stops', 0)
+        total_safety_stops = daily_safety + total_safety
+
+        if total_safety_stops > 0:
+            breach_text += f"\n\n  ⚠️ SAFETY STOPS: {total_safety_stops} times (daily:{daily_safety} total:{total_safety})\n"
+            breach_text += f"     Bot paused before firm limits — account survived\n"
+
+            # Format safety dates
+            all_safety_dates = sorted(set(
+                breaches.get('daily_safety_dates', []) +
+                breaches.get('total_safety_dates', [])
+            ))
+
+            if all_safety_dates:
+                breach_text += f"\n     Safety stop timeline:\n"
+                for d in all_safety_dates:
+                    try:
+                        dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                        month_str = dt.strftime('%B %Y')
+                        # Check if daily or total safety stop
+                        stop_type = "daily" if d in breaches.get('daily_safety_dates', []) else "total"
+                        breach_text += f"       • {month_str} ({stop_type} safety limit)\n"
+                    except Exception:
+                        breach_text += f"       • {d} (safety stop)\n"
 
         if blown <= 3:
             breach_text += f"\n     🟡 Occasional blows — might pass with good timing"

@@ -219,15 +219,23 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
 
 
 def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
-                       daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0):
+                       daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0,
+                       daily_dd_safety_pct=None, total_dd_safety_pct=None):
     """
-    Simulate equity curve, count prop firm DD breaches.
+    Simulate equity curve, count prop firm DD breaches and safety stops.
+
+    Firm breaches: account blown, challenge failed
+    Safety stops: bot-imposed limits BEFORE firm limits, account survives
+
     After each breach, resets account (like restarting a challenge).
+    Safety stops are tracked but don't reset the account.
     """
     if not trades:
         return {
             'daily_breaches': 0, 'total_breaches': 0, 'blown_count': 0,
             'daily_breach_dates': [], 'total_breach_dates': [],
+            'daily_safety_stops': 0, 'total_safety_stops': 0,
+            'daily_safety_dates': [], 'total_safety_dates': [],
             'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
             'total_months': 0, 'months_blown': 0,
             'worst_daily_pct': 0, 'worst_total_pct': 0,
@@ -252,6 +260,8 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         return {
             'daily_breaches': 0, 'total_breaches': 0, 'blown_count': 0,
             'daily_breach_dates': [], 'total_breach_dates': [],
+            'daily_safety_stops': 0, 'total_safety_stops': 0,
+            'daily_safety_dates': [], 'total_safety_dates': [],
             'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
             'total_months': 0, 'months_blown': 0,
             'worst_daily_pct': 0, 'worst_total_pct': 0,
@@ -261,11 +271,17 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     daily_dd_limit = account_size * (daily_dd_limit_pct / 100)
     total_dd_limit = account_size * (total_dd_limit_pct / 100)
 
+    # Safety limits (bot stops before firm limits)
+    daily_dd_safety = account_size * (daily_dd_safety_pct / 100) if daily_dd_safety_pct else None
+    total_dd_safety = account_size * (total_dd_safety_pct / 100) if total_dd_safety_pct else None
+
     balance = account_size
     high_water = account_size
     blown_count = 0
     daily_breach_dates = []
     total_breach_dates = []
+    daily_safety_dates = []
+    total_safety_dates = []
     last_blown_day = None
     days_between_blows = []
     worst_daily_pct = 0.0
@@ -278,6 +294,12 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             daily_pct = abs(day_pnl) / account_size * 100
             worst_daily_pct = max(worst_daily_pct, daily_pct)
 
+        # Check daily safety stop (bot pauses before firm limit)
+        if daily_dd_safety and day_pnl < 0 and abs(day_pnl) >= daily_dd_safety:
+            if abs(day_pnl) < daily_dd_limit:  # Only count if not also a breach
+                daily_safety_dates.append(day)
+
+        # Check daily breach (firm limit - account blown)
         if day_pnl < 0 and abs(day_pnl) >= daily_dd_limit:
             daily_breach_dates.append(day)
             blown_count += 1
@@ -299,6 +321,12 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         total_dd_pct = total_dd / account_size * 100
         worst_total_pct = max(worst_total_pct, total_dd_pct)
 
+        # Check total safety stop (bot pauses before firm limit)
+        if total_dd_safety and total_dd >= total_dd_safety:
+            if total_dd < total_dd_limit:  # Only count if not also a breach
+                total_safety_dates.append(day)
+
+        # Check total breach (firm limit - account blown)
         if total_dd >= total_dd_limit:
             total_breach_dates.append(day)
             blown_count += 1
@@ -326,6 +354,10 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         'blown_count': blown_count,
         'daily_breach_dates': daily_breach_dates[:10],
         'total_breach_dates': total_breach_dates[:10],
+        'daily_safety_stops': len(daily_safety_dates),
+        'total_safety_stops': len(total_safety_dates),
+        'daily_safety_dates': daily_safety_dates[:10],
+        'total_safety_dates': total_safety_dates[:10],
         'avg_days_between_blows': int(avg_gap),
         'survival_rate_per_month': survival_rate,
         'total_months': int(total_months),

@@ -851,7 +851,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             m["trades"],
             account_size=100000,
             daily_dd_limit_pct=5.0,
-            total_dd_limit_pct=10.0
+            total_dd_limit_pct=10.0,
+            daily_dd_safety_pct=4.0,
+            total_dd_safety_pct=8.0
         )
 
         result = {

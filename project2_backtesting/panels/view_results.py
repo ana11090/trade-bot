@@ -377,6 +377,51 @@ def display_summary(output_text, summary_frame):
                                 f"worst total: {wt:.1f}% (limit: 10%)\n\n"
                                 f"survival {surv}%/mo = {surv}% of months had no blowup"
                                 f"{dates_text}")
+
+                # Safety stops row (if any)
+                daily_safety = breaches.get('daily_safety_stops', 0)
+                total_safety = breaches.get('total_safety_stops', 0)
+                total_safety_stops = daily_safety + total_safety
+
+                if total_safety_stops > 0:
+                    safety_row = tk.Frame(dd_frame, bg=bg_color)
+                    safety_row.pack(fill="x", padx=10, pady=(2, 0))
+
+                    # Build safety dates for tooltip
+                    import datetime
+                    all_safety_dates = sorted(set(
+                        breaches.get('daily_safety_dates', []) +
+                        breaches.get('total_safety_dates', [])
+                    ))
+                    safety_months = []
+                    for d in all_safety_dates:
+                        try:
+                            dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                            safety_months.append(dt.strftime('%b %Y'))
+                        except Exception:
+                            safety_months.append(d[:7])
+
+                    safety_dates_text = ""
+                    if safety_months:
+                        safety_dates_text = "\n\nSafety stops in:\n"
+                        for sm in safety_months:
+                            safety_dates_text += f"  • {sm}\n"
+
+                    safety_lbl = tk.Label(safety_row,
+                                          text=f"⚠️ {total_safety_stops} safety stops (daily:{daily_safety} total:{total_safety}) — bot paused before firm limits",
+                                          bg=bg_color, fg="#e67e22", font=("Arial", 8))
+                    safety_lbl.pack(side=tk.LEFT)
+                    add_tooltip(safety_lbl,
+                                f"⚠️ {total_safety_stops} safety stops = bot self-imposed limits touched\n\n"
+                                f"DIFFERENCE:\n"
+                                f"  💀 Firm breach = account BLOWN, challenge FAILED\n"
+                                f"  ⚠️ Safety stop = bot PAUSED, account SURVIVES\n\n"
+                                f"Safety stops are YOUR conservative limits set BEFORE\n"
+                                f"the prop firm's actual limits. When touched, the bot\n"
+                                f"stops trading to protect the account.\n\n"
+                                f"daily:{daily_safety} = {daily_safety} times touched daily safety limit\n"
+                                f"total:{total_safety} = {total_safety} times touched total safety limit"
+                                f"{safety_dates_text}")
         else:
             tk.Label(card, text="0 trades — rule conditions never triggered",
                      bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
