@@ -5,6 +5,102 @@
   "market_type": "forex_cfd",
   "dd_reset_timezone": "UTC",
   "typical_swap_xauusd_per_lot_per_night": 30.0,
+  "leverage_by_size": {
+    "5000": "1:30",
+    "10000": "1:30",
+    "25000": "1:30",
+    "50000": "1:30",
+    "100000": "1:30"
+  },
+  "trading_rules": [
+    {
+      "id": "eval_strategy",
+      "name": "Evaluation Strategy — Hit 6% Target",
+      "stage": "evaluation",
+      "description": "Aggressive settings to reach 6% profit target fast",
+      "explanation": "The evaluation has no consistency rule and no minimum profitable days. The only goal is reaching 6% without hitting 3% daily or 6% total DD. If you blow the $155 fee, retry. Speed matters more than safety because the REAL money is in the funded account. Use higher risk per trade and more trades per day. Sessions and exact risk % are determined by the optimizer based on your strategy's backtest results.",
+      "type": "eval_settings",
+      "parameters": {
+        "risk_pct_range": [0.8, 1.5],
+        "max_trades_per_day_range": [3, 5],
+        "daily_dd_buffer_pct": 0.3,
+        "total_dd_buffer_pct": 0.3
+      }
+    },
+    {
+      "id": "funded_accumulate",
+      "name": "Funded — Accumulate Phase",
+      "stage": "funded",
+      "description": "Conservative trading to meet payout conditions",
+      "explanation": "Trade conservatively to meet two payout conditions: (1) at least 3 profitable days with >= 0.5% ($50) gain each, and (2) no single day exceeds 20% of total profit. Use a daily profit cap of 2 winning trades then stop for the day — this naturally spreads profit across many days and makes consistency easy. If total DD reaches 5% before conditions are met, stop trading for the rest of the period to protect the account.",
+      "type": "funded_accumulate",
+      "parameters": {
+        "risk_pct_range": [0.3, 0.5],
+        "max_winning_trades_per_day": 2,
+        "daily_dd_stop_pct": 2.5,
+        "total_dd_stop_pct": 5.5,
+        "emergency_total_dd_stop_pct": 5.0
+      }
+    },
+    {
+      "id": "funded_protect",
+      "name": "Funded — Protection Phase (After Conditions Met)",
+      "stage": "funded",
+      "description": "STOP trading — payout conditions met, wait for collection",
+      "explanation": "Once both payout conditions are met (3 profitable days at >= 0.5% AND best day under 20% of total), STOP trading completely. Do not risk the secured payout. Wait for the 14-day period to end and collect. Any additional trading could create a new 'best day' that breaks the 20% consistency rule.",
+      "type": "funded_protect",
+      "parameters": {
+        "stop_trading": true
+      }
+    },
+    {
+      "id": "consistency_rule",
+      "name": "20% Consistency Rule",
+      "stage": "funded",
+      "description": "No single day can exceed 20% of total payout period profit",
+      "explanation": "Measured at payout time, not daily. If you make $700 total in 14 days, no single day can account for more than $140 (20%). More trading days makes this easier — with 8 profitable days, each day is ~12.5% of total (well under 20%). The daily profit cap of 2 winning trades helps ensure even distribution. Lot size does NOT fix consistency — if you halve lots, every day halves proportionally and the RATIO stays the same. The fix is more trading days, not smaller trades.",
+      "type": "consistency",
+      "parameters": {
+        "max_day_pct": 20
+      }
+    },
+    {
+      "id": "min_profitable_days",
+      "name": "3 Minimum Profitable Days",
+      "stage": "funded",
+      "description": "At least 3 days must be profitable with >= 0.5% gain each",
+      "explanation": "You cannot just trade one big day and sit out. The firm wants to see consistent trading ability. Each of the 3 days must make at least 0.5% of the account ($50 on $10K). With the 2-winning-trades-per-day cap and conservative risk, most trading days will clear this threshold easily.",
+      "type": "min_profitable_days",
+      "parameters": {
+        "min_days": 3,
+        "min_pct_per_day": 0.5
+      }
+    },
+    {
+      "id": "daily_dd_after_payout_met",
+      "name": "Daily DD Safety — Accumulate Phase",
+      "stage": "funded",
+      "description": "Stop for the DAY when daily loss reaches 2.5% (limit is 3%)",
+      "explanation": "While building toward payout conditions, stop trading for the current day if daily loss reaches 2.5%. The firm's limit is 3% — this 0.5% buffer protects against a final bad trade pushing you over. Resume trading next day.",
+      "type": "dd_safety",
+      "parameters": {
+        "daily_dd_buffer_pct": 0.5,
+        "action": "stop_for_day"
+      }
+    },
+    {
+      "id": "total_dd_emergency",
+      "name": "Total DD Emergency Stop",
+      "stage": "funded",
+      "description": "Stop for the PERIOD when total DD reaches 5% (limit is 6%)",
+      "explanation": "If total trailing drawdown reaches 5% before payout conditions are met, stop trading entirely for the rest of the 14-day period. Better to lose one payout cycle than the entire funded account. The account survives and you try again next period. This 1% buffer (5% vs 6% limit) protects against overnight gaps or Monday opens that could push past the limit.",
+      "type": "dd_emergency",
+      "parameters": {
+        "total_dd_stop_pct": 5.0,
+        "action": "stop_for_period"
+      }
+    }
+  ],
   "challenges": [
     {
       "challenge_id": "leveraged_standard",

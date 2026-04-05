@@ -316,8 +316,9 @@ def _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
 
 
 def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
-                           funded_cfg, account_size, daily_dd_safety_pct):
-    """Simulate funded account from start_idx onward. Returns funded result dict."""
+                           funded_cfg, account_size, daily_dd_safety_pct,
+                           trading_rules=None):
+    """Simulate funded account from start_idx onward with trading_rules support."""
     max_daily_dd  = funded_cfg.get("max_daily_drawdown_pct")
     max_total_dd  = funded_cfg.get("max_total_drawdown_pct") or 999.0
     dd_type       = funded_cfg.get("drawdown_type", "static")
@@ -327,6 +328,35 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
     min_payout    = float(funded_cfg.get("min_payout_amount") or 0)
 
     payout_interval = _PAYOUT_FREQ_DAYS.get(payout_freq, 14)
+
+    # Parse trading_rules
+    max_winning_trades_per_day = 999  # unlimited by default
+    consistency_max_pct = None
+    min_profitable_days_count = 0
+    min_profitable_day_pct = 0
+    emergency_total_dd_pct = None
+    stop_after_conditions_met = False
+
+    if trading_rules:
+        for rule in trading_rules:
+            if rule.get('stage') != 'funded':
+                continue
+            rtype = rule.get('type', '')
+            params = rule.get('parameters', {})
+
+            if rtype == 'funded_accumulate':
+                max_winning_trades_per_day = params.get('max_winning_trades_per_day', 999)
+                emergency_total_dd_pct = params.get('emergency_total_dd_stop_pct')
+
+            elif rtype == 'funded_protect':
+                stop_after_conditions_met = params.get('stop_trading', False)
+
+            elif rtype == 'consistency':
+                consistency_max_pct = params.get('max_day_pct')
+
+            elif rtype == 'min_profitable_days':
+                min_profitable_days_count = params.get('min_days', 0)
+                min_profitable_day_pct = params.get('min_pct_per_day', 0)
 
     # Funded safety threshold
     daily_dd_limit_abs = account_size * (max_daily_dd / 100.0) if max_daily_dd else None
@@ -348,15 +378,59 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
     funded_start     = trading_dates[start_idx]
     last_payout_date = funded_start
 
+    # Payout period tracking for trading_rules
+    period_daily_pnls = {}  # {date_str: pnl} for current payout period
+    payout_conditions_met = False
+    stopped_for_period = False
+
     for i in range(start_idx, len(trading_dates)):
         cur_date   = trading_dates[i]
         trade_list = daily_trades[cur_date]
-        day_pnl    = _apply_daily_safety(trade_list, safety_threshold)
+
+        # If stopped for period (emergency DD or payout met), skip trading
+        if stopped_for_period:
+            # Check if new payout period started
+            if (cur_date - last_payout_date).days >= payout_interval:
+                # New period — reset
+                stopped_for_period = False
+                payout_conditions_met = False
+                period_daily_pnls = {}
+                # Process payout for previous period
+                profit = balance - account_size
+                if profit > 0 and payout_conditions_met:
+                    payout = profit * split_pct / 100.0
+                    if payout >= min_payout:
+                        total_payout += payout
+                        payout_count += 1
+                        balance      -= payout
+                        if dd_reset:
+                            hwm = balance
+                last_payout_date = cur_date
+            else:
+                continue
+
+        # Apply daily profit cap: only take first N winning trades
+        if max_winning_trades_per_day < 999:
+            capped_trades = []
+            win_count = 0
+            for t in trade_list:
+                if t > 0:
+                    win_count += 1
+                    if win_count > max_winning_trades_per_day:
+                        break  # stop after N winning trades
+                capped_trades.append(t)
+            day_pnl = _apply_daily_safety(capped_trades, safety_threshold)
+        else:
+            day_pnl = _apply_daily_safety(trade_list, safety_threshold)
 
         balance      += day_pnl
         trading_days += 1
 
         cal_days = (cur_date - funded_start).days + 1
+
+        # Track daily P&L for this payout period
+        day_str = str(cur_date)
+        period_daily_pnls[day_str] = period_daily_pnls.get(day_str, 0) + day_pnl
 
         if dd_type in ("trailing", "trailing_eod"):
             hwm = max(hwm, balance)
@@ -392,10 +466,36 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                     "monthly_avg": monthly, "max_dd_pct": max_dd_hit,
                     "end_reason": "DD_BREACH"}
 
-        # Payout
+        # Emergency total DD stop
+        if emergency_total_dd_pct and not payout_conditions_met:
+            if total_dd >= emergency_total_dd_pct:
+                stopped_for_period = True
+                continue
+
+        # Check payout conditions
+        if not payout_conditions_met and consistency_max_pct:
+            period_profit = sum(v for v in period_daily_pnls.values() if v > 0)
+
+            if period_profit > 0:
+                # Check consistency: best day under max_pct of total
+                best_day = max(period_daily_pnls.values()) if period_daily_pnls else 0
+                best_day_pct = (best_day / period_profit * 100) if period_profit > 0 else 100
+                consistency_ok = best_day_pct <= consistency_max_pct
+
+                # Check min profitable days
+                min_profit_threshold = account_size * (min_profitable_day_pct / 100)
+                profitable_days = sum(1 for v in period_daily_pnls.values() if v >= min_profit_threshold)
+                min_days_ok = profitable_days >= min_profitable_days_count
+
+                if consistency_ok and min_days_ok:
+                    payout_conditions_met = True
+                    if stop_after_conditions_met:
+                        stopped_for_period = True
+
+        # Payout processing
         if (cur_date - last_payout_date).days >= payout_interval:
             profit = balance - account_size
-            if profit > 0:
+            if profit > 0 and payout_conditions_met:
                 payout = profit * split_pct / 100.0
                 if payout >= min_payout:
                     total_payout += payout
@@ -403,8 +503,12 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                     balance      -= payout
                     if dd_reset:
                         hwm = balance
-                # If payout < min_payout, profit stays in account
+
+            # Reset for next period
             last_payout_date = cur_date
+            period_daily_pnls = {}
+            payout_conditions_met = False
+            stopped_for_period = False
 
     final_cal = (trading_dates[-1] - funded_start).days + 1 if len(trading_dates) > start_idx else 0
     monthly   = total_payout / (final_cal / 30) if final_cal > 0 else 0.0
@@ -416,8 +520,8 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
 
 def _single_sim(trading_dates, daily_trades, start_date, date_to_idx,
                 phases, funded_cfg, account_size, simulate_funded,
-                max_override_days, daily_dd_safety_pct):
-    """Run one complete simulation (eval + optional funded)."""
+                max_override_days, daily_dd_safety_pct, trading_rules=None):
+    """Run one complete simulation (eval + optional funded) with trading_rules."""
     start_idx = date_to_idx[start_date]
     eval_r    = _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
                                phases, account_size, max_override_days, daily_dd_safety_pct)
@@ -442,7 +546,8 @@ def _single_sim(trading_dates, daily_trades, start_date, date_to_idx,
 
     funded_r = _simulate_funded_stage(
         trading_dates, daily_trades, eval_r["next_idx"],
-        funded_cfg, account_size, daily_dd_safety_pct)
+        funded_cfg, account_size, daily_dd_safety_pct,
+        trading_rules=trading_rules)
 
     return SingleSimResult(
         start_date=str(start_date),
@@ -602,6 +707,9 @@ def simulate_challenge(
     phases     = challenge.get("phases", [])
     funded_cfg = challenge.get("funded", {})
 
+    # Load trading_rules from firm data
+    trading_rules = firm.config.get('trading_rules', [])
+
     # ── Prepare trades ────────────────────────────────────────────────────────
     df = trades_df.copy()
     df["_close_dt"]   = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
@@ -680,6 +788,7 @@ def simulate_challenge(
             trading_dates, daily_trades, start_date, date_to_idx,
             phases, funded_cfg, account_size, simulate_funded,
             max_eval_calendar_days, daily_dd_safety_pct,
+            trading_rules=trading_rules,
         )
         all_results.append(r)
 
