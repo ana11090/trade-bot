@@ -801,6 +801,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             stats = compute_stats(trades)
 
             result = {
+                "rules":        combo["rules"],        # actual rule conditions for validator
                 "rule_combo":   combo["name"],
                 "rule_indices": combo["indices"],
                 "exit_strategy": exit_strat.describe(),
