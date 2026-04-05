@@ -89,6 +89,8 @@ def _get_selected_index():
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
+    if '───' in val:
+        return None  # separator, not a real selection
     for s in _strategies:
         if s['label'] == val:
             return s['index']

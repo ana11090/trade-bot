@@ -261,14 +261,21 @@ def display_summary(output_text, summary_frame):
             # Breach counter (from precomputed data)
             breaches = r.get('breaches', {})
             if breaches:
+                from shared.tooltip import add_tooltip
+
                 blown = breaches.get('blown_count', 0)
 
                 breach_row = tk.Frame(card, bg=bg_color)
                 breach_row.pack(fill="x", pady=(2, 0))
 
                 if blown == 0:
-                    tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
-                             bg=bg_color, fg="#28a745", font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+                    breach_lbl = tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
+                                          bg=bg_color, fg="#28a745", font=("Arial", 8, "bold"))
+                    breach_lbl.pack(side=tk.LEFT)
+                    add_tooltip(breach_lbl,
+                                "This strategy NEVER exceeded the prop firm's\n"
+                                "daily or total drawdown limits across the\n"
+                                "entire backtest period. Safe to trade.")
                 else:
                     daily_b = breaches.get('daily_breaches', 0)
                     total_b = breaches.get('total_breaches', 0)
@@ -276,10 +283,21 @@ def display_summary(output_text, summary_frame):
                     wd = breaches.get('worst_daily_pct', 0)
                     wt = breaches.get('worst_total_pct', 0)
                     color = "#dc3545" if blown > 3 else "#e67e22"
-                    tk.Label(breach_row,
-                             text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
-                                  f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
-                             bg=bg_color, fg=color, font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+                    breach_lbl = tk.Label(breach_row,
+                                          text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
+                                               f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
+                                          bg=bg_color, fg=color, font=("Arial", 8, "bold"))
+                    breach_lbl.pack(side=tk.LEFT)
+                    add_tooltip(breach_lbl,
+                                f"💀 {blown} blows = account blown {blown} times\n"
+                                f"  Each blow = 1 failed challenge = 1 fee lost\n\n"
+                                f"daily:{daily_b} = {daily_b} times lost ≥5% in a single day\n"
+                                f"  (FTMO resets daily DD at midnight CET)\n\n"
+                                f"total:{total_b} = {total_b} times equity dropped ≥10%\n"
+                                f"  from its peak (trailing or static depending on firm)\n\n"
+                                f"worst daily: {wd:.1f}% = biggest single-day loss\n"
+                                f"worst total: {wt:.1f}% = deepest peak-to-trough drop\n\n"
+                                f"survival {surv}%/mo = {surv}% of months had no blowup")
         else:
             tk.Label(card, text="0 trades — rule conditions never triggered",
                      bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")

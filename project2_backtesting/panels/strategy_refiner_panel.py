@@ -84,6 +84,8 @@ def _get_selected_index():
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
+    if '───' in val:
+        return None  # separator, not a real selection
     for s in _strategies:
         if s['label'] == val:
             return s['index']
@@ -832,7 +834,7 @@ def build_panel(parent):
         _strategy_var = tk.StringVar(value=_strategies[0]['label'])
         labels = [s['label'] for s in _strategies]
         dd = ttk.Combobox(sel_row, textvariable=_strategy_var,
-                          values=labels, state="readonly", width=65)
+                          values=labels, state="readonly", width=95)
         dd.pack(side=tk.LEFT, padx=(0, 10))
 
     tk.Button(sel_row, text="Load", command=_load_selected_strategy,
@@ -1039,6 +1041,19 @@ def build_panel(parent):
                               font=("Courier", 9), bg=WHITE, fg="#333",
                               justify=tk.LEFT, anchor="nw")
     _breach_label.pack(fill="x")
+
+    from shared.tooltip import add_tooltip
+    add_tooltip(_breach_label,
+                "💀 Prop Firm Breach Counter\n\n"
+                "Simulates your strategy across the full backtest period.\n"
+                "Every time drawdown exceeds the prop firm limit,\n"
+                "the account is 'blown' and restarted — just like\n"
+                "a real failed challenge.\n\n"
+                "Daily DD breach: lost too much in ONE day\n"
+                "Total DD breach: equity dropped too far from peak\n\n"
+                "0 blows = strategy never violated limits\n"
+                "1-3 blows = occasional, might pass with timing\n"
+                "4+ blows = too risky for prop firms")
 
     # ── Trade list ────────────────────────────────────────────────────────────
     tl_hdr = tk.Frame(sf, bg=WHITE, padx=20, pady=6)

@@ -341,30 +341,92 @@ def load_trades_from_matrix(strategy_index):
 
 
 def load_strategy_list():
-    """Return list of strategy summary dicts from backtest_matrix.json."""
-    if not os.path.exists(BACKTEST_MATRIX_PATH):
-        return []
-    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    """Return list of strategy summary dicts from backtest_matrix.json + saved rules."""
     results = []
-    for i, r in enumerate(data.get('results', [])):
-        stats = r.get('stats', r)  # stats might be nested or at top level
-        results.append({
-            'index':             i,
-            'label':             f"{r.get('rule_combo','?')} × {r.get('exit_name','?')}",
-            'rule_combo':        r.get('rule_combo', '?'),
-            'exit_strategy':     r.get('exit_strategy', '?'),
-            'exit_name':         r.get('exit_name', '?'),
-            'total_trades':      stats.get('total_trades', r.get('total_trades', 0)),
-            'win_rate':          stats.get('win_rate', r.get('win_rate', 0)),
-            'net_total_pips':    stats.get('net_total_pips', r.get('net_total_pips', 0)),
-            'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
-            'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
-            'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
-            'spread_pips':       r.get('spread_pips', 2.5),
-            'commission_pips':   r.get('commission_pips', 0.0),
-            'has_trades':        'trades' in r and bool(r.get('trades')),
-        })
+
+    # Load backtest matrix results
+    if os.path.exists(BACKTEST_MATRIX_PATH):
+        with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for i, r in enumerate(data.get('results', [])):
+            stats = r.get('stats', r)  # stats might be nested or at top level
+            wr = stats.get('win_rate', r.get('win_rate', 0))
+            wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+            net = stats.get('net_total_pips', r.get('net_total_pips', 0))
+            trades_count = stats.get('total_trades', r.get('total_trades', 0))
+
+            results.append({
+                'index':             i,
+                'source':            'backtest',
+                'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
+                                      f"  [{trades_count} trades, WR {wr_str}, {net:+,.0f} pips]"),
+                'rule_combo':        r.get('rule_combo', '?'),
+                'exit_strategy':     r.get('exit_strategy', '?'),
+                'exit_name':         r.get('exit_name', '?'),
+                'total_trades':      trades_count,
+                'win_rate':          wr,
+                'net_total_pips':    net,
+                'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
+                'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
+                'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
+                'spread_pips':       r.get('spread_pips', 2.5),
+                'commission_pips':   r.get('commission_pips', 0.0),
+                'has_trades':        'trades' in r and bool(r.get('trades')),
+            })
+
+    # Load saved rules
+    try:
+        saved_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '..', '..', 'saved_rules.json')
+        saved_path = os.path.normpath(saved_path)
+        if os.path.exists(saved_path):
+            with open(saved_path, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+
+            if saved:
+                # Add separator
+                results.append({
+                    'index':        '__separator__',
+                    'source':       'separator',
+                    'label':        '─── SAVED RULES ───────────────────────────────────────────────────────────────',
+                    'total_trades': 0,
+                    'has_trades':   False,
+                })
+
+                for entry in saved:
+                    rule = entry.get('rule', {})
+                    wr = rule.get('win_rate', 0)
+                    wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+                    source = entry.get('source', '?')
+                    notes = entry.get('notes', '')
+                    rid = entry.get('id', '?')
+
+                    label_parts = [f"💾 Saved #{rid} — from {source}"]
+                    if wr > 0:
+                        label_parts.append(f"WR {wr_str}")
+                    if notes:
+                        label_parts.append(notes[:30])
+
+                    results.append({
+                        'index':             f"saved_{rid}",
+                        'source':            'saved',
+                        'label':             '  '.join(label_parts),
+                        'rule_combo':        f"Saved #{rid}",
+                        'exit_strategy':     'Default',
+                        'exit_name':         'Default',
+                        'total_trades':      rule.get('total_trades', 0),
+                        'win_rate':          wr,
+                        'net_total_pips':    rule.get('net_total_pips', 0),
+                        'net_avg_pips':      rule.get('avg_pips', 0),
+                        'net_profit_factor': rule.get('net_profit_factor', 0),
+                        'max_dd_pips':       rule.get('max_dd_pips', 0),
+                        'spread_pips':       2.5,
+                        'commission_pips':   0.0,
+                        'has_trades':        False,
+                        'saved_rule':        rule,  # keep the original rule for loading
+                    })
+    except Exception:
+        pass
+
     return results
 
 
