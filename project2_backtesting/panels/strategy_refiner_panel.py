@@ -429,25 +429,84 @@ def _start_optimization():
 
     def _cb(step, total, message, current_best, elapsed_str="",
             candidates_tested=0, improvements_found=0):
+        """Update optimizer UI — called from background thread."""
         pct = int(step / max(total, 1) * 100)
 
         def _update():
-            if _opt_live_labels:
-                _opt_live_labels.get('msg',     tk.Label()).configure(text=message)
-                _opt_live_labels.get('progress',tk.Label()).configure(
-                    text=f"Step {step}/{total}  ({pct}%)")
-                _opt_live_labels.get('best_name', tk.Label()).configure(
-                    text=current_best.get('name', '—'))
-                _opt_live_labels.get('best_stats', tk.Label()).configure(
-                    text=f"{current_best.get('trades',0)} trades  |  "
-                         f"WR {current_best.get('win_rate',0)*100:.1f}%  |  "
-                         f"avg {current_best.get('avg_pips',0):+.1f} pips  |  "
-                         f"{current_best.get('trades_per_day',0):.1f}/day")
-                _opt_live_labels.get('counters', tk.Label()).configure(
-                    text=f"Tested: {candidates_tested}  |  "
-                         f"Improvements: {improvements_found}  |  "
-                         f"Elapsed: {elapsed_str}")
-        state.window.after(0, _update)
+            try:
+                # Update status label
+                if _opt_status_lbl:
+                    try:
+                        if _opt_status_lbl.winfo_exists():
+                            _opt_status_lbl.configure(text=message, fg="#28a745")
+                    except Exception:
+                        pass
+
+                # Update live labels — check each one individually
+                if isinstance(_opt_live_labels, dict):
+                    # Message/status
+                    msg_lbl = _opt_live_labels.get('msg')
+                    if msg_lbl:
+                        try:
+                            if msg_lbl.winfo_exists():
+                                msg_lbl.configure(text=message)
+                        except Exception:
+                            pass
+
+                    # Progress
+                    progress_lbl = _opt_live_labels.get('progress')
+                    if progress_lbl:
+                        try:
+                            if progress_lbl.winfo_exists():
+                                progress_lbl.configure(text=f"Step {step}/{total}  ({pct}%)")
+                        except Exception:
+                            pass
+
+                    # Best name
+                    best_name_lbl = _opt_live_labels.get('best_name')
+                    if best_name_lbl:
+                        try:
+                            if best_name_lbl.winfo_exists():
+                                best_name_lbl.configure(text=current_best.get('name', '—'))
+                        except Exception:
+                            pass
+
+                    # Best stats
+                    best_stats_lbl = _opt_live_labels.get('best_stats')
+                    if best_stats_lbl:
+                        try:
+                            if best_stats_lbl.winfo_exists():
+                                best_stats_lbl.configure(
+                                    text=f"{current_best.get('trades',0)} trades  |  "
+                                         f"WR {current_best.get('win_rate',0)*100:.1f}%  |  "
+                                         f"avg {current_best.get('avg_pips',0):+.1f} pips  |  "
+                                         f"{current_best.get('trades_per_day',0):.1f}/day")
+                        except Exception:
+                            pass
+
+                    # Counters/elapsed time
+                    counters_lbl = _opt_live_labels.get('counters')
+                    if counters_lbl:
+                        try:
+                            if counters_lbl.winfo_exists():
+                                counters_lbl.configure(
+                                    text=f"Tested: {candidates_tested}  |  "
+                                         f"Improvements: {improvements_found}  |  "
+                                         f"Elapsed: {elapsed_str}")
+                        except Exception:
+                            pass
+
+            except Exception as e:
+                print(f"[OPTIMIZER UI] Update error: {e}")
+
+        # Schedule on main thread
+        try:
+            if state.window and state.window.winfo_exists():
+                state.window.after(0, _update)
+            else:
+                print(f"[OPTIMIZER UI] Window not available")
+        except Exception as e:
+            print(f"[OPTIMIZER UI] after() error: {e}")
 
     def _worker():
         try:
