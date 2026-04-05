@@ -869,11 +869,13 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
         # Silently skip if breach calculation fails
         pass
 
-    # Payout estimation
+    # Stage-specific estimation (Payout for Funded, Target for Evaluation)
     try:
+        from shared.tooltip import add_tooltip
+        global _stage_var
+
         trade_list = cand.get('trades', [])
         if trade_list and len(trade_list) > 20:
-            # Calculate 14-day window consistency pass rate
             import pandas as pd
 
             # Group trades by day
@@ -888,104 +890,183 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
 
             if daily_pnls:
                 days_sorted = sorted(daily_pnls.keys())
+                stage = _stage_var.get().lower() if _stage_var else "funded"
 
-                # Slide 14-day windows across the data
-                windows_total = 0
-                windows_pass = 0
-                window_profits = []
+                if stage == "funded":
+                    # FUNDED: Payout estimation with consistency rules
+                    windows_total = 0
+                    windows_pass = 0
+                    window_profits = []
 
-                for start_i in range(0, len(days_sorted) - 5, 7):  # step by 7 days
-                    # Get 14-day window
-                    start_day = pd.to_datetime(days_sorted[start_i])
-                    window_pnls = {}
-                    for d in days_sorted[start_i:]:
-                        dt = pd.to_datetime(d)
-                        if (dt - start_day).days >= 14:
-                            break
-                        window_pnls[d] = daily_pnls[d]
+                    for start_i in range(0, len(days_sorted) - 5, 7):  # step by 7 days
+                        # Get 14-day window
+                        start_day = pd.to_datetime(days_sorted[start_i])
+                        window_pnls = {}
+                        for d in days_sorted[start_i:]:
+                            dt = pd.to_datetime(d)
+                            if (dt - start_day).days >= 14:
+                                break
+                            window_pnls[d] = daily_pnls[d]
 
-                    if not window_pnls:
-                        continue
+                        if not window_pnls:
+                            continue
 
-                    total_profit = sum(v for v in window_pnls.values() if v > 0)
-                    if total_profit <= 0:
+                        total_profit = sum(v for v in window_pnls.values() if v > 0)
+                        if total_profit <= 0:
+                            windows_total += 1
+                            continue
+
+                        # Check consistency: best day < 20% of total
+                        best_day = max(window_pnls.values())
+                        best_day_pct = (best_day / total_profit * 100) if total_profit > 0 else 100
+
+                        # Check min profitable days (3 days >= 0.5% of account)
+                        min_threshold = (acct or 100000) * 0.005
+                        profitable_days = sum(1 for v in window_pnls.values() if v >= min_threshold)
+
+                        # Read consistency rule from firm
+                        consistency_limit = 20  # default
+                        min_profit_days = 3     # default
+                        if firm_data:
+                            trading_rules = firm_data.get('trading_rules', [])
+                            for rule in trading_rules:
+                                if rule.get('type') == 'consistency':
+                                    consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
+                                elif rule.get('type') == 'min_profitable_days':
+                                    min_profit_days = rule.get('parameters', {}).get('min_days', 3)
+
                         windows_total += 1
-                        continue
+                        net_window = sum(window_pnls.values())
 
-                    # Check consistency: best day < 20% of total
-                    best_day = max(window_pnls.values())
-                    best_day_pct = (best_day / total_profit * 100) if total_profit > 0 else 100
+                        consistency_ok = best_day_pct <= consistency_limit
+                        min_days_ok = profitable_days >= min_profit_days
 
-                    # Check min profitable days (3 days >= 0.5% of account)
-                    min_threshold = (acct or 100000) * 0.005
-                    profitable_days = sum(1 for v in window_pnls.values() if v >= min_threshold)
+                        if consistency_ok and min_days_ok and net_window > 0:
+                            windows_pass += 1
+                            payout = net_window * ((profit_split or 80) / 100)
+                            window_profits.append(payout)
 
-                    # Read consistency rule from firm
-                    consistency_limit = 20  # default
-                    min_profit_days = 3     # default
-                    if firm_data:
-                        trading_rules = firm_data.get('trading_rules', [])
-                        for rule in trading_rules:
-                            if rule.get('type') == 'consistency':
-                                consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
-                            elif rule.get('type') == 'min_profitable_days':
-                                min_profit_days = rule.get('parameters', {}).get('min_days', 3)
+                    if windows_total > 0:
+                        pass_rate = windows_pass / windows_total * 100
+                        avg_payout = sum(window_profits) / len(window_profits) if window_profits else 0
+                        min_payout = min(window_profits) if window_profits else 0
+                        max_payout = max(window_profits) if window_profits else 0
+                        annual_est = avg_payout * (365 / 14)  # ~26 periods per year
 
-                    windows_total += 1
-                    net_window = sum(window_pnls.values())
+                        payout_frame = tk.Frame(card, bg="#f0f0ff", padx=8, pady=5)
+                        payout_frame.pack(fill="x", pady=(3, 0))
 
-                    consistency_ok = best_day_pct <= consistency_limit
-                    min_days_ok = profitable_days >= min_profit_days
+                        if pass_rate > 0:
+                            payout_label = tk.Label(payout_frame,
+                                     text=f"💰 Payout: {pass_rate:.0f}% of periods pass | "
+                                          f"Avg: ${avg_payout:,.0f} | "
+                                          f"Min: ${min_payout:,.0f} | Max: ${max_payout:,.0f} | "
+                                          f"Annual est: ${annual_est:,.0f}",
+                                     bg="#f0f0ff", fg="#4a148c", font=("Segoe UI", 8, "bold"))
+                        else:
+                            payout_label = tk.Label(payout_frame,
+                                     text=f"💰 Payout: 0% of periods pass consistency — "
+                                          f"this strategy won't generate payouts",
+                                     bg="#f0f0ff", fg="#dc3545", font=("Segoe UI", 8, "bold"))
 
-                    if consistency_ok and min_days_ok and net_window > 0:
-                        windows_pass += 1
-                        payout = net_window * ((profit_split or 80) / 100)
-                        window_profits.append(payout)
+                        payout_label.pack(anchor="w")
 
-                if windows_total > 0:
-                    pass_rate = windows_pass / windows_total * 100
-                    avg_payout = sum(window_profits) / len(window_profits) if window_profits else 0
-                    min_payout = min(window_profits) if window_profits else 0
-                    max_payout = max(window_profits) if window_profits else 0
-                    annual_est = avg_payout * (365 / 14)  # ~26 periods per year
+                        add_tooltip(payout_label,
+                            f"Payout Estimation (14-day windows)\n\n"
+                            f"Windows tested: {windows_total}\n"
+                            f"Windows that pass all rules: {windows_pass} ({pass_rate:.0f}%)\n\n"
+                            f"Rules checked per window:\n"
+                            f"  • Consistency: best day < {consistency_limit}% of total\n"
+                            f"  • Min profitable days: {min_profit_days} days >= 0.5%\n"
+                            f"  • Net profit > 0\n\n"
+                            f"Payout amounts (your {profit_split}% share):\n"
+                            f"  Minimum: ${min_payout:,.0f}\n"
+                            f"  Average: ${avg_payout:,.0f}\n"
+                            f"  Maximum: ${max_payout:,.0f}\n\n"
+                            f"Annual estimate: ${annual_est:,.0f} "
+                            f"(~26 periods × ${avg_payout:,.0f})",
+                            wraplength=400)
 
-                    payout_frame = tk.Frame(card, bg="#f0f0ff", padx=8, pady=5)
-                    payout_frame.pack(fill="x", pady=(3, 0))
+                elif stage == "evaluation":
+                    # EVALUATION: Days to reach profit target
+                    # Read profit target from firm
+                    profit_target_pct = 6.0  # default
+                    try:
+                        if firm_data:
+                            phases = firm_data['challenges'][0].get('phases', [])
+                            if phases:
+                                profit_target_pct = phases[0].get('profit_target_pct', 6.0)
+                    except Exception:
+                        pass
 
-                    if pass_rate > 0:
-                        payout_label = tk.Label(payout_frame,
-                                 text=f"💰 Payout: {pass_rate:.0f}% of periods pass | "
-                                      f"Avg: ${avg_payout:,.0f} | "
-                                      f"Min: ${min_payout:,.0f} | Max: ${max_payout:,.0f} | "
-                                      f"Annual est: ${annual_est:,.0f}",
-                                 bg="#f0f0ff", fg="#4a148c", font=("Segoe UI", 8, "bold"))
+                    target_dollars = acct * (profit_target_pct / 100)
+
+                    # Get DD limit for blown check
+                    total_limit = 10.0
+                    try:
+                        if firm_data:
+                            phases = firm_data['challenges'][0].get('phases', [])
+                            if phases:
+                                total_limit = phases[0].get('max_total_drawdown_pct', 10.0)
+                    except Exception:
+                        pass
+
+                    # Simulate: how many trading days to reach target?
+                    days_to_target = []
+                    days_list = sorted(daily_pnls.keys())
+
+                    for start_i in range(0, len(days_list) - 5, 7):
+                        running = 0
+                        day_count = 0
+                        reached = False
+                        for d in days_list[start_i:]:
+                            running += daily_pnls[d]
+                            day_count += 1
+                            if running >= target_dollars:
+                                days_to_target.append(day_count)
+                                reached = True
+                                break
+                            # Check if blown before reaching target
+                            if running < -(acct * (total_limit / 100)):
+                                break
+
+                    eval_frame = tk.Frame(card, bg="#fff8e1", padx=8, pady=5)
+                    eval_frame.pack(fill="x", pady=(3, 0))
+
+                    if days_to_target:
+                        avg_days = sum(days_to_target) / len(days_to_target)
+                        min_days = min(days_to_target)
+                        max_days = max(days_to_target)
+                        total_windows = max(len(list(range(0, len(days_list) - 5, 7))), 1)
+                        pass_rate = len(days_to_target) / total_windows * 100
+
+                        eval_lbl = tk.Label(eval_frame,
+                            text=f"🎯 Eval: {pass_rate:.0f}% pass rate | "
+                                 f"Avg: {avg_days:.0f} days | "
+                                 f"Min: {min_days} days | Max: {max_days} days | "
+                                 f"Target: {profit_target_pct}% (${target_dollars:,.0f})",
+                            bg="#fff8e1", fg="#e65100",
+                            font=("Segoe UI", 8, "bold"))
                     else:
-                        payout_label = tk.Label(payout_frame,
-                                 text=f"💰 Payout: 0% of periods pass consistency — "
-                                      f"this strategy won't generate payouts",
-                                 bg="#f0f0ff", fg="#dc3545", font=("Segoe UI", 8, "bold"))
+                        eval_lbl = tk.Label(eval_frame,
+                            text=f"🎯 Eval: 0% pass rate — never reaches {profit_target_pct}% target",
+                            bg="#fff8e1", fg="#dc3545",
+                            font=("Segoe UI", 8, "bold"))
 
-                    payout_label.pack(anchor="w")
+                    eval_lbl.pack(anchor="w")
 
-                    # Add tooltip with detailed breakdown
-                    from shared.tooltip import add_tooltip
-                    add_tooltip(payout_label,
-                        f"Payout Estimation (14-day windows)\n\n"
-                        f"Windows tested: {windows_total}\n"
-                        f"Windows that pass all rules: {windows_pass} ({pass_rate:.0f}%)\n\n"
-                        f"Rules checked per window:\n"
-                        f"  • Consistency: best day < {consistency_limit}% of total\n"
-                        f"  • Min profitable days: {min_profit_days} days >= 0.5%\n"
-                        f"  • Net profit > 0\n\n"
-                        f"Payout amounts (your {profit_split}% share):\n"
-                        f"  Minimum: ${min_payout:,.0f}\n"
-                        f"  Average: ${avg_payout:,.0f}\n"
-                        f"  Maximum: ${max_payout:,.0f}\n\n"
-                        f"Annual estimate: ${annual_est:,.0f} "
-                        f"(~26 periods × ${avg_payout:,.0f})",
+                    add_tooltip(eval_lbl,
+                        f"Evaluation Target Estimation\n\n"
+                        f"Target: {profit_target_pct}% = ${target_dollars:,.0f}\n"
+                        f"Windows tested: {max(len(list(range(0, len(days_list) - 5, 7))), 1)}\n"
+                        f"Windows reaching target: {len(days_to_target)}\n\n"
+                        f"Days to reach target:\n"
+                        f"  Fastest: {min(days_to_target) if days_to_target else '—'}\n"
+                        f"  Average: {sum(days_to_target)//max(len(days_to_target),1) if days_to_target else '—'}\n"
+                        f"  Slowest: {max(days_to_target) if days_to_target else '—'}",
                         wraplength=400)
     except Exception as e:
-        # Silently skip if payout calculation fails
+        # Silently skip if calculation fails
         pass
 
     # What changed
