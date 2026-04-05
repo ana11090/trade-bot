@@ -4,10 +4,11 @@ Setup and configuration for backtesting
 """
 
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, ttk
 import os
 import sys
 import json
+import glob
 
 # Module-level variables for refresh
 _rules_status_label = None
@@ -482,6 +483,155 @@ def build_panel(parent):
 
     tk.Label(auto_btn_frame, text="Reads your price data and fills all 4 dates automatically",
              font=("Arial", 9), bg="#e8f5e9", fg="#555555").pack(side=tk.LEFT, padx=(10, 0))
+
+    # ── Prop Firm Target ──────────────────────────────────────────────────────
+    firm_frame = tk.LabelFrame(config_frame, text="🏢 Prop Firm Target (auto-fills settings below)",
+                                font=("Arial", 10, "bold"), bg="#ffffff", fg="#333",
+                                padx=10, pady=8)
+    firm_frame.pack(fill="x", pady=(0, 10))
+
+    firm_row = tk.Frame(firm_frame, bg="#ffffff")
+    firm_row.pack(fill="x")
+
+    tk.Label(firm_row, text="Firm:", font=("Arial", 9, "bold"),
+             bg="#ffffff", fg="#333").pack(side=tk.LEFT)
+
+    prop_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
+    firm_names = ["None — manual settings"]
+    for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+        try:
+            with open(fp, encoding='utf-8') as f:
+                fd = json.load(f)
+            firm_names.append(fd.get('firm_name', '?'))
+        except:
+            pass
+
+    _config_firm_var = tk.StringVar(value="None — manual settings")
+    firm_combo = ttk.Combobox(firm_row, textvariable=_config_firm_var,
+                               values=firm_names, width=22, state="readonly")
+    firm_combo.pack(side=tk.LEFT, padx=5)
+
+    tk.Label(firm_row, text="Stage:", font=("Arial", 9, "bold"),
+             bg="#ffffff", fg="#333").pack(side=tk.LEFT, padx=(15, 0))
+
+    _config_stage_var = tk.StringVar(value="Funded")
+    stage_combo = ttk.Combobox(firm_row, textvariable=_config_stage_var,
+                                values=["Evaluation", "Funded"], width=12, state="readonly")
+    stage_combo.pack(side=tk.LEFT, padx=5)
+
+    tk.Label(firm_row, text="Account:", font=("Arial", 9, "bold"),
+             bg="#ffffff", fg="#333").pack(side=tk.LEFT, padx=(15, 0))
+
+    _config_acct_var = tk.StringVar(value="")
+    acct_combo = ttk.Combobox(firm_row, textvariable=_config_acct_var,
+                               values=[], width=10, state="readonly")
+    acct_combo.pack(side=tk.LEFT, padx=5)
+
+    # Info label
+    firm_info = tk.Label(firm_frame, text="Select a firm to auto-fill capital, risk, and costs",
+                          font=("Arial", 8), bg="#ffffff", fg="#888")
+    firm_info.pack(anchor="w", pady=(3, 0))
+
+    # Firm rules reminder
+    from shared.firm_rules_reminder import show_reminder_on_firm_change
+    _config_reminder = [None]
+    show_reminder_on_firm_change(_config_firm_var, firm_frame, _config_reminder, _config_stage_var)
+
+    def _on_firm_stage_change(*_):
+        firm = _config_firm_var.get()
+        stage = _config_stage_var.get().lower()
+
+        if firm == "None — manual settings":
+            firm_info.config(text="Manual mode — set values yourself")
+            return
+
+        # Load firm data
+        for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+            try:
+                with open(fp, encoding='utf-8') as f:
+                    fd = json.load(f)
+                if fd.get('firm_name') != firm:
+                    continue
+
+                challenge = fd['challenges'][0]
+                funded = challenge.get('funded', {})
+
+                # Update account sizes dropdown
+                sizes = challenge.get('account_sizes', [100000])
+                acct_combo['values'] = [str(s) for s in sizes]
+                if sizes:
+                    _config_acct_var.set(str(sizes[0]))
+
+                # Auto-fill starting capital
+                if entries.get('starting_capital'):
+                    entries['starting_capital'].set(_config_acct_var.get())
+
+                # Auto-fill spread from firm data
+                if entries.get('spread'):
+                    entries['spread'].set("2.5")  # typical for XAUUSD
+
+                # Auto-fill risk from trading_rules
+                trading_rules = fd.get('trading_rules', [])
+                for rule in trading_rules:
+                    if rule.get('stage') not in (stage, 'both'):
+                        continue
+                    params = rule.get('parameters', {})
+
+                    if rule.get('type') in ('eval_settings', 'eval_strategy'):
+                        risk_range = params.get('risk_pct_range', [0.8, 1.5])
+                        if entries.get('risk_pct'):
+                            entries['risk_pct'].set(str(risk_range[0]))
+                        break
+
+                    elif rule.get('type') == 'funded_accumulate':
+                        risk_range = params.get('risk_pct_range', [0.3, 0.5])
+                        if entries.get('risk_pct'):
+                            entries['risk_pct'].set(str(risk_range[1]))
+                        break
+                else:
+                    # No trading_rules — use defaults
+                    if stage == "evaluation":
+                        if entries.get('risk_pct'):
+                            entries['risk_pct'].set("1.0")
+                    else:
+                        if entries.get('risk_pct'):
+                            entries['risk_pct'].set("0.5")
+
+                # Leverage info
+                leverage = fd.get('leverage_by_size', {})
+                lev = leverage.get(_config_acct_var.get(),
+                      list(leverage.values())[0] if leverage else '—')
+
+                # DD info
+                if stage == "evaluation":
+                    phase = challenge.get('phases', [{}])[0]
+                    daily = phase.get('max_daily_drawdown_pct', '?')
+                    total = phase.get('max_total_drawdown_pct', '?')
+                    target = phase.get('profit_target_pct', '?')
+                    firm_info.config(
+                        text=f"Target: {target}% | DD: {daily}%/{total}% | Leverage: {lev} | "
+                             f"Risk auto-set for evaluation")
+                else:
+                    daily = funded.get('max_daily_drawdown_pct', '?')
+                    total = funded.get('max_total_drawdown_pct', '?')
+                    firm_info.config(
+                        text=f"DD: {daily}%/{total}% | Leverage: {lev} | "
+                             f"Risk auto-set for funded (conservative)")
+
+                break
+            except Exception:
+                continue
+
+    def _on_acct_change(*_):
+        """Update capital when account size changes."""
+        acct = _config_acct_var.get()
+        if acct and entries.get('starting_capital'):
+            entries['starting_capital'].set(acct)
+        _on_firm_stage_change()
+
+    _config_firm_var.trace_add("write", _on_firm_stage_change)
+    _config_stage_var.trace_add("write", _on_firm_stage_change)
+    _config_acct_var.trace_add("write", _on_acct_change)
 
     # Capital & Risk
     risk_frame = tk.LabelFrame(config_frame, text="💰 Capital & Risk",
