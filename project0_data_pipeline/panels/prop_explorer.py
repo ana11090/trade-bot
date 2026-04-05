@@ -443,35 +443,39 @@ def build_panel(content):
 
     # Treeview
     tree_frame = tk.Frame(panel, bg="#f0f2f5")
-    tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+    tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
-    cols = ("firm", "challenge", "phases", "target", "daily_dd", "max_dd",
-            "dd_type", "min_days", "consistency", "split", "sizes")
-    _tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=22)
+    cols = ("firm", "stage", "target", "daily_dd", "max_dd", "min_days",
+            "consistency", "profit_days", "payout", "leverage", "sizes")
+    _tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=18)
 
-    _tree.heading("firm",        text="Firm")
-    _tree.heading("challenge",   text="Challenge")
-    _tree.heading("phases",      text="Phases")
-    _tree.heading("target",      text="Target")
-    _tree.heading("daily_dd",    text="Daily DD")
-    _tree.heading("max_dd",      text="Max DD")
-    _tree.heading("dd_type",     text="DD Type")
-    _tree.heading("min_days",    text="Min Days")
-    _tree.heading("consistency", text="Consistency")
-    _tree.heading("split",       text="Split")
-    _tree.heading("sizes",       text="Sizes")
+    _tree.heading("firm",         text="Firm")
+    _tree.heading("stage",        text="Stage")
+    _tree.heading("target",       text="Target")
+    _tree.heading("daily_dd",     text="Daily DD")
+    _tree.heading("max_dd",       text="Max DD")
+    _tree.heading("min_days",     text="Min Days")
+    _tree.heading("consistency",  text="Consistency")
+    _tree.heading("profit_days",  text="Profit Days")
+    _tree.heading("payout",       text="Payout")
+    _tree.heading("leverage",     text="Leverage")
+    _tree.heading("sizes",        text="Sizes")
 
-    _tree.column("firm",        width=110, minwidth=90)
-    _tree.column("challenge",   width=140, minwidth=110)
-    _tree.column("phases",      width=50,  minwidth=40,  anchor="center")
-    _tree.column("target",      width=80,  minwidth=60,  anchor="center")
-    _tree.column("daily_dd",    width=65,  minwidth=50,  anchor="center")
-    _tree.column("max_dd",      width=65,  minwidth=50,  anchor="center")
-    _tree.column("dd_type",     width=75,  minwidth=60,  anchor="center")
-    _tree.column("min_days",    width=60,  minwidth=45,  anchor="center")
-    _tree.column("consistency", width=80,  minwidth=60,  anchor="center")
-    _tree.column("split",       width=55,  minwidth=45,  anchor="center")
-    _tree.column("sizes",       width=120, minwidth=90)
+    _tree.column("firm",         width=100)
+    _tree.column("stage",        width=110)
+    _tree.column("target",       width=55,  anchor="center")
+    _tree.column("daily_dd",     width=60,  anchor="center")
+    _tree.column("max_dd",       width=100, anchor="center")
+    _tree.column("min_days",     width=60,  anchor="center")
+    _tree.column("consistency",  width=75,  anchor="center")
+    _tree.column("profit_days",  width=90,  anchor="center")
+    _tree.column("payout",       width=100, anchor="center")
+    _tree.column("leverage",     width=60,  anchor="center")
+    _tree.column("sizes",        width=130)
+
+    # Color code eval vs funded rows
+    _tree.tag_configure("eval", background="#f0f8ff")
+    _tree.tag_configure("funded", background="#f0fff0")
 
     scrollbar_y = ttk.Scrollbar(tree_frame, orient="vertical",   command=_tree.yview)
     scrollbar_x = ttk.Scrollbar(tree_frame, orient="horizontal", command=_tree.xview)
@@ -481,6 +485,49 @@ def build_panel(content):
 
     # Double-click to edit
     _tree.bind("<Double-1>", lambda e: _on_edit())
+
+    # Trading rules info panel
+    rules_frame = tk.LabelFrame(panel, text="📋 Trading Rules (select a firm above)",
+                                 font=("Segoe UI", 10, "bold"), bg="#f0f2f5", fg="#333",
+                                 padx=10, pady=8)
+    rules_frame.pack(fill="x", padx=20, pady=(0, 10))
+
+    _rules_info_label = tk.Label(rules_frame, text="Click a row to see detailed trading rules",
+                                  font=("Segoe UI", 9), bg="#f0f2f5", fg="#666",
+                                  justify=tk.LEFT, anchor="nw", wraplength=800)
+    _rules_info_label.pack(fill="x")
+    panel._rules_info_label = _rules_info_label
+
+    # Bind row selection to show trading rules
+    def _on_row_select(event):
+        sel = _tree.selection()
+        if not sel:
+            return
+        item = _tree.item(sel[0])
+        firm_name = item['values'][0]
+
+        # Find trading rules for this firm
+        import glob
+        for fp in glob.glob(os.path.join(_PROP_DIR, '*.json')):
+            try:
+                with open(fp, encoding='utf-8') as f:
+                    data = json.load(f)
+                if data.get('firm_name') == firm_name and data.get('trading_rules'):
+                    rules_text = f"Trading Rules for {firm_name}:\n\n"
+                    for rule in data['trading_rules']:
+                        rules_text += f"  {rule['name']}\n"
+                        rules_text += f"  Stage: {rule['stage']}\n"
+                        rules_text += f"  {rule['description']}\n\n"
+
+                    _rules_info_label.config(text=rules_text)
+                    return
+            except Exception:
+                continue
+
+        # No trading rules found
+        _rules_info_label.config(text="No special trading rules defined for this firm.")
+
+    _tree.bind("<<TreeviewSelect>>", _on_row_select)
 
     return panel
 
@@ -502,42 +549,82 @@ def _format_targets(phases):
 
 
 def _load_data():
+    """Load all prop firms and build rows — one per eval phase + one for funded."""
     global _all_rows
     _all_rows = []
-    from shared.prop_firm_engine import load_all_firms
-    firms = load_all_firms()
-    for firm_id, firm in sorted(firms.items(), key=lambda x: x[1].firm_name):
-        for ch_info in firm.list_challenges():
-            ch = firm.get_challenge(ch_info["challenge_id"])
-            if not ch:
-                continue
-            phases = ch.get("phases", [])
-            funded = ch.get("funded", {})
-            if phases:
-                p0         = phases[0]
-                daily_dd   = p0.get("max_daily_drawdown_pct")
-                max_dd     = p0.get("max_total_drawdown_pct")
-                dd_type    = p0.get("drawdown_type", "—")
-                min_days   = p0.get("min_trading_days", 0)
-                consistency = p0.get("consistency_rule_pct")
-            else:
-                daily_dd   = funded.get("max_daily_drawdown_pct")
-                max_dd     = funded.get("max_total_drawdown_pct")
-                dd_type    = funded.get("drawdown_type", "—")
-                min_days   = 0
-                consistency = funded.get("consistency_rule_pct")
+
+    import glob
+    firm_names = set()
+
+    for fp in sorted(glob.glob(os.path.join(_PROP_DIR, '*.json'))):
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            continue
+
+        name = data.get('firm_name', '?')
+        firm_names.add(name)
+        leverage_map = data.get('leverage_by_size', {})
+        default_leverage = list(leverage_map.values())[0] if leverage_map else '—'
+
+        for challenge in data.get('challenges', []):
+            ch_name = challenge.get('challenge_name', '?')
+            sizes = challenge.get('account_sizes', [])
+            sizes_str = ', '.join(f'${s//1000}K' for s in sizes[:4])
+            funded = challenge.get('funded', {})
+
+            # EVALUATION rows
+            for phase in challenge.get('phases', []):
+                target = phase.get('profit_target_pct', '—')
+                daily_dd = phase.get('max_daily_drawdown_pct', '—')
+                total_dd = phase.get('max_total_drawdown_pct', '—')
+                dd_type = phase.get('drawdown_type', 'static')
+                min_days = phase.get('min_trading_days', 0)
+                consistency = phase.get('consistency_rule_pct')
+
+                _all_rows.append((
+                    name,
+                    f"📋 {phase.get('phase_name', 'Eval')}",
+                    f"{target}%" if target != '—' else '—',
+                    f"{daily_dd}%",
+                    f"{total_dd}% {dd_type}",
+                    str(min_days) if min_days else "—",
+                    f"{consistency}%" if consistency else "—",
+                    "—",
+                    "—",
+                    default_leverage,
+                    sizes_str,
+                    "eval"  # tag for coloring
+                ))
+
+            # FUNDED row
+            daily_dd_f = funded.get('max_daily_drawdown_pct', '—')
+            total_dd_f = funded.get('max_total_drawdown_pct', '—')
+            dd_type_f = funded.get('drawdown_type', 'static')
+            consistency_f = funded.get('consistency_rule_pct')
+            min_profit_days = funded.get('min_profitable_days')
+            split = funded.get('profit_split_pct', '—')
+            payout_freq = funded.get('payout_frequency', '—')
+
+            profit_days_str = "—"
+            if min_profit_days:
+                min_pct = funded.get('min_profitable_day_pct', 0.5)
+                profit_days_str = f"{min_profit_days}d (>={min_pct}%)"
+
             _all_rows.append((
-                firm.firm_name,
-                ch["challenge_name"],
-                str(len(phases)),
-                _format_targets(phases),
-                f"{daily_dd}%" if daily_dd is not None else "None",
-                f"{max_dd}%"   if max_dd   is not None else "—",
-                dd_type.replace("_", " ").title(),
-                str(min_days) if min_days else "None",
-                f"{consistency}%" if consistency else "None",
-                f"{funded.get('profit_split_pct', '?')}%",
-                _format_sizes(ch.get("account_sizes", [])),
+                name,
+                "💰 Funded",
+                "—",
+                f"{daily_dd_f}%",
+                f"{total_dd_f}% {dd_type_f}",
+                "—",
+                f"{consistency_f}%" if consistency_f else "—",
+                profit_days_str,
+                f"{split}% / {payout_freq}",
+                default_leverage,
+                sizes_str,
+                "funded"  # tag for coloring
             ))
 
 
@@ -562,7 +649,10 @@ def _apply_filter(firm_name):
         _tree.delete(item)
     for row in _all_rows:
         if firm_name == "All" or row[0] == firm_name:
-            _tree.insert("", "end", values=row)
+            # Extract tag (last element) and values (all but last)
+            tag = row[-1] if len(row) > 11 else ""
+            values = row[:-1] if len(row) > 11 else row
+            _tree.insert("", "end", values=values, tags=(tag,))
 
 
 def refresh():
