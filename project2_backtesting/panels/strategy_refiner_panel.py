@@ -527,6 +527,22 @@ def _start_optimization():
 
             all_candidates = []
 
+            # Get stage and account size
+            stage = _stage_var.get().lower() if _stage_var else "funded"
+            account_size = float(_acct_var.get()) if _acct_var else 100000
+
+            # Pass stage to presets for scoring
+            from project2_backtesting.strategy_refiner import get_prop_firm_presets
+            if target_firm and isinstance(target_firm, str):
+                presets = get_prop_firm_presets()
+                target_data = presets.get(target_firm, {})
+                target_data['stage'] = stage
+            elif target_firm and isinstance(target_firm, dict):
+                target_data = target_firm
+                target_data['stage'] = stage
+            else:
+                target_data = {'stage': stage}
+
             # ── Mode 1: Quick optimize (filter existing trades) ──
             if _mode_quick_var.get():
                 print("[OPTIMIZER] Running Quick Optimize mode...")
@@ -540,8 +556,8 @@ def _start_optimization():
                     indicators_df=None,
                     base_rules=[],
                     exit_strategies=[],
-                    target_firm=target_firm,
-                    account_size=100000,
+                    target_firm=target_data,
+                    account_size=account_size,
                     progress_callback=_cb,
                 )
                 all_candidates.extend(quick_results)
@@ -600,8 +616,8 @@ def _start_optimization():
                     timeframe=entry_tf,
                     spread_pips=spread_pips,
                     commission_pips=commission_pips,
-                    target_firm=target_firm,
-                    account_size=100000,
+                    target_firm=target_data,
+                    account_size=account_size,
                     filters=current_filters if current_filters else None,
                     progress_callback=_cb,
                     feature_matrix_path=feature_matrix_path,
@@ -656,7 +672,23 @@ def _show_opt_results(candidates):
                 font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY).pack(pady=10)
         return
 
-    from project2_backtesting.strategy_refiner import compute_stats_summary
+    from project2_backtesting.strategy_refiner import compute_stats_summary, get_prop_firm_presets
+
+    # Dollar conversion parameters
+    try:
+        acct = float(_acct_var.get())
+        risk = float(_risk_var.get())
+    except (ValueError, NameError):
+        acct = 100000
+        risk = 1.0
+
+    pip_value = 10.0
+    sl_pips = 150
+    lot_size = (acct * risk / 100) / (sl_pips * pip_value)
+    dollar_per_pip = pip_value * lot_size
+
+    # Get firm preset data for challenge fee and profit split
+    presets = get_prop_firm_presets()
 
     tk.Label(_opt_results_frame,
              text=f"Top {len(candidates)} optimized strategies (sorted by score):",
@@ -699,6 +731,62 @@ def _show_opt_results(candidates):
                       f"Max DD: {stats.get('max_dd_pips', 0):,.0f} pips")
         tk.Label(card, text=stats_text, font=("Segoe UI", 9), bg=card_bg,
                  fg=wr_color).pack(anchor="w", pady=(2, 0))
+
+        # ── Dollar amounts ──
+        total_pips = stats.get('total_pips', 0)
+        total_dollars = total_pips * dollar_per_pip
+        total_pct = (total_dollars / acct) * 100
+
+        try:
+            trade_list = cand.get('trades', [])
+            if trade_list:
+                first = pd.to_datetime(trade_list[0].get('entry_time', ''))
+                last = pd.to_datetime(trade_list[-1].get('entry_time', ''))
+                months = max((last - first).days / 30, 1)
+                monthly_dollars = total_dollars / months
+            else:
+                monthly_dollars = 0
+        except Exception:
+            monthly_dollars = 0
+
+        # Get challenge fee and split
+        challenge_fee = 0
+        profit_split = 80
+        firm = _opt_target_var.get() if _opt_target_var else ""
+        preset = presets.get(firm, {})
+        firm_data = preset.get('firm_data')
+        if firm_data:
+            costs = firm_data['challenges'][0].get('costs', {})
+            fee_by_size = costs.get('challenge_fee_by_size', {})
+            challenge_fee = fee_by_size.get(str(int(acct)), 0) or 0
+            profit_split = firm_data['challenges'][0].get('funded', {}).get('profit_split_pct', 80)
+
+        your_monthly = monthly_dollars * (profit_split / 100)
+
+        dollar_frame = tk.Frame(card, bg=card_bg)
+        dollar_frame.pack(fill="x", pady=(2, 0))
+
+        for label, value, color in [
+            ("Total", f"${total_dollars:+,.0f} ({total_pct:+.1f}%)",
+             "#28a745" if total_dollars > 0 else "#dc3545"),
+            ("Monthly", f"${monthly_dollars:+,.0f}/mo",
+             "#28a745" if monthly_dollars > 0 else "#dc3545"),
+            ("Your share", f"${your_monthly:+,.0f}/mo ({profit_split}%)", "#667eea"),
+        ]:
+            tk.Label(dollar_frame, text=f"{label}: ", bg=card_bg, fg="#888",
+                     font=("Segoe UI", 8)).pack(side=tk.LEFT)
+            tk.Label(dollar_frame, text=value, bg=card_bg, fg=color,
+                     font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+
+        # Challenge fee ROI
+        if challenge_fee > 0 and your_monthly > 0:
+            months_to_roi = challenge_fee / max(your_monthly, 1)
+            roi_frame = tk.Frame(card, bg="#e8f5e9", padx=6, pady=3)
+            roi_frame.pack(fill="x", pady=(3, 0))
+            tk.Label(roi_frame,
+                     text=f"💰 Challenge fee: ${challenge_fee} | ROI in {months_to_roi:.1f} months | "
+                          f"Year 1 net: ${(your_monthly * 12 - challenge_fee):+,.0f}",
+                     bg="#e8f5e9", fg="#2e7d32", font=("Segoe UI", 8, "bold")).pack(anchor="w")
 
         # ── What changed section ──
         changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=5)
@@ -1653,6 +1741,53 @@ def build_panel(parent):
 
     _stage_var.trace_add("write", _on_stage_change)
     _on_stage_change()  # Initial update
+
+    # ── Account size + risk row ──
+    acct_row = tk.Frame(sf, bg=WHITE)
+    acct_row.pack(fill="x", padx=10, pady=(0, 5))
+
+    tk.Label(acct_row, text="Account:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg="#333").pack(side=tk.LEFT)
+
+    _acct_var = tk.StringVar(value="100000")
+    _acct_combo = ttk.Combobox(acct_row, textvariable=_acct_var,
+                                values=["10000", "25000", "50000", "100000", "200000"],
+                                width=10)
+    _acct_combo.pack(side=tk.LEFT, padx=5)
+
+    tk.Label(acct_row, text="Risk:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg="#333").pack(side=tk.LEFT, padx=(15, 0))
+
+    _risk_var = tk.StringVar(value="1.0")
+    tk.Entry(acct_row, textvariable=_risk_var, width=5, font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=5)
+    tk.Label(acct_row, text="%/trade", font=("Segoe UI", 9), bg=WHITE, fg="#555").pack(side=tk.LEFT)
+
+    # Account info label
+    _acct_info = tk.Label(acct_row, text="", font=("Segoe UI", 8), bg=WHITE, fg="#888")
+    _acct_info.pack(side=tk.LEFT, padx=(15, 0))
+
+    # Auto-update account sizes when firm changes
+    def _on_firm_change_acct(*_):
+        firm = _opt_target_var.get() if _opt_target_var else ""
+        presets = get_prop_firm_presets()
+        preset = presets.get(firm, {})
+        firm_data = preset.get('firm_data')
+        if firm_data:
+            sizes = firm_data['challenges'][0].get('account_sizes', [100000])
+            _acct_combo['values'] = [str(s) for s in sizes]
+            if sizes and _acct_var.get() not in [str(s) for s in sizes]:
+                _acct_var.set(str(sizes[-1]))
+
+            funded = firm_data['challenges'][0].get('funded', {})
+            daily = funded.get('max_daily_drawdown_pct', 5)
+            total = funded.get('max_total_drawdown_pct', 10)
+            dd_type = funded.get('drawdown_type', 'static')
+            leverage = firm_data.get('leverage_by_size', {})
+            lev = leverage.get(_acct_var.get(), list(leverage.values())[0] if leverage else '—')
+            _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
+
+    _opt_target_var.trace_add("write", _on_firm_change_acct)
+    _acct_var.trace_add("write", lambda *_: _on_firm_change_acct())
 
     _opt_start_btn = tk.Button(ctrl_row, text="Start Deep Optimization",
                                command=_start_optimization,

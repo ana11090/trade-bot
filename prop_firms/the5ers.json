@@ -5,6 +5,7 @@
   "market_type": "forex_cfd",
   "dd_reset_timezone": "UTC",
   "typical_swap_xauusd_per_lot_per_night": 25.0,
+  "leverage_by_size": {"6000": "1:100", "10000": "1:100", "20000": "1:100", "40000": "1:30", "60000": "1:30", "100000": "1:30"},
   "challenges": [
     {
       "challenge_id": "the5ers_high_stakes",

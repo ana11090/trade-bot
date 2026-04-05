@@ -337,6 +337,11 @@ def build_panel(parent):
     ttk.Combobox(right, textvariable=firm_var, values=firm_names,
                   width=18, state="readonly").pack(fill="x", pady=2)
 
+    # Firm rules reminder
+    from shared.firm_rules_reminder import show_reminder_on_firm_change
+    _pg_reminder = [None]
+    show_reminder_on_firm_change(firm_var, right, _pg_reminder)
+
     tk.Label(right, text="Account $:", font=("Arial", 9), bg=WHITE).pack(anchor="w", pady=(5,0))
     tk.Entry(right, textvariable=acct_var, width=12, font=("Arial", 9)).pack(fill="x", pady=2)
 

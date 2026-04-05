@@ -387,6 +387,11 @@ def _build_inner(inner):
                               state="readonly", width=40, font=("Segoe UI", 9))
     firm_combo.pack(side="left", padx=(0, 10))
 
+    # Firm rules reminder
+    from shared.firm_rules_reminder import show_reminder_on_firm_change
+    _p4_reminder = [None]
+    show_reminder_on_firm_change(prop_firm_var, prop_frame, _p4_reminder)
+
     # Row 2: Challenge selection (populated when firm selected)
     row2 = tk.Frame(prop_inner, bg="#fff8dc")
     row2.pack(fill="x", pady=4)

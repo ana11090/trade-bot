@@ -5,6 +5,7 @@
   "market_type": "forex_cfd",
   "dd_reset_timezone": "UTC",
   "typical_swap_xauusd_per_lot_per_night": 30.0,
+  "leverage_by_size": {"5000": "1:100", "10000": "1:100", "25000": "1:100", "50000": "1:100", "100000": "1:100", "200000": "1:100"},
   "challenges": [
     {
       "challenge_id": "atlas_1step",

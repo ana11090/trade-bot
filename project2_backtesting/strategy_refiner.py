@@ -780,29 +780,58 @@ def compute_filter_impact(trades, filter_name, filter_value):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_prop_firm_presets():
-    return {
-        "FTMO-friendly": {
-            "min_hold_minutes": 5,
-            "max_trades_per_day": 5,
-            "cooldown_minutes": 30,
-            "description": "Conservative: 5+ min holds, max 5/day, 30 min cooldown",
-        },
-        "Topstep-friendly": {
-            "max_trades_per_day": 3,
-            "cooldown_minutes": 60,
-            "min_pips": 5,
-            "description": "Consistency focus: max 3/day, 1h cooldown, skip tiny wins",
-        },
-        "Apex-friendly": {
-            "min_hold_minutes": 2,
-            "max_trades_per_day": 4,
-            "min_pips": 10,
-            "description": "Balanced: 2+ min holds, max 4/day, skip tiny wins",
-        },
-        "Custom": {
-            "description": "Set your own filters",
-        },
-    }
+    """Load presets from ALL prop firm JSON files dynamically."""
+    prop_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
+    presets = {}
+
+    if os.path.isdir(prop_dir):
+        for f in sorted(os.listdir(prop_dir)):
+            if not f.endswith('.json'):
+                continue
+            try:
+                with open(os.path.join(prop_dir, f), 'r', encoding='utf-8') as fh:
+                    firm = json.load(fh)
+
+                name = firm.get('firm_name', f.replace('.json', ''))
+                c = firm['challenges'][0]
+                funded = c.get('funded', {})
+                restr = c.get('restrictions', {})
+
+                daily_dd = funded.get('max_daily_drawdown_pct', 5)
+                total_dd = funded.get('max_total_drawdown_pct', 10)
+                dd_type = funded.get('drawdown_type', 'static')
+
+                preset = {
+                    'description': f"{name}: daily DD {daily_dd}%, total DD {total_dd}% ({dd_type})",
+                    'firm_data': firm,
+                }
+
+                # Auto-generate smart filters based on firm's DD limits
+                if daily_dd <= 2:
+                    preset['max_trades_per_day'] = 2
+                    preset['cooldown_minutes'] = 90
+                    preset['min_pips'] = 10
+                elif daily_dd <= 3:
+                    preset['max_trades_per_day'] = 3
+                    preset['cooldown_minutes'] = 60
+                    preset['min_pips'] = 5
+                else:
+                    preset['max_trades_per_day'] = 5
+                    preset['cooldown_minutes'] = 30
+
+                if dd_type in ('trailing', 'trailing_eod'):
+                    preset['min_hold_minutes'] = 2
+                    preset['min_pips'] = max(preset.get('min_pips', 0), 5)
+                else:
+                    preset['min_hold_minutes'] = 5
+
+                presets[name] = preset
+
+            except Exception:
+                continue
+
+    presets["Custom"] = {"description": "Set your own filters"}
+    return presets
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -816,18 +845,108 @@ def stop_optimization():
     _stop_flag.set()
 
 
-def _score_trades(trades, target_firm=None):
-    """Score a set of trades. Higher is better."""
-    if not trades:
+def _score_trades(trades, target_firm=None, stage="funded"):
+    """
+    Score trades for prop firm suitability.
+
+    stage="evaluation": maximize profit speed, ignore consistency
+    stage="funded": maximize consistency + survival, penalize spiky days
+    """
+    if not trades or len(trades) < 5:
         return -999.0
+
     net = [t.get('net_pips', 0) for t in trades]
-    wr  = sum(1 for p in net if p > 0) / len(net)
+    wr = sum(1 for p in net if p > 0) / len(net)
     avg = float(np.mean(net))
-    tpd = len(trades) / max(len(set(
-        str(pd.to_datetime(t['entry_time']).date()) for t in trades
-    )), 1)
-    # Balance between quality (WR, avg pips) and volume (tpd)
-    return wr * 100 + avg * 0.1 - max(0, tpd - 5) * 2
+    total_pips = sum(net)
+
+    # Profit factor
+    gross_profit = sum(p for p in net if p > 0)
+    gross_loss = abs(sum(p for p in net if p < 0))
+    pf = gross_profit / max(gross_loss, 0.01)
+
+    # Trades per day
+    try:
+        dates = set(str(pd.to_datetime(t['entry_time']).date()) for t in trades)
+        n_days = max(len(dates), 1)
+    except Exception:
+        n_days = max(len(trades) // 2, 1)
+    tpd = len(trades) / n_days
+
+    # Daily P&L for consistency
+    daily_pnls = {}
+    for t in trades:
+        try:
+            day = str(pd.to_datetime(t['entry_time']).date())
+        except Exception:
+            continue
+        daily_pnls[day] = daily_pnls.get(day, 0) + t.get('net_pips', 0)
+
+    # Max drawdown
+    cum = np.cumsum(net)
+    peak = np.maximum.accumulate(cum)
+    max_dd = float(np.max(peak - cum)) if len(cum) > 0 else 0
+
+    if stage == "evaluation":
+        # EVALUATION: reach profit target fast
+        score = 0
+        score += wr * 30
+        score += min(pf, 5) * 8
+        score += avg * 0.1   # bigger avg wins = faster
+
+        if 2 <= tpd <= 6:
+            score += 10
+        elif tpd < 1:
+            score -= 10
+        elif tpd > 8:
+            score -= 5
+
+        score += min(total_pips / 1000, 20)
+
+        dd_pct_approx = max_dd * 0.067
+        if dd_pct_approx > 6:
+            score -= (dd_pct_approx - 6) * 3
+
+    else:
+        # FUNDED: survive + consistency + steady payouts
+        score = 0
+        score += wr * 40
+        score += min(pf, 5) * 8
+        score += avg * 0.05
+
+        # Consistency: best day vs total
+        if daily_pnls and total_pips > 0:
+            best_day = max(daily_pnls.values())
+            consistency = 1 - (best_day / max(total_pips, 1))
+            score += consistency * 15
+
+        # Trades per day: sweet spot 1-3
+        if 1 <= tpd <= 3:
+            score += 10
+        elif tpd < 1:
+            score -= 5
+        elif tpd > 5:
+            score -= (tpd - 5) * 3
+
+        # DD penalty
+        dd_pct_approx = max_dd * 0.067
+        if dd_pct_approx > 10:
+            score -= (dd_pct_approx - 10) * 5
+        elif dd_pct_approx > 8:
+            score -= (dd_pct_approx - 8) * 2
+
+        # Trailing DD penalty
+        if target_firm and isinstance(target_firm, dict):
+            firm_data = target_firm.get('firm_data')
+            if firm_data:
+                funded = firm_data['challenges'][0].get('funded', {})
+                dd_type = funded.get('drawdown_type', 'static')
+                if dd_type in ('trailing', 'trailing_eod'):
+                    biggest_win = max(net) if net else 0
+                    if biggest_win > abs(min(net)) * 3:
+                        score -= 5
+
+    return round(score, 2)
 
 
 def deep_optimize(
@@ -859,8 +978,22 @@ def deep_optimize(
     candidates = []
     step = 0
 
+    # Resolve target firm
+    if target_firm and isinstance(target_firm, str):
+        presets = get_prop_firm_presets()
+        target_firm_data = presets.get(target_firm, {})
+    elif target_firm and isinstance(target_firm, dict):
+        target_firm_data = target_firm
+    else:
+        target_firm_data = None
+
+    # Get stage from target_firm_data or default
+    stage = "funded"  # default
+    if target_firm_data and isinstance(target_firm_data, dict):
+        stage = target_firm_data.get('stage', 'funded')
+
     base_stats  = compute_stats_summary(trades)
-    base_score  = _score_trades(trades, target_firm)
+    base_score  = _score_trades(trades, target_firm_data, stage)
     best_so_far = {
         'name':           'Base (no changes)',
         'trades':         len(trades),
@@ -892,7 +1025,7 @@ def deep_optimize(
         if len(kept_trades) < 5:
             return
         s = compute_stats_summary(kept_trades)
-        score = _score_trades(kept_trades, target_firm)
+        score = _score_trades(kept_trades, target_firm_data, stage)
         candidate = {
             'name':             name,
             'rules':            base_rules,
@@ -1108,8 +1241,22 @@ def deep_optimize_generate(
         TrailingStop(sl_pips=default_sl, trail_pips=50, pip_size=pip_size),
     ]
 
+    # Resolve target firm
+    if target_firm and isinstance(target_firm, str):
+        presets = get_prop_firm_presets()
+        target_firm_data = presets.get(target_firm, {})
+    elif target_firm and isinstance(target_firm, dict):
+        target_firm_data = target_firm
+    else:
+        target_firm_data = None
+
+    # Get stage from target_firm_data or default
+    stage = "funded"  # default
+    if target_firm_data and isinstance(target_firm_data, dict):
+        stage = target_firm_data.get('stage', 'funded')
+
     base_stats = compute_stats_summary(trades)
-    base_score = _score_trades(trades, target_firm)
+    base_score = _score_trades(trades, target_firm_data, stage)
     best_so_far = {
         'name':           'Base (original)',
         'trades':         len(trades),
@@ -1166,7 +1313,7 @@ def deep_optimize_generate(
             final_trades = enriched
 
         stats = compute_stats_summary(final_trades)
-        score = _score_trades(final_trades, target_firm)
+        score = _score_trades(final_trades, target_firm_data, stage)
 
         exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
         exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name

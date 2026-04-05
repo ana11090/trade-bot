@@ -5,6 +5,7 @@
   "market_type": "futures",
   "dd_reset_timezone": "CT",
   "typical_swap_xauusd_per_lot_per_night": 0.0,
+  "leverage_by_size": {"25000": "N/A (futures)"},
   "challenges": [
     {
       "challenge_id": "apex_25k_eod",
