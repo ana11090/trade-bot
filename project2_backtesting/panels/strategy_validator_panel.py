@@ -322,19 +322,38 @@ def _display_wf_results(wf_result):
         return
 
     for w in windows:
-        deg = w['degradation']
-        if deg > -15:
+        ins  = w['in_sample']
+        outs = w['out_sample']
+        deg  = w['degradation']
+        in_err  = w.get('in_error')
+        out_err = w.get('out_error')
+
+        # 0-trade windows get grey/warning — NOT green
+        if ins['count'] == 0 and outs['count'] == 0:
+            border_color = "#999999"
+            deg_color    = GREY
+            check        = "⚪"
+            deg_text     = "NO TRADES"
+        elif outs['count'] == 0:
+            border_color = "#996600"
+            deg_color    = AMBER
+            check        = "⚠️"
+            deg_text     = "0 OOS trades"
+        elif deg > -15:
             border_color = "#2d8a4e"
             deg_color    = GREEN
             check        = "✅"
+            deg_text     = f"{deg:+.1f}%"
         elif deg < -25:
             border_color = "#e94560"
             deg_color    = RED
             check        = "❌"
+            deg_text     = f"{deg:+.1f}%"
         else:
             border_color = "#996600"
             deg_color    = AMBER
             check        = "⚠️"
+            deg_text     = f"{deg:+.1f}%"
 
         card = tk.Frame(_wf_frame, bg=WHITE,
                         highlightbackground=border_color, highlightthickness=2,
@@ -347,11 +366,9 @@ def _display_wf_results(wf_result):
                  text=f"{w['label']}",
                  font=("Segoe UI", 10, "bold"), bg=WHITE, fg=DARK).pack(side=tk.LEFT)
         tk.Label(title_row,
-                 text=f"  {deg:+.1f}%  {check}",
+                 text=f"  {deg_text}  {check}",
                  font=("Segoe UI", 9, "bold"), bg=WHITE, fg=deg_color).pack(side=tk.LEFT)
 
-        ins  = w['in_sample']
-        outs = w['out_sample']
         tk.Label(card,
                  text=f"  IN:  {ins['count']:3d} trades  WR {ins['win_rate']*100:.1f}%  "
                       f"avg {ins['avg_pips']:+.0f} pips  PF {ins['profit_factor']:.2f}",
@@ -360,6 +377,14 @@ def _display_wf_results(wf_result):
                  text=f"  OUT: {outs['count']:3d} trades  WR {outs['win_rate']*100:.1f}%  "
                       f"avg {outs['avg_pips']:+.0f} pips  PF {outs['profit_factor']:.2f}",
                  font=("Consolas", 8), bg=WHITE, fg=DARK if outs['count'] > 0 else GREY).pack(anchor="w")
+
+        # Show errors if run_backtest crashed
+        if in_err:
+            tk.Label(card, text=f"  ⚠ IN error: {in_err}",
+                     font=("Consolas", 8), bg=WHITE, fg=RED).pack(anchor="w")
+        if out_err:
+            tk.Label(card, text=f"  ⚠ OUT error: {out_err}",
+                     font=("Consolas", 8), bg=WHITE, fg=RED).pack(anchor="w")
 
     # Summary
     verdict = summary.get('verdict', 'INSUFFICIENT_DATA')
@@ -505,6 +530,11 @@ def _show_estimation(trades, parent_frame):
         font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#4a148c" if stage == "funded" else "#e65100",
         padx=10, pady=8)
     est_frame.pack(fill="x", padx=5, pady=(10, 5))
+
+    # Add source disclaimer
+    tk.Label(est_frame,
+        text="Based on in-sample backtest trades — validate with walk-forward first",
+        bg=WHITE, fg=AMBER, font=("Segoe UI", 8, "italic")).pack(anchor="w", pady=(0, 4))
 
     if stage == "funded":
         # Payout estimation — 14-day windows
@@ -718,9 +748,22 @@ def _display_verdict(combined, trades=None):
               bg=GREY, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT)
 
-    # Show stage-aware estimation
-    if trades:
+    # Show stage-aware estimation ONLY if walk-forward shows a real edge
+    wf_verdict = verdicts.get('walk_forward', 'N/A')
+    if trades and wf_verdict not in ('LIKELY_OVERFITTING', 'N/A', 'INSUFFICIENT_DATA'):
         _show_estimation(trades, _verdict_frame)
+    elif trades and wf_verdict == 'LIKELY_OVERFITTING':
+        warn_frame = tk.LabelFrame(_verdict_frame,
+            text="🎯 Estimation Suppressed",
+            font=("Segoe UI", 10, "bold"), bg=WHITE, fg=RED,
+            padx=10, pady=8)
+        warn_frame.pack(fill="x", padx=5, pady=(10, 5))
+        tk.Label(warn_frame,
+            text="Walk-forward validation indicates overfitting.\n"
+                 "Estimation is hidden because in-sample results are unreliable.\n"
+                 "Go back to the Refiner and improve the strategy before estimating payouts.",
+            bg=WHITE, fg="#666", font=("Segoe UI", 9), wraplength=550,
+            justify="left").pack(anchor="w")
 
 
 def _nav(panel_name):

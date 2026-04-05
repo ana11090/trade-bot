@@ -233,6 +233,7 @@ def walk_forward_validate(
             progress_callback(i, len(windows_schedule), f"Window {i+1}/{len(windows_schedule)}: backtesting in-sample...")
 
         # In-sample
+        in_error = None
         try:
             in_trades = run_backtest(
                 candles_df=candles_df,
@@ -248,12 +249,17 @@ def walk_forward_validate(
             )
         except Exception as e:
             in_trades = []
+            in_error = str(e)
+            import traceback
+            print(f"  [WF] Window {i+1} IN-SAMPLE ERROR: {e}")
+            traceback.print_exc()
 
         if progress_callback:
             progress_callback(i, len(windows_schedule),
                               f"Window {i+1}/{len(windows_schedule)}: backtesting out-of-sample...")
 
         # Out-of-sample
+        out_error = None
         try:
             out_trades = run_backtest(
                 candles_df=candles_df,
@@ -269,14 +275,27 @@ def walk_forward_validate(
             )
         except Exception as e:
             out_trades = []
+            out_error = str(e)
+            import traceback
+            print(f"  [WF] Window {i+1} OUT-OF-SAMPLE ERROR: {e}")
+            traceback.print_exc()
 
         in_stats  = _compute_window_stats(in_trades)
         out_stats = _compute_window_stats(out_trades)
 
         in_wr  = in_stats['win_rate']
         out_wr = out_stats['win_rate']
-        degradation = ((out_wr - in_wr) / in_wr * 100.0) if in_wr > 0 else 0.0
-        edge_held = out_wr >= 0.50
+
+        # Fix: 0-trade windows should not show as "no degradation"
+        if in_stats['count'] == 0 and out_stats['count'] == 0:
+            degradation = 0.0
+            edge_held = False  # No data = no edge
+        elif in_wr > 0:
+            degradation = (out_wr - in_wr) / in_wr * 100.0
+            edge_held = out_wr >= 0.50
+        else:
+            degradation = 0.0
+            edge_held = out_wr >= 0.50
 
         results_windows.append({
             'window_idx':   i + 1,
@@ -289,6 +308,8 @@ def walk_forward_validate(
             'out_sample':   out_stats,
             'degradation':  round(degradation, 2),
             'edge_held':    edge_held,
+            'in_error':     in_error,
+            'out_error':    out_error,
         })
         completed += 1
 

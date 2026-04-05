@@ -283,8 +283,15 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     trades = []
 
     # ── Date filter ──────────────────────────────────────────────────────────
-    df  = candles_df.copy()
-    ind = indicators_df.copy()
+    df  = candles_df.copy().reset_index(drop=True)
+    ind = indicators_df.copy().reset_index(drop=True)
+
+    # Ensure same length before filtering
+    min_len = min(len(df), len(ind))
+    if len(df) != len(ind):
+        print(f"  [run_backtest] WARNING: candles ({len(df)}) and indicators ({len(ind)}) length mismatch — trimming to {min_len}")
+        df  = df.iloc[:min_len]
+        ind = ind.iloc[:min_len]
 
     if start_date is not None:
         m = df['timestamp'] >= pd.to_datetime(start_date)
