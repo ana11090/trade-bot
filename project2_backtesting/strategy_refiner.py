@@ -385,6 +385,58 @@ def load_strategy_list():
                 'has_trades':        'trades' in r and bool(r.get('trades')),
             })
 
+    # Load optimizer results if available
+    try:
+        opt_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '_validator_optimized.json')
+        if os.path.exists(opt_path):
+            with open(opt_path, 'r', encoding='utf-8') as f:
+                opt_data = json.load(f)
+
+            # Add separator
+            results.append({
+                'index':        '__separator_opt__',
+                'source':       'separator',
+                'label':        '─── OPTIMIZER RESULTS ─────────────────────────────────────────────────────────',
+                'total_trades': 0,
+                'has_trades':   False,
+            })
+
+            # Add optimizer result
+            opt_trades = opt_data.get('trades', [])
+            opt_rules = opt_data.get('rules', [])
+            opt_name = opt_data.get('name', 'Optimized Strategy')
+
+            wr = 0
+            net = 0
+            if opt_trades:
+                wins = sum(1 for t in opt_trades if t.get('net_pips', 0) > 0)
+                wr = wins / len(opt_trades) if opt_trades else 0
+                net = sum(t.get('net_pips', 0) for t in opt_trades)
+
+            wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+
+            results.append({
+                'index':             'optimizer_latest',
+                'source':            'optimizer',
+                'label':             f"🎯 {opt_name}  [{len(opt_trades)} trades, WR {wr_str}, {net:+,.0f} pips]",
+                'rule_combo':        opt_name,
+                'exit_strategy':     'Optimized',
+                'exit_name':         'Optimized',
+                'total_trades':      len(opt_trades),
+                'win_rate':          wr,
+                'net_total_pips':    net,
+                'net_avg_pips':      net / len(opt_trades) if opt_trades else 0,
+                'net_profit_factor': 0,
+                'max_dd_pips':       0,
+                'spread_pips':       2.5,
+                'commission_pips':   0.0,
+                'has_trades':        True,
+                'optimizer_trades':  opt_trades,
+                'optimizer_rules':   opt_rules,
+            })
+    except Exception:
+        pass
+
     # Load saved rules
     try:
         saved_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '..', '..', 'saved_rules.json')

@@ -238,6 +238,22 @@ def build_panel(parent):
             except Exception:
                 pass
 
+        # Load optimizer rules from playground export
+        playground_rules = os.path.join(project_root, 'project2_backtesting', 'outputs', '_playground_rules.json')
+        if os.path.exists(playground_rules):
+            try:
+                with open(playground_rules, encoding='utf-8') as f:
+                    data = json.load(f)
+                opt_rules = data.get('rules', [])
+                source = data.get('source', 'optimizer')
+                # Each rule becomes a selectable option
+                for i, r in enumerate(opt_rules):
+                    wr = r.get('win_rate', 0)
+                    label = f"🎯 Optimizer Rule {i+1} (WR {wr:.0%})" if wr else f"🎯 Optimizer Rule {i+1}"
+                    rules_list.append((label, r))
+            except Exception:
+                pass
+
         return rules_list
 
     _rule_options = _load_rule_list()
