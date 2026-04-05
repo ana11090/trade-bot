@@ -28,12 +28,19 @@ _SESSIONS = {
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def compute_monthly_pnl(trades):
+def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.0):
     """
     Group trades by month, return monthly P&L breakdown with daily trade frequency stats.
     Returns list of dicts: [{month: '2020-01', pnl_pips: +340, trades: 12, wins: 8,
-                             avg_trades_per_day: 2.4, min_trades_per_day: 1, max_trades_per_day: 5}, ...]
+                             avg_trades_per_day: 2.4, min_trades_per_day: 1, max_trades_per_day: 5,
+                             pnl_dollars: +2267, pnl_pct: +2.27}, ...]
     """
+    # Calculate $ per pip based on risk settings
+    sl_pips = 150
+    risk_dollars = account_size * (risk_pct / 100)
+    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+    dollar_per_pip = pip_value * lot_size
+
     monthly = {}
     for t in trades:
         try:
@@ -56,7 +63,7 @@ def compute_monthly_pnl(trades):
 
         monthly[key]['daily_counts'][day] = monthly[key]['daily_counts'].get(day, 0) + 1
 
-    # Compute daily trade frequency stats
+    # Compute daily trade frequency stats and profit %
     for m in monthly.values():
         counts = list(m['daily_counts'].values()) if m['daily_counts'] else [0]
         m['trading_days'] = len(m['daily_counts'])
@@ -64,6 +71,10 @@ def compute_monthly_pnl(trades):
         m['min_trades_per_day'] = min(counts) if counts else 0
         m['max_trades_per_day'] = max(counts) if counts else 0
         del m['daily_counts']
+
+        # Profit as % of account
+        m['pnl_dollars'] = round(m['pnl_pips'] * dollar_per_pip, 2)
+        m['pnl_pct'] = round((m['pnl_dollars'] / account_size) * 100, 2)
 
     return sorted(monthly.values(), key=lambda x: x['month'])
 

@@ -90,6 +90,24 @@ def open_output_folder():
 
 def display_summary(output_text, summary_frame):
     """Display ALL backtest results as sortable cards."""
+    # Read account size from config for % calculations
+    try:
+        from project2_backtesting.panels.configuration import load_config
+        cfg = load_config()
+        account_size = float(cfg.get('starting_capital', '100000'))
+        risk_pct = float(cfg.get('risk_pct', '1.0'))
+        pip_value = float(cfg.get('pip_value_per_lot', '10.0'))
+    except Exception:
+        account_size = 100000
+        risk_pct = 1.0
+        pip_value = 10.0
+
+    # Calculate $ per pip based on risk settings
+    sl_pips = 150
+    risk_dollars = account_size * (risk_pct / 100)
+    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+    dollar_per_pip = pip_value * lot_size
+
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
@@ -120,6 +138,9 @@ def display_summary(output_text, summary_frame):
     tk.Label(info_frame, text=f"Backtest Matrix — {combos} combinations ({with_trades} with trades)",
              bg="#e8f5e9", fg="#2e7d32", font=("Arial", 11, "bold")).pack(anchor="w")
     tk.Label(info_frame, text=f"Generated: {gen_at}  |  Spread: {spread} pips  |  Time: {elapsed:.0f}s",
+             bg="#e8f5e9", fg="#555", font=("Arial", 9)).pack(anchor="w")
+    tk.Label(info_frame, text=f"Account: ${account_size:,.0f}  |  Risk: {risk_pct}%/trade  |  "
+                               f"${dollar_per_pip:.2f}/pip",
              bg="#e8f5e9", fg="#555", font=("Arial", 9)).pack(anchor="w")
 
     # ── Sort buttons ──
@@ -240,6 +261,18 @@ def display_summary(output_text, summary_frame):
             pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
             net_color = "#28a745" if net_pips > 0 else "#dc3545"
 
+            # Calculate profit %, median, average
+            profit_dollars = net_pips * dollar_per_pip
+            profit_pct = (profit_dollars / account_size) * 100
+
+            trade_pips = []
+            if 'trades' in r and r['trades']:
+                trade_pips = [t.get('net_pips', 0) for t in r['trades']]
+
+            import statistics
+            median_pips = statistics.median(trade_pips) if trade_pips else 0
+            avg_pips_calc = sum(trade_pips) / len(trade_pips) if trade_pips else avg
+
             metrics_row = tk.Frame(card, bg=bg_color)
             metrics_row.pack(fill="x", pady=(2, 0))
 
@@ -248,7 +281,6 @@ def display_summary(output_text, summary_frame):
                 ("WR", wr_str, wr_color),
                 ("PF", f"{pf:.2f}", pf_color),
                 ("Net", f"{net_pips:+,.0f} pips", net_color),
-                ("Avg", f"{avg:+.1f} pips", net_color),
                 ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
                 ("Best", f"{best:+.0f}", "#28a745"),
                 ("Worst", f"{worst:+.0f}", "#dc3545"),
@@ -257,6 +289,22 @@ def display_summary(output_text, summary_frame):
                          font=("Arial", 8)).pack(side=tk.LEFT)
                 tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
                          font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+
+            # Row 2: profit %, median, average
+            extra_row = tk.Frame(card, bg=bg_color)
+            extra_row.pack(fill="x", pady=(1, 0))
+
+            pct_color = "#28a745" if profit_pct > 0 else "#dc3545"
+
+            for label, value, color in [
+                ("Profit", f"{profit_pct:+.1f}% of ${account_size:,.0f}", pct_color),
+                ("Median", f"{median_pips:+.1f} pips", "#28a745" if median_pips > 0 else "#dc3545"),
+                ("Average", f"{avg_pips_calc:+.1f} pips", "#28a745" if avg_pips_calc > 0 else "#dc3545"),
+            ]:
+                tk.Label(extra_row, text=f"{label}: ", bg=bg_color, fg="#888",
+                         font=("Arial", 8)).pack(side=tk.LEFT)
+                tk.Label(extra_row, text=value, bg=bg_color, fg=color,
+                         font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
 
             # Breach counter (from precomputed data)
             breaches = r.get('breaches', {})
@@ -326,9 +374,9 @@ def display_summary(output_text, summary_frame):
     # ── Update detailed text output too ──
     output_text.delete(1.0, tk.END)
     output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
-                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'MaxDD':>8} "
-                                f"{'Blows':>6} {'DailyDD%':>8} {'TotalDD%':>8}\n")
-    output_text.insert(tk.END, "-" * 130 + "\n")
+                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Profit%':>8} "
+                                f"{'Median':>8} {'Avg':>8} {'MaxDD':>8} {'Blows':>6}\n")
+    output_text.insert(tk.END, "-" * 135 + "\n")
 
     for i, r in enumerate(sorted_results):
         trades = r.get('total_trades', 0)
@@ -341,18 +389,29 @@ def display_summary(output_text, summary_frame):
         rule = r.get('rule_combo', '?')[:20]
         exit_s = r.get('exit_strategy', '?')[:26]
 
+        # Profit %
+        profit_dollars = net * dollar_per_pip
+        profit_pct = (profit_dollars / account_size) * 100
+
+        # Median
+        trade_list = r.get('trades', [])
+        if trade_list:
+            import statistics
+            med = statistics.median([t.get('net_pips', 0) for t in trade_list])
+            avg_calc = sum(t.get('net_pips', 0) for t in trade_list) / len(trade_list)
+        else:
+            med = 0
+            avg_calc = avg
+
         blown_str = "-"
-        wd_str = "-"
-        wt_str = "-"
         breaches = r.get('breaches', {})
         if breaches:
             blown_str = str(breaches.get('blown_count', 0))
-            wd_str = f"{breaches.get('worst_daily_pct', 0):.1f}%"
-            wt_str = f"{breaches.get('worst_total_pct', 0):.1f}%"
 
         output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
-                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} {dd:>8,.0f} "
-                                    f"{blown_str:>6} {wd_str:>8} {wt_str:>8}\n")
+                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} "
+                                    f"{profit_pct:>+7.1f}% {med:>+7.1f} {avg_calc:>+7.1f} "
+                                    f"{dd:>8,.0f} {blown_str:>6}\n")
 
     output_text.see("1.0")
 

@@ -599,8 +599,21 @@ def _draw_monthly_chart(canvas, tooltip, trades):
     """Draw monthly P&L bar chart with hover tooltips."""
     from project2_backtesting.strategy_refiner import compute_monthly_pnl
 
+    # Load account config for profit % calculations
+    try:
+        from project2_backtesting.panels.configuration import load_config
+        cfg = load_config()
+        _acct_size = float(cfg.get('starting_capital', '100000'))
+        _risk_pct = float(cfg.get('risk_pct', '1.0'))
+        _pip_value = float(cfg.get('pip_value_per_lot', '10.0'))
+    except Exception:
+        _acct_size = 100000
+        _risk_pct = 1.0
+        _pip_value = 10.0
+
     canvas.delete("all")
-    monthly = compute_monthly_pnl(trades)
+    monthly = compute_monthly_pnl(trades, account_size=_acct_size,
+                                   risk_pct=_risk_pct, pip_value=_pip_value)
 
     if not monthly:
         canvas.create_text(200, 100, text="No trade data", font=("Arial", 11), fill="#888")
@@ -674,7 +687,10 @@ def _draw_monthly_chart(canvas, tooltip, trades):
             coords = canvas.coords(rect)
             if coords and coords[0] <= event.x <= coords[2]:
                 pnl = m['pnl_pips']
-                text = (f"{m['month']}: {pnl:+,.0f} pips\n"
+                pnl_pct = m.get('pnl_pct', 0)
+                pnl_dollars = m.get('pnl_dollars', 0)
+
+                text = (f"{m['month']}: {pnl:+,.0f} pips  ({pnl_pct:+.1f}%  ${pnl_dollars:+,.0f})\n"
                         f"{m['trades']} trades ({m['wins']}W / {m['losses']}L)\n"
                         f"Avg: {m.get('avg_trades_per_day', 0)}/day  "
                         f"Min: {m.get('min_trades_per_day', 0)}/day  "
