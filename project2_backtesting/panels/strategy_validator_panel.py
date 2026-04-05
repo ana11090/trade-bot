@@ -1247,7 +1247,9 @@ def build_panel(parent):
             if _val_firm_var and _val_stage_var:
                 show_reminder_on_firm_change(_val_firm_var, sel_frame, _val_reminder, _val_stage_var)
         except Exception as e:
-            print(f"Warning: Could not initialize firm rules reminder: {e}")
+            import traceback
+            print("Warning: Could not initialize firm rules reminder")
+            traceback.print_exc()
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
