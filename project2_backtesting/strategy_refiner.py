@@ -1057,7 +1057,7 @@ def deep_optimize(
         if _stop_flag.is_set():
             break
         _report(f"Testing preset: {pname}", total_steps, i + 1)
-        filt = {k: v for k, v in pvals.items() if k != 'description'}
+        filt = {k: v for k, v in pvals.items() if k not in ('description', 'firm_data', 'stage')}
         kept, _ = apply_filters(trades, filt)
         _maybe_add(f"{pname} filters", kept, pname, filt)
 

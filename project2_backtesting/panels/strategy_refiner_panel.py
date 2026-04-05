@@ -745,6 +745,37 @@ def _show_opt_results(candidates):
                  text=f"Showing {len(filtered)} of {len(_all_candidates)} strategies (WR >= {min_wr*100:.0f}%)",
                  font=("Segoe UI", 10, "bold"), bg=BG, fg=DARK).pack(anchor="w", padx=5, pady=(4, 6))
 
+        # Save All button
+        def _save_all():
+            from shared.saved_rules import save_rule
+            saved = 0
+            for c, s in filtered:
+                try:
+                    save_data = {
+                        'conditions': [],
+                        'prediction': 'WIN',
+                        'win_rate': s.get('win_rate', 0),
+                        'avg_pips': s.get('avg_pips', 0),
+                        'total_pips': s.get('total_pips', 0),
+                        'net_total_pips': s.get('total_pips', 0),
+                        'total_trades': s.get('count', 0),
+                        'filters_applied': {k: v for k, v in (c.get('filters_applied') or {}).items()
+                                           if k not in ('firm_data', 'description', 'stage')},
+                    }
+                    for rule in c.get('rules', []):
+                        if rule.get('prediction') == 'WIN':
+                            save_data['conditions'].extend(rule.get('conditions', []))
+                    save_rule(save_data, source=f"Optimizer: {c.get('name', '?')}")
+                    saved += 1
+                except Exception:
+                    pass
+            messagebox.showinfo("Saved", f"Saved {saved} strategies to 💾 Saved Rules!")
+
+        tk.Button(_opt_results_frame, text=f"💾 Save All {len(filtered)} Strategies",
+                  command=_save_all,
+                  bg="#28a745", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief=tk.FLAT, cursor="hand2", padx=15, pady=5).pack(pady=(0, 8))
+
         if not filtered:
             tk.Label(_opt_results_frame, text="No strategies meet the minimum win rate. Try lowering it.",
                      font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY).pack(pady=10)
@@ -782,10 +813,11 @@ def _show_opt_results(candidates):
 
         # ── Render cards ──
         for i, (cand, stats) in enumerate(filtered, 1):
-            score = cand.get('score', 0)
-            rules = cand.get('rules', [])
-            filters = cand.get('filters_applied', {})
-            changes = cand.get('changes_from_base', '')
+            try:
+                score = cand.get('score', 0)
+                rules = cand.get('rules', [])
+                filters = cand.get('filters_applied', {})
+                changes = cand.get('changes_from_base', '')
 
             card_bg = "#f0fff0" if score > 0 else "#fff8f8"
             border = "#28a745" if score > 0 else "#dc3545"
@@ -856,8 +888,15 @@ def _show_opt_results(candidates):
                               f"Year 1: ${(your_monthly * 12 - challenge_fee):+,.0f}",
                          bg="#e8f5e9", fg="#2e7d32", font=("Arial", 8, "bold")).pack(anchor="w")
 
-            # What changed
-            if isinstance(filters, dict) and filters:
+            # What changed — defensive rendering
+            display_filters = {}
+            if isinstance(filters, dict):
+                for fk, fv in filters.items():
+                    if fk in ('description', 'firm_data', 'stage', 'firm_name'):
+                        continue
+                    display_filters[fk] = fv
+
+            if display_filters:
                 changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=5)
                 changes_frame.pack(fill="x", pady=(5, 0))
                 tk.Label(changes_frame, text="What was changed:",
@@ -867,15 +906,18 @@ def _show_opt_results(candidates):
                     'min_hold_minutes': lambda v: f"Min hold {v} minutes",
                     'cooldown_minutes': lambda v: f"Wait {v} min between trades",
                     'min_pips': lambda v: f"Skip trades < {v} pips",
-                    'sessions': lambda v: f"Sessions: {', '.join(v) if isinstance(v, list) else v}",
+                    'sessions': lambda v: f"Sessions: {', '.join(v) if isinstance(v, list) else str(v)}",
+                    'days': lambda v: f"Days: {', '.join(v) if isinstance(v, list) else str(v)}",
+                    'news_blackout_minutes': lambda v: f"No trading {v} min around news",
                 }
-                for fk, fv in filters.items():
-                    if fk in ('description', 'firm_data', 'stage'):
-                        continue
-                    fn = explanations.get(fk)
-                    txt = fn(fv) if fn else f"{fk} = {fv}"
-                    tk.Label(changes_frame, text=f"  - {txt}",
-                             bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
+                for fk, fv in display_filters.items():
+                    try:
+                        fn = explanations.get(fk)
+                        txt = fn(fv) if fn else f"{fk} = {fv}"
+                        tk.Label(changes_frame, text=f"  - {txt}",
+                                 bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
+                    except Exception:
+                        pass
             elif changes:
                 changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=3)
                 changes_frame.pack(fill="x", pady=(3, 0))
@@ -996,6 +1038,23 @@ def _show_opt_results(candidates):
                       command=_to_csv,
                       bg="#6c757d", fg="white", font=("Segoe UI", 8, "bold"),
                       relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT)
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[OPTIMIZER] Error rendering card #{i}: {e}")
+                # Show error card so user knows something went wrong
+                err_card = tk.Frame(_opt_results_frame, bg="#fff0f0",
+                                     highlightbackground="#dc3545", highlightthickness=1,
+                                     padx=12, pady=8)
+                err_card.pack(fill="x", padx=5, pady=4)
+                tk.Label(err_card, text=f"#{i}: {cand.get('name', '?')} — Error rendering: {e}",
+                         font=("Segoe UI", 9), bg="#fff0f0", fg="#dc3545").pack(anchor="w")
+
+        # Force scroll region update so all cards are visible
+        _opt_results_frame.update_idletasks()
+        if _scroll_canvas:
+            _scroll_canvas.configure(scrollregion=_scroll_canvas.bbox("all"))
 
     # Apply filter button
     tk.Button(filter_row, text="Filter", font=("Segoe UI", 9, "bold"),
