@@ -449,7 +449,7 @@ def _show_estimation(trades, parent_frame):
         return
 
     try:
-        global _val_stage_var, _val_firm_var, _val_acct_var
+        global _val_stage_var, _val_firm_var, _val_acct_var, _scroll_canvas
 
         stage = _val_stage_var.get().lower() if _val_stage_var else "funded"
         acct = float(_val_acct_var.get()) if _val_acct_var else 100000
@@ -621,6 +621,14 @@ def _show_estimation(trades, parent_frame):
             tk.Label(est_frame,
                 text=f"0% pass rate — never reaches {profit_target_pct}% target",
                 bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
+
+    # Update scroll region to show new content
+    if _scroll_canvas:
+        try:
+            parent_frame.update_idletasks()
+            _scroll_canvas.configure(scrollregion=_scroll_canvas.bbox("all"))
+        except:
+            pass
 
 
 def _display_verdict(combined, trades=None):
