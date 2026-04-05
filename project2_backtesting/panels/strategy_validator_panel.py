@@ -945,8 +945,38 @@ def build_panel(parent):
 
     panel = tk.Frame(parent, bg=BG)
 
+    # ── Scrollable canvas wrapping ALL content ────────────────────────────────
+    _scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
+    vscroll = tk.Scrollbar(panel, orient="vertical", command=_scroll_canvas.yview)
+    scroll_frame = tk.Frame(_scroll_canvas, bg=BG)
+
+    scroll_frame.bind("<Configure>",
+                      lambda e: _scroll_canvas.configure(
+                          scrollregion=_scroll_canvas.bbox("all")))
+    cwin = _scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    _scroll_canvas.configure(yscrollcommand=vscroll.set)
+    _scroll_canvas.pack(side="left", fill="both", expand=True)
+    vscroll.pack(side="right", fill="y")
+
+    # Safe mousewheel binding
+    def _on_enter(event):
+        _scroll_canvas.bind("<MouseWheel>",
+            lambda e: _scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        _scroll_canvas.bind("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
+        _scroll_canvas.bind("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        _scroll_canvas.unbind("<MouseWheel>")
+        _scroll_canvas.unbind("<Button-4>")
+        _scroll_canvas.unbind("<Button-5>")
+
+    _scroll_canvas.bind("<Enter>", _on_enter)
+    _scroll_canvas.bind("<Leave>", _on_leave)
+    _scroll_canvas.bind("<Configure>",
+                        lambda e: _scroll_canvas.itemconfig(cwin, width=e.width))
+
     # ── Header ────────────────────────────────────────────────────────────────
-    hdr = tk.Frame(panel, bg=WHITE, pady=16)
+    hdr = tk.Frame(scroll_frame, bg=WHITE, pady=16)
     hdr.pack(fill="x", padx=20, pady=(20, 10))
     tk.Label(hdr, text="✅ Strategy Validator",
              bg=WHITE, fg=DARK, font=("Segoe UI", 18, "bold")).pack()
@@ -954,7 +984,7 @@ def build_panel(parent):
              bg=WHITE, fg=GREY, font=("Segoe UI", 11)).pack(pady=(4, 0))
 
     # ── Strategy selector ─────────────────────────────────────────────────────
-    sel_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
+    sel_frame = tk.Frame(scroll_frame, bg=WHITE, padx=20, pady=12)
     sel_frame.pack(fill="x", padx=20, pady=(0, 5))
 
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
@@ -1262,7 +1292,7 @@ def build_panel(parent):
     _update_strat_info()
 
     # ── Settings ──────────────────────────────────────────────────────────────
-    settings_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
+    settings_frame = tk.Frame(scroll_frame, bg=WHITE, padx=20, pady=12)
     settings_frame.pack(fill="x", padx=20, pady=(0, 5))
 
     tk.Label(settings_frame, text="Settings", font=("Segoe UI", 11, "bold"),
@@ -1315,7 +1345,7 @@ def build_panel(parent):
     _pipval_var = _field(com_row2, "Pip value/lot:", "10.0", 5)
 
     # ── Buttons + progress ────────────────────────────────────────────────────
-    btn_frame = tk.Frame(panel, bg=BG, pady=8)
+    btn_frame = tk.Frame(scroll_frame, bg=BG, pady=8)
     btn_frame.pack(fill="x", padx=20)
 
     _start_wf_btn = tk.Button(btn_frame, text="Run Walk-Forward Only",
@@ -1349,62 +1379,33 @@ def build_panel(parent):
                           state="disabled")
     _stop_btn.pack(side=tk.LEFT)
 
-    _progress_bar = ttk.Progressbar(panel, mode='determinate', length=400)
+    _progress_bar = ttk.Progressbar(scroll_frame, mode='determinate', length=400)
     _progress_bar.pack(fill="x", padx=20, pady=(4, 0))
 
-    _status_lbl = tk.Label(panel, text="Ready",
+    _status_lbl = tk.Label(scroll_frame, text="Ready",
                             font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY)
     _status_lbl.pack(pady=(2, 5))
 
-    # ── Scrollable results area ───────────────────────────────────────────────
-    _scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
-    vscroll = tk.Scrollbar(panel, orient="vertical", command=_scroll_canvas.yview)
-    scroll_frame = tk.Frame(_scroll_canvas, bg=BG)
+    # ── Results frames ────────────────────────────────────────────────────────
+    # Separator
+    tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=20, pady=8)
 
-    scroll_frame.bind("<Configure>",
-                      lambda e: _scroll_canvas.configure(
-                          scrollregion=_scroll_canvas.bbox("all")))
-    cwin = _scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-    _scroll_canvas.configure(yscrollcommand=vscroll.set)
-    _scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
-    vscroll.pack(side="right", fill="y", padx=(0, 20))
-
-    # Safe mousewheel binding — doesn't break other canvases
-    def _on_enter(event):
-        _scroll_canvas.bind("<MouseWheel>",
-            lambda e: _scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        # Linux
-        _scroll_canvas.bind("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
-        _scroll_canvas.bind("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
-
-    def _on_leave(event):
-        _scroll_canvas.unbind("<MouseWheel>")
-        _scroll_canvas.unbind("<Button-4>")
-        _scroll_canvas.unbind("<Button-5>")
-
-    _scroll_canvas.bind("<Enter>", _on_enter)
-    _scroll_canvas.bind("<Leave>", _on_leave)
-    _scroll_canvas.bind("<Configure>",
-                        lambda e: _scroll_canvas.itemconfig(cwin, width=e.width))
-
-    sf = scroll_frame
-
-    _wf_frame      = tk.Frame(sf, bg=BG)
+    _wf_frame      = tk.Frame(scroll_frame, bg=BG)
     _wf_frame.pack(fill="x", padx=5, pady=(5, 0))
 
-    tk.Frame(sf, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
+    tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
 
-    _mc_frame      = tk.Frame(sf, bg=BG)
+    _mc_frame      = tk.Frame(scroll_frame, bg=BG)
     _mc_frame.pack(fill="x", padx=5)
 
-    tk.Frame(sf, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
+    tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
 
-    _slip_frame    = tk.Frame(sf, bg=BG)
+    _slip_frame    = tk.Frame(scroll_frame, bg=BG)
     _slip_frame.pack(fill="x", padx=5)
 
-    tk.Frame(sf, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
+    tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
 
-    _verdict_frame = tk.Frame(sf, bg=BG)
+    _verdict_frame = tk.Frame(scroll_frame, bg=BG)
     _verdict_frame.pack(fill="x", padx=5, pady=(0, 20))
 
     return panel
