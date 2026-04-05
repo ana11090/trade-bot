@@ -41,6 +41,11 @@ _tree           = None
 _selected_count = None
 _check_vars     = {}  # index -> bool (checkbox state)
 
+# Validator stage/firm/account selectors
+_val_stage_var  = None
+_val_firm_var   = None
+_val_acct_var   = None
+
 # Settings vars
 _train_var      = None
 _test_var       = None
@@ -438,7 +443,187 @@ def _display_mc_results(mc_result):
              fg=verdict_colors.get(verdict, WHITE)).pack(anchor="w", pady=(6, 0))
 
 
-def _display_verdict(combined):
+def _show_estimation(trades, parent_frame):
+    """Show payout or eval estimation after validation."""
+    if not trades or len(trades) < 20:
+        return
+
+    try:
+        global _val_stage_var, _val_firm_var, _val_acct_var
+
+        stage = _val_stage_var.get().lower() if _val_stage_var else "funded"
+        acct = float(_val_acct_var.get()) if _val_acct_var else 100000
+        firm_name = _val_firm_var.get() if _val_firm_var else ""
+    except:
+        stage = "funded"
+        acct = 100000
+        firm_name = ""
+
+    risk = 1.0
+    pip_value = 10.0
+    sl_pips = 150
+    lot_size = (acct * risk / 100) / (sl_pips * pip_value)
+    dollar_per_pip = pip_value * lot_size
+
+    # Load firm data
+    firm_data = None
+    profit_split = 80
+    try:
+        import glob
+        prop_dir = os.path.join(project_root, 'prop_firms')
+        for fp in glob.glob(os.path.join(prop_dir, '*.json')):
+            with open(fp, encoding='utf-8') as f:
+                fd = json.load(f)
+            if fd.get('firm_name') == firm_name:
+                firm_data = fd
+                profit_split = fd['challenges'][0].get('funded', {}).get('profit_split_pct', 80)
+                break
+    except:
+        pass
+
+    import pandas as pd
+    daily_pnls = {}
+    for t in trades:
+        try:
+            day = str(pd.to_datetime(t.get('entry_time', '')).date())
+            pnl = (t.get('net_pips', 0) or 0) * dollar_per_pip
+            daily_pnls[day] = daily_pnls.get(day, 0) + pnl
+        except:
+            continue
+
+    if not daily_pnls:
+        return
+
+    days_sorted = sorted(daily_pnls.keys())
+
+    est_frame = tk.LabelFrame(parent_frame,
+        text="💰 Payout Estimation" if stage == "funded" else "🎯 Eval Target Estimation",
+        font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#4a148c" if stage == "funded" else "#e65100",
+        padx=10, pady=8)
+    est_frame.pack(fill="x", padx=5, pady=(10, 5))
+
+    if stage == "funded":
+        # Payout estimation — 14-day windows
+        consistency_limit = 20
+        min_profit_days_req = 3
+        min_day_threshold = acct * 0.005
+
+        if firm_data:
+            for rule in firm_data.get('trading_rules', []):
+                if rule.get('type') == 'consistency':
+                    consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
+                elif rule.get('type') == 'min_profitable_days':
+                    min_profit_days_req = rule.get('parameters', {}).get('min_days', 3)
+
+        windows_total = 0
+        windows_pass = 0
+        window_profits = []
+
+        for start_i in range(0, len(days_sorted) - 5, 7):
+            start_day = pd.to_datetime(days_sorted[start_i])
+            window = {}
+            for d in days_sorted[start_i:]:
+                if (pd.to_datetime(d) - start_day).days >= 14:
+                    break
+                window[d] = daily_pnls[d]
+
+            if not window:
+                continue
+
+            total_profit = sum(v for v in window.values() if v > 0)
+            net = sum(window.values())
+            windows_total += 1
+
+            if total_profit <= 0:
+                continue
+
+            best_day = max(window.values())
+            best_pct = best_day / total_profit * 100
+            prof_days = sum(1 for v in window.values() if v >= min_day_threshold)
+
+            if best_pct <= consistency_limit and prof_days >= min_profit_days_req and net > 0:
+                windows_pass += 1
+                window_profits.append(net * profit_split / 100)
+
+        if windows_total > 0 and window_profits:
+            pr = windows_pass / windows_total * 100
+            avg_p = sum(window_profits) / len(window_profits)
+            min_p = min(window_profits)
+            max_p = max(window_profits)
+            annual = avg_p * (365 / 14)
+
+            tk.Label(est_frame,
+                text=f"Pass rate: {pr:.0f}% of 14-day periods  |  "
+                     f"Avg payout: ${avg_p:,.0f}  |  Min: ${min_p:,.0f}  |  Max: ${max_p:,.0f}",
+                bg=WHITE, fg="#333", font=("Segoe UI", 10)).pack(anchor="w")
+            tk.Label(est_frame,
+                text=f"Annual estimate: ${annual:,.0f}  |  "
+                     f"Consistency: {consistency_limit}% rule  |  "
+                     f"Min profitable days: {min_profit_days_req}  |  "
+                     f"Split: {profit_split}%",
+                bg=WHITE, fg="#666", font=("Segoe UI", 9)).pack(anchor="w")
+        else:
+            tk.Label(est_frame,
+                text="0% of periods pass payout rules — strategy won't generate payouts",
+                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
+
+    else:
+        # Evaluation: days to reach target
+        profit_target_pct = 6.0
+        total_dd_limit = 10.0
+        try:
+            if firm_data:
+                phases = firm_data['challenges'][0].get('phases', [])
+                if phases:
+                    profit_target_pct = phases[0].get('profit_target_pct', 6.0)
+                    total_dd_limit = phases[0].get('max_total_drawdown_pct', 10.0)
+        except:
+            pass
+
+        target_dollars = acct * (profit_target_pct / 100)
+        days_to_target = []
+        blown_count = 0
+        total_attempts = 0
+
+        for start_i in range(0, len(days_sorted) - 5, 7):
+            running = 0
+            day_count = 0
+            reached = False
+            total_attempts += 1
+
+            for d in days_sorted[start_i:]:
+                running += daily_pnls[d]
+                day_count += 1
+                if running >= target_dollars:
+                    days_to_target.append(day_count)
+                    reached = True
+                    break
+                if running < -(acct * total_dd_limit / 100):
+                    blown_count += 1
+                    break
+
+        if days_to_target:
+            pass_rate = len(days_to_target) / max(total_attempts, 1) * 100
+            avg_d = sum(days_to_target) / len(days_to_target)
+            blow_rate = blown_count / max(total_attempts, 1) * 100
+
+            tk.Label(est_frame,
+                text=f"Pass rate: {pass_rate:.0f}%  |  "
+                     f"Avg days to {profit_target_pct}%: {avg_d:.0f}  |  "
+                     f"Fastest: {min(days_to_target)}  |  Slowest: {max(days_to_target)}",
+                bg=WHITE, fg="#333", font=("Segoe UI", 10)).pack(anchor="w")
+            tk.Label(est_frame,
+                text=f"Blow rate: {blow_rate:.0f}%  |  "
+                     f"Target: ${target_dollars:,.0f}  |  "
+                     f"Expected attempts: {100/max(pass_rate,1):.1f}",
+                bg=WHITE, fg="#666", font=("Segoe UI", 9)).pack(anchor="w")
+        else:
+            tk.Label(est_frame,
+                text=f"0% pass rate — never reaches {profit_target_pct}% target",
+                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
+
+
+def _display_verdict(combined, trades=None):
     if _verdict_frame is None:
         return
     for w in _verdict_frame.winfo_children():
@@ -520,6 +705,10 @@ def _display_verdict(combined):
               command=lambda: _nav('p2_refiner'),
               bg=GREY, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT)
+
+    # Show stage-aware estimation
+    if trades:
+        _show_estimation(trades, _verdict_frame)
 
 
 def _nav(panel_name):
@@ -702,7 +891,7 @@ def _run(mode):
 
             if wf_result or mc_result or slip_result:
                 combined = combined_score(wf_result, mc_result, slip_result)
-                state.window.after(0, lambda c=combined: _display_verdict(c))
+                state.window.after(0, lambda c=combined, t=trades: _display_verdict(c, t))
 
                 # Save
                 result = {
@@ -742,6 +931,7 @@ def build_panel(parent):
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
     global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
+    global _val_stage_var, _val_firm_var, _val_acct_var
 
     _load_strategies()
 
@@ -999,6 +1189,53 @@ def build_panel(parent):
         _selected_count = tk.Label(sel_frame, text="0 selected of 0 shown (0 total)",
                                     font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#667eea")
         _selected_count.pack(anchor="w")
+
+        # Stage/Firm/Account selector
+        global _val_stage_var, _val_firm_var, _val_acct_var
+
+        stage_frame = tk.Frame(sel_frame, bg=WHITE)
+        stage_frame.pack(fill="x", pady=(10, 0))
+
+        tk.Label(stage_frame, text="Stage:", font=("Segoe UI", 9, "bold"),
+                 bg=WHITE, fg=DARK).pack(side=tk.LEFT)
+
+        _val_stage_var = tk.StringVar(value="Funded")
+        ttk.Combobox(stage_frame, textvariable=_val_stage_var,
+                      values=["Evaluation", "Funded"], width=12,
+                      state="readonly").pack(side=tk.LEFT, padx=5)
+
+        tk.Label(stage_frame, text="Firm:", font=("Segoe UI", 9, "bold"),
+                 bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(15, 0))
+
+        _val_firm_var = tk.StringVar(value="FTMO")
+        # Load firm names
+        import glob
+        prop_dir = os.path.join(project_root, 'prop_firms')
+        firm_names_val = []
+        for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+            try:
+                with open(fp, encoding='utf-8') as f:
+                    fd = json.load(f)
+                firm_names_val.append(fd.get('firm_name', '?'))
+            except:
+                pass
+
+        ttk.Combobox(stage_frame, textvariable=_val_firm_var,
+                      values=firm_names_val, width=18,
+                      state="readonly").pack(side=tk.LEFT, padx=5)
+
+        tk.Label(stage_frame, text="Account:", font=("Segoe UI", 9, "bold"),
+                 bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(15, 0))
+
+        _val_acct_var = tk.StringVar(value="100000")
+        ttk.Combobox(stage_frame, textvariable=_val_acct_var,
+                      values=["10000", "25000", "50000", "100000", "200000"],
+                      width=8).pack(side=tk.LEFT, padx=5)
+
+        # Show firm rules reminder
+        from shared.firm_rules_reminder import show_reminder_on_firm_change
+        _val_reminder = [None]
+        show_reminder_on_firm_change(_val_firm_var, sel_frame, _val_reminder, _val_stage_var)
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
