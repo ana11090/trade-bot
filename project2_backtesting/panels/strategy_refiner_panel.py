@@ -686,7 +686,7 @@ def _stop_optimization():
 
 
 def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
-                      challenge_fee, profit_split):
+                      challenge_fee, profit_split, risk=1.0, firm_data=None):
     """Render a single optimizer result card with all buttons."""
     score = cand.get('score', 0) or 0
     rules = cand.get('rules', [])
@@ -758,6 +758,235 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
         tk.Label(roi, text=f"Fee: ${challenge_fee or 0} | ROI: {months_roi:.1f}mo | "
                            f"Year 1: ${((your_monthly or 0) * 12 - (challenge_fee or 0)):+,.0f}",
                  bg="#e8f5e9", fg="#2e7d32", font=("Arial", 8, "bold")).pack(anchor="w")
+
+    # DD Breach Count
+    try:
+        from project2_backtesting.strategy_refiner import count_dd_breaches
+
+        # Extract DD limits from firm_data
+        daily_limit = 5.0
+        total_limit = 10.0
+        if firm_data:
+            try:
+                # Try evaluation phase first (most common for optimizer)
+                phase_data = firm_data['challenges'][0]['phases'][0]
+                daily_limit = phase_data.get('max_daily_drawdown_pct', 5.0)
+                total_limit = phase_data.get('max_total_drawdown_pct', 10.0)
+            except (KeyError, IndexError):
+                # Fallback to funded phase
+                try:
+                    funded = firm_data['challenges'][0]['funded']
+                    daily_limit = funded.get('max_daily_drawdown_pct', 5.0)
+                    total_limit = funded.get('max_total_drawdown_pct', 10.0)
+                except (KeyError, IndexError):
+                    pass
+
+        trades = cand.get('trades', [])
+        if trades:
+            breach_data = count_dd_breaches(
+                trades,
+                account_size=acct,
+                risk_pct=risk,
+                pip_value=10.0,
+                daily_dd_limit_pct=daily_limit,
+                total_dd_limit_pct=total_limit
+            )
+
+            blown = breach_data.get('blown_count', 0)
+            daily_br = breach_data.get('daily_breaches', 0)
+            total_br = breach_data.get('total_breaches', 0)
+            worst_daily = breach_data.get('worst_daily_pct', 0)
+            worst_total = breach_data.get('worst_total_pct', 0)
+            survival = breach_data.get('survival_rate_per_month', 0)
+
+            # Color coding: green if 0 blows, red if blown, orange if close calls
+            if blown == 0:
+                dd_bg = "#e8f5e9"
+                dd_fg = "#2e7d32"
+            elif blown >= 3:
+                dd_bg = "#ffebee"
+                dd_fg = "#c62828"
+            else:
+                dd_bg = "#fff3e0"
+                dd_fg = "#e65100"
+
+            dd_frame = tk.Frame(card, bg=dd_bg, padx=6, pady=3)
+            dd_frame.pack(fill="x", pady=(3, 0))
+
+            # Main DD breach text
+            dd_text = f"🚨 Blown: {blown}x  |  DD Breaches: {daily_br} daily, {total_br} total  |  "
+            dd_text += f"Worst: {worst_daily:.1f}% daily, {worst_total:.1f}% total  |  "
+            dd_text += f"Survival: {survival:.1f}%"
+
+            dd_label = tk.Label(dd_frame, text=dd_text, bg=dd_bg, fg=dd_fg,
+                               font=("Arial", 8, "bold"))
+            dd_label.pack(anchor="w")
+
+            # Tooltip with detailed breakdown
+            daily_dates = breach_data.get('daily_breach_dates', [])
+            total_dates = breach_data.get('total_breach_dates', [])
+
+            tooltip_text = f"DD Limits: {daily_limit}% daily / {total_limit}% total\n"
+            tooltip_text += f"Account blown {blown} time(s)\n\n"
+
+            if daily_dates:
+                tooltip_text += f"Daily DD breaches ({len(daily_dates)}):\n"
+                for dt in daily_dates[:10]:  # Show first 10
+                    tooltip_text += f"  • {dt}\n"
+                if len(daily_dates) > 10:
+                    tooltip_text += f"  ... and {len(daily_dates) - 10} more\n"
+                tooltip_text += "\n"
+
+            if total_dates:
+                tooltip_text += f"Total DD breaches ({len(total_dates)}):\n"
+                for dt in total_dates[:10]:  # Show first 10
+                    tooltip_text += f"  • {dt}\n"
+                if len(total_dates) > 10:
+                    tooltip_text += f"  ... and {len(total_dates) - 10} more\n"
+
+            if not daily_dates and not total_dates:
+                tooltip_text += "✓ No DD breaches - clean run!"
+
+            # Create tooltip
+            def _show_tooltip(event):
+                tooltip = tk.Toplevel()
+                tooltip.wm_overrideredirect(True)
+                tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+                label = tk.Label(tooltip, text=tooltip_text, justify=tk.LEFT,
+                               background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                               font=("Courier", 8), padx=8, pady=6)
+                label.pack()
+                dd_label._tooltip = tooltip
+
+            def _hide_tooltip(event):
+                if hasattr(dd_label, '_tooltip'):
+                    dd_label._tooltip.destroy()
+                    del dd_label._tooltip
+
+            dd_label.bind("<Enter>", _show_tooltip)
+            dd_label.bind("<Leave>", _hide_tooltip)
+    except Exception as e:
+        # Silently skip if breach calculation fails
+        pass
+
+    # Payout estimation
+    try:
+        trade_list = cand.get('trades', [])
+        if trade_list and len(trade_list) > 20:
+            # Calculate 14-day window consistency pass rate
+            import pandas as pd
+
+            # Group trades by day
+            daily_pnls = {}
+            for t in trade_list:
+                try:
+                    day = str(pd.to_datetime(t.get('entry_time', '')).date())
+                    pnl_dollars = t.get('net_pips', 0) * dollar_per_pip
+                    daily_pnls[day] = daily_pnls.get(day, 0) + pnl_dollars
+                except:
+                    continue
+
+            if daily_pnls:
+                days_sorted = sorted(daily_pnls.keys())
+
+                # Slide 14-day windows across the data
+                windows_total = 0
+                windows_pass = 0
+                window_profits = []
+
+                for start_i in range(0, len(days_sorted) - 5, 7):  # step by 7 days
+                    # Get 14-day window
+                    start_day = pd.to_datetime(days_sorted[start_i])
+                    window_pnls = {}
+                    for d in days_sorted[start_i:]:
+                        dt = pd.to_datetime(d)
+                        if (dt - start_day).days >= 14:
+                            break
+                        window_pnls[d] = daily_pnls[d]
+
+                    if not window_pnls:
+                        continue
+
+                    total_profit = sum(v for v in window_pnls.values() if v > 0)
+                    if total_profit <= 0:
+                        windows_total += 1
+                        continue
+
+                    # Check consistency: best day < 20% of total
+                    best_day = max(window_pnls.values())
+                    best_day_pct = (best_day / total_profit * 100) if total_profit > 0 else 100
+
+                    # Check min profitable days (3 days >= 0.5% of account)
+                    min_threshold = acct * 0.005
+                    profitable_days = sum(1 for v in window_pnls.values() if v >= min_threshold)
+
+                    # Read consistency rule from firm
+                    consistency_limit = 20  # default
+                    min_profit_days = 3     # default
+                    if firm_data:
+                        trading_rules = firm_data.get('trading_rules', [])
+                        for rule in trading_rules:
+                            if rule.get('type') == 'consistency':
+                                consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
+                            elif rule.get('type') == 'min_profitable_days':
+                                min_profit_days = rule.get('parameters', {}).get('min_days', 3)
+
+                    windows_total += 1
+                    net_window = sum(window_pnls.values())
+
+                    consistency_ok = best_day_pct <= consistency_limit
+                    min_days_ok = profitable_days >= min_profit_days
+
+                    if consistency_ok and min_days_ok and net_window > 0:
+                        windows_pass += 1
+                        payout = net_window * (profit_split / 100)
+                        window_profits.append(payout)
+
+                if windows_total > 0:
+                    pass_rate = windows_pass / windows_total * 100
+                    avg_payout = sum(window_profits) / len(window_profits) if window_profits else 0
+                    min_payout = min(window_profits) if window_profits else 0
+                    max_payout = max(window_profits) if window_profits else 0
+                    annual_est = avg_payout * (365 / 14)  # ~26 periods per year
+
+                    payout_frame = tk.Frame(card, bg="#f0f0ff", padx=8, pady=5)
+                    payout_frame.pack(fill="x", pady=(3, 0))
+
+                    if pass_rate > 0:
+                        payout_label = tk.Label(payout_frame,
+                                 text=f"💰 Payout: {pass_rate:.0f}% of periods pass | "
+                                      f"Avg: ${avg_payout:,.0f} | "
+                                      f"Min: ${min_payout:,.0f} | Max: ${max_payout:,.0f} | "
+                                      f"Annual est: ${annual_est:,.0f}",
+                                 bg="#f0f0ff", fg="#4a148c", font=("Segoe UI", 8, "bold"))
+                    else:
+                        payout_label = tk.Label(payout_frame,
+                                 text=f"💰 Payout: 0% of periods pass consistency — "
+                                      f"this strategy won't generate payouts",
+                                 bg="#f0f0ff", fg="#dc3545", font=("Segoe UI", 8, "bold"))
+
+                    payout_label.pack(anchor="w")
+
+                    # Add tooltip with detailed breakdown
+                    from shared.tooltip import add_tooltip
+                    add_tooltip(payout_label,
+                        f"Payout Estimation (14-day windows)\n\n"
+                        f"Windows tested: {windows_total}\n"
+                        f"Windows that pass all rules: {windows_pass} ({pass_rate:.0f}%)\n\n"
+                        f"Rules checked per window:\n"
+                        f"  • Consistency: best day < {consistency_limit}% of total\n"
+                        f"  • Min profitable days: {min_profit_days} days >= 0.5%\n"
+                        f"  • Net profit > 0\n\n"
+                        f"Payout amounts (your {profit_split}% share):\n"
+                        f"  Minimum: ${min_payout:,.0f}\n"
+                        f"  Average: ${avg_payout:,.0f}\n"
+                        f"  Maximum: ${max_payout:,.0f}\n\n"
+                        f"Annual estimate: ${annual_est:,.0f} "
+                        f"(~26 periods × ${avg_payout:,.0f})",
+                        wraplength=400)
+    except Exception as e:
+        # Silently skip if payout calculation fails
+        pass
 
     # What changed
     display_filters = {}
@@ -1066,7 +1295,7 @@ def _show_opt_results(candidates):
         for i, (cand, stats) in enumerate(filtered, 1):
             try:
                 _render_opt_card(cards_frame, i, cand, stats, dollar_per_pip,
-                                  acct, challenge_fee, profit_split)
+                                  acct, challenge_fee, profit_split, risk, firm_data)
             except Exception as e:
                 import traceback; traceback.print_exc()
                 err = tk.Frame(cards_frame, bg="#fff0f0", highlightbackground="#dc3545",
