@@ -813,6 +813,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 "rule_indices": combo["indices"],
                 "exit_strategy": exit_strat.describe(),
                 "exit_name":    exit_strat.name,
+                "exit_class":   type(exit_strat).__name__,
+                "exit_params":  exit_strat.params,
                 "stats":        stats,
                 "trades":       trades,
             }
@@ -866,13 +868,17 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
         result = {
             "rule_combo":      m["rule_combo"],
+            "rule_indices":    m.get("rule_indices", []),
+            "rules":           m.get("rules", []),
             "exit_strategy":   m["exit_strategy"],
             "exit_name":       m["exit_name"],
+            "exit_class":      m.get("exit_class", ""),
+            "exit_params":     m.get("exit_params", {}),
             "spread_pips":     spread_pips,
             "commission_pips": commission_pips,
             **m["stats"],
-            "trades": m["trades"],  # Include individual trades for prop firm testing
-            "breaches": breaches,   # Precomputed breach data
+            "trades": m["trades"],
+            "breaches": breaches,
         }
         summary.append(result)
 

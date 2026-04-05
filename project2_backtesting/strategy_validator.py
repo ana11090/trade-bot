@@ -84,7 +84,11 @@ def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size):
     if cls is None:
         raise ValueError(f"Unknown exit strategy class: {exit_strategy_class!r}")
     params = dict(exit_strategy_params or {})
-    params['pip_size'] = pip_size
+    # Only pass pip_size if the constructor accepts it
+    import inspect
+    sig = inspect.signature(cls.__init__)
+    if 'pip_size' in sig.parameters:
+        params['pip_size'] = pip_size
     return cls(**params)
 
 
@@ -113,20 +117,170 @@ def _compute_window_stats(trades):
     }
 
 
+def _compute_rich_window_stats(trades, account_size=100000, risk_per_trade_pct=1.0,
+                                default_sl_pips=150.0, pip_value_per_lot=10.0):
+    """Compute detailed stats for a walk-forward window: DD tracking, monthly profit,
+    trade frequency, payout estimation."""
+    base = _compute_window_stats(trades)
+    if not trades:
+        base.update({
+            'daily_dd_max_pct': 0.0,
+            'total_dd_max_pct': 0.0,
+            'dd_daily_touches': 0,
+            'dd_total_touches': 0,
+            'dd_recovered': True,
+            'monthly_profits': {},
+            'monthly_avg': 0.0,
+            'monthly_best': 0.0,
+            'monthly_worst': 0.0,
+            'months_green': 0,
+            'months_red': 0,
+            'trades_per_day_avg': 0.0,
+            'trades_per_day_min': 0,
+            'trades_per_day_max': 0,
+            'trading_days': 0,
+            'trades_per_month_avg': 0.0,
+            'trades_per_month_min': 0,
+            'trades_per_month_max': 0,
+            'trading_months': 0,
+            'min_payout_14d': 0.0,
+            'max_payout_14d': 0.0,
+        })
+        return base
+
+    import pandas as pd
+
+    # ── Lot size and dollar conversion ────────────────────────────────────────
+    lot_size = (account_size * risk_per_trade_pct / 100.0) / (default_sl_pips * pip_value_per_lot)
+    dollar_per_pip = pip_value_per_lot * lot_size
+
+    # ── Daily PnL and DD tracking ─────────────────────────────────────────────
+    daily_pnl = {}
+    for t in trades:
+        try:
+            day = str(pd.to_datetime(t.get('exit_time', t.get('entry_time', ''))).date())
+            pnl = (t.get('net_pips', 0) or 0) * dollar_per_pip
+            daily_pnl[day] = daily_pnl.get(day, 0) + pnl
+        except:
+            continue
+
+    days_sorted = sorted(daily_pnl.keys())
+    equity = account_size
+    peak = equity
+    max_daily_dd_pct = 0.0
+    max_total_dd_pct = 0.0
+    daily_dd_touches = 0  # times daily DD >= 4%
+    total_dd_touches = 0  # times total DD >= 8%
+    daily_start = equity
+
+    for day in days_sorted:
+        daily_start = equity  # reset daily start at beginning of day
+        equity += daily_pnl[day]
+        peak = max(peak, equity)
+
+        # Daily DD: loss from start of day
+        daily_dd = (daily_start - equity) / account_size * 100 if equity < daily_start else 0
+        max_daily_dd_pct = max(max_daily_dd_pct, daily_dd)
+        if daily_dd >= 4.0:
+            daily_dd_touches += 1
+
+        # Total DD: loss from peak
+        total_dd = (peak - equity) / account_size * 100 if equity < peak else 0
+        max_total_dd_pct = max(max_total_dd_pct, total_dd)
+        if total_dd >= 8.0:
+            total_dd_touches += 1
+
+    dd_recovered = equity >= peak * 0.98  # within 2% of peak = recovered
+
+    # ── Monthly profits ───────────────────────────────────────────────────────
+    monthly = {}
+    for day, pnl in daily_pnl.items():
+        month = day[:7]  # "2006-03"
+        monthly[month] = monthly.get(month, 0) + pnl
+
+    monthly_vals = list(monthly.values()) if monthly else [0]
+    months_green = sum(1 for v in monthly_vals if v > 0)
+    months_red = sum(1 for v in monthly_vals if v <= 0)
+
+    # ── Trades per day stats ──────────────────────────────────────────────────
+    trades_by_day = {}
+    for t in trades:
+        try:
+            day = str(pd.to_datetime(t.get('entry_time', '')).date())
+            trades_by_day[day] = trades_by_day.get(day, 0) + 1
+        except:
+            continue
+
+    day_counts = list(trades_by_day.values()) if trades_by_day else [0]
+    trading_days = len(trades_by_day)
+
+    # ── Trades per month ──────────────────────────────────────────────────────
+    trades_by_month = {}
+    for t in trades:
+        try:
+            month = str(pd.to_datetime(t.get('entry_time', '')).date())[:7]  # "2006-03"
+            trades_by_month[month] = trades_by_month.get(month, 0) + 1
+        except:
+            continue
+
+    month_counts = list(trades_by_month.values()) if trades_by_month else [0]
+
+    # ── Payout estimation (14-day windows) ────────────────────────────────────
+    window_payouts = []
+    if len(days_sorted) >= 5:
+        for start_i in range(0, len(days_sorted) - 3, 7):
+            start_day = pd.to_datetime(days_sorted[start_i])
+            window_pnl = 0
+            for d in days_sorted[start_i:]:
+                if (pd.to_datetime(d) - start_day).days >= 14:
+                    break
+                window_pnl += daily_pnl[d]
+            if window_pnl > 0:
+                window_payouts.append(window_pnl * 0.80)  # 80% split default
+
+    base.update({
+        'daily_dd_max_pct':   round(max_daily_dd_pct, 2),
+        'total_dd_max_pct':   round(max_total_dd_pct, 2),
+        'dd_daily_touches':   daily_dd_touches,
+        'dd_total_touches':   total_dd_touches,
+        'dd_recovered':       dd_recovered,
+        'monthly_profits':    {k: round(v, 2) for k, v in monthly.items()},
+        'monthly_avg':        round(sum(monthly_vals) / max(len(monthly_vals), 1), 0),
+        'monthly_best':       round(max(monthly_vals), 0),
+        'monthly_worst':      round(min(monthly_vals), 0),
+        'months_green':       months_green,
+        'months_red':         months_red,
+        'trades_per_day_avg': round(sum(day_counts) / max(len(day_counts), 1), 1),
+        'trades_per_day_min': min(day_counts),
+        'trades_per_day_max': max(day_counts),
+        'trading_days':       trading_days,
+        'trades_per_month_avg': round(sum(month_counts) / max(len(month_counts), 1), 1),
+        'trades_per_month_min': min(month_counts),
+        'trades_per_month_max': max(month_counts),
+        'trading_months':       len(trades_by_month),
+        'min_payout_14d':     round(min(window_payouts), 0) if window_payouts else 0.0,
+        'max_payout_14d':     round(max(window_payouts), 0) if window_payouts else 0.0,
+    })
+    return base
+
+
 def _trades_to_df(trades, risk_per_trade_pct=1.0, default_sl_pips=150.0,
                   pip_value_per_lot=10.0, account_size=100000):
-    """Convert trade list to DataFrame accepted by simulate_challenge."""
+    """Convert trade list to DataFrame accepted by simulate_challenge.
+
+    Includes 'Pips' column so _rescale_trades in the simulator can compute
+    dollar profit from pips directly — preventing double lot-size scaling.
+    """
     rows = []
     for t in trades:
         net_pips = t.get('net_pips', 0)
-        lot_size = (account_size * risk_per_trade_pct / 100.0) / (default_sl_pips * pip_value_per_lot)
-        profit = net_pips * pip_value_per_lot * lot_size
         rows.append({
             'Close Date': pd.to_datetime(t.get('exit_time', t.get('entry_time', '2020-01-01'))),
-            'Profit':     round(profit, 2),
+            'Pips':       float(net_pips),
+            'Profit':     0.0,  # placeholder — _rescale_trades will compute from Pips
         })
     if not rows:
-        return pd.DataFrame(columns=['Close Date', 'Profit'])
+        return pd.DataFrame(columns=['Close Date', 'Pips', 'Profit'])
     df = pd.DataFrame(rows)
     df = df.sort_values('Close Date').reset_index(drop=True)
     return df
@@ -149,6 +303,7 @@ def walk_forward_validate(
     commission_pips=0.0,
     account_size=100000,
     progress_callback=None,
+    custom_windows=None,
 ):
     """
     Walk-forward validation: train on N years, test on following M years,
@@ -193,10 +348,8 @@ def walk_forward_validate(
     data_start = all_dates.min()
     data_end   = all_dates.max()
 
-    # Build window schedule
-    # Each window: train [t, t+train_years), test [t+train_years, t+train_years+test_years)
-    # Slide by test_years each step
-    windows_schedule = []
+    # ── STEP 1: Build ALL auto sliding windows ────────────────────────────────
+    windows_schedule = []  # list of (train_start, train_end, test_start, test_end, is_custom)
     t = data_start
     while len(windows_schedule) < n_windows:
         train_start = t
@@ -205,8 +358,28 @@ def walk_forward_validate(
         test_end    = test_start + pd.DateOffset(years=test_years)
         if test_end > data_end + pd.DateOffset(days=1):
             break
-        windows_schedule.append((train_start, train_end, test_start, test_end))
+        windows_schedule.append((train_start, train_end, test_start, test_end, False))
         t += pd.DateOffset(years=test_years)
+
+    # ── STEP 2: ADD custom windows on top (never replace) ─────────────────────
+    if custom_windows:
+        for cw in custom_windows:
+            try:
+                ts = pd.to_datetime(f"{cw['train_start']}-01-01")
+                te = pd.to_datetime(f"{cw['train_end']}-12-31")
+                os_start = pd.to_datetime(f"{cw['test_year']}-01-01")
+                os_end = min(pd.to_datetime(f"{cw['test_year']}-12-31"),
+                             data_end + pd.DateOffset(days=1))
+                if ts >= data_start and os_start <= data_end:
+                    windows_schedule.append((ts, te, os_start, os_end, True))
+            except Exception as e:
+                print(f"  [WF] Skipping invalid custom window: {cw} — {e}")
+
+    # Sort all windows by test period start date
+    windows_schedule.sort(key=lambda w: w[2])
+
+    # Sort by test period start
+    windows_schedule.sort(key=lambda w: w[2])
 
     if not windows_schedule:
         return {
@@ -224,11 +397,12 @@ def walk_forward_validate(
     results_windows = []
     completed = 0
 
-    for i, (train_start, train_end, test_start, test_end) in enumerate(windows_schedule):
+    for i, (train_start, train_end, test_start, test_end, is_custom) in enumerate(windows_schedule):
         if _stop_flag.is_set():
             break
 
-        w_label = f"W{i+1}: Train {train_start.year}–{train_end.year-1}, Test {test_start.year}"
+        prefix = "★ CUSTOM" if is_custom else f"W{i+1}"
+        w_label = f"{prefix}: In-Sample {train_start.year}–{train_end.year-1}, Out-of-Sample {test_start.year}"
         if progress_callback:
             progress_callback(i, len(windows_schedule), f"Window {i+1}/{len(windows_schedule)}: backtesting in-sample...")
 
@@ -280,8 +454,8 @@ def walk_forward_validate(
             print(f"  [WF] Window {i+1} OUT-OF-SAMPLE ERROR: {e}")
             traceback.print_exc()
 
-        in_stats  = _compute_window_stats(in_trades)
-        out_stats = _compute_window_stats(out_trades)
+        in_stats  = _compute_rich_window_stats(in_trades, account_size)
+        out_stats = _compute_rich_window_stats(out_trades, account_size)
 
         in_wr  = in_stats['win_rate']
         out_wr = out_stats['win_rate']
@@ -308,6 +482,7 @@ def walk_forward_validate(
             'out_sample':   out_stats,
             'degradation':  round(degradation, 2),
             'edge_held':    edge_held,
+            'is_custom':    is_custom,
             'in_error':     in_error,
             'out_error':    out_error,
         })
@@ -320,29 +495,42 @@ def walk_forward_validate(
     if completed < 2:
         verdict = 'INSUFFICIENT_DATA'
     else:
-        out_wrs = [w['out_sample']['win_rate'] for w in results_windows]
-        degs    = [w['degradation'] for w in results_windows]
-        held    = [w['edge_held'] for w in results_windows]
+        # Check if walk-forward actually produced trades
+        total_in_trades  = sum(w['in_sample']['count'] for w in results_windows)
+        total_out_trades = sum(w['out_sample']['count'] for w in results_windows)
 
-        avg_out_wr      = float(np.mean(out_wrs))
-        avg_degradation = float(np.mean(degs))
-        edge_held_count = sum(held)
-        edge_held_ratio = edge_held_count / len(held)
-
-        if avg_out_wr >= 0.55 and avg_degradation > -15 and edge_held_ratio >= 0.60:
-            verdict = 'LIKELY_REAL'
-        elif avg_out_wr >= 0.50 and edge_held_ratio >= 0.40:
-            verdict = 'INCONCLUSIVE'
+        if total_in_trades == 0 and total_out_trades == 0:
+            verdict = 'INSUFFICIENT_DATA'
+        elif total_out_trades == 0:
+            verdict = 'INSUFFICIENT_DATA'
         else:
-            verdict = 'LIKELY_OVERFITTING'
+            out_wrs = [w['out_sample']['win_rate'] for w in results_windows]
+            degs    = [w['degradation'] for w in results_windows]
+            held    = [w['edge_held'] for w in results_windows]
+
+            avg_out_wr      = float(np.mean(out_wrs))
+            avg_degradation = float(np.mean(degs))
+            edge_held_count = sum(held)
+            edge_held_ratio = edge_held_count / len(held)
+
+            if avg_out_wr >= 0.55 and avg_degradation > -15 and edge_held_ratio >= 0.60:
+                verdict = 'LIKELY_REAL'
+            elif avg_out_wr >= 0.50 and edge_held_ratio >= 0.40:
+                verdict = 'INCONCLUSIVE'
+            else:
+                verdict = 'LIKELY_OVERFITTING'
 
     out_wrs_all = [w['out_sample']['win_rate'] for w in results_windows] if results_windows else [0.0]
     degs_all    = [w['degradation'] for w in results_windows] if results_windows else [0.0]
     held_all    = [w['edge_held'] for w in results_windows] if results_windows else []
+    total_in    = sum(w['in_sample']['count'] for w in results_windows) if results_windows else 0
+    total_out   = sum(w['out_sample']['count'] for w in results_windows) if results_windows else 0
 
     summary = {
         'verdict':           verdict,
         'windows_completed': completed,
+        'total_in_trades':   total_in,
+        'total_out_trades':  total_out,
         'avg_out_wr':        round(float(np.mean(out_wrs_all)), 4),
         'avg_degradation':   round(float(np.mean(degs_all)), 2),
         'edge_held_count':   sum(held_all),
@@ -419,9 +607,10 @@ def monte_carlo_test(
     except Exception as e:
         baseline_pass_rate = 0.0
 
-    # Shuffle simulations
-    pnl_values = list(trades_df['Profit'].values)
-    dates      = list(trades_df['Close Date'].values)
+    # Shuffle simulations — shuffle Pips, let simulator compute Profit
+    pips_values = list(trades_df['Pips'].values) if 'Pips' in trades_df.columns else list(trades_df['Profit'].values)
+    dates       = list(trades_df['Close Date'].values)
+    has_pips    = 'Pips' in trades_df.columns
     shuffled_rates = []
 
     for sim_i in range(n_simulations):
@@ -431,9 +620,12 @@ def monte_carlo_test(
             progress_callback(sim_i, n_simulations,
                               f"Monte Carlo: shuffle {sim_i}/{n_simulations}...")
 
-        shuffled_pnl = pnl_values[:]
-        random.shuffle(shuffled_pnl)
-        shuffled_df = pd.DataFrame({'Close Date': dates, 'Profit': shuffled_pnl})
+        shuffled_pips = pips_values[:]
+        random.shuffle(shuffled_pips)
+        if has_pips:
+            shuffled_df = pd.DataFrame({'Close Date': dates, 'Pips': shuffled_pips, 'Profit': 0.0})
+        else:
+            shuffled_df = pd.DataFrame({'Close Date': dates, 'Profit': shuffled_pips})
         shuffled_df = shuffled_df.sort_values('Close Date').reset_index(drop=True)
 
         try:
@@ -521,6 +713,7 @@ def slippage_stress_test(
     account_size=100000,
     n_runs_per_level=3,
     progress_callback=None,
+    filters=None,
 ):
     """
     Re-run the backtest at increasing slippage levels to find where the
@@ -591,12 +784,21 @@ def slippage_stress_test(
                     slippage_pips=float(slip_pips),
                     account_size=account_size,
                 )
+                # Apply filters if provided (max_trades_per_day, sessions, etc.)
+                if filters and run_trades:
+                    try:
+                        from project2_backtesting.strategy_refiner import apply_filters
+                        run_trades, _ = apply_filters(run_trades, filters)
+                    except Exception:
+                        pass
                 stats = compute_stats(run_trades)
                 level_wrs.append(stats['win_rate'])
                 level_avg_pips.append(stats['net_avg_pips'])
                 level_total_pips.append(stats['net_total_pips'])
-            except Exception:
-                pass
+            except Exception as e:
+                import traceback
+                print(f"  [SLIPPAGE] Level {slip_pips} pips, run {run_i+1} ERROR: {e}")
+                traceback.print_exc()
 
         if not level_wrs:
             continue

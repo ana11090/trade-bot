@@ -12,6 +12,7 @@ import sys
 import threading
 import json
 import re
+import re
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
@@ -35,6 +36,119 @@ GRADE_COLORS = {
     'F': "#e94560",
 }
 
+
+class _Tooltip:
+    """Scrollable hover tooltip for any Tkinter widget.
+    Shows on hover, stays open while mouse is over the tooltip itself,
+    and can be scrolled with mousewheel."""
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self._hide_id = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._schedule_hide)
+
+    def _show(self, event=None):
+        if self.tip_window:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+
+        # Calculate text height to decide if scrolling is needed
+        lines = self.text.count('\n') + 1
+        max_height = 300  # max pixel height before scroll kicks in
+
+        frame = tk.Frame(tw, bg="#333", padx=2, pady=2)
+        frame.pack(fill="both", expand=True)
+
+        if lines > 10:
+            # Scrollable version for long content
+            canvas = tk.Canvas(frame, bg="#333", highlightthickness=0,
+                               width=440, height=max_height)
+            scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+            scroll_frame = tk.Frame(canvas, bg="#333")
+
+            scroll_frame.bind("<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            # Mousewheel scrolling
+            def _on_mousewheel(e):
+                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+            def _on_mousewheel_linux_up(e):
+                canvas.yview_scroll(-3, "units")
+
+            def _on_mousewheel_linux_down(e):
+                canvas.yview_scroll(3, "units")
+
+            canvas.bind("<MouseWheel>", _on_mousewheel)
+            canvas.bind("<Button-4>", _on_mousewheel_linux_up)
+            canvas.bind("<Button-5>", _on_mousewheel_linux_down)
+            scroll_frame.bind("<MouseWheel>", _on_mousewheel)
+            scroll_frame.bind("<Button-4>", _on_mousewheel_linux_up)
+            scroll_frame.bind("<Button-5>", _on_mousewheel_linux_down)
+
+            label = tk.Label(scroll_frame, text=self.text, justify="left",
+                             bg="#333", fg="white", font=("Segoe UI", 9),
+                             padx=10, pady=6, wraplength=420)
+            label.pack(anchor="nw")
+            label.bind("<MouseWheel>", _on_mousewheel)
+            label.bind("<Button-4>", _on_mousewheel_linux_up)
+            label.bind("<Button-5>", _on_mousewheel_linux_down)
+        else:
+            # Simple version for short content (no scrollbar needed)
+            label = tk.Label(frame, text=self.text, justify="left",
+                             bg="#333", fg="white", font=("Segoe UI", 9),
+                             padx=10, pady=6, wraplength=420)
+            label.pack()
+
+        # Keep tooltip open when mouse moves over it
+        tw.bind("<Enter>", self._cancel_hide)
+        tw.bind("<Leave>", self._schedule_hide)
+
+        # Position: try to keep on screen
+        tw.update_idletasks()
+        screen_w = tw.winfo_screenwidth()
+        screen_h = tw.winfo_screenheight()
+        tip_w = tw.winfo_reqwidth()
+        tip_h = tw.winfo_reqheight()
+
+        if x + tip_w > screen_w:
+            x = screen_w - tip_w - 10
+        if y + tip_h > screen_h:
+            y = self.widget.winfo_rooty() - tip_h - 5
+
+        tw.wm_geometry(f"+{x}+{y}")
+
+    def _schedule_hide(self, event=None):
+        """Hide after a short delay — gives time to move mouse to the tooltip."""
+        if self._hide_id:
+            self.widget.after_cancel(self._hide_id)
+        self._hide_id = self.widget.after(300, self._hide)
+
+    def _cancel_hide(self, event=None):
+        """Cancel the scheduled hide — mouse entered the tooltip."""
+        if self._hide_id:
+            self.widget.after_cancel(self._hide_id)
+            self._hide_id = None
+
+    def _hide(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+        self._hide_id = None
+
+
 # ── Module-level state ────────────────────────────────────────────────────────
 _strategy_var   = None
 _strategies     = []
@@ -45,19 +159,21 @@ _firm_name_to_id = {}  # firm display name -> firm_id (for Monte Carlo)
 
 
 # Settings vars
-_train_var      = None
-_test_var       = None
-_windows_var    = None
-_sims_var       = None
-_mc_firm_var    = None
-_stage_var      = None
-_account_var    = None
-_spread_var     = None
-_comm_var       = None
-_risk_var       = None
-_sl_var         = None
-_pipval_var     = None
-_pip_size_var   = None
+_train_var          = None
+_test_var           = None
+_windows_var        = None
+_recent_first_var   = None
+_custom_windows_var = None
+_sims_var           = None
+_mc_firm_var        = None
+_stage_var          = None
+_account_var        = None
+_spread_var         = None
+_comm_var           = None
+_risk_var           = None
+_sl_var             = None
+_pipval_var         = None
+_pip_size_var       = None
 
 # Filter vars
 _filt_wr        = None
@@ -222,6 +338,59 @@ def _parse_exit_strategy(exit_name, exit_str):
     return 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}
 
 
+def _load_rules_from_report():
+    """Load WIN-prediction rules from Project 1 analysis_report.json."""
+    try:
+        report_path = os.path.join(project_root,
+            'project1_reverse_engineering', 'outputs', 'analysis_report.json')
+        with open(report_path, 'r', encoding='utf-8') as f:
+            report = json.load(f)
+        rules = report.get('rules', [])
+        return [r for r in rules if r.get('prediction') == 'WIN']
+    except Exception:
+        return []
+
+
+def _resolve_rules(r):
+    """Get rules for a strategy result — from saved data or by parsing rule_combo name."""
+    # 1) Check if rules are saved directly (future backtests will have this)
+    saved_rules = r.get('rules', [])
+    if saved_rules and len(saved_rules) > 0:
+        # Verify they actually have conditions (not just metadata)
+        if any(rule.get('conditions') for rule in saved_rules):
+            return saved_rules
+
+    # 2) Fallback: load from analysis_report.json and use rule_combo name to select
+    all_rules = _load_rules_from_report()
+    if not all_rules:
+        return []
+
+    # Check for saved rule_indices first
+    indices = r.get('rule_indices')
+    if indices is not None:
+        return [all_rules[i] for i in indices if i < len(all_rules)]
+
+    # Parse the rule_combo name to figure out which rules were used
+    combo_name = r.get('rule_combo', '')
+
+    if combo_name == 'All rules combined':
+        return all_rules
+
+    m = re.match(r'^Rule\s+(\d+)', combo_name)
+    if m:
+        idx = int(m.group(1)) - 1  # "Rule 1" → index 0
+        if 0 <= idx < len(all_rules):
+            return [all_rules[idx]]
+
+    m = re.match(r'^Top\s+(\d+)\s+rules', combo_name)
+    if m:
+        n = int(m.group(1))
+        return all_rules[:n]
+
+    # Unknown combo name — try all rules as fallback
+    return all_rules
+
+
 def _get_strategy_meta(idx):
     """Return (rules, exit_class, exit_params, trades, spread, commission) for strategy idx."""
     try:
@@ -229,18 +398,23 @@ def _get_strategy_meta(idx):
         with open(backtest_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         r = data['results'][idx]
-        rules = r.get('rules', [])
 
-        # Parse exit strategy from stored strings
-        exit_name = r.get('exit_name', '')
-        exit_str  = r.get('exit_strategy', '')
-        exit_class, exit_params = _parse_exit_strategy(exit_name, exit_str)
+        # Get rules — from saved data or from analysis_report.json
+        rules = _resolve_rules(r)
+
+        # Get exit strategy — from saved class/params or by parsing the description string
+        exit_class = r.get('exit_class', '')
+        exit_params = r.get('exit_params')
+        if not exit_class or exit_params is None:
+            exit_class, exit_params = _parse_exit_strategy(
+                r.get('exit_name', ''), r.get('exit_strategy', ''))
 
         trades     = r.get('trades', [])
         spread     = r.get('spread_pips', 2.5)
         commission = r.get('commission_pips', 0.0)
         return rules, exit_class, exit_params, trades, spread, commission
-    except Exception:
+    except Exception as e:
+        import traceback; traceback.print_exc()
         return [], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0
 
 
@@ -333,6 +507,13 @@ def _display_slip_results(slip_result):
     tk.Label(_slip_frame, text="Slippage Stress Test",
              font=("Segoe UI", 11, "bold"), bg=BG, fg=DARK).pack(anchor="w", padx=5, pady=(8, 4))
 
+    tk.Label(_slip_frame,
+             text="Tests how your strategy holds up when trade execution is worse than expected.\n"
+                  "Slippage = extra pips lost on each trade due to slow fills, requotes, or spread widening.\n"
+                  "A robust strategy stays profitable even at 3-5 pips of slippage.",
+             font=("Segoe UI", 8, "italic"), bg=BG, fg=GREY,
+             wraplength=600, justify="left").pack(anchor="w", padx=5, pady=(0, 6))
+
     if not slip_result or slip_result.get('verdict') == 'INSUFFICIENT_DATA':
         msg = slip_result.get('error', 'Not run.') if slip_result else 'Not run.'
         tk.Label(_slip_frame, text=msg,
@@ -357,6 +538,10 @@ def _display_slip_results(slip_result):
     # Level rows
     table_frame = tk.Frame(_slip_frame, bg=WHITE, padx=12, pady=4)
     table_frame.pack(fill="x", padx=5, pady=(0, 4))
+
+    # Get baseline (0 slippage) for comparison
+    baseline_tp = levels[0]['total_pips'] if levels else 1
+
     for lvl in levels:
         sp     = lvl['slippage_pips']
         wr     = lvl['win_rate']
@@ -364,8 +549,17 @@ def _display_slip_results(slip_result):
         tp     = lvl['total_pips']
         ok     = lvl['profitable']
         color  = GREEN if ok else RED
-        status = "profitable" if ok else "loss"
-        line   = (f"{sp:>8.1f}p  {wr:>9.1f}%  {ap:>+9.1f}  {tp:>+10.0f}  {status:>10}")
+        status = "✅ profit" if ok else "❌ loss"
+
+        # Show % change from baseline
+        if baseline_tp != 0 and sp > 0:
+            pct_change = (tp - baseline_tp) / abs(baseline_tp) * 100
+            change_str = f"{pct_change:+.0f}%"
+        else:
+            change_str = "baseline"
+
+        line = (f"  {sp:>5.1f} pips  │  WR {wr:>5.1f}%  │  avg {ap:>+7.1f}  │  "
+                f"total {tp:>+8.0f}  │  {change_str:>8}  │  {status}")
         tk.Label(table_frame, text=line,
                  font=("Consolas", 8), bg=WHITE, fg=color).pack(anchor="w")
 
@@ -396,6 +590,8 @@ def _display_wf_results(wf_result):
         w.destroy()
 
     windows = wf_result.get('windows', [])
+    if _recent_first_var and _recent_first_var.get():
+        windows = list(reversed(windows))
     summary = wf_result.get('summary', {})
 
     tk.Label(_wf_frame, text="Walk-Forward Results",
@@ -440,6 +636,10 @@ def _display_wf_results(wf_result):
             check        = "⚠️"
             deg_text     = f"{deg:+.1f}%"
 
+        # Custom windows get a golden border
+        if w.get('is_custom', False):
+            border_color = "#DAA520"  # gold
+
         card = tk.Frame(_wf_frame, bg=WHITE,
                         highlightbackground=border_color, highlightthickness=2,
                         padx=12, pady=8)
@@ -463,7 +663,129 @@ def _display_wf_results(wf_result):
                       f"avg {outs['avg_pips']:+.0f} pips  PF {outs['profit_factor']:.2f}",
                  font=("Consolas", 8), bg=WHITE, fg=DARK if outs['count'] > 0 else GREY).pack(anchor="w")
 
-        # Show errors if run_backtest crashed
+        # ── Side-by-side comparison table ─────────────────────────────────────
+        if ins['count'] > 0 or outs['count'] > 0:
+            cmp_frame = tk.Frame(card, bg="#f8f9fa", padx=6, pady=5)
+            cmp_frame.pack(fill="x", pady=(4, 0))
+
+            def _cmp_row(parent, icon, label, in_val, out_val,
+                         warn_fn=None, bg_color="#f8f9fa"):
+                """Add one comparison row: icon  label  IN_value  OUT_value.
+                in_val and out_val should be PRE-FORMATTED strings."""
+                row = tk.Frame(parent, bg=bg_color)
+                row.pack(fill="x")
+                tk.Label(row, text=f"  {icon} {label}",
+                         font=("Consolas", 8), bg=bg_color, fg="#555",
+                         width=24, anchor="w").pack(side=tk.LEFT)
+                tk.Label(row, text=str(in_val),
+                         font=("Consolas", 8), bg=bg_color, fg="#555",
+                         width=16, anchor="e").pack(side=tk.LEFT)
+                out_color = "#555"
+                if warn_fn and out_val:
+                    try:
+                        out_color = warn_fn(out_val)
+                    except:
+                        pass
+                tk.Label(row, text=str(out_val),
+                         font=("Consolas", 8), bg=bg_color, fg=out_color,
+                         width=16, anchor="e").pack(side=tk.LEFT)
+
+            # Header
+            hdr = tk.Frame(cmp_frame, bg="#e8ecf0")
+            hdr.pack(fill="x")
+            tk.Label(hdr, text="",
+                     font=("Consolas", 8, "bold"), bg="#e8ecf0",
+                     width=24, anchor="w").pack(side=tk.LEFT)
+            tk.Label(hdr, text="IN-SAMPLE",
+                     font=("Consolas", 8, "bold"), bg="#e8ecf0", fg="#667eea",
+                     width=16, anchor="e").pack(side=tk.LEFT)
+            tk.Label(hdr, text="OUT-OF-SAMPLE",
+                     font=("Consolas", 8, "bold"), bg="#e8ecf0", fg="#2d8a4e",
+                     width=16, anchor="e").pack(side=tk.LEFT)
+
+            # ── Section: Drawdown ─────────────────────────────────────────────
+            dd_warn = lambda v: "#e94560" if float(v.replace('%','')) >= 8 else (
+                "#e67e00" if float(v.replace('%','')) >= 5 else "#2d8a4e")
+
+            _cmp_row(cmp_frame, "📊", "Max daily DD",
+                f"{ins.get('daily_dd_max_pct', 0):.1f}%",
+                f"{outs.get('daily_dd_max_pct', 0):.1f}%",
+                warn_fn=dd_warn)
+
+            _cmp_row(cmp_frame, "📊", "Max total DD",
+                f"{ins.get('total_dd_max_pct', 0):.1f}%",
+                f"{outs.get('total_dd_max_pct', 0):.1f}%",
+                warn_fn=dd_warn)
+
+            _cmp_row(cmp_frame, "🔴", "DD touches (daily/total)",
+                f"{ins.get('dd_daily_touches', 0)} / {ins.get('dd_total_touches', 0)}",
+                f"{outs.get('dd_daily_touches', 0)} / {outs.get('dd_total_touches', 0)}")
+
+            in_rec = "✅ yes" if ins.get('dd_recovered', True) else "❌ no"
+            out_rec = "✅ yes" if outs.get('dd_recovered', True) else "❌ no"
+            _cmp_row(cmp_frame, "🔄", "DD recovered", in_rec, out_rec)
+
+            # ── Section: Daily trade frequency ────────────────────────────────
+            _cmp_row(cmp_frame, "📅", "Trades/day avg",
+                f"{ins.get('trades_per_day_avg', 0):.1f}",
+                f"{outs.get('trades_per_day_avg', 0):.1f}")
+
+            _cmp_row(cmp_frame, "📅", "Trades/day min",
+                f"{ins.get('trades_per_day_min', 0)}",
+                f"{outs.get('trades_per_day_min', 0)}")
+
+            _cmp_row(cmp_frame, "📅", "Trades/day max",
+                f"{ins.get('trades_per_day_max', 0)}",
+                f"{outs.get('trades_per_day_max', 0)}")
+
+            _cmp_row(cmp_frame, "📅", "Trading days",
+                f"{ins.get('trading_days', 0)}",
+                f"{outs.get('trading_days', 0)}")
+
+            # ── Section: Monthly trade frequency ──────────────────────────────
+            _cmp_row(cmp_frame, "📆", "Trades/month avg",
+                f"{ins.get('trades_per_month_avg', 0):.1f}",
+                f"{outs.get('trades_per_month_avg', 0):.1f}")
+
+            _cmp_row(cmp_frame, "📆", "Trades/month min",
+                f"{ins.get('trades_per_month_min', 0)}",
+                f"{outs.get('trades_per_month_min', 0)}")
+
+            _cmp_row(cmp_frame, "📆", "Trades/month max",
+                f"{ins.get('trades_per_month_max', 0)}",
+                f"{outs.get('trades_per_month_max', 0)}")
+
+            _cmp_row(cmp_frame, "📆", "Trading months",
+                f"{ins.get('trading_months', 0)}",
+                f"{outs.get('trading_months', 0)}")
+
+            # ── Section: Payout ───────────────────────────────────────────────
+            _cmp_row(cmp_frame, "💰", "Payout 14d min",
+                f"${ins.get('min_payout_14d', 0):,.0f}",
+                f"${outs.get('min_payout_14d', 0):,.0f}")
+
+            _cmp_row(cmp_frame, "💰", "Payout 14d max",
+                f"${ins.get('max_payout_14d', 0):,.0f}",
+                f"${outs.get('max_payout_14d', 0):,.0f}")
+
+            # ── Section: Monthly profit ───────────────────────────────────────
+            _cmp_row(cmp_frame, "📈", "Monthly profit avg",
+                f"${ins.get('monthly_avg', 0):,.0f}",
+                f"${outs.get('monthly_avg', 0):,.0f}")
+
+            _cmp_row(cmp_frame, "📈", "Monthly profit best",
+                f"${ins.get('monthly_best', 0):,.0f}",
+                f"${outs.get('monthly_best', 0):,.0f}")
+
+            _cmp_row(cmp_frame, "📈", "Monthly profit worst",
+                f"${ins.get('monthly_worst', 0):,.0f}",
+                f"${outs.get('monthly_worst', 0):,.0f}")
+
+            _cmp_row(cmp_frame, "📈", "Months green / red",
+                f"{ins.get('months_green', 0)} / {ins.get('months_red', 0)}",
+                f"{outs.get('months_green', 0)} / {outs.get('months_red', 0)}")
+
+        # ── Errors ────────────────────────────────────────────────────────────
         if in_err:
             tk.Label(card, text=f"  ⚠ IN error: {in_err}",
                      font=("Consolas", 8), bg=WHITE, fg=RED).pack(anchor="w")
@@ -496,6 +818,29 @@ def _display_wf_results(wf_result):
              bg="#f0f8ff",
              fg=verdict_colors.get(verdict, GREY)).pack(anchor="w")
 
+    # Show date coverage
+    if windows:
+        first_test = windows[0].get('test_start', '?')
+        last_test = windows[-1].get('test_end', '?')
+        tk.Label(sum_card,
+            text=f"Coverage: {first_test} to {last_test}  |  {len(windows)} windows",
+            font=("Segoe UI", 8), bg="#f0f8ff", fg=GREY).pack(anchor="w", pady=(2, 0))
+
+        # Count how many windows had DD issues
+        dd_warnings = sum(1 for w in windows
+                         if w['out_sample'].get('total_dd_max_pct', 0) >= 8)
+        if dd_warnings > 0:
+            tk.Label(sum_card,
+                text=f"⚠ {dd_warnings}/{len(windows)} windows had total DD ≥ 8%",
+                font=("Segoe UI", 8, "bold"), bg="#f0f8ff", fg="#e94560").pack(anchor="w")
+        no_recover = sum(1 for w in windows
+                         if not w['out_sample'].get('dd_recovered', True)
+                         and w['out_sample']['count'] > 0)
+        if no_recover > 0:
+            tk.Label(sum_card,
+                text=f"⚠ {no_recover}/{len(windows)} windows did not recover from drawdown",
+                font=("Segoe UI", 8, "bold"), bg="#f0f8ff", fg="#e94560").pack(anchor="w")
+
 
 def _display_mc_results(mc_result):
     if _mc_frame is None:
@@ -514,7 +859,9 @@ def _display_mc_results(mc_result):
 
     hist = mc_result.get('histogram', [])
     n_sims = mc_result.get('n_simulations', 0)
-    firm_id = mc_result.get('firm_id', '?').upper()
+    firm_id_raw = mc_result.get('firm_id', '?')
+    # Show the display name, not the internal ID
+    firm_display = _mc_firm_var.get() if _mc_firm_var else firm_id_raw.upper()
     baseline = mc_result.get('baseline_pass_rate', 0) * 100
     mean_pr  = mc_result.get('mean_pass_rate', 0) * 100
     p5_pr    = mc_result.get('p5_pass_rate', 0) * 100
@@ -524,7 +871,7 @@ def _display_mc_results(mc_result):
     header_card = tk.Frame(_mc_frame, bg=WHITE, padx=12, pady=8)
     header_card.pack(fill="x", padx=5, pady=(0, 4))
     tk.Label(header_card,
-             text=f"Pass Rate Distribution ({n_sims} shuffles, {firm_id}):",
+             text=f"Pass Rate Distribution ({n_sims} shuffles, {firm_display}):",
              font=("Segoe UI", 9, "bold"), bg=WHITE, fg=DARK).pack(anchor="w")
 
     # Text histogram
@@ -573,15 +920,28 @@ def _show_estimation(trades, parent_frame):
         acct = 100000
         firm_name = ""
 
-    risk = 1.0
-    pip_value = 10.0
-    sl_pips = 150
+    # Read settings from the panel (not hardcoded)
+    try:
+        risk = float(_risk_var.get()) if _risk_var else 1.0
+        pip_value = float(_pipval_var.get()) if _pipval_var else 10.0
+        sl_pips = float(_sl_var.get()) if _sl_var else 150.0
+    except:
+        risk = 1.0
+        pip_value = 10.0
+        sl_pips = 150.0
+
     lot_size = (acct * risk / 100) / (sl_pips * pip_value)
     dollar_per_pip = pip_value * lot_size
 
-    # Load firm data
+    # ── Load firm data — find the right challenge by matching account size ─────
     firm_data = None
     profit_split = 80
+    challenge_name = "?"
+    profit_target_pct = 6.0
+    total_dd_limit = 10.0
+    daily_dd_limit = 5.0
+    phase_name = "Evaluation"
+
     try:
         import glob
         prop_dir = os.path.join(project_root, 'prop_firms')
@@ -590,11 +950,37 @@ def _show_estimation(trades, parent_frame):
                 fd = json.load(f)
             if fd.get('firm_name') == firm_name:
                 firm_data = fd
-                profit_split = fd['challenges'][0].get('funded', {}).get('profit_split_pct', 80)
+
+                # Find the challenge that has this account size
+                best_challenge = fd['challenges'][0]  # fallback to first
+                for ch in fd.get('challenges', []):
+                    sizes = ch.get('account_sizes', [])
+                    if int(acct) in sizes:
+                        best_challenge = ch
+                        break
+
+                challenge_name = best_challenge.get('challenge_name', '?')
+                profit_split = best_challenge.get('funded', {}).get('profit_split_pct', 80)
+
+                # Get phase data for evaluation
+                phases = best_challenge.get('phases', [])
+                if phases:
+                    phase = phases[0]
+                    phase_name = phase.get('phase_name', 'Evaluation')
+                    profit_target_pct = phase.get('profit_target_pct', 6.0)
+                    total_dd_limit = phase.get('max_total_drawdown_pct', 10.0)
+                    daily_dd_limit = phase.get('max_daily_drawdown_pct', 5.0) or 5.0
+
+                # For funded stage, get DD from funded section
+                if stage == "funded":
+                    funded = best_challenge.get('funded', {})
+                    total_dd_limit = funded.get('max_total_drawdown_pct', total_dd_limit)
+
                 break
     except:
-        pass
+        import traceback; traceback.print_exc()
 
+    # ── Build daily PnL ───────────────────────────────────────────────────────
     import pandas as pd
     daily_pnls = {}
     for t in trades:
@@ -610,19 +996,32 @@ def _show_estimation(trades, parent_frame):
 
     days_sorted = sorted(daily_pnls.keys())
 
+    # ── Frame ─────────────────────────────────────────────────────────────────
     est_frame = tk.LabelFrame(parent_frame,
         text="💰 Payout Estimation" if stage == "funded" else "🎯 Eval Target Estimation",
         font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#4a148c" if stage == "funded" else "#e65100",
         padx=10, pady=8)
     est_frame.pack(fill="x", padx=5, pady=(10, 5))
 
-    # Add source disclaimer
+    # Show settings being used
+    settings_lbl = tk.Label(est_frame,
+        text=f"Firm: {firm_name or 'default'}  |  Challenge: {challenge_name}  |  "
+             f"Account: ${acct:,.0f}  |  Risk: {risk}%  |  Lot: {lot_size:.2f}",
+        bg=WHITE, fg="#999", font=("Segoe UI", 8))
+    settings_lbl.pack(anchor="w", pady=(0, 2))
+    _Tooltip(settings_lbl,
+        "These settings determine lot size and dollar-per-pip.\n"
+        "Change them in the Settings section above.\n"
+        f"Lot size = (${acct:,.0f} × {risk}%) ÷ ({sl_pips:.0f} SL × ${pip_value} pip value) = {lot_size:.3f}")
+
+    # Disclaimer
     tk.Label(est_frame,
-        text="Based on in-sample backtest trades — validate with walk-forward first",
+        text="⚠ Based on in-sample backtest trades — validate with walk-forward first",
         bg=WHITE, fg=AMBER, font=("Segoe UI", 8, "italic")).pack(anchor="w", pady=(0, 4))
 
+    # ══════════════════════════════════════════════════════════════════════════
     if stage == "funded":
-        # Payout estimation — 14-day windows
+        # ── FUNDED: Payout estimation ─────────────────────────────────────────
         consistency_limit = 20
         min_profit_days_req = 3
         min_day_threshold = acct * 0.005
@@ -633,6 +1032,20 @@ def _show_estimation(trades, parent_frame):
                     consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
                 elif rule.get('type') == 'min_profitable_days':
                     min_profit_days_req = rule.get('parameters', {}).get('min_days', 3)
+
+        rules_lbl = tk.Label(est_frame,
+            text=f"📋 Funded rules: {profit_split}% profit split  |  "
+                 f"consistency: best day ≤{consistency_limit}% of total  |  "
+                 f"min {min_profit_days_req} profitable days  |  "
+                 f"max DD: {total_dd_limit}%",
+            bg=WHITE, fg="#555", font=("Segoe UI", 9))
+        rules_lbl.pack(anchor="w", pady=(0, 6))
+        _Tooltip(rules_lbl,
+            f"Payout rules from {firm_name}:\n"
+            f"• You keep {profit_split}% of profits\n"
+            f"• No single day can be more than {consistency_limit}% of total profit\n"
+            f"• Need at least {min_profit_days_req} profitable days per payout window\n"
+            f"• Account blows if total DD reaches {total_dd_limit}%")
 
         windows_total = 0
         windows_pass = 0
@@ -671,77 +1084,177 @@ def _show_estimation(trades, parent_frame):
             max_p = max(window_profits)
             annual = avg_p * (365 / 14)
 
-            tk.Label(est_frame,
-                text=f"Pass rate: {pr:.0f}% of 14-day periods  |  "
-                     f"Avg payout: ${avg_p:,.0f}  |  Min: ${min_p:,.0f}  |  Max: ${max_p:,.0f}",
-                bg=WHITE, fg="#333", font=("Segoe UI", 10)).pack(anchor="w")
-            tk.Label(est_frame,
-                text=f"Annual estimate: ${annual:,.0f}  |  "
-                     f"Consistency: {consistency_limit}% rule  |  "
-                     f"Min profitable days: {min_profit_days_req}  |  "
-                     f"Split: {profit_split}%",
-                bg=WHITE, fg="#666", font=("Segoe UI", 9)).pack(anchor="w")
+            pr_lbl = tk.Label(est_frame,
+                text=f"✅ Pass rate: {pr:.0f}% of {windows_total} payout periods",
+                bg=WHITE, fg="#2d8a4e" if pr >= 60 else "#e67e00",
+                font=("Segoe UI", 10, "bold"))
+            pr_lbl.pack(anchor="w")
+            _Tooltip(pr_lbl,
+                f"We simulate {windows_total} consecutive 14-day payout windows.\n"
+                f"{windows_pass} of them pass all the rules (consistency, min days, positive P&L).\n"
+                f"Pass rate = {windows_pass}/{windows_total} = {pr:.0f}%")
+
+            pay_lbl = tk.Label(est_frame,
+                text=f"💰 Payout per period: min ${min_p:,.0f}  |  avg ${avg_p:,.0f}  |  max ${max_p:,.0f}",
+                bg=WHITE, fg="#333", font=("Segoe UI", 9))
+            pay_lbl.pack(anchor="w", pady=(2, 0))
+            _Tooltip(pay_lbl,
+                f"From the {len(window_profits)} passing windows:\n"
+                f"• Smallest payout: ${min_p:,.0f}\n"
+                f"• Average payout: ${avg_p:,.0f}\n"
+                f"• Largest payout: ${max_p:,.0f}\n"
+                f"Payouts = net profit × {profit_split}% split")
+
+            ann_lbl = tk.Label(est_frame,
+                text=f"📅 Annual estimate: ${annual:,.0f}  ({365//14} periods × ${avg_p:,.0f} avg)",
+                bg=WHITE, fg="#666", font=("Segoe UI", 9))
+            ann_lbl.pack(anchor="w", pady=(2, 0))
+            _Tooltip(ann_lbl,
+                f"If every 14-day period pays the average (${avg_p:,.0f}):\n"
+                f"~{365//14} periods per year × ${avg_p:,.0f} = ${annual:,.0f}/year\n"
+                f"This is optimistic — only {pr:.0f}% of periods pass the rules.")
         else:
             tk.Label(est_frame,
-                text="0% of periods pass payout rules — strategy won't generate payouts",
+                text=f"0% of payout periods pass — strategy won't generate payouts under current rules",
                 bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
 
     else:
-        # Evaluation: days to reach target
-        profit_target_pct = 6.0
-        total_dd_limit = 10.0
-        try:
-            if firm_data:
-                phases = firm_data['challenges'][0].get('phases', [])
-                if phases:
-                    profit_target_pct = phases[0].get('profit_target_pct', 6.0)
-                    total_dd_limit = phases[0].get('max_total_drawdown_pct', 10.0)
-        except:
-            pass
-
+        # ── EVALUATION: Days to reach profit target ───────────────────────────
         target_dollars = acct * (profit_target_pct / 100)
+        total_dd_dollars = acct * (total_dd_limit / 100)
+        daily_dd_dollars = acct * (daily_dd_limit / 100)
+
+        rules_lbl = tk.Label(est_frame,
+            text=f"📋 {phase_name}: make {profit_target_pct}% (${target_dollars:,.0f}) profit  "
+                 f"without losing {daily_dd_limit}% in a day (${daily_dd_dollars:,.0f}) "
+                 f"or {total_dd_limit}% total (${total_dd_dollars:,.0f})",
+            bg=WHITE, fg="#555", font=("Segoe UI", 9), wraplength=600, justify="left")
+        rules_lbl.pack(anchor="w", pady=(0, 6))
+        _Tooltip(rules_lbl,
+            f"Evaluation rules from {firm_name} — {challenge_name}:\n"
+            f"• Profit target: {profit_target_pct}% of ${acct:,.0f} = ${target_dollars:,.0f}\n"
+            f"• Max daily drawdown: {daily_dd_limit}% = ${daily_dd_dollars:,.0f} loss in one day\n"
+            f"• Max total drawdown: {total_dd_limit}% = ${total_dd_dollars:,.0f} total loss from peak\n"
+            f"You pass by reaching the target before hitting either DD limit.")
+
+        # Simulate attempts
         days_to_target = []
-        blown_count = 0
+        blown_daily = 0
+        blown_total = 0
         total_attempts = 0
 
         for start_i in range(0, len(days_sorted) - 5, 7):
             running = 0
             day_count = 0
-            reached = False
             total_attempts += 1
 
             for d in days_sorted[start_i:]:
-                running += daily_pnls[d]
+                day_pnl = daily_pnls[d]
+                running += day_pnl
                 day_count += 1
+
                 if running >= target_dollars:
                     days_to_target.append(day_count)
-                    reached = True
-                    break
-                if running < -(acct * total_dd_limit / 100):
-                    blown_count += 1
                     break
 
-        if days_to_target:
-            pass_rate = len(days_to_target) / max(total_attempts, 1) * 100
-            avg_d = sum(days_to_target) / len(days_to_target)
-            blow_rate = blown_count / max(total_attempts, 1) * 100
+                # Daily DD: single day loss exceeds limit
+                if day_pnl < 0 and abs(day_pnl) >= daily_dd_dollars:
+                    blown_daily += 1
+                    break
 
+                # Total DD: cumulative loss from start exceeds limit
+                if running < 0 and abs(running) >= total_dd_dollars:
+                    blown_total += 1
+                    break
+
+        if total_attempts == 0:
             tk.Label(est_frame,
-                text=f"Pass rate: {pass_rate:.0f}%  |  "
-                     f"Avg days to {profit_target_pct}%: {avg_d:.0f}  |  "
-                     f"Fastest: {min(days_to_target)}  |  Slowest: {max(days_to_target)}",
-                bg=WHITE, fg="#333", font=("Segoe UI", 10)).pack(anchor="w")
-            tk.Label(est_frame,
-                text=f"Blow rate: {blow_rate:.0f}%  |  "
-                     f"Target: ${target_dollars:,.0f}  |  "
-                     f"Expected attempts: {100/max(pass_rate,1):.1f}",
-                bg=WHITE, fg="#666", font=("Segoe UI", 9)).pack(anchor="w")
-        else:
-            tk.Label(est_frame,
-                text=f"0% pass rate — never reaches {profit_target_pct}% target",
+                text="Not enough data to simulate evaluation attempts",
                 bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
+        elif days_to_target:
+            pass_rate = len(days_to_target) / total_attempts * 100
+            avg_d = sum(days_to_target) / len(days_to_target)
+            total_blown = blown_daily + blown_total
+            blow_rate = total_blown / total_attempts * 100
 
-    # Update scroll region to show new content
+            # Pass rate
+            pr_lbl = tk.Label(est_frame,
+                text=f"✅ Pass rate: {pass_rate:.0f}% of {total_attempts} simulated attempts",
+                bg=WHITE, fg="#2d8a4e" if pass_rate >= 80 else "#e67e00",
+                font=("Segoe UI", 10, "bold"))
+            pr_lbl.pack(anchor="w")
+            _Tooltip(pr_lbl,
+                f"We start a simulated evaluation at {total_attempts} different points\n"
+                f"in your backtest data (every 7 trading days).\n\n"
+                f"Each attempt trades until it either:\n"
+                f"  ✅ Reaches ${target_dollars:,.0f} profit ({profit_target_pct}%)\n"
+                f"  💥 Hits the daily DD limit (${daily_dd_dollars:,.0f})\n"
+                f"  💥 Hits the total DD limit (${total_dd_dollars:,.0f})\n\n"
+                f"Result: {len(days_to_target)} passed, {total_blown} blown = {pass_rate:.0f}% pass rate")
+
+            # Days to target
+            days_lbl = tk.Label(est_frame,
+                text=f"📅 Trading days to reach ${target_dollars:,.0f} target: "
+                     f"avg {avg_d:.0f}  |  fastest {min(days_to_target)}  |  slowest {max(days_to_target)}",
+                bg=WHITE, fg="#333", font=("Segoe UI", 9))
+            days_lbl.pack(anchor="w", pady=(2, 0))
+            _Tooltip(days_lbl,
+                f"Of the {len(days_to_target)} successful attempts:\n"
+                f"• Average: {avg_d:.0f} trading days to make ${target_dollars:,.0f}\n"
+                f"• Fastest: reached target in just {min(days_to_target)} trading day(s)\n"
+                f"• Slowest: took {max(days_to_target)} trading days\n\n"
+                f"These are TRADING days (when the bot trades), not calendar days.")
+
+            # Blow details
+            if total_blown > 0:
+                blow_lbl = tk.Label(est_frame,
+                    text=f"💥 Blow rate: {blow_rate:.0f}%  —  "
+                         f"{blown_daily} from daily DD (≥{daily_dd_limit}%)  |  "
+                         f"{blown_total} from total DD (≥{total_dd_limit}%)",
+                    bg=WHITE, fg="#e94560" if blow_rate > 10 else "#e67e00",
+                    font=("Segoe UI", 9))
+                blow_lbl.pack(anchor="w", pady=(2, 0))
+                _Tooltip(blow_lbl,
+                    f"Out of {total_attempts} attempts, {total_blown} failed:\n"
+                    f"• {blown_daily} blew the daily DD limit ({daily_dd_limit}% = ${daily_dd_dollars:,.0f})\n"
+                    f"  → a single trading day lost more than ${daily_dd_dollars:,.0f}\n"
+                    f"• {blown_total} blew the total DD limit ({total_dd_limit}% = ${total_dd_dollars:,.0f})\n"
+                    f"  → cumulative losses exceeded ${total_dd_dollars:,.0f}")
+            else:
+                blow_lbl = tk.Label(est_frame,
+                    text=f"💥 Blow rate: 0% — no attempts hit any DD limit",
+                    bg=WHITE, fg="#2d8a4e", font=("Segoe UI", 9))
+                blow_lbl.pack(anchor="w", pady=(2, 0))
+                _Tooltip(blow_lbl,
+                    f"None of the {total_attempts} simulated attempts hit the drawdown limits.\n"
+                    f"Daily limit: {daily_dd_limit}% (${daily_dd_dollars:,.0f})\n"
+                    f"Total limit: {total_dd_limit}% (${total_dd_dollars:,.0f})")
+
+            # Expected attempts
+            if pass_rate < 100:
+                expected = 100 / max(pass_rate, 1)
+                att_lbl = tk.Label(est_frame,
+                    text=f"🔄 Expected attempts to pass: {expected:.1f}",
+                    bg=WHITE, fg="#666", font=("Segoe UI", 8))
+                att_lbl.pack(anchor="w", pady=(2, 0))
+                _Tooltip(att_lbl,
+                    f"With a {pass_rate:.0f}% pass rate, on average you'd need\n"
+                    f"{expected:.1f} attempts before passing.\n\n"
+                    f"If you fail (hit a DD limit), you restart the evaluation\n"
+                    f"from scratch with a fresh ${acct:,.0f} account.")
+        else:
+            blow_rate = (blown_daily + blown_total) / max(total_attempts, 1) * 100
+            tk.Label(est_frame,
+                text=f"❌ 0% pass rate — never reaches {profit_target_pct}% target "
+                     f"(${target_dollars:,.0f})",
+                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+            if blown_daily > 0 or blown_total > 0:
+                tk.Label(est_frame,
+                    text=f"💥 {blown_daily} daily DD blows + {blown_total} total DD blows "
+                         f"out of {total_attempts} attempts",
+                    bg=WHITE, fg="#e94560", font=("Segoe UI", 9)).pack(anchor="w")
+
+    # Update scroll region
     if _scroll_canvas:
         try:
             parent_frame.update_idletasks()
@@ -833,20 +1346,20 @@ def _display_verdict(combined, trades=None):
               bg=GREY, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT)
 
-    # Show stage-aware estimation ONLY if walk-forward shows a real edge
+    # Show estimation ONLY if walk-forward found real data
     wf_verdict = verdicts.get('walk_forward', 'N/A')
-    if trades and wf_verdict not in ('LIKELY_OVERFITTING', 'N/A', 'INSUFFICIENT_DATA'):
+    if trades and wf_verdict in ('LIKELY_REAL', 'INCONCLUSIVE'):
         _show_estimation(trades, _verdict_frame)
-    elif trades and wf_verdict == 'LIKELY_OVERFITTING':
+    elif trades and wf_verdict in ('LIKELY_OVERFITTING', 'INSUFFICIENT_DATA', 'N/A'):
+        reason = ("Walk-forward had no trade data — cannot evaluate."
+                  if wf_verdict == 'INSUFFICIENT_DATA'
+                  else "Walk-forward indicates overfitting — in-sample results unreliable.")
         warn_frame = tk.LabelFrame(_verdict_frame,
             text="🎯 Estimation Suppressed",
             font=("Segoe UI", 10, "bold"), bg=WHITE, fg=RED,
             padx=10, pady=8)
         warn_frame.pack(fill="x", padx=5, pady=(10, 5))
-        tk.Label(warn_frame,
-            text="Walk-forward validation indicates overfitting.\n"
-                 "Estimation is hidden because in-sample results are unreliable.\n"
-                 "Go back to the Refiner and improve the strategy before estimating payouts.",
+        tk.Label(warn_frame, text=reason + "\nImprove the strategy before estimating payouts.",
             bg=WHITE, fg="#666", font=("Segoe UI", 9), wraplength=550,
             justify="left").pack(anchor="w")
 
@@ -994,6 +1507,27 @@ def _run(mode, override_idx=None, done_event=None):
             mc_result   = None
             slip_result = None
 
+            # Parse custom windows if specified
+            custom_windows_str = _custom_windows_var.get().strip() if _custom_windows_var else ""
+            custom_windows = None
+            if custom_windows_str:
+                custom_windows = []
+                for part in custom_windows_str.split(','):
+                    part = part.strip()
+                    if '>' in part:
+                        train_part, test_part = part.split('>', 1)
+                        train_part = train_part.strip()
+                        test_part = test_part.strip()
+                        if '-' in train_part:
+                            t_start, t_end = train_part.split('-', 1)
+                            custom_windows.append({
+                                'train_start': t_start.strip(),
+                                'train_end': t_end.strip(),
+                                'test_year': test_part.strip(),
+                            })
+                if custom_windows:
+                    print(f"[VALIDATOR] {len(custom_windows)} custom window(s) will be ADDED to auto windows")
+
             if mode in ('wf', 'full') and candles_path:
                 wf_result = walk_forward_validate(
                     rules=rules,
@@ -1007,6 +1541,7 @@ def _run(mode, override_idx=None, done_event=None):
                     spread_pips=spread_pips,
                     commission_pips=comm_pips,
                     account_size=account_size,
+                    custom_windows=custom_windows,
                     progress_callback=_make_progress_cb("Walk-Forward"),
                 )
                 state.window.after(0, lambda r=wf_result: _display_wf_results(r))
@@ -1038,6 +1573,7 @@ def _run(mode, override_idx=None, done_event=None):
                     account_size=account_size,
                     n_runs_per_level=3,
                     progress_callback=_make_progress_cb("Slippage Test"),
+                    filters=None,  # TODO: pass filters from strategy metadata when available
                 )
                 state.window.after(0, lambda r=slip_result: _display_slip_results(r))
 
@@ -1080,11 +1616,12 @@ def _run(mode, override_idx=None, done_event=None):
 def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _prev_result_lbl
     global _tree, _selected_count
-    global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var, _stage_var
+    global _train_var, _test_var, _windows_var, _recent_first_var, _custom_windows_var, _sims_var, _mc_firm_var, _stage_var
     global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var, _pip_size_var
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
     global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
+    global _firm_name_to_id
 
     _load_strategies()
 
@@ -1404,7 +1941,23 @@ def build_panel(parent):
              bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
     _train_var   = _field(wf_row, "Train years:", "3", 4)
     _test_var    = _field(wf_row, "Test years:", "1", 4)
-    _windows_var = _field(wf_row, "Windows:", "4", 4)
+    _windows_var = _field(wf_row, "Windows:", "20", 4)
+    _recent_first_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(wf_row, text="Recent first", variable=_recent_first_var,
+                   bg=WHITE, font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(10, 0))
+
+    # Custom windows row
+    custom_row = tk.Frame(settings_frame, bg=WHITE)
+    custom_row.pack(fill="x", pady=2)
+    tk.Label(custom_row, text="Custom Windows:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
+
+    _custom_windows_var = tk.StringVar(value="")
+    tk.Entry(custom_row, textvariable=_custom_windows_var, width=60,
+             font=("Consolas", 8)).pack(side=tk.LEFT, padx=5)
+
+    tk.Label(custom_row, text="(e.g. 2018-2020>2021, 2022-2024>2025)",
+             font=("Segoe UI", 7, "italic"), bg=WHITE, fg=GREY).pack(side=tk.LEFT)
 
     # Monte Carlo row
     mc_row = tk.Frame(settings_frame, bg=WHITE)
