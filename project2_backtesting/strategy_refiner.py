@@ -669,8 +669,9 @@ def apply_filters(trades, filters):
             by_day[day].append(t)
         allowed_ids = set()
         for day_trades in by_day.values():
-            top = sorted(day_trades, key=lambda x: x.get('net_pips', 0), reverse=True)
-            for t in top[:max_per_day]:
+            # Keep first N trades chronologically — no look-ahead bias
+            chrono = sorted(day_trades, key=lambda x: str(x.get('entry_time', '')))
+            for t in chrono[:max_per_day]:
                 allowed_ids.add(id(t))
     else:
         allowed_ids = None
@@ -700,8 +701,11 @@ def apply_filters(trades, filters):
             day_abbrevs = [d[:3] for d in days]
             if t.get('day_abbrev', 'Mon') not in day_abbrevs and t.get('day_of_week', '') not in days:
                 reason = 'day'
+        # NOTE: min_pips is a post-hoc filter — it removes trades based on
+        # outcome, which creates look-ahead bias. Results using this filter
+        # will be better than real trading. Use with caution.
         elif min_pips is not None and t.get('net_pips', 0) < min_pips:
-            reason = 'min_pips'
+            reason = 'min_pips_WARNING_LOOK_AHEAD'
         elif allowed_ids is not None and id(t) not in allowed_ids:
             reason = 'max_per_day'
         elif cooldown and last_exit_time is not None:

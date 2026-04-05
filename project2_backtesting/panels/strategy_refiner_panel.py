@@ -1085,7 +1085,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             'max_trades_per_day': lambda v: f"max {v}/day",
             'min_hold_minutes': lambda v: f"hold ≥{v}m",
             'cooldown_minutes': lambda v: f"cooldown {v}m",
-            'min_pips': lambda v: f"skip <{v} pips",
+            'min_pips': lambda v: f"⚠️ skip <{v} pips (WARNING: look-ahead bias — not realistic)",
             'sessions': lambda v: f"sessions: {', '.join(v) if isinstance(v, list) else str(v)}",
         }
         parts = []
