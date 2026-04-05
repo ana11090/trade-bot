@@ -406,6 +406,7 @@ _opt_target_var    = None
 _stage_var         = None
 _generate_new_var  = None
 _mode_quick_var    = None
+_acct_var          = None
 
 
 def _start_optimization():
@@ -676,9 +677,9 @@ def _show_opt_results(candidates):
 
     # Dollar conversion parameters
     try:
-        acct = float(_acct_var.get())
-        risk = float(_risk_var.get())
-    except (ValueError, NameError):
+        acct = float(_acct_var.get()) if _acct_var else 100000
+        risk = float(_risk_var.get()) if _risk_var else 1.0
+    except (ValueError, NameError, AttributeError):
         acct = 100000
         risk = 1.0
 
@@ -1247,7 +1248,7 @@ def build_panel(parent):
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
-    global _scroll_canvas, _generate_new_var, _mode_quick_var
+    global _scroll_canvas, _generate_new_var, _mode_quick_var, _acct_var
 
     _load_strategies()
 
