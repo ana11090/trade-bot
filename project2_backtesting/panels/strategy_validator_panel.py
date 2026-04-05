@@ -41,10 +41,6 @@ _tree           = None
 _selected_count = None
 _check_vars     = {}  # index -> bool (checkbox state)
 
-# Validator stage/firm/account selectors
-_val_stage_var  = None
-_val_firm_var   = None
-_val_acct_var   = None
 
 # Settings vars
 _train_var      = None
@@ -52,6 +48,7 @@ _test_var       = None
 _windows_var    = None
 _sims_var       = None
 _mc_firm_var    = None
+_stage_var      = None
 _account_var    = None
 _spread_var     = None
 _comm_var       = None
@@ -449,11 +446,11 @@ def _show_estimation(trades, parent_frame):
         return
 
     try:
-        global _val_stage_var, _val_firm_var, _val_acct_var, _scroll_canvas
+        global _stage_var, _mc_firm_var, _account_var, _scroll_canvas
 
-        stage = _val_stage_var.get().lower() if _val_stage_var else "funded"
-        acct = float(_val_acct_var.get()) if _val_acct_var else 100000
-        firm_name = _val_firm_var.get() if _val_firm_var else ""
+        stage = _stage_var.get().lower() if _stage_var else "funded"
+        acct = float(_account_var.get()) if _account_var else 100000
+        firm_name = _mc_firm_var.get() if _mc_firm_var else ""
     except:
         stage = "funded"
         acct = 100000
@@ -934,12 +931,11 @@ def _run(mode):
 def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _prev_result_lbl
     global _tree, _selected_count
-    global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var
+    global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var, _stage_var
     global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
     global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
-    global _val_stage_var, _val_firm_var, _val_acct_var
 
     _load_strategies()
 
@@ -1228,59 +1224,6 @@ def build_panel(parent):
                                     font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#667eea")
         _selected_count.pack(anchor="w")
 
-        # Stage/Firm/Account selector
-        global _val_stage_var, _val_firm_var, _val_acct_var
-
-        stage_frame = tk.Frame(sel_frame, bg=WHITE)
-        stage_frame.pack(fill="x", pady=(10, 0))
-
-        tk.Label(stage_frame, text="Stage:", font=("Segoe UI", 9, "bold"),
-                 bg=WHITE, fg=DARK).pack(side=tk.LEFT)
-
-        _val_stage_var = tk.StringVar(value="Funded")
-        ttk.Combobox(stage_frame, textvariable=_val_stage_var,
-                      values=["Evaluation", "Funded"], width=12,
-                      state="readonly").pack(side=tk.LEFT, padx=5)
-
-        tk.Label(stage_frame, text="Firm:", font=("Segoe UI", 9, "bold"),
-                 bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(15, 0))
-
-        _val_firm_var = tk.StringVar(value="FTMO")
-        # Load firm names
-        import glob
-        prop_dir = os.path.join(project_root, 'prop_firms')
-        firm_names_val = []
-        for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
-            try:
-                with open(fp, encoding='utf-8') as f:
-                    fd = json.load(f)
-                firm_names_val.append(fd.get('firm_name', '?'))
-            except:
-                pass
-
-        ttk.Combobox(stage_frame, textvariable=_val_firm_var,
-                      values=firm_names_val, width=18,
-                      state="readonly").pack(side=tk.LEFT, padx=5)
-
-        tk.Label(stage_frame, text="Account:", font=("Segoe UI", 9, "bold"),
-                 bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(15, 0))
-
-        _val_acct_var = tk.StringVar(value="100000")
-        ttk.Combobox(stage_frame, textvariable=_val_acct_var,
-                      values=["10000", "25000", "50000", "100000", "200000"],
-                      width=8).pack(side=tk.LEFT, padx=5)
-
-        # Show firm rules reminder
-        try:
-            from shared.firm_rules_reminder import show_reminder_on_firm_change
-            _val_reminder = [None]
-            if _val_firm_var and _val_stage_var:
-                show_reminder_on_firm_change(_val_firm_var, sel_frame, _val_reminder, _val_stage_var)
-        except Exception as e:
-            import traceback
-            print("Warning: Could not initialize firm rules reminder")
-            traceback.print_exc()
-
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
     _strat_info_lbl.pack(anchor="w", pady=(4, 0))
@@ -1321,12 +1264,32 @@ def build_panel(parent):
              bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
     _sims_var = _field(mc_row, "Simulations:", "500", 6)
 
-    firm_options = ["FTMO", "Topstep", "Apex", "FundedNext", "The5ers", "Atlas", "Leveraged"]
-    _mc_firm_var = tk.StringVar(value="FTMO")
+    # Load firm names from JSON files
+    import glob
+    prop_dir = os.path.join(project_root, 'prop_firms')
+    firm_names_list = []
+    for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+        try:
+            with open(fp, encoding='utf-8') as f:
+                fd = json.load(f)
+            firm_names_list.append(fd.get('firm_name', '?'))
+        except:
+            pass
+
+    _mc_firm_var = tk.StringVar(value=firm_names_list[0] if firm_names_list else "FTMO")
     tk.Label(mc_row, text="Target firm:", font=("Segoe UI", 9), bg=WHITE, fg=DARK
              ).pack(side=tk.LEFT, padx=(0, 3))
     ttk.Combobox(mc_row, textvariable=_mc_firm_var,
-                 values=firm_options, state="readonly", width=14).pack(side=tk.LEFT, padx=(0, 15))
+                 values=firm_names_list if firm_names_list else ["FTMO"],
+                 state="readonly", width=18).pack(side=tk.LEFT, padx=5)
+
+    # Add Stage dropdown
+    tk.Label(mc_row, text="Stage:", font=("Segoe UI", 9), bg=WHITE, fg=DARK
+             ).pack(side=tk.LEFT, padx=(15, 2))
+    _stage_var = tk.StringVar(value="Funded")
+    ttk.Combobox(mc_row, textvariable=_stage_var,
+                 values=["Evaluation", "Funded"], width=12,
+                 state="readonly").pack(side=tk.LEFT, padx=5)
 
     # Common row
     com_row = tk.Frame(settings_frame, bg=WHITE)
@@ -1337,12 +1300,39 @@ def build_panel(parent):
     _spread_var  = _field(com_row, "Spread:", "2.5", 5)
     _comm_var    = _field(com_row, "Commission:", "0.0", 5)
 
+    # Auto-update account size when firm changes
+    def _on_val_firm_change(*_):
+        firm = _mc_firm_var.get()
+        for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+            try:
+                with open(fp, encoding='utf-8') as f:
+                    fd = json.load(f)
+                if fd.get('firm_name') == firm:
+                    sizes = fd['challenges'][0].get('account_sizes', [100000])
+                    # Update account entry with largest size
+                    _account_var.set(str(sizes[-1] if sizes else 100000))
+                    break
+            except:
+                pass
+
+    _mc_firm_var.trace_add("write", _on_val_firm_change)
+
     com_row2 = tk.Frame(settings_frame, bg=WHITE)
     com_row2.pack(fill="x", pady=2)
     tk.Label(com_row2, text="", width=16).pack(side=tk.LEFT)
     _risk_var   = _field(com_row2, "Risk %:", "1.0", 5)
     _sl_var     = _field(com_row2, "SL pips:", "150", 5)
     _pipval_var = _field(com_row2, "Pip value/lot:", "10.0", 5)
+
+    # Show firm rules reminder
+    try:
+        from shared.firm_rules_reminder import show_reminder_on_firm_change
+        _val_reminder = [None]
+        show_reminder_on_firm_change(_mc_firm_var, settings_frame, _val_reminder, _stage_var)
+    except Exception as e:
+        import traceback
+        print("Warning: Could not initialize firm rules reminder")
+        traceback.print_exc()
 
     # ── Buttons + progress ────────────────────────────────────────────────────
     btn_frame = tk.Frame(scroll_frame, bg=BG, pady=8)
