@@ -403,6 +403,7 @@ def _export_csv(trades=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 _opt_target_var    = None
+_stage_var         = None
 _generate_new_var  = None
 _mode_quick_var    = None
 
@@ -1129,7 +1130,7 @@ def build_panel(parent):
     global _session_vars, _day_vars, _results_card, _trade_list_frame
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
-    global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var
+    global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
     global _scroll_canvas, _generate_new_var, _mode_quick_var
 
     _load_strategies()
@@ -1590,12 +1591,40 @@ def build_panel(parent):
 
     ctrl_row = tk.Frame(opt_controls, bg=WHITE)
     ctrl_row.pack(fill="x", pady=(0, 8))
+
+    # Firm selector
     tk.Label(ctrl_row, text="Target firm:", font=("Segoe UI", 9), bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(0, 8))
 
-    firm_options = ["None — maximize pips", "FTMO", "Topstep", "Apex", "FundedNext", "The5ers"]
+    firm_options = ["None — maximize pips", "FTMO", "Topstep", "Apex", "FundedNext", "The5ers", "Get Leveraged"]
     _opt_target_var = tk.StringVar(value=firm_options[0])
     ttk.Combobox(ctrl_row, textvariable=_opt_target_var,
-                 values=firm_options, state="readonly", width=25).pack(side=tk.LEFT, padx=(0, 20))
+                 values=firm_options, state="readonly", width=25).pack(side=tk.LEFT, padx=(0, 15))
+
+    # Stage selector
+    tk.Label(ctrl_row, text="Stage:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg="#333").pack(side=tk.LEFT, padx=(15, 5))
+
+    _stage_var = tk.StringVar(value="Funded")
+    stage_combo = ttk.Combobox(ctrl_row, textvariable=_stage_var,
+                                values=["Evaluation", "Funded"], width=12, state="readonly")
+    stage_combo.pack(side=tk.LEFT, padx=(0, 10))
+
+    stage_info = tk.Label(ctrl_row, text="", font=("Segoe UI", 8), bg=WHITE, fg="#888")
+    stage_info.pack(side=tk.LEFT, padx=(0, 10))
+
+    def _on_stage_change(*_):
+        stage = _stage_var.get()
+        if stage == "Evaluation":
+            stage_info.config(
+                text="🎯 Goal: hit profit target fast. No consistency rule. Higher risk OK.",
+                fg="#e67e22")
+        else:
+            stage_info.config(
+                text="🛡️ Goal: survive + payouts. 2 wins/day cap. Stop after conditions met.",
+                fg="#28a745")
+
+    _stage_var.trace_add("write", _on_stage_change)
+    _on_stage_change()  # Initial update
 
     _opt_start_btn = tk.Button(ctrl_row, text="Start Deep Optimization",
                                command=_start_optimization,
@@ -1613,6 +1642,12 @@ def build_panel(parent):
     _opt_status_lbl = tk.Label(opt_controls, text="Ready",
                                font=("Segoe UI", 9, "italic"), bg=WHITE, fg=GREY)
     _opt_status_lbl.pack(anchor="w")
+
+    # Firm rules reminder
+    from shared.firm_rules_reminder import show_reminder_on_firm_change
+
+    _reminder = [None]
+    show_reminder_on_firm_change(_opt_target_var, sf, _reminder, _stage_var)
 
     # Live progress box
     prog_box = tk.Frame(sf, bg="#1a1a2a", padx=16, pady=12)
