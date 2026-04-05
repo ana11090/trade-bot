@@ -797,7 +797,13 @@ def _run_multi(mode):
 
 def _run(mode):
     """mode: 'wf' | 'mc' | 'full' | 'slip'"""
-    idx = _get_selected_index()
+    # Get from checkboxes first, fallback to dropdown
+    indices = _get_all_selected_indices()
+    if indices:
+        idx = int(indices[0])  # Use first checked item
+    else:
+        idx = _get_selected_index()  # Fallback to dropdown
+
     if idx is None:
         messagebox.showerror("No Strategy", "Select a strategy first.")
         return
