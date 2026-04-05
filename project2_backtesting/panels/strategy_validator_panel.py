@@ -1297,6 +1297,10 @@ def build_panel(parent):
                  values=["Evaluation", "Funded"], width=12,
                  state="readonly").pack(side=tk.LEFT, padx=5)
 
+    # DD info label
+    _val_dd_info = tk.Label(mc_row, text="", font=("Segoe UI", 8), bg=WHITE, fg="#888")
+    _val_dd_info.pack(side=tk.LEFT, padx=(15, 0))
+
     # Common row
     com_row = tk.Frame(settings_frame, bg=WHITE)
     com_row.pack(fill="x", pady=2)
@@ -1306,22 +1310,83 @@ def build_panel(parent):
     _spread_var  = _field(com_row, "Spread:", "2.5", 5)
     _comm_var    = _field(com_row, "Commission:", "0.0", 5)
 
-    # Auto-update account size when firm changes
+    # Auto-update settings when firm/stage changes
     def _on_val_firm_change(*_):
         firm = _mc_firm_var.get()
+        stage = _stage_var.get().lower()  # "evaluation" or "funded"
+
         for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
             try:
                 with open(fp, encoding='utf-8') as f:
                     fd = json.load(f)
-                if fd.get('firm_name') == firm:
-                    sizes = fd['challenges'][0].get('account_sizes', [100000])
-                    # Update account entry with largest size
-                    _account_var.set(str(sizes[-1] if sizes else 100000))
-                    break
-            except:
+                if fd.get('firm_name') != firm:
+                    continue
+
+                ch = fd['challenges'][0]
+                sizes = ch.get('account_sizes', [100000])
+
+                # ── Account size ──────────────────────────────────────────────
+                # Use largest size by default (same as refiner)
+                if sizes and _account_var.get() not in [str(s) for s in sizes]:
+                    _account_var.set(str(sizes[-1]))
+
+                # ── DD info label ─────────────────────────────────────────────
+                if stage == "funded":
+                    funded = ch.get('funded', {})
+                    daily_dd = funded.get('max_daily_drawdown_pct', '?')
+                    total_dd = funded.get('max_total_drawdown_pct', '?')
+                    dd_type  = funded.get('drawdown_type', 'static')
+                else:
+                    # Evaluation — use phase 1
+                    phases = ch.get('phases', [{}])
+                    p1 = phases[0] if phases else {}
+                    daily_dd = p1.get('max_daily_drawdown_pct', '?')
+                    total_dd = p1.get('max_total_drawdown_pct', '?')
+                    dd_type  = p1.get('drawdown_type', 'static')
+
+                try:
+                    _val_dd_info.config(
+                        text=f"Daily DD: {daily_dd}%  |  Total DD: {total_dd}%  ({dd_type})"
+                    )
+                except Exception:
+                    pass
+
+                # ── Risk% from trading_rules ──────────────────────────────────
+                trading_rules = fd.get('trading_rules', [])
+                risk_set = False
+
+                if stage in ('evaluation', 'eval'):
+                    for rule in trading_rules:
+                        if rule.get('type') == 'eval_settings' and rule.get('stage') == 'evaluation':
+                            rng = rule.get('parameters', {}).get('risk_pct_range') or \
+                                  rule.get('parameters', {}).get('risk_per_trade_pct_range')
+                            if rng:
+                                _risk_var.set(str(rng[0]))  # lower bound (safer)
+                                risk_set = True
+                            break
+                    if not risk_set:
+                        _risk_var.set("1.0")
+
+                else:  # funded
+                    for rule in trading_rules:
+                        if rule.get('type') == 'funded_accumulate' and rule.get('stage') == 'funded':
+                            rng = rule.get('parameters', {}).get('risk_pct_range') or \
+                                  rule.get('parameters', {}).get('risk_per_trade_pct_range')
+                            if rng:
+                                _risk_var.set(str(rng[0]))  # lower bound (safest)
+                                risk_set = True
+                            break
+                    if not risk_set:
+                        _risk_var.set("0.5")
+
+                break  # found the right firm, done
+
+            except Exception:
                 pass
 
     _mc_firm_var.trace_add("write", _on_val_firm_change)
+    _stage_var.trace_add("write", _on_val_firm_change)
+    _on_val_firm_change()  # populate values immediately on panel load
 
     com_row2 = tk.Frame(settings_frame, bg=WHITE)
     com_row2.pack(fill="x", pady=2)
