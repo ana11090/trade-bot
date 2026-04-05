@@ -819,225 +819,225 @@ def _show_opt_results(candidates):
                 filters = cand.get('filters_applied', {})
                 changes = cand.get('changes_from_base', '')
 
-            card_bg = "#f0fff0" if score > 0 else "#fff8f8"
-            border = "#28a745" if score > 0 else "#dc3545"
+                card_bg = "#f0fff0" if score > 0 else "#fff8f8"
+                border = "#28a745" if score > 0 else "#dc3545"
 
-            card = tk.Frame(_opt_results_frame, bg=card_bg,
-                            highlightbackground=border, highlightthickness=2,
-                            padx=12, pady=8)
-            card.pack(fill="x", padx=5, pady=4)
+                card = tk.Frame(_opt_results_frame, bg=card_bg,
+                                highlightbackground=border, highlightthickness=2,
+                                padx=12, pady=8)
+                card.pack(fill="x", padx=5, pady=4)
 
-            # Header
-            strategy_name = cand.get('name', '?')
-            tk.Label(card, text=f"#{i}: {strategy_name}  (score: {score:.1f})",
-                     font=("Segoe UI", 10, "bold"), bg=card_bg, fg=DARK).pack(anchor="w")
+                # Header
+                strategy_name = cand.get('name', '?')
+                tk.Label(card, text=f"#{i}: {strategy_name}  (score: {score:.1f})",
+                         font=("Segoe UI", 10, "bold"), bg=card_bg, fg=DARK).pack(anchor="w")
 
-            # Stats
-            wr = stats.get('win_rate', 0)
-            wr_str = f"{wr*100:.1f}%" if wr <= 1 else f"{wr:.1f}%"
-            wr_color = GREEN if (wr if wr <= 1 else wr/100) >= 0.60 else AMBER
+                # Stats
+                wr = stats.get('win_rate', 0)
+                wr_str = f"{wr*100:.1f}%" if wr <= 1 else f"{wr:.1f}%"
+                wr_color = GREEN if (wr if wr <= 1 else wr/100) >= 0.60 else AMBER
 
-            stats_text = (f"Trades: {stats.get('count', 0)}  |  WR: {wr_str}  |  "
-                          f"Avg: {stats.get('avg_pips', 0):+.1f} pips  |  "
-                          f"Total: {stats.get('total_pips', 0):+,.0f} pips  |  "
-                          f"{stats.get('trades_per_day', 0):.1f}/day")
-            tk.Label(card, text=stats_text, font=("Segoe UI", 9), bg=card_bg,
-                     fg=wr_color).pack(anchor="w", pady=(2, 0))
+                stats_text = (f"Trades: {stats.get('count', 0)}  |  WR: {wr_str}  |  "
+                              f"Avg: {stats.get('avg_pips', 0):+.1f} pips  |  "
+                              f"Total: {stats.get('total_pips', 0):+,.0f} pips  |  "
+                              f"{stats.get('trades_per_day', 0):.1f}/day")
+                tk.Label(card, text=stats_text, font=("Segoe UI", 9), bg=card_bg,
+                         fg=wr_color).pack(anchor="w", pady=(2, 0))
 
-            # Dollar amounts
-            total_pips = stats.get('total_pips', 0)
-            total_dollars = total_pips * dollar_per_pip
-            total_pct = (total_dollars / acct) * 100
-            try:
-                trade_list = cand.get('trades', [])
-                if trade_list:
-                    import pandas as pd
-                    first = pd.to_datetime(trade_list[0].get('entry_time', ''))
-                    last = pd.to_datetime(trade_list[-1].get('entry_time', ''))
-                    months = max((last - first).days / 30, 1)
-                    monthly_dollars = total_dollars / months
-                else:
+                # Dollar amounts
+                total_pips = stats.get('total_pips', 0)
+                total_dollars = total_pips * dollar_per_pip
+                total_pct = (total_dollars / acct) * 100
+                try:
+                    trade_list = cand.get('trades', [])
+                    if trade_list:
+                        import pandas as pd
+                        first = pd.to_datetime(trade_list[0].get('entry_time', ''))
+                        last = pd.to_datetime(trade_list[-1].get('entry_time', ''))
+                        months = max((last - first).days / 30, 1)
+                        monthly_dollars = total_dollars / months
+                    else:
+                        monthly_dollars = 0
+                except Exception:
                     monthly_dollars = 0
-            except Exception:
-                monthly_dollars = 0
 
-            your_monthly = monthly_dollars * (profit_split / 100)
+                your_monthly = monthly_dollars * (profit_split / 100)
 
-            dollar_frame = tk.Frame(card, bg=card_bg)
-            dollar_frame.pack(fill="x", pady=(2, 0))
+                dollar_frame = tk.Frame(card, bg=card_bg)
+                dollar_frame.pack(fill="x", pady=(2, 0))
 
-            for label, value, color in [
-                ("Total", f"${total_dollars:+,.0f} ({total_pct:+.1f}%)",
-                 "#28a745" if total_dollars > 0 else "#dc3545"),
-                ("Monthly", f"${monthly_dollars:+,.0f}/mo",
-                 "#28a745" if monthly_dollars > 0 else "#dc3545"),
-                ("Your share", f"${your_monthly:+,.0f}/mo ({profit_split}%)", "#667eea"),
-            ]:
-                tk.Label(dollar_frame, text=f"{label}: ", bg=card_bg, fg="#888",
-                         font=("Arial", 8)).pack(side=tk.LEFT)
-                tk.Label(dollar_frame, text=value, bg=card_bg, fg=color,
-                         font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+                for label, value, color in [
+                    ("Total", f"${total_dollars:+,.0f} ({total_pct:+.1f}%)",
+                     "#28a745" if total_dollars > 0 else "#dc3545"),
+                    ("Monthly", f"${monthly_dollars:+,.0f}/mo",
+                     "#28a745" if monthly_dollars > 0 else "#dc3545"),
+                    ("Your share", f"${your_monthly:+,.0f}/mo ({profit_split}%)", "#667eea"),
+                ]:
+                    tk.Label(dollar_frame, text=f"{label}: ", bg=card_bg, fg="#888",
+                             font=("Arial", 8)).pack(side=tk.LEFT)
+                    tk.Label(dollar_frame, text=value, bg=card_bg, fg=color,
+                             font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
 
-            # Challenge fee ROI
-            if challenge_fee > 0 and your_monthly > 0:
-                months_to_roi = challenge_fee / max(your_monthly, 1)
-                roi_frame = tk.Frame(card, bg="#e8f5e9", padx=6, pady=3)
-                roi_frame.pack(fill="x", pady=(3, 0))
-                tk.Label(roi_frame,
-                         text=f"Fee: ${challenge_fee} | ROI in {months_to_roi:.1f}mo | "
-                              f"Year 1: ${(your_monthly * 12 - challenge_fee):+,.0f}",
-                         bg="#e8f5e9", fg="#2e7d32", font=("Arial", 8, "bold")).pack(anchor="w")
+                # Challenge fee ROI
+                if challenge_fee > 0 and your_monthly > 0:
+                    months_to_roi = challenge_fee / max(your_monthly, 1)
+                    roi_frame = tk.Frame(card, bg="#e8f5e9", padx=6, pady=3)
+                    roi_frame.pack(fill="x", pady=(3, 0))
+                    tk.Label(roi_frame,
+                             text=f"Fee: ${challenge_fee} | ROI in {months_to_roi:.1f}mo | "
+                                  f"Year 1: ${(your_monthly * 12 - challenge_fee):+,.0f}",
+                             bg="#e8f5e9", fg="#2e7d32", font=("Arial", 8, "bold")).pack(anchor="w")
 
-            # What changed — defensive rendering
-            display_filters = {}
-            if isinstance(filters, dict):
-                for fk, fv in filters.items():
-                    if fk in ('description', 'firm_data', 'stage', 'firm_name'):
-                        continue
-                    display_filters[fk] = fv
+                # What changed — defensive rendering
+                display_filters = {}
+                if isinstance(filters, dict):
+                    for fk, fv in filters.items():
+                        if fk in ('description', 'firm_data', 'stage', 'firm_name'):
+                            continue
+                        display_filters[fk] = fv
 
-            if display_filters:
-                changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=5)
-                changes_frame.pack(fill="x", pady=(5, 0))
-                tk.Label(changes_frame, text="What was changed:",
-                         bg="#e8f4fd", fg="#1565c0", font=("Segoe UI", 9, "bold")).pack(anchor="w")
-                explanations = {
-                    'max_trades_per_day': lambda v: f"Max {v} trades/day",
-                    'min_hold_minutes': lambda v: f"Min hold {v} minutes",
-                    'cooldown_minutes': lambda v: f"Wait {v} min between trades",
-                    'min_pips': lambda v: f"Skip trades < {v} pips",
-                    'sessions': lambda v: f"Sessions: {', '.join(v) if isinstance(v, list) else str(v)}",
-                    'days': lambda v: f"Days: {', '.join(v) if isinstance(v, list) else str(v)}",
-                    'news_blackout_minutes': lambda v: f"No trading {v} min around news",
-                }
-                for fk, fv in display_filters.items():
-                    try:
-                        fn = explanations.get(fk)
-                        txt = fn(fv) if fn else f"{fk} = {fv}"
-                        tk.Label(changes_frame, text=f"  - {txt}",
-                                 bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
-                    except Exception:
-                        pass
-            elif changes:
-                changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=3)
-                changes_frame.pack(fill="x", pady=(3, 0))
-                tk.Label(changes_frame, text=f"Changed: {changes}",
-                         bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
-
-            # Rules display
-            if rules:
-                win_rules = [r for r in rules if r.get('prediction') == 'WIN']
-                if win_rules:
-                    rules_frame = tk.Frame(card, bg="#f5f0ff", padx=8, pady=5)
-                    rules_frame.pack(fill="x", pady=(5, 0))
-                    tk.Label(rules_frame, text=f"Entry Rules ({len(win_rules)}):",
-                             bg="#f5f0ff", fg="#8e44ad", font=("Segoe UI", 9, "bold")).pack(anchor="w")
-                    for ri, rule in enumerate(win_rules[:3]):
-                        conds = rule.get('conditions', [])
-                        cond_strs = [f"{c['feature']} {c['operator']} {c['value']}" for c in conds[:3]]
-                        tk.Label(rules_frame, text=f"  R{ri+1}: {' AND '.join(cond_strs)}",
-                                 bg="#f5f0ff", fg="#555", font=("Courier", 8)).pack(anchor="w")
-
-            # ── Action buttons ──
-            btn_row = tk.Frame(card, bg=card_bg)
-            btn_row.pack(fill="x", pady=(6, 0))
-
-            trades_snap = list(cand.get('trades', []))
-            rules_snap = list(cand.get('rules', []))
-            filters_snap = dict(cand.get('filters_applied', {})) if isinstance(cand.get('filters_applied'), dict) else {}
-            cand_name = strategy_name
-            stats_snap = dict(stats)
-
-            # View Trades
-            tk.Button(btn_row, text="📊 Trades",
-                      command=lambda t=trades_snap: _show_candidate_trades(t),
-                      bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
-                      relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
-
-            # 💾 Save — WORKING version
-            def _do_save(r=rules_snap, f=filters_snap, n=cand_name, s=stats_snap):
-                try:
-                    from shared.saved_rules import save_rule
-                    save_data = {
-                        'conditions': [],
-                        'prediction': 'WIN',
-                        'win_rate': s.get('win_rate', 0),
-                        'avg_pips': s.get('avg_pips', 0),
-                        'total_pips': s.get('total_pips', 0),
-                        'net_total_pips': s.get('total_pips', 0),
-                        'total_trades': s.get('count', 0),
-                        'max_dd_pips': s.get('max_dd_pips', 0),
-                        'net_profit_factor': s.get('profit_factor', 0),
-                        'optimized_rules': r,
-                        'filters_applied': f,
+                if display_filters:
+                    changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=5)
+                    changes_frame.pack(fill="x", pady=(5, 0))
+                    tk.Label(changes_frame, text="What was changed:",
+                             bg="#e8f4fd", fg="#1565c0", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+                    explanations = {
+                        'max_trades_per_day': lambda v: f"Max {v} trades/day",
+                        'min_hold_minutes': lambda v: f"Min hold {v} minutes",
+                        'cooldown_minutes': lambda v: f"Wait {v} min between trades",
+                        'min_pips': lambda v: f"Skip trades < {v} pips",
+                        'sessions': lambda v: f"Sessions: {', '.join(v) if isinstance(v, list) else str(v)}",
+                        'days': lambda v: f"Days: {', '.join(v) if isinstance(v, list) else str(v)}",
+                        'news_blackout_minutes': lambda v: f"No trading {v} min around news",
                     }
-                    for rule in r:
-                        if rule.get('prediction') == 'WIN':
-                            save_data['conditions'].extend(rule.get('conditions', []))
+                    for fk, fv in display_filters.items():
+                        try:
+                            fn = explanations.get(fk)
+                            txt = fn(fv) if fn else f"{fk} = {fv}"
+                            tk.Label(changes_frame, text=f"  - {txt}",
+                                     bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
+                        except Exception:
+                            pass
+                elif changes:
+                    changes_frame = tk.Frame(card, bg="#e8f4fd", padx=8, pady=3)
+                    changes_frame.pack(fill="x", pady=(3, 0))
+                    tk.Label(changes_frame, text=f"Changed: {changes}",
+                             bg="#e8f4fd", fg="#333", font=("Segoe UI", 8)).pack(anchor="w")
 
-                    rid = save_rule(save_data, source=f"Optimizer: {n}", notes=str(f))
-                    messagebox.showinfo("Saved", f"Strategy saved as rule #{rid}!\n\n"
-                                                  f"Find it in 💾 Saved Rules panel.")
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    messagebox.showerror("Save Error", f"Could not save: {e}")
+                # Rules display
+                if rules:
+                    win_rules = [r for r in rules if r.get('prediction') == 'WIN']
+                    if win_rules:
+                        rules_frame = tk.Frame(card, bg="#f5f0ff", padx=8, pady=5)
+                        rules_frame.pack(fill="x", pady=(5, 0))
+                        tk.Label(rules_frame, text=f"Entry Rules ({len(win_rules)}):",
+                                 bg="#f5f0ff", fg="#8e44ad", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+                        for ri, rule in enumerate(win_rules[:3]):
+                            conds = rule.get('conditions', [])
+                            cond_strs = [f"{c['feature']} {c['operator']} {c['value']}" for c in conds[:3]]
+                            tk.Label(rules_frame, text=f"  R{ri+1}: {' AND '.join(cond_strs)}",
+                                     bg="#f5f0ff", fg="#555", font=("Courier", 8)).pack(anchor="w")
 
-            tk.Button(btn_row, text="💾 Save",
-                      command=_do_save,
-                      bg="#28a745", fg="white", font=("Segoe UI", 8, "bold"),
-                      relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
+                # ── Action buttons ──
+                btn_row = tk.Frame(card, bg=card_bg)
+                btn_row.pack(fill="x", pady=(6, 0))
 
-            # → Playground
-            def _to_playground(r=rules_snap):
-                try:
-                    import json
-                    temp = os.path.join(project_root, 'project2_backtesting', 'outputs', '_playground_rules.json')
-                    with open(temp, 'w') as fp:
-                        json.dump({'rules': r, 'source': 'optimizer'}, fp, indent=2, default=str)
-                    messagebox.showinfo("Ready", "Rules loaded for Playground.\n\n"
-                                                  "Go to 🎮 Strategy Playground.")
-                except Exception as e:
-                    messagebox.showerror("Error", str(e))
+                trades_snap = list(cand.get('trades', []))
+                rules_snap = list(cand.get('rules', []))
+                filters_snap = dict(cand.get('filters_applied', {})) if isinstance(cand.get('filters_applied'), dict) else {}
+                cand_name = strategy_name
+                stats_snap = dict(stats)
 
-            tk.Button(btn_row, text="🎮 Playground",
-                      command=_to_playground,
-                      bg="#17a2b8", fg="white", font=("Segoe UI", 8, "bold"),
-                      relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
+                # View Trades
+                tk.Button(btn_row, text="📊 Trades",
+                          command=lambda t=trades_snap: _show_candidate_trades(t),
+                          bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
+                          relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
 
-            # → Validator
-            def _to_validator(t=trades_snap, r=rules_snap, n=cand_name):
-                try:
-                    import json
-                    temp = os.path.join(project_root, 'project2_backtesting', 'outputs', '_validator_optimized.json')
-                    with open(temp, 'w') as fp:
-                        json.dump({'rules': r, 'trades': t, 'name': n, 'source': 'optimizer'},
-                                  fp, indent=2, default=str)
-                    messagebox.showinfo("Ready", f"Strategy '{n}' ready for validation.\n\n"
-                                                  "Go to ✅ Strategy Validator.")
-                except Exception as e:
-                    messagebox.showerror("Error", str(e))
+                # 💾 Save — WORKING version
+                def _do_save(r=rules_snap, f=filters_snap, n=cand_name, s=stats_snap):
+                    try:
+                        from shared.saved_rules import save_rule
+                        save_data = {
+                            'conditions': [],
+                            'prediction': 'WIN',
+                            'win_rate': s.get('win_rate', 0),
+                            'avg_pips': s.get('avg_pips', 0),
+                            'total_pips': s.get('total_pips', 0),
+                            'net_total_pips': s.get('total_pips', 0),
+                            'total_trades': s.get('count', 0),
+                            'max_dd_pips': s.get('max_dd_pips', 0),
+                            'net_profit_factor': s.get('profit_factor', 0),
+                            'optimized_rules': r,
+                            'filters_applied': f,
+                        }
+                        for rule in r:
+                            if rule.get('prediction') == 'WIN':
+                                save_data['conditions'].extend(rule.get('conditions', []))
 
-            tk.Button(btn_row, text="✅ Validator",
-                      command=_to_validator,
-                      bg="#e67e22", fg="white", font=("Segoe UI", 8, "bold"),
-                      relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
+                        rid = save_rule(save_data, source=f"Optimizer: {n}", notes=str(f))
+                        messagebox.showinfo("Saved", f"Strategy saved as rule #{rid}!\n\n"
+                                                      f"Find it in 💾 Saved Rules panel.")
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        messagebox.showerror("Save Error", f"Could not save: {e}")
 
-            # Export CSV
-            def _to_csv(t=trades_snap, n=cand_name):
-                path = filedialog.asksaveasfilename(
-                    defaultextension=".csv",
-                    initialfile=f"optimized_{n.replace(' ', '_')}.csv",
-                    filetypes=[("CSV", "*.csv")])
-                if path:
-                    import pandas as pd
-                    pd.DataFrame(t).to_csv(path, index=False)
-                    messagebox.showinfo("Exported", f"Saved {len(t)} trades to:\n{path}")
+                tk.Button(btn_row, text="💾 Save",
+                          command=_do_save,
+                          bg="#28a745", fg="white", font=("Segoe UI", 8, "bold"),
+                          relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
 
-            tk.Button(btn_row, text="📁 CSV",
-                      command=_to_csv,
-                      bg="#6c757d", fg="white", font=("Segoe UI", 8, "bold"),
-                      relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT)
+                # → Playground
+                def _to_playground(r=rules_snap):
+                    try:
+                        import json
+                        temp = os.path.join(project_root, 'project2_backtesting', 'outputs', '_playground_rules.json')
+                        with open(temp, 'w') as fp:
+                            json.dump({'rules': r, 'source': 'optimizer'}, fp, indent=2, default=str)
+                        messagebox.showinfo("Ready", "Rules loaded for Playground.\n\n"
+                                                      "Go to 🎮 Strategy Playground.")
+                    except Exception as e:
+                        messagebox.showerror("Error", str(e))
+
+                tk.Button(btn_row, text="🎮 Playground",
+                          command=_to_playground,
+                          bg="#17a2b8", fg="white", font=("Segoe UI", 8, "bold"),
+                          relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
+
+                # → Validator
+                def _to_validator(t=trades_snap, r=rules_snap, n=cand_name):
+                    try:
+                        import json
+                        temp = os.path.join(project_root, 'project2_backtesting', 'outputs', '_validator_optimized.json')
+                        with open(temp, 'w') as fp:
+                            json.dump({'rules': r, 'trades': t, 'name': n, 'source': 'optimizer'},
+                                      fp, indent=2, default=str)
+                        messagebox.showinfo("Ready", f"Strategy '{n}' ready for validation.\n\n"
+                                                      "Go to ✅ Strategy Validator.")
+                    except Exception as e:
+                        messagebox.showerror("Error", str(e))
+
+                tk.Button(btn_row, text="✅ Validator",
+                          command=_to_validator,
+                          bg="#e67e22", fg="white", font=("Segoe UI", 8, "bold"),
+                          relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT, padx=(0, 4))
+
+                # Export CSV
+                def _to_csv(t=trades_snap, n=cand_name):
+                    path = filedialog.asksaveasfilename(
+                        defaultextension=".csv",
+                        initialfile=f"optimized_{n.replace(' ', '_')}.csv",
+                        filetypes=[("CSV", "*.csv")])
+                    if path:
+                        import pandas as pd
+                        pd.DataFrame(t).to_csv(path, index=False)
+                        messagebox.showinfo("Exported", f"Saved {len(t)} trades to:\n{path}")
+
+                tk.Button(btn_row, text="📁 CSV",
+                          command=_to_csv,
+                          bg="#6c757d", fg="white", font=("Segoe UI", 8, "bold"),
+                          relief=tk.FLAT, cursor="hand2", padx=8, pady=3).pack(side=tk.LEFT)
 
             except Exception as e:
                 import traceback
