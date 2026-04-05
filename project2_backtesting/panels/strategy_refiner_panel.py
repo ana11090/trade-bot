@@ -141,7 +141,7 @@ def _update_strat_info():
         return
     from project2_backtesting.strategy_refiner import compute_stats_summary
     s = compute_stats_summary(_base_trades)
-    text = (f"{s['count']} trades  |  WR {s['win_rate']*100:.1f}%  |  "
+    text = (f"{s['count']} trades  |  WR {s['win_rate']*100:.1f}%  |  PF {s.get('profit_factor', 0):.2f}  |  "
             f"avg {s['avg_pips']:+.1f} pips  |  {s['trades_per_day']:.1f}/day  |  "
             f"hold {s['avg_hold_minutes']:.0f}m  |  max DD {s['max_dd_pips']:.0f} pips")
     _strat_info_lbl.configure(text=text, fg=MIDGREY)

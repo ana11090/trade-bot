@@ -32,5 +32,29 @@
       "total_trades": 2514,
       "max_dd_pips": 2050.0
     }
+  },
+  {
+    "id": 3,
+    "saved_at": "2026-04-05T18:01:30.690785",
+    "source": "Optimizer: Get Leveraged filters",
+    "notes": "{'max_trades_per_day': 5, 'cooldown_minutes': 30, 'min_hold_minutes': 2, 'min_pips': 5}",
+    "rule": {
+      "conditions": [],
+      "prediction": "WIN",
+      "win_rate": 1.0,
+      "avg_pips": 666.66,
+      "total_pips": 1210653.0,
+      "net_total_pips": 1210653.0,
+      "total_trades": 1816,
+      "max_dd_pips": 0.0,
+      "net_profit_factor": 1210653.0,
+      "optimized_rules": [],
+      "filters_applied": {
+        "max_trades_per_day": 5,
+        "cooldown_minutes": 30,
+        "min_hold_minutes": 2,
+        "min_pips": 5
+      }
+    }
   }
 ]

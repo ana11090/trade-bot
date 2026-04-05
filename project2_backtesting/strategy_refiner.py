@@ -397,12 +397,13 @@ def load_strategy_list():
             wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
             net = stats.get('net_total_pips', r.get('net_total_pips', 0))
             trades_count = stats.get('total_trades', r.get('total_trades', 0))
+            pf = stats.get('net_profit_factor', r.get('net_profit_factor', 0))
 
             results.append({
                 'index':             i,
                 'source':            'backtest',
                 'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
-                                      f"  [{trades_count} trades, WR {wr_str}, {net:+,.0f} pips]"),
+                                      f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
                 'rule_combo':        r.get('rule_combo', '?'),
                 'exit_strategy':     r.get('exit_strategy', '?'),
                 'exit_name':         r.get('exit_name', '?'),
@@ -440,17 +441,21 @@ def load_strategy_list():
 
             wr = 0
             net = 0
+            pf = 0
             if opt_trades:
                 wins = sum(1 for t in opt_trades if t.get('net_pips', 0) > 0)
                 wr = wins / len(opt_trades) if opt_trades else 0
                 net = sum(t.get('net_pips', 0) for t in opt_trades)
+                gross_profit = sum(t.get('net_pips', 0) for t in opt_trades if t.get('net_pips', 0) > 0)
+                gross_loss = abs(sum(t.get('net_pips', 0) for t in opt_trades if t.get('net_pips', 0) < 0))
+                pf = gross_profit / max(gross_loss, 0.01) if gross_loss > 0 else 0
 
             wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
 
             results.append({
                 'index':             'optimizer_latest',
                 'source':            'optimizer',
-                'label':             f"🎯 {opt_name}  [{len(opt_trades)} trades, WR {wr_str}, {net:+,.0f} pips]",
+                'label':             f"🎯 {opt_name}  [{len(opt_trades)} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]",
                 'rule_combo':        opt_name,
                 'exit_strategy':     'Optimized',
                 'exit_name':         'Optimized',
@@ -491,6 +496,7 @@ def load_strategy_list():
                     rule = entry.get('rule', {})
                     wr = rule.get('win_rate', 0)
                     wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+                    pf = rule.get('net_profit_factor', 0)
                     source = entry.get('source', '?')
                     notes = entry.get('notes', '')
                     rid = entry.get('id', '?')
@@ -498,6 +504,8 @@ def load_strategy_list():
                     label_parts = [f"💾 Saved #{rid} — from {source}"]
                     if wr > 0:
                         label_parts.append(f"WR {wr_str}")
+                    if pf > 0:
+                        label_parts.append(f"PF {pf:.1f}")
                     if notes:
                         label_parts.append(notes[:30])
 
@@ -591,6 +599,7 @@ def compute_stats_summary(trades):
             'count': 0, 'win_rate': 0.0, 'avg_pips': 0.0,
             'total_pips': 0.0, 'max_dd_pips': 0.0,
             'trades_per_day': 0.0, 'avg_hold_minutes': 0.0,
+            'profit_factor': 0.0,
         }
     net = np.array([t.get('net_pips', 0) for t in trades], dtype=float)
     winners = np.sum(net > 0)
