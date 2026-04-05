@@ -363,17 +363,21 @@ def build_panel(parent):
         canvas.itemconfig(window_id, width=event.width)
     canvas.bind("<Configure>", _on_canvas_resize)
 
-    # Mousewheel scrolling
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    # Safe mousewheel binding — doesn't break other canvases
+    def _on_enter(event):
+        canvas.bind("<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+        canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
 
-    def _bind_wheel(event):
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-    def _unbind_wheel(event):
-        canvas.unbind_all("<MouseWheel>")
+    def _on_leave(event):
+        canvas.unbind("<MouseWheel>")
+        canvas.unbind("<Button-4>")
+        canvas.unbind("<Button-5>")
 
-    canvas.bind("<Enter>", _bind_wheel)
-    canvas.bind("<Leave>", _unbind_wheel)
+    canvas.bind("<Enter>", _on_enter)
+    canvas.bind("<Leave>", _on_leave)
 
     # Title
     tk.Label(inner, text="Project 2 - Backtesting Configuration",

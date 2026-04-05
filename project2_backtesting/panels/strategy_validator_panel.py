@@ -967,10 +967,21 @@ def build_panel(parent):
     _scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
     vscroll.pack(side="right", fill="y", padx=(0, 20))
 
-    def _mw(e): _scroll_canvas.yview_scroll(int(-1*(e.delta/120)), "units")
-    _scroll_canvas.bind_all("<MouseWheel>", _mw)
-    _scroll_canvas.bind_all("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
-    _scroll_canvas.bind_all("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
+    # Safe mousewheel binding — doesn't break other canvases
+    def _on_enter(event):
+        _scroll_canvas.bind("<MouseWheel>",
+            lambda e: _scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        _scroll_canvas.bind("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
+        _scroll_canvas.bind("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        _scroll_canvas.unbind("<MouseWheel>")
+        _scroll_canvas.unbind("<Button-4>")
+        _scroll_canvas.unbind("<Button-5>")
+
+    _scroll_canvas.bind("<Enter>", _on_enter)
+    _scroll_canvas.bind("<Leave>", _on_leave)
     _scroll_canvas.bind("<Configure>",
                         lambda e: _scroll_canvas.itemconfig(cwin, width=e.width))
 

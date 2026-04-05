@@ -100,9 +100,22 @@ def build_panel(parent):
     wid = canvas.create_window((0, 0), window=inner, anchor="nw")
     inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
     canvas.bind("<Configure>", lambda e: canvas.itemconfig(wid, width=e.width))
-    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>",
-                lambda ev: canvas.yview_scroll(int(-1*(ev.delta/120)), "units")))
-    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+    # Safe mousewheel binding — doesn't break other canvases
+    def _on_enter(event):
+        canvas.bind("<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+        canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        canvas.unbind("<MouseWheel>")
+        canvas.unbind("<Button-4>")
+        canvas.unbind("<Button-5>")
+
+    canvas.bind("<Enter>", _on_enter)
+    canvas.bind("<Leave>", _on_leave)
 
     # Title
     tk.Label(inner, text="🎮 Strategy Playground", font=("Arial", 16, "bold"),

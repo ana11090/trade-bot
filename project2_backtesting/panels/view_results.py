@@ -192,11 +192,21 @@ def display_summary(output_text, summary_frame):
     results_inner.bind("<Configure>", lambda e: results_canvas.configure(scrollregion=results_canvas.bbox("all")))
     results_canvas.bind("<Configure>", lambda e: results_canvas.itemconfig(results_wid, width=e.width))
 
-    # Mousewheel
-    def _mw(event):
-        results_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-    results_canvas.bind("<Enter>", lambda e: results_canvas.bind_all("<MouseWheel>", _mw))
-    results_canvas.bind("<Leave>", lambda e: results_canvas.unbind_all("<MouseWheel>"))
+    # Safe mousewheel binding — doesn't break other canvases
+    def _on_enter(event):
+        results_canvas.bind("<MouseWheel>",
+            lambda e: results_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        results_canvas.bind("<Button-4>", lambda e: results_canvas.yview_scroll(-3, "units"))
+        results_canvas.bind("<Button-5>", lambda e: results_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        results_canvas.unbind("<MouseWheel>")
+        results_canvas.unbind("<Button-4>")
+        results_canvas.unbind("<Button-5>")
+
+    results_canvas.bind("<Enter>", _on_enter)
+    results_canvas.bind("<Leave>", _on_leave)
 
     # Count label
     count_text = f"Showing {len(sorted_results)} of {len(results)} results"

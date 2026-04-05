@@ -412,11 +412,21 @@ def build_panel(parent):
         _rule_canvas.itemconfig(rule_window, width=event.width)
     _rule_canvas.bind("<Configure>", _on_rule_canvas_resize)
 
-    # Mousewheel for rule list
-    def _rule_mousewheel(event):
-        _rule_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-    _rule_canvas.bind("<Enter>", lambda e: _rule_canvas.bind_all("<MouseWheel>", _rule_mousewheel))
-    _rule_canvas.bind("<Leave>", lambda e: _rule_canvas.unbind_all("<MouseWheel>"))
+    # Safe mousewheel binding for rule list — doesn't break other canvases
+    def _on_enter(event):
+        _rule_canvas.bind("<MouseWheel>",
+            lambda e: _rule_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        _rule_canvas.bind("<Button-4>", lambda e: _rule_canvas.yview_scroll(-3, "units"))
+        _rule_canvas.bind("<Button-5>", lambda e: _rule_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        _rule_canvas.unbind("<MouseWheel>")
+        _rule_canvas.unbind("<Button-4>")
+        _rule_canvas.unbind("<Button-5>")
+
+    _rule_canvas.bind("<Enter>", _on_enter)
+    _rule_canvas.bind("<Leave>", _on_leave)
 
     def _load_rules_from_source(source_paths):
         """Load rules from selected source and display with checkboxes."""

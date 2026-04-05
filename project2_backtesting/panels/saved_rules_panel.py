@@ -38,10 +38,21 @@ def build_panel(parent):
         canvas.itemconfig(window_id, width=event.width)
     canvas.bind("<Configure>", _on_canvas_resize)
 
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
-    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+    # Safe mousewheel binding — doesn't break other canvases
+    def _on_enter(event):
+        canvas.bind("<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+        canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        canvas.unbind("<MouseWheel>")
+        canvas.unbind("<Button-4>")
+        canvas.unbind("<Button-5>")
+
+    canvas.bind("<Enter>", _on_enter)
+    canvas.bind("<Leave>", _on_leave)
 
     # Title
     tk.Label(inner, text="💾 Saved Rules", font=("Arial", 16, "bold"),
