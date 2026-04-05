@@ -407,17 +407,30 @@ _stage_var         = None
 _generate_new_var  = None
 _mode_quick_var    = None
 _acct_var          = None
+_risk_var          = None
 
 
 def _start_optimization():
     global _opt_start_btn, _opt_stop_btn, _opt_status_lbl
 
+    # Disable button FIRST — before any checks that might fail
+    try:
+        if _opt_start_btn:
+            _opt_start_btn.configure(state="disabled")
+        if _opt_stop_btn:
+            _opt_stop_btn.configure(state="normal")
+    except Exception:
+        pass
+
     if not _base_trades:
         messagebox.showerror("No Data", "Load a strategy first.")
+        # Re-enable button since we're not starting
+        if _opt_start_btn:
+            _opt_start_btn.configure(state="normal")
+        if _opt_stop_btn:
+            _opt_stop_btn.configure(state="disabled")
         return
 
-    _opt_start_btn.configure(state="disabled")
-    _opt_stop_btn.configure(state="normal")
     if _opt_status_lbl:
         _opt_status_lbl.configure(text="Running...", fg=GREY)
 
@@ -648,8 +661,11 @@ def _start_optimization():
             state.window.after(0, lambda: _opt_status_lbl.configure(
                 text=f"Error: {e}", fg=RED))
         finally:
-            state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
-            state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled"))
+            try:
+                state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
+                state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled"))
+            except Exception:
+                pass
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -729,7 +745,7 @@ def _show_opt_results(candidates):
         # Dollar conversion
         try:
             acct = float(_acct_var.get()) if _acct_var else 100000
-            risk = float(_risk_var.get()) if '_risk_var' in dir() else 1.0
+            risk = float(_risk_var.get()) if _risk_var else 1.0
         except Exception:
             acct = 100000
             risk = 1.0
@@ -1252,7 +1268,7 @@ def build_panel(parent):
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
-    global _scroll_canvas, _generate_new_var, _mode_quick_var, _acct_var
+    global _scroll_canvas, _generate_new_var, _mode_quick_var, _acct_var, _risk_var
 
     _load_strategies()
 
@@ -1735,14 +1751,46 @@ def build_panel(parent):
 
     def _on_stage_change(*_):
         stage = _stage_var.get()
+        firm = _opt_target_var.get() if _opt_target_var else ""
+
+        # Load trading_rules for this firm
+        presets = get_prop_firm_presets()
+        preset = presets.get(firm, {})
+        firm_data = preset.get('firm_data')
+        trading_rules = firm_data.get('trading_rules', []) if firm_data else []
+
         if stage == "Evaluation":
             stage_info.config(
                 text="🎯 Goal: hit profit target fast. No consistency rule. Higher risk OK.",
                 fg="#e67e22")
+            # Auto-set risk from eval trading_rules
+            for rule in trading_rules:
+                if rule.get('stage') == 'evaluation' and rule.get('type') == 'eval_settings':
+                    params = rule.get('parameters', {})
+                    risk_range = params.get('risk_pct_range', [0.8, 1.5])
+                    if _risk_var:
+                        _risk_var.set(str(risk_range[0]))  # use lower bound
+                    break
+            else:
+                # No firm-specific eval rules — default aggressive
+                if _risk_var:
+                    _risk_var.set("1.0")
         else:
             stage_info.config(
                 text="🛡️ Goal: survive + payouts. 2 wins/day cap. Stop after conditions met.",
                 fg="#28a745")
+            # Auto-set risk from funded trading_rules
+            for rule in trading_rules:
+                if rule.get('stage') == 'funded' and rule.get('type') == 'funded_accumulate':
+                    params = rule.get('parameters', {})
+                    risk_range = params.get('risk_pct_range', [0.3, 0.5])
+                    if _risk_var:
+                        _risk_var.set(str(risk_range[0]))  # use lower bound (safest)
+                    break
+            else:
+                # No firm-specific funded rules — default conservative
+                if _risk_var:
+                    _risk_var.set("0.5")
 
     _stage_var.trace_add("write", _on_stage_change)
     _on_stage_change()  # Initial update
@@ -1790,6 +1838,9 @@ def build_panel(parent):
             leverage = firm_data.get('leverage_by_size', {})
             lev = leverage.get(_acct_var.get(), list(leverage.values())[0] if leverage else '—')
             _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
+
+        # Also update risk based on stage + firm
+        _on_stage_change()
 
     _opt_target_var.trace_add("write", _on_firm_change_acct)
     _acct_var.trace_add("write", lambda *_: _on_firm_change_acct())
