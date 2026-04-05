@@ -688,13 +688,13 @@ def _stop_optimization():
 def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                       challenge_fee, profit_split):
     """Render a single optimizer result card with all buttons."""
-    score = cand.get('score', 0)
+    score = cand.get('score', 0) or 0
     rules = cand.get('rules', [])
     filters = cand.get('filters_applied', {})
     changes = cand.get('changes_from_base', '')
 
-    card_bg = "#f0fff0" if score > 0 else "#fff8f8"
-    border = "#28a745" if score > 0 else "#dc3545"
+    card_bg = "#f0fff0" if (score or 0) > 0 else "#fff8f8"
+    border = "#28a745" if (score or 0) > 0 else "#dc3545"
 
     card = tk.Frame(parent, bg=card_bg, highlightbackground=border,
                      highlightthickness=2, padx=12, pady=8)
@@ -705,9 +705,9 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
              font=("Segoe UI", 10, "bold"), bg=card_bg, fg=DARK).pack(anchor="w")
 
     # Stats
-    wr = stats.get('win_rate', 0)
-    wr_str = f"{wr*100:.1f}%" if wr <= 1 else f"{wr:.1f}%"
-    wr_color = GREEN if (wr if wr <= 1 else wr/100) >= 0.60 else AMBER
+    wr = stats.get('win_rate', 0) or 0
+    wr_str = f"{wr*100:.1f}%" if (wr or 0) <= 1 else f"{wr:.1f}%"
+    wr_color = GREEN if ((wr or 0) if (wr or 0) <= 1 else (wr or 0)/100) >= 0.60 else AMBER
 
     stats_text = (f"Trades: {stats.get('count', 0)}  |  WR: {wr_str}  |  "
                   f"Avg: {stats.get('avg_pips', 0):+.1f} pips  |  "
@@ -718,9 +718,9 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
              fg=wr_color).pack(anchor="w", pady=(2, 0))
 
     # Dollar amounts
-    total_pips = stats.get('total_pips', 0)
-    total_dollars = total_pips * dollar_per_pip
-    total_pct = (total_dollars / acct) * 100 if acct > 0 else 0
+    total_pips = stats.get('total_pips', 0) or 0
+    total_dollars = (total_pips or 0) * (dollar_per_pip or 0)
+    total_pct = (total_dollars / acct) * 100 if (acct or 0) > 0 else 0
     try:
         trade_list = cand.get('trades', [])
         if trade_list:
@@ -740,10 +740,10 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     dollar_row.pack(fill="x", pady=(2, 0))
     for label, value, color in [
         ("Total", f"${total_dollars:+,.0f} ({total_pct:+.1f}%)",
-         "#28a745" if total_dollars > 0 else "#dc3545"),
+         "#28a745" if (total_dollars or 0) > 0 else "#dc3545"),
         ("Monthly", f"${monthly_dollars:+,.0f}/mo",
-         "#28a745" if monthly_dollars > 0 else "#dc3545"),
-        ("Your share", f"${your_monthly:+,.0f}/mo ({profit_split}%)", "#667eea"),
+         "#28a745" if (monthly_dollars or 0) > 0 else "#dc3545"),
+        ("Your share", f"${your_monthly:+,.0f}/mo ({profit_split or 0}%)", "#667eea"),
     ]:
         tk.Label(dollar_row, text=f"{label}: ", bg=card_bg, fg="#888",
                  font=("Arial", 8)).pack(side=tk.LEFT)
@@ -751,12 +751,12 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                  font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
 
     # ROI
-    if challenge_fee > 0 and your_monthly > 0:
+    if (challenge_fee or 0) > 0 and (your_monthly or 0) > 0:
         roi = tk.Frame(card, bg="#e8f5e9", padx=6, pady=3)
         roi.pack(fill="x", pady=(3, 0))
-        months_roi = challenge_fee / max(your_monthly, 1)
-        tk.Label(roi, text=f"Fee: ${challenge_fee} | ROI: {months_roi:.1f}mo | "
-                           f"Year 1: ${(your_monthly * 12 - challenge_fee):+,.0f}",
+        months_roi = (challenge_fee or 0) / max((your_monthly or 0), 1)
+        tk.Label(roi, text=f"Fee: ${challenge_fee or 0} | ROI: {months_roi:.1f}mo | "
+                           f"Year 1: ${((your_monthly or 0) * 12 - (challenge_fee or 0)):+,.0f}",
                  bg="#e8f5e9", fg="#2e7d32", font=("Arial", 8, "bold")).pack(anchor="w")
 
     # What changed
@@ -962,32 +962,32 @@ def _show_opt_results(candidates):
         filtered = []
         for c in _all_candidates:
             s = c.get('stats') or compute_stats_summary(c.get('trades', []))
-            wr = s.get('win_rate', 0)
-            if wr > 1:
-                wr = wr / 100
-            count = s.get('count', 0)
-            pf = s.get('profit_factor', 0)
-            tpd = s.get('trades_per_day', 0)
+            wr = s.get('win_rate', 0) or 0
+            if (wr or 0) > 1:
+                wr = (wr or 0) / 100
+            count = s.get('count', 0) or 0
+            pf = s.get('profit_factor', 0) or 0
+            tpd = s.get('trades_per_day', 0) or 0
 
-            if wr >= min_wr and count >= min_trades and pf >= min_pf and tpd <= max_tpd:
+            if (wr or 0) >= min_wr and (count or 0) >= min_trades and (pf or 0) >= min_pf and (tpd or 0) <= max_tpd:
                 filtered.append((c, s))
 
         # Sort
         def _sort_key(x):
             c, s = x
             if sort_key == 'score':
-                return c.get('score', 0)
+                return c.get('score', 0) or 0
             elif sort_key == 'win_rate':
-                return s.get('win_rate', 0)
+                return s.get('win_rate', 0) or 0
             elif sort_key == 'total_pips':
-                return s.get('total_pips', 0)
+                return s.get('total_pips', 0) or 0
             elif sort_key == 'count':
-                return s.get('count', 0)
+                return s.get('count', 0) or 0
             elif sort_key == 'avg_pips':
-                return s.get('avg_pips', 0)
+                return s.get('avg_pips', 0) or 0
             elif sort_key == 'trades_per_day':
-                return s.get('trades_per_day', 0)
-            return c.get('score', 0)
+                return s.get('trades_per_day', 0) or 0
+            return c.get('score', 0) or 0
 
         filtered.sort(key=_sort_key, reverse=True)
 

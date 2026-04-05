@@ -609,6 +609,11 @@ def compute_stats_summary(trades):
     hold_vals = [t.get('hold_minutes', 0) for t in trades]
     avg_hold = float(np.mean(hold_vals)) if hold_vals else 0.0
 
+    # Profit factor
+    gross_profit = sum(p for p in net if p > 0)
+    gross_loss = abs(sum(p for p in net if p < 0))
+    profit_factor = gross_profit / max(gross_loss, 0.01) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 0.0)
+
     return {
         'count':            total,
         'win_rate':         round(float(winners / total), 4),
@@ -617,6 +622,7 @@ def compute_stats_summary(trades):
         'max_dd_pips':      round(max_dd, 1),
         'trades_per_day':   round(total / n_days, 2),
         'avg_hold_minutes': round(avg_hold, 1),
+        'profit_factor':    round(float(profit_factor), 2),
     }
 
 
