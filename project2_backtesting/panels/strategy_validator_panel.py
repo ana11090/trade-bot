@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import json
+import re
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
@@ -40,6 +41,7 @@ _strategies     = []
 _tree           = None
 _selected_count = None
 _check_vars     = {}  # index -> bool (checkbox state)
+_firm_name_to_id = {}  # firm display name -> firm_id (for Monte Carlo)
 
 
 # Settings vars
@@ -55,6 +57,7 @@ _comm_var       = None
 _risk_var       = None
 _sl_var         = None
 _pipval_var     = None
+_pip_size_var   = None
 
 # Filter vars
 _filt_wr        = None
@@ -141,6 +144,84 @@ def _get_all_selected_indices():
     return sorted(checked)  # Return sorted list for consistent ordering
 
 
+def _parse_exit_strategy(exit_name, exit_str):
+    """Parse the human-readable exit_strategy string back into class + params.
+
+    Returns (class_name, params_dict).
+    """
+    if not exit_name or not exit_str:
+        return 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}
+
+    name = exit_name.lower().strip()
+    s = exit_str.strip()
+
+    if name == 'fixed sl/tp' or s.startswith('Fixed SL'):
+        # "Fixed SL 150 pips / TP 300 pips"
+        m = re.search(r'SL\s+(\d+).*TP\s+(\d+)', s)
+        if m:
+            return 'FixedSLTP', {'sl_pips': int(m.group(1)), 'tp_pips': int(m.group(2))}
+        return 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}
+
+    elif name == 'trailing stop' or 'trail after' in s:
+        # "SL 150 pips, trail after +100 pips, trail distance 150 pips"
+        sl_m = re.search(r'SL\s+(\d+)', s)
+        act_m = re.search(r'trail after \+(\d+)', s)
+        dist_m = re.search(r'trail distance\s+(\d+)', s)
+        return 'TrailingStop', {
+            'sl_pips': int(sl_m.group(1)) if sl_m else 150,
+            'activation_pips': int(act_m.group(1)) if act_m else 50,
+            'trail_distance_pips': int(dist_m.group(1)) if dist_m else 100,
+        }
+
+    elif name == 'atr-based' or 'xATR' in s:
+        # "SL 1.5xATR, TP 3.0xATR"
+        sl_m = re.search(r'SL\s+([\d.]+)xATR', s)
+        tp_m = re.search(r'TP\s+([\d.]+)xATR', s)
+        return 'ATRBased', {
+            'sl_atr_mult': float(sl_m.group(1)) if sl_m else 1.5,
+            'tp_atr_mult': float(tp_m.group(1)) if tp_m else 3.0,
+        }
+
+    elif name == 'time-based' or 'close after' in s:
+        # "SL 150 pips, close after 6 candles"
+        sl_m = re.search(r'SL\s+(\d+)', s)
+        candles_m = re.search(r'after\s+(\d+)\s+candles', s)
+        return 'TimeBased', {
+            'sl_pips': int(sl_m.group(1)) if sl_m else 150,
+            'max_candles': int(candles_m.group(1)) if candles_m else 6,
+        }
+
+    elif name == 'indicator exit' or 'exit when' in s:
+        # "SL 150 pips, exit when H1_rsi_14 above 70"
+        sl_m = re.search(r'SL\s+(\d+)', s)
+        ind_m = re.search(r'when\s+(\S+)\s+(above|below)\s+([\d.]+)', s)
+        if ind_m:
+            return 'IndicatorExit', {
+                'sl_pips': int(sl_m.group(1)) if sl_m else 150,
+                'exit_indicator': ind_m.group(1),
+                'exit_threshold': float(ind_m.group(3)),
+                'exit_direction': ind_m.group(2),
+            }
+        return 'IndicatorExit', {'sl_pips': 150, 'exit_indicator': 'H1_rsi_14',
+                                  'exit_threshold': 70, 'exit_direction': 'above'}
+
+    elif name == 'hybrid' or 'BE at' in s:
+        # "SL 150, BE at +50, trail 100, max 12 candles"
+        sl_m = re.search(r'SL\s+(\d+)', s)
+        be_m = re.search(r'BE at \+(\d+)', s)
+        trail_m = re.search(r'trail\s+(\d+)', s)
+        candles_m = re.search(r'max\s+(\d+)\s+candles', s)
+        return 'HybridExit', {
+            'sl_pips': int(sl_m.group(1)) if sl_m else 150,
+            'breakeven_activation_pips': int(be_m.group(1)) if be_m else 50,
+            'trail_distance_pips': int(trail_m.group(1)) if trail_m else 100,
+            'max_candles': int(candles_m.group(1)) if candles_m else 12,
+        }
+
+    # Fallback
+    return 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}
+
+
 def _get_strategy_meta(idx):
     """Return (rules, exit_class, exit_params, trades, spread, commission) for strategy idx."""
     try:
@@ -148,12 +229,16 @@ def _get_strategy_meta(idx):
         with open(backtest_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         r = data['results'][idx]
-        rules         = r.get('rules', [])
-        exit_class    = r.get('exit_strategy_class', 'FixedSLTP')
-        exit_params   = r.get('exit_strategy_params', {'sl_pips': 150, 'tp_pips': 300})
-        trades        = r.get('trades', [])
-        spread        = r.get('spread_pips', 2.5)
-        commission    = r.get('commission_pips', 0.0)
+        rules = r.get('rules', [])
+
+        # Parse exit strategy from stored strings
+        exit_name = r.get('exit_name', '')
+        exit_str  = r.get('exit_strategy', '')
+        exit_class, exit_params = _parse_exit_strategy(exit_name, exit_str)
+
+        trades     = r.get('trades', [])
+        spread     = r.get('spread_pips', 2.5)
+        commission = r.get('commission_pips', 0.0)
         return rules, exit_class, exit_params, trades, spread, commission
     except Exception:
         return [], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0
@@ -812,47 +897,42 @@ def _run_multi(mode):
                                f"This may take several minutes."):
         return
 
-    # Run sequentially - temporarily override _strategy_var for each
+    # Run sequentially - wait for each validation to complete
     def _worker():
-        _set_buttons(True)
-        original_val = _strategy_var.get()
+        state.window.after(0, lambda: _set_buttons(True))
         try:
             for i, idx in enumerate(indices):
                 strat = next((s for s in _strategies if s['index'] == idx), None)
                 if not strat:
                     continue
 
-                # Temporarily set this as the selected strategy
-                _strategy_var.set(strat['label'])
-
                 if _status_lbl:
                     state.window.after(0, lambda lbl=strat['label'], i=i, total=len(indices):
                                         _status_lbl.config(text=f"[{i+1}/{total}] {lbl}..."))
 
-                # Run validation for this specific strategy (pass idx to bypass checkbox logic)
-                _run(mode, force_idx=idx)
-
-                # Wait for completion (hacky but works)
-                import time
-                time.sleep(2)
+                # Run validation and WAIT for it to finish
+                done = threading.Event()
+                _run(mode, override_idx=idx, done_event=done)
+                done.wait(timeout=600)  # Wait up to 10 minutes per strategy
 
             if _status_lbl:
-                state.window.after(0, lambda: _status_lbl.config(text=f"✅ Done — validated {len(indices)} strategies"))
+                state.window.after(0, lambda: _status_lbl.config(
+                    text=f"✅ Done — validated {len(indices)} strategies"))
         finally:
-            _strategy_var.set(original_val)
-            _set_buttons(False)
+            state.window.after(0, lambda: _set_buttons(False))
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def _run(mode, force_idx=None):
+def _run(mode, override_idx=None, done_event=None):
     """
     mode: 'wf' | 'mc' | 'full' | 'slip'
-    force_idx: if provided, use this index instead of reading from checkboxes/dropdown
+    override_idx: if provided, use this index instead of reading from checkboxes/dropdown
+    done_event: threading.Event — set when validation completes (for batch mode)
     """
-    # Use forced index if provided (for batch validation)
-    if force_idx is not None:
-        idx = force_idx
+    # Use override index if provided (for batch validation)
+    if override_idx is not None:
+        idx = override_idx
     else:
         # Get from checkboxes first, fallback to dropdown
         indices = _get_all_selected_indices()
@@ -884,11 +964,14 @@ def _run(mode, force_idx=None):
         risk_pct      = float(_risk_var.get())
         sl_pips       = float(_sl_var.get())
         pip_val       = float(_pipval_var.get())
+        pip_size      = float(_pip_size_var.get())
         n_windows     = int(_windows_var.get())
         train_years   = int(_train_var.get())
         test_years    = int(_test_var.get())
         n_sims        = int(_sims_var.get())
-        mc_firm       = _mc_firm_var.get().lower().replace(' ', '').replace('-', '').replace('_', '')
+        # Use firm_id mapping instead of string transformation
+        mc_firm       = _firm_name_to_id.get(_mc_firm_var.get(),
+                        _mc_firm_var.get().lower().replace(' ', '').replace('-', '').replace('_', ''))
     except ValueError:
         messagebox.showerror("Invalid Settings", "Check that all settings are valid numbers.")
         return
@@ -920,6 +1003,7 @@ def _run(mode, force_idx=None):
                     n_windows=n_windows,
                     train_years=train_years,
                     test_years=test_years,
+                    pip_size=pip_size,
                     spread_pips=spread_pips,
                     commission_pips=comm_pips,
                     account_size=account_size,
@@ -948,7 +1032,7 @@ def _run(mode, force_idx=None):
                     exit_strategy_class=exit_class,
                     exit_strategy_params=exit_params,
                     slippage_levels=[0, 1, 2, 3, 5],
-                    pip_size=0.01,
+                    pip_size=pip_size,
                     spread_pips=spread_pips,
                     commission_pips=comm_pips,
                     account_size=account_size,
@@ -983,6 +1067,8 @@ def _run(mode, force_idx=None):
                 text=f"Error: {e}", fg=RED))
         finally:
             state.window.after(0, lambda: _set_buttons(False))
+            if done_event:
+                done_event.set()
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -995,7 +1081,7 @@ def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _prev_result_lbl
     global _tree, _selected_count
     global _train_var, _test_var, _windows_var, _sims_var, _mc_firm_var, _stage_var
-    global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var
+    global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var, _pip_size_var
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
     global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
@@ -1331,11 +1417,16 @@ def build_panel(parent):
     import glob
     prop_dir = os.path.join(project_root, 'prop_firms')
     firm_names_list = []
+    global _firm_name_to_id
+    _firm_name_to_id = {}  # Reset mapping
     for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
         try:
             with open(fp, encoding='utf-8') as f:
                 fd = json.load(f)
-            firm_names_list.append(fd.get('firm_name', '?'))
+            name = fd.get('firm_name', '?')
+            fid  = fd.get('firm_id', '')
+            firm_names_list.append(name)
+            _firm_name_to_id[name] = fid  # Build name -> id mapping
         except:
             pass
 
@@ -1451,6 +1542,11 @@ def build_panel(parent):
     _risk_var   = _field(com_row2, "Risk %:", "1.0", 5)
     _sl_var     = _field(com_row2, "SL pips:", "150", 5)
     _pipval_var = _field(com_row2, "Pip value/lot:", "10.0", 5)
+
+    com_row3 = tk.Frame(settings_frame, bg=WHITE)
+    com_row3.pack(fill="x", pady=2)
+    tk.Label(com_row3, text="", width=16).pack(side=tk.LEFT)
+    _pip_size_var = _field(com_row3, "Pip size:", "0.01", 7)
 
     # Show firm rules reminder
     try:
