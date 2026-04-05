@@ -404,6 +404,7 @@ def _export_csv(trades=None):
 
 _opt_target_var    = None
 _generate_new_var  = None
+_mode_quick_var    = None
 
 
 def _start_optimization():
@@ -513,7 +514,6 @@ def _start_optimization():
             current_trades = list(_base_trades)
             current_filters = _get_current_filters()
 
-            # Spread/commission from selected strategy metadata
             spread_pips = 2.5
             commission_pips = 0.0
             idx = _get_selected_index()
@@ -524,56 +524,16 @@ def _start_optimization():
                         commission_pips = s.get('commission_pips', 0.0)
                         break
 
-            if _generate_new_var and _generate_new_var.get():
-                import json as _json
-                from project2_backtesting.strategy_refiner import deep_optimize_generate
+            all_candidates = []
 
-                rules_path = os.path.join(
-                    project_root, 'project1_reverse_engineering', 'outputs', 'analysis_report.json'
-                )
-                if not os.path.exists(rules_path):
-                    state.window.after(0, lambda: _opt_status_lbl.configure(
-                        text="Error: analysis_report.json not found. Run project 1 first.", fg=RED))
-                    return
+            # ── Mode 1: Quick optimize (filter existing trades) ──
+            if _mode_quick_var.get():
+                print("[OPTIMIZER] Running Quick Optimize mode...")
+                state.window.after(0, lambda: _opt_status_lbl.configure(
+                    text="Quick Optimize: testing filter combinations...", fg="#e67e22"))
 
-                with open(rules_path) as f:
-                    report = _json.load(f)
-                base_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
-
-                candles_path = None
-                for p in [
-                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
-                    os.path.join(project_root, 'data', 'xauusd', 'H1.csv'),
-                ]:
-                    if os.path.exists(p):
-                        candles_path = p
-                        break
-
-                if not candles_path:
-                    state.window.after(0, lambda: _opt_status_lbl.configure(
-                        text="Error: H1 candle CSV not found in data/ folder.", fg=RED))
-                    return
-
-                feature_matrix_path = os.path.join(
-                    project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
-                )
-
-                results = deep_optimize_generate(
-                    trades=current_trades,
-                    base_rules=base_rules,
-                    candles_path=candles_path,
-                    timeframe='H1',
-                    spread_pips=spread_pips,
-                    commission_pips=commission_pips,
-                    target_firm=target_firm,
-                    account_size=100000,
-                    filters=current_filters if current_filters else None,
-                    progress_callback=_cb,
-                    feature_matrix_path=feature_matrix_path,
-                )
-            else:
                 from project2_backtesting.strategy_refiner import deep_optimize
-                results = deep_optimize(
+                quick_results = deep_optimize(
                     trades=current_trades,
                     candles_df=None,
                     indicators_df=None,
@@ -583,12 +543,90 @@ def _start_optimization():
                     account_size=100000,
                     progress_callback=_cb,
                 )
+                all_candidates.extend(quick_results)
+                print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
+
+            # ── Mode 2: Generate new trades (modify rules) ──
+            if _generate_new_var.get():
+                print("[OPTIMIZER] Running Deep Explore mode...")
+                state.window.after(0, lambda: _opt_status_lbl.configure(
+                    text="Deep Explore: loading indicators and modifying rules...", fg="#e67e22"))
+
+                import json as _json
+                from project2_backtesting.strategy_refiner import deep_optimize_generate
+
+                rules_path = os.path.join(
+                    project_root, 'project1_reverse_engineering', 'outputs', 'analysis_report.json'
+                )
+                if not os.path.exists(rules_path):
+                    state.window.after(0, lambda: _opt_status_lbl.configure(
+                        text="Error: analysis_report.json not found.", fg=RED))
+                    return
+
+                with open(rules_path) as f:
+                    report = _json.load(f)
+                base_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+
+                # Find candle path from config
+                from project2_backtesting.panels.configuration import load_config
+                cfg = load_config()
+                symbol = cfg.get('symbol', 'XAUUSD').lower()
+                entry_tf = cfg.get('winning_scenario', 'H1')
+
+                candles_path = None
+                for p in [
+                    os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
+                    os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
+                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
+                ]:
+                    if os.path.exists(p):
+                        candles_path = p
+                        break
+
+                if not candles_path:
+                    state.window.after(0, lambda: _opt_status_lbl.configure(
+                        text=f"Error: candle CSV not found.", fg=RED))
+                    return
+
+                feature_matrix_path = os.path.join(
+                    project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
+                )
+
+                generate_results = deep_optimize_generate(
+                    trades=current_trades,
+                    base_rules=base_rules,
+                    candles_path=candles_path,
+                    timeframe=entry_tf,
+                    spread_pips=spread_pips,
+                    commission_pips=commission_pips,
+                    target_firm=target_firm,
+                    account_size=100000,
+                    filters=current_filters if current_filters else None,
+                    progress_callback=_cb,
+                    feature_matrix_path=feature_matrix_path,
+                )
+                all_candidates.extend(generate_results)
+                print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
+
+            if not _mode_quick_var.get() and not _generate_new_var.get():
+                state.window.after(0, lambda: _opt_status_lbl.configure(
+                    text="Select at least one optimization mode!", fg=RED))
+                return
+
+            # Sort all candidates by score
+            all_candidates.sort(key=lambda c: c.get('score', 0), reverse=True)
+            results = all_candidates[:20]
 
             state.window.after(0, lambda: _show_opt_results(results))
             state.window.after(0, lambda: _opt_status_lbl.configure(
-                text=f"Complete — {len(results)} candidates found", fg=GREEN))
+                text=f"Complete — {len(results)} candidates from "
+                     f"{'Quick' if _mode_quick_var.get() else ''}"
+                     f"{' + ' if _mode_quick_var.get() and _generate_new_var.get() else ''}"
+                     f"{'Deep Explore' if _generate_new_var.get() else ''}",
+                fg=GREEN))
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             state.window.after(0, lambda: _opt_status_lbl.configure(
                 text=f"Error: {e}", fg=RED))
         finally:
@@ -1092,7 +1130,7 @@ def build_panel(parent):
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var
-    global _scroll_canvas, _generate_new_var
+    global _scroll_canvas, _generate_new_var, _mode_quick_var
 
     _load_strategies()
 
@@ -1387,18 +1425,168 @@ def build_panel(parent):
              text="Tests filter combinations and scores them. Runs in background — UI stays responsive.",
              font=("Segoe UI", 9), bg=WHITE, fg=MIDGREY).pack(anchor="w", pady=(2, 0))
 
+    # ── Optimizer Mode Description ────────────────────────────
+    mode_desc_frame = tk.Frame(sf, bg="#fff3cd", padx=12, pady=8)
+    mode_desc_frame.pack(fill="x", padx=10, pady=(0, 5))
+
+    tk.Label(mode_desc_frame,
+             text="🔬 Deep Optimizer — Work In Progress",
+             font=("Segoe UI", 10, "bold"), bg="#fff3cd", fg="#856404").pack(anchor="w")
+    tk.Label(mode_desc_frame,
+             text="The optimizer tests different filter combinations and rule modifications\n"
+                  "to find the best version of your strategy for a specific prop firm.\n"
+                  "More optimization modes will be added over time.\n"
+                  "Select one or both modes below:",
+             font=("Segoe UI", 9), bg="#fff3cd", fg="#856404",
+             justify=tk.LEFT).pack(anchor="w", pady=(3, 0))
+
+    # ── Mode checkboxes ───────────────────────────────────────
+    modes_frame = tk.LabelFrame(sf, text="Optimization Modes",
+                                 font=("Segoe UI", 10, "bold"), bg=BG, fg=DARK,
+                                 padx=12, pady=8)
+    modes_frame.pack(fill="x", padx=10, pady=(0, 5))
+
+    # Mode 1: Quick optimization (filter existing trades)
+    _mode_quick_var = tk.BooleanVar(value=True)
+
+    quick_cb = tk.Checkbutton(modes_frame,
+        text="⚡ Quick Optimize — filter existing trades (seconds)",
+        variable=_mode_quick_var,
+        font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
+        selectcolor=BG, activebackground=BG, anchor="w")
+    quick_cb.pack(fill="x", pady=(0, 2))
+
+    quick_desc = tk.Label(modes_frame,
+        text="Uses only the indicators your current rules need. Tests session filters,\n"
+             "max trades/day, cooldown, hold time. Very fast — finishes in seconds.",
+        font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT)
+    quick_desc.pack(fill="x", padx=(24, 0), pady=(0, 8))
+
+    # Mode 2: Generate new trades (modify rules)
+    _generate_new_var = tk.BooleanVar(value=False)
+
+    generate_cb = tk.Checkbutton(modes_frame,
+        text="🧬 Deep Explore — modify rules, find new entries (minutes)",
+        variable=_generate_new_var,
+        font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
+        selectcolor=BG, activebackground=BG, anchor="w")
+    generate_cb.pack(fill="x", pady=(0, 2))
+
+    generate_desc = tk.Label(modes_frame,
+        text="Loads the top 30 most important indicators from Project 1 analysis.\n"
+             "Shifts thresholds ±10-20%, adds new conditions, removes weak ones.\n"
+             "Re-runs backtests with each modification. Slower but finds NEW trade setups.",
+        font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT)
+    generate_desc.pack(fill="x", padx=(24, 0), pady=(0, 5))
+
+    # ── Add hover tooltips with full details ──────────────────
+    from shared.tooltip import add_tooltip
+
+    # Build dynamic tooltip text showing actual indicators
+    def _build_quick_tooltip():
+        """Build tooltip showing which indicators quick mode uses."""
+        text = (
+            "⚡ QUICK OPTIMIZE MODE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "What it does:\n"
+            "  • Tests prop firm filter presets (FTMO, Topstep, Apex, etc.)\n"
+            "  • Sweeps min hold time: 1, 2, 5, 10, 15, 20, 30 min\n"
+            "  • Sweeps max trades/day: 1, 2, 3, 5, 8\n"
+            "  • Tests session combos: London, NY, London+NY, Asian+London\n"
+            "  • Tests combined filters: hold + max/day together\n\n"
+            "Does NOT change:\n"
+            "  • Entry rules — same conditions, same thresholds\n"
+            "  • Exit strategy — same SL/TP\n"
+            "  • Indicators used — no new ones added\n\n"
+            "Speed: ~2-5 seconds\n"
+            "Best for: fine-tuning a strategy that already works\n\n"
+        )
+
+        # Show which indicators the current rules use
+        try:
+            idx = _get_selected_index()
+            if idx is not None:
+                for s in _strategies:
+                    if s['index'] == idx:
+                        text += f"Current strategy: {s.get('rule_combo', '?')} × {s.get('exit_name', '?')}\n"
+                        break
+        except Exception:
+            pass
+
+        return text
+
+    def _build_generate_tooltip():
+        """Build tooltip showing which indicators generate mode explores."""
+        text = (
+            "🧬 DEEP EXPLORE MODE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "What it does:\n"
+            "  • Shifts each condition threshold ±10% and ±20%\n"
+            "    Example: H4_adx_14 > 18.5 → tries > 16.7, > 14.8, > 20.4, > 22.2\n\n"
+            "  • Adds NEW indicator conditions from the top 30 features\n"
+            "    Example: adds 'D1_atr_50 > 12.5' if it improves win rate\n\n"
+            "  • Removes weak conditions one by one\n"
+            "    Example: drops 'M15_volume_change > -0.35' if it doesn't help\n\n"
+            "  • Tests 5 exit strategies with each modified rule set:\n"
+            "    - Fixed SL/TP: 150/300, 100/200, 200/400\n"
+            "    - Trailing Stop: 100 pip trail, 50 pip trail\n\n"
+            "Speed: 2-10 minutes (depends on number of rules)\n"
+            "Best for: discovering new trading patterns\n\n"
+        )
+
+        # Show which indicators will be explored
+        try:
+            import json as _json
+            report_path = os.path.join(project_root, 'project1_reverse_engineering',
+                                        'outputs', 'analysis_report.json')
+            if os.path.exists(report_path):
+                with open(report_path) as f:
+                    report = _json.load(f)
+
+                # Current rules' indicators
+                win_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+                current_features = set()
+                for r in win_rules:
+                    for c in r.get('conditions', []):
+                        current_features.add(c['feature'])
+
+                text += f"CURRENT rules use {len(current_features)} indicators:\n"
+                for feat in sorted(current_features)[:10]:
+                    text += f"  • {feat}\n"
+                if len(current_features) > 10:
+                    text += f"  ... +{len(current_features) - 10} more\n"
+
+                # Top features from importance ranking
+                top_features = report.get('feature_importance', {}).get('top_20', [])
+                if top_features:
+                    text += f"\nTOP features to explore (from Project 1):\n"
+                    for feat, score in top_features[:15]:
+                        already = "✓ (in rules)" if feat in current_features else "NEW"
+                        text += f"  • {feat}  [{already}]\n"
+                    if len(top_features) > 15:
+                        text += f"  ... +{len(top_features) - 15} more\n"
+
+                text += f"\nRules that will be modified:\n"
+                for i, r in enumerate(win_rules[:5]):
+                    wr = r.get('win_rate', 0)
+                    wr_str = f"{wr:.0%}" if wr <= 1 else f"{wr:.0f}%"
+                    conds = [c['feature'] for c in r.get('conditions', [])]
+                    text += f"  Rule {i+1} (WR {wr_str}): {', '.join(conds[:3])}\n"
+                if len(win_rules) > 5:
+                    text += f"  ... +{len(win_rules) - 5} more rules\n"
+        except Exception:
+            text += "  (Load a strategy to see which indicators will be explored)\n"
+
+        return text
+
+    # Apply tooltips
+    add_tooltip(quick_cb, _build_quick_tooltip(), wraplength=450)
+    add_tooltip(quick_desc, _build_quick_tooltip(), wraplength=450)
+    add_tooltip(generate_cb, _build_generate_tooltip(), wraplength=450)
+    add_tooltip(generate_desc, _build_generate_tooltip(), wraplength=450)
+
     opt_controls = tk.Frame(sf, bg=WHITE, padx=20, pady=8)
     opt_controls.pack(fill="x", padx=5, pady=(0, 5))
-
-    _generate_new_var = tk.BooleanVar(value=False)
-    generate_cb = tk.Checkbutton(
-        opt_controls,
-        text="Generate new trades (modifies rules, runs new backtests — slower but finds new entries)",
-        variable=_generate_new_var,
-        bg=WHITE, font=("Segoe UI", 9),
-        anchor="w",
-    )
-    generate_cb.pack(fill="x", pady=(0, 10))
 
     ctrl_row = tk.Frame(opt_controls, bg=WHITE)
     ctrl_row.pack(fill="x", pady=(0, 8))

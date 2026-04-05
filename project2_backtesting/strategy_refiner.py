@@ -1008,27 +1008,19 @@ def deep_optimize_generate(
     ts_col = candles_df.columns[0]
     candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
 
+    # Load indicators — partial build for speed
+    data_dir = os.path.dirname(candles_path)
+    indicators_df = None
+
+    # Check for existing full cache
     cache_path = candles_path.replace('.csv', '_indicators.parquet')
     if os.path.exists(cache_path):
+        print(f"  [GENERATE] Loading cached indicators: {cache_path}")
         indicators_df = pd.read_parquet(cache_path)
         if 'timestamp' in indicators_df.columns:
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
-    else:
-        from project2_backtesting.strategy_backtester import build_multi_tf_indicators
-        data_dir = os.path.dirname(candles_path)
-        # Pass all indicator groups to force compute_indicators code path
-        # (compute_all_indicators has integer index bug)
-        _ALL_GROUPS = [
-            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
-            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
-            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
-            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
-            'volume', 'vwap', 'williams_r',
-        ]
-        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
-        indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
 
+    # Load top features list first (needed for partial build)
     top_features = []
     if feature_matrix_path and os.path.exists(feature_matrix_path):
         try:
@@ -1044,6 +1036,33 @@ def deep_optimize_generate(
                 ]
         except Exception:
             pass
+
+    if indicators_df is None:
+        print(f"  [GENERATE] Building indicators (partial — rules + top features)...")
+        from project2_backtesting.strategy_backtester import (
+            build_multi_tf_indicators, _extract_required_indicators
+        )
+
+        # Get indicators the rules need
+        required = _extract_required_indicators(base_rules)
+
+        # Also add top features from feature importance
+        if top_features:
+            for feat_name in top_features[:30]:
+                if isinstance(feat_name, (list, tuple)):
+                    feat_name = feat_name[0]
+                parts = feat_name.split('_', 1)
+                if len(parts) == 2 and parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    required.setdefault(parts[0], [])
+                    if parts[1] not in required[parts[0]]:
+                        required[parts[0]].append(parts[1])
+
+        total = sum(len(v) for v in required.values())
+        print(f"  [GENERATE] Loading {total} indicators across {len(required)} TFs")
+
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=required)
+        print(f"  [GENERATE] Built {len(indicators_df.columns)} indicator columns")
 
     available_indicators = [c for c in indicators_df.columns if c != 'timestamp']
 
