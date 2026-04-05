@@ -126,12 +126,19 @@ def _get_selected_index():
 def _get_all_selected_indices():
     """Get all checked strategy indices (from checkboxes)."""
     global _check_vars
-    try:
-        # Return all checked indices
-        checked = [int(idx) for idx, is_checked in _check_vars.items() if is_checked]
-        return checked if checked else []
-    except Exception:
+    if not _check_vars:
         return []
+
+    checked = []
+    for idx_str, is_checked in _check_vars.items():
+        if is_checked:
+            try:
+                checked.append(int(idx_str))
+            except (ValueError, TypeError) as e:
+                print(f"[validator] Warning: Could not convert checkbox key '{idx_str}' to int: {e}")
+                continue
+
+    return sorted(checked)  # Return sorted list for consistent ordering
 
 
 def _get_strategy_meta(idx):
@@ -779,8 +786,8 @@ def _run_multi(mode):
                     state.window.after(0, lambda lbl=strat['label'], i=i, total=len(indices):
                                         _status_lbl.config(text=f"[{i+1}/{total}] {lbl}..."))
 
-                # Run validation for this strategy
-                _run(mode)
+                # Run validation for this specific strategy (pass idx to bypass checkbox logic)
+                _run(mode, force_idx=idx)
 
                 # Wait for completion (hacky but works)
                 import time
@@ -795,14 +802,21 @@ def _run_multi(mode):
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def _run(mode):
-    """mode: 'wf' | 'mc' | 'full' | 'slip'"""
-    # Get from checkboxes first, fallback to dropdown
-    indices = _get_all_selected_indices()
-    if indices:
-        idx = int(indices[0])  # Use first checked item
+def _run(mode, force_idx=None):
+    """
+    mode: 'wf' | 'mc' | 'full' | 'slip'
+    force_idx: if provided, use this index instead of reading from checkboxes/dropdown
+    """
+    # Use forced index if provided (for batch validation)
+    if force_idx is not None:
+        idx = force_idx
     else:
-        idx = _get_selected_index()  # Fallback to dropdown
+        # Get from checkboxes first, fallback to dropdown
+        indices = _get_all_selected_indices()
+        if indices:
+            idx = int(indices[0])  # Use first checked item
+        else:
+            idx = _get_selected_index()  # Fallback to dropdown
 
     if idx is None:
         messagebox.showerror("No Strategy", "Select a strategy first.")
