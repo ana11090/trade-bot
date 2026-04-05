@@ -404,10 +404,19 @@ def _export_csv(trades=None):
 
 _opt_target_var    = None
 _stage_var         = None
-_generate_new_var  = None
-_mode_quick_var    = None
+_opt_mode_var      = None
 _acct_var          = None
 _risk_var          = None
+
+
+def _update_status(msg, error=False):
+    """Thread-safe status label update."""
+    color = RED if error else "#28a745"
+    try:
+        if state.window and state.window.winfo_exists():
+            state.window.after(0, lambda: _opt_status_lbl.configure(text=msg, fg=color) if _opt_status_lbl else None)
+    except Exception:
+        pass
 
 
 def _start_optimization():
@@ -443,7 +452,7 @@ def _start_optimization():
         for w in _opt_results_frame.winfo_children():
             w.destroy()
 
-    def _cb(step, total, message, current_best, elapsed_str="",
+    def _cb(step, total, message, current_best=None, elapsed_str="",
             candidates_tested=0, improvements_found=0):
         """Update optimizer UI — called from background thread."""
         pct = int(step / max(total, 1) * 100)
@@ -480,7 +489,7 @@ def _start_optimization():
 
                     # Best name
                     best_name_lbl = _opt_live_labels.get('best_name')
-                    if best_name_lbl:
+                    if best_name_lbl and current_best:
                         try:
                             if best_name_lbl.winfo_exists():
                                 best_name_lbl.configure(text=current_best.get('name', '—'))
@@ -489,7 +498,7 @@ def _start_optimization():
 
                     # Best stats
                     best_stats_lbl = _opt_live_labels.get('best_stats')
-                    if best_stats_lbl:
+                    if best_stats_lbl and current_best:
                         try:
                             if best_stats_lbl.winfo_exists():
                                 best_stats_lbl.configure(
@@ -526,8 +535,10 @@ def _start_optimization():
 
     def _worker():
         try:
+            print("[OPTIMIZER] Worker thread started")
             current_trades = list(_base_trades)
             current_filters = _get_current_filters()
+            print(f"[OPTIMIZER] Base trades: {len(current_trades)}, filters: {current_filters}")
 
             spread_pips = 2.5
             commission_pips = 0.0
@@ -544,6 +555,8 @@ def _start_optimization():
             # Get stage and account size
             stage = _stage_var.get().lower() if _stage_var else "funded"
             account_size = float(_acct_var.get()) if _acct_var else 100000
+            risk_pct = float(_risk_var.get()) if _risk_var else 1.0
+            print(f"[OPTIMIZER] Stage: {stage}, Account: ${account_size:,.0f}, Risk: {risk_pct}%")
 
             # Pass stage to presets for scoring
             from project2_backtesting.strategy_refiner import get_prop_firm_presets
@@ -557,11 +570,13 @@ def _start_optimization():
             else:
                 target_data = {'stage': stage}
 
-            # ── Mode 1: Quick optimize (filter existing trades) ──
-            if _mode_quick_var.get():
+            opt_mode = _opt_mode_var.get() if _opt_mode_var else "quick"
+            print(f"[OPTIMIZER] Mode: {opt_mode}")
+
+            # ── Quick optimize (filter existing trades) ──
+            if opt_mode == "quick":
                 print("[OPTIMIZER] Running Quick Optimize mode...")
-                state.window.after(0, lambda: _opt_status_lbl.configure(
-                    text="Quick Optimize: testing filter combinations...", fg="#e67e22"))
+                _update_status("Quick Optimize: testing filter combinations...")
 
                 from project2_backtesting.strategy_refiner import deep_optimize
                 quick_results = deep_optimize(
@@ -577,11 +592,10 @@ def _start_optimization():
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
 
-            # ── Mode 2: Generate new trades (modify rules) ──
-            if _generate_new_var.get():
+            # ── Deep Explore (modify rules, find new entries) ──
+            elif opt_mode == "deep":
                 print("[OPTIMIZER] Running Deep Explore mode...")
-                state.window.after(0, lambda: _opt_status_lbl.configure(
-                    text="Deep Explore: loading indicators and modifying rules...", fg="#e67e22"))
+                _update_status("Deep Explore: loading indicators and modifying rules...")
 
                 import json as _json
                 from project2_backtesting.strategy_refiner import deep_optimize_generate
@@ -590,13 +604,14 @@ def _start_optimization():
                     project_root, 'project1_reverse_engineering', 'outputs', 'analysis_report.json'
                 )
                 if not os.path.exists(rules_path):
-                    state.window.after(0, lambda: _opt_status_lbl.configure(
-                        text="Error: analysis_report.json not found.", fg=RED))
+                    print(f"[OPTIMIZER] ERROR: analysis_report.json not found at {rules_path}")
+                    _update_status("Error: analysis_report.json not found.", error=True)
                     return
 
                 with open(rules_path) as f:
                     report = _json.load(f)
                 base_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+                print(f"[OPTIMIZER] Loaded {len(base_rules)} WIN rules from analysis_report.json")
 
                 # Find candle path from config
                 from project2_backtesting.panels.configuration import load_config
@@ -615,10 +630,11 @@ def _start_optimization():
                         break
 
                 if not candles_path:
-                    state.window.after(0, lambda: _opt_status_lbl.configure(
-                        text=f"Error: candle CSV not found.", fg=RED))
+                    print(f"[OPTIMIZER] ERROR: No candle CSV found for {symbol}_{entry_tf}")
+                    _update_status(f"Error: candle CSV not found.", error=True)
                     return
 
+                print(f"[OPTIMIZER] Using candles: {candles_path}")
                 feature_matrix_path = os.path.join(
                     project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
                 )
@@ -639,31 +655,23 @@ def _start_optimization():
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
 
-            if not _mode_quick_var.get() and not _generate_new_var.get():
-                state.window.after(0, lambda: _opt_status_lbl.configure(
-                    text="Select at least one optimization mode!", fg=RED))
-                return
-
-            # Sort all candidates by score
+            # Sort all candidates by score and return ALL (no [:20] cap)
             all_candidates.sort(key=lambda c: c.get('score', 0), reverse=True)
-            results = all_candidates[:20]
+            print(f"[OPTIMIZER] Total candidates: {len(all_candidates)}")
 
-            state.window.after(0, lambda: _show_opt_results(results))
-            state.window.after(0, lambda: _opt_status_lbl.configure(
-                text=f"Complete — {len(results)} candidates from "
-                     f"{'Quick' if _mode_quick_var.get() else ''}"
-                     f"{' + ' if _mode_quick_var.get() and _generate_new_var.get() else ''}"
-                     f"{'Deep Explore' if _generate_new_var.get() else ''}",
-                fg=GREEN))
+            state.window.after(0, lambda: _show_opt_results(all_candidates))
+            mode_name = "⚡ Quick Optimize" if opt_mode == "quick" else "🧬 Deep Explore"
+            _update_status(f"Complete — {len(all_candidates)} candidates from {mode_name}")
         except Exception as e:
             import traceback
+            print(f"[OPTIMIZER] ERROR: {e}")
             traceback.print_exc()
-            state.window.after(0, lambda: _opt_status_lbl.configure(
-                text=f"Error: {e}", fg=RED))
+            _update_status(f"Error: {e}", error=True)
         finally:
             try:
                 state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
                 state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled"))
+                print("[OPTIMIZER] Worker thread finished")
             except Exception:
                 pass
 
@@ -1268,7 +1276,7 @@ def build_panel(parent):
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
-    global _scroll_canvas, _generate_new_var, _mode_quick_var, _acct_var, _risk_var
+    global _scroll_canvas, _opt_mode_var, _acct_var, _risk_var
 
     _load_strategies()
 
@@ -1578,21 +1586,22 @@ def build_panel(parent):
              font=("Segoe UI", 9), bg="#fff3cd", fg="#856404",
              justify=tk.LEFT).pack(anchor="w", pady=(3, 0))
 
-    # ── Mode checkboxes ───────────────────────────────────────
-    modes_frame = tk.LabelFrame(sf, text="Optimization Modes",
+    # ── Mode radio buttons ────────────────────────────────────
+    modes_frame = tk.LabelFrame(sf, text="Optimization Mode",
                                  font=("Segoe UI", 10, "bold"), bg=BG, fg=DARK,
                                  padx=12, pady=8)
     modes_frame.pack(fill="x", padx=10, pady=(0, 5))
 
-    # Mode 1: Quick optimization (filter existing trades)
-    _mode_quick_var = tk.BooleanVar(value=True)
+    _opt_mode_var = tk.StringVar(value="quick")
 
-    quick_cb = tk.Checkbutton(modes_frame,
+    # Radio 1: Quick optimization (filter existing trades)
+    quick_rb = tk.Radiobutton(modes_frame,
         text="⚡ Quick Optimize — filter existing trades (seconds)",
-        variable=_mode_quick_var,
+        variable=_opt_mode_var,
+        value="quick",
         font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
         selectcolor=BG, activebackground=BG, anchor="w")
-    quick_cb.pack(fill="x", pady=(0, 2))
+    quick_rb.pack(fill="x", pady=(0, 2))
 
     quick_desc = tk.Label(modes_frame,
         text="Uses only the indicators your current rules need. Tests session filters,\n"
@@ -1600,22 +1609,21 @@ def build_panel(parent):
         font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT)
     quick_desc.pack(fill="x", padx=(24, 0), pady=(0, 8))
 
-    # Mode 2: Generate new trades (modify rules)
-    _generate_new_var = tk.BooleanVar(value=False)
-
-    generate_cb = tk.Checkbutton(modes_frame,
+    # Radio 2: Generate new trades (modify rules)
+    deep_rb = tk.Radiobutton(modes_frame,
         text="🧬 Deep Explore — modify rules, find new entries (minutes)",
-        variable=_generate_new_var,
+        variable=_opt_mode_var,
+        value="deep",
         font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
         selectcolor=BG, activebackground=BG, anchor="w")
-    generate_cb.pack(fill="x", pady=(0, 2))
+    deep_rb.pack(fill="x", pady=(0, 2))
 
-    generate_desc = tk.Label(modes_frame,
+    deep_desc = tk.Label(modes_frame,
         text="Loads the top 30 most important indicators from Project 1 analysis.\n"
              "Shifts thresholds ±10-20%, adds new conditions, removes weak ones.\n"
              "Re-runs backtests with each modification. Slower but finds NEW trade setups.",
         font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT)
-    generate_desc.pack(fill="x", padx=(24, 0), pady=(0, 5))
+    deep_desc.pack(fill="x", padx=(24, 0), pady=(0, 5))
 
     # ── Add hover tooltips with full details ──────────────────
     from shared.tooltip import add_tooltip
@@ -1653,8 +1661,8 @@ def build_panel(parent):
 
         return text
 
-    def _build_generate_tooltip():
-        """Build tooltip showing which indicators generate mode explores."""
+    def _build_deep_tooltip():
+        """Build tooltip showing which indicators deep mode explores."""
         text = (
             "🧬 DEEP EXPLORE MODE\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1718,10 +1726,10 @@ def build_panel(parent):
         return text
 
     # Apply tooltips
-    add_tooltip(quick_cb, _build_quick_tooltip(), wraplength=450)
+    add_tooltip(quick_rb, _build_quick_tooltip(), wraplength=450)
     add_tooltip(quick_desc, _build_quick_tooltip(), wraplength=450)
-    add_tooltip(generate_cb, _build_generate_tooltip(), wraplength=450)
-    add_tooltip(generate_desc, _build_generate_tooltip(), wraplength=450)
+    add_tooltip(deep_rb, _build_deep_tooltip(), wraplength=450)
+    add_tooltip(deep_desc, _build_deep_tooltip(), wraplength=450)
 
     opt_controls = tk.Frame(sf, bg=WHITE, padx=20, pady=8)
     opt_controls.pack(fill="x", padx=5, pady=(0, 5))
