@@ -720,7 +720,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     # Dollar amounts
     total_pips = stats.get('total_pips', 0) or 0
     total_dollars = (total_pips or 0) * (dollar_per_pip or 0)
-    total_pct = (total_dollars / acct) * 100 if (acct or 0) > 0 else 0
+    total_pct = (total_dollars / max(acct or 1, 1)) * 100
     try:
         trade_list = cand.get('trades', [])
         if trade_list:
@@ -734,7 +734,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     except Exception:
         monthly_dollars = 0
 
-    your_monthly = monthly_dollars * (profit_split / 100)
+    your_monthly = (monthly_dollars or 0) * ((profit_split or 80) / 100)
 
     dollar_row = tk.Frame(card, bg=card_bg)
     dollar_row.pack(fill="x", pady=(2, 0))
@@ -917,7 +917,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     best_day_pct = (best_day / total_profit * 100) if total_profit > 0 else 100
 
                     # Check min profitable days (3 days >= 0.5% of account)
-                    min_threshold = acct * 0.005
+                    min_threshold = (acct or 100000) * 0.005
                     profitable_days = sum(1 for v in window_pnls.values() if v >= min_threshold)
 
                     # Read consistency rule from firm
@@ -939,7 +939,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
 
                     if consistency_ok and min_days_ok and net_window > 0:
                         windows_pass += 1
-                        payout = net_window * (profit_split / 100)
+                        payout = net_window * ((profit_split or 80) / 100)
                         window_profits.append(payout)
 
                 if windows_total > 0:
