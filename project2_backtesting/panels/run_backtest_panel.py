@@ -572,6 +572,14 @@ def build_panel(parent):
     # Load initial rules
     _load_rules_from_source(source_paths)
 
+    # ── Feature Toggles ────────────────────────────────────────────────────────
+    try:
+        from shared import feature_toggles
+        toggle_widget = feature_toggles.build_toggle_widget(panel, bg="#ffffff")
+        toggle_widget.pack(fill="x", padx=20, pady=(15, 5))
+    except ImportError:
+        pass  # Shared module not available, skip toggles
+
     # ── Run button ────────────────────────────────────────────────────────────
     _run_button = tk.Button(
         panel, text="Run Backtest",

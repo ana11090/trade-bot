@@ -316,6 +316,13 @@ def _build_inner(inner):
     # ── Spacer ────────────────────────────────────────────────────────────────
     tk.Frame(inner, bg="#f0f2f5", height=1).pack(fill="x", pady=(10, 0))
 
+    # ── Feature Toggles ────────────────────────────────────────────────────────
+    try:
+        from shared import feature_toggles
+        toggle_widget = feature_toggles.build_toggle_widget(inner, bg="#f0f2f5")
+        toggle_widget.pack(fill="x", **pad)
+    except ImportError:
+        pass  # Shared module not available, skip toggles
 
     # ── Run button + progress ─────────────────────────────────────────────────
     _section(inner, "Run")

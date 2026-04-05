@@ -13,8 +13,14 @@ Results cached to outputs/smart_feature_matrix.csv.
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
+
+# Add parent dir to sys.path for shared imports
+_PARENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(_HERE, 'outputs')
@@ -27,7 +33,7 @@ def compute_smart_features(feature_matrix_path=None, force_recompute=False,
     Compute smart features and return extended DataFrame.
     Caches to smart_feature_matrix.csv.
 
-    Returns: DataFrame with original columns + ~50 new SMART_ columns.
+    Returns: DataFrame with original columns + ~50 SMART_ + 14 REGIME_ columns.
     """
     if not force_recompute and os.path.exists(CACHE_PATH):
         cached_df = pd.read_csv(CACHE_PATH)
@@ -39,39 +45,65 @@ def compute_smart_features(feature_matrix_path=None, force_recompute=False,
         feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
 
     df = pd.read_csv(feature_matrix_path)
-    total_steps = 8
 
-    if progress_callback:
-        progress_callback(1, total_steps, "Computing TF divergences...")
-    df = _add_tf_divergences(df)
+    # Check feature toggles
+    try:
+        from shared import feature_toggles
+        smart_enabled  = feature_toggles.get_smart()
+        regime_enabled = feature_toggles.get_regime()
+    except ImportError:
+        smart_enabled = True
+        regime_enabled = True
 
-    if progress_callback:
-        progress_callback(2, total_steps, "Computing indicator dynamics...")
-    df = _add_indicator_dynamics(df)
+    total_steps = 8 + (1 if regime_enabled else 0)
+    step = 0
 
-    if progress_callback:
-        progress_callback(3, total_steps, "Computing TF alignment...")
-    df = _add_alignment_scores(df)
+    if smart_enabled:
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing TF divergences...")
+        df = _add_tf_divergences(df)
 
-    if progress_callback:
-        progress_callback(4, total_steps, "Computing session features...")
-    df = _add_session_intelligence(df)
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing indicator dynamics...")
+        df = _add_indicator_dynamics(df)
 
-    if progress_callback:
-        progress_callback(5, total_steps, "Computing calendar features...")
-    df = _add_calendar_features(df)
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing TF alignment...")
+        df = _add_alignment_scores(df)
 
-    if progress_callback:
-        progress_callback(6, total_steps, "Computing volatility regimes...")
-    df = _add_volatility_regimes(df)
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing session features...")
+        df = _add_session_intelligence(df)
 
-    if progress_callback:
-        progress_callback(7, total_steps, "Computing price action...")
-    df = _add_price_action(df)
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing calendar features...")
+        df = _add_calendar_features(df)
 
-    if progress_callback:
-        progress_callback(8, total_steps, "Computing momentum quality...")
-    df = _add_momentum_quality(df)
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing volatility regimes...")
+        df = _add_volatility_regimes(df)
+
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing price action...")
+        df = _add_price_action(df)
+
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing momentum quality...")
+        df = _add_momentum_quality(df)
+
+    if regime_enabled:
+        step += 1
+        if progress_callback:
+            progress_callback(step, total_steps, "Computing regime features...")
+        df = _add_regime_features(df)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     df.to_csv(CACHE_PATH, index=False)
@@ -301,6 +333,84 @@ def _add_momentum_quality(df):
     return df
 
 
+def _add_regime_features(df):
+    """
+    Regime-aware features — normalize indicators relative to price level.
+
+    Gold traded at $400 in 2005, $5000 in 2025. An ATR of 30 pips means very
+    different things at different price levels:
+    - At $400: 30 / 400 = 7.5% (extremely volatile)
+    - At $5000: 30 / 5000 = 0.6% (normal volatility)
+
+    These 14 features normalize indicators as % of price, making strategies
+    robust across price regimes.
+    """
+    # Use H1 pivot point as price proxy (more stable than close)
+    price = _safe_col(df, 'H1_pivot_point')
+    ps = np.maximum(price, 1.0)  # Price safe (avoid div by zero)
+
+    # 1-3: ATR as % of price across timeframes
+    h1_atr = _safe_col(df, 'H1_atr_14')
+    h4_atr = _safe_col(df, 'H4_atr_14')
+    d1_atr = _safe_col(df, 'D1_atr_14')
+    df['REGIME_atr_pct_of_price'] = (h1_atr / ps) * 100
+    df['REGIME_h4_atr_pct']       = (h4_atr / ps) * 100
+    df['REGIME_d1_atr_pct']       = (d1_atr / ps) * 100
+
+    # 4-5: Bollinger & Keltner width as % of price
+    bb_width  = _safe_col(df, 'H1_bb_20_2_width')
+    kel_width = _safe_col(df, 'H1_keltner_width')
+    df['REGIME_bb_width_pct']      = (bb_width / ps) * 100
+    df['REGIME_keltner_width_pct'] = (kel_width / ps) * 100
+
+    # 6: Daily range as % of price
+    df['REGIME_daily_range_pct'] = (d1_atr / ps) * 100
+
+    # 7-8: Swing range height as % of price
+    # Swing height = distance from swing low to swing high
+    h1_swing_pos = _safe_col(df, 'H1_position_in_swing_range')
+    h4_swing_pos = _safe_col(df, 'H4_position_in_swing_range')
+    # Approximate swing height: if position = 0.5, price is mid-range
+    # We'll use ATR as proxy for swing height (imperfect but correlated)
+    h1_swing_h = _safe_col(df, 'H1_atr_50')  # 50-period captures swing scale
+    h4_swing_h = _safe_col(df, 'H4_atr_50')
+    df['REGIME_swing_height_pct_h1'] = (h1_swing_h / ps) * 100
+    df['REGIME_swing_height_pct_h4'] = (h4_swing_h / ps) * 100
+
+    # 9: Distance to pivot as % of price
+    h1_pivot_dist = _safe_col(df, 'H1_pivot_point_distance')
+    df['REGIME_pivot_dist_pct'] = (np.abs(h1_pivot_dist) / ps) * 100
+
+    # 10-11: Standard deviation as % of price
+    h1_std = _safe_col(df, 'H1_std_dev_20')
+    h4_std = _safe_col(df, 'H4_std_dev_20')
+    df['REGIME_std_dev_pct'] = (h1_std / ps) * 100
+    df['REGIME_h4_std_pct']  = (h4_std / ps) * 100
+
+    # 12: Price bucket (0-1000, 1000-2000, 2000-3000, 3000+)
+    df['REGIME_price_bucket'] = np.select(
+        [price < 1000, price < 2000, price < 3000, price >= 3000],
+        [0, 1, 2, 3],
+        default=1
+    )
+
+    # 13: High price era flag (post-2020 gold > $2000)
+    df['REGIME_is_high_price_era'] = (price > 2000).astype(int)
+
+    # 14: ROC alignment across periods (1, 20, 50 bars)
+    # Count how many ROC values are positive
+    roc_1  = _safe_col(df, 'H1_roc_1')
+    roc_20 = _safe_col(df, 'H1_roc_20')
+    roc_50 = _safe_col(df, 'H1_roc_50')
+    df['REGIME_roc_alignment'] = (
+        (roc_1 > 0).astype(int) +
+        (roc_20 > 0).astype(int) +
+        (roc_50 > 0).astype(int)
+    )
+
+    return df
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -382,3 +492,32 @@ SMART_FEATURE_CATEGORIES = {
 def get_smart_feature_names():
     """Return flat list of all SMART_ feature names."""
     return [name for group in SMART_FEATURE_CATEGORIES.values() for name, _ in group]
+
+
+REGIME_FEATURE_CATEGORIES = {
+    "Price-Normalized Volatility": [
+        ("REGIME_atr_pct_of_price",      "H1 ATR as % of price (accounts for $400→$5000 gold)"),
+        ("REGIME_h4_atr_pct",            "H4 ATR as % of price"),
+        ("REGIME_d1_atr_pct",            "D1 ATR as % of price"),
+        ("REGIME_bb_width_pct",          "Bollinger Band width as % of price"),
+        ("REGIME_keltner_width_pct",     "Keltner Channel width as % of price"),
+        ("REGIME_daily_range_pct",       "Daily ATR as % of price"),
+        ("REGIME_std_dev_pct",           "H1 standard deviation as % of price"),
+        ("REGIME_h4_std_pct",            "H4 standard deviation as % of price"),
+    ],
+    "Market Structure (Price-Relative)": [
+        ("REGIME_swing_height_pct_h1",   "H1 swing range height as % of price"),
+        ("REGIME_swing_height_pct_h4",   "H4 swing range height as % of price"),
+        ("REGIME_pivot_dist_pct",        "Distance to pivot point as % of price"),
+    ],
+    "Price Regime Classification": [
+        ("REGIME_price_bucket",          "Price bucket (0: <1000, 1: 1000-2000, 2: 2000-3000, 3: 3000+)"),
+        ("REGIME_is_high_price_era",     "High price era flag (price > $2000)"),
+        ("REGIME_roc_alignment",         "ROC alignment (count of positive ROC 1/20/50)"),
+    ],
+}
+
+
+def get_regime_feature_names():
+    """Return flat list of all REGIME_ feature names."""
+    return [name for group in REGIME_FEATURE_CATEGORIES.values() for name, _ in group]

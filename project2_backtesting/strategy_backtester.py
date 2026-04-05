@@ -58,23 +58,25 @@ _SMART_DEPENDENCIES = {
             'macd_fast_diff', 'cci_14', 'bb_20_2_width',
             'ema_200_distance', 'ema_9_above_20',
             'keltner_width', 'std_dev_20', 'std_dev_50',
-            'pivot_point', 'candle_range', 'body_to_range_ratio',
-            'position_in_swing_range', 'stoch_14_k', 'williams_r_14', 'tsi'],
-    'H4':  ['rsi_14', 'adx_14', 'atr_14', 'atr_50',
+            'pivot_point', 'pivot_point_distance', 'candle_range', 'body_to_range_ratio',
+            'position_in_swing_range', 'stoch_14_k', 'williams_r_14', 'tsi',
+            'roc_1', 'roc_20', 'roc_50'],
+    'H4':  ['rsi_14', 'adx_14', 'atr_14', 'atr_50', 'std_dev_20',
             'macd_fast_diff', 'ema_200_distance', 'ema_9_above_20',
             'position_in_swing_range'],
-    'D1':  ['rsi_14', 'adx_14', 'atr_14', 'ema_200_distance'],
+    'D1':  ['rsi_14', 'adx_14', 'atr_14', 'ema_200_distance', 'position_in_swing_range'],
 }
 
 
 def _extract_required_indicators(rules):
     """
     Get the set of indicator names needed by the rules, grouped by timeframe.
-    When rules use SMART features, also includes all base indicators that
-    SMART features depend on.
+    When rules use SMART or REGIME features, also includes all base indicators
+    that those features depend on.
     """
     required = {}
     has_smart = False
+    has_regime = False
 
     for rule in rules:
         if rule.get('prediction') != 'WIN':
@@ -84,14 +86,18 @@ def _extract_required_indicators(rules):
             if feature.startswith('SMART_'):
                 has_smart = True
                 continue  # SMART features computed separately
+            if feature.startswith('REGIME_'):
+                has_regime = True
+                continue  # REGIME features computed separately
             parts = feature.split('_', 1)
             if len(parts) == 2:
                 tf, indicator = parts[0], parts[1]
                 if tf in ('M5', 'M15', 'H1', 'H4', 'D1'):
                     required.setdefault(tf, set()).add(indicator)
 
-    # If any rule uses SMART features, add all their base dependencies
-    if has_smart:
+    # If any rule uses SMART or REGIME features, add all their base dependencies
+    # (REGIME features use same base indicators as SMART features)
+    if has_smart or has_regime:
         for tf, deps in _SMART_DEPENDENCIES.items():
             required.setdefault(tf, set()).update(deps)
 
@@ -297,9 +303,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     if len(df) == 0:
         return trades
 
-    # ── Compute SMART features if rules need them and they're not already present ───
+    # ── Compute SMART & REGIME features if rules need them and they're not already present ───
     smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
                     if c['feature'].startswith('SMART_')}
+    regime_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
+                     if c['feature'].startswith('REGIME_')}
+
     # Only compute SMART features if not already present (computed once in run_comparison_matrix)
     if smart_needed and not any(c.startswith('SMART_') for c in ind.columns):
         # SMART features needed but not in indicators_df — compute them now
@@ -328,6 +337,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             print(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
         except ImportError:
             print("  WARNING: smart_features module not found — SMART conditions will not match")
+        except Exception as e:
+            print(f"  WARNING: Error computing SMART features: {e}")
+
+    # Compute REGIME features if needed
+    if regime_needed and not any(c.startswith('REGIME_') for c in ind.columns):
+        try:
+            from project1_reverse_engineering.smart_features import _add_regime_features
+            ind = _add_regime_features(ind)
+            regime_cols = [c for c in ind.columns if c.startswith('REGIME_')]
+            print(f"  [run_backtest] Computed {len(regime_cols)} REGIME features")
+        except ImportError:
+            print("  WARNING: smart_features module not found — REGIME conditions will not match")
         except Exception as e:
             print(f"  WARNING: Failed to compute SMART features: {e}")
 
@@ -652,9 +673,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         data_dir, candles_df['timestamp'], required_indicators=required_indicators)
     print(f"  Total indicator columns: {len(indicators_df.columns)}")
 
-    # ── Compute SMART features if any rules reference them ───────────────
+    # ── Compute SMART & REGIME features if any rules reference them ───────────────
     smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
                     if c['feature'].startswith('SMART_')}
+    regime_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
+                     if c['feature'].startswith('REGIME_')}
+
     if smart_needed:
         print(f"\n[BACKTESTER] Rules use {len(smart_needed)} SMART features — computing...")
         try:
@@ -685,17 +709,32 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         except Exception as e:
             print(f"  WARNING: Failed to compute SMART features: {e}")
 
+    if regime_needed:
+        print(f"\n[BACKTESTER] Rules use {len(regime_needed)} REGIME features — computing...")
+        try:
+            from project1_reverse_engineering.smart_features import _add_regime_features
+            indicators_df = _add_regime_features(indicators_df)
+            regime_cols = [c for c in indicators_df.columns if c.startswith('REGIME_')]
+            print(f"  Added {len(regime_cols)} REGIME features")
+        except ImportError:
+            print("  WARNING: smart_features module not found — REGIME conditions will not match")
+        except Exception as e:
+            print(f"  WARNING: Failed to compute REGIME features: {e}")
+
     # ── Verify all rule features are available ──────────────────────────────
     needed    = {c["feature"] for r in rules for c in r.get("conditions", [])}
     available = set(indicators_df.columns)
     found     = needed & available
     missing   = needed - available
 
-    # Separate SMART features from regular indicators for clearer reporting
+    # Separate SMART & REGIME features from regular indicators for clearer reporting
     smart_features = {f for f in needed if f.startswith('SMART_')}
-    regular_features = needed - smart_features
+    regime_features = {f for f in needed if f.startswith('REGIME_')}
+    regular_features = needed - smart_features - regime_features
     smart_found = smart_features & available
     smart_missing = smart_features - available
+    regime_found = regime_features & available
+    regime_missing = regime_features - available
     regular_found = regular_features & available
     regular_missing = regular_features - available
 
@@ -707,6 +746,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         print(f"  SMART features:     {len(smart_found)}/{len(smart_features)} found"
               + (f" — MISSING: {sorted(smart_missing)[:5]}" + ("..." if len(smart_missing) > 5 else "")
                  if smart_missing else " ✓"))
+    if regime_features:
+        print(f"  REGIME features:    {len(regime_found)}/{len(regime_features)} found"
+              + (f" — MISSING: {sorted(regime_missing)[:5]}" + ("..." if len(regime_missing) > 5 else "")
+                 if regime_missing else " ✓"))
 
     if missing:
         print(f"  WARNING: {len(missing)} features missing — rules using them will match 0 trades")
