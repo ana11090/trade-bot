@@ -876,6 +876,8 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               bg="#6c757d", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT)
 
+    print(f"[OPTIMIZER] Card #{rank} rendered with all buttons")
+
 
 def _show_opt_results(candidates):
     """Show optimizer results filtered by minimum WR, with working save buttons."""
