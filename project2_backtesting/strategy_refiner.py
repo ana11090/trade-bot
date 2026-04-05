@@ -1049,8 +1049,29 @@ def deep_optimize(
             }
 
     presets = get_prop_firm_presets()
-    preset_list = [(k, v) for k, v in presets.items() if k != 'Custom']
-    total_steps = len(preset_list) + 20 + 5 + 3  # rough total
+
+    # Only test the selected firm's preset, not ALL firms
+    if target_firm and isinstance(target_firm, dict):
+        # Find which firm was selected by matching firm_data
+        selected_firm_name = None
+        for pname, pvals in presets.items():
+            if pname == 'Custom':
+                continue
+            if pvals.get('firm_data') == target_firm.get('firm_data'):
+                selected_firm_name = pname
+                break
+
+        if selected_firm_name:
+            preset_list = [(selected_firm_name, presets[selected_firm_name])]
+        else:
+            preset_list = []
+    elif target_firm and isinstance(target_firm, str) and target_firm in presets:
+        preset_list = [(target_firm, presets[target_firm])]
+    else:
+        # No firm selected — test all presets
+        preset_list = [(k, v) for k, v in presets.items() if k != 'Custom']
+
+    total_steps = len(preset_list) + 20 + 5 + 3
 
     # ── Step 1: Preset filters ────────────────────────────────────────────────
     for i, (pname, pvals) in enumerate(preset_list):
