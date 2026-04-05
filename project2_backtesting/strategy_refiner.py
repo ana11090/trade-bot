@@ -1123,7 +1123,7 @@ def deep_optimize(
             improvements_found=sum(1 for c in candidates if c['score'] > base_score),
         )
 
-    return candidates[:20]  # top 20
+    return candidates  # return ALL — panel handles filtering/display
 
 
 # ─────────────────────────────────────────────────────────────────────────────
