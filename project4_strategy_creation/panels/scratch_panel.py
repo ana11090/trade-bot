@@ -1088,11 +1088,51 @@ def _render_results():
                      bg=bg, fg=fg,
                      font=("Segoe UI", 9, "bold")).pack(anchor="w")
 
+            opt_sl = rule.get('optimal_sl_pips')
+            opt_tp = rule.get('optimal_tp_pips')
+            if opt_sl and opt_tp:
+                tk.Label(rc,
+                         text=f"  Optimal exit: SL={opt_sl} / TP={opt_tp}  (R:R {opt_tp/opt_sl:.1f}:1)",
+                         bg=bg, fg="#8e44ad",
+                         font=("Segoe UI", 8, "bold")).pack(anchor="w")
+
             for cond in rule.get('conditions', []):
                 tk.Label(rc,
                          text=f"    {cond['feature']} {cond['operator']} {cond['value']}",
                          bg=bg, fg="#444",
                          font=("Courier", 8)).pack(anchor="w")
+
+    # Multi-exit comparison table (if multi-exit labeling was used)
+    multi_exit = r.get('multi_exit_comparison', [])
+    if multi_exit:
+        tk.Label(frame,
+                 text=f"\nMulti-Exit Comparison  ({r.get('multi_exit_tested', 0)} SL/TP combos tested):",
+                 bg="#f0f2f5", fg="#2c3e50",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10, 2))
+
+        me_frame = tk.Frame(frame, bg="#f0f2f5")
+        me_frame.pack(fill="x", pady=(0, 4))
+
+        # Header row
+        hdr = tk.Frame(me_frame, bg="#2c3e50")
+        hdr.pack(fill="x")
+        for h, w in [("SL", 6), ("TP", 6), ("R:R", 5), ("Rules", 6),
+                     ("Best WR", 9), ("Best Pips", 10), ("Score", 8)]:
+            tk.Label(hdr, text=h, bg="#2c3e50", fg="white",
+                     font=("Courier", 8, "bold"), width=w, anchor="w").pack(side="left")
+
+        for si, s in enumerate(sorted(multi_exit, key=lambda x: x['score'], reverse=True)):
+            bg_c = "#eafaf1" if si == 0 else ("#f8f9fa" if si % 2 == 0 else "white")
+            row = tk.Frame(me_frame, bg=bg_c)
+            row.pack(fill="x")
+            star = " *" if si == 0 else ""
+            for val, w in [
+                (str(s['sl']), 6), (str(s['tp']), 6), (f"{s['rr']}:1", 5),
+                (str(s['rules_found']), 6), (f"{s['best_wr']:.1%}", 9),
+                (f"{s['best_pips']:+.0f}", 10), (f"{s['score']:.1f}{star}", 8),
+            ]:
+                tk.Label(row, text=val, bg=bg_c, fg="#2c3e50",
+                         font=("Courier", 8), width=w, anchor="w").pack(side="left")
 
 
 def _update_comparison():

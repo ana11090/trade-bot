@@ -166,6 +166,107 @@ def run_scratch_discovery(
                 "Run the Data Pipeline first to load your candle history."
             )
 
+    # ── Enhancement: Multi-Exit Labeling ──────────────────────────────────────
+    # WHY: Different indicator combos work better with different SL/TP settings.
+    #      A rule might have 74% WR with SL=100/TP=200 but only 65% with SL=150/TP=300.
+    #      Without testing both, you'd miss the better exit pairing.
+    # HOW: Label candles with ~15 SL/TP combos, run discovery on each, keep the best.
+    # CHANGED: April 2026 — Level 2 enhancement
+    if enhance_multi_exit:
+        _cb(1, total_steps, "[Multi-Exit] Testing multiple SL/TP combinations...")
+
+        # Cover tight scalps through wide swings with different R:R ratios
+        exit_combos = [
+            (75,  150),
+            (100, 150),
+            (100, 200),
+            (100, 300),
+            (150, 225),
+            (150, 300),
+            (150, 450),
+            (200, 300),
+            (200, 400),
+            (200, 600),
+            (250, 375),
+            (250, 500),
+        ]
+
+        best_result_overall = None
+        best_score_overall = 0
+        all_exit_summaries = []
+
+        for ei, (test_sl, test_tp) in enumerate(exit_combos):
+            _cb(1, total_steps,
+                f"[Multi-Exit] Testing SL={test_sl}/TP={test_tp} ({ei+1}/{len(exit_combos)})...")
+
+            try:
+                exit_result = run_scratch_discovery(
+                    candles_path=candles_path,
+                    entry_timeframe=entry_timeframe,
+                    sl_pips=test_sl,
+                    tp_pips=test_tp,
+                    direction=direction,
+                    max_hold_candles=max_hold_candles,
+                    pip_size=pip_size,
+                    spread_pips=spread_pips,
+                    use_smart_features=use_smart_features,
+                    max_rules=max_rules,
+                    max_depth=max_depth,
+                    n_estimators=n_estimators,
+                    min_coverage_pct=min_coverage_pct,
+                    min_win_rate=min_win_rate,
+                    train_test_split=train_test_split,
+                    discovery_mode=discovery_mode,
+                    enhance_grid_threshold=enhance_grid_threshold,
+                    enhance_multi_exit=False,  # Don't recurse
+                    enhance_walkforward_score=enhance_walkforward_score,
+                    enhance_feature_interactions=enhance_feature_interactions,
+                    progress_callback=None,  # Suppress nested progress
+                )
+
+                rules = exit_result.get('rules', [])
+                if rules:
+                    best_wr = max(r.get('win_rate', 0) for r in rules)
+                    best_pips = max(r.get('avg_pips', 0) for r in rules)
+                    score = best_wr * max(1 + best_pips / 200, 0.1)
+
+                    for r in rules:
+                        r['optimal_sl_pips'] = test_sl
+                        r['optimal_tp_pips'] = test_tp
+                        r['optimal_rr'] = round(test_tp / test_sl, 1)
+
+                    all_exit_summaries.append({
+                        'sl': test_sl, 'tp': test_tp,
+                        'rr': round(test_tp / test_sl, 1),
+                        'rules_found': len(rules),
+                        'best_wr': round(best_wr, 3),
+                        'best_pips': round(best_pips, 1),
+                        'score': round(score, 2),
+                    })
+
+                    if score > best_score_overall:
+                        best_score_overall = score
+                        best_result_overall = exit_result
+
+            except Exception as e:
+                print(f"[MULTI-EXIT] SL={test_sl}/TP={test_tp} failed: {e}")
+                continue
+
+        if best_result_overall:
+            best_result_overall['multi_exit_comparison'] = all_exit_summaries
+            best_result_overall['multi_exit_tested'] = len(exit_combos)
+
+            print(f"\n[MULTI-EXIT] Tested {len(exit_combos)} SL/TP combinations:")
+            for s in sorted(all_exit_summaries, key=lambda x: x['score'], reverse=True):
+                marker = " * BEST" if s['score'] == best_score_overall else ""
+                print(f"  SL={s['sl']}/TP={s['tp']} (R:R {s['rr']}) -> "
+                      f"{s['rules_found']} rules, best WR={s['best_wr']:.1%}, "
+                      f"best pips={s['best_pips']:.0f}{marker}")
+
+            return best_result_overall
+        else:
+            print("[MULTI-EXIT] No exit combo produced viable rules. Falling through to normal discovery.")
+
     # ── Step 1: Label candles ─────────────────────────────────────────────────
     _cb(1, "Step 1/6: Labeling candles (WIN/LOSS)...")
 
