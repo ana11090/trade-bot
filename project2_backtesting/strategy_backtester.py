@@ -264,6 +264,200 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
     return combined
 
 
+def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
+                                  exit_strategy, direction, pip_size,
+                                  spread_pips, commission_pips, slippage_pips,
+                                  account_size, risk_per_trade_pct,
+                                  default_sl_pips, pip_value_per_lot,
+                                  swap_cost_per_lot_per_night=0):
+    """
+    Vectorized trade simulation for FixedSLTP exit strategy.
+
+    WHY: The iterrows() loop processes ~150K candle iterations for ~3000 trades.
+         For FixedSLTP, SL and TP are constant — we can find the exit candle
+         with a single numpy operation per trade instead of looping.
+
+    HOW: For each entry signal:
+      1. Compute SL/TP prices (fixed from entry price)
+      2. Get numpy arrays of future highs/lows
+      3. Find first index where low <= SL or high >= TP
+      4. Determine if SL or TP hit first (when both trigger on same candle)
+
+    CHANGED: April 2026 — replaces iterrows for 10-50x speedup
+    """
+    trades = []
+
+    sl_pips = exit_strategy.sl_pips
+    tp_pips = exit_strategy.tp_pips
+
+    # Pre-extract numpy arrays (read-only, no copy)
+    all_opens  = df['open'].values.astype(float)
+    all_highs  = df['high'].values.astype(float)
+    all_lows   = df['low'].values.astype(float)
+    all_closes = df['close'].values.astype(float)
+    all_times  = df['timestamp'].values
+
+    index_positions = {idx: pos for pos, idx in enumerate(df.index)}
+    occupied_until_idx = -1
+
+    for sig_idx in signal_indices:
+        if sig_idx <= occupied_until_idx:
+            continue
+
+        rule_id   = int(signal_rule_ids.loc[sig_idx])
+        entry_pos = index_positions.get(sig_idx, 0)
+
+        if entry_pos + 1 >= len(df):
+            continue
+
+        entry_price = all_opens[entry_pos + 1]
+
+        if direction == "BUY":
+            entry_price += (spread_pips + slippage_pips) * pip_size
+        else:
+            entry_price -= slippage_pips * pip_size
+
+        entry_time = all_times[entry_pos + 1]
+
+        # Compute SL/TP levels
+        if direction == "BUY":
+            sl_price = entry_price - sl_pips * pip_size
+            tp_price = entry_price + tp_pips * pip_size
+        else:
+            sl_price = entry_price + sl_pips * pip_size
+            tp_price = entry_price - tp_pips * pip_size
+
+        # Get future candle arrays from entry+2 onward
+        start = entry_pos + 2
+        if start >= len(df):
+            continue
+
+        future_highs = all_highs[start:]
+        future_lows  = all_lows[start:]
+        future_opens = all_opens[start:]
+
+        # ── Find exit candle with numpy ──────────────────────────────────
+        # WHY: Instead of looping candle-by-candle, we check ALL future candles
+        #      at once. numpy finds the first match in microseconds.
+        if direction == "BUY":
+            sl_hit = future_lows  <= sl_price
+            tp_hit = future_highs >= tp_price
+        else:
+            sl_hit = future_highs >= sl_price
+            tp_hit = future_lows  <= tp_price
+
+        either_hit = sl_hit | tp_hit
+
+        if either_hit.any():
+            exit_offset = int(np.argmax(either_hit))
+            exit_pos    = start + exit_offset
+
+            candle_open = future_opens[exit_offset]
+            candle_low  = future_lows[exit_offset]
+            candle_high = future_highs[exit_offset]
+
+            sl_triggered = bool(sl_hit[exit_offset])
+            tp_triggered = bool(tp_hit[exit_offset])
+
+            if sl_triggered and tp_triggered:
+                # Both on same candle — gap check first, then conservative SL
+                if direction == "BUY":
+                    if candle_open <= sl_price:
+                        exit_price  = candle_open
+                        exit_reason = "STOP_LOSS_GAP"
+                    elif candle_open >= tp_price:
+                        exit_price  = candle_open
+                        exit_reason = "TAKE_PROFIT_GAP"
+                    else:
+                        exit_price  = sl_price
+                        exit_reason = "STOP_LOSS"
+                else:
+                    if candle_open >= sl_price:
+                        exit_price  = candle_open
+                        exit_reason = "STOP_LOSS_GAP"
+                    elif candle_open <= tp_price:
+                        exit_price  = candle_open
+                        exit_reason = "TAKE_PROFIT_GAP"
+                    else:
+                        exit_price  = sl_price
+                        exit_reason = "STOP_LOSS"
+            elif sl_triggered:
+                if direction == "BUY" and candle_open <= sl_price:
+                    exit_price  = candle_open
+                    exit_reason = "STOP_LOSS_GAP"
+                elif direction == "SELL" and candle_open >= sl_price:
+                    exit_price  = candle_open
+                    exit_reason = "STOP_LOSS_GAP"
+                else:
+                    exit_price  = sl_price
+                    exit_reason = "STOP_LOSS"
+            else:
+                if direction == "BUY" and candle_open >= tp_price:
+                    exit_price  = candle_open
+                    exit_reason = "TAKE_PROFIT_GAP"
+                elif direction == "SELL" and candle_open <= tp_price:
+                    exit_price  = candle_open
+                    exit_reason = "TAKE_PROFIT_GAP"
+                else:
+                    exit_price  = tp_price
+                    exit_reason = "TAKE_PROFIT"
+
+            exit_time    = all_times[exit_pos]
+            candles_held = exit_offset + 1
+        else:
+            # No SL/TP hit — close at end of data
+            exit_pos     = len(df) - 1
+            exit_price   = all_closes[-1]
+            exit_time    = all_times[-1]
+            exit_reason  = "END_OF_DATA"
+            candles_held = len(future_highs)
+
+        # P&L
+        if direction == "BUY":
+            pnl_pips = (exit_price - entry_price) / pip_size
+        else:
+            pnl_pips = (entry_price - exit_price) / pip_size
+
+        net_pips = pnl_pips - commission_pips
+
+        # Swap costs
+        swap_cost_pips = 0.0
+        if swap_cost_per_lot_per_night > 0:
+            entry_dt   = pd.Timestamp(entry_time)
+            exit_dt    = pd.Timestamp(exit_time)
+            swap_nights = (exit_dt.date() - entry_dt.date()).days
+            if swap_nights > 0:
+                swap_cost_pips = (swap_nights * swap_cost_per_lot_per_night) / pip_value_per_lot
+                net_pips -= swap_cost_pips
+
+        # Lot sizing
+        lot_size = 0.01
+        if account_size and risk_per_trade_pct > 0 and default_sl_pips > 0:
+            risk_dollars = account_size * (risk_per_trade_pct / 100)
+            lot_size = max(0.01, round(risk_dollars / (default_sl_pips * pip_value_per_lot), 2))
+
+        net_profit = net_pips * pip_value_per_lot * lot_size
+
+        trades.append({
+            'entry_time':   str(entry_time),
+            'exit_time':    str(exit_time),
+            'entry_price':  round(float(entry_price), 5),
+            'exit_price':   round(float(exit_price), 5),
+            'direction':    direction,
+            'pips':         round(float(pnl_pips + commission_pips), 1),
+            'net_pips':     round(float(net_pips), 1),
+            'net_profit':   round(float(net_profit), 2),
+            'lot_size':     lot_size,
+            'exit_reason':  exit_reason,
+            'candles_held': candles_held,
+            'rule_id':      rule_id,
+        })
+
+        occupied_until_idx = df.index[exit_pos]
+
+    return trades
+
+
 def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  direction="BUY", start_date=None, end_date=None,
                  pip_size=0.01, max_open_trades=1,
@@ -396,6 +590,21 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         signal_rule_ids[new_signals] = rule_idx
 
     signal_indices = df.index[signal_mask].tolist()
+
+    # ── Use vectorized exit for FixedSLTP (10-50x faster) ────────────────────
+    # WHY: FixedSLTP has constant SL/TP levels — numpy finds the exit candle
+    #      in microseconds per trade vs milliseconds for the iterrows loop.
+    # CHANGED: April 2026 — vectorized FixedSLTP path
+    from project2_backtesting.exit_strategies import FixedSLTP
+    if isinstance(exit_strategy, FixedSLTP) and signal_indices:
+        return _vectorized_fixed_sltp_exits(
+            df, signal_indices, signal_rule_ids, rules,
+            exit_strategy, direction, pip_size,
+            spread_pips, commission_pips, slippage_pips,
+            account_size, risk_per_trade_pct,
+            default_sl_pips, pip_value_per_lot,
+            swap_cost_per_lot_per_night,
+        )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
     occupied_until_idx = -1   # index of last candle in current open trade
@@ -617,6 +826,19 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     if not signal_indices:
         return trades
+
+    # ── Use vectorized exit for FixedSLTP ────────────────────────────────
+    # WHY: Same optimization as run_backtest — vectorized exit detection.
+    # CHANGED: April 2026 — vectorized FixedSLTP in fast_backtest
+    from project2_backtesting.exit_strategies import FixedSLTP
+    if isinstance(exit_strategy, FixedSLTP):
+        return _vectorized_fixed_sltp_exits(
+            df, signal_indices, signal_rule_ids, rules,
+            exit_strategy, direction, pip_size,
+            spread_pips, commission_pips, slippage_pips,
+            account_size, risk_per_trade_pct,
+            default_sl_pips, pip_value_per_lot,
+        )
 
     # ── Simulate trades from signal candles ──────────────────────────────
     occupied_until_idx = -1
