@@ -115,10 +115,9 @@
       "stage": "funded",
       "type": "funded_accumulate",
       "description": "Conservative trading to meet payout conditions",
-      "explanation": "Trade conservatively to meet two payout conditions: (1) at least 3 profitable days with >= 0.5% gain each, and (2) no single day exceeds 20% of total profit. Use a daily profit cap of 2 winning trades then stop for the day. If total DD reaches 5% before conditions are met, stop trading for the rest of the period.",
+      "explanation": "Trade conservatively to meet two payout conditions: (1) at least 3 profitable days with >= 0.5% gain each, and (2) no single day exceeds 20% of total profit. If total DD reaches 5% before conditions are met, stop trading for the rest of the period.",
       "parameters": {
         "risk_pct": 0.5,
-        "max_winning_trades_per_day": 2,
         "daily_dd_alert_pct": 2.5,
         "total_dd_alert_pct": 5.5,
         "emergency_total_dd_pct": 5.0,
@@ -144,7 +143,7 @@
       "stage": "funded",
       "type": "consistency",
       "description": "No single day > 20% of total profit in the payout period",
-      "explanation": "Measured at payout time. More trading days = easier consistency. With 8 days, each is ~12.5%. The 2-win daily cap helps ensure even distribution. Lot size does NOT fix consistency.",
+      "explanation": "Measured at payout time. More trading days = easier consistency. With 8 days, each is ~12.5%. Spreading trades across more days helps even distribution. Lot size does NOT fix consistency.",
       "parameters": {
         "max_day_pct": 20
       }

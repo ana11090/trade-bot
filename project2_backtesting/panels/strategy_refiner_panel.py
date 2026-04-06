@@ -2383,7 +2383,7 @@ def build_panel(parent):
                     _risk_var.set("1.0")
         else:
             stage_info.config(
-                text="🛡️ Goal: survive + payouts. 2 wins/day cap. Stop after conditions met.",
+                text="🛡️ Goal: survive + payouts consistently. Meet DD and consistency rules.",
                 fg="#28a745")
             # Auto-set risk from funded trading_rules
             for rule in trading_rules:

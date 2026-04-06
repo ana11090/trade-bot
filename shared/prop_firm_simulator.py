@@ -330,7 +330,6 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
     payout_interval = _PAYOUT_FREQ_DAYS.get(payout_freq, 14)
 
     # Parse trading_rules
-    max_winning_trades_per_day = 999  # unlimited by default
     consistency_max_pct = None
     min_profitable_days_count = 0
     min_profitable_day_pct = 0
@@ -345,7 +344,6 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
             params = rule.get('parameters', {})
 
             if rtype == 'funded_accumulate':
-                max_winning_trades_per_day = params.get('max_winning_trades_per_day', 999)
                 emergency_total_dd_pct = params.get('emergency_total_dd_stop_pct')
 
             elif rtype == 'funded_protect':
@@ -409,19 +407,7 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
             else:
                 continue
 
-        # Apply daily profit cap: only take first N winning trades
-        if max_winning_trades_per_day < 999:
-            capped_trades = []
-            win_count = 0
-            for t in trade_list:
-                if t > 0:
-                    win_count += 1
-                    if win_count > max_winning_trades_per_day:
-                        break  # stop after N winning trades
-                capped_trades.append(t)
-            day_pnl = _apply_daily_safety(capped_trades, safety_threshold)
-        else:
-            day_pnl = _apply_daily_safety(trade_list, safety_threshold)
+        day_pnl = _apply_daily_safety(trade_list, safety_threshold)
 
         balance      += day_pnl
         trading_days += 1

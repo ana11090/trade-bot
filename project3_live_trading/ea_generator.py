@@ -228,7 +228,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_on_trade  = []     # runs when a trade closes (OnTradeTransaction)
 
     # Track what capabilities are needed
-    has_winning_cap     = False
     has_consistency     = False
     has_min_profit_days = False
     has_protect_phase   = False
@@ -279,21 +278,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                     f'      }}\n'
                     f'   }}')
 
-        # ── funded_accumulate: win cap + DD alerts with payout status ────────
+        # ── funded_accumulate: DD alerts with payout status ──────────────────
         elif rtype == 'funded_accumulate':
             if 'risk_pct' in params:
                 funded_risk_pct = params['risk_pct']
-
-            if 'max_winning_trades_per_day' in params:
-                has_winning_cap = True
-                mw = params['max_winning_trades_per_day']
-                extra_inputs.append(f'input int MaxWinTradesPerDay = {mw}; // [{rname}]')
-                extra_globals.append(f'int g_dailyWins = 0;')
-                extra_daily_reset.append(f'   g_dailyWins = 0;')
-                extra_tick_checks.append(
-                    f'   // [{rname}] Stop after {mw} winning trades\n'
-                    f'   if(g_dailyWins >= MaxWinTradesPerDay)\n'
-                    f'   {{ LogSkip("max_wins_reached", g_dailyWins); return; }}')
 
             # DD alert with payout condition status
             # WHY: The alert includes whether payout conditions are met,
@@ -470,8 +458,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # ── Period reset (14 days) ────────────────────────────────────────────
     if has_period_reset:
         reset_items = []
-        if has_winning_cap:
-            reset_items.append('g_dailyWins = 0;')
         if has_min_profit_days:
             reset_items.append('g_profitDayCount = 0;')
         if has_consistency:
@@ -508,17 +494,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     # ── OnTradeTransaction ────────────────────────────────────────────────
     on_trade_body = '\n'.join(extra_on_trade)
-    if has_winning_cap or on_trade_body:
-        win_cap_code = ''
-        if has_winning_cap:
-            win_cap_code = (
-                f'   if(dealProfit > 0) {{\n'
-                f'      g_dailyWins++;\n'
-                f'      if(g_dailyWins >= MaxWinTradesPerDay) {{\n'
-                f'         g_stopForDay = true;\n'
-                f'         Print("[RULE] Max wins reached: ", g_dailyWins);\n'
-                f'      }}\n'
-                f'   }}')
+    if on_trade_body:
         extra_functions.append(
             f'void OnTradeTransaction(const MqlTradeTransaction &trans,\n'
             f'                         const MqlTradeRequest &request,\n'
@@ -526,7 +502,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'{{\n'
             f'   if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;\n'
             f'   double dealProfit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT);\n'
-            f'{win_cap_code}\n'
             f'{on_trade_body}\n'
             f'}}')
 
