@@ -5,7 +5,14 @@
   "market_type": "forex_cfd",
   "dd_reset_timezone": "UTC",
   "typical_swap_xauusd_per_lot_per_night": 30.0,
-  "leverage_by_size": {"5000": "1:100", "10000": "1:100", "25000": "1:100", "50000": "1:100", "100000": "1:100", "200000": "1:100"},
+  "leverage_by_size": {
+    "5000": "1:100",
+    "10000": "1:100",
+    "25000": "1:100",
+    "50000": "1:100",
+    "100000": "1:100",
+    "200000": "1:100"
+  },
   "challenges": [
     {
       "challenge_id": "atlas_1step",
@@ -434,8 +441,17 @@
     {
       "challenge_id": "atlas_instant",
       "challenge_name": "Instant Funding",
-      "description": "No evaluation — instant funded access. Trailing drawdown varies by size. Up to 100% profit split.",
-      "phases": [],
+      "description": "No evaluation \u2014 instant funded access. Trailing drawdown varies by size. Up to 100% profit split.",
+      "phases": [
+        {
+          "phase_name": "Instant \u2014 No Evaluation",
+          "profit_target_pct": null,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 6.0,
+          "max_calendar_days": null,
+          "min_trading_days": 0
+        }
+      ],
       "funded": {
         "profit_split_pct": 80,
         "max_profit_split_pct": 100,

@@ -5,7 +5,14 @@
   "market_type": "forex_cfd",
   "dd_reset_timezone": "CET",
   "typical_swap_xauusd_per_lot_per_night": 25.0,
-  "leverage_by_size": {"6000": "1:100", "15000": "1:100", "25000": "1:100", "50000": "1:100", "100000": "1:100", "200000": "1:100"},
+  "leverage_by_size": {
+    "6000": "1:100",
+    "15000": "1:100",
+    "25000": "1:100",
+    "50000": "1:100",
+    "100000": "1:100",
+    "200000": "1:100"
+  },
   "challenges": [
     {
       "challenge_id": "fundednext_stellar_2step",
@@ -222,8 +229,18 @@
     {
       "challenge_id": "fundednext_stellar_instant",
       "challenge_name": "Stellar Instant",
-      "description": "No evaluation — instant funded account. 6% trailing max DD, no daily DD limit. On-demand payouts.",
-      "phases": [],
+      "description": "No evaluation \u2014 instant funded account. 6% trailing max DD, no daily DD limit. On-demand payouts.",
+      "phases": [
+        {
+          "phase_name": "Instant \u2014 No Evaluation",
+          "profit_target_pct": null,
+          "max_daily_drawdown_pct": null,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "trailing",
+          "max_calendar_days": null,
+          "min_trading_days": 0
+        }
+      ],
       "funded": {
         "profit_split_pct": 80,
         "max_profit_split_pct": 80,
