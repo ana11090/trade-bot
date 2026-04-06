@@ -3,3 +3,5 @@ data/xauusd_M1.csv filter=lfs diff=lfs merge=lfs -text
 data/xauusd_M15.csv filter=lfs diff=lfs merge=lfs -text
 data/_backup_old/*.csv filter=lfs diff=lfs merge=lfs -text
 data/xauusd_*.csv filter=lfs diff=lfs merge=lfs -text
+project2_backtesting/outputs/backtest_matrix.json filter=lfs diff=lfs merge=lfs -text
+project2_backtesting/outputs/backtest_matrix.csv filter=lfs diff=lfs merge=lfs -text
