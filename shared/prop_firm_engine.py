@@ -55,6 +55,10 @@ class PropFirmProfile:
         self.firm_name = self._data["firm_name"]
         self.market_type = self._data.get("market_type", "forex_cfd")
         self._challenges = {c["challenge_id"]: c for c in self._data.get("challenges", [])}
+        # WHY: The simulator accesses firm.config.get('trading_rules', []) but
+        #      data was stored in self._data. This property fixes the AttributeError.
+        # CHANGED: April 2026 — expose raw config as property
+        self.config = self._data
 
     def get_challenge(self, challenge_id: str) -> Optional[dict]:
         return self._challenges.get(challenge_id)
@@ -115,7 +119,8 @@ def _prepare_trades(trades_df):
     return df
 
 
-def _check_phase(df, phase_config: dict, account_size: float, start_idx: int) -> tuple:
+def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
+                 dd_mechanics: dict = None) -> tuple:
     """
     Simulate one challenge phase against trades starting at start_idx.
     Returns (PhaseResult, next_trade_idx).
@@ -128,6 +133,19 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int) ->
     consistency_rule_pct  = phase_config.get("consistency_rule_pct")
     consistency_rule_type = phase_config.get("consistency_rule_type")
     phase_name            = phase_config.get("phase_name", "Phase")
+
+    # ── Parse drawdown_mechanics from firm JSON ───────────────────────────
+    # WHY: The generic "trailing" type doesn't capture firm-specific behavior.
+    #      Leveraged uses trailing on CLOSED BALANCE with HWM lock after +6%.
+    #      Without this, pass/fail rates are wrong.
+    # CHANGED: April 2026 — firm-specific DD mechanics
+    if dd_mechanics is None:
+        dd_mechanics = {}
+    trailing_dd       = dd_mechanics.get('trailing_dd', {})
+    hwm_lock_gain_pct = trailing_dd.get('lock_after_gain_pct')
+    hwm_locked        = False
+    daily_dd_config   = dd_mechanics.get('daily_dd', {})
+    daily_dd_ref_type = daily_dd_config.get('reference', '')
 
     balance   = float(account_size)
     hwm       = float(account_size)   # high water mark
@@ -169,15 +187,37 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int) ->
         trading_days += 1
         day_profits.append(day_pnl)
 
-        # Update HWM
+        # ── Update HWM — respect firm-specific trailing mechanics ─────────
+        # WHY: Generic trailing updates HWM on every balance increase.
+        #      Leveraged locks HWM once gain reaches +6% of starting balance.
+        #      After lock, HWM stays at starting balance permanently.
+        # CHANGED: April 2026 — HWM lock support
         if drawdown_type in ("trailing", "trailing_eod"):
-            hwm = max(hwm, balance)
+            if hwm_lock_gain_pct and not hwm_locked:
+                gain_pct = (balance - account_size) / account_size * 100.0
+                if gain_pct >= hwm_lock_gain_pct:
+                    hwm_locked = True
+                    hwm = account_size
+                else:
+                    hwm = max(hwm, balance)
+            elif hwm_locked:
+                pass  # HWM permanently locked at account_size
+            else:
+                hwm = max(hwm, balance)
         # For static, hwm stays at account_size (not used in calculation but track anyway)
 
-        # Daily DD: how much was lost today vs starting balance
+        # ── Daily DD — respect firm-specific reference ────────────────────
+        # WHY: Leveraged uses max(balance, equity) at 23:00 GMT+3 as the daily
+        #      DD reference. Generic uses fixed account_size. Using the wrong
+        #      reference means daily DD checks are too lenient or too strict.
+        # CHANGED: April 2026 — dynamic daily DD reference
         daily_dd_pct = 0.0
         if day_pnl < 0:
-            daily_dd_pct = abs(day_pnl) / account_size * 100.0
+            if daily_dd_ref_type == 'max_balance_equity':
+                dd_ref = max(day_start_balance, account_size)
+                daily_dd_pct = abs(day_pnl) / dd_ref * 100.0
+            else:
+                daily_dd_pct = abs(day_pnl) / account_size * 100.0
 
         # Total DD based on type
         if drawdown_type == "static":
@@ -344,13 +384,21 @@ def check_compliance(
         cutoff = pd.to_datetime(start_date).date()
         df = df[df["_close_date"] >= cutoff].reset_index(drop=True)
 
+    # WHY: drawdown_mechanics overrides the generic "trailing" type with
+    #      firm-specific behavior (trailing_closed_balance, HWM lock, etc.)
+    # CHANGED: April 2026 — read DD mechanics from JSON
+    dd_mechanics = firm._data.get('drawdown_mechanics', {})
+
     phases_config = challenge.get("phases", [])
     phase_results = []
     trade_idx = 0
     overall_failed = False
 
     for phase_config in phases_config:
-        phase_result, trade_idx = _check_phase(df, phase_config, account_size, trade_idx)
+        phase_result, trade_idx = _check_phase(
+            df, phase_config, account_size, trade_idx,
+            dd_mechanics=dd_mechanics,
+        )
         phase_results.append(phase_result)
         if not phase_result.passed:
             overall_failed = True

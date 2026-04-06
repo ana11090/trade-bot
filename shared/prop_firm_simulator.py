@@ -151,7 +151,8 @@ def _apply_daily_safety(trade_profits: list, safety_threshold: Optional[float]) 
 # ── Internal simulation helpers ────────────────────────────────────────────────
 
 def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
-                    account_size, max_override_days, daily_dd_safety_pct):
+                    account_size, max_override_days, daily_dd_safety_pct,
+                    dd_mechanics=None):
     """
     Simulate one evaluation phase.
     Returns dict with outcome, calendar_days, trading_days, profit_pct, max_dd_pct, next_idx.
@@ -178,6 +179,18 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
                 "trading_days": 0, "profit_pct": 0.0, "max_dd_pct": 0.0,
                 "next_idx": start_idx}
 
+    # ── Parse drawdown_mechanics ──────────────────────────────────────────
+    # WHY: Firms like Leveraged have trailing DD on closed balance with HWM lock.
+    #      Generic "trailing" doesn't capture this. Wrong DD = wrong pass rates.
+    # CHANGED: April 2026 — firm-specific DD mechanics
+    if dd_mechanics is None:
+        dd_mechanics = {}
+    trailing_dd       = dd_mechanics.get('trailing_dd', {})
+    hwm_lock_gain_pct = trailing_dd.get('lock_after_gain_pct')
+    hwm_locked        = False
+    daily_dd_config   = dd_mechanics.get('daily_dd', {})
+    daily_dd_ref_type = daily_dd_config.get('reference', '')
+
     balance  = float(account_size)
     hwm      = float(account_size)
     target   = account_size * profit_target_pct / 100.0
@@ -198,21 +211,36 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
 
         cal_days = (cur_date - phase_start).days + 1
 
+        # WHY: HWM lock — once gain hits threshold, HWM stops trailing
+        # CHANGED: April 2026 — HWM lock for Leveraged
         if drawdown_type in ("trailing", "trailing_eod"):
-            hwm = max(hwm, balance)
+            if hwm_lock_gain_pct and not hwm_locked:
+                gain_pct = (balance - account_size) / account_size * 100.0
+                if gain_pct >= hwm_lock_gain_pct:
+                    hwm_locked = True
+                    hwm = account_size
+                else:
+                    hwm = max(hwm, balance)
+            elif hwm_locked:
+                pass
+            else:
+                hwm = max(hwm, balance)
 
-        # Daily DD calculation based on drawdown_basis
-        drawdown_basis = phase.get("drawdown_basis", "balance")
-        if drawdown_basis == "balance_or_equity_higher":
-            # DD measured from the higher of balance or equity at start of day
-            # Since we don't track floating P&L intraday in the simulator,
-            # use balance as the reference (conservative approximation)
-            dd_reference = max(account_size, balance)
-            daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
-        elif drawdown_basis == "equity":
-            daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
-        else:  # "balance" (default)
-            daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+        # ── Daily DD calculation — firm-specific reference ────────────────
+        # WHY: Leveraged uses max(balance, equity) as daily DD reference.
+        # CHANGED: April 2026 — respect DD mechanics from JSON
+        if daily_dd_ref_type == 'max_balance_equity':
+            dd_ref = max(balance - day_pnl, account_size)  # balance at start of day
+            daily_dd = abs(min(0.0, day_pnl)) / dd_ref * 100.0
+        else:
+            drawdown_basis = phase.get("drawdown_basis", "balance")
+            if drawdown_basis == "balance_or_equity_higher":
+                dd_reference = max(account_size, balance)
+                daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
+            elif drawdown_basis == "equity":
+                daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+            else:
+                daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
 
         if drawdown_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -279,7 +307,8 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
 
 
 def _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
-                   phases, account_size, max_override_days, daily_dd_safety_pct):
+                   phases, account_size, max_override_days, daily_dd_safety_pct,
+                   dd_mechanics=None):
     """Simulate all evaluation phases in sequence. Returns eval result dict."""
     if not phases:
         return {"outcome": "PASS", "calendar_days": 0, "trading_days": 0,
@@ -294,7 +323,8 @@ def _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
 
     for phase in phases:
         pr = _simulate_phase(trading_dates, daily_trades, current_idx,
-                             phase, account_size, max_override_days, daily_dd_safety_pct)
+                             phase, account_size, max_override_days, daily_dd_safety_pct,
+                             dd_mechanics=dd_mechanics)
         phase_results.append(pr)
         total_cal   += pr["calendar_days"]
         total_tdays += pr["trading_days"]
@@ -317,7 +347,7 @@ def _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
 
 def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                            funded_cfg, account_size, daily_dd_safety_pct,
-                           trading_rules=None):
+                           trading_rules=None, dd_mechanics=None):
     """Simulate funded account from start_idx onward with trading_rules support."""
     max_daily_dd  = funded_cfg.get("max_daily_drawdown_pct")
     max_total_dd  = funded_cfg.get("max_total_drawdown_pct") or 999.0
@@ -365,6 +395,17 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         return {"survival_days": 0, "trading_days": 0, "total_payouts": 0.0,
                 "payout_count": 0, "monthly_avg": 0.0, "max_dd_pct": 0.0,
                 "end_reason": "TRADES_EXHAUSTED"}
+
+    # ── Parse drawdown_mechanics for funded stage ─────────────────────────
+    # WHY: HWM lock and daily DD reference also apply in the funded stage.
+    # CHANGED: April 2026 — firm-specific DD mechanics in funded
+    if dd_mechanics is None:
+        dd_mechanics = {}
+    _trailing_dd_f       = dd_mechanics.get('trailing_dd', {})
+    hwm_lock_gain_pct_f  = _trailing_dd_f.get('lock_after_gain_pct')
+    hwm_locked           = False
+    _daily_dd_cfg_f      = dd_mechanics.get('daily_dd', {})
+    daily_dd_ref_type_f  = _daily_dd_cfg_f.get('reference', '')
 
     balance      = float(account_size)
     hwm          = float(account_size)
@@ -418,18 +459,35 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         day_str = str(cur_date)
         period_daily_pnls[day_str] = period_daily_pnls.get(day_str, 0) + day_pnl
 
+        # WHY: HWM lock — Leveraged locks at starting balance after +6% gain
+        # CHANGED: April 2026 — HWM lock for funded stage
         if dd_type in ("trailing", "trailing_eod"):
-            hwm = max(hwm, balance)
+            if hwm_lock_gain_pct_f and not hwm_locked:
+                gain_pct = (balance - account_size) / account_size * 100.0
+                if gain_pct >= hwm_lock_gain_pct_f:
+                    hwm_locked = True
+                    hwm = account_size
+                else:
+                    hwm = max(hwm, balance)
+            elif hwm_locked:
+                pass
+            else:
+                hwm = max(hwm, balance)
 
-        # Daily DD calculation based on drawdown_basis
-        drawdown_basis = funded_cfg.get("drawdown_basis", "balance")
-        if drawdown_basis == "balance_or_equity_higher":
-            dd_reference = max(account_size, balance)
-            daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
-        elif drawdown_basis == "equity":
-            daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
-        else:  # "balance" (default)
-            daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+        # ── Daily DD — firm-specific reference ────────────────────────────
+        # CHANGED: April 2026 — respect DD mechanics from JSON
+        if daily_dd_ref_type_f == 'max_balance_equity':
+            dd_ref_f = max(balance - day_pnl, account_size)
+            daily_dd = abs(min(0.0, day_pnl)) / dd_ref_f * 100.0
+        else:
+            drawdown_basis = funded_cfg.get("drawdown_basis", "balance")
+            if drawdown_basis == "balance_or_equity_higher":
+                dd_reference = max(account_size, balance)
+                daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
+            elif drawdown_basis == "equity":
+                daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+            else:
+                daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
 
         if dd_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -487,7 +545,15 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                     total_payout += payout
                     payout_count += 1
                     balance      -= payout
-                    if dd_reset:
+                    # WHY: After payout, DD behavior depends on firm mechanics.
+                    #      Leveraged: DD locks at initial balance after withdrawal.
+                    #      Generic: DD resets to current balance.
+                    # CHANGED: April 2026 — post-payout DD lock
+                    post_payout = dd_mechanics.get('post_payout', {}) if dd_mechanics else {}
+                    if post_payout.get('dd_locks_at') == 'initial_balance':
+                        hwm = account_size
+                        hwm_locked = True
+                    elif dd_reset:
                         hwm = balance
 
             # Reset for next period
@@ -506,11 +572,13 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
 
 def _single_sim(trading_dates, daily_trades, start_date, date_to_idx,
                 phases, funded_cfg, account_size, simulate_funded,
-                max_override_days, daily_dd_safety_pct, trading_rules=None):
+                max_override_days, daily_dd_safety_pct, trading_rules=None,
+                dd_mechanics=None):
     """Run one complete simulation (eval + optional funded) with trading_rules."""
     start_idx = date_to_idx[start_date]
     eval_r    = _simulate_eval(trading_dates, daily_trades, start_date, start_idx,
-                               phases, account_size, max_override_days, daily_dd_safety_pct)
+                               phases, account_size, max_override_days, daily_dd_safety_pct,
+                               dd_mechanics=dd_mechanics)
 
     if eval_r["outcome"] != "PASS" or not simulate_funded:
         return SingleSimResult(
@@ -533,7 +601,7 @@ def _single_sim(trading_dates, daily_trades, start_date, date_to_idx,
     funded_r = _simulate_funded_stage(
         trading_dates, daily_trades, eval_r["next_idx"],
         funded_cfg, account_size, daily_dd_safety_pct,
-        trading_rules=trading_rules)
+        trading_rules=trading_rules, dd_mechanics=dd_mechanics)
 
     return SingleSimResult(
         start_date=str(start_date),
@@ -696,6 +764,10 @@ def simulate_challenge(
     # Load trading_rules from firm data
     trading_rules = firm.config.get('trading_rules', [])
 
+    # WHY: drawdown_mechanics override generic DD behavior with firm-specific rules
+    # CHANGED: April 2026 — pass DD mechanics to all simulation functions
+    dd_mechanics = firm.config.get('drawdown_mechanics', {})
+
     # ── Prepare trades ────────────────────────────────────────────────────────
     df = trades_df.copy()
     df["_close_dt"]   = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
@@ -774,7 +846,7 @@ def simulate_challenge(
             trading_dates, daily_trades, start_date, date_to_idx,
             phases, funded_cfg, account_size, simulate_funded,
             max_eval_calendar_days, daily_dd_safety_pct,
-            trading_rules=trading_rules,
+            trading_rules=trading_rules, dd_mechanics=dd_mechanics,
         )
         all_results.append(r)
 
