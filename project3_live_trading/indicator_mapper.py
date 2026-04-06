@@ -176,6 +176,174 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": True,
         "description": "Distance to Fibonacci {p} level on {tf} (custom)",
     }),
+
+    # ── Rate of Change ────────────────────────────────────────────────────
+    # WHY: roc_1 = percentage price change over N bars.
+    #      H4_roc_1 = (close - close[1]) / close[1] * 100
+    #      Used heavily in discovered rules for momentum detection.
+    #      iMomentum returns 100-based (100 = no change), subtract 100 for % change.
+    # CHANGED: April 2026 — critical missing indicator
+    (r"^roc_(\d+)$", {
+        "mt5_handle_var":  "int handle_mom_{tf}_{p};",
+        "mt5_handle_init": "handle_mom_{tf}_{p} = iMomentum(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_mom_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": (
+            "double buf_mom_{tf}_{p}[1]; CopyBuffer(handle_mom_{tf}_{p},0,0,1,buf_mom_{tf}_{p}); "
+            "double val_{var} = (buf_mom_{tf}_{p}[0] - 100.0);  "
+            "// iMomentum returns 100-based, subtract 100 to match Python roc % change"
+        ),
+        "tradovate_code":  "ta.roc(df_m{tv_tf}['close'], length={p}).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Rate of Change ({p}) on {tf}",
+    }),
+
+    # ── EMA (standard) ───────────────────────────────────────────────────
+    # WHY: EMA is a core indicator. Used for crossovers and trend detection.
+    # CHANGED: April 2026 — add EMA pattern
+    (r"^ema_(\d+)$", {
+        "mt5_handle_var":  "int handle_ema_{tf}_{p};",
+        "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double buf_ema_{tf}_{p}[1]; CopyBuffer(handle_ema_{tf}_{p},0,0,1,buf_ema_{tf}_{p}); double val_{var} = buf_ema_{tf}_{p}[0];",
+        "tradovate_code":  "ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "EMA({p}) on {tf}",
+    }),
+
+    # ── EMA distance (price distance from EMA as % of price) ─────────────
+    # WHY: ema_9_distance = (close - EMA(9)) / close * 100
+    #      Positive = price above EMA (bullish), negative = below (bearish).
+    #      Used in rules to detect how far price has moved from the trend line.
+    # CHANGED: April 2026 — critical missing indicator
+    (r"^ema_(\d+)_distance$", {
+        "mt5_handle_var":  "int handle_ema_{tf}_{p};",
+        "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": (
+            "double buf_ema_{tf}_{p}[1]; CopyBuffer(handle_ema_{tf}_{p},0,0,1,buf_ema_{tf}_{p}); "
+            "double _ema_val_{tf}_{p} = buf_ema_{tf}_{p}[0]; "
+            "double _close_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0;"
+        ),
+        "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
+        "custom_indicator_mt5": False,
+        "description": "Distance from EMA({p}) as % of price on {tf}",
+    }),
+
+    # ── EMA above (boolean: ema_fast > ema_slow) ─────────────────────────
+    (r"^ema_(\d+)_above_(\d+)$", {
+        "mt5_handle_var":  "int handle_ema_{tf}_{p1}; int handle_ema_{tf}_{p2};",
+        "mt5_handle_init": (
+            "handle_ema_{tf}_{p1} = iMA(NULL,{mt5_tf},{p1},0,MODE_EMA,PRICE_CLOSE); "
+            "handle_ema_{tf}_{p2} = iMA(NULL,{mt5_tf},{p2},0,MODE_EMA,PRICE_CLOSE); "
+            "if(handle_ema_{tf}_{p1}==INVALID_HANDLE || handle_ema_{tf}_{p2}==INVALID_HANDLE) return(INIT_FAILED);"
+        ),
+        "mt5_buffer_read": (
+            "double buf_ema_{tf}_{p1}[1]; CopyBuffer(handle_ema_{tf}_{p1},0,0,1,buf_ema_{tf}_{p1}); "
+            "double buf_ema_{tf}_{p2}[1]; CopyBuffer(handle_ema_{tf}_{p2},0,0,1,buf_ema_{tf}_{p2}); "
+            "double val_{var} = (buf_ema_{tf}_{p1}[0] > buf_ema_{tf}_{p2}[0]) ? 1.0 : 0.0;"
+        ),
+        "tradovate_code":  "1.0 if ta.ema(df_m{tv_tf}['close'],{p1}).iloc[-1] > ta.ema(df_m{tv_tf}['close'],{p2}).iloc[-1] else 0.0",
+        "custom_indicator_mt5": False,
+        "description": "EMA({p1}) above EMA({p2}) on {tf} (1=yes, 0=no)",
+    }),
+
+    # ── Distance to swing low/high ────────────────────────────────────────
+    # WHY: distance_to_swing_low = (close - lowest_low_20) / close * 100
+    #      Measures how far price is from the recent swing low.
+    #      Used to detect oversold conditions or breakout potential.
+    # CHANGED: April 2026 — critical missing indicator
+    (r"^distance_to_swing_low$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": (
+            "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
+            "double _sw_low_{tf} = iLow(NULL,{mt5_tf},_sw_low_idx_{tf}); "
+            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double val_{var} = (_cl_sw_{tf} > 0) ? (_cl_sw_{tf} - _sw_low_{tf}) / _cl_sw_{tf} * 100.0 : 0.0;"
+        ),
+        "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
+        "custom_indicator_mt5": False,
+        "description": "Distance from 20-bar swing low as % on {tf}",
+    }),
+
+    (r"^distance_to_swing_high$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": (
+            "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "double _sw_high_{tf} = iHigh(NULL,{mt5_tf},_sw_high_idx_{tf}); "
+            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double val_{var} = (_cl_swh_{tf} > 0) ? (_sw_high_{tf} - _cl_swh_{tf}) / _cl_swh_{tf} * 100.0 : 0.0;"
+        ),
+        "tradovate_code":  "(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
+        "custom_indicator_mt5": False,
+        "description": "Distance from 20-bar swing high as % on {tf}",
+    }),
+
+    # ── Position in swing range ───────────────────────────────────────────
+    # WHY: 0.0 = at swing low, 1.0 = at swing high.
+    (r"^position_in_swing_range$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": (
+            "int _psr_lo_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
+            "int _psr_hi_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "double _psr_lo_{tf} = iLow(NULL,{mt5_tf},_psr_lo_idx_{tf}); "
+            "double _psr_hi_{tf} = iHigh(NULL,{mt5_tf},_psr_hi_idx_{tf}); "
+            "double _psr_range_{tf} = _psr_hi_{tf} - _psr_lo_{tf}; "
+            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},0) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
+        ),
+        "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / max(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1], 0.000001))",
+        "custom_indicator_mt5": False,
+        "description": "Position in 20-bar swing range (0=low, 1=high) on {tf}",
+    }),
+
+    # ── Stochastic %K ─────────────────────────────────────────────────────
+    (r"^stoch_(\d+)_k$", {
+        "mt5_handle_var":  "int handle_stoch_{tf}_{p};",
+        "mt5_handle_init": "handle_stoch_{tf}_{p} = iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH); if(handle_stoch_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double buf_stoch_{tf}_{p}[1]; CopyBuffer(handle_stoch_{tf}_{p},0,0,1,buf_stoch_{tf}_{p}); double val_{var} = buf_stoch_{tf}_{p}[0];",
+        "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Stochastic %K({p}) on {tf}",
+    }),
+
+    # ── Williams %R ───────────────────────────────────────────────────────
+    (r"^williams_r_(\d+)$", {
+        "mt5_handle_var":  "int handle_wpr_{tf}_{p};",
+        "mt5_handle_init": "handle_wpr_{tf}_{p} = iWPR(NULL,{mt5_tf},{p}); if(handle_wpr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double buf_wpr_{tf}_{p}[1]; CopyBuffer(handle_wpr_{tf}_{p},0,0,1,buf_wpr_{tf}_{p}); double val_{var} = buf_wpr_{tf}_{p}[0];",
+        "tradovate_code":  "ta.willr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],length={p}).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Williams %R({p}) on {tf}",
+    }),
+
+    # ── Standard Deviation ────────────────────────────────────────────────
+    (r"^std_dev_(\d+)$", {
+        "mt5_handle_var":  "int handle_std_{tf}_{p};",
+        "mt5_handle_init": "handle_std_{tf}_{p} = iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_std_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double buf_std_{tf}_{p}[1]; CopyBuffer(handle_std_{tf}_{p},0,0,1,buf_std_{tf}_{p}); double val_{var} = buf_std_{tf}_{p}[0];",
+        "tradovate_code":  "df_m{tv_tf}['close'].rolling({p}).std().iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Standard Deviation({p}) on {tf}",
+    }),
+
+    # ── Keltner Channel width ─────────────────────────────────────────────
+    (r"^keltner_width$", {
+        "mt5_handle_var":  "int handle_ema_{tf}_20_kc; int handle_atr_{tf}_10_kc;",
+        "mt5_handle_init": (
+            "handle_ema_{tf}_20_kc = iMA(NULL,{mt5_tf},20,0,MODE_EMA,PRICE_CLOSE); "
+            "handle_atr_{tf}_10_kc = iATR(NULL,{mt5_tf},10); "
+            "if(handle_ema_{tf}_20_kc==INVALID_HANDLE || handle_atr_{tf}_10_kc==INVALID_HANDLE) return(INIT_FAILED);"
+        ),
+        "mt5_buffer_read": (
+            "double buf_ema_{tf}_20_kc[1]; CopyBuffer(handle_ema_{tf}_20_kc,0,0,1,buf_ema_{tf}_20_kc); "
+            "double buf_atr_{tf}_10_kc[1]; CopyBuffer(handle_atr_{tf}_10_kc,0,0,1,buf_atr_{tf}_10_kc); "
+            "double val_{var} = buf_atr_{tf}_10_kc[0] * 2.0;  "
+            "// Keltner width = 2 x ATR(10)"
+        ),
+        "tradovate_code":  "ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 2",
+        "custom_indicator_mt5": False,
+        "description": "Keltner Channel width (2×ATR(10)) on {tf}",
+    }),
 ]
 
 # ── SMART feature formulas ────────────────────────────────────────────────────
