@@ -1455,59 +1455,93 @@ def deep_optimize_generate(
 
     win_rules = [r for r in base_rules if r.get('prediction') == 'WIN']
 
+    # WHY: Log rule structure so we can diagnose KeyError crashes from terminal output
+    # CHANGED: April 2026 — debug logging for conditions structure
+    print(f"[OPTIMIZER] win_rules: {len(win_rules)} rules")
+    for ri, wr in enumerate(win_rules):
+        conds = wr.get('conditions', 'MISSING')
+        n_conds = len(conds) if isinstance(conds, list) else conds
+        keys = sorted(wr.keys())
+        print(f"  Rule {ri}: conditions={n_conds}, keys={keys}")
+
     # ── STEP 1: Threshold shifts ──────────────────────────────────────────────
     if not _report(1, "Step 1: Testing threshold shifts..."):
         return candidates
 
+    # WHY: Each step is wrapped in try/except so one bad rule/indicator doesn't
+    #      crash the entire optimization. Errors are logged and skipped.
+    # CHANGED: April 2026 — per-iteration error handling
     shifts = [0.7, 0.8, 0.9, 1.1, 1.2, 1.3]
     for rule_idx, rule in enumerate(win_rules):
         for cond_idx, cond in enumerate(rule.get('conditions', [])):
-            original_val = cond['value']
-            if original_val == 0:
+            try:
+                original_val = cond.get('value', 0)
+                feat = cond.get('feature', '?')
+                if original_val == 0:
+                    continue
+                for shift in shifts:
+                    if _stop_flag.is_set():
+                        break
+                    new_val = original_val * shift
+                    modified_rules = copy.deepcopy(win_rules)
+                    # WHY: Safe access — check 'conditions' exists before bracket access
+                    if 'conditions' not in modified_rules[rule_idx]:
+                        print(f"[OPTIMIZER] WARNING: Rule {rule_idx} missing 'conditions' key, skipping")
+                        continue
+                    modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
+                    change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
+                    _test_rules(f"Threshold shift: {change}", modified_rules, exit_strategies[0], change)
+                    _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
+            except Exception as e:
+                print(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
+                import traceback; traceback.print_exc()
                 continue
-            for shift in shifts:
-                if _stop_flag.is_set():
-                    break
-                new_val = original_val * shift
-                modified_rules = copy.deepcopy(win_rules)
-                modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
-                feat = cond['feature']
-                change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
-                _test_rules(f"Threshold shift: {change}", modified_rules, exit_strategies[0], change)
-                _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
 
     # ── STEP 2: Add new indicator conditions ──────────────────────────────────
     if not _report(2, "Step 2: Testing additional indicators..."):
         return candidates
 
+    # WHY: Guard against rules without 'conditions' key. Use .setdefault() to
+    #      ensure the key exists before appending. Wrap each indicator test in
+    #      try/except so a crash on one indicator doesn't stop all testing.
+    # CHANGED: April 2026 — defensive conditions access + per-indicator error handling
     test_indicators = top_features[:30] if top_features else available_indicators[:30]
     for ind_name in test_indicators:
         if _stop_flag.is_set():
             break
-        if ind_name not in indicators_df.columns:
+        try:
+            if ind_name not in indicators_df.columns:
+                continue
+            col = indicators_df[ind_name].dropna()
+            if len(col) < 100:
+                continue
+            for pct in [25, 50, 75]:
+                threshold = col.quantile(pct / 100.0)
+                for operator in ['>', '<']:
+                    modified_rules = copy.deepcopy(win_rules)
+                    if not modified_rules:
+                        continue
+                    # WHY: setdefault ensures 'conditions' exists even if the original
+                    #      rule somehow doesn't have it (shouldn't happen but defensive)
+                    modified_rules[0].setdefault('conditions', []).append({
+                        'feature':  ind_name,
+                        'operator': operator,
+                        'value':    float(threshold),
+                    })
+                    change = f"Added {ind_name} {operator} {threshold:.4f} to Rule 1"
+                    _test_rules(f"+ {ind_name} {operator} {threshold:.2f}", modified_rules, exit_strategies[0], change)
+            _report(2, f"Testing indicator: {ind_name}")
+        except Exception as e:
+            print(f"[OPTIMIZER] Step 2 error on indicator '{ind_name}': {e}")
+            import traceback; traceback.print_exc()
             continue
-        col = indicators_df[ind_name].dropna()
-        if len(col) < 100:
-            continue
-        for pct in [25, 50, 75]:
-            threshold = col.quantile(pct / 100.0)
-            for operator in ['>', '<']:
-                modified_rules = copy.deepcopy(win_rules)
-                if not modified_rules:
-                    continue
-                modified_rules[0]['conditions'].append({
-                    'feature':  ind_name,
-                    'operator': operator,
-                    'value':    float(threshold),
-                })
-                change = f"Added {ind_name} {operator} {threshold:.4f} to Rule 1"
-                _test_rules(f"+ {ind_name} {operator} {threshold:.2f}", modified_rules, exit_strategies[0], change)
-        _report(2, f"Testing indicator: {ind_name}")
 
     # ── STEP 3: Remove weak conditions ────────────────────────────────────────
     if not _report(3, "Step 3: Testing condition removal..."):
         return candidates
 
+    # WHY: Safe access to 'conditions' and per-condition error handling.
+    # CHANGED: April 2026 — defensive access
     for rule_idx, rule in enumerate(win_rules):
         conditions = rule.get('conditions', [])
         if len(conditions) <= 1:
@@ -1515,27 +1549,41 @@ def deep_optimize_generate(
         for cond_idx, cond in enumerate(conditions):
             if _stop_flag.is_set():
                 break
-            modified_rules = copy.deepcopy(win_rules)
-            removed_cond = modified_rules[rule_idx]['conditions'].pop(cond_idx)
-            feat = removed_cond['feature']
-            change = f"Removed {feat} from Rule {rule_idx+1}"
-            _test_rules(f"- {feat} from R{rule_idx+1}", modified_rules, exit_strategies[0], change)
-            _report(3, f"Remove: {feat} from R{rule_idx+1}")
+            try:
+                modified_rules = copy.deepcopy(win_rules)
+                rule_conds = modified_rules[rule_idx].get('conditions', [])
+                if cond_idx >= len(rule_conds):
+                    continue
+                removed_cond = rule_conds.pop(cond_idx)
+                modified_rules[rule_idx]['conditions'] = rule_conds
+                feat = removed_cond.get('feature', '?')
+                change = f"Removed {feat} from Rule {rule_idx+1}"
+                _test_rules(f"- {feat} from R{rule_idx+1}", modified_rules, exit_strategies[0], change)
+                _report(3, f"Remove: {feat} from R{rule_idx+1}")
+            except Exception as e:
+                print(f"[OPTIMIZER] Step 3 error at rule {rule_idx}, cond {cond_idx}: {e}")
+                import traceback; traceback.print_exc()
+                continue
 
     # ── STEP 4: Exit strategy scan on top candidates ──────────────────────────
     if not _report(4, "Step 4: Testing exit strategies on best candidates..."):
         return candidates
 
-    top_rule_sets = sorted(candidates, key=lambda c: c['score'], reverse=True)[:5]
+    top_rule_sets = sorted(candidates, key=lambda c: c.get('score', 0), reverse=True)[:5]
     for rank, top_cand in enumerate(top_rule_sets):
-        for exit_strat in exit_strategies:
-            if _stop_flag.is_set():
-                break
-            exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
-            name = f"{top_cand['name']} × {exit_name}"
-            change = f"{top_cand['changes_from_base']} + {exit_name}"
-            _test_rules(name, top_cand['rules'], exit_strat, change)
-            _report(4, f"Exit test: {exit_name} on #{rank+1}")
+        try:
+            for exit_strat in exit_strategies:
+                if _stop_flag.is_set():
+                    break
+                exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
+                name = f"{top_cand['name']} × {exit_name}"
+                change = f"{top_cand['changes_from_base']} + {exit_name}"
+                _test_rules(name, top_cand['rules'], exit_strat, change)
+                _report(4, f"Exit test: {exit_name} on #{rank+1}")
+        except Exception as e:
+            print(f"[OPTIMIZER] Step 4 error on candidate {rank}: {e}")
+            import traceback; traceback.print_exc()
+            continue
 
     candidates.sort(key=lambda c: c['score'], reverse=True)
 
