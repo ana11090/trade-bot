@@ -178,6 +178,727 @@ INDICATOR_PATTERNS = [
     }),
 ]
 
+# ── SMART feature formulas ────────────────────────────────────────────────────
+# Each value is a formula dict interpreted by _generate_smart_mql().
+SMART_FORMULAS = {
+    # Inter-TF Divergences
+    'SMART_rsi_h4_minus_h1':    {'type': 'diff',       'a': 'H4_rsi_14',          'b': 'H1_rsi_14'},
+    'SMART_rsi_h1_minus_m15':   {'type': 'diff',       'a': 'H1_rsi_14',          'b': 'M15_rsi_14'},
+    'SMART_rsi_h4_minus_m15':   {'type': 'diff',       'a': 'H4_rsi_14',          'b': 'M15_rsi_14'},
+    'SMART_adx_h4_minus_h1':    {'type': 'diff',       'a': 'H4_adx_14',          'b': 'H1_adx_14'},
+    'SMART_above_ema200_count':  {'type': 'count_gt',  'cols': ['H1_ema_200_distance','H4_ema_200_distance','D1_ema_200_distance'], 'threshold': 0},
+    'SMART_macd_agree':          {'type': 'macd_agree','a': 'H1_macd_fast_diff',   'b': 'H4_macd_fast_diff'},
+    # Indicator Dynamics
+    'SMART_H1_rsi_14_direction':         {'type': 'direction', 'col': 'H1_rsi_14'},
+    'SMART_H1_rsi_14_accel':             {'type': 'accel',     'col': 'H1_rsi_14'},
+    'SMART_H4_adx_14_direction':         {'type': 'direction', 'col': 'H4_adx_14'},
+    'SMART_H4_adx_14_accel':             {'type': 'accel',     'col': 'H4_adx_14'},
+    'SMART_H1_atr_14_direction':         {'type': 'direction', 'col': 'H1_atr_14'},
+    'SMART_H1_atr_14_accel':             {'type': 'accel',     'col': 'H1_atr_14'},
+    'SMART_H1_macd_fast_diff_direction': {'type': 'direction', 'col': 'H1_macd_fast_diff'},
+    'SMART_H1_macd_fast_diff_accel':     {'type': 'accel',     'col': 'H1_macd_fast_diff'},
+    'SMART_H4_rsi_14_direction':         {'type': 'direction', 'col': 'H4_rsi_14'},
+    'SMART_H4_rsi_14_accel':             {'type': 'accel',     'col': 'H4_rsi_14'},
+    'SMART_H1_cci_14_direction':         {'type': 'direction', 'col': 'H1_cci_14'},
+    'SMART_H1_cci_14_accel':             {'type': 'accel',     'col': 'H1_cci_14'},
+    'SMART_H1_bb_20_2_width_direction':  {'type': 'direction', 'col': 'H1_bb_20_2_width'},
+    'SMART_H1_bb_20_2_width_accel':      {'type': 'accel',     'col': 'H1_bb_20_2_width'},
+    'SMART_atr_expansion':               {'type': 'ratio_safe','num': 'H1_atr_14', 'den': 'H1_atr_50'},
+    # TF Alignment Scores
+    'SMART_rsi_bullish_tfs': {'type': 'count_gt',  'cols': ['M5_rsi_14','M15_rsi_14','H1_rsi_14','H4_rsi_14','D1_rsi_14'], 'threshold': 50},
+    'SMART_trending_tfs':    {'type': 'count_gt',  'cols': ['M5_adx_14','M15_adx_14','H1_adx_14','H4_adx_14','D1_adx_14'], 'threshold': 25},
+    'SMART_ema_bullish_tfs': {'type': 'count_sum', 'cols': ['M15_ema_9_above_20','H1_ema_9_above_20','H4_ema_9_above_20']},
+    # Session Intelligence
+    'SMART_is_london_ny_overlap': {'type': 'time_range', 'lo': 13, 'hi': 16},
+    'SMART_is_early_london':      {'type': 'time_range', 'lo': 7,  'hi': 9},
+    'SMART_is_late_ny':           {'type': 'time_range', 'lo': 19, 'hi': 21},
+    'SMART_is_asian_dead_zone':   {'type': 'time_range', 'lo': 3,  'hi': 5},
+    'SMART_is_pre_london':        {'type': 'time_range', 'lo': 6,  'hi': 7},
+    'SMART_is_pre_ny':            {'type': 'time_range', 'lo': 12, 'hi': 13},
+    'SMART_hours_since_london':   {'type': 'time_since', 'open_hour': 7},
+    'SMART_hours_since_ny':       {'type': 'time_since', 'open_hour': 13},
+    'SMART_active_sessions':      {'type': 'count_sessions'},
+    # Calendar / Fundamentals
+    'SMART_is_monday':            {'type': 'cal_dow_eq',    'value': 0},
+    'SMART_is_friday':            {'type': 'cal_dow_eq',    'value': 4},
+    'SMART_is_midweek':           {'type': 'cal_dow_range', 'lo': 1, 'hi': 3},
+    'SMART_is_month_start':       {'type': 'cal_dom_le',    'value': 3},
+    'SMART_is_month_end':         {'type': 'cal_dom_ge',    'value': 27},
+    'SMART_is_nfp_friday':        {'type': 'cal_nfp'},
+    'SMART_is_quarter_end_month': {'type': 'cal_quarter_end'},
+    'SMART_week_of_month':        {'type': 'cal_week_of_month'},
+    # Volatility Regimes
+    'SMART_bb_squeeze':    {'type': 'bb_vs_keltner'},
+    'SMART_atr_vs_long':   {'type': 'ratio_safe', 'num': 'H1_atr_14',       'den': 'H1_atr_100'},
+    'SMART_vol_expanding': {'type': 'compare',    'a': 'H4_atr_14', 'op': '>', 'b': 'H4_atr_50'},
+    'SMART_std_ratio':     {'type': 'ratio_safe', 'num': 'H1_std_dev_20',    'den': 'H1_std_dev_50'},
+    # Price Action Patterns
+    'SMART_dist_to_round_50':   {'type': 'price_mod',     'col': 'H1_pivot_point', 'modulo': 50,  'half': 25},
+    'SMART_dist_to_round_100':  {'type': 'price_mod',     'col': 'H1_pivot_point', 'modulo': 100, 'half': 50},
+    'SMART_daily_range_used':   {'type': 'ratio_safe',    'num': 'H1_candle_range','den': 'D1_atr_14'},
+    'SMART_strong_candle':      {'type': 'compare_const', 'a': 'H1_body_to_range_ratio',     'op': '>',  'value': 0.7},
+    'SMART_indecision_candle':  {'type': 'compare_const', 'a': 'H1_body_to_range_ratio',     'op': '<',  'value': 0.3},
+    'SMART_near_swing_high':    {'type': 'compare_const', 'a': 'H1_position_in_swing_range', 'op': '>',  'value': 0.8},
+    'SMART_near_swing_low':     {'type': 'compare_const', 'a': 'H1_position_in_swing_range', 'op': '<',  'value': 0.2},
+    'SMART_swing_pos_h4_vs_h1': {'type': 'diff',          'a': 'H4_position_in_swing_range', 'b': 'H1_position_in_swing_range'},
+    # Momentum Quality
+    'SMART_rsi_zone':            {'type': 'rsi_zone',       'col': 'H1_rsi_14'},
+    'SMART_rsi_crossed_50_up':   {'type': 'crossed_above',  'col': 'H1_rsi_14', 'threshold': 50},
+    'SMART_rsi_crossed_50_down': {'type': 'crossed_below',  'col': 'H1_rsi_14', 'threshold': 50},
+    'SMART_macd_normalized':     {'type': 'ratio_safe',     'num': 'H1_macd_fast_diff', 'den': 'H1_atr_14'},
+    'SMART_stoch_overbought':    {'type': 'compare_const',  'a': 'H1_stoch_14_k',    'op': '>', 'value': 80},
+    'SMART_stoch_oversold':      {'type': 'compare_const',  'a': 'H1_stoch_14_k',    'op': '<', 'value': 20},
+    'SMART_willr_extreme_high':  {'type': 'compare_const',  'a': 'H1_williams_r_14', 'op': '>', 'value': -20},
+    'SMART_willr_extreme_low':   {'type': 'compare_const',  'a': 'H1_williams_r_14', 'op': '<', 'value': -80},
+    'SMART_tsi_bullish':         {'type': 'compare_const',  'a': 'H1_tsi',           'op': '>', 'value': 0},
+    'SMART_tsi_strong':          {'type': 'compare_const_abs', 'a': 'H1_tsi',        'op': '>', 'value': 20},
+}
+
+# ── REGIME feature formulas ───────────────────────────────────────────────────
+REGIME_FORMULAS = {
+    'REGIME_atr_pct_of_price':    {'type': 'ratio_safe_price',     'num': 'H1_atr_14',              'scale': 100},
+    'REGIME_h4_atr_pct':          {'type': 'ratio_safe_price',     'num': 'H4_atr_14',              'scale': 100},
+    'REGIME_d1_atr_pct':          {'type': 'ratio_safe_price',     'num': 'D1_atr_14',              'scale': 100},
+    'REGIME_bb_width_pct':        {'type': 'ratio_safe_price',     'num': 'H1_bb_20_2_width',       'scale': 100},
+    'REGIME_keltner_width_pct':   {'type': 'ratio_safe_price',     'num': 'H1_keltner_width',       'scale': 100},
+    'REGIME_daily_range_pct':     {'type': 'ratio_safe_price',     'num': 'D1_atr_14',              'scale': 100},
+    'REGIME_std_dev_pct':         {'type': 'ratio_safe_price',     'num': 'H1_std_dev_20',          'scale': 100},
+    'REGIME_h4_std_pct':          {'type': 'ratio_safe_price',     'num': 'H4_std_dev_20',          'scale': 100},
+    'REGIME_swing_height_pct_h1': {'type': 'ratio_safe_price',     'num': 'H1_atr_50',              'scale': 100},
+    'REGIME_swing_height_pct_h4': {'type': 'ratio_safe_price',     'num': 'H4_atr_50',              'scale': 100},
+    'REGIME_pivot_dist_pct':      {'type': 'ratio_safe_price_abs', 'num': 'H1_pivot_point_distance','scale': 100},
+    'REGIME_price_bucket':        {'type': 'price_bucket'},
+    'REGIME_is_high_price_era':   {'type': 'price_gt',             'value': 2000},
+    'REGIME_roc_alignment':       {'type': 'count_gt',             'cols': ['H1_roc_1','H1_roc_20','H1_roc_50'], 'threshold': 0},
+}
+
+
+# ── Sub-feature expression helpers ────────────────────────────────────────────
+
+def _mql5_sub_expr(feat_name, uid=''):
+    """
+    Returns (setup_lines, val_expr) for reading a base indicator value inline.
+    Uses iRSI()/iADX()/etc. — MQL5 caches handles on repeated calls with same params.
+    uid: unique suffix to avoid variable name conflicts when calling multiple times.
+    """
+    parsed = parse_feature_name(feat_name)
+    tf = parsed['timeframe']
+    ind = parsed['indicator']
+    params = parsed['params']
+
+    tf_info = TIMEFRAME_MAP.get(tf, TIMEFRAME_MAP['H1'])
+    mt5_tf  = tf_info['mt5']
+    p   = params[0] if params else '14'
+    p1  = params[0] if len(params) > 0 else '20'
+    p2  = params[1] if len(params) > 1 else '2'
+    buf = f'_sb_{re.sub(r"[^a-zA-Z0-9]", "_", feat_name).lower()}{uid}'
+
+    # RSI
+    if re.match(r'^rsi_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iRSI(NULL,{mt5_tf},{p},PRICE_CLOSE),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # ADX
+    if re.match(r'^adx_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iADX(NULL,{mt5_tf},{p}),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # ATR (atr_14, atr_50, atr_100 etc.)
+    if re.match(r'^atr_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iATR(NULL,{mt5_tf},{p}),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # MACD histogram
+    if ind == 'macd_fast_diff':
+        return ([f'double {buf}[1]; CopyBuffer(iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE),2,0,1,{buf});'],
+                f'{buf}[0]')
+    # BB width
+    if re.match(r'^bb_\d+_[\d.]+_width$', ind):
+        return ([f'double {buf}u[1],{buf}l[1]; '
+                 f'CopyBuffer(iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE),1,0,1,{buf}u); '
+                 f'CopyBuffer(iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE),2,0,1,{buf}l);'],
+                f'({buf}u[0]-{buf}l[0])')
+    # Keltner width ≈ 2 × ATR(20) (standard Keltner Channel formula)
+    if ind == 'keltner_width':
+        return ([f'double {buf}[1]; CopyBuffer(iATR(NULL,{mt5_tf},20),0,0,1,{buf});'],
+                f'(2.0*{buf}[0])')
+    # EMA distance from close
+    if re.match(r'^ema_(\d+)_distance$', ind):
+        return ([],
+                f'((iClose(NULL,{mt5_tf},1)-iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1))/_Point)')
+    # EMA9 above EMA20 (binary)
+    if re.match(r'^ema_(\d+)_above_(\d+)$', ind):
+        return ([],
+                f'(iMA(NULL,{mt5_tf},{p1},0,MODE_EMA,PRICE_CLOSE,1)>iMA(NULL,{mt5_tf},{p2},0,MODE_EMA,PRICE_CLOSE,1)?1.0:0.0)')
+    # Standard deviation
+    if re.match(r'^std_dev_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # Stochastic %K
+    if re.match(r'^stoch_(\d+)_k$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # Williams %R
+    if re.match(r'^williams_r_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iWPR(NULL,{mt5_tf},{p}),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # CCI
+    if re.match(r'^cci_\d+$', ind):
+        return ([f'double {buf}[1]; CopyBuffer(iCCI(NULL,{mt5_tf},{p},PRICE_TYPICAL),0,0,1,{buf});'],
+                f'{buf}[0]')
+    # Candle range (H - L)
+    if ind == 'candle_range':
+        return ([], f'(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1))')
+    # Body-to-range ratio
+    if ind == 'body_to_range_ratio':
+        return ([], f'(MathAbs(iClose(NULL,{mt5_tf},1)-iOpen(NULL,{mt5_tf},1))/MathMax(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1),0.000001))')
+    # Pivot point = (H+L+C)/3 of previous D1 bar
+    if ind == 'pivot_point':
+        return ([], f'((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0)')
+    # Pivot point distance = close - pivot
+    if ind == 'pivot_point_distance':
+        return ([], f'(iClose(NULL,{mt5_tf},1)-(iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0)')
+    # ROC (rate of change)
+    if re.match(r'^roc_\d+$', ind):
+        n = int(p) + 1
+        return ([], f'((iClose(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001))')
+    # Position in swing range (20-bar rolling min/max)
+    if ind == 'position_in_swing_range':
+        lo_buf = f'{buf}lo'; hi_buf = f'{buf}hi'
+        lines = [
+            f'double {lo_buf}=iClose(NULL,{mt5_tf},1); double {hi_buf}=iClose(NULL,{mt5_tf},1);',
+            f'for(int _si=1;_si<20;_si++){{double _sc=iClose(NULL,{mt5_tf},_si);if(_sc<{lo_buf}){lo_buf}=_sc;if(_sc>{hi_buf}){hi_buf}=_sc;}}',
+        ]
+        return (lines, f'((iClose(NULL,{mt5_tf},1)-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
+    # TSI — complex, fallback to 0
+    if ind == 'tsi':
+        return ([f'// TODO: TSI for {feat_name} — install TSI custom indicator'], '0.0')
+    # Unknown
+    return ([f'// TODO: {feat_name} — unknown sub-feature'], '0.0')
+
+
+def _py_sub_expr(feat_name):
+    """Returns a Python/Tradovate expression for reading a base indicator value."""
+    parsed = parse_feature_name(feat_name)
+    tf    = parsed['timeframe']
+    ind   = parsed['indicator']
+    params = parsed['params']
+
+    tf_info = TIMEFRAME_MAP.get(tf, TIMEFRAME_MAP['H1'])
+    tv_tf = tf_info['tradovate']
+    p   = params[0] if params else '14'
+    p1  = params[0] if len(params) > 0 else '20'
+    p2  = params[1] if len(params) > 1 else '2'
+    df  = f"df_m{tv_tf}"
+
+    if re.match(r'^rsi_\d+$', ind):
+        return f"ta.rsi({df}['close'], length={p}).iloc[-1]"
+    if re.match(r'^adx_\d+$', ind):
+        return f"ta.adx({df}['high'],{df}['low'],{df}['close'],length={p})['ADX_{p}'].iloc[-1]"
+    if re.match(r'^atr_\d+$', ind):
+        return f"ta.atr({df}['high'],{df}['low'],{df}['close'],length={p}).iloc[-1]"
+    if ind == 'macd_fast_diff':
+        return f"ta.macd({df}['close'])['MACDh_12_26_9'].iloc[-1]"
+    if re.match(r'^bb_\d+_[\d.]+_width$', ind):
+        return (f"(ta.bbands({df}['close'],length={p1},std={p2})[f'BBU_{p1}_{p2}_0'].iloc[-1]"
+                f" - ta.bbands({df}['close'],length={p1},std={p2})[f'BBL_{p1}_{p2}_0'].iloc[-1])")
+    if ind == 'keltner_width':
+        return (f"(ta.kc({df}['high'],{df}['low'],{df}['close'])['KCUe_20_2'].iloc[-1]"
+                f" - ta.kc({df}['high'],{df}['low'],{df}['close'])['KCLe_20_2'].iloc[-1])")
+    if re.match(r'^ema_\d+_distance$', ind):
+        return f"({df}['close'].iloc[-1] - ta.ema({df}['close'],length={p}).iloc[-1])"
+    if re.match(r'^ema_\d+_above_\d+$', ind):
+        return (f"(1.0 if ta.ema({df}['close'],length={p1}).iloc[-1]"
+                f" > ta.ema({df}['close'],length={p2}).iloc[-1] else 0.0)")
+    if re.match(r'^std_dev_\d+$', ind):
+        return f"{df}['close'].rolling({p}).std().iloc[-1]"
+    if re.match(r'^stoch_\d+_k$', ind):
+        return f"ta.stoch({df}['high'],{df}['low'],{df}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]"
+    if re.match(r'^williams_r_\d+$', ind):
+        return f"ta.willr({df}['high'],{df}['low'],{df}['close'],length={p}).iloc[-1]"
+    if re.match(r'^cci_\d+$', ind):
+        return f"ta.cci({df}['high'],{df}['low'],{df}['close'],length={p}).iloc[-1]"
+    if ind == 'candle_range':
+        return f"({df}['high'].iloc[-1] - {df}['low'].iloc[-1])"
+    if ind == 'body_to_range_ratio':
+        return f"(abs({df}['close'].iloc[-1]-{df}['open'].iloc[-1])/max({df}['high'].iloc[-1]-{df}['low'].iloc[-1],1e-6))"
+    if ind == 'pivot_point':
+        return "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+    if ind == 'pivot_point_distance':
+        return (f"({df}['close'].iloc[-1]"
+                " - (df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0)")
+    if re.match(r'^roc_\d+$', ind):
+        n = int(p) + 1
+        return f"(({df}['close'].iloc[-1]-{df}['close'].iloc[-{n}])/max({df}['close'].iloc[-{n}],0.001))"
+    if ind == 'position_in_swing_range':
+        return (f"(({df}['close'].iloc[-1]-{df}['close'].rolling(20).min().iloc[-1])"
+                f"/max({df}['close'].rolling(20).max().iloc[-1]-{df}['close'].rolling(20).min().iloc[-1],1e-6))")
+    if ind == 'tsi':
+        return f"ta.tsi({df}['close']).iloc[-1]"
+    return '0.0  # TODO: unknown sub-feature'
+
+
+# ── SMART / REGIME code generator ─────────────────────────────────────────────
+
+def _generate_smart_mql(feature_name, formula, platform):
+    """Generate platform code for a SMART_ or REGIME_ feature."""
+    var_name = re.sub(r'[^a-zA-Z0-9]', '_', feature_name).lower()
+    ftype = formula['type']
+    sep   = '\n   '  # indentation matching ea_generator emission
+
+    def _rc(lines):
+        """Join setup lines + return as read_code string."""
+        return sep.join(lines)
+
+    # ── MT5 ──────────────────────────────────────────────────────────────────
+    if platform == 'mt5':
+        lines = []
+
+        if ftype == 'diff':
+            ls_a, ea = _mql5_sub_expr(formula['a'], '_a')
+            ls_b, eb = _mql5_sub_expr(formula['b'], '_b')
+            lines = ls_a + ls_b + [f'double val_{var_name} = {ea} - {eb};']
+
+        elif ftype == 'ratio_safe':
+            ls_n, en = _mql5_sub_expr(formula['num'], '_n')
+            ls_d, ed = _mql5_sub_expr(formula['den'], '_d')
+            lines = ls_n + ls_d + [f'double val_{var_name} = (MathAbs({ed})>0)?({en}/MathMax(MathAbs({ed}),0.001)):0.0;']
+
+        elif ftype == 'ratio_safe_price':
+            ls_n, en = _mql5_sub_expr(formula['num'], '_n')
+            s = formula.get('scale', 100)
+            lines = ls_n + [
+                'double _ps = MathMax((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0,1.0);',
+                f'double val_{var_name} = ({en}/_ps)*{s}.0;',
+            ]
+
+        elif ftype == 'ratio_safe_price_abs':
+            ls_n, en = _mql5_sub_expr(formula['num'], '_n')
+            s = formula.get('scale', 100)
+            lines = ls_n + [
+                'double _ps = MathMax((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0,1.0);',
+                f'double val_{var_name} = (MathAbs({en})/_ps)*{s}.0;',
+            ]
+
+        elif ftype == 'count_gt':
+            all_ls = []
+            exprs  = []
+            for i, col in enumerate(formula['cols']):
+                ls, ex = _mql5_sub_expr(col, f'_{i}')
+                all_ls.extend(ls)
+                exprs.append(f'(({ex})>{formula["threshold"]}?1:0)')
+            lines = all_ls + [f'double val_{var_name} = (double)({"+".join(exprs)});']
+
+        elif ftype == 'count_sum':
+            all_ls = []
+            exprs  = []
+            for i, col in enumerate(formula['cols']):
+                ls, ex = _mql5_sub_expr(col, f'_{i}')
+                all_ls.extend(ls)
+                exprs.append(ex)
+            lines = all_ls + [f'double val_{var_name} = (double)({"+".join(exprs)});']
+
+        elif ftype == 'macd_agree':
+            ls_a, ea = _mql5_sub_expr(formula['a'], '_a')
+            ls_b, eb = _mql5_sub_expr(formula['b'], '_b')
+            lines = ls_a + ls_b + [
+                f'double val_{var_name} = (double)(({ea}>0&&{eb}>0)?1:(({ea}<0&&{eb}<0)?-1:0));'
+            ]
+
+        elif ftype == 'direction':
+            # current - value 3 bars ago; need 4-element buffer
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            mt5_tf  = tf_info['mt5']
+            pr      = (p_info['params'] or ['14'])[0]
+            ind     = p_info['indicator']
+            buf     = f'_db_{var_name}'
+            if re.match(r'^rsi_\d+$', ind):
+                init = f'iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE)'
+            elif re.match(r'^adx_\d+$', ind):
+                init = f'iADX(NULL,{mt5_tf},{pr})'
+            elif re.match(r'^atr_\d+$', ind):
+                init = f'iATR(NULL,{mt5_tf},{pr})'
+            elif ind == 'macd_fast_diff':
+                init = f'iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE)'
+            elif re.match(r'^cci_\d+$', ind):
+                init = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
+            elif re.match(r'^bb_\d+_[\d.]+_width$', ind):
+                p1 = p_info['params'][0] if p_info['params'] else '20'
+                p2 = p_info['params'][1] if len(p_info['params']) > 1 else '2'
+                # BB direction: buffer is upper-lower (compute from 2 bands)
+                bufU = f'{buf}u'; bufL = f'{buf}l'
+                lines = [
+                    f'double {bufU}[4],{bufL}[4]; CopyBuffer(iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE),1,0,4,{bufU}); CopyBuffer(iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE),2,0,4,{bufL});',
+                    f'double val_{var_name} = ({bufU}[0]-{bufL}[0]) - ({bufU}[3]-{bufL}[3]);',
+                ]
+                return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
+                        'read_code': _rc(lines), 'custom_indicator': False,
+                        'description': f'Direction of {col}'}
+            else:
+                init = f'// TODO direction of {col}'
+                lines = [f'double val_{var_name} = 0.0; // TODO direction of {col}']
+                return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
+                        'read_code': _rc(lines), 'custom_indicator': False,
+                        'description': f'Direction of {col}'}
+            buf_n = 2 if ind == 'macd_fast_diff' else 0
+            lines = [
+                f'double {buf}[4]; CopyBuffer({init},{buf_n},0,4,{buf});',
+                f'double val_{var_name} = {buf}[0] - {buf}[3];',
+            ]
+
+        elif ftype == 'accel':
+            # direction change: (cur-3ago) - (3ago-6ago) = cur - 2*3ago + 6ago; need 7 bars
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            mt5_tf  = tf_info['mt5']
+            pr      = (p_info['params'] or ['14'])[0]
+            ind     = p_info['indicator']
+            buf     = f'_ac_{var_name}'
+            if re.match(r'^rsi_\d+$', ind):
+                init = f'iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE)'
+            elif re.match(r'^adx_\d+$', ind):
+                init = f'iADX(NULL,{mt5_tf},{pr})'
+            elif re.match(r'^atr_\d+$', ind):
+                init = f'iATR(NULL,{mt5_tf},{pr})'
+            elif ind == 'macd_fast_diff':
+                init = f'iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE)'
+            elif re.match(r'^cci_\d+$', ind):
+                init = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
+            else:
+                lines = [f'double val_{var_name} = 0.0; // TODO accel of {col}']
+                return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
+                        'read_code': _rc(lines), 'custom_indicator': False,
+                        'description': f'Acceleration of {col}'}
+            buf_n = 2 if ind == 'macd_fast_diff' else 0
+            lines = [
+                f'double {buf}[7]; CopyBuffer({init},{buf_n},0,7,{buf});',
+                f'double val_{var_name} = ({buf}[0]-{buf}[3]) - ({buf}[3]-{buf}[6]);',
+            ]
+
+        elif ftype in ('time_range', 'time_since', 'count_sessions'):
+            mdt = f'_mdt_{var_name}'
+            if ftype == 'time_range':
+                lo, hi = formula['lo'], formula['hi']
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'double val_{var_name} = (_hr_{var_name}>={lo}&&_hr_{var_name}<={hi})?1.0:0.0;',
+                ]
+            elif ftype == 'time_since':
+                oh = formula['open_hour']
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'double val_{var_name} = (_hr_{var_name}>={oh})?(double)(_hr_{var_name}-{oh}):0.0;',
+                ]
+            else:  # count_sessions
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'double val_{var_name} = (double)((_hr_{var_name}>=0&&_hr_{var_name}<8?1:0)+(_hr_{var_name}>=7&&_hr_{var_name}<16?1:0)+(_hr_{var_name}>=13&&_hr_{var_name}<22?1:0));',
+                ]
+
+        elif ftype in ('cal_dow_eq', 'cal_dow_range', 'cal_dom_le', 'cal_dom_ge',
+                       'cal_nfp', 'cal_quarter_end', 'cal_week_of_month'):
+            mdt = f'_mdt_{var_name}'
+            if ftype == 'cal_dow_eq':
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.day_of_week=={formula["value"]})?1.0:0.0;',
+                ]
+            elif ftype == 'cal_dow_range':
+                lo, hi = formula['lo'], formula['hi']
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.day_of_week>={lo}&&{mdt}.day_of_week<={hi})?1.0:0.0;',
+                ]
+            elif ftype == 'cal_dom_le':
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.day<={formula["value"]})?1.0:0.0;',
+                ]
+            elif ftype == 'cal_dom_ge':
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.day>={formula["value"]})?1.0:0.0;',
+                ]
+            elif ftype == 'cal_nfp':
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.day_of_week==4&&{mdt}.day<=7)?1.0:0.0;',
+                ]
+            elif ftype == 'cal_quarter_end':
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = ({mdt}.mon==3||{mdt}.mon==6||{mdt}.mon==9||{mdt}.mon==12)?1.0:0.0;',
+                ]
+            else:  # cal_week_of_month
+                lines = [
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'double val_{var_name} = (double)(({mdt}.day-1)/7+1);',
+                ]
+
+        elif ftype == 'compare':
+            ls_a, ea = _mql5_sub_expr(formula['a'], '_a')
+            ls_b, eb = _mql5_sub_expr(formula['b'], '_b')
+            op = formula['op']
+            lines = ls_a + ls_b + [f'double val_{var_name} = ({ea}{op}{eb})?1.0:0.0;']
+
+        elif ftype == 'compare_const':
+            ls_a, ea = _mql5_sub_expr(formula['a'], '_a')
+            lines = ls_a + [f'double val_{var_name} = ({ea}{formula["op"]}{formula["value"]})?1.0:0.0;']
+
+        elif ftype == 'compare_const_abs':
+            ls_a, ea = _mql5_sub_expr(formula['a'], '_a')
+            lines = ls_a + [f'double val_{var_name} = (MathAbs({ea}){formula["op"]}{formula["value"]})?1.0:0.0;']
+
+        elif ftype == 'bb_vs_keltner':
+            ls_bb, ebb = _mql5_sub_expr('H1_bb_20_2_width', '_bb')
+            ls_kel, ekkel = _mql5_sub_expr('H1_keltner_width', '_kel')
+            lines = ls_bb + ls_kel + [f'double val_{var_name} = ({ebb}<{ekkel})?1.0:0.0;']
+
+        elif ftype == 'price_mod':
+            ls_c, ec = _mql5_sub_expr(formula['col'], '_c')
+            mod, half = formula['modulo'], formula['half']
+            lines = ls_c + [f'double val_{var_name} = MathAbs(MathMod({ec},{mod}.0)-{half}.0)/{half}.0;']
+
+        elif ftype == 'rsi_zone':
+            ls, er = _mql5_sub_expr(formula['col'], '_rz')
+            lines = ls + [
+                f'double _rz_{var_name} = {er};',
+                f'double val_{var_name} = (_rz_{var_name}>70)?3.0:(_rz_{var_name}>60)?2.0:(_rz_{var_name}>50)?1.0:(_rz_{var_name}>40)?-1.0:(_rz_{var_name}>30)?-2.0:-3.0;',
+            ]
+
+        elif ftype == 'crossed_above':
+            col = formula['col']
+            thr = formula['threshold']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            mt5_tf  = tf_info['mt5']
+            pr      = (p_info['params'] or ['14'])[0]
+            buf     = f'_cx_{var_name}'
+            lines = [
+                f'double {buf}[2]; CopyBuffer(iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE),0,0,2,{buf});',
+                f'double val_{var_name} = ({buf}[0]>{thr}&&{buf}[1]<={thr})?1.0:0.0;',
+            ]
+
+        elif ftype == 'crossed_below':
+            col = formula['col']
+            thr = formula['threshold']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            mt5_tf  = tf_info['mt5']
+            pr      = (p_info['params'] or ['14'])[0]
+            buf     = f'_cx_{var_name}'
+            lines = [
+                f'double {buf}[2]; CopyBuffer(iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE),0,0,2,{buf});',
+                f'double val_{var_name} = ({buf}[0]<{thr}&&{buf}[1]>={thr})?1.0:0.0;',
+            ]
+
+        elif ftype == 'price_bucket':
+            lines = [
+                'double _px = (iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0;',
+                f'double val_{var_name} = (_px<1000)?0.0:(_px<2000)?1.0:(_px<3000)?2.0:3.0;',
+            ]
+
+        elif ftype == 'price_gt':
+            lines = [
+                'double _px = (iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0;',
+                f'double val_{var_name} = (_px>{formula["value"]})?1.0:0.0;',
+            ]
+
+        else:
+            lines = [f'double val_{var_name} = 0.0; // TODO: formula type {ftype}']
+
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       _rc(lines),
+            'custom_indicator': False,
+            'description':     f'{feature_name} (computed)',
+        }
+
+    # ── Tradovate / Python ────────────────────────────────────────────────────
+    else:
+        def _py(col, suf=''):
+            return _py_sub_expr(col)
+
+        if ftype == 'diff':
+            expr = f"({_py(formula['a'])} - {_py(formula['b'])})"
+        elif ftype == 'ratio_safe':
+            en = _py(formula['num']); ed = _py(formula['den'])
+            expr = f"(({en}) / max(abs({ed}), 0.001) if abs({ed}) > 0 else 0.0)"
+        elif ftype in ('ratio_safe_price', 'ratio_safe_price_abs'):
+            en = _py(formula['num']); s = formula.get('scale', 100)
+            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+            if ftype == 'ratio_safe_price_abs':
+                expr = f"(abs({en}) / max({pivot}, 1.0)) * {s}"
+            else:
+                expr = f"(({en}) / max({pivot}, 1.0)) * {s}"
+        elif ftype == 'count_gt':
+            parts = [f"(1 if ({_py(c)}) > {formula['threshold']} else 0)" for c in formula['cols']]
+            expr = f"float({' + '.join(parts)})"
+        elif ftype == 'count_sum':
+            expr = f"float({' + '.join([_py(c) for c in formula['cols']])})"
+        elif ftype == 'macd_agree':
+            ea = _py(formula['a']); eb = _py(formula['b'])
+            expr = f"(1 if ({ea}>0 and {eb}>0) else (-1 if ({ea}<0 and {eb}<0) else 0))"
+        elif ftype == 'direction':
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            tv_tf = tf_info['tradovate']
+            pr = (p_info['params'] or ['14'])[0]
+            ind = p_info['indicator']
+            df = f"df_m{tv_tf}"
+            if re.match(r'^rsi_\d+$', ind):
+                expr = f"(ta.rsi({df}['close'],length={pr}).iloc[-1] - ta.rsi({df}['close'],length={pr}).iloc[-4])"
+            elif re.match(r'^adx_\d+$', ind):
+                expr = f"(ta.adx({df}['high'],{df}['low'],{df}['close'],length={pr})['ADX_{pr}'].iloc[-1] - ta.adx({df}['high'],{df}['low'],{df}['close'],length={pr})['ADX_{pr}'].iloc[-4])"
+            elif re.match(r'^atr_\d+$', ind):
+                expr = f"(ta.atr({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-1] - ta.atr({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-4])"
+            else:
+                expr = '0.0  # TODO direction'
+        elif ftype == 'accel':
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            tv_tf = tf_info['tradovate']
+            pr = (p_info['params'] or ['14'])[0]
+            ind = p_info['indicator']
+            df = f"df_m{tv_tf}"
+            if re.match(r'^rsi_\d+$', ind):
+                expr = (f"((ta.rsi({df}['close'],length={pr}).iloc[-1]-ta.rsi({df}['close'],length={pr}).iloc[-4])"
+                        f" - (ta.rsi({df}['close'],length={pr}).iloc[-4]-ta.rsi({df}['close'],length={pr}).iloc[-7]))")
+            else:
+                expr = '0.0  # TODO accel'
+        elif ftype == 'time_range':
+            import datetime as _dt
+            lo, hi = formula['lo'], formula['hi']
+            expr = f"(1.0 if {lo} <= __import__('datetime').datetime.utcnow().hour <= {hi} else 0.0)"
+        elif ftype == 'time_since':
+            oh = formula['open_hour']
+            expr = f"max(0, __import__('datetime').datetime.utcnow().hour - {oh})"
+        elif ftype == 'count_sessions':
+            expr = ("(lambda h: int(0<=h<8) + int(7<=h<16) + int(13<=h<22))"
+                    "(__import__('datetime').datetime.utcnow().hour)")
+        elif ftype == 'cal_dow_eq':
+            expr = f"(1.0 if __import__('datetime').datetime.utcnow().weekday() == {formula['value']} else 0.0)"
+        elif ftype == 'cal_dow_range':
+            lo, hi = formula['lo'], formula['hi']
+            expr = f"(1.0 if {lo} <= __import__('datetime').datetime.utcnow().weekday() <= {hi} else 0.0)"
+        elif ftype == 'cal_dom_le':
+            expr = f"(1.0 if __import__('datetime').datetime.utcnow().day <= {formula['value']} else 0.0)"
+        elif ftype == 'cal_dom_ge':
+            expr = f"(1.0 if __import__('datetime').datetime.utcnow().day >= {formula['value']} else 0.0)"
+        elif ftype == 'cal_nfp':
+            expr = ("(lambda d: 1.0 if d.weekday()==4 and d.day<=7 else 0.0)"
+                    "(__import__('datetime').datetime.utcnow())")
+        elif ftype == 'cal_quarter_end':
+            expr = "(1.0 if __import__('datetime').datetime.utcnow().month in (3,6,9,12) else 0.0)"
+        elif ftype == 'cal_week_of_month':
+            expr = "float((__import__('datetime').datetime.utcnow().day - 1) // 7 + 1)"
+        elif ftype == 'compare':
+            ea = _py(formula['a']); eb = _py(formula['b']); op = formula['op']
+            expr = f"(1.0 if ({ea}) {op} ({eb}) else 0.0)"
+        elif ftype == 'compare_const':
+            ea = _py(formula['a']); op = formula['op']; v = formula['value']
+            expr = f"(1.0 if ({ea}) {op} {v} else 0.0)"
+        elif ftype == 'compare_const_abs':
+            ea = _py(formula['a']); op = formula['op']; v = formula['value']
+            expr = f"(1.0 if abs({ea}) {op} {v} else 0.0)"
+        elif ftype == 'bb_vs_keltner':
+            bb  = _py('H1_bb_20_2_width')
+            kel = _py('H1_keltner_width')
+            expr = f"(1.0 if ({bb}) < ({kel}) else 0.0)"
+        elif ftype == 'price_mod':
+            ec = _py(formula['col']); mod = formula['modulo']; half = formula['half']
+            expr = f"abs(({ec}) % {mod} - {half}) / {half}"
+        elif ftype == 'rsi_zone':
+            er = _py(formula['col'])
+            expr = (f"(lambda r: 3.0 if r>70 else 2.0 if r>60 else 1.0 if r>50 else"
+                    f" -1.0 if r>40 else -2.0 if r>30 else -3.0)({er})")
+        elif ftype == 'crossed_above':
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            tv_tf = tf_info['tradovate']; pr = (p_info['params'] or ['14'])[0]; thr = formula['threshold']
+            df = f"df_m{tv_tf}"
+            expr = (f"(1.0 if ta.rsi({df}['close'],length={pr}).iloc[-1]>{thr}"
+                    f" and ta.rsi({df}['close'],length={pr}).iloc[-2]<={thr} else 0.0)")
+        elif ftype == 'crossed_below':
+            col = formula['col']
+            p_info = parse_feature_name(col)
+            tf_info = TIMEFRAME_MAP.get(p_info['timeframe'], TIMEFRAME_MAP['H1'])
+            tv_tf = tf_info['tradovate']; pr = (p_info['params'] or ['14'])[0]; thr = formula['threshold']
+            df = f"df_m{tv_tf}"
+            expr = (f"(1.0 if ta.rsi({df}['close'],length={pr}).iloc[-1]<{thr}"
+                    f" and ta.rsi({df}['close'],length={pr}).iloc[-2]>={thr} else 0.0)")
+        elif ftype == 'price_bucket':
+            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+            expr = f"(lambda p: 0.0 if p<1000 else 1.0 if p<2000 else 2.0 if p<3000 else 3.0)({pivot})"
+        elif ftype == 'price_gt':
+            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+            expr = f"(1.0 if ({pivot}) > {formula['value']} else 0.0)"
+        else:
+            expr = f"0.0  # TODO: formula type {ftype}"
+
+        return {
+            'var_name':        var_name,
+            'python_code':     f'val_{var_name} = {expr}',
+            'custom_indicator': False,
+            'description':     f'{feature_name} (computed)',
+        }
+
+
+# ── INT_ feature code generator ───────────────────────────────────────────────
+
+def _generate_int_mql(feature_name, platform):
+    """
+    Generate code for INT_{op}_{featA}__{featB} interaction features.
+    op: ratio | diff | prod
+    featA/featB: full feature names (double-underscore separator).
+    Returns None if the name does not match the pattern.
+    """
+    m = re.match(r'^INT_(ratio|diff|prod)_(.+?)__(.+)$', feature_name)
+    if not m:
+        return None
+    op, feat_a, feat_b = m.group(1), m.group(2), m.group(3)
+    var_name = re.sub(r'[^a-zA-Z0-9]', '_', feature_name).lower()
+    sep = '\n   '
+
+    if platform == 'mt5':
+        ls_a, ea = _mql5_sub_expr(feat_a, '_ia')
+        ls_b, eb = _mql5_sub_expr(feat_b, '_ib')
+        if op == 'ratio':
+            combine = f'double val_{var_name} = ({eb}!=0.0)?({ea}/MathMax(MathAbs({eb}),0.001)):0.0;'
+        elif op == 'diff':
+            combine = f'double val_{var_name} = {ea} - {eb};'
+        else:  # prod
+            combine = f'double val_{var_name} = {ea} * {eb};'
+        lines = ls_a + ls_b + [combine]
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       sep.join(lines),
+            'custom_indicator': False,
+            'description':     f'INT {op}: {feat_a} vs {feat_b}',
+        }
+    else:
+        ea = _py_sub_expr(feat_a)
+        eb = _py_sub_expr(feat_b)
+        if op == 'ratio':
+            expr = f"(({ea}) / max(abs({eb}), 0.001) if ({eb}) != 0 else 0.0)"
+        elif op == 'diff':
+            expr = f"({ea}) - ({eb})"
+        else:  # prod
+            expr = f"({ea}) * ({eb})"
+        return {
+            'var_name':        var_name,
+            'python_code':     f'val_{var_name} = {expr}',
+            'custom_indicator': False,
+            'description':     f'INT {op}: {feat_a} vs {feat_b}',
+        }
+
 
 def parse_feature_name(feature_name):
     """
@@ -232,6 +953,16 @@ def get_mql_code(feature_name, platform='mt5'):
     var_name = re.sub(r'[^a-zA-Z0-9]', '_', feature_name).lower()
 
     template, groups = _match_pattern(ind)
+
+    # ── SMART / REGIME / INT routing ─────────────────────────────────────────
+    if feature_name in SMART_FORMULAS:
+        return _generate_smart_mql(feature_name, SMART_FORMULAS[feature_name], platform)
+    if feature_name in REGIME_FORMULAS:
+        return _generate_smart_mql(feature_name, REGIME_FORMULAS[feature_name], platform)
+    if feature_name.startswith('INT_'):
+        result = _generate_int_mql(feature_name, platform)
+        if result is not None:
+            return result
 
     if template is None:
         # Unknown indicator — generate placeholder
