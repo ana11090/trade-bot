@@ -1913,6 +1913,56 @@ def build_panel(parent):
               bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=14, pady=4).pack(side=tk.LEFT)
 
+    # ── Star/favorite button ──────────────────────────────────────────────
+    # WHY: Star your best strategies so they appear at the top of every dropdown.
+    # CHANGED: April 2026 — star system
+    def _toggle_star():
+        idx = _get_selected_index()
+        if idx is None:
+            return
+        for s in _strategies:
+            if s.get('index') == idx:
+                rc = s.get('rule_combo', '')
+                es = s.get('exit_strategy', s.get('exit_name', ''))
+                try:
+                    from shared.starred import toggle
+                    is_now_starred = toggle(rc, es)
+                    star_btn.configure(
+                        text="⭐ Starred" if is_now_starred else "☆ Star",
+                        bg="#f39c12" if is_now_starred else "#95a5a6",
+                    )
+                    _load_strategies()
+                    if _strategies:
+                        labels = [s['label'] for s in _strategies]
+                        for lbl in labels:
+                            if rc in lbl:
+                                _strategy_var.set(lbl)
+                                break
+                except ImportError:
+                    pass
+                break
+
+    star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
+                         bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
+                         relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+    star_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+    def _update_star_btn(*args):
+        idx = _get_selected_index()
+        if idx is None:
+            return
+        for s in _strategies:
+            if s.get('index') == idx:
+                is_s = s.get('is_starred', False)
+                star_btn.configure(
+                    text="⭐ Starred" if is_s else "☆ Star",
+                    bg="#f39c12" if is_s else "#95a5a6",
+                )
+                break
+
+    if _strategy_var:
+        _strategy_var.trace_add('write', _update_star_btn)
+
     _strat_info_lbl = tk.Label(sel_frame, text="Click Load to load a strategy.",
                                 font=("Segoe UI", 9), bg=WHITE, fg=GREY)
     _strat_info_lbl.pack(anchor="w", pady=(5, 0))

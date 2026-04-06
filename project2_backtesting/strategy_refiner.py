@@ -576,6 +576,40 @@ def load_strategy_list():
     except Exception:
         pass
 
+    # ── Mark starred strategies and sort to top ───────────────────────────
+    # WHY: Starred strategies appear at the top of every dropdown with ⭐ prefix.
+    #      This makes it easy to find your best strategies across 36+ results.
+    # CHANGED: April 2026 — star/favorite system
+    try:
+        from shared.starred import is_starred
+        for s in results:
+            if s.get('source') == 'separator':
+                s['is_starred'] = False
+                continue
+            rc = s.get('rule_combo', '')
+            es = s.get('exit_strategy', s.get('exit_name', ''))
+            if is_starred(rc, es):
+                s['is_starred'] = True
+                if not s['label'].startswith('⭐'):
+                    s['label'] = f"⭐ {s['label']}"
+            else:
+                s['is_starred'] = False
+
+        starred_results = [s for s in results if s.get('is_starred')]
+        non_starred = [s for s in results if not s.get('is_starred')]
+
+        if starred_results:
+            return starred_results + [{
+                'index':        '__separator_starred__',
+                'source':       'separator',
+                'label':        '─── ALL STRATEGIES ─────────────────────────────────────────────────────────────',
+                'total_trades': 0,
+                'has_trades':   False,
+                'is_starred':   False,
+            }] + non_starred
+    except ImportError:
+        pass
+
     return results
 
 

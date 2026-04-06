@@ -263,6 +263,39 @@ def display_summary(output_text, summary_frame):
         except Exception:
             pass
 
+        # Star button
+        # WHY: Star your best strategies directly from View Results.
+        #      Starred strategies show with ⭐ at top of all dropdowns.
+        # CHANGED: April 2026 — star from View Results
+        try:
+            from shared.starred import toggle, is_starred
+            rc = r.get('rule_combo', '?')
+            es = r.get('exit_strategy', r.get('exit_name', '?'))
+            starred = is_starred(rc, es)
+
+            def _make_star_toggle(combo_name, exit_name, btn_ref):
+                def _toggle():
+                    from shared.starred import toggle as _t
+                    new_state = _t(combo_name, exit_name)
+                    btn_ref[0].configure(
+                        text="⭐" if new_state else "☆",
+                        bg="#f39c12" if new_state else "#ddd",
+                    )
+                return _toggle
+
+            star_btn_ref = [None]
+            star_btn_ref[0] = tk.Button(
+                header_row,
+                text="⭐" if starred else "☆",
+                command=_make_star_toggle(rc, es, star_btn_ref),
+                bg="#f39c12" if starred else "#ddd",
+                fg="white" if starred else "#666",
+                font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",
+            )
+            star_btn_ref[0].pack(side=tk.RIGHT, padx=3)
+        except Exception:
+            pass
+
         # Row 2: metrics
         if trades > 0:
             # Format win rate correctly
