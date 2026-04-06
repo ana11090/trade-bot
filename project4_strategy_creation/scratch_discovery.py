@@ -462,6 +462,38 @@ def run_scratch_discovery(
     n_original = len([c for c in valid_cols if not c.startswith('SMART_')])
     n_smart    = len([c for c in valid_cols if c.startswith('SMART_')])
 
+    # ── Enhancement: Feature Interactions ─────────────────────────────────────
+    # WHY: Individual indicators might score poorly alone but are powerful in combination.
+    #      Ratios, differences, and products capture cross-indicator relationships.
+    #      Added BEFORE XGBoost trains so the model can discover these new signals.
+    # CHANGED: April 2026 — Level 4 enhancement
+    interaction_features = []
+    if enhance_feature_interactions:
+        _cb(4, "Step 4b/6: Generating feature interactions...")
+
+        # Run a quick XGBoost pass to identify the top 50 features for interaction
+        # WHY: We only generate interactions between TOP features, not all 670.
+        #      This keeps the number of new features manageable (~500-1000).
+        from xgboost import XGBClassifier as _XGB
+        _split_i = int(len(X) * train_test_split)
+        _quick_model = _XGB(
+            n_estimators=50, max_depth=3, learning_rate=0.1,
+            subsample=0.8, colsample_bytree=0.5,
+            random_state=42, eval_metric='logloss', n_jobs=-1,
+        )
+        _quick_model.fit(X.iloc[:_split_i], y[:_split_i], verbose=False)
+        _imp = _quick_model.feature_importances_
+        _top_idx = np.argsort(_imp)[::-1][:50]
+        _top_names = [valid_cols[i] for i in _top_idx if _imp[i] > 0]
+
+        X, interaction_features = _generate_interaction_features(
+            X, _top_names, max_interactions=400,
+            progress_callback=lambda s, t, m: _cb(4, m),
+        )
+        valid_cols = list(valid_cols) + interaction_features
+        _cb(4, f"Added {len(interaction_features)} interaction features "
+               f"→ {len(valid_cols)} total features")
+
     min_coverage = max(10, int(len(X) * min_coverage_pct / 100))
 
     try:
@@ -532,11 +564,12 @@ def run_scratch_discovery(
         "direction":          direction,
         "max_hold_candles":   max_hold_candles,
         "spread_pips":        spread_pips,
-        "features_used":      len(valid_cols),
-        "original_features":  n_original,
-        "smart_features":     n_smart,
-        "discovery_mode":     discovery_mode,
-        "enhancements_used":  {k: v for k, v in enhance_opts.items() if v},
+        "features_used":          len(valid_cols),
+        "original_features":      n_original,
+        "smart_features":         n_smart,
+        "interaction_features":   len(interaction_features),
+        "discovery_mode":         discovery_mode,
+        "enhancements_used":      {k: v for k, v in enhance_opts.items() if v},
         "rules":              final_rules,
         "model_metrics":      model_metrics,
         "profile": {
@@ -1296,6 +1329,115 @@ def _rules_similar(r1, r2, threshold_tolerance=0.05):
         if abs(cond1['value'] - match[0]['value']) / max(val1, 1e-6) > threshold_tolerance:
             return False
     return True
+
+
+def _generate_interaction_features(X, top_feature_names, max_interactions=500,
+                                    progress_callback=None):
+    """
+    Generate cross-indicator interaction features from the top indicators.
+
+    WHY: Individual indicators might be useless alone but powerful in combination.
+         Ratios, differences, and products capture relationships that single
+         indicators can't express.
+
+    HOW: From the top 50 features, generate:
+      - Ratios: feat_A / feat_B  (e.g., H4_rsi / M15_rsi — cross-TF momentum ratio)
+      - Differences: feat_A - feat_B  (e.g., H1_atr - H4_atr — volatility divergence)
+      - Products: feat_A * feat_B / scale  (e.g., rsi * adx — momentum × trend)
+
+    Only generates interactions between features from DIFFERENT timeframes
+    or different indicator types (rsi vs atr, ema vs roc, etc.) to avoid
+    redundant features. SMART/REGIME features are skipped (already interactions).
+
+    CHANGED: April 2026 — Level 4 enhancement
+    """
+    from itertools import combinations
+
+    def _parse_feature(name):
+        parts = name.split('_')
+        tf  = parts[0] if len(parts) >= 2 else ''
+        ind = parts[1] if len(parts) >= 2 else name
+        return tf, ind
+
+    available = [f for f in top_feature_names if f in X.columns]
+    if len(available) < 4:
+        return X, []
+
+    parsed = {f: _parse_feature(f) for f in available}
+
+    candidates = []
+    for fa, fb in combinations(available, 2):
+        tf_a, ind_a = parsed[fa]
+        tf_b, ind_b = parsed[fb]
+        if tf_a == tf_b and ind_a == ind_b:
+            continue  # Same TF + same indicator type — redundant
+        if tf_a in ('SMART', 'REGIME') or tf_b in ('SMART', 'REGIME'):
+            continue  # Already interaction features
+        candidates.append((fa, fb))
+
+    if not candidates:
+        return X, []
+
+    if len(candidates) > max_interactions:
+        # Prioritise cross-TF pairs (most likely to find divergence signals)
+        cross_tf  = [(a, b) for a, b in candidates if parsed[a][0] != parsed[b][0]]
+        same_tf   = [(a, b) for a, b in candidates if parsed[a][0] == parsed[b][0]]
+        candidates = cross_tf[:max_interactions * 2 // 3] + same_tf[:max_interactions // 3]
+        candidates = candidates[:max_interactions]
+
+    new_features = []
+    X_new = X.copy()
+
+    for pi, (fa, fb) in enumerate(candidates):
+        if progress_callback and pi % 100 == 0:
+            progress_callback(pi, len(candidates),
+                f"[Interactions] Generating {pi}/{len(candidates)} features...")
+
+        col_a = X[fa].values.astype(float)
+        col_b = X[fb].values.astype(float)
+
+        short_a = fa[:20]
+        short_b = fb[:20]
+
+        # Ratio: A / B — detect divergence between timeframes
+        ratio_name = f"INT_ratio_{short_a}__{short_b}"
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratio = np.where(np.abs(col_b) > 1e-8, col_a / col_b, 0.0)
+            ratio = np.clip(ratio, -10, 10)
+        X_new[ratio_name] = ratio
+        new_features.append(ratio_name)
+
+        # Difference: A - B — detect spread / divergence
+        diff_name = f"INT_diff_{short_a}__{short_b}"
+        X_new[diff_name] = col_a - col_b
+        new_features.append(diff_name)
+
+        # Product: A * B / scale — combined strength (positive-only features)
+        if np.nanmin(col_a) >= 0 and np.nanmin(col_b) >= 0:
+            prod_name = f"INT_prod_{short_a}__{short_b}"
+            scale = max(np.nanstd(col_a) * np.nanstd(col_b), 1e-8)
+            X_new[prod_name] = (col_a * col_b) / scale
+            new_features.append(prod_name)
+
+    # Remove features with >50% NaN or zero variance
+    good_features = []
+    cols_to_drop = []
+    for fn in new_features:
+        col = X_new[fn].values
+        if np.isnan(col).mean() > 0.5 or np.nanstd(col) < 1e-10:
+            cols_to_drop.append(fn)
+        else:
+            good_features.append(fn)
+    if cols_to_drop:
+        X_new.drop(columns=cols_to_drop, inplace=True)
+
+    for fn in good_features:
+        X_new[fn] = X_new[fn].fillna(0)
+
+    print(f"[INTERACTIONS] Generated {len(good_features)} interaction features "
+          f"from {len(candidates)} candidate pairs")
+
+    return X_new, good_features
 
 
 def _walkforward_score_rules(rules, X, y, pips, timestamps=None,

@@ -1016,7 +1016,9 @@ def _render_results():
         f"Time:              {r.get('computation_time_s', 0):.0f}s\n"
         f"Features used:     {r.get('features_used', 0)}"
         f"  ({r.get('original_features', 0)} standard"
-        f" + {r.get('smart_features', 0)} smart)\n"
+        f" + {r.get('smart_features', 0)} smart"
+        + (f" + {r.get('interaction_features', 0)} interactions)"
+           if r.get('interaction_features', 0) > 0 else ")") + "\n"
         f"Discovery mode:    {r.get('discovery_mode', 'quick').upper()}"
     )
     tk.Label(sc, text=summary_text,
@@ -1110,9 +1112,13 @@ def _render_results():
                          font=("Segoe UI", 8, "bold")).pack(anchor="w")
 
             for cond in rule.get('conditions', []):
+                feat = cond['feature']
+                is_interaction = feat.startswith('INT_')
+                color  = "#8e44ad" if is_interaction else "#444"
+                prefix = "[x] " if is_interaction else "  "
                 tk.Label(rc,
-                         text=f"    {cond['feature']} {cond['operator']} {cond['value']}",
-                         bg=bg, fg="#444",
+                         text=f"  {prefix}{feat} {cond['operator']} {cond['value']}",
+                         bg=bg, fg=color,
                          font=("Courier", 8)).pack(anchor="w")
 
     # Multi-exit comparison table (if multi-exit labeling was used)
