@@ -286,6 +286,26 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
                              "Price data file not found!\n\nPlease download XAUUSD data first.")
         return
 
+    # ── Check for stale rules ─────────────────────────────────────────────
+    # WHY: If analysis_report.json is missing entry_timeframe or direction,
+    #      the backtest will use wrong defaults (H1, BUY) silently.
+    #      Better to warn the user NOW than produce wrong results.
+    # CHANGED: April 2026 — stale rules detection
+    try:
+        from shared.stale_check import check_analysis_report, format_warning
+        stale = check_analysis_report()
+        if stale['is_stale']:
+            warning = format_warning(stale)
+            proceed = messagebox.askyesno(
+                "Stale Rules Warning",
+                f"{warning}\n\nProceed anyway with defaults?",
+                icon='warning',
+            )
+            if not proceed:
+                return
+    except ImportError:
+        pass
+
     if messagebox.askyesno("Run Backtest",
                            "Start backtesting?\n\n"
                            "  1. Simulate trades on discovered rules\n"

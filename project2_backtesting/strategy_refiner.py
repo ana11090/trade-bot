@@ -555,6 +555,22 @@ def load_strategy_list():
                     if notes:
                         label_parts.append(notes[:30])
 
+                    # ── Check if saved rule is stale ──────────────────────────────
+                    # WHY: Old saved rules may be missing exit_class, filters, entry_timeframe.
+                    #      Marking them ⚠️ in the dropdown tells the user to re-save.
+                    # CHANGED: April 2026 — stale saved rule detection
+                    is_stale = False
+                    stale_issues = []
+                    try:
+                        from shared.stale_check import check_saved_rule
+                        rule_check = check_saved_rule(rule)
+                        if rule_check['is_stale']:
+                            label_parts[0] = f"⚠️ {label_parts[0]}"
+                            is_stale = True
+                            stale_issues = rule_check['issues']
+                    except ImportError:
+                        pass
+
                     results.append({
                         'index':             f"saved_{rid}",
                         'source':            'saved',
@@ -572,6 +588,8 @@ def load_strategy_list():
                         'commission_pips':   0.0,
                         'has_trades':        False,
                         'saved_rule':        rule,  # keep the original rule for loading
+                        'is_stale':          is_stale,
+                        'stale_issues':      stale_issues,
                     })
     except Exception:
         pass

@@ -164,6 +164,23 @@ def _update_strat_info():
         except Exception:
             _badge_lbl.configure(text="", fg=GREY)
 
+    # ── Stale rules warning ───────────────────────────────────────────────
+    # WHY: If the analysis_report.json is missing entry_timeframe, the EA
+    #      will use H1 by default. If direction is missing, it generates
+    #      BUY-only code. The user needs to know and fix this.
+    # CHANGED: April 2026 — stale rules detection in EA generator
+    if _badge_lbl:
+        try:
+            from shared.stale_check import check_analysis_report
+            stale = check_analysis_report()
+            if stale['is_stale']:
+                issues_short = '; '.join(stale['issues'][:2])
+                _badge_lbl.configure(
+                    text=f"⚠️ Stale rules: {issues_short} — re-run P4 Discovery",
+                    fg="#e67e00")
+        except ImportError:
+            pass
+
     # Update condition threshold vars
     _refresh_condition_vars(idx)
 
@@ -432,6 +449,26 @@ def _generate():
     if idx is None:
         messagebox.showerror("No Strategy", "Select a strategy first.")
         return
+
+    # ── Stale rules check ─────────────────────────────────────────────────
+    # WHY: Generating an EA from stale rules means the entry_timeframe might
+    #      be wrong (H1 instead of M15), or direction missing. The EA would
+    #      look at wrong candles or miss SELL signals.
+    # CHANGED: April 2026 — warn before generating from stale data
+    try:
+        from shared.stale_check import check_analysis_report, format_warning
+        stale = check_analysis_report()
+        if stale['is_stale']:
+            warning = format_warning(stale)
+            proceed = messagebox.askyesno(
+                "Stale Rules Warning",
+                f"{warning}\n\nGenerate EA anyway?",
+                icon='warning',
+            )
+            if not proceed:
+                return
+    except ImportError:
+        pass
 
     strat_data = _get_strategy_data(idx)
     if not strat_data:

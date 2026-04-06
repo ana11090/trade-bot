@@ -143,14 +143,31 @@ def _load_selected_strategy():
     # CHANGED: April 2026 — match saved rules to matrix
     if isinstance(idx, str) and idx.startswith('saved_'):
         saved_rule = None
+        is_stale_rule = False
+        stale_issues_list = []
         for s in _strategies:
             if s.get('index') == idx:
                 saved_rule = s.get('saved_rule', {})
+                is_stale_rule = s.get('is_stale', False)
+                stale_issues_list = s.get('stale_issues', [])
                 break
 
         if not saved_rule:
             messagebox.showwarning("No Data", "Saved rule data not found.")
             return
+
+        # ── Stale saved rule warning ──────────────────────────────────────────
+        # WHY: Saved rules from before the fixes are missing exit_class, filters,
+        #      entry_timeframe. The user needs to know so they can re-save.
+        # CHANGED: April 2026 — stale saved rule detection
+        if is_stale_rule and stale_issues_list:
+            issues_text = '\n  • '.join([''] + stale_issues_list)
+            messagebox.showinfo(
+                "Stale Saved Rule",
+                f"⚠️ This saved rule is missing some data:\n{issues_text}\n\n"
+                f"To fix: make any change in the Refiner, then click Save again.\n"
+                f"The new save will capture all fields correctly.",
+            )
 
         # Try to match against backtest matrix
         rule_combo = saved_rule.get('rule_combo', '')

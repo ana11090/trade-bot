@@ -161,6 +161,40 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     tp_pips = exit_params.get('tp_pips', 300)
     trail_pips = exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))
 
+    # ── Determine exit strategy type ──────────────────────────────────────
+    # WHY: Different exit strategies need different MQL5 code.
+    #      FixedSLTP: set SL/TP at entry, done.
+    #      ATRBased: read ATR at entry, compute SL/TP dynamically.
+    #      TimeBased: fixed SL + close after N candles.
+    #      HybridExit: trailing + breakeven + time limit.
+    # CHANGED: April 2026 — support all backtester exit strategies
+    exit_class = exit_name  # e.g., 'FixedSLTP', 'ATRBased', 'TimeBased', etc.
+    # Normalize common names
+    exit_class_map = {
+        'Fixed SL/TP': 'FixedSLTP', 'FixedSLTP': 'FixedSLTP',
+        'Trailing Stop': 'TrailingStop', 'TrailingStop': 'TrailingStop',
+        'ATR-Based': 'ATRBased', 'ATRBased': 'ATRBased',
+        'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
+        'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
+        'Hybrid': 'HybridExit', 'HybridExit': 'HybridExit',
+    }
+    exit_class = exit_class_map.get(exit_class, 'FixedSLTP')
+
+    # ATR params
+    sl_atr_mult = exit_params.get('sl_atr_mult', 1.5)
+    tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
+    atr_column = exit_params.get('atr_column', 'H1_atr_14')
+
+    # Time params
+    max_candles = exit_params.get('max_candles', 12)
+
+    # Indicator exit params
+    exit_indicator = exit_params.get('exit_indicator', 'H1_rsi_14')
+    exit_threshold = exit_params.get('exit_threshold', 70)
+
+    # Hybrid params
+    breakeven_pips = exit_params.get('breakeven_activation_pips', 50)
+
     # WHY: EA checks for new bar on the entry timeframe, not always H1.
     _mql_periods = {
         'M1': 'PERIOD_M1', 'M5': 'PERIOD_M5', 'M15': 'PERIOD_M15',
@@ -196,6 +230,52 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     session_comment = ', '.join(session_filter) if session_filter else 'All sessions'
     day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     day_comment = ', '.join(day_names[d - 1] for d in day_filter if 1 <= d <= 7) if day_filter else 'All days'
+
+    # ── Build dynamic session filter code ─────────────────────────────────
+    # WHY: The optimizer might find that only London+NY sessions are profitable.
+    #      The EA must enforce this — otherwise it trades Asian session too,
+    #      losing the edge the optimizer found.
+    # CHANGED: April 2026 — dynamic session filter in generated EA
+    #
+    # Session hours (GMT):
+    #   Asian:   00:00 - 08:00
+    #   London:  07:00 - 16:00
+    #   New York: 13:00 - 22:00
+    #   Sydney:  22:00 - 07:00 (wraps midnight)
+    if session_filter and len(session_filter) > 0:
+        session_checks = []
+        for sess in session_filter:
+            s = sess.strip().lower()
+            if s in ('london', 'london session'):
+                session_checks.append('(hour >= 7 && hour < 16)')
+            elif s in ('new york', 'ny', 'new york session'):
+                session_checks.append('(hour >= 13 && hour < 22)')
+            elif s in ('asian', 'asia', 'asian session', 'tokyo'):
+                session_checks.append('(hour >= 0 && hour < 8)')
+            elif s in ('sydney', 'sydney session'):
+                session_checks.append('(hour >= 22 || hour < 7)')
+
+        if session_checks:
+            session_body = ' || '.join(session_checks)
+            session_code = f'return ({session_body});'
+        else:
+            session_code = 'return true; // All sessions allowed'
+    else:
+        session_code = 'return true; // All sessions allowed'
+
+    # ── Build dynamic day filter code ─────────────────────────────────────
+    # WHY: The optimizer might find that Mon/Fri are unprofitable (news days).
+    #      The EA must skip those days to preserve the edge.
+    # CHANGED: April 2026 — dynamic day filter in generated EA
+    #
+    # MQL5 day_of_week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+    if day_filter and len(day_filter) > 0 and set(day_filter) != {1,2,3,4,5}:
+        # Only generate filter if not all weekdays are selected
+        allowed_days = ', '.join(str(d) for d in sorted(day_filter))
+        day_checks = ' || '.join(f'dow == {d}' for d in sorted(day_filter))
+        day_code = f'return ({day_checks});  // Allowed: {allowed_days}'
+    else:
+        day_code = 'if(dow == 0 || dow == 6) return false;\n   return true;  // All weekdays allowed'
 
     conditions_block = '\n'.join(condition_inputs)
     conditions_check_block = '\n'.join(condition_checks)
@@ -505,6 +585,187 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'{on_trade_body}\n'
             f'}}')
 
+    # ── Build daily reset timing from drawdown_mechanics ──────────────────
+    # WHY: Leveraged resets daily DD at 23:00 GMT+3 (= 20:00 GMT), not midnight.
+    #      Using midnight means the DD reference is wrong for 1 hour, which
+    #      could trigger a false breach or miss a real one.
+    # CHANGED: April 2026 — dynamic reset timing from JSON
+    reset_hour_gmt = 0  # default: midnight GMT
+    if dd_mechanics:
+        daily_dd_mech = dd_mechanics.get('daily_dd', {})
+        reset_time_str = daily_dd_mech.get('reset_time', '00:00')
+        reset_tz = daily_dd_mech.get('reset_timezone', 'GMT')
+
+        # Parse reset time
+        try:
+            parts = reset_time_str.split(':')
+            reset_hour_local = int(parts[0])
+        except Exception:
+            reset_hour_local = 0
+
+        # Convert to GMT
+        tz_offset = 0
+        if 'GMT+' in reset_tz:
+            tz_offset = int(reset_tz.replace('GMT+', ''))
+        elif 'GMT-' in reset_tz:
+            tz_offset = -int(reset_tz.replace('GMT-', ''))
+        reset_hour_gmt = (reset_hour_local - tz_offset) % 24
+
+    use_custom_reset = reset_hour_gmt != 0
+
+    # ── Exit strategy specific code blocks ────────────────────────────────
+    # WHY: Each exit type needs different inputs, globals, and management code.
+    # CHANGED: April 2026 — all exit strategies supported
+    exit_inputs = ''
+    exit_globals = ''
+    exit_on_entry = ''
+    exit_management = ''
+
+    if exit_class == 'ATRBased':
+        # WHY: ATR-Based reads ATR at entry and computes SL/TP as multiples.
+        #      Adapts to current volatility — wide SL in volatile markets,
+        #      tight SL in quiet markets.
+        atr_tf = atr_column.split('_')[0] if '_' in atr_column else 'H1'
+        atr_period_str = atr_column.split('_')[-1] if '_' in atr_column else '14'
+        atr_mql_tf = _mql_periods.get(atr_tf, 'PERIOD_H1')
+
+        exit_inputs = (
+            f'input double SL_ATR_Mult     = {sl_atr_mult};              // SL = ATR × this\n'
+            f'input double TP_ATR_Mult     = {tp_atr_mult};              // TP = ATR × this\n'
+            f'input int    ATR_Period      = {atr_period_str};            // ATR period\n'
+        )
+        exit_globals = (
+            f'int handle_exit_atr;\n'
+            f'double g_entrySL = 0.0;\n'
+            f'double g_entryTP = 0.0;\n'
+        )
+        extra_init.append(
+            f'   handle_exit_atr = iATR(NULL, {atr_mql_tf}, ATR_Period);\n'
+            f'   if(handle_exit_atr == INVALID_HANDLE) return(INIT_FAILED);'
+        )
+        exit_on_entry = (
+            f'      // ATR-Based: compute SL/TP from ATR at entry\n'
+            f'      double atrBuf[1];\n'
+            f'      CopyBuffer(handle_exit_atr, 0, 0, 1, atrBuf);\n'
+            f'      double atrVal = atrBuf[0];\n'
+            f'      g_entrySL = atrVal * SL_ATR_Mult;\n'
+            f'      g_entryTP = atrVal * TP_ATR_Mult;\n'
+            f'      trade.PositionModify(trade.ResultOrder(),\n'
+            f'         entryPrice - g_entrySL,\n'
+            f'         entryPrice + g_entryTP);\n'
+        )
+
+    elif exit_class == 'TimeBased':
+        # WHY: Time-Based closes the trade after N candles regardless of profit.
+        #      Prevents trades from lingering in choppy markets.
+        exit_inputs = (
+            f'input int MaxHoldCandles    = {max_candles};               // Close after N candles\n'
+        )
+        exit_globals = (
+            f'int g_entryBarIndex = 0;\n'
+        )
+        exit_on_entry = (
+            f'      // Time-Based: record entry bar index\n'
+            f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+        )
+        exit_management = (
+            f'   // Time-Based exit: close after MaxHoldCandles\n'
+            f'   if(g_entryBarIndex > 0)\n'
+            f'   {{\n'
+            f'      int barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
+            f'      if(barsHeld >= MaxHoldCandles)\n'
+            f'      {{\n'
+            f'         CloseAllPositions("TimeExit");\n'
+            f'         g_entryBarIndex = 0;\n'
+            f'         Print("[EA] Time exit after ", barsHeld, " candles");\n'
+            f'      }}\n'
+            f'   }}\n'
+        )
+
+    elif exit_class == 'IndicatorExit':
+        # WHY: Indicator Exit closes when an indicator crosses a threshold.
+        #      E.g., close BUY when RSI goes above 70 (overbought).
+        ind_parts = exit_indicator.split('_', 1)
+        ind_tf = ind_parts[0] if len(ind_parts) > 1 else 'H1'
+        ind_name = ind_parts[1] if len(ind_parts) > 1 else exit_indicator
+        ind_mql_tf = _mql_periods.get(ind_tf, 'PERIOD_H1')
+
+        ind_code = get_mql_code(exit_indicator, 'mt5')
+
+        exit_inputs = (
+            f'input double ExitThreshold   = {exit_threshold};            // Exit when indicator crosses this\n'
+        )
+        if ind_code.get('handle_var'):
+            exit_globals = ind_code['handle_var'] + '\n'
+        if ind_code.get('handle_init'):
+            extra_init.append(f'   {ind_code["handle_init"]}')
+        exit_management = (
+            f'   // Indicator Exit: close when {exit_indicator} crosses {exit_threshold}\n'
+            f'   {{\n'
+            f'      {ind_code["read_code"]}\n'
+            f'      if(val_{ind_code["var_name"]} >= ExitThreshold)\n'
+            f'      {{\n'
+            f'         CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
+            f'         Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
+            f'      }}\n'
+            f'   }}\n'
+        )
+
+    elif exit_class == 'HybridExit':
+        # WHY: Hybrid combines trailing stop + breakeven + time limit.
+        #      Most sophisticated exit — protects profits while limiting time exposure.
+        exit_inputs = (
+            f'input double BreakevenPips   = {breakeven_pips};            // Move SL to entry after this profit\n'
+            f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles\n'
+        )
+        exit_globals = (
+            f'int g_entryBarIndex = 0;\n'
+            f'bool g_breakevenSet = false;\n'
+        )
+        exit_on_entry = (
+            f'      // Hybrid: record entry for time-based component\n'
+            f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+            f'      g_breakevenSet = false;\n'
+        )
+        exit_management = (
+            f'   // Hybrid exit: breakeven + trailing + time limit\n'
+            f'   for(int _hi = PositionsTotal() - 1; _hi >= 0; _hi--)\n'
+            f'   {{\n'
+            f'      ulong _ht = PositionGetTicket(_hi);\n'
+            f'      if(_ht <= 0 || PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;\n'
+            f'      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;\n'
+            f'      double _openP = PositionGetDouble(POSITION_PRICE_OPEN);\n'
+            f'      double _curSL = PositionGetDouble(POSITION_SL);\n'
+            f'      double _curTP = PositionGetDouble(POSITION_TP);\n'
+            f'      double _bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);\n'
+            f'      double _profitPips = (_bid - _openP) / (_Point * 10);\n'
+            f'      // Breakeven: move SL to entry once profit reaches threshold\n'
+            f'      if(!g_breakevenSet && _profitPips >= BreakevenPips)\n'
+            f'      {{\n'
+            f'         trade.PositionModify(_ht, _openP + _Point, _curTP);\n'
+            f'         g_breakevenSet = true;\n'
+            f'         Print("[EA] Breakeven set at ", _openP);\n'
+            f'      }}\n'
+            f'      // Trailing: move SL up as price moves\n'
+            f'      if(g_breakevenSet && TrailPips > 0)\n'
+            f'      {{\n'
+            f'         double _newSL = _bid - TrailPips * _Point * 10;\n'
+            f'         if(_newSL > _curSL + _Point)\n'
+            f'            trade.PositionModify(_ht, _newSL, _curTP);\n'
+            f'      }}\n'
+            f'   }}\n'
+            f'   // Time limit\n'
+            f'   if(g_entryBarIndex > 0)\n'
+            f'   {{\n'
+            f'      int _barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
+            f'      if(_barsHeld >= MaxHoldCandles)\n'
+            f'      {{\n'
+            f'         CloseAllPositions("HybridTimeExit");\n'
+            f'         g_entryBarIndex = 0;\n'
+            f'      }}\n'
+            f'   }}\n'
+        )
+
     # ── Build injection strings ───────────────────────────────────────────
     extra_inputs_block      = '\n'.join(extra_inputs)      if extra_inputs      else ''
     extra_globals_block     = '\n'.join(extra_globals)     if extra_globals     else ''
@@ -512,6 +773,9 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_daily_reset_block = '\n'.join(extra_daily_reset) if extra_daily_reset else ''
     extra_tick_checks_block = '\n'.join(extra_tick_checks) if extra_tick_checks else ''
     extra_functions_block   = '\n\n'.join(extra_functions) if extra_functions   else 'string GetPayoutStatus() { return "N/A"; }'
+
+    # Exit-specific blocks (computed outside f-string to avoid backslash issues)
+    exit_on_entry_block = exit_on_entry if exit_on_entry else '      trade.PositionModify(trade.ResultOrder(),\n         entryPrice - sl,\n         entryPrice + tp);'
 
     code = f"""\
 //+------------------------------------------------------------------+
@@ -549,6 +813,7 @@ input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file p
 input double SLPips             = {sl_pips};                 // Stop loss (pips)
 input double TPPips             = {tp_pips};                 // Take profit (pips)
 input double TrailPips          = {trail_pips};              // Trailing stop (pips, 0=off)
+{exit_inputs}
 //--- Entry rule thresholds (one per condition — tweak without recompiling)
 {conditions_block}
 {extra_inputs_block}
@@ -567,6 +832,7 @@ datetime g_lastTradeTime = 0;
 datetime g_lastBarTime   = 0;
 int    g_logHandle       = INVALID_HANDLE;
 {extra_globals_block}
+{exit_globals}
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                              |
@@ -622,18 +888,46 @@ void OnTick()
 
    if(g_stopForDay) return;
 
+   // WHY: Trailing stop must be checked every tick, not just on new bars.
+   //      Price can hit the trail level between bars.
+   // CHANGED: April 2026 — trailing stop management
+   ManageTrailingStop();
+
+   // WHY: Exit-specific management (time-based, indicator-based, hybrid).
+   //      Must be checked every tick for time/indicator exits.
+   // CHANGED: April 2026 — all exit strategies supported
+{exit_management}
+
    //--- Check for new bar
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    if(currentBarTime == g_lastBarTime) return;
    g_lastBarTime = currentBarTime;
 
-   //--- Reset daily counter on new day
-   MqlDateTime now_struct;
-   TimeToStruct(TimeCurrent(), now_struct);
-   static int lastDay = -1;
-   if(now_struct.day != lastDay)
+   //--- Reset daily counter
+   MqlDateTime now_gmt;
+   TimeToStruct(TimeGMT(), now_gmt);
+   int _resetHour = {reset_hour_gmt}; // From firm JSON ({daily_dd_mech.get('reset_time', '00:00')} {daily_dd_mech.get('reset_timezone', 'GMT')} = {reset_hour_gmt}:00 GMT)
+   static int _lastResetDay = -1;
+   // WHY: Leveraged resets at 23:00 GMT+3 (= 20:00 GMT), not midnight.
+   //      We check if current GMT hour >= reset hour AND we haven't reset today.
+   bool _shouldReset = false;
+   if(_resetHour == 0)
    {{
-      lastDay          = now_struct.day;
+      // Standard midnight reset
+      if(now_gmt.day != _lastResetDay) _shouldReset = true;
+   }}
+   else
+   {{
+      // Custom reset hour (e.g., 20:00 GMT for Leveraged)
+      if(now_gmt.hour >= _resetHour && now_gmt.day != _lastResetDay)
+         _shouldReset = true;
+      // Handle day wrap: if reset hour is late (e.g., 23), also check next day
+      if(now_gmt.hour < _resetHour && now_gmt.day != _lastResetDay && _lastResetDay != -1)
+         _shouldReset = false; // wait until reset hour
+   }}
+   if(_shouldReset)
+   {{
+      _lastResetDay    = now_gmt.day;
       g_dailyTrades    = 0;
       g_stopForDay     = false;
       g_sessionEquity  = equity;
@@ -670,7 +964,19 @@ void OnTick()
    if(!entrySignal) return;
 
    //--- No existing position with our magic
-   if(PositionSelectByTicket(0)) return; // already in position
+   // WHY: PositionSelectByTicket(0) always fails — ticket 0 doesn't exist.
+   //      Must loop through all positions and check our MagicNumber.
+   //      Without this, EA opens multiple trades simultaneously = 2-3x risk.
+   // CHANGED: April 2026 — correct position check
+   for(int _pi = PositionsTotal() - 1; _pi >= 0; _pi--)
+   {{
+      ulong _ticket = PositionGetTicket(_pi);
+      if(_ticket > 0 && PositionGetInteger(POSITION_MAGIC) == MagicNumber
+         && PositionGetString(POSITION_SYMBOL) == _Symbol)
+      {{
+         return; // already have an open position
+      }}
+   }}
 
    //--- Position sizing
    double sl = SLPips * _Point * 10;
@@ -682,9 +988,7 @@ void OnTick()
    if(trade.Buy(lots, _Symbol, 0, 0, 0, "EA_Entry"))
    {{
       double entryPrice = trade.ResultPrice();
-      trade.PositionModify(trade.ResultOrder(),
-         entryPrice - sl,
-         entryPrice + tp);
+{exit_on_entry_block}
       g_dailyTrades++;
       g_lastTradeTime = TimeCurrent();
       LogTrade("OPEN", "BUY", lots, entryPrice, 0, 0, "entry_signal");
@@ -715,6 +1019,58 @@ double CalculateLots(double slDistance)
 }}
 
 //+------------------------------------------------------------------+
+//| Manage trailing stop on open position                              |
+//+------------------------------------------------------------------+
+void ManageTrailingStop()
+{{
+   if(TrailPips <= 0) return; // trailing stop disabled
+
+   double trailDistance = TrailPips * _Point * 10;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {{
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double currentTP = PositionGetDouble(POSITION_TP);
+      long   posType   = PositionGetInteger(POSITION_TYPE);
+      double bid       = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask       = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+      if(posType == POSITION_TYPE_BUY)
+      {{
+         // Only trail if price has moved enough in profit
+         double profitPips = (bid - openPrice) / (_Point * 10);
+         if(profitPips >= TrailPips)
+         {{
+            double newSL = bid - trailDistance;
+            // Only move SL up, never down
+            if(newSL > currentSL + _Point)
+            {{
+               trade.PositionModify(ticket, newSL, currentTP);
+            }}
+         }}
+      }}
+      else if(posType == POSITION_TYPE_SELL)
+      {{
+         double profitPips = (openPrice - ask) / (_Point * 10);
+         if(profitPips >= TrailPips)
+         {{
+            double newSL = ask + trailDistance;
+            if(newSL < currentSL - _Point || currentSL == 0)
+            {{
+               trade.PositionModify(ticket, newSL, currentTP);
+            }}
+         }}
+      }}
+   }}
+}}
+
+//+------------------------------------------------------------------+
 //| Close all open positions                                           |
 //+------------------------------------------------------------------+
 void CloseAllPositions(string reason)
@@ -738,9 +1094,8 @@ bool CheckSession()
    MqlDateTime dt;
    TimeToStruct(TimeGMT(), dt);
    int hour = dt.hour;
-   // London: 7-16, NewYork: 12-21, Asian: 0-8
-   // Adjust based on selected sessions: {session_comment}
-   return true; // TODO: customise per session_filter setting
+   // Sessions: {session_comment}
+   {session_code}
 }}
 
 //+------------------------------------------------------------------+
@@ -750,11 +1105,9 @@ bool CheckDayFilter()
 {{
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
-   // dow: 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
-   // Allowed days: {day_comment}
    int dow = dt.day_of_week;
-   if(dow == 0 || dow == 6) return false; // skip weekends by default
-   return true;
+   // Days: {day_comment}
+   {day_code}
 }}
 
 //+------------------------------------------------------------------+
