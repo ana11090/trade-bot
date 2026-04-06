@@ -111,20 +111,42 @@ def display_summary(output_text, summary_frame):
     for widget in summary_frame.winfo_children():
         widget.destroy()
 
-    data = load_summary_stats()
-    if data is None:
-        tk.Label(summary_frame, text="No backtest results found. Run the backtest first.",
-                 font=("Arial", 10, "italic"), bg="#ffffff", fg="#999").pack(pady=20)
+    try:
+        data = load_summary_stats()
+        if data is None:
+            tk.Label(summary_frame, text="No backtest results found. Run the backtest first.",
+                     font=("Arial", 10, "italic"), bg="#ffffff", fg="#999").pack(pady=20)
+            output_text.delete(1.0, tk.END)
+            output_text.insert(tk.END, "No backtest results available.\n\nRun the backtest first.")
+            return
+
+        results = data.get('results', [])
+        if not results:
+            output_text.delete(1.0, tk.END)
+            output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
+            return
+
+        _display_results_inner(output_text, summary_frame, data, results,
+                               account_size, risk_pct, pip_value, dollar_per_pip)
+
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        print(f"[VIEW RESULTS] ERROR in display_summary: {e}")
+        traceback.print_exc()
+        tk.Label(summary_frame,
+                 text=f"Error displaying results:\n\n{e}\n\nCheck terminal for full traceback.",
+                 font=("Arial", 10), bg="#ffffff", fg="#dc3545",
+                 wraplength=600, justify="left").pack(pady=20, padx=20)
         output_text.delete(1.0, tk.END)
-        output_text.insert(tk.END, "No backtest results available.\n\nRun the backtest first.")
+        output_text.insert(tk.END, f"Error:\n{err}")
         return
 
-    results = data.get('results', [])
-    if not results:
-        output_text.delete(1.0, tk.END)
-        output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
-        return
 
+
+def _display_results_inner(output_text, summary_frame, data, results,
+                           account_size, risk_pct, pip_value, dollar_per_pip):
+    """Inner display logic — separated so errors are caught by display_summary."""
     # ── Header info ──
     info_frame = tk.Frame(summary_frame, bg="#e8f5e9", padx=15, pady=10)
     info_frame.pack(fill="x", padx=10, pady=(0, 5))
@@ -192,11 +214,9 @@ def display_summary(output_text, summary_frame):
     results_inner.bind("<Configure>", lambda e: results_canvas.configure(scrollregion=results_canvas.bbox("all")))
     results_canvas.bind("<Configure>", lambda e: results_canvas.itemconfig(results_wid, width=e.width))
 
-    # Safe mousewheel binding — doesn't break other canvases
     def _on_enter(event):
         results_canvas.bind("<MouseWheel>",
             lambda e: results_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        # Linux
         results_canvas.bind("<Button-4>", lambda e: results_canvas.yview_scroll(-3, "units"))
         results_canvas.bind("<Button-5>", lambda e: results_canvas.yview_scroll(3, "units"))
 
@@ -208,7 +228,6 @@ def display_summary(output_text, summary_frame):
     results_canvas.bind("<Enter>", _on_enter)
     results_canvas.bind("<Leave>", _on_leave)
 
-    # Count label
     count_text = f"Showing {len(sorted_results)} of {len(results)} results"
     if _sort_key[0] == 'max_dd_pips' and not _sort_reverse[0]:
         count_text += " (sorted by lowest drawdown — safer strategies first)"
@@ -217,249 +236,253 @@ def display_summary(output_text, summary_frame):
 
     # ── Result cards ──
     for i, r in enumerate(sorted_results):
-        net_pips = r.get('net_total_pips', 0)
-        wr = r.get('win_rate', 0)
-        pf = r.get('net_profit_factor', 0)
-        trades = r.get('total_trades', 0)
-        avg = r.get('net_avg_pips', 0)
-        dd = r.get('max_dd_pips', 0)
-        best = r.get('best_trade', 0)
-        worst = r.get('worst_trade', 0)
-
-        is_profitable = net_pips > 0 and trades > 0
-        bg_color = "#f8fff8" if is_profitable else "#fff8f8" if trades > 0 else "#f5f5f5"
-        border_color = "#28a745" if is_profitable else "#dc3545" if trades > 0 else "#ccc"
-
-        card = tk.Frame(results_inner, bg=bg_color, highlightbackground=border_color,
-                         highlightthickness=1, padx=12, pady=6)
-        card.pack(fill="x", pady=2)
-
-        # Row 1: rank + strategy name + save button
-        header_row = tk.Frame(card, bg=bg_color)
-        header_row.pack(fill="x")
-
-        rank_label = f"#{i+1}"
-        header_text = f"{rank_label}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
-        tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
-                 font=("Arial", 10, "bold")).pack(side=tk.LEFT)
-
-        # Save button
+        # FIX 4: per-card error handling — one broken result doesn't kill the display
         try:
-            from shared.saved_rules import build_save_button
-            # Save the result metadata
-            save_data = {
-                'rule_combo': r.get('rule_combo', '?'),
-                'exit_strategy': r.get('exit_strategy', '?'),
-                'exit_name': r.get('exit_name', '?'),
-                'prediction': 'WIN',
-                'win_rate': wr,
-                'net_total_pips': net_pips,
-                'net_profit_factor': pf,
-                'total_trades': trades,
-                'max_dd_pips': dd,
-            }
-            sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
-            sb.pack(side=tk.RIGHT, padx=3)
-        except Exception:
-            pass
+            net_pips = r.get('net_total_pips', 0)
+            wr = r.get('win_rate', 0)
+            pf = r.get('net_profit_factor', 0)
+            trades = r.get('total_trades', 0)
+            avg = r.get('net_avg_pips', 0)
+            dd = r.get('max_dd_pips', 0)
+            best = r.get('best_trade', 0)
+            worst = r.get('worst_trade', 0)
 
-        # Star button
-        # WHY: Star your best strategies directly from View Results.
-        #      Starred strategies show with ⭐ at top of all dropdowns.
-        # CHANGED: April 2026 — star from View Results
-        try:
-            from shared.starred import toggle, is_starred
-            rc = r.get('rule_combo', '?')
-            es = r.get('exit_strategy', r.get('exit_name', '?'))
-            starred = is_starred(rc, es)
+            is_profitable = net_pips > 0 and trades > 0
+            bg_color = "#f8fff8" if is_profitable else "#fff8f8" if trades > 0 else "#f5f5f5"
+            border_color = "#28a745" if is_profitable else "#dc3545" if trades > 0 else "#ccc"
 
-            def _make_star_toggle(combo_name, exit_name, btn_ref):
-                def _toggle():
-                    from shared.starred import toggle as _t
-                    new_state = _t(combo_name, exit_name)
-                    btn_ref[0].configure(
-                        text="⭐" if new_state else "☆",
-                        bg="#f39c12" if new_state else "#ddd",
-                    )
-                return _toggle
+            card = tk.Frame(results_inner, bg=bg_color, highlightbackground=border_color,
+                             highlightthickness=1, padx=12, pady=6)
+            card.pack(fill="x", pady=2)
 
-            star_btn_ref = [None]
-            star_btn_ref[0] = tk.Button(
-                header_row,
-                text="⭐" if starred else "☆",
-                command=_make_star_toggle(rc, es, star_btn_ref),
-                bg="#f39c12" if starred else "#ddd",
-                fg="white" if starred else "#666",
-                font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",
-            )
-            star_btn_ref[0].pack(side=tk.RIGHT, padx=3)
-        except Exception:
-            pass
+            header_row = tk.Frame(card, bg=bg_color)
+            header_row.pack(fill="x")
 
-        # Row 2: metrics
-        if trades > 0:
-            # Format win rate correctly
-            wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
-            wr_color = "#28a745" if (wr if wr > 1 else wr*100) >= 55 else "#dc3545"
-            pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
-            net_color = "#28a745" if net_pips > 0 else "#dc3545"
+            header_text = f"#{i+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
+            tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
+                     font=("Arial", 10, "bold")).pack(side=tk.LEFT)
 
-            # Calculate profit %, median, average
-            profit_dollars = net_pips * dollar_per_pip
-            profit_pct = (profit_dollars / account_size) * 100
+            # Save button
+            try:
+                from shared.saved_rules import build_save_button
+                save_data = {
+                    'rule_combo': r.get('rule_combo', '?'),
+                    'exit_strategy': r.get('exit_strategy', '?'),
+                    'exit_name': r.get('exit_name', '?'),
+                    'prediction': 'WIN',
+                    'win_rate': wr,
+                    'net_total_pips': net_pips,
+                    'net_profit_factor': pf,
+                    'total_trades': trades,
+                    'max_dd_pips': dd,
+                }
+                sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
+                sb.pack(side=tk.RIGHT, padx=3)
+            except Exception:
+                pass
 
-            trade_pips = []
-            if 'trades' in r and r['trades']:
-                trade_pips = [t.get('net_pips', 0) for t in r['trades']]
+            # Star button
+            # WHY: Star your best strategies directly from View Results.
+            #      Starred strategies show with ⭐ at top of all dropdowns.
+            # CHANGED: April 2026 — star from View Results
+            try:
+                from shared.starred import toggle, is_starred
+                rc = r.get('rule_combo', '?')
+                es = r.get('exit_strategy', r.get('exit_name', '?'))
+                starred = is_starred(rc, es)
 
-            import statistics
-            median_pips = statistics.median(trade_pips) if trade_pips else 0
-            avg_pips_calc = sum(trade_pips) / len(trade_pips) if trade_pips else avg
+                def _make_star_toggle(combo_name, exit_name, btn_ref):
+                    def _toggle():
+                        from shared.starred import toggle as _t
+                        new_state = _t(combo_name, exit_name)
+                        btn_ref[0].configure(
+                            text="⭐" if new_state else "☆",
+                            bg="#f39c12" if new_state else "#ddd",
+                        )
+                    return _toggle
 
-            metrics_row = tk.Frame(card, bg=bg_color)
-            metrics_row.pack(fill="x", pady=(2, 0))
+                star_btn_ref = [None]
+                star_btn_ref[0] = tk.Button(
+                    header_row,
+                    text="⭐" if starred else "☆",
+                    command=_make_star_toggle(rc, es, star_btn_ref),
+                    bg="#f39c12" if starred else "#ddd",
+                    fg="white" if starred else "#666",
+                    font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",
+                )
+                star_btn_ref[0].pack(side=tk.RIGHT, padx=3)
+            except Exception:
+                pass
 
-            for label, value, color in [
-                ("Trades", str(trades), "#333"),
-                ("WR", wr_str, wr_color),
-                ("PF", f"{pf:.2f}", pf_color),
-                ("Net", f"{net_pips:+,.0f} pips", net_color),
-                ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
-                ("Best", f"{best:+.0f}", "#28a745"),
-                ("Worst", f"{worst:+.0f}", "#dc3545"),
-            ]:
-                tk.Label(metrics_row, text=f"{label}: ", bg=bg_color, fg="#888",
-                         font=("Arial", 8)).pack(side=tk.LEFT)
-                tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
-                         font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+            if trades > 0:
+                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                wr_color = "#28a745" if (wr if wr > 1 else wr*100) >= 55 else "#dc3545"
+                pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
+                net_color = "#28a745" if net_pips > 0 else "#dc3545"
 
-            # Row 2: profit %, median, average
-            extra_row = tk.Frame(card, bg=bg_color)
-            extra_row.pack(fill="x", pady=(1, 0))
+                profit_dollars = net_pips * dollar_per_pip
+                profit_pct = (profit_dollars / account_size) * 100
 
-            pct_color = "#28a745" if profit_pct > 0 else "#dc3545"
+                # FIX 3: safe trades access
+                trade_pips = []
+                try:
+                    if 'trades' in r and r['trades']:
+                        trade_pips = [t.get('net_pips', 0) for t in r['trades'] if isinstance(t, dict)]
+                except Exception:
+                    trade_pips = []
 
-            for label, value, color in [
-                ("Profit", f"{profit_pct:+.1f}% of ${account_size:,.0f}", pct_color),
-                ("Median", f"{median_pips:+.1f} pips", "#28a745" if median_pips > 0 else "#dc3545"),
-                ("Average", f"{avg_pips_calc:+.1f} pips", "#28a745" if avg_pips_calc > 0 else "#dc3545"),
-            ]:
-                tk.Label(extra_row, text=f"{label}: ", bg=bg_color, fg="#888",
-                         font=("Arial", 8)).pack(side=tk.LEFT)
-                tk.Label(extra_row, text=value, bg=bg_color, fg=color,
-                         font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
+                import statistics
+                try:
+                    median_pips = statistics.median(trade_pips) if trade_pips else 0
+                    avg_pips_calc = sum(trade_pips) / len(trade_pips) if trade_pips else avg
+                except Exception:
+                    median_pips = 0
+                    avg_pips_calc = avg
 
-            # Breach counter (from precomputed data)
-            breaches = r.get('breaches', {})
-            if breaches:
-                from shared.tooltip import add_tooltip
+                metrics_row = tk.Frame(card, bg=bg_color)
+                metrics_row.pack(fill="x", pady=(2, 0))
 
-                blown = breaches.get('blown_count', 0)
+                for label, value, color in [
+                    ("Trades", str(trades), "#333"),
+                    ("WR", wr_str, wr_color),
+                    ("PF", f"{pf:.2f}", pf_color),
+                    ("Net", f"{net_pips:+,.0f} pips", net_color),
+                    ("MaxDD", f"{dd:,.0f} pips", "#dc3545"),
+                    ("Best", f"{best:+.0f}", "#28a745"),
+                    ("Worst", f"{worst:+.0f}", "#dc3545"),
+                ]:
+                    tk.Label(metrics_row, text=f"{label}: ", bg=bg_color, fg="#888",
+                             font=("Arial", 8)).pack(side=tk.LEFT)
+                    tk.Label(metrics_row, text=value, bg=bg_color, fg=color,
+                             font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 10))
 
-                breach_row = tk.Frame(card, bg=bg_color)
-                breach_row.pack(fill="x", pady=(2, 0))
+                extra_row = tk.Frame(card, bg=bg_color)
+                extra_row.pack(fill="x", pady=(1, 0))
+                pct_color = "#28a745" if profit_pct > 0 else "#dc3545"
 
-                if blown == 0:
-                    breach_lbl = tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
-                                          bg=bg_color, fg="#28a745", font=("Arial", 8, "bold"))
-                    breach_lbl.pack(side=tk.LEFT)
-                    add_tooltip(breach_lbl,
-                                "This strategy NEVER exceeded the prop firm's\n"
-                                "daily or total drawdown limits across the\n"
-                                "entire backtest period. Safe to trade.")
-                else:
-                    daily_b = breaches.get('daily_breaches', 0)
-                    total_b = breaches.get('total_breaches', 0)
-                    surv = breaches.get('survival_rate_per_month', 0)
-                    wd = breaches.get('worst_daily_pct', 0)
-                    wt = breaches.get('worst_total_pct', 0)
+                for label, value, color in [
+                    ("Profit", f"{profit_pct:+.1f}% of ${account_size:,.0f}", pct_color),
+                    ("Median", f"{median_pips:+.1f} pips", "#28a745" if median_pips > 0 else "#dc3545"),
+                    ("Average", f"{avg_pips_calc:+.1f} pips", "#28a745" if avg_pips_calc > 0 else "#dc3545"),
+                ]:
+                    tk.Label(extra_row, text=f"{label}: ", bg=bg_color, fg="#888",
+                             font=("Arial", 8)).pack(side=tk.LEFT)
+                    tk.Label(extra_row, text=value, bg=bg_color, fg=color,
+                             font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
 
-                    # Build date list for tooltip
-                    import datetime
-                    all_blow_dates = sorted(set(
-                        breaches.get('daily_breach_dates', []) +
-                        breaches.get('total_breach_dates', [])
-                    ))
-                    # Format as month/year: "2008-10-15" → "Oct 2008"
-                    blow_months = []
-                    for d in all_blow_dates:
-                        try:
-                            dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
-                            blow_months.append(dt.strftime('%b %Y'))
-                        except Exception:
-                            blow_months.append(d[:7])
+                breaches = r.get('breaches', {})
+                if breaches:
+                    from shared.tooltip import add_tooltip
+                    blown = breaches.get('blown_count', 0)
+                    breach_row = tk.Frame(card, bg=bg_color)
+                    breach_row.pack(fill="x", pady=(2, 0))
 
-                    dates_text = ""
-                    if blow_months:
-                        dates_text = "\n\nBlown in:\n"
-                        for bm in blow_months:
-                            dates_text += f"  • {bm}\n"
+                    if blown == 0:
+                        breach_lbl = tk.Label(breach_row, text="✅ 0 breaches — prop firm safe",
+                                              bg=bg_color, fg="#28a745", font=("Arial", 8, "bold"))
+                        breach_lbl.pack(side=tk.LEFT)
+                        add_tooltip(breach_lbl,
+                                    "This strategy NEVER exceeded the prop firm's\n"
+                                    "daily or total drawdown limits across the\n"
+                                    "entire backtest period. Safe to trade.")
+                    else:
+                        daily_b = breaches.get('daily_breaches', 0)
+                        total_b = breaches.get('total_breaches', 0)
+                        surv = breaches.get('survival_rate_per_month', 0)
+                        wd = breaches.get('worst_daily_pct', 0)
+                        wt = breaches.get('worst_total_pct', 0)
 
-                    color = "#dc3545" if blown > 3 else "#e67e22"
-                    breach_lbl = tk.Label(breach_row,
-                                          text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
-                                               f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
-                                          bg=bg_color, fg=color, font=("Arial", 8, "bold"))
-                    breach_lbl.pack(side=tk.LEFT)
-                    add_tooltip(breach_lbl,
-                                f"💀 {blown} blows = account blown {blown} times\n"
-                                f"  Each blow = 1 failed challenge = 1 fee lost\n\n"
-                                f"daily:{daily_b} = {daily_b} times lost ≥5% in a single day\n"
-                                f"total:{total_b} = {total_b} times equity dropped ≥10% from peak\n\n"
-                                f"worst daily: {wd:.1f}% (limit: 5%)\n"
-                                f"worst total: {wt:.1f}% (limit: 10%)\n\n"
-                                f"survival {surv}%/mo = {surv}% of months had no blowup"
-                                f"{dates_text}")
+                        import datetime
+                        all_blow_dates = sorted(set(
+                            breaches.get('daily_breach_dates', []) +
+                            breaches.get('total_breach_dates', [])
+                        ))
+                        blow_months = []
+                        for d in all_blow_dates:
+                            try:
+                                dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                                blow_months.append(dt.strftime('%b %Y'))
+                            except Exception:
+                                blow_months.append(d[:7])
 
-                # Safety stops row (if any)
-                daily_safety = breaches.get('daily_safety_stops', 0)
-                total_safety = breaches.get('total_safety_stops', 0)
-                total_safety_stops = daily_safety + total_safety
+                        dates_text = ""
+                        if blow_months:
+                            dates_text = "\n\nBlown in:\n"
+                            for bm in blow_months:
+                                dates_text += f"  • {bm}\n"
 
-                if total_safety_stops > 0:
-                    safety_row = tk.Frame(card, bg=bg_color)
-                    safety_row.pack(fill="x", padx=10, pady=(2, 0))
+                        color = "#dc3545" if blown > 3 else "#e67e22"
+                        breach_lbl = tk.Label(breach_row,
+                                              text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
+                                                   f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
+                                              bg=bg_color, fg=color, font=("Arial", 8, "bold"))
+                        breach_lbl.pack(side=tk.LEFT)
+                        add_tooltip(breach_lbl,
+                                    f"💀 {blown} blows = account blown {blown} times\n"
+                                    f"  Each blow = 1 failed challenge = 1 fee lost\n\n"
+                                    f"daily:{daily_b} = {daily_b} times lost ≥5% in a single day\n"
+                                    f"total:{total_b} = {total_b} times equity dropped ≥10% from peak\n\n"
+                                    f"worst daily: {wd:.1f}% (limit: 5%)\n"
+                                    f"worst total: {wt:.1f}% (limit: 10%)\n\n"
+                                    f"survival {surv}%/mo = {surv}% of months had no blowup"
+                                    f"{dates_text}")
 
-                    # Build safety dates for tooltip
-                    import datetime
-                    all_safety_dates = sorted(set(
-                        breaches.get('daily_safety_dates', []) +
-                        breaches.get('total_safety_dates', [])
-                    ))
-                    safety_months = []
-                    for d in all_safety_dates:
-                        try:
-                            dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
-                            safety_months.append(dt.strftime('%b %Y'))
-                        except Exception:
-                            safety_months.append(d[:7])
+                    daily_safety = breaches.get('daily_safety_stops', 0)
+                    total_safety = breaches.get('total_safety_stops', 0)
+                    total_safety_stops = daily_safety + total_safety
 
-                    safety_dates_text = ""
-                    if safety_months:
-                        safety_dates_text = "\n\nSafety stops in:\n"
-                        for sm in safety_months:
-                            safety_dates_text += f"  • {sm}\n"
+                    if total_safety_stops > 0:
+                        safety_row = tk.Frame(card, bg=bg_color)
+                        safety_row.pack(fill="x", padx=10, pady=(2, 0))
 
-                    safety_lbl = tk.Label(safety_row,
-                                          text=f"⚠️ {total_safety_stops} safety stops (daily:{daily_safety} total:{total_safety}) — bot paused before firm limits",
-                                          bg=bg_color, fg="#e67e22", font=("Arial", 8))
-                    safety_lbl.pack(side=tk.LEFT)
-                    add_tooltip(safety_lbl,
-                                f"⚠️ {total_safety_stops} safety stops = bot self-imposed limits touched\n\n"
-                                f"DIFFERENCE:\n"
-                                f"  💀 Firm breach = account BLOWN, challenge FAILED\n"
-                                f"  ⚠️ Safety stop = bot PAUSED, account SURVIVES\n\n"
-                                f"Safety stops are YOUR conservative limits set BEFORE\n"
-                                f"the prop firm's actual limits. When touched, the bot\n"
-                                f"stops trading to protect the account.\n\n"
-                                f"daily:{daily_safety} = {daily_safety} times touched daily safety limit\n"
-                                f"total:{total_safety} = {total_safety} times touched total safety limit"
-                                f"{safety_dates_text}")
-        else:
-            tk.Label(card, text="0 trades — rule conditions never triggered",
-                     bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
+                        import datetime
+                        all_safety_dates = sorted(set(
+                            breaches.get('daily_safety_dates', []) +
+                            breaches.get('total_safety_dates', [])
+                        ))
+                        safety_months = []
+                        for d in all_safety_dates:
+                            try:
+                                dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
+                                safety_months.append(dt.strftime('%b %Y'))
+                            except Exception:
+                                safety_months.append(d[:7])
 
-    # ── Update detailed text output too ──
+                        safety_dates_text = ""
+                        if safety_months:
+                            safety_dates_text = "\n\nSafety stops in:\n"
+                            for sm in safety_months:
+                                safety_dates_text += f"  • {sm}\n"
+
+                        safety_lbl = tk.Label(safety_row,
+                                              text=f"⚠️ {total_safety_stops} safety stops "
+                                                   f"(daily:{daily_safety} total:{total_safety}) — "
+                                                   f"bot paused before firm limits",
+                                              bg=bg_color, fg="#e67e22", font=("Arial", 8))
+                        safety_lbl.pack(side=tk.LEFT)
+                        add_tooltip(safety_lbl,
+                                    f"⚠️ {total_safety_stops} safety stops = bot self-imposed limits touched\n\n"
+                                    f"DIFFERENCE:\n"
+                                    f"  💀 Firm breach = account BLOWN, challenge FAILED\n"
+                                    f"  ⚠️ Safety stop = bot PAUSED, account SURVIVES\n\n"
+                                    f"Safety stops are YOUR conservative limits set BEFORE\n"
+                                    f"the prop firm's actual limits. When touched, the bot\n"
+                                    f"stops trading to protect the account.\n\n"
+                                    f"daily:{daily_safety} = {daily_safety} times touched daily safety limit\n"
+                                    f"total:{total_safety} = {total_safety} times touched total safety limit"
+                                    f"{safety_dates_text}")
+            else:
+                tk.Label(card, text="0 trades — rule conditions never triggered",
+                         bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")
+
+        except Exception as e:
+            # FIX 4: show error card instead of crashing the entire display
+            err_card = tk.Frame(results_inner, bg="#fff3cd", padx=12, pady=6)
+            err_card.pack(fill="x", pady=2)
+            tk.Label(err_card, text=f"#{i+1} Error displaying result: {e}",
+                     bg="#fff3cd", fg="#856404", font=("Arial", 9)).pack(anchor="w")
+
+    # ── Update detailed text output ──
     output_text.delete(1.0, tk.END)
     output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
                                 f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Profit%':>8} "
@@ -477,17 +500,20 @@ def display_summary(output_text, summary_frame):
         rule = r.get('rule_combo', '?')[:20]
         exit_s = r.get('exit_strategy', '?')[:26]
 
-        # Profit %
         profit_dollars = net * dollar_per_pip
         profit_pct = (profit_dollars / account_size) * 100
 
-        # Median
         trade_list = r.get('trades', [])
-        if trade_list:
-            import statistics
-            med = statistics.median([t.get('net_pips', 0) for t in trade_list])
-            avg_calc = sum(t.get('net_pips', 0) for t in trade_list) / len(trade_list)
-        else:
+        try:
+            if trade_list and isinstance(trade_list, list):
+                import statistics
+                pips_list = [t.get('net_pips', 0) for t in trade_list if isinstance(t, dict)]
+                med = statistics.median(pips_list) if pips_list else 0
+                avg_calc = sum(pips_list) / len(pips_list) if pips_list else avg
+            else:
+                med = 0
+                avg_calc = avg
+        except Exception:
             med = 0
             avg_calc = avg
 
@@ -601,8 +627,19 @@ def build_panel(parent):
     )
     _output_text.pack(fill="both", expand=True)
 
-    # Initial load
-    display_summary(_output_text, _summary_frame)
+    # Initial load — wrapped so panel always appears even if data is corrupt
+    # WHY: If display_summary crashes on initial load, the panel never appears
+    #      and clicking the sidebar button does literally nothing.
+    # CHANGED: April 2026 — error handling for panel build
+    try:
+        display_summary(_output_text, _summary_frame)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        tk.Label(_summary_frame,
+                 text=f"Error loading results: {e}\n\nCheck the terminal for details.",
+                 font=("Arial", 10), bg="#ffffff", fg="#dc3545",
+                 wraplength=600, justify="left").pack(pady=20, padx=20)
 
     return panel
 
