@@ -384,7 +384,7 @@ def display_summary(output_text, summary_frame):
                 total_safety_stops = daily_safety + total_safety
 
                 if total_safety_stops > 0:
-                    safety_row = tk.Frame(dd_frame, bg=bg_color)
+                    safety_row = tk.Frame(card, bg=bg_color)
                     safety_row.pack(fill="x", padx=10, pady=(2, 0))
 
                     # Build safety dates for tooltip
