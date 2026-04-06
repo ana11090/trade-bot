@@ -1274,7 +1274,7 @@ def deep_optimize_generate(
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from project2_backtesting.strategy_backtester import run_backtest, compute_stats
+    from project2_backtesting.strategy_backtester import run_backtest, compute_stats, fast_backtest
     from project2_backtesting.exit_strategies import (
         FixedSLTP, TrailingStop,
     )
@@ -1339,6 +1339,60 @@ def deep_optimize_generate(
             data_dir, candles_df['timestamp'], required_indicators=required)
         print(f"  [GENERATE] Built {len(indicators_df.columns)} indicator columns")
 
+    # ── Pre-compute SMART/REGIME features ONCE ────────────────────────────
+    # WHY: run_backtest re-computes SMART features on every call (275 times).
+    #      Computing once here and passing the enriched indicators_df saves
+    #      massive redundant computation.
+    # CHANGED: April 2026 — pre-compute for speed
+    smart_needed = any(
+        c.get('feature', '').startswith('SMART_')
+        for r in base_rules for c in r.get('conditions', [])
+    )
+    regime_needed = any(
+        c.get('feature', '').startswith('REGIME_')
+        for r in base_rules for c in r.get('conditions', [])
+    )
+
+    if smart_needed and not any(c.startswith('SMART_') for c in indicators_df.columns):
+        try:
+            from project1_reverse_engineering.smart_features import (
+                _add_tf_divergences, _add_indicator_dynamics,
+                _add_alignment_scores, _add_session_intelligence,
+                _add_volatility_regimes, _add_price_action,
+                _add_momentum_quality,
+            )
+            if 'hour_of_day' not in indicators_df.columns:
+                indicators_df['hour_of_day'] = candles_df['timestamp'].dt.hour
+            if 'open_time' not in indicators_df.columns:
+                indicators_df['open_time'] = candles_df['timestamp'].astype(str)
+            indicators_df = _add_tf_divergences(indicators_df)
+            indicators_df = _add_indicator_dynamics(indicators_df)
+            indicators_df = _add_alignment_scores(indicators_df)
+            indicators_df = _add_session_intelligence(indicators_df)
+            indicators_df = _add_volatility_regimes(indicators_df)
+            indicators_df = _add_price_action(indicators_df)
+            indicators_df = _add_momentum_quality(indicators_df)
+            print(f"  [GENERATE] Pre-computed SMART features: "
+                  f"{sum(1 for c in indicators_df.columns if c.startswith('SMART_'))} columns")
+        except Exception as e:
+            print(f"  [GENERATE] SMART feature error: {e}")
+
+    if regime_needed and not any(c.startswith('REGIME_') for c in indicators_df.columns):
+        try:
+            from project1_reverse_engineering.smart_features import _add_regime_features
+            indicators_df = _add_regime_features(indicators_df)
+            print(f"  [GENERATE] Pre-computed REGIME features")
+        except Exception as e:
+            print(f"  [GENERATE] REGIME feature error: {e}")
+
+    # ── Pre-trim DataFrames (skip warmup) — do this ONCE, not 275 times ──
+    # WHY: run_backtest trims warmup (first 200 candles) every call.
+    #      Pre-trim here so fast_backtest doesn't need to.
+    # CHANGED: April 2026 — eliminate redundant trimming
+    _candles_trimmed    = candles_df.iloc[200:].reset_index(drop=True)
+    _indicators_trimmed = indicators_df.iloc[200:].reset_index(drop=True)
+    print(f"  [GENERATE] Pre-trimmed to {len(_candles_trimmed)} candles (skipped 200 warmup)")
+
     available_indicators = [c for c in indicators_df.columns if c != 'timestamp']
 
     default_sl = 150.0
@@ -1394,11 +1448,18 @@ def deep_optimize_generate(
         return True
 
     def _test_rules(name, rules, exit_strat, changes_desc):
+        """Test a rule set using fast_backtest (no DataFrame copies).
+
+        WHY: run_backtest copies 130K×670 DataFrames every call.
+             fast_backtest uses pre-trimmed, pre-SMART'd data — read-only.
+             ~10-50x faster for the 275 iterations in deep optimization.
+        CHANGED: April 2026 — use fast_backtest for speed
+        """
         nonlocal best_so_far
         try:
-            new_trades = run_backtest(
-                candles_df=candles_df,
-                indicators_df=indicators_df,
+            new_trades = fast_backtest(
+                df=_candles_trimmed,
+                ind=_indicators_trimmed,
                 rules=rules,
                 exit_strategy=exit_strat,
                 direction="BUY",

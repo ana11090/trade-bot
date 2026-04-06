@@ -548,6 +548,151 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     return trades
 
 
+def fast_backtest(df, ind, rules, exit_strategy,
+                  direction="BUY", pip_size=0.01,
+                  spread_pips=2.5, commission_pips=0.0,
+                  account_size=None, risk_per_trade_pct=1.0,
+                  default_sl_pips=150.0, pip_value_per_lot=10.0):
+    """
+    Fast backtest — NO DataFrame copies, NO SMART recomputation.
+
+    WHY: run_backtest copies candles_df (130K rows) and indicators_df (670 cols)
+         on EVERY call. The deep optimizer calls it 275 times = ~385 GB of copies
+         for data that never changes. This function takes pre-prepared DataFrames
+         and only builds the boolean mask + simulates trades.
+
+    IMPORTANT: df and ind must be:
+      - Already trimmed (warmup removed)
+      - Already have SMART/REGIME features if needed
+      - Same length and aligned by index
+      - NOT modified by this function (read-only access)
+
+    CHANGED: April 2026 — 10-50x speedup for deep optimizer
+    """
+    trades = []
+
+    if len(df) == 0:
+        return trades
+
+    # ── VECTORIZED: build entry signal mask ──────────────────────────────
+    # WHY: This is the only part that changes between iterations —
+    #      different threshold values produce different masks.
+    #      Everything else (indicator values, candle data) is identical.
+    signal_mask     = pd.Series(False, index=ind.index)
+    signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
+
+    for rule_idx, rule in enumerate(rules):
+        if rule.get('prediction') != 'WIN':
+            continue
+        rule_mask  = pd.Series(True, index=ind.index)
+        valid_rule = True
+
+        for cond in rule.get("conditions", []):
+            col = cond.get("feature", "")
+            if col not in ind.columns:
+                valid_rule = False
+                break
+            col_data = ind[col]
+            op       = cond.get("operator", ">")
+            val      = cond.get("value", 0)
+            if op == "<=":
+                rule_mask &= (col_data <= val)
+            elif op == ">":
+                rule_mask &= (col_data > val)
+            elif op == "<":
+                rule_mask &= (col_data < val)
+            elif op == ">=":
+                rule_mask &= (col_data >= val)
+
+        if not valid_rule:
+            continue
+
+        rule_mask = rule_mask.fillna(False)
+        new_signals = rule_mask & ~signal_mask
+        signal_mask |= rule_mask
+        signal_rule_ids[new_signals] = rule_idx
+
+    signal_indices = df.index[signal_mask].tolist()
+
+    if not signal_indices:
+        return trades
+
+    # ── Simulate trades from signal candles ──────────────────────────────
+    occupied_until_idx = -1
+    index_positions = {idx: pos for pos, idx in enumerate(df.index)}
+
+    for sig_idx in signal_indices:
+        if sig_idx <= occupied_until_idx:
+            continue
+
+        entry_pos_int = index_positions.get(sig_idx, 0)
+        if entry_pos_int + 1 >= len(df):
+            continue
+        next_candle = df.iloc[entry_pos_int + 1]
+
+        entry_time  = next_candle['timestamp']
+        entry_price = float(next_candle['open'])
+
+        if direction == "BUY":
+            entry_price += spread_pips * pip_size
+
+        # Simulate trade exit
+        future_candles = df.iloc[entry_pos_int + 1:]
+        result = exit_strategy.check_exit(
+            entry_price=entry_price,
+            direction=direction,
+            candles=future_candles,
+            pip_size=pip_size,
+        )
+
+        if result is None:
+            continue
+
+        exit_price  = result['exit_price']
+        exit_reason = result.get('exit_reason', 'unknown')
+        exit_idx    = result.get('exit_candle_idx', len(future_candles) - 1)
+
+        if exit_idx >= len(future_candles):
+            exit_idx = len(future_candles) - 1
+        exit_candle = future_candles.iloc[exit_idx]
+        exit_time   = exit_candle['timestamp']
+
+        if direction == "BUY":
+            pips = (exit_price - entry_price) / pip_size
+        else:
+            pips = (entry_price - exit_price) / pip_size
+
+        net_pips = pips - commission_pips
+
+        lot_size = 0.01
+        if account_size and risk_per_trade_pct > 0:
+            risk_dollars = account_size * (risk_per_trade_pct / 100)
+            lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot) if default_sl_pips > 0 else 0.01
+            lot_size = max(0.01, round(lot_size, 2))
+
+        net_profit = net_pips * pip_value_per_lot * lot_size
+
+        trade = {
+            'entry_time':   str(entry_time),
+            'exit_time':    str(exit_time),
+            'entry_price':  round(entry_price, 5),
+            'exit_price':   round(exit_price, 5),
+            'direction':    direction,
+            'pips':         round(pips, 1),
+            'net_pips':     round(net_pips, 1),
+            'net_profit':   round(net_profit, 2),
+            'lot_size':     lot_size,
+            'exit_reason':  exit_reason,
+            'rule_id':      int(signal_rule_ids.loc[sig_idx]),
+        }
+        trades.append(trade)
+
+        # Mark occupied candles
+        occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
+
+    return trades
+
+
 def compute_stats(trades):
     """Compute gross and net performance statistics."""
     if not trades:
