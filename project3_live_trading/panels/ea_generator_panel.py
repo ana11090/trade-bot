@@ -86,6 +86,9 @@ _max_day_var      = None
 _session_vars     = {}
 _day_vars         = {}
 
+_auto_min_hold = [0]     # WHY: Stores optimizer's min_hold value for generate call
+_auto_min_pips = [0]     # WHY: Stores optimizer's min_pips value for generate call
+
 # Per-condition threshold entry vars: list of (feature, op, tk.StringVar)
 _condition_vars   = []
 
@@ -207,8 +210,153 @@ def _refresh_condition_vars(idx):
     if _tp_var:    _tp_var.set(str(exit_params.get('tp_pips', 300)))
     if _trail_var: _trail_var.set(str(exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))))
 
+    # ── Auto-fill filters from optimizer or saved rules ───────────────────
+    # WHY: The optimizer finds the best filters (max_trades_per_day, sessions,
+    #      cooldown, etc.) but these values were lost when moving to the EA
+    #      generator. This auto-fills the filter fields so the EA matches
+    #      the optimized strategy exactly.
+    # CHANGED: April 2026 — optimizer filters flow to EA generator
+    _auto_fill_filters(idx, strat_data)
+
+    # ── Auto-fill entry timeframe ─────────────────────────────────────────
+    # WHY: Rules discovered on M15 need PERIOD_M15 in the EA. The entry TF
+    #      should be read from the strategy data, not defaulted to H1.
+    # CHANGED: April 2026 — entry TF flows to EA
+    entry_tf = strat_data.get('entry_timeframe')
+    if not entry_tf:
+        try:
+            report_path = os.path.join(project_root, 'project1_reverse_engineering',
+                                        'outputs', 'analysis_report.json')
+            if os.path.exists(report_path):
+                with open(report_path, 'r') as f:
+                    report = json.load(f)
+                entry_tf = report.get('entry_timeframe')
+        except Exception:
+            pass
+    # Note: entry_tf is used in _generate when reading from config
+    # The config already has winning_scenario, this is just a double-check
+
 
 _condition_frame = None
+
+
+def _auto_fill_filters(idx, strat_data):
+    """Auto-fill trading filter fields from optimizer results or saved rules.
+
+    WHY: When the user optimizes a strategy, the optimizer finds the best values
+         for max_trades_per_day, sessions, cooldown, etc. These values need to
+         carry over to the EA so it trades exactly as optimized.
+
+    Priority:
+      1. Strategy data itself (if it has filters_applied from optimizer)
+      2. Matching saved rule (might have optimizer filters)
+      3. _validator_optimized.json (latest optimizer output)
+      4. Leave current UI values unchanged (user's manual settings)
+
+    CHANGED: April 2026 — connect optimizer → EA filters
+    """
+    filters = None
+
+    # ── Source 1: Strategy data from backtest matrix ──────────────────────
+    # WHY: If this strategy was saved from the optimizer, it might have
+    #      filters_applied baked into the matrix result.
+    filters = strat_data.get('filters_applied')
+
+    # ── Source 2: Check saved_rules.json for matching strategy ────────────
+    # WHY: User might have saved the optimized strategy with its filters.
+    #      Match by rule_combo + exit_strategy name.
+    if not filters:
+        try:
+            saved_path = os.path.join(project_root, 'saved_rules.json')
+            if os.path.exists(saved_path):
+                with open(saved_path, 'r', encoding='utf-8') as f:
+                    saved = json.load(f)
+
+                rule_combo = strat_data.get('rule_combo', '')
+                exit_name  = strat_data.get('exit_name', '')
+
+                for entry in saved:
+                    rule = entry.get('rule', {})
+                    if (rule.get('rule_combo', '') == rule_combo or
+                            rule.get('exit_name', '') == exit_name):
+                        saved_filters = rule.get('filters_applied')
+                        if saved_filters:
+                            filters = saved_filters
+                            print(f"[EA GEN] Loaded filters from saved rule #{entry.get('id')}: {filters}")
+                            break
+        except Exception:
+            pass
+
+    # ── Source 3: Check _validator_optimized.json ─────────────────────────
+    # WHY: The optimizer's latest result file might have filters
+    if not filters:
+        try:
+            opt_path = os.path.join(project_root, 'project2_backtesting',
+                                    'outputs', '_validator_optimized.json')
+            if os.path.exists(opt_path):
+                with open(opt_path, 'r', encoding='utf-8') as f:
+                    opt_data = json.load(f)
+                filters = opt_data.get('filters')
+        except Exception:
+            pass
+
+    if not filters:
+        return  # No optimized filters found — keep current UI values
+
+    # ── Apply filters to UI fields ────────────────────────────────────────
+    applied = []
+
+    max_per_day = filters.get('max_trades_per_day')
+    if max_per_day and _max_day_var:
+        _max_day_var.set(str(int(max_per_day)))
+        applied.append(f"max {max_per_day} trades/day")
+
+    cooldown = filters.get('cooldown_minutes')
+    if cooldown and _cooldown_var:
+        _cooldown_var.set(str(int(cooldown)))
+        applied.append(f"cooldown {cooldown}min")
+
+    min_hold = filters.get('min_hold_minutes')
+    if min_hold and min_hold > 0:
+        _auto_min_hold[0] = int(min_hold)
+        applied.append(f"min hold {min_hold}min")
+
+    min_pips = filters.get('min_pips')
+    if min_pips and min_pips > 0:
+        _auto_min_pips[0] = int(min_pips)
+        applied.append(f"min {min_pips} pips")
+
+    sessions = filters.get('sessions', [])
+    if sessions and _session_vars:
+        # WHY: Uncheck all sessions first, then check only the optimized ones
+        for var in _session_vars.values():
+            var.set(False)
+        for sess in sessions:
+            if sess in _session_vars:
+                _session_vars[sess].set(True)
+        applied.append(f"sessions: {', '.join(sessions)}")
+
+    days = filters.get('days', [])
+    if days and _day_vars:
+        day_names = list(_day_vars.keys())
+        for var in _day_vars.values():
+            var.set(False)
+        for day_num in days:
+            if 0 < day_num <= len(day_names):
+                _day_vars[day_names[day_num - 1]].set(True)
+        applied.append(f"days: {days}")
+
+    if applied:
+        print(f"[EA GEN] Auto-filled filters from optimizer: {', '.join(applied)}")
+        try:
+            if _strat_info_lbl:
+                current = _strat_info_lbl.cget('text')
+                _strat_info_lbl.configure(
+                    text=f"{current}\nOptimizer filters loaded: {', '.join(applied)}",
+                    fg=GREEN,
+                )
+        except Exception:
+            pass
 
 
 
@@ -393,6 +541,7 @@ def _generate():
             session_filter=session_filter,
             day_filter=day_filter,
             cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 60,
+            min_hold_minutes=_auto_min_hold[0],
             news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 5,
             max_spread_pips=float(_spread_var.get()) if _spread_var else 5.0,
         )
