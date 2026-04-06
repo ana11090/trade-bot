@@ -372,51 +372,97 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_trades_from_matrix(strategy_index):
-    """Load trades for one strategy from backtest_matrix.json."""
+    """Load trades for one strategy from backtest_matrix.json.
+
+    WHY: strategy_index can be:
+      - int: index into backtest_matrix results (from Run Backtest)
+      - 'optimizer_latest': from the optimizer output file
+      - 'saved_X': from saved_rules.json (no trades — needs re-backtest)
+
+    CHANGED: April 2026 — handle non-integer indices
+    """
+    # ── Saved rules don't have trades in the matrix ───────────────────────
+    # WHY: Saved rules store conditions and stats but not individual trade data.
+    if isinstance(strategy_index, str):
+        if strategy_index.startswith('saved_'):
+            return None  # No trades — panel should prompt to re-backtest
+        if strategy_index == 'optimizer_latest':
+            try:
+                opt_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '_validator_optimized.json')
+                if os.path.exists(opt_path):
+                    with open(opt_path, 'r', encoding='utf-8') as f:
+                        opt_data = json.load(f)
+                    return opt_data.get('trades', None)
+            except Exception:
+                pass
+            return None
+        if strategy_index.startswith('__separator'):
+            return None
+        return None
+
+    # ── Normal integer index — load from backtest matrix ──────────────────
     if not os.path.exists(BACKTEST_MATRIX_PATH):
         return None
-    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    results = data.get('results', [])
-    if strategy_index >= len(results):
+    try:
+        with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        results = data.get('results', [])
+        if strategy_index >= len(results):
+            return None
+        return results[strategy_index].get('trades', None)
+    except Exception as e:
+        print(f"[REFINER] Error loading trades from matrix: {e}")
         return None
-    return results[strategy_index].get('trades', None)
 
 
 def load_strategy_list():
     """Return list of strategy summary dicts from backtest_matrix.json + saved rules."""
     results = []
 
-    # Load backtest matrix results
-    if os.path.exists(BACKTEST_MATRIX_PATH):
-        with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        for i, r in enumerate(data.get('results', [])):
-            stats = r.get('stats', r)  # stats might be nested or at top level
-            wr = stats.get('win_rate', r.get('win_rate', 0))
-            wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
-            net = stats.get('net_total_pips', r.get('net_total_pips', 0))
-            trades_count = stats.get('total_trades', r.get('total_trades', 0))
-            pf = stats.get('net_profit_factor', r.get('net_profit_factor', 0))
+    # ── Load backtest matrix results ──────────────────────────────────────
+    # WHY: Wrapped in try/except so saved rules still load if matrix is corrupt,
+    #      being rewritten, or is a Git LFS pointer on a new machine.
+    # CHANGED: April 2026 — error handling so saved rules survive matrix failures
+    try:
+        if os.path.exists(BACKTEST_MATRIX_PATH):
+            with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+                first_line = f.readline()
+                if 'git-lfs' in first_line:
+                    # LFS pointer, not real data — skip but don't crash
+                    print("[REFINER] backtest_matrix.json is a Git LFS pointer — run 'git lfs pull'")
+                else:
+                    f.seek(0)
+                    data = json.load(f)
+                    for i, r in enumerate(data.get('results', [])):
+                        stats = r.get('stats', r)  # stats might be nested or at top level
+                        wr = stats.get('win_rate', r.get('win_rate', 0))
+                        wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+                        net = stats.get('net_total_pips', r.get('net_total_pips', 0))
+                        trades_count = stats.get('total_trades', r.get('total_trades', 0))
+                        pf = stats.get('net_profit_factor', r.get('net_profit_factor', 0))
 
-            results.append({
-                'index':             i,
-                'source':            'backtest',
-                'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
-                                      f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
-                'rule_combo':        r.get('rule_combo', '?'),
-                'exit_strategy':     r.get('exit_strategy', '?'),
-                'exit_name':         r.get('exit_name', '?'),
-                'total_trades':      trades_count,
-                'win_rate':          wr,
-                'net_total_pips':    net,
-                'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
-                'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
-                'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
-                'spread_pips':       r.get('spread_pips', 2.5),
-                'commission_pips':   r.get('commission_pips', 0.0),
-                'has_trades':        'trades' in r and bool(r.get('trades')),
-            })
+                        results.append({
+                            'index':             i,
+                            'source':            'backtest',
+                            'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
+                                                  f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
+                            'rule_combo':        r.get('rule_combo', '?'),
+                            'exit_strategy':     r.get('exit_strategy', '?'),
+                            'exit_name':         r.get('exit_name', '?'),
+                            'total_trades':      trades_count,
+                            'win_rate':          wr,
+                            'net_total_pips':    net,
+                            'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
+                            'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
+                            'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
+                            'spread_pips':       r.get('spread_pips', 2.5),
+                            'commission_pips':   r.get('commission_pips', 0.0),
+                            'has_trades':        'trades' in r and bool(r.get('trades')),
+                        })
+    except Exception as e:
+        # WHY: Don't let matrix errors prevent saved rules from loading.
+        print(f"[REFINER] Error loading backtest matrix: {e}")
+        import traceback; traceback.print_exc()
 
     # Load optimizer results if available
     try:

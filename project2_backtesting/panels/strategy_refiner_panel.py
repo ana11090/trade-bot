@@ -75,26 +75,34 @@ _strategies_cache = []
 _cache_mtime = 0
 
 def _load_strategies():
+    """Load strategy list from backtest matrix + saved rules.
+
+    WHY: The dropdown needs to show all available strategies:
+      1. Backtest results (from Run Backtest)
+      2. Optimizer results (if any)
+      3. Saved rules (from Save button in refiner/optimizer)
+    If any source fails, the others still load (handled inside load_strategy_list).
+
+    CHANGED: April 2026 — always call load_strategy_list so saved rules load
+             even when backtest_matrix.json doesn't exist.
+    """
     global _strategies, _strategies_cache, _cache_mtime
     try:
-        # Check if backtest_matrix.json has been modified
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
         if os.path.exists(backtest_path):
             current_mtime = os.path.getmtime(backtest_path)
             if current_mtime == _cache_mtime and _strategies_cache:
-                # Use cached data — file hasn't changed
+                # WHY: Don't re-parse 44MB JSON on every panel switch
                 _strategies = _strategies_cache
                 return
-
-            # File changed or no cache — reload
-            from project2_backtesting.strategy_refiner import load_strategy_list
-            _strategies = load_strategy_list()
-            _strategies_cache = _strategies
             _cache_mtime = current_mtime
-        else:
-            _strategies = []
+
+        from project2_backtesting.strategy_refiner import load_strategy_list
+        _strategies = load_strategy_list()
+        _strategies_cache = _strategies
     except Exception as e:
-        print(f"[refiner_panel] {e}")
+        print(f"[refiner_panel] Error loading strategies: {e}")
+        import traceback; traceback.print_exc()
         _strategies = []
 
 
@@ -111,10 +119,49 @@ def _get_selected_index():
 
 
 def _load_selected_strategy():
+    """Load the selected strategy's trades for filtering/optimizing.
+
+    WHY: Different strategy sources need different loading logic:
+      - backtest results → load trades from backtest_matrix.json
+      - optimizer results → load from _validator_optimized.json
+      - saved rules → no trades available, prompt user to re-backtest
+
+    CHANGED: April 2026 — handle saved rules gracefully
+    """
     global _base_trades, _filtered_trades
     idx = _get_selected_index()
     if idx is None:
         return
+
+    # ── Saved rules have no trade data ────────────────────────────────────
+    # WHY: Saved rules store conditions + stats but not individual trades.
+    #      The user needs to run the backtest with these rules first.
+    if isinstance(idx, str) and idx.startswith('saved_'):
+        saved_rule = None
+        for s in _strategies:
+            if s.get('index') == idx:
+                saved_rule = s.get('saved_rule', {})
+                break
+
+        if saved_rule:
+            conditions = saved_rule.get('conditions', [])
+            n_conds = len(conditions)
+            exit_name = saved_rule.get('exit_name', 'Not set')
+            entry_tf = saved_rule.get('entry_timeframe', 'H1')
+            msg = (f"This saved rule has {n_conds} condition(s) but no trade data.\n\n"
+                   f"Exit strategy: {exit_name}\n"
+                   f"Entry timeframe: {entry_tf}\n\n"
+                   f"To use this rule:\n"
+                   f"1. Go to Run Backtest and run the backtest\n"
+                   f"2. The results will appear in this dropdown\n"
+                   f"3. Select the matching result and click Load\n\n"
+                   f"Or use the rules directly in the Validator for walk-forward testing.")
+        else:
+            msg = "No trade data available for saved rules.\nRun the backtest first."
+        messagebox.showinfo("Saved Rule — No Trade Data", msg)
+        return
+
+    # ── Normal strategy loading ───────────────────────────────────────────
     try:
         from project2_backtesting.strategy_refiner import (
             load_trades_from_matrix, enrich_trades
