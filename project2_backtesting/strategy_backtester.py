@@ -551,6 +551,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 def fast_backtest(df, ind, rules, exit_strategy,
                   direction="BUY", pip_size=0.01,
                   spread_pips=2.5, commission_pips=0.0,
+                  slippage_pips=0.0,
                   account_size=None, risk_per_trade_pct=1.0,
                   default_sl_pips=150.0, pip_value_per_lot=10.0):
     """
@@ -634,7 +635,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
         entry_price = float(next_candle['open'])
 
         if direction == "BUY":
-            entry_price += spread_pips * pip_size
+            entry_price += (spread_pips + slippage_pips) * pip_size
+        else:
+            entry_price -= slippage_pips * pip_size
 
         # Simulate trade exit
         future_candles = df.iloc[entry_pos_int + 1:]
@@ -931,6 +934,23 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     print(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "
           f"= {total} combinations  |  spread={spread_pips} pips  commission={commission_pips} pips")
 
+    # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
+    # WHY: run_backtest copies DataFrames on every call and re-applies date filters.
+    #      Pre-trimming once saves len(rule_combos)*len(exit_strategies) copies.
+    _c = candles_df.iloc[200:].reset_index(drop=True)
+    _i = indicators_df.iloc[200:].reset_index(drop=True)
+    if start_date:
+        _sd = pd.Timestamp(start_date)
+        mask = _c['timestamp'] >= _sd
+        _c = _c[mask].reset_index(drop=True)
+        _i = _i[mask].reset_index(drop=True)
+    if end_date:
+        _ed = pd.Timestamp(end_date)
+        mask = _c['timestamp'] <= _ed
+        _c = _c[mask].reset_index(drop=True)
+        _i = _i[mask].reset_index(drop=True)
+    print(f"  Pre-trimmed to {len(_c)} candles for matrix loop")
+
     matrix = []
     count  = 0
 
@@ -938,11 +958,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         for exit_strat in exit_strategies:
             count += 1
 
-            trades = run_backtest(
-                candles_df, indicators_df,
-                combo["rules"], exit_strat,
+            trades = fast_backtest(
+                df=_c, ind=_i,
+                rules=combo["rules"], exit_strategy=exit_strat,
                 direction=direction,
-                start_date=start_date, end_date=end_date,
                 pip_size=pip_size,
                 spread_pips=spread_pips, commission_pips=commission_pips,
                 slippage_pips=slippage_pips,

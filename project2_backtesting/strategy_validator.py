@@ -21,6 +21,53 @@ VALIDATION_PATH = os.path.join(_HERE, 'outputs', 'validation_results.json')
 
 _stop_flag = threading.Event()
 
+# ── Module-level data cache ────────────────────────────────────────────────────
+# WHY: walk_forward_validate and slippage_stress_test both load the same
+#      candles CSV + parquet. When called in sequence (validation panel runs
+#      both), we load 130K rows twice. Cache prevents the double load.
+_cached_candles_path  = None
+_cached_candles_df    = None
+_cached_indicators_df = None
+
+
+def _load_data_cached(candles_path):
+    """Load candles + indicators, returning cached copies if path matches last call."""
+    global _cached_candles_path, _cached_candles_df, _cached_indicators_df
+
+    candles_path = os.path.abspath(candles_path)
+    if _cached_candles_path == candles_path and _cached_candles_df is not None:
+        print(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
+        return _cached_candles_df, _cached_indicators_df
+
+    print(f"[VALIDATOR] Loading data: {os.path.basename(candles_path)}")
+    candles_df = pd.read_csv(candles_path)
+    ts_col = candles_df.columns[0]
+    candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
+
+    cache_path = candles_path.replace('.csv', '_indicators.parquet')
+    if os.path.exists(cache_path):
+        indicators_df = pd.read_parquet(cache_path)
+        if 'timestamp' in indicators_df.columns:
+            indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
+    else:
+        _, _, build_multi_tf_indicators = _load_backtester()
+        data_dir = os.path.dirname(candles_path)
+        _ALL_GROUPS = [
+            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
+            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
+            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
+            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
+            'volume', 'vwap', 'williams_r',
+        ]
+        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
+
+    _cached_candles_path  = candles_path
+    _cached_candles_df    = candles_df
+    _cached_indicators_df = indicators_df
+    return candles_df, indicators_df
+
 
 def stop_validation():
     _stop_flag.set()
@@ -317,29 +364,7 @@ def walk_forward_validate(
     if progress_callback:
         progress_callback(0, n_windows, "Loading candle data...")
 
-    # Load candles
-    candles_df = pd.read_csv(candles_path)
-    ts_col = candles_df.columns[0]
-    candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
-
-    # Load/build indicator cache
-    cache_path = candles_path.replace('.csv', '_indicators.parquet')
-    if os.path.exists(cache_path):
-        indicators_df = pd.read_parquet(cache_path)
-        if 'timestamp' in indicators_df.columns:
-            indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
-    else:
-        data_dir = os.path.dirname(candles_path)
-        _ALL_GROUPS = [
-            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
-            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
-            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
-            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
-            'volume', 'vwap', 'williams_r',
-        ]
-        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
-        indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
+    candles_df, indicators_df = _load_data_cached(candles_path)
 
     exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
 
@@ -725,31 +750,14 @@ def slippage_stress_test(
         slippage_levels = [0, 1, 2, 3, 5]
 
     _stop_flag.clear()
-    run_backtest, compute_stats, build_multi_tf_indicators = _load_backtester()
+    run_backtest, compute_stats, _ = _load_backtester()
+    from project2_backtesting.strategy_backtester import fast_backtest
 
-    # Load candles
-    candles_df = pd.read_csv(candles_path)
-    ts_col = candles_df.columns[0]
-    candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
+    candles_df, indicators_df = _load_data_cached(candles_path)
 
-    # Reuse cache if available, otherwise build
-    cache_path = candles_path.replace('.csv', '_indicators.parquet')
-    if os.path.exists(cache_path):
-        indicators_df = pd.read_parquet(cache_path)
-        if 'timestamp' in indicators_df.columns:
-            indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
-    else:
-        data_dir = os.path.dirname(candles_path)
-        _ALL_GROUPS = [
-            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
-            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
-            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
-            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
-            'volume', 'vwap', 'williams_r',
-        ]
-        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
-        indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
+    # Pre-trim once — slippage loop has no per-level date filter
+    _c = candles_df.iloc[200:].reset_index(drop=True)
+    _i = indicators_df.iloc[200:].reset_index(drop=True)
 
     exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
 
@@ -773,9 +781,8 @@ def slippage_stress_test(
                 progress_callback(run_count, total_runs,
                                   f"Slippage {slip_pips} pips — run {run_i+1}/{n_runs_per_level}")
             try:
-                run_trades = run_backtest(
-                    candles_df=candles_df,
-                    indicators_df=indicators_df,
+                run_trades = fast_backtest(
+                    df=_c, ind=_i,
                     rules=rules,
                     exit_strategy=exit_strat,
                     pip_size=pip_size,
