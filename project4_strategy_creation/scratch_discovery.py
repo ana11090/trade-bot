@@ -45,7 +45,11 @@ def run_scratch_discovery(
     prop_firm_name=None,
     prop_firm_data=None,
     compare_all_tfs=False,
-    discovery_mode='quick',   # 'quick', 'deep', or 'exhaustive'
+    discovery_mode='quick',             # 'quick', 'deep', or 'exhaustive'
+    enhance_grid_threshold=False,       # Level 1: test precise thresholds
+    enhance_multi_exit=False,           # Level 2: test multiple SL/TP combos
+    enhance_walkforward_score=False,    # Level 3: score rules with walk-forward
+    enhance_feature_interactions=False, # Level 4: generate cross-indicator features
     progress_callback=None,
 ):
     """
@@ -367,7 +371,17 @@ def run_scratch_discovery(
     # ── Steps 5-6: Discovery — mode determines the search strategy ────────────
     # WHY: Quick uses greedy search (fast, may miss combos). Deep tests all combos
     #      of top features. Exhaustive uses genetic search on ALL features.
-    # CHANGED: April 2026 — three discovery modes
+    # CHANGED: April 2026 — three discovery modes + enhancement flags
+    # Enhancement flags — passed to whichever discovery mode is selected.
+    # Each implementation is added by its own prompt (Level 1-4).
+    # WHY: Stubs here so the code doesn't break before enhancements are implemented.
+    enhance_opts = {
+        'grid_threshold':       enhance_grid_threshold,
+        'multi_exit':           enhance_multi_exit,
+        'walkforward_score':    enhance_walkforward_score,
+        'feature_interactions': enhance_feature_interactions,
+    }
+
     if discovery_mode == 'deep':
         final_rules, model_metrics = _discover_deep(
             X, y, pips, merged, valid_cols,
@@ -375,6 +389,7 @@ def run_scratch_discovery(
             min_coverage=min_coverage, min_win_rate=min_win_rate,
             max_rules=max_rules, train_test_split=train_test_split,
             progress_callback=_cb,
+            enhancements=enhance_opts,
         )
     elif discovery_mode == 'exhaustive':
         final_rules, model_metrics = _discover_exhaustive(
@@ -383,6 +398,7 @@ def run_scratch_discovery(
             min_coverage=min_coverage, min_win_rate=min_win_rate,
             max_rules=max_rules, train_test_split=train_test_split,
             progress_callback=_cb,
+            enhancements=enhance_opts,
         )
     else:
         # Quick mode — current behavior (unchanged)
@@ -392,6 +408,7 @@ def run_scratch_discovery(
             min_coverage=min_coverage, min_win_rate=min_win_rate,
             max_rules=max_rules, train_test_split=train_test_split,
             progress_callback=_cb,
+            enhancements=enhance_opts,
         )
 
     elapsed = time.time() - start
@@ -418,6 +435,7 @@ def run_scratch_discovery(
         "original_features":  n_original,
         "smart_features":     n_smart,
         "discovery_mode":     discovery_mode,
+        "enhancements_used":  {k: v for k, v in enhance_opts.items() if v},
         "rules":              final_rules,
         "model_metrics":      model_metrics,
         "profile": {
@@ -509,11 +527,18 @@ def restore_previous_rules():
 def _discover_quick(X, y, pips, merged, valid_cols,
                     n_estimators=300, max_depth=4, min_coverage=100,
                     min_win_rate=0.55, max_rules=25, train_test_split=0.7,
-                    progress_callback=None):
+                    progress_callback=None, enhancements=None):
     """
     QUICK MODE: Current approach — XGBoost → top 30 → decision tree → rules.
     Fast (~5 min) but greedy — can miss combinations that work together.
     """
+    if enhancements is None:
+        enhancements = {}
+    active = [k for k, v in enhancements.items() if v]
+    if active:
+        print(f"[DISCOVERY quick] Enhancements enabled: {', '.join(active)}")
+    # Enhancement implementations added by Level 1-4 prompts
+
     def _cb(step, msg):
         if progress_callback:
             progress_callback(step, 6, msg)
@@ -577,7 +602,7 @@ def _discover_quick(X, y, pips, merged, valid_cols,
 def _discover_deep(X, y, pips, merged, valid_cols,
                    n_estimators=300, max_depth=4, min_coverage=100,
                    min_win_rate=0.55, max_rules=25, train_test_split=0.7,
-                   progress_callback=None):
+                   progress_callback=None, enhancements=None):
     """
     DEEP MODE: Run XGBoost 10 times with different random subsets → union top features
     → test ALL combinations of those features exhaustively.
@@ -596,6 +621,13 @@ def _discover_deep(X, y, pips, merged, valid_cols,
 
     ~20-30 minutes for 50 features at depth 4 (230K combinations)
     """
+    if enhancements is None:
+        enhancements = {}
+    active = [k for k, v in enhancements.items() if v]
+    if active:
+        print(f"[DISCOVERY deep] Enhancements enabled: {', '.join(active)}")
+    # Enhancement implementations added by Level 1-4 prompts
+
     from xgboost import XGBClassifier
     from sklearn.tree import DecisionTreeClassifier
     from itertools import combinations
@@ -704,7 +736,7 @@ def _discover_deep(X, y, pips, merged, valid_cols,
 def _discover_exhaustive(X, y, pips, merged, valid_cols,
                          n_estimators=300, max_depth=4, min_coverage=100,
                          min_win_rate=0.55, max_rules=25, train_test_split=0.7,
-                         progress_callback=None):
+                         progress_callback=None, enhancements=None):
     """
     EXHAUSTIVE MODE: Genetic algorithm that searches ALL features (not just top 50).
 
@@ -723,6 +755,13 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
 
     ~1-2 hours for 670 features × 100 generations × 500 population
     """
+    if enhancements is None:
+        enhancements = {}
+    active = [k for k, v in enhancements.items() if v]
+    if active:
+        print(f"[DISCOVERY exhaustive] Enhancements enabled: {', '.join(active)}")
+    # Enhancement implementations added by Level 1-4 prompts
+
     from sklearn.tree import DecisionTreeClassifier
     import random as rng
 

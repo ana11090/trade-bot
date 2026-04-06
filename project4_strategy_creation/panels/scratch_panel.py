@@ -17,6 +17,50 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+# WHY: Scrollable tooltips for enhancement checkbox descriptions
+# CHANGED: April 2026 — added for discovery enhancements
+try:
+    from shared.tooltip import _Tooltip
+except ImportError:
+    class _Tooltip:
+        def __init__(self, widget, text):
+            self.widget = widget
+            self.text = text
+            self.tip = None
+            widget.bind("<Enter>", self._show)
+            widget.bind("<Leave>", self._hide)
+        def _show(self, e=None):
+            if self.tip:
+                return
+            x = self.widget.winfo_rootx() + 20
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+            self.tip = tw = tk.Toplevel(self.widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            f = tk.Frame(tw, bg="#333", padx=2, pady=2)
+            f.pack()
+            lines = self.text.count('\n') + 1
+            if lines > 12:
+                canvas = tk.Canvas(f, bg="#333", highlightthickness=0, width=440, height=300)
+                sb = tk.Scrollbar(f, orient="vertical", command=canvas.yview)
+                sf = tk.Frame(canvas, bg="#333")
+                sf.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+                canvas.create_window((0, 0), window=sf, anchor="nw")
+                canvas.configure(yscrollcommand=sb.set)
+                canvas.pack(side="left", fill="both", expand=True)
+                sb.pack(side="right", fill="y")
+                tk.Label(sf, text=self.text, justify="left", bg="#333", fg="white",
+                         font=("Segoe UI", 9), padx=10, pady=6, wraplength=420).pack()
+                canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+                sf.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+            else:
+                tk.Label(f, text=self.text, justify="left", bg="#333", fg="white",
+                         font=("Segoe UI", 9), padx=10, pady=6, wraplength=420).pack()
+        def _hide(self, e=None):
+            if self.tip:
+                self.tip.destroy()
+                self.tip = None
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..', '..')))
 
@@ -385,6 +429,159 @@ def _build_inner(inner):
 
         tk.Label(row, text=description, bg="#f0f2f5", fg="#666",
                  font=("Segoe UI", 8), justify="left", padx=28).pack(anchor="w")
+
+    # ── Discovery Enhancements ────────────────────────────────────────────────
+    # WHY: Each enhancement makes the search deeper at the cost of time.
+    #      They stack with any discovery mode (Quick/Deep/Exhaustive).
+    # CHANGED: April 2026 — added 4 enhancement options
+    _section(inner, "Discovery Enhancements")
+
+    enhance_frame = tk.Frame(inner, bg="#f0f2f5")
+    enhance_frame.pack(fill="x", padx=20, pady=6)
+
+    tk.Label(enhance_frame,
+             text="Stack these on top of any discovery mode for deeper search. Each one adds time but improves results.",
+             bg="#f0f2f5", fg="#666", font=("Segoe UI", 8, "italic"),
+             wraplength=600, justify="left").pack(anchor="w", pady=(0, 6))
+
+    grid_threshold_var   = tk.BooleanVar(value=False)
+    multi_exit_var       = tk.BooleanVar(value=False)
+    walkforward_score_var = tk.BooleanVar(value=False)
+    feature_interact_var = tk.BooleanVar(value=False)
+
+    _widgets.update(dict(
+        grid_threshold_var=grid_threshold_var,
+        multi_exit_var=multi_exit_var,
+        walkforward_score_var=walkforward_score_var,
+        feature_interact_var=feature_interact_var,
+    ))
+
+    enhancements = [
+        (
+            grid_threshold_var,
+            "Grid Threshold Search",
+            "~2x slower",
+            "Tests precise threshold values instead of letting the tree pick one greedily",
+            "HOW IT WORKS:\n"
+            "Normally, the decision tree picks ONE threshold per indicator greedily.\n"
+            "Grid search tests every 5th percentile (20 values) for each indicator.\n\n"
+            "For a 4-condition rule, that's 20^4 = 160,000 threshold combinations\n"
+            "per feature combo. Each test is a fast numpy boolean AND.\n\n"
+            "WHY IT HELPS:\n"
+            "The greedy threshold might be 'RSI > 55.3' but the actual best is\n"
+            "'RSI > 48.7'. Grid search finds the precise sweet spot.\n\n"
+            "EXAMPLE:\n"
+            "Without: H4_roc_1 > 0.1476 (tree's greedy pick, 68% WR)\n"
+            "With:    H4_roc_1 > 0.1180 (grid search found, 72% WR)\n"
+            "Same feature, better threshold — 4% WR improvement."
+        ),
+        (
+            multi_exit_var,
+            "Multi-Exit Labeling",
+            "~5x slower",
+            "Tests multiple SL/TP combinations to find the best exit per rule",
+            "HOW IT WORKS:\n"
+            "Normally, all candles are labeled with ONE fixed SL/TP (e.g., 150/300).\n"
+            "Multi-exit labels every candle with ~15 different SL/TP combos:\n"
+            "  100/150, 100/200, 100/300, 150/300, 150/450, 200/400, 200/600...\n\n"
+            "Discovery runs separately for EACH label set, then compares:\n"
+            "  'Rule A with SL 100/TP 200 -> 74% WR, +180 avg pips'\n"
+            "  'Rule A with SL 150/TP 300 -> 65% WR, +120 avg pips'\n"
+            "The best rule-exit pairing wins.\n\n"
+            "WHY IT HELPS:\n"
+            "Some indicator combos work better with tight SL (fast scalps),\n"
+            "others with wide SL (swing trades). Current approach might miss\n"
+            "a 74% WR rule because it only tested the wrong exit for it.\n\n"
+            "OUTPUT:\n"
+            "Each rule shows its optimal SL/TP, not just the default you set."
+        ),
+        (
+            walkforward_score_var,
+            "Walk-Forward Scoring",
+            "~3x slower",
+            "Filters overfit rules during discovery, not just at validation",
+            "HOW IT WORKS:\n"
+            "Normally, discovery scores rules on a simple 70/30 train/test split.\n"
+            "A rule might get 72% on the test set but fail in 2024-2025.\n\n"
+            "Walk-forward scoring splits history into multiple windows:\n"
+            "  Window 1: train 2003-2010, test 2011-2012\n"
+            "  Window 2: train 2005-2012, test 2013-2014\n"
+            "  Window 3: train 2007-2014, test 2015-2016\n"
+            "  ... up to 8-10 windows\n\n"
+            "Each rule is scored on ALL out-of-sample windows.\n"
+            "Final score = average WR across all windows.\n\n"
+            "WHY IT HELPS:\n"
+            "Rules that only work in one specific period score poorly because\n"
+            "they fail in other windows. Only rules that work CONSISTENTLY\n"
+            "across 20+ years survive. Like building the Validator into discovery."
+        ),
+        (
+            feature_interact_var,
+            "Feature Interactions",
+            "~2x slower",
+            "Discovers edges in cross-indicator relationships (ratios, divergences)",
+            "HOW IT WORKS:\n"
+            "The 670 features are individual indicators. But some edges only\n"
+            "exist in RELATIONSHIPS between indicators.\n\n"
+            "This generates interaction features from the top 50 indicators:\n"
+            "  H4_rsi_14 / M15_rsi_14        -> momentum ratio across TFs\n"
+            "  H1_atr_14 - H4_atr_14         -> volatility divergence\n"
+            "  H1_ema_9 - H1_ema_21          -> EMA spread (trend strength)\n"
+            "  abs(H4_roc_1 - D1_roc_1)      -> TF agreement score\n"
+            "  H1_rsi_14 * H1_adx_14 / 100   -> momentum x trend strength\n\n"
+            "Adds 500-1000 new features to the pool.\n\n"
+            "WHY IT HELPS:\n"
+            "Individual RSI might be useless alone, but the RATIO of H4 RSI\n"
+            "to M15 RSI might be a powerful signal.\n\n"
+            "EXAMPLE:\n"
+            "H4_rsi_14 alone: 52% WR (useless)\n"
+            "M15_rsi_14 alone: 54% WR (useless)\n"
+            "H4_rsi_14 / M15_rsi_14 > 1.3: 71% WR (powerful divergence signal)"
+        ),
+    ]
+
+    for var, title, time_note, short_desc, tooltip_text in enhancements:
+        row = tk.Frame(enhance_frame, bg="#f0f2f5")
+        row.pack(fill="x", pady=3)
+
+        cb = tk.Checkbutton(row, text=f"{title}  ({time_note})",
+                            variable=var, bg="#f0f2f5", fg="#2c3e50",
+                            font=("Segoe UI", 9, "bold"),
+                            activebackground="#f0f2f5", selectcolor="#f0f2f5")
+        cb.pack(anchor="w")
+
+        tk.Label(row, text=f"  {short_desc}", bg="#f0f2f5", fg="#777",
+                 font=("Segoe UI", 8), justify="left", padx=28).pack(anchor="w")
+
+        try:
+            _Tooltip(cb, tooltip_text)
+        except Exception:
+            pass
+
+    # Ultimate Mode button — enables all 4 enhancements at once
+    def _ultimate_mode():
+        grid_threshold_var.set(True)
+        multi_exit_var.set(True)
+        walkforward_score_var.set(True)
+        feature_interact_var.set(True)
+        messagebox.showinfo("Ultimate Mode",
+            "All 4 enhancements enabled.\n\n"
+            "Combined with Exhaustive mode, this is the most thorough\n"
+            "search possible. Expect 4-8+ hours depending on your data.\n\n"
+            "The results will be the best rules your historical data can produce.")
+
+    ultimate_row = tk.Frame(enhance_frame, bg="#f0f2f5")
+    ultimate_row.pack(fill="x", pady=(8, 2))
+
+    tk.Button(ultimate_row, text="Ultimate Mode — Enable All Enhancements",
+              command=_ultimate_mode,
+              bg="#764ba2", fg="white", font=("Segoe UI", 10, "bold"),
+              bd=0, padx=16, pady=8, cursor="hand2").pack(anchor="w")
+
+    tk.Label(ultimate_row,
+             text="Exhaustive + all 4 enhancements. Maximum search depth. Takes hours but finds the absolute best.",
+             bg="#f0f2f5", fg="#999", font=("Segoe UI", 8, "italic"),
+             padx=4).pack(anchor="w")
 
     # ── Spacer ────────────────────────────────────────────────────────────────
     tk.Frame(inner, bg="#f0f2f5", height=1).pack(fill="x", pady=(10, 0))
@@ -1026,6 +1223,18 @@ def _on_run():
         discovery_mode_widget = _widgets.get('discovery_mode_var')
         discovery_mode = discovery_mode_widget.get() if discovery_mode_widget else 'quick'
 
+        # Read enhancement flags
+        # WHY: Each flag enables a deeper search technique that stacks with the mode
+        # CHANGED: April 2026 — enhancement checkboxes
+        _gt = _widgets.get('grid_threshold_var')
+        enhance_grid = _gt.get() if _gt else False
+        _me = _widgets.get('multi_exit_var')
+        enhance_multi_exit = _me.get() if _me else False
+        _wf = _widgets.get('walkforward_score_var')
+        enhance_wf_score = _wf.get() if _wf else False
+        _fi = _widgets.get('feature_interact_var')
+        enhance_interactions = _fi.get() if _fi else False
+
     except ValueError as exc:
         messagebox.showerror("Invalid Input", f"Check your settings:\n{exc}")
         return
@@ -1098,6 +1307,10 @@ def _on_run():
                 prop_firm_data=prop_data,
                 compare_all_tfs=compare_all,
                 discovery_mode=discovery_mode,
+                enhance_grid_threshold=enhance_grid,
+                enhance_multi_exit=enhance_multi_exit,
+                enhance_walkforward_score=enhance_wf_score,
+                enhance_feature_interactions=enhance_interactions,
                 progress_callback=_progress,
             )
             _panel.after(0, _on_done)
