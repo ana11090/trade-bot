@@ -583,6 +583,36 @@ def _discover_quick(X, y, pips, merged, valid_cols,
                                max_rules=10, min_coverage=min_coverage)
         all_rules.extend(rules)
 
+    # ── Enhancement: Grid Threshold Search ────────────────────────────────
+    # WHY: Decision tree thresholds are greedy. Grid search tests all quantile
+    #      thresholds for the top feature combos to find precise optima.
+    # CHANGED: April 2026 — Level 1 enhancement
+    if enhancements.get('grid_threshold'):
+        _cb(6, "[Quick+Grid] Running grid threshold search on top rules...")
+
+        seen_combos = set()
+        for rule in all_rules:
+            feats = tuple(sorted(c['feature'] for c in rule.get('conditions', [])))
+            if len(feats) >= 2:
+                seen_combos.add(feats)
+
+        if len(seen_combos) < 20:
+            from itertools import combinations as iter_combos
+            for combo in iter_combos(top_feat_names[:10], min(max_depth, 3)):
+                seen_combos.add(tuple(sorted(combo)))
+
+        grid_rules = []
+        combo_list_g = list(seen_combos)[:30]
+        for ci, combo in enumerate(combo_list_g):
+            _cb(6, f"[Quick+Grid] Grid search combo {ci+1}/{len(combo_list_g)}...")
+            grid_rules.extend(_grid_search_thresholds(
+                X_top, y, pips, list(combo),
+                min_coverage=min_coverage, min_win_rate=min_win_rate,
+            ))
+
+        all_rules.extend(grid_rules)
+        print(f"[GRID] Added {len(grid_rules)} rules from grid threshold search")
+
     unique = _deduplicate(all_rules)
     quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
     for r in quality:
@@ -595,6 +625,8 @@ def _discover_quick(X, y, pips, merged, valid_cols,
         'feature_importance_top_20': top_features[:20],
         'discovery_mode': 'quick',
     }
+    if enhancements.get('grid_threshold'):
+        model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
 
     return quality[:max_rules], model_metrics
 
@@ -707,6 +739,30 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         except Exception:
             continue
 
+    # ── Enhancement: Grid Threshold Search ────────────────────────────────
+    if enhancements.get('grid_threshold'):
+        _cb(n_runs + 2, total_steps,
+            f"[Deep+Grid] Grid search on top {min(len(all_rules), 50)} combos...")
+
+        all_rules_sorted = sorted(all_rules,
+                                  key=lambda r: r.get('score', r.get('win_rate', 0)),
+                                  reverse=True)
+        seen_combos = set()
+        for rule in all_rules_sorted[:50]:
+            feats = tuple(sorted(c['feature'] for c in rule.get('conditions', [])))
+            if len(feats) >= 2:
+                seen_combos.add(feats)
+
+        grid_rules = []
+        for combo in list(seen_combos)[:30]:
+            grid_rules.extend(_grid_search_thresholds(
+                X_pool, y, pips, list(combo),
+                min_coverage=min_coverage, min_win_rate=min_win_rate,
+            ))
+
+        all_rules.extend(grid_rules)
+        print(f"[GRID] Added {len(grid_rules)} rules from grid search")
+
     # ── Phase 4: Score and deduplicate ────────────────────────────────────
     _cb(n_runs + 2, total_steps, f"[Deep] Scoring {len(all_rules)} candidate rules...")
 
@@ -729,6 +785,8 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         'combos_tested': total_combos,
         'candidates_found': len(all_rules),
     }
+    if enhancements.get('grid_threshold'):
+        model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
 
     return quality[:max_rules], model_metrics
 
@@ -890,6 +948,29 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
 
         population = next_gen[:population_size]
 
+    # ── Enhancement: Grid Threshold Search ────────────────────────────────
+    if enhancements.get('grid_threshold'):
+        _cb(n_generations + 2, total_steps,
+            f"[Exhaustive+Grid] Grid search on top evolved combos...")
+
+        seen_combos = set()
+        for rule in all_good_rules:
+            feats = tuple(sorted(c['feature'] for c in rule.get('conditions', [])))
+            if len(feats) >= 2:
+                seen_combos.add(feats)
+
+        grid_rules = []
+        for combo in list(seen_combos)[:50]:
+            feat_names_combo = list(combo)
+            if all(f in X.columns for f in feat_names_combo):
+                grid_rules.extend(_grid_search_thresholds(
+                    X, y, pips, feat_names_combo,
+                    min_coverage=min_coverage, min_win_rate=min_win_rate,
+                ))
+
+        all_good_rules.extend(grid_rules)
+        print(f"[GRID] Added {len(grid_rules)} rules from grid search")
+
     # ── Phase 3: Final scoring and deduplication ──────────────────────────
     _cb(n_generations + 2, total_steps,
         f"[Exhaustive] Scoring {len(all_good_rules)} candidate rules from {n_generations} generations...")
@@ -912,8 +993,134 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
         'candidates_found': len(all_good_rules),
         'best_score': round(best_ever_score, 2),
     }
+    if enhancements.get('grid_threshold'):
+        model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
 
     return quality[:max_rules], model_metrics
+
+
+def _grid_search_thresholds(X, y, pips, feat_names, min_coverage=100,
+                            min_win_rate=0.55, n_quantiles=20,
+                            progress_callback=None):
+    """
+    Grid Threshold Search — test all quantile-based thresholds for a feature combo.
+
+    WHY: Decision trees pick thresholds greedily (best split at each level).
+         But the globally best threshold combination might not be the greedy one.
+         Grid search tests all combinations systematically.
+
+    HOW: For each feature, compute thresholds at every 5th percentile.
+         Then test every combination of thresholds + operator direction (> or <=).
+         Score = win_rate × sqrt(coverage) × pips_factor.
+
+    CHANGED: April 2026 — Level 1 enhancement
+    """
+    from itertools import product as iterproduct
+
+    quantiles = np.linspace(0.05, 0.95, n_quantiles)
+    thresholds_per_feat = {}
+    for fname in feat_names:
+        if fname not in X.columns:
+            continue
+        col = X[fname].values
+        vals = np.nanquantile(col, quantiles)
+        thresholds_per_feat[fname] = np.unique(vals)
+
+    valid_feats = [f for f in feat_names if f in thresholds_per_feat]
+    if not valid_feats:
+        return []
+
+    feat_arrays = {fn: X[fn].values for fn in valid_feats}
+    n_rows = len(y)
+
+    # For 1-2 features test both > and <=; for 3-4 only > (keeps combos manageable)
+    operators = ['>', '<='] if len(valid_feats) <= 2 else ['>']
+
+    threshold_lists = [thresholds_per_feat[fn] for fn in valid_feats]
+    total_combos = len(operators) * (1 if not threshold_lists else
+                                     int(np.prod([len(t) for t in threshold_lists])))
+
+    batch_report = max(1, total_combos // 20)
+    combo_count = 0
+    best_rules = []
+
+    for op in operators:
+        for thresh_combo in iterproduct(*threshold_lists):
+            combo_count += 1
+            if combo_count % batch_report == 0 and progress_callback:
+                progress_callback(combo_count, total_combos,
+                    f"Grid search: {combo_count:,}/{total_combos:,} ({combo_count/total_combos*100:.0f}%)")
+
+            mask = np.ones(n_rows, dtype=bool)
+            conditions = []
+
+            for fi, fname in enumerate(valid_feats):
+                threshold = thresh_combo[fi]
+                col = feat_arrays[fname]
+                if op == '>':
+                    mask &= col > threshold
+                    conditions.append({'feature': fname, 'operator': '>', 'value': round(float(threshold), 4)})
+                else:
+                    mask &= col <= threshold
+                    conditions.append({'feature': fname, 'operator': '<=', 'value': round(float(threshold), 4)})
+
+            coverage = int(mask.sum())
+            if coverage < min_coverage:
+                continue
+
+            win_rate = float(y[mask].mean())
+            if win_rate < min_win_rate:
+                continue
+
+            avg_p = float(pips[mask].mean())
+            score = win_rate * np.sqrt(coverage) * max(1 + avg_p / 200, 0.1)
+
+            best_rules.append({
+                'conditions':    conditions,
+                'prediction':    'WIN',
+                'confidence':    round(win_rate, 3),
+                'coverage':      coverage,
+                'coverage_pct':  round(coverage / n_rows * 100, 1),
+                'win_rate':      round(win_rate, 3),
+                'avg_pips':      round(avg_p, 1),
+                'score':         round(score, 2),
+                'search_method': 'grid_threshold',
+            })
+
+    best_rules.sort(key=lambda r: r['score'], reverse=True)
+
+    # Deduplicate near-identical rules (same features, close thresholds)
+    final = []
+    for rule in best_rules[:200]:
+        is_dup = any(_rules_similar(rule, ex, threshold_tolerance=0.05) for ex in final)
+        if not is_dup:
+            final.append(rule)
+        if len(final) >= 50:
+            break
+
+    return final
+
+
+def _rules_similar(r1, r2, threshold_tolerance=0.05):
+    """Check if two rules have the same features with similar thresholds.
+    WHY: Grid search produces many near-identical rules (RSI > 55.1 vs RSI > 55.3).
+         Deduplication keeps only the best version of each pattern.
+    CHANGED: April 2026 — helper for grid search dedup
+    """
+    c1, c2 = r1.get('conditions', []), r2.get('conditions', [])
+    if len(c1) != len(c2):
+        return False
+    if sorted(c['feature'] for c in c1) != sorted(c['feature'] for c in c2):
+        return False
+    for cond1 in c1:
+        match = [c for c in c2 if c['feature'] == cond1['feature']
+                                and c['operator'] == cond1['operator']]
+        if not match:
+            return False
+        val1 = abs(cond1['value']) if cond1['value'] != 0 else 1
+        if abs(cond1['value'] - match[0]['value']) / max(val1, 1e-6) > threshold_tolerance:
+            return False
+    return True
 
 
 def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100):
