@@ -1096,6 +1096,19 @@ def _render_results():
                          bg=bg, fg="#8e44ad",
                          font=("Segoe UI", 8, "bold")).pack(anchor="w")
 
+            wf_score = rule.get('wf_score')
+            if wf_score is not None:
+                wf_wr     = rule.get('wf_avg_wr', 0)
+                wf_min    = rule.get('wf_min_wr', 0)
+                wf_recent = rule.get('wf_recent_wr', 0)
+                wf_wins   = rule.get('wf_windows', 0)
+                wf_color  = "#1e8449" if wf_wr >= 0.60 else ("#996600" if wf_wr >= 0.55 else "#922b21")
+                tk.Label(rc,
+                         text=f"  Walk-forward: avg {wf_wr:.1%} | min {wf_min:.1%} | "
+                              f"recent {wf_recent:.1%} | {wf_wins} windows",
+                         bg=bg, fg=wf_color,
+                         font=("Segoe UI", 8, "bold")).pack(anchor="w")
+
             for cond in rule.get('conditions', []):
                 tk.Label(rc,
                          text=f"    {cond['feature']} {cond['operator']} {cond['value']}",

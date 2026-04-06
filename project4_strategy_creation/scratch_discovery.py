@@ -720,6 +720,26 @@ def _discover_quick(X, y, pips, merged, valid_cols,
         r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
+    # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
+    # WHY: Overfit rules score well on one test period but fail elsewhere.
+    #      8 sliding windows spanning full history filter them out here.
+    # CHANGED: April 2026 — Level 3 enhancement
+    if enhancements.get('walkforward_score') and quality:
+        _cb(6, "[Quick+WF] Re-scoring rules across 8 walk-forward windows...")
+        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        quality = _walkforward_score_rules(
+            quality, X, y, pips,
+            timestamps=timestamps,
+            n_windows=8,
+            min_coverage=max(20, min_coverage // 5),
+        )
+        quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
+        wf_scored = [r for r in quality if 'wf_score' in r]
+        if wf_scored:
+            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+
     model_metrics = {
         'train_accuracy': round(train_acc, 4),
         'test_accuracy': round(test_acc, 4),
@@ -728,6 +748,12 @@ def _discover_quick(X, y, pips, merged, valid_cols,
     }
     if enhancements.get('grid_threshold'):
         model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
+    if enhancements.get('walkforward_score'):
+        wf_rules = [r for r in quality if 'wf_score' in r]
+        model_metrics['wf_scored_rules'] = len(wf_rules)
+        if wf_rules:
+            model_metrics['wf_best_avg_wr'] = wf_rules[0].get('wf_avg_wr', 0)
+            model_metrics['wf_best_min_wr'] = wf_rules[0].get('wf_min_wr', 0)
 
     return quality[:max_rules], model_metrics
 
@@ -873,6 +899,24 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
+    # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
+    if enhancements.get('walkforward_score') and quality:
+        _cb(n_runs + 2, total_steps,
+            "[Deep+WF] Re-scoring rules across 8 walk-forward windows...")
+        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        quality = _walkforward_score_rules(
+            quality, X, y, pips,
+            timestamps=timestamps,
+            n_windows=8,
+            min_coverage=max(20, min_coverage // 5),
+        )
+        quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
+        wf_scored = [r for r in quality if 'wf_score' in r]
+        if wf_scored:
+            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+
     test_acc = model.score(X_test, y_test) if model else 0
     train_acc = model.score(X_train, y_train) if model else 0
 
@@ -888,6 +932,12 @@ def _discover_deep(X, y, pips, merged, valid_cols,
     }
     if enhancements.get('grid_threshold'):
         model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
+    if enhancements.get('walkforward_score'):
+        wf_rules = [r for r in quality if 'wf_score' in r]
+        model_metrics['wf_scored_rules'] = len(wf_rules)
+        if wf_rules:
+            model_metrics['wf_best_avg_wr'] = wf_rules[0].get('wf_avg_wr', 0)
+            model_metrics['wf_best_min_wr'] = wf_rules[0].get('wf_min_wr', 0)
 
     return quality[:max_rules], model_metrics
 
@@ -1082,6 +1132,24 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
         r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
+    # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
+    if enhancements.get('walkforward_score') and quality:
+        _cb(n_generations + 2, total_steps,
+            "[Exhaustive+WF] Re-scoring rules across 8 walk-forward windows...")
+        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        quality = _walkforward_score_rules(
+            quality, X, y, pips,
+            timestamps=timestamps,
+            n_windows=8,
+            min_coverage=max(20, min_coverage // 5),
+        )
+        quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
+        wf_scored = [r for r in quality if 'wf_score' in r]
+        if wf_scored:
+            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+
     model_metrics = {
         'train_accuracy': round(train_acc, 4),
         'test_accuracy': round(test_acc, 4),
@@ -1096,6 +1164,12 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
     }
     if enhancements.get('grid_threshold'):
         model_metrics['grid_threshold_rules'] = len([r for r in quality if r.get('search_method') == 'grid_threshold'])
+    if enhancements.get('walkforward_score'):
+        wf_rules = [r for r in quality if 'wf_score' in r]
+        model_metrics['wf_scored_rules'] = len(wf_rules)
+        if wf_rules:
+            model_metrics['wf_best_avg_wr'] = wf_rules[0].get('wf_avg_wr', 0)
+            model_metrics['wf_best_min_wr'] = wf_rules[0].get('wf_min_wr', 0)
 
     return quality[:max_rules], model_metrics
 
@@ -1222,6 +1296,138 @@ def _rules_similar(r1, r2, threshold_tolerance=0.05):
         if abs(cond1['value'] - match[0]['value']) / max(val1, 1e-6) > threshold_tolerance:
             return False
     return True
+
+
+def _walkforward_score_rules(rules, X, y, pips, timestamps=None,
+                              n_windows=8, train_ratio=0.75,
+                              min_coverage=50,
+                              progress_callback=None):
+    """
+    Walk-Forward Scoring — re-score rules across multiple sliding time windows.
+
+    WHY: A 70/30 train/test split can be lucky. A rule might work in 2020-2026
+         but fail in 2010-2019. Walk-forward scoring tests across 8+ windows
+         spanning the full history. Only rules that work CONSISTENTLY survive.
+
+    HOW:
+      1. Split data into 8 sliding windows (each: 75% train, 25% test)
+      2. For each rule, apply conditions to the OOS portion of each window
+      3. Final score = weighted avg WR penalised for inconsistency
+      4. Rules that work in RECENT windows get a small recency bonus
+
+    CHANGED: April 2026 — Level 3 enhancement
+    """
+    n_rows = len(X)
+    if n_rows < 1000:
+        return rules
+
+    window_size = n_rows // (n_windows // 2 + 1)
+    step_size = max(1, (n_rows - window_size) // max(n_windows - 1, 1))
+
+    windows = []
+    for wi in range(n_windows):
+        start = wi * step_size
+        end = min(start + window_size, n_rows)
+        if end - start < 500:
+            continue
+        split_point = start + int((end - start) * train_ratio)
+        windows.append({
+            'oos_start': split_point,
+            'oos_end':   end,
+            'window_idx': wi,
+            'is_recent':  end > n_rows * 0.85,
+        })
+
+    if not windows:
+        return rules
+
+    for ri, rule in enumerate(rules):
+        if progress_callback and ri % 10 == 0:
+            progress_callback(ri, len(rules), f"[WF Score] Rule {ri+1}/{len(rules)}")
+
+        conditions = rule.get('conditions', [])
+        if not conditions:
+            continue
+
+        window_results = []
+
+        for w in windows:
+            oos_X    = X.iloc[w['oos_start']:w['oos_end']]
+            oos_y    = y[w['oos_start']:w['oos_end']]
+            oos_pips = pips[w['oos_start']:w['oos_end']]
+
+            mask  = np.ones(len(oos_X), dtype=bool)
+            valid = True
+
+            for cond in conditions:
+                feat = cond['feature']
+                op   = cond['operator']
+                val  = cond['value']
+
+                if feat not in oos_X.columns:
+                    valid = False
+                    break
+
+                col = oos_X[feat].values
+                if   op == '>':  mask &= col > val
+                elif op == '>=': mask &= col >= val
+                elif op == '<':  mask &= col < val
+                elif op == '<=': mask &= col <= val
+                elif op == '==': mask &= col == val
+                else:            mask &= col > val
+
+            if not valid:
+                continue
+
+            coverage = int(mask.sum())
+            if coverage < min_coverage:
+                window_results.append({'window': w['window_idx'], 'coverage': coverage,
+                                       'win_rate': None, 'avg_pips': None, 'recent': w['is_recent']})
+                continue
+
+            wr = float(oos_y[mask].mean())
+            ap = float(oos_pips[mask].mean())
+            window_results.append({'window': w['window_idx'], 'coverage': coverage,
+                                   'win_rate': round(wr, 3), 'avg_pips': round(ap, 1),
+                                   'recent': w['is_recent']})
+
+        valid_windows = [w for w in window_results if w['win_rate'] is not None]
+
+        if len(valid_windows) < 3:
+            rule['wf_score']   = rule.get('score', 0) * 0.3
+            rule['wf_windows'] = len(valid_windows)
+            rule['wf_detail']  = window_results
+            continue
+
+        wrs    = [w['win_rate'] for w in valid_windows]
+        avg_wr = float(np.mean(wrs))
+        min_wr = float(np.min(wrs))
+        std_wr = float(np.std(wrs))
+
+        recent_windows = [w for w in valid_windows if w['recent']]
+        recent_wr = float(np.mean([w['win_rate'] for w in recent_windows])) if recent_windows else avg_wr
+
+        # WHY: consistency_factor penalises high variance across windows;
+        #      min_factor penalises rules that fail badly in any single window;
+        #      recent_factor boosts rules that still work in current market.
+        consistency_factor = max(0.5, 1.0 - std_wr)
+        min_factor         = max(0.5, min_wr / max(avg_wr, 0.01))
+        recent_factor      = 1.0 + max(0, (recent_wr - avg_wr)) * 2
+
+        wf_score = (avg_wr * np.sqrt(rule.get('coverage', 100)) *
+                    consistency_factor * min_factor * recent_factor *
+                    max(1 + rule.get('avg_pips', 0) / 200, 0.1))
+
+        rule['wf_score']     = round(wf_score, 2)
+        rule['wf_avg_wr']    = round(avg_wr, 3)
+        rule['wf_min_wr']    = round(min_wr, 3)
+        rule['wf_std_wr']    = round(std_wr, 3)
+        rule['wf_recent_wr'] = round(recent_wr, 3)
+        rule['wf_windows']   = len(valid_windows)
+        rule['wf_detail']    = window_results
+
+    rules.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
+    return rules
 
 
 def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100):
