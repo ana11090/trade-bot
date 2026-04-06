@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import ttk, filedialog, simpledialog, messagebox
 import state
 
 
@@ -8,7 +8,26 @@ def build_sidebar(window, canvas, refresh_map):
     sidebar.pack(side="left", fill="y")
     sidebar.pack_propagate(False)
 
-    tk.Label(sidebar, text="Trade Bot", bg="#16213e", fg="white",
+    # ── Scrollable inner area ─────────────────────────────────────────────────
+    _sb_canvas = tk.Canvas(sidebar, bg="#16213e", highlightthickness=0, bd=0)
+    _sb_vsb    = ttk.Scrollbar(sidebar, orient="vertical", command=_sb_canvas.yview)
+    _sb_canvas.configure(yscrollcommand=_sb_vsb.set)
+    _sb_vsb.pack(side="right", fill="y")
+    _sb_canvas.pack(side="left", fill="both", expand=True)
+
+    inner_frame = tk.Frame(_sb_canvas, bg="#16213e")
+    _sb_cw = _sb_canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+    def _sb_on_inner_resize(e):
+        _sb_canvas.configure(scrollregion=_sb_canvas.bbox("all"))
+    def _sb_on_canvas_resize(e):
+        _sb_canvas.itemconfig(_sb_cw, width=e.width)
+
+    inner_frame.bind("<Configure>", _sb_on_inner_resize)
+    _sb_canvas.bind("<Configure>", _sb_on_canvas_resize)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    tk.Label(inner_frame, text="Trade Bot", bg="#16213e", fg="white",
              font=("Segoe UI", 14, "bold"), pady=16).pack()
 
     # ── Trade history selector ────────────────────────────────────────────────
@@ -17,7 +36,7 @@ def build_sidebar(window, canvas, refresh_map):
         load_trades, get_history_config, get_history_trades_path,
     )
 
-    selector_frame = tk.Frame(sidebar, bg="#16213e")
+    selector_frame = tk.Frame(inner_frame, bg="#16213e")
     selector_frame.pack(fill="x", padx=10, pady=(0, 6))
 
     tk.Label(selector_frame, text="Active trade history", bg="#16213e", fg="#5a7a99",
@@ -97,7 +116,7 @@ def build_sidebar(window, canvas, refresh_map):
     load_btn.pack(fill="x", pady=(4, 0))
 
     # ── Separator ─────────────────────────────────────────────────────────────
-    tk.Frame(sidebar, bg="#2a3a5c", height=1).pack(fill="x", padx=10, pady=(4, 0))
+    tk.Frame(inner_frame, bg="#2a3a5c", height=1).pack(fill="x", padx=10, pady=(4, 0))
 
     stats_open    = [False]
     prob_open     = [False]
@@ -107,13 +126,13 @@ def build_sidebar(window, canvas, refresh_map):
     project4_open = [False]
 
     # ── Frames ────────────────────────────────────────────────────────────────
-    project0_extras = tk.Frame(sidebar, bg="#16213e")
+    project0_extras = tk.Frame(inner_frame, bg="#16213e")
     stats_submenu   = tk.Frame(project0_extras, bg=state.COL_SUB)
     prob_submenu    = tk.Frame(project0_extras, bg=state.COL_SUB)
-    project1_extras = tk.Frame(sidebar, bg="#16213e")
-    project2_extras = tk.Frame(sidebar, bg="#16213e")
-    project3_extras = tk.Frame(sidebar, bg="#16213e")
-    project4_extras = tk.Frame(sidebar, bg="#16213e")
+    project1_extras = tk.Frame(inner_frame, bg="#16213e")
+    project2_extras = tk.Frame(inner_frame, bg="#16213e")
+    project3_extras = tk.Frame(inner_frame, bg="#16213e")
+    project4_extras = tk.Frame(inner_frame, bg="#16213e")
 
     # ── Button helpers ────────────────────────────────────────────────────────
     def _sidebar_btn(parent, text, cmd):
@@ -364,7 +383,7 @@ def build_sidebar(window, canvas, refresh_map):
             show_panel("p4_scratch")
 
     # ── Build buttons ─────────────────────────────────────────────────────────
-    btn0 = _sidebar_btn(sidebar, "0 - Data Pipeline", _on_pipeline_click)
+    btn0 = _sidebar_btn(inner_frame, "0 - Data Pipeline", _on_pipeline_click)
     btn0.pack(fill="x")
 
     # project0_extras contents
@@ -429,7 +448,7 @@ def build_sidebar(window, canvas, refresh_map):
     }
 
     # ── Remaining project buttons (always visible) ────────────────────────────
-    btn1 = _sidebar_btn(sidebar, "1 - Reverse Engineer", _toggle_project1)
+    btn1 = _sidebar_btn(inner_frame, "1 - Reverse Engineer", _toggle_project1)
     btn1.pack(fill="x")
 
     btn_p1_config  = _sub_btn(project1_extras, "⚙️ Configuration & Data", lambda: show_panel("p1_config"))
@@ -454,7 +473,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p1_search":   btn_p1_search,
     }
 
-    btn2 = _sidebar_btn(sidebar, "2 - Backtesting", _toggle_project2)
+    btn2 = _sidebar_btn(inner_frame, "2 - Backtesting", _toggle_project2)
     btn2.pack(fill="x")
 
     btn_p2_config  = _sub_btn(project2_extras, "⚙️ Configuration", lambda: show_panel("p2_config"))
@@ -485,7 +504,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p2_playground": btn_p2_playground,
     }
 
-    btn3 = _sidebar_btn(sidebar, "3 - Live Trading", _toggle_project3)
+    btn3 = _sidebar_btn(inner_frame, "3 - Live Trading", _toggle_project3)
     btn3.pack(fill="x")
 
     btn_p3_generator = _sub_btn(project3_extras, "🤖 EA Generator",  lambda: show_panel("p3_generator"))
@@ -498,7 +517,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p3_monitor":   btn_p3_monitor,
     }
 
-    btn4 = _sidebar_btn(sidebar, "4 - Strategy Creation", _toggle_project4)
+    btn4 = _sidebar_btn(inner_frame, "4 - Strategy Creation", _toggle_project4)
     btn4.pack(fill="x")
 
     btn_p4_scratch = _sub_btn(project4_extras, "🎯 Build from Scratch", lambda: show_panel("p4_scratch"))
