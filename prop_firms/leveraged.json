@@ -3,63 +3,148 @@
   "firm_name": "Get Leveraged",
   "website": "https://getleveraged.com",
   "market_type": "forex_cfd",
-  "dd_reset_timezone": "UTC",
-  "typical_swap_xauusd_per_lot_per_night": 30.0,
-  "leverage_by_size": {
-    "5000": "1:30",
-    "10000": "1:30",
-    "25000": "1:30",
-    "50000": "1:30",
-    "100000": "1:30"
+  "leverage": "1:30",
+
+  "drawdown_mechanics": {
+    "_comment": "Leveraged-specific DD rules. Other firms will have their own structure.",
+
+    "trailing_dd": {
+      "type": "trailing_closed_balance",
+      "description": "Trailing DD tracks closed balance (not floating equity). HWM updates only when a trade closes at a new high. Breach check uses equity.",
+      "basis": "closed_balance",
+      "breach_check": "equity",
+      "lock_after_gain_pct": 6.0,
+      "lock_level": "starting_balance",
+      "lock_description": "Once closed balance reaches starting + 6%, the DD floor locks at starting balance permanently. No more trailing."
+    },
+
+    "daily_dd": {
+      "type": "max_balance_equity_at_reset",
+      "description": "Daily DD reference = max(balance, equity) at reset time. If equity drops 3% from that reference during the next day, account breaches.",
+      "reference": "max_balance_equity",
+      "reset_time": "23:00",
+      "reset_timezone": "GMT+3",
+      "reset_description": "Resets at 23:00 GMT+3 (1 hour before market close). The higher of balance or equity at that moment becomes the reference."
+    },
+
+    "post_payout": {
+      "description": "After payout withdrawal, DD limit locks at initial starting balance. Withdrawing profit shrinks DD room.",
+      "dd_locks_at": "initial_balance",
+      "example": "Make $7000 profit on $100K, withdraw $5000. New DD floor = $100K. If equity drops to $100K = breach. Only $2000 room left."
+    }
   },
+
+  "challenges": [
+    {
+      "challenge_id": "leveraged_standard",
+      "challenge_name": "Standard Challenge",
+
+      "account_sizes": [5000, 10000, 25000, 50000, 100000],
+
+      "costs": {
+        "challenge_fee_by_size": {
+          "5000": 99,
+          "10000": 155,
+          "25000": 349,
+          "50000": 549,
+          "100000": 949
+        },
+        "fee_refundable": false
+      },
+
+      "phases": [
+        {
+          "phase_number": 1,
+          "phase_name": "Evaluation",
+          "profit_target_pct": 6.0,
+          "max_daily_drawdown_pct": 3.0,
+          "max_total_drawdown_pct": 6.0,
+          "drawdown_type": "trailing",
+          "min_trading_days": 0,
+          "max_calendar_days": null,
+          "consistency_rule_pct": null
+        }
+      ],
+
+      "funded": {
+        "profit_split_pct": 80,
+        "max_profit_split_pct": 90,
+        "max_daily_drawdown_pct": 3.0,
+        "max_total_drawdown_pct": 6.0,
+        "drawdown_type": "trailing",
+        "profit_target_pct": null,
+        "consistency_rule_pct": 20,
+        "payout_frequency": "biweekly",
+        "payout_period_days": 14,
+        "min_payout_amount": 50,
+        "scaling_plan": "After 3 successful payouts, request account scaling",
+        "dd_reset_on_payout": false
+      },
+
+      "restrictions": {
+        "news_trading_eval": true,
+        "news_trading_funded": false,
+        "news_blackout_minutes": 0,
+        "weekend_holding_allowed": true,
+        "hedging_allowed": true,
+        "ea_allowed": true,
+        "min_trade_duration_seconds": 0,
+        "max_lots": null
+      }
+    }
+  ],
+
   "trading_rules": [
     {
       "id": "eval_strategy",
-      "name": "Evaluation Strategy — Hit 6% Target",
+      "name": "Evaluation — Hit 6% Target",
       "stage": "evaluation",
-      "description": "Aggressive settings to reach 6% profit target fast",
-      "explanation": "The evaluation has no consistency rule and no minimum profitable days. The only goal is reaching 6% without hitting 3% daily or 6% total DD. If you blow the $155 fee, retry. Speed matters more than safety because the REAL money is in the funded account. Use higher risk per trade and more trades per day. Sessions and exact risk % are determined by the optimizer based on your strategy's backtest results.",
       "type": "eval_settings",
+      "description": "Aggressive settings to reach 6% profit target fast",
+      "explanation": "The evaluation has no consistency rule and no minimum profitable days. The only goal is reaching 6% without hitting 3% daily or 6% total DD. If you blow the fee, retry. Speed matters more than safety because the REAL money is in the funded account. Sessions, exact risk, and trades per day are determined by the optimizer.",
       "parameters": {
         "risk_pct_range": [0.8, 1.5],
         "max_trades_per_day_range": [3, 5],
-        "daily_dd_buffer_pct": 0.3,
-        "total_dd_buffer_pct": 0.3
+        "daily_dd_alert_pct": 2.7,
+        "total_dd_alert_pct": 5.7
       }
     },
     {
       "id": "funded_accumulate",
       "name": "Funded — Accumulate Phase",
       "stage": "funded",
-      "description": "Conservative trading to meet payout conditions",
-      "explanation": "Trade conservatively to meet two payout conditions: (1) at least 3 profitable days with >= 0.5% ($50) gain each, and (2) no single day exceeds 20% of total profit. Use a daily profit cap of 2 winning trades then stop for the day — this naturally spreads profit across many days and makes consistency easy. If total DD reaches 5% before conditions are met, stop trading for the rest of the period to protect the account.",
       "type": "funded_accumulate",
+      "description": "Conservative trading to meet payout conditions",
+      "explanation": "Trade conservatively to meet two payout conditions: (1) at least 3 profitable days with >= 0.5% gain each, and (2) no single day exceeds 20% of total profit. Use a daily profit cap of 2 winning trades then stop for the day. If total DD reaches 5% before conditions are met, stop trading for the rest of the period.",
       "parameters": {
-        "risk_pct_range": [0.3, 0.5],
+        "risk_pct": 0.5,
         "max_winning_trades_per_day": 2,
-        "daily_dd_stop_pct": 2.5,
-        "total_dd_stop_pct": 5.5,
-        "emergency_total_dd_stop_pct": 5.0
+        "daily_dd_alert_pct": 2.5,
+        "total_dd_alert_pct": 5.5,
+        "emergency_total_dd_pct": 5.0,
+        "news_allowed": false
       }
     },
     {
       "id": "funded_protect",
-      "name": "Funded — Protection Phase (After Conditions Met)",
+      "name": "Funded — Protection Phase",
       "stage": "funded",
-      "description": "STOP trading — payout conditions met, wait for collection",
-      "explanation": "Once both payout conditions are met (3 profitable days at >= 0.5% AND best day under 20% of total), STOP trading completely. Do not risk the secured payout. Wait for the 14-day period to end and collect. Any additional trading could create a new 'best day' that breaks the 20% consistency rule.",
       "type": "funded_protect",
+      "description": "STOP trading when payout conditions are met",
+      "explanation": "Once BOTH conditions are met (3 profitable days at >= 0.5% AND best day under 20% of total), STOP trading completely. Close all positions. Wait for 14-day period to end. Any additional trading could break the consistency rule.",
       "parameters": {
-        "stop_trading": true
+        "stop_trading": true,
+        "close_all_positions": true,
+        "send_alert": true
       }
     },
     {
       "id": "consistency_rule",
       "name": "20% Consistency Rule",
       "stage": "funded",
-      "description": "No single day can exceed 20% of total payout period profit",
-      "explanation": "Measured at payout time, not daily. If you make $700 total in 14 days, no single day can account for more than $140 (20%). More trading days makes this easier — with 8 profitable days, each day is ~12.5% of total (well under 20%). The daily profit cap of 2 winning trades helps ensure even distribution. Lot size does NOT fix consistency — if you halve lots, every day halves proportionally and the RATIO stays the same. The fix is more trading days, not smaller trades.",
       "type": "consistency",
+      "description": "No single day > 20% of total profit in the payout period",
+      "explanation": "Measured at payout time. More trading days = easier consistency. With 8 days, each is ~12.5%. The 2-win daily cap helps ensure even distribution. Lot size does NOT fix consistency.",
       "parameters": {
         "max_day_pct": 20
       }
@@ -68,98 +153,25 @@
       "id": "min_profitable_days",
       "name": "3 Minimum Profitable Days",
       "stage": "funded",
-      "description": "At least 3 days must be profitable with >= 0.5% gain each",
-      "explanation": "You cannot just trade one big day and sit out. The firm wants to see consistent trading ability. Each of the 3 days must make at least 0.5% of the account ($50 on $10K). With the 2-winning-trades-per-day cap and conservative risk, most trading days will clear this threshold easily.",
       "type": "min_profitable_days",
+      "description": "At least 3 days must be profitable with >= 0.5% gain each",
+      "explanation": "Each day must make at least 0.5% of account. With 2 winning trades averaging $50-$80 each, most days clear this easily.",
       "parameters": {
         "min_days": 3,
         "min_pct_per_day": 0.5
       }
     },
     {
-      "id": "daily_dd_after_payout_met",
-      "name": "Daily DD Safety — Accumulate Phase",
+      "id": "payout_period_reset",
+      "name": "14-Day Period Reset",
       "stage": "funded",
-      "description": "Stop for the DAY when daily loss reaches 2.5% (limit is 3%)",
-      "explanation": "While building toward payout conditions, stop trading for the current day if daily loss reaches 2.5%. The firm's limit is 3% — this 0.5% buffer protects against a final bad trade pushing you over. Resume trading next day.",
-      "type": "dd_safety",
+      "type": "period_reset",
+      "description": "What resets and what doesn't every 14 days",
+      "explanation": "RESETS: winning trade counter, profitable day count, best day tracker, payout conditions flag, stopped-for-period flag. DOES NOT RESET: account balance (carries over), trailing DD high water mark (carries over).",
       "parameters": {
-        "daily_dd_buffer_pct": 0.5,
-        "action": "stop_for_day"
-      }
-    },
-    {
-      "id": "total_dd_emergency",
-      "name": "Total DD Emergency Stop",
-      "stage": "funded",
-      "description": "Stop for the PERIOD when total DD reaches 5% (limit is 6%)",
-      "explanation": "If total trailing drawdown reaches 5% before payout conditions are met, stop trading entirely for the rest of the 14-day period. Better to lose one payout cycle than the entire funded account. The account survives and you try again next period. This 1% buffer (5% vs 6% limit) protects against overnight gaps or Monday opens that could push past the limit.",
-      "type": "dd_emergency",
-      "parameters": {
-        "total_dd_stop_pct": 5.0,
-        "action": "stop_for_period"
-      }
-    }
-  ],
-  "challenges": [
-    {
-      "challenge_id": "leveraged_standard",
-      "challenge_name": "Standard Challenge",
-      "description": "Rules based on limited data — verify with firm. Trailing DD: 6%, Daily DD: 5%. Other details approximate.",
-      "phases": [
-        {
-          "phase_number": 1,
-          "phase_name": "Challenge Phase 1",
-          "profit_target_pct": 8.0,
-          "max_daily_drawdown_pct": 5.0,
-          "max_total_drawdown_pct": 6.0,
-          "drawdown_type": "trailing",
-          "drawdown_basis": "equity",
-          "min_trading_days": 0,
-          "max_calendar_days": null,
-          "consistency_rule_pct": null,
-          "consistency_rule_type": null
-        }
-      ],
-      "funded": {
-        "profit_split_pct": 80,
-        "max_profit_split_pct": 90,
-        "max_daily_drawdown_pct": 5.0,
-        "max_total_drawdown_pct": 6.0,
-        "drawdown_type": "trailing",
-        "profit_target_pct": null,
-        "consistency_rule_pct": null,
-        "payout_frequency": "biweekly",
-        "scaling_plan": null,
-        "dd_reset_on_payout": false,
-        "min_payout_amount": 50,
-        "consistency_rule_type": null
-      },
-      "account_sizes": [
-        5000,
-        10000,
-        25000,
-        50000,
-        100000
-      ],
-      "restrictions": {
-        "news_trading_allowed": true,
-        "news_blackout_minutes": 0,
-        "weekend_holding_allowed": true,
-        "hedging_allowed": true,
-        "ea_allowed": true,
-        "min_trade_duration_seconds": 0,
-        "max_lots": null
-      },
-      "costs": {
-        "challenge_fee_by_size": {
-          "5000": null,
-          "10000": null,
-          "25000": null,
-          "50000": null,
-          "100000": null
-        },
-        "fee_refundable": false
+        "period_days": 14,
+        "resets": ["winning_trade_counter", "profitable_day_count", "best_day_profit", "conditions_met_flag", "stopped_for_period_flag"],
+        "does_not_reset": ["account_balance", "trailing_dd_hwm"]
       }
     }
   ]

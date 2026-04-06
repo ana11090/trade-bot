@@ -45,6 +45,7 @@ def run_scratch_discovery(
     prop_firm_name=None,
     prop_firm_data=None,
     compare_all_tfs=False,
+    discovery_mode='quick',   # 'quick', 'deep', or 'exhaustive'
     progress_callback=None,
 ):
     """
@@ -356,81 +357,50 @@ def run_scratch_discovery(
     n_original = len([c for c in valid_cols if not c.startswith('SMART_')])
     n_smart    = len([c for c in valid_cols if c.startswith('SMART_')])
 
-    # ── Step 5: Train XGBoost ─────────────────────────────────────────────────
-    _cb(5, f"Step 5/6: Training XGBoost on {len(X)} rows x {len(valid_cols)} features...")
+    min_coverage = max(10, int(len(X) * min_coverage_pct / 100))
 
     try:
         from xgboost import XGBClassifier
     except ImportError:
         raise ImportError("XGBoost not installed. Run: pip install xgboost")
 
-    min_coverage = max(10, int(len(X) * min_coverage_pct / 100))
-
-    # Time-based split (NOT random — prevents look-ahead bias)
-    split_idx = int(len(X) * train_test_split)
-    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_test = y[:split_idx],       y[split_idx:]
-
-    model = XGBClassifier(
-        n_estimators=n_estimators,
-        max_depth=max_depth,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.7,
-        min_child_weight=min_coverage,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
-        random_state=42,
-        eval_metric='logloss',
-        n_jobs=-1,
-    )
-    model.fit(X_train, y_train,
-              eval_set=[(X_test, y_test)],
-              verbose=False)
-
-    train_acc = model.score(X_train, y_train)
-    test_acc  = model.score(X_test,  y_test)
-
-    importances = model.feature_importances_
-    top_indices = np.argsort(importances)[::-1]
-    top_features = [(valid_cols[i], float(importances[i]))
-                    for i in top_indices[:50]]
-
-    # ── Step 6: Extract rules ─────────────────────────────────────────────────
-    _cb(6, "Step 6/6: Extracting rules...")
-
-    from sklearn.tree import DecisionTreeClassifier
-
-    top_feat_names = [f[0] for f in top_features[:30]]
-    X_top = X[top_feat_names]
-
-    all_rules = []
-    for depth in [3, 4, 5]:
-        tree = DecisionTreeClassifier(
-            max_depth=depth,
-            min_samples_leaf=min_coverage,
-            random_state=42 + depth,
+    # ── Steps 5-6: Discovery — mode determines the search strategy ────────────
+    # WHY: Quick uses greedy search (fast, may miss combos). Deep tests all combos
+    #      of top features. Exhaustive uses genetic search on ALL features.
+    # CHANGED: April 2026 — three discovery modes
+    if discovery_mode == 'deep':
+        final_rules, model_metrics = _discover_deep(
+            X, y, pips, merged, valid_cols,
+            n_estimators=n_estimators, max_depth=max_depth,
+            min_coverage=min_coverage, min_win_rate=min_win_rate,
+            max_rules=max_rules, train_test_split=train_test_split,
+            progress_callback=_cb,
         )
-        tree.fit(X_top, y)
-        rules = _extract_rules(tree, top_feat_names, X_top, y, pips, merged,
-                               max_rules=10, min_coverage=min_coverage)
-        all_rules.extend(rules)
+    elif discovery_mode == 'exhaustive':
+        final_rules, model_metrics = _discover_exhaustive(
+            X, y, pips, merged, valid_cols,
+            n_estimators=n_estimators, max_depth=max_depth,
+            min_coverage=min_coverage, min_win_rate=min_win_rate,
+            max_rules=max_rules, train_test_split=train_test_split,
+            progress_callback=_cb,
+        )
+    else:
+        # Quick mode — current behavior (unchanged)
+        final_rules, model_metrics = _discover_quick(
+            X, y, pips, merged, valid_cols,
+            n_estimators=n_estimators, max_depth=max_depth,
+            min_coverage=min_coverage, min_win_rate=min_win_rate,
+            max_rules=max_rules, train_test_split=train_test_split,
+            progress_callback=_cb,
+        )
 
-    unique  = _deduplicate(all_rules)
-    quality = [r for r in unique
-               if r['win_rate'] >= min_win_rate
-               and r['prediction'] == 'WIN']
-
-    for r in quality:
-        r['score'] = (r['win_rate'] * np.sqrt(r['coverage'])
-                      * max(1 + r['avg_pips'] / 200, 0.1))
-    quality.sort(key=lambda r: r['score'], reverse=True)
-
-    final_rules = quality[:max_rules]
-    elapsed     = time.time() - start
+    elapsed = time.time() - start
 
     _cb(total_steps, total_steps,
         f"Done! {len(final_rules)} rules from {n_candles} candles in {elapsed:.0f}s")
+
+    model_metrics['n_estimators'] = n_estimators
+    model_metrics['max_depth'] = max_depth
 
     result = {
         "method":             "scratch_xgboost",
@@ -438,6 +408,7 @@ def run_scratch_discovery(
         "computation_time_s": round(elapsed, 1),
         "candles_analyzed":   n_candles,
         "base_win_rate":      round(win_rate_base, 3),
+        "entry_timeframe":    entry_timeframe or 'H1',
         "sl_pips":            sl_pips,
         "tp_pips":            tp_pips,
         "direction":          direction,
@@ -446,14 +417,9 @@ def run_scratch_discovery(
         "features_used":      len(valid_cols),
         "original_features":  n_original,
         "smart_features":     n_smart,
+        "discovery_mode":     discovery_mode,
         "rules":              final_rules,
-        "model_metrics": {
-            "train_accuracy":          round(train_acc, 4),
-            "test_accuracy":           round(test_acc,  4),
-            "n_estimators":            n_estimators,
-            "max_depth":               max_depth,
-            "feature_importance_top_20": top_features[:20],
-        },
+        "model_metrics":      model_metrics,
         "profile": {
             "method":           "Scratch Discovery (no robot needed)",
             "candles_analyzed": n_candles,
@@ -507,6 +473,10 @@ def activate_scratch_rules():
         current = {}
 
     current['rules'] = scratch['rules']
+    # WHY: P2 reads entry_timeframe from this file to load the correct candle CSV.
+    #      Without this, everything defaults to H1 even if rules were found on M15.
+    # CHANGED: April 2026 — entry TF travels with the rules
+    current['entry_timeframe'] = scratch.get('entry_timeframe', 'H1')
     current['feature_importance'] = {
         'top_20':         scratch['model_metrics'].get('feature_importance_top_20', []),
         'train_accuracy': scratch['model_metrics']['train_accuracy'],
@@ -534,6 +504,377 @@ def restore_previous_rules():
 
     shutil.copy2(backup_path, report_path)
     os.remove(backup_path)
+
+
+def _discover_quick(X, y, pips, merged, valid_cols,
+                    n_estimators=300, max_depth=4, min_coverage=100,
+                    min_win_rate=0.55, max_rules=25, train_test_split=0.7,
+                    progress_callback=None):
+    """
+    QUICK MODE: Current approach — XGBoost → top 30 → decision tree → rules.
+    Fast (~5 min) but greedy — can miss combinations that work together.
+    """
+    def _cb(step, msg):
+        if progress_callback:
+            progress_callback(step, 6, msg)
+
+    _cb(5, f"[Quick] Training XGBoost on {len(X)} rows x {len(valid_cols)} features...")
+
+    from xgboost import XGBClassifier
+    from sklearn.tree import DecisionTreeClassifier
+
+    split_idx = int(len(X) * train_test_split)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+
+    model = XGBClassifier(
+        n_estimators=n_estimators, max_depth=max_depth,
+        learning_rate=0.05, subsample=0.8, colsample_bytree=0.7,
+        min_child_weight=min_coverage, reg_alpha=0.1, reg_lambda=1.0,
+        random_state=42, eval_metric='logloss', n_jobs=-1,
+    )
+    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+    train_acc = model.score(X_train, y_train)
+    test_acc = model.score(X_test, y_test)
+
+    importances = model.feature_importances_
+    top_indices = np.argsort(importances)[::-1]
+    top_features = [(valid_cols[i], float(importances[i])) for i in top_indices[:50]]
+
+    _cb(6, "[Quick] Extracting rules from decision tree...")
+
+    top_feat_names = [f[0] for f in top_features[:30]]
+    X_top = X[top_feat_names]
+
+    all_rules = []
+    for depth in [3, 4, 5]:
+        tree = DecisionTreeClassifier(
+            max_depth=depth, min_samples_leaf=min_coverage,
+            random_state=42 + depth,
+        )
+        tree.fit(X_top, y)
+        rules = _extract_rules(tree, top_feat_names, X_top, y, pips, merged,
+                               max_rules=10, min_coverage=min_coverage)
+        all_rules.extend(rules)
+
+    unique = _deduplicate(all_rules)
+    quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    for r in quality:
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+    quality.sort(key=lambda r: r['score'], reverse=True)
+
+    model_metrics = {
+        'train_accuracy': round(train_acc, 4),
+        'test_accuracy': round(test_acc, 4),
+        'feature_importance_top_20': top_features[:20],
+        'discovery_mode': 'quick',
+    }
+
+    return quality[:max_rules], model_metrics
+
+
+def _discover_deep(X, y, pips, merged, valid_cols,
+                   n_estimators=300, max_depth=4, min_coverage=100,
+                   min_win_rate=0.55, max_rules=25, train_test_split=0.7,
+                   progress_callback=None):
+    """
+    DEEP MODE: Run XGBoost 10 times with different random subsets → union top features
+    → test ALL combinations of those features exhaustively.
+
+    WHY: Quick mode picks features greedily. Deep mode ensures every combination of
+    the top features is tested, finding combos that only work together.
+
+    Process:
+    1. Train XGBoost 10 times with colsample_bytree=0.3 and different seeds
+    2. Collect feature importances from all 10 runs
+    3. Union the top features → pool of ~50 best features
+    4. For each combination of `max_depth` features from that pool:
+       - Fit a small decision tree on just those features
+       - Extract the best rule from that tree
+    5. Score, deduplicate, return best rules
+
+    ~20-30 minutes for 50 features at depth 4 (230K combinations)
+    """
+    from xgboost import XGBClassifier
+    from sklearn.tree import DecisionTreeClassifier
+    from itertools import combinations
+
+    def _cb(step, total, msg):
+        if progress_callback:
+            progress_callback(step, total, msg)
+
+    total_steps = 12  # 10 xgb runs + combo search + scoring
+
+    split_idx = int(len(X) * train_test_split)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+
+    # ── Phase 1: Multi-run XGBoost to discover diverse features ───────────
+    all_importances = {}  # feature_name → max importance across runs
+    n_runs = 10
+    model = None
+
+    for run_i in range(n_runs):
+        _cb(run_i + 1, total_steps,
+            f"[Deep] XGBoost run {run_i+1}/{n_runs} (colsample=0.3, seed={42+run_i})...")
+
+        model = XGBClassifier(
+            n_estimators=n_estimators, max_depth=max_depth,
+            learning_rate=0.05, subsample=0.8,
+            colsample_bytree=0.3,  # Each run sees only 30% of features
+            min_child_weight=min_coverage, reg_alpha=0.1, reg_lambda=1.0,
+            random_state=42 + run_i, eval_metric='logloss', n_jobs=-1,
+        )
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+        for idx, imp in enumerate(model.feature_importances_):
+            feat = valid_cols[idx]
+            if imp > 0:
+                all_importances[feat] = max(all_importances.get(feat, 0), float(imp))
+
+    # ── Phase 2: Select top features from union of all runs ───────────────
+    sorted_feats = sorted(all_importances.items(), key=lambda x: x[1], reverse=True)
+    n_top = min(50, len(sorted_feats))  # Top 50 features from all runs
+    top_feat_names = [f[0] for f in sorted_feats[:n_top]]
+
+    _cb(n_runs + 1, total_steps,
+        f"[Deep] Found {len(all_importances)} useful features across {n_runs} runs. "
+        f"Testing all combos of top {n_top}...")
+
+    # ── Phase 3: Test ALL combinations of top features ────────────────────
+    # For depth=4 with 50 features: C(50,4) = 230,300 combos
+    X_pool = X[top_feat_names]
+    all_rules = []
+    combo_list = list(combinations(range(n_top), max_depth))
+    total_combos = len(combo_list)
+
+    _cb(n_runs + 1, total_steps,
+        f"[Deep] Testing {total_combos:,} combinations of {max_depth} features...")
+
+    batch_size = max(1, total_combos // 20)  # Report progress ~20 times
+
+    for ci, combo in enumerate(combo_list):
+        if ci % batch_size == 0:
+            pct = ci / total_combos * 100
+            _cb(n_runs + 1, total_steps,
+                f"[Deep] Combo {ci:,}/{total_combos:,} ({pct:.0f}%)...")
+
+        feat_names = [top_feat_names[i] for i in combo]
+        X_combo = X_pool[feat_names]
+
+        try:
+            tree = DecisionTreeClassifier(
+                max_depth=max_depth, min_samples_leaf=min_coverage,
+                random_state=42,
+            )
+            tree.fit(X_combo, y)
+            rules = _extract_rules(tree, feat_names, X_combo, y, pips, merged,
+                                   max_rules=2, min_coverage=min_coverage)
+            all_rules.extend(rules)
+        except Exception:
+            continue
+
+    # ── Phase 4: Score and deduplicate ────────────────────────────────────
+    _cb(n_runs + 2, total_steps, f"[Deep] Scoring {len(all_rules)} candidate rules...")
+
+    unique = _deduplicate(all_rules)
+    quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    for r in quality:
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+    quality.sort(key=lambda r: r['score'], reverse=True)
+
+    test_acc = model.score(X_test, y_test) if model else 0
+    train_acc = model.score(X_train, y_train) if model else 0
+
+    model_metrics = {
+        'train_accuracy': round(train_acc, 4),
+        'test_accuracy': round(test_acc, 4),
+        'feature_importance_top_20': sorted_feats[:20],
+        'discovery_mode': 'deep',
+        'xgb_runs': n_runs,
+        'features_pool': n_top,
+        'combos_tested': total_combos,
+        'candidates_found': len(all_rules),
+    }
+
+    return quality[:max_rules], model_metrics
+
+
+def _discover_exhaustive(X, y, pips, merged, valid_cols,
+                         n_estimators=300, max_depth=4, min_coverage=100,
+                         min_win_rate=0.55, max_rules=25, train_test_split=0.7,
+                         progress_callback=None):
+    """
+    EXHAUSTIVE MODE: Genetic algorithm that searches ALL features (not just top 50).
+
+    WHY: Deep mode tests all combos of the top 50 features. But what if the best
+    combination includes feature #200 that XGBoost ranked as unimportant? Genetic
+    search explores the FULL feature space by evolving combinations over generations.
+
+    Process:
+    1. Create 500 random combinations of `max_depth` features from ALL valid features
+    2. Score each combination (fit small tree, extract best rule, compute score)
+    3. Keep the top 100 (selection)
+    4. Create new combos by mixing features from two good parents (crossover)
+    5. Randomly swap in features from the full pool (mutation)
+    6. Repeat for 100 generations
+    7. Final generation → extract and return best rules
+
+    ~1-2 hours for 670 features × 100 generations × 500 population
+    """
+    from sklearn.tree import DecisionTreeClassifier
+    import random as rng
+
+    def _cb(step, total, msg):
+        if progress_callback:
+            progress_callback(step, total, msg)
+
+    rng.seed(42)
+    n_features = len(valid_cols)
+    population_size = 500
+    n_generations = 100
+    n_keep = 100          # Top survivors per generation
+    mutation_rate = 0.2   # Chance of swapping one feature for a random one
+    crossover_rate = 0.6  # Chance of breeding two parents
+    total_steps = n_generations + 2
+
+    # Baseline XGBoost for metrics and seeding
+    _cb(1, total_steps, f"[Exhaustive] Baseline XGBoost on {n_features} features...")
+
+    from xgboost import XGBClassifier
+    split_idx = int(len(X) * train_test_split)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+
+    baseline_model = XGBClassifier(
+        n_estimators=n_estimators, max_depth=max_depth,
+        learning_rate=0.05, subsample=0.8, colsample_bytree=0.7,
+        min_child_weight=min_coverage, random_state=42,
+        eval_metric='logloss', n_jobs=-1,
+    )
+    baseline_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+    train_acc = baseline_model.score(X_train, y_train)
+    test_acc = baseline_model.score(X_test, y_test)
+
+    importances = baseline_model.feature_importances_
+    top_indices = np.argsort(importances)[::-1][:50]
+
+    def _score_combo(feature_indices):
+        """Score a feature combination: fit tree, extract best rule, return score."""
+        feat_names = [valid_cols[i] for i in feature_indices]
+        X_combo = X[feat_names]
+        try:
+            tree = DecisionTreeClassifier(
+                max_depth=max_depth, min_samples_leaf=min_coverage,
+                random_state=42,
+            )
+            tree.fit(X_combo, y)
+            rules = _extract_rules(tree, feat_names, X_combo, y, pips, merged,
+                                   max_rules=1, min_coverage=min_coverage)
+            if rules and rules[0]['prediction'] == 'WIN':
+                r = rules[0]
+                return r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1), r
+            return 0.0, None
+        except Exception:
+            return 0.0, None
+
+    # ── Phase 1: Initialize population ────────────────────────────────────
+    _cb(2, total_steps, f"[Exhaustive] Creating initial population of {population_size}...")
+
+    population = []
+    # 20% seeded from XGBoost top features
+    n_seeded = population_size // 5
+    for _ in range(n_seeded):
+        combo = tuple(rng.sample(list(top_indices), min(max_depth, len(top_indices))))
+        if len(combo) == max_depth:
+            population.append(combo)
+
+    # 80% random from all features
+    while len(population) < population_size:
+        combo = tuple(rng.sample(range(n_features), max_depth))
+        population.append(combo)
+
+    # ── Phase 2: Evolution ────────────────────────────────────────────────
+    best_ever_score = 0.0
+    all_good_rules = []
+
+    for gen in range(n_generations):
+        _cb(gen + 2, total_steps,
+            f"[Exhaustive] Generation {gen+1}/{n_generations} — "
+            f"pop: {len(population)}, best score: {best_ever_score:.1f}...")
+
+        # Score all combos
+        scored = []
+        for combo in population:
+            score, rule = _score_combo(combo)
+            scored.append((score, combo, rule))
+
+            if score > best_ever_score:
+                best_ever_score = score
+
+            if rule and rule['win_rate'] >= min_win_rate:
+                all_good_rules.append(rule)
+
+        # Sort by score
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Keep top N (selection)
+        survivors = [s[1] for s in scored[:n_keep]]
+
+        # Build next generation
+        next_gen = list(survivors)  # Elitism: keep all survivors
+
+        while len(next_gen) < population_size:
+            if rng.random() < crossover_rate and len(survivors) >= 2:
+                # Crossover: pick 2 parents, mix their features
+                p1, p2 = rng.sample(survivors, 2)
+                child = []
+                for i in range(max_depth):
+                    child.append(p1[i] if rng.random() < 0.5 else p2[i])
+                # Ensure no duplicates
+                child = list(set(child))
+                while len(child) < max_depth:
+                    child.append(rng.randint(0, n_features - 1))
+                next_gen.append(tuple(child[:max_depth]))
+            else:
+                # Random new combo (exploration)
+                next_gen.append(tuple(rng.sample(range(n_features), max_depth)))
+
+        # Mutation: randomly swap one feature
+        for i in range(n_keep, len(next_gen)):
+            if rng.random() < mutation_rate:
+                combo = list(next_gen[i])
+                idx_to_replace = rng.randint(0, max_depth - 1)
+                combo[idx_to_replace] = rng.randint(0, n_features - 1)
+                next_gen[i] = tuple(combo)
+
+        population = next_gen[:population_size]
+
+    # ── Phase 3: Final scoring and deduplication ──────────────────────────
+    _cb(n_generations + 2, total_steps,
+        f"[Exhaustive] Scoring {len(all_good_rules)} candidate rules from {n_generations} generations...")
+
+    unique = _deduplicate(all_good_rules)
+    quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    for r in quality:
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+    quality.sort(key=lambda r: r['score'], reverse=True)
+
+    model_metrics = {
+        'train_accuracy': round(train_acc, 4),
+        'test_accuracy': round(test_acc, 4),
+        'feature_importance_top_20': [(valid_cols[i], float(importances[i]))
+                                      for i in top_indices[:20]],
+        'discovery_mode': 'exhaustive',
+        'generations': n_generations,
+        'population_size': population_size,
+        'total_features': n_features,
+        'candidates_found': len(all_good_rules),
+        'best_score': round(best_ever_score, 2),
+    }
+
+    return quality[:max_rules], model_metrics
 
 
 def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100):

@@ -25,6 +25,8 @@ def generate_ea(
     strategy,
     platform='mt5',
     prop_firm=None,
+    stage='evaluation',
+    entry_timeframe='H1',
     symbol='XAUUSD',
     magic_number=None,
     risk_per_trade_pct=1.0,
@@ -67,6 +69,15 @@ def generate_ea(
         dd_safety_pct = prop_firm.get('safety_pct',     80.0)
         consistency   = prop_firm.get('consistency_pct', 0.0)
 
+    # WHY: trading_rules drive what MQL5 code is generated.
+    #      drawdown_mechanics drive HOW DD is tracked (different per firm).
+    #      No hardcoding — if a field doesn't exist in JSON, that code isn't generated.
+    trading_rules = prop_firm.get('trading_rules', []) if prop_firm else []
+    dd_mechanics  = prop_firm.get('drawdown_mechanics', {}) if prop_firm else {}
+    account_size  = prop_firm.get('account_size', 10000) if prop_firm else 10000
+    restrictions  = prop_firm.get('restrictions', {}) if prop_firm else {}
+    challenge     = prop_firm.get('challenge', {}) if prop_firm else {}
+
     if platform == 'mt5':
         code = _generate_mt5(
             win_rules=win_rules,
@@ -90,6 +101,13 @@ def generate_ea(
             score=score,
             base_stats=base_stats,
             prop_firm_name=prop_firm.get('name', 'None') if prop_firm else 'None',
+            stage=stage,
+            entry_timeframe=entry_timeframe,
+            trading_rules=trading_rules,
+            dd_mechanics=dd_mechanics,
+            account_size=account_size,
+            restrictions=restrictions,
+            challenge=challenge,
         )
     else:
         code = _generate_tradovate(
@@ -130,7 +148,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   day_filter, min_hold_minutes, cooldown_minutes,
                   news_filter_minutes, max_spread_pips,
                   dd_daily_pct, dd_total_pct, dd_safety_pct, consistency_pct,
-                  grade, score, base_stats, prop_firm_name):
+                  grade, score, base_stats, prop_firm_name,
+                  stage='evaluation', trading_rules=None,
+                  dd_mechanics=None, account_size=10000,
+                  restrictions=None, challenge=None,
+                  entry_timeframe='H1'):
 
     handles = get_all_handles_for_rules(win_rules, platform='mt5')
     generated_at = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -138,6 +160,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
     trail_pips = exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))
+
+    # WHY: EA checks for new bar on the entry timeframe, not always H1.
+    _mql_periods = {
+        'M1': 'PERIOD_M1', 'M5': 'PERIOD_M5', 'M15': 'PERIOD_M15',
+        'H1': 'PERIOD_H1', 'H4': 'PERIOD_H4', 'D1': 'PERIOD_D1',
+    }
+    mql_period = _mql_periods.get(entry_timeframe, 'PERIOD_H1')
 
     # Build condition input params
     condition_inputs = []
@@ -171,6 +200,344 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     conditions_block = '\n'.join(condition_inputs)
     conditions_check_block = '\n'.join(condition_checks)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # RULES-DRIVEN MQL5 CODE GENERATION
+    # WHY: Each trading_rule in the JSON produces specific MQL5 code.
+    #      The generator checks rule['type'] and rule['parameters'] to decide
+    #      what code to produce. If a param doesn't exist, that code isn't generated.
+    #      This means adding a new firm = adding a JSON, not changing Python code.
+    # ══════════════════════════════════════════════════════════════════════
+
+    if trading_rules is None:
+        trading_rules = []
+    if dd_mechanics is None:
+        dd_mechanics = {}
+    if restrictions is None:
+        restrictions = {}
+    if challenge is None:
+        challenge = {}
+
+    stage_rules = [r for r in trading_rules if r.get('stage', '') == stage]
+
+    extra_inputs    = []
+    extra_globals   = []
+    extra_init      = []
+    extra_daily_reset = []
+    extra_tick_checks = []   # runs every tick BEFORE entry check
+    extra_functions = []
+    extra_on_trade  = []     # runs when a trade closes (OnTradeTransaction)
+
+    # Track what capabilities are needed
+    has_winning_cap     = False
+    has_consistency     = False
+    has_min_profit_days = False
+    has_protect_phase   = False
+    has_period_reset    = False
+    funded_risk_pct     = None
+
+    for rule in stage_rules:
+        rtype  = rule.get('type', '')
+        params = rule.get('parameters', {})
+        rname  = rule.get('name', rule.get('id', ''))
+
+        # ── eval_settings: DD buffers only (risk/trades are from optimizer) ──
+        # WHY: The firm blows the account at X%. The EA stops at X-buffer%.
+        #      This protects against a final bad trade pushing past the limit.
+        if rtype == 'eval_settings':
+            daily_alert = params.get('daily_dd_alert_pct')
+            total_alert = params.get('total_dd_alert_pct')
+
+            if daily_alert is not None:
+                extra_inputs.append(f'input double EvalDailyDDAlert = {daily_alert}; // EA stops here (firm blows at {dd_daily_pct}%)')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Daily DD alert at {daily_alert}% (firm limit: {dd_daily_pct}%)\n'
+                    f'   if(UsePropFirmMode && !g_stopForDay)\n'
+                    f'   {{\n'
+                    f'      double dailyLossPct = (g_dailyReference > 0) ? (g_dailyReference - equity) / g_dailyReference * 100.0 : 0;\n'
+                    f'      if(dailyLossPct >= EvalDailyDDAlert)\n'
+                    f'      {{\n'
+                    f'         g_stopForDay = true;\n'
+                    f'         CloseAllPositions("DailyDDBuffer");\n'
+                    f'         Print("[EVAL] Daily DD buffer hit: ", DoubleToString(dailyLossPct,1), "%");\n'
+                    f'         return;\n'
+                    f'      }}\n'
+                    f'   }}')
+
+            if total_alert is not None:
+                extra_inputs.append(f'input double EvalTotalDDAlert = {total_alert}; // EA stops here (firm blows at {dd_total_pct}%)')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Total DD alert at {total_alert}% (firm limit: {dd_total_pct}%)\n'
+                    f'   if(UsePropFirmMode)\n'
+                    f'   {{\n'
+                    f'      double totalDDPct = (g_hwm > 0) ? (g_hwm - equity) / g_hwm * 100.0 : 0;\n'
+                    f'      if(totalDDPct >= EvalTotalDDAlert)\n'
+                    f'      {{\n'
+                    f'         g_stopForever = true;\n'
+                    f'         CloseAllPositions("TotalDDBuffer");\n'
+                    f'         Alert("[EVAL] Total DD buffer hit: " + DoubleToString(totalDDPct,1) + "%");\n'
+                    f'         return;\n'
+                    f'      }}\n'
+                    f'   }}')
+
+        # ── funded_accumulate: win cap + DD alerts with payout status ────────
+        elif rtype == 'funded_accumulate':
+            if 'risk_pct' in params:
+                funded_risk_pct = params['risk_pct']
+
+            if 'max_winning_trades_per_day' in params:
+                has_winning_cap = True
+                mw = params['max_winning_trades_per_day']
+                extra_inputs.append(f'input int MaxWinTradesPerDay = {mw}; // [{rname}]')
+                extra_globals.append(f'int g_dailyWins = 0;')
+                extra_daily_reset.append(f'   g_dailyWins = 0;')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Stop after {mw} winning trades\n'
+                    f'   if(g_dailyWins >= MaxWinTradesPerDay)\n'
+                    f'   {{ LogSkip("max_wins_reached", g_dailyWins); return; }}')
+
+            # DD alert with payout condition status
+            # WHY: The alert includes whether payout conditions are met,
+            #      so the user knows: "met → stop & collect" or "not met → careful"
+            if 'daily_dd_alert_pct' in params:
+                da = params['daily_dd_alert_pct']
+                extra_inputs.append(f'input double FundedDailyDDAlert = {da}; // [{rname}]')
+                extra_globals.append(f'bool g_dailyAlertSent = false;')
+                extra_daily_reset.append(f'   g_dailyAlertSent = false;')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Daily DD alert at {da}%\n'
+                    f'   if(UsePropFirmMode && !g_dailyAlertSent)\n'
+                    f'   {{\n'
+                    f'      double dailyLossPct = (g_dailyReference > 0) ? (g_dailyReference - equity) / g_dailyReference * 100.0 : 0;\n'
+                    f'      if(dailyLossPct >= FundedDailyDDAlert)\n'
+                    f'      {{\n'
+                    f'         string cs = GetPayoutStatus();\n'
+                    f'         SendNotification("[DD] Daily " + DoubleToString(dailyLossPct,1) + "% | " + cs);\n'
+                    f'         SendMail("[DD] " + _Symbol, "Daily DD: " + DoubleToString(dailyLossPct,1) + "% | " + cs);\n'
+                    f'         g_stopForDay = true;\n'
+                    f'         g_dailyAlertSent = true;\n'
+                    f'         return;\n'
+                    f'      }}\n'
+                    f'   }}')
+
+            if 'emergency_total_dd_pct' in params:
+                em = params['emergency_total_dd_pct']
+                extra_inputs.append(f'input double EmergencyDDPct = {em}; // [{rname}] Stop for PERIOD')
+                extra_globals.append(f'bool g_stoppedForPeriod = false;')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Emergency: stop for rest of period at {em}%\n'
+                    f'   if(g_stoppedForPeriod) {{ LogSkip("stopped_for_period", 0); return; }}\n'
+                    f'   if(UsePropFirmMode)\n'
+                    f'   {{\n'
+                    f'      double totalDDPct = (g_hwm > 0) ? (g_hwm - equity) / g_hwm * 100.0 : 0;\n'
+                    f'      if(totalDDPct >= EmergencyDDPct)\n'
+                    f'      {{\n'
+                    f'         string cs = GetPayoutStatus();\n'
+                    f'         SendNotification("[EMERGENCY] Total DD " + DoubleToString(totalDDPct,1) + "% — stopped for period | " + cs);\n'
+                    f'         SendMail("[EMERGENCY] " + _Symbol, "Total DD " + DoubleToString(totalDDPct,1) + "% — stopped for period\\n" + cs);\n'
+                    f'         g_stoppedForPeriod = true;\n'
+                    f'         CloseAllPositions("EmergencyDD");\n'
+                    f'         return;\n'
+                    f'      }}\n'
+                    f'   }}')
+
+        # ── funded_protect: stop when conditions met ──────────────────────────
+        elif rtype == 'funded_protect':
+            if params.get('stop_trading'):
+                has_protect_phase = True
+                extra_globals.append(f'bool g_payoutCondsMet = false;')
+                extra_tick_checks.append(
+                    f'   // [{rname}] STOP when payout conditions met\n'
+                    f'   if(g_payoutCondsMet)\n'
+                    f'   {{ LogSkip("CONDITIONS_MET_STOP", 0); return; }}')
+
+        # ── consistency: track best day % of total ───────────────────────────
+        elif rtype == 'consistency':
+            has_consistency = True
+            mp = params.get('max_day_pct', 20)
+            extra_inputs.append(f'input double ConsistencyMaxPct = {mp}; // [{rname}]')
+            extra_globals.append(f'double g_bestDayProfit = 0.0;')
+            extra_globals.append(f'double g_periodProfit = 0.0;')
+
+        # ── min_profitable_days ───────────────────────────────────────────────
+        elif rtype == 'min_profitable_days':
+            has_min_profit_days = True
+            md = params.get('min_days', 3)
+            mp = params.get('min_pct_per_day', 0.5)
+            extra_inputs.append(f'input int MinProfitDays = {md}; // [{rname}]')
+            extra_inputs.append(f'input double MinDayProfitPct = {mp}; // Min % per day')
+            extra_globals.append(f'int g_profitDayCount = 0;')
+
+        # ── period_reset: what resets every 14 days ──────────────────────────
+        elif rtype == 'period_reset':
+            has_period_reset = True
+            pd_days = params.get('period_days', 14)
+            extra_inputs.append(f'input int PayoutPeriodDays = {pd_days}; // [{rname}]')
+            extra_globals.append(f'datetime g_periodStart = 0;')
+
+    # ── Override risk for funded stage if specified in JSON ───────────────
+    if funded_risk_pct is not None and stage == 'funded':
+        risk_per_trade_pct = funded_risk_pct
+
+    # ── DD tracking — depends on drawdown_mechanics from JSON ────────────
+    # WHY: Different firms calculate DD differently. Leveraged uses trailing on
+    #      closed balance with HWM lock after +6%. Other firms use static or equity-based DD.
+    #      The JSON describes HOW, the generator produces the matching MQL5 code.
+    trailing_dd  = dd_mechanics.get('trailing_dd', {})
+    daily_dd_mech = dd_mechanics.get('daily_dd', {})
+
+    # Always add DD tracking globals
+    extra_globals.append(f'double g_hwm = 0.0;            // High water mark for total DD')
+    extra_globals.append(f'double g_dailyReference = 0.0; // Daily DD reference point')
+    extra_globals.append(f'double g_startingBalance = 0.0; // Balance at period/session start')
+    extra_globals.append(f'bool   g_ddLocked = false;      // True when trailing DD locks at starting balance')
+
+    # Init
+    extra_init.append(f'   g_startingBalance = AccountInfoDouble(ACCOUNT_BALANCE);')
+    extra_init.append(f'   g_hwm = g_startingBalance;')
+    extra_init.append(f'   g_dailyReference = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
+
+    # HWM update logic depends on trailing type
+    if trailing_dd.get('basis') == 'closed_balance':
+        # WHY: Leveraged tracks HWM on closed trades, not floating equity.
+        #      HWM only moves up when balance increases from a closed trade.
+        extra_on_trade.append(
+            f'   // DD Mechanic: trailing on closed balance (not floating equity)\n'
+            f'   double newBalance = AccountInfoDouble(ACCOUNT_BALANCE);\n'
+            f'   if(newBalance > g_hwm && !g_ddLocked)\n'
+            f'      g_hwm = newBalance;')
+
+        lock_pct = trailing_dd.get('lock_after_gain_pct')
+        if lock_pct:
+            extra_on_trade.append(
+                f'   // DD lock: after +{lock_pct}% gain, floor locks at starting balance\n'
+                f'   if(!g_ddLocked && newBalance >= g_startingBalance * (1.0 + {lock_pct}/100.0))\n'
+                f'   {{\n'
+                f'      g_ddLocked = true;\n'
+                f'      g_hwm = g_startingBalance + g_startingBalance * ({lock_pct}/100.0);\n'
+                f'      Print("[DD] Trailing DD LOCKED at starting balance $", g_startingBalance);\n'
+                f'   }}')
+    else:
+        # Default: HWM updates on equity (standard trailing)
+        extra_tick_checks.insert(0,
+            f'   // DD Mechanic: standard trailing on equity\n'
+            f'   if(equity > g_hwm && !g_ddLocked) g_hwm = equity;')
+
+    # Daily reference depends on firm's daily DD mechanic
+    if daily_dd_mech.get('reference') == 'max_balance_equity':
+        reset_time = daily_dd_mech.get('reset_time', '00:00')
+        reset_tz   = daily_dd_mech.get('reset_timezone', 'GMT+3')
+        extra_daily_reset.insert(0,
+            f'   // Daily DD reference = max(balance, equity) at {reset_time} {reset_tz}\n'
+            f'   g_dailyReference = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
+    else:
+        extra_daily_reset.insert(0,
+            f'   g_dailyReference = AccountInfoDouble(ACCOUNT_EQUITY);')
+
+    # ── Payout condition tracking ─────────────────────────────────────────
+    if has_consistency or has_min_profit_days:
+        if has_min_profit_days:
+            extra_daily_reset.append(
+                f'   // Count profitable days (payout condition)\n'
+                f'   double ydayPnl = AccountInfoDouble(ACCOUNT_BALANCE) - g_sessionEquity;\n'
+                f'   if(ydayPnl >= g_sessionEquity * MinDayProfitPct / 100.0 && g_sessionEquity > 0)\n'
+                f'      g_profitDayCount++;')
+        if has_consistency:
+            extra_daily_reset.append(
+                f'   // Track best day and total profit (consistency)\n'
+                f'   double dayProf = AccountInfoDouble(ACCOUNT_BALANCE) - g_sessionEquity;\n'
+                f'   if(dayProf > g_bestDayProfit) g_bestDayProfit = dayProf;\n'
+                f'   g_periodProfit = AccountInfoDouble(ACCOUNT_BALANCE) - g_startingBalance;')
+
+        if has_protect_phase:
+            conds = ['g_periodProfit > 0']
+            if has_min_profit_days:
+                conds.append('g_profitDayCount >= MinProfitDays')
+            if has_consistency:
+                conds.append('(g_bestDayProfit / g_periodProfit * 100.0 <= ConsistencyMaxPct)')
+            check = ' && '.join(conds)
+            extra_daily_reset.append(
+                f'   // Check ALL payout conditions\n'
+                f'   if(!g_payoutCondsMet && ({check}))\n'
+                f'   {{\n'
+                f'      g_payoutCondsMet = true;\n'
+                f'      CloseAllPositions("PayoutCondsMet");\n'
+                f'      string s = GetPayoutStatus();\n'
+                f'      SendNotification("[PAYOUT] CONDITIONS MET — STOP | " + s);\n'
+                f'      SendMail("[PAYOUT] " + _Symbol, "Conditions met. STOP trading.\\n" + s);\n'
+                f'      Alert("[PAYOUT] CONDITIONS MET. Collect your payout!");\n'
+                f'   }}')
+
+    # ── Period reset (14 days) ────────────────────────────────────────────
+    if has_period_reset:
+        reset_items = []
+        if has_winning_cap:
+            reset_items.append('g_dailyWins = 0;')
+        if has_min_profit_days:
+            reset_items.append('g_profitDayCount = 0;')
+        if has_consistency:
+            reset_items.append('g_bestDayProfit = 0;')
+            reset_items.append('g_periodProfit = 0;')
+        if has_protect_phase:
+            reset_items.append('g_payoutCondsMet = false;')
+        if any('g_stoppedForPeriod' in e for e in extra_globals):
+            reset_items.append('g_stoppedForPeriod = false;')
+        reset_items.append('g_startingBalance = AccountInfoDouble(ACCOUNT_BALANCE);')
+        reset_block = '\n      '.join(reset_items)
+        extra_daily_reset.append(
+            f'   // Period reset check (every {{}}-day cycle)\n'
+            f'   if(g_periodStart == 0) g_periodStart = TimeCurrent();\n'
+            f'   if(TimeCurrent() - g_periodStart >= PayoutPeriodDays * 86400)\n'
+            f'   {{\n'
+            f'      g_periodStart = TimeCurrent();\n'
+            f'      {reset_block}\n'
+            f'      Print("[PERIOD] New period started. Balance: $", g_startingBalance);\n'
+            f'   }}')
+
+    # ── GetPayoutStatus function ──────────────────────────────────────────
+    parts = ['"Status: "']
+    if has_min_profit_days:
+        parts.append('"Days=" + IntegerToString(g_profitDayCount) + "/" + IntegerToString(MinProfitDays)')
+    if has_consistency:
+        parts.append('"Best=" + DoubleToString(g_periodProfit>0 ? g_bestDayProfit/g_periodProfit*100 : 0, 1) + "%"')
+    parts.append('"Profit=$" + DoubleToString(g_periodProfit, 0)')
+    if has_protect_phase:
+        parts.append('(g_payoutCondsMet ? " MET" : " NOT MET")')
+    extra_functions.append(
+        f'string GetPayoutStatus()\n'
+        f'{{ return {" + ".join(parts)}; }}')
+
+    # ── OnTradeTransaction ────────────────────────────────────────────────
+    on_trade_body = '\n'.join(extra_on_trade)
+    if has_winning_cap or on_trade_body:
+        win_cap_code = ''
+        if has_winning_cap:
+            win_cap_code = (
+                f'   if(dealProfit > 0) {{\n'
+                f'      g_dailyWins++;\n'
+                f'      if(g_dailyWins >= MaxWinTradesPerDay) {{\n'
+                f'         g_stopForDay = true;\n'
+                f'         Print("[RULE] Max wins reached: ", g_dailyWins);\n'
+                f'      }}\n'
+                f'   }}')
+        extra_functions.append(
+            f'void OnTradeTransaction(const MqlTradeTransaction &trans,\n'
+            f'                         const MqlTradeRequest &request,\n'
+            f'                         const MqlTradeResult &result)\n'
+            f'{{\n'
+            f'   if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;\n'
+            f'   double dealProfit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT);\n'
+            f'{win_cap_code}\n'
+            f'{on_trade_body}\n'
+            f'}}')
+
+    # ── Build injection strings ───────────────────────────────────────────
+    extra_inputs_block      = '\n'.join(extra_inputs)      if extra_inputs      else ''
+    extra_globals_block     = '\n'.join(extra_globals)     if extra_globals     else ''
+    extra_init_block        = '\n'.join(extra_init)        if extra_init        else '   // No special init'
+    extra_daily_reset_block = '\n'.join(extra_daily_reset) if extra_daily_reset else ''
+    extra_tick_checks_block = '\n'.join(extra_tick_checks) if extra_tick_checks else ''
+    extra_functions_block   = '\n\n'.join(extra_functions) if extra_functions   else 'string GetPayoutStatus() { return "N/A"; }'
+
     code = f"""\
 //+------------------------------------------------------------------+
 //| Strategy: {exit_name}                                             |
@@ -199,9 +566,8 @@ input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
 input bool   UseNewsFilter      = true;                      // Skip trading around news
 input int    NewsFilterMinutes  = {news_filter_minutes};     // Minutes before/after news
 input bool   UsePropFirmMode    = true;                      // Enable prop firm safety
-input double DailyDDLimitPct    = {dd_daily_pct};           // Daily drawdown limit %
-input double TotalDDLimitPct    = {dd_total_pct};           // Total drawdown limit %
-input double DailySafetyPct     = {dd_safety_pct};          // Stop at X% of daily limit
+input double DailyDDLimitPct    = {dd_daily_pct};           // Daily DD blow limit % (firm closes account here)
+input double TotalDDLimitPct    = {dd_total_pct};           // Total DD blow limit % (firm closes account here)
 input bool   LogTrades          = true;                      // Log trades to CSV
 input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file path
 //--- Exit parameters
@@ -210,6 +576,7 @@ input double TPPips             = {tp_pips};                 // Take profit (pip
 input double TrailPips          = {trail_pips};              // Trailing stop (pips, 0=off)
 //--- Entry rule thresholds (one per condition — tweak without recompiling)
 {conditions_block}
+{extra_inputs_block}
 
 //--- Global variables
 CTrade         trade;
@@ -224,6 +591,7 @@ bool   g_stopForever     = false;
 datetime g_lastTradeTime = 0;
 datetime g_lastBarTime   = 0;
 int    g_logHandle       = INVALID_HANDLE;
+{extra_globals_block}
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                              |
@@ -248,6 +616,7 @@ int OnInit()
 
    g_sessionEquity   = AccountInfoDouble(ACCOUNT_EQUITY);
    g_dailyHighEquity = g_sessionEquity;
+{extra_init_block}
    Print("[EA] Started. Magic=", MagicNumber, " Equity=", g_sessionEquity);
    return(INIT_SUCCEEDED);
 }}
@@ -276,32 +645,10 @@ void OnTick()
    //--- Update daily high equity
    if(equity > g_dailyHighEquity) g_dailyHighEquity = equity;
 
-   //--- Check drawdown limits
-   if(UsePropFirmMode)
-   {{
-      double dailyLoss = g_sessionEquity - equity;
-      double dailyLimit = g_sessionEquity * DailyDDLimitPct / 100.0;
-      if(dailyLoss >= dailyLimit * DailySafetyPct / 100.0 && !g_stopForDay)
-      {{
-         g_stopForDay = true;
-         CloseAllPositions("DailyDDLimit");
-         Print("[RISK] Daily DD limit reached. Stopping for today.");
-         return;
-      }}
-      double totalDD = g_sessionEquity - equity;
-      if(totalDD >= g_sessionEquity * TotalDDLimitPct / 100.0)
-      {{
-         g_stopForever = true;
-         CloseAllPositions("TotalDDLimit");
-         Alert("[RISK] TOTAL DD LIMIT REACHED. EA disabled.");
-         return;
-      }}
-   }}
-
    if(g_stopForDay) return;
 
    //--- Check for new bar
-   datetime currentBarTime = iTime(_Symbol, PERIOD_H1, 0);
+   datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    if(currentBarTime == g_lastBarTime) return;
    g_lastBarTime = currentBarTime;
 
@@ -316,6 +663,7 @@ void OnTick()
       g_stopForDay     = false;
       g_sessionEquity  = equity;
       g_dailyHighEquity = equity;
+{extra_daily_reset_block}
    }}
 
    //--- Skip checks
@@ -338,6 +686,7 @@ void OnTick()
    if(UseNewsFilter && IsNewsImminent())
    {{ LogSkip("news_filter", 0); return; }}
 
+{extra_tick_checks_block}
    //--- Check entry conditions
    bool entrySignal = true;
 
@@ -493,6 +842,7 @@ void LogSkip(string reason, double val)
    FileFlush(g_logHandle);
 }}
 //+------------------------------------------------------------------+
+{extra_functions_block}
 """
     return code
 

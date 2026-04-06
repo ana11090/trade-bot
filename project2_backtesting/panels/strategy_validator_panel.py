@@ -150,6 +150,7 @@ class _Tooltip:
 
 
 # ── Module-level state ────────────────────────────────────────────────────────
+_batch_mode     = False
 _strategy_var   = None
 _strategies     = []
 _tree           = None
@@ -419,9 +420,62 @@ def _get_strategy_meta(idx):
 
 
 def _get_candles_path():
+    """Get candle CSV path for the entry TF the rules were discovered on.
+
+    Priority:
+      1. backtest_matrix.json → entry_timeframe (what the backtest ran on)
+      2. analysis_report.json → entry_timeframe (what P4 discovery used)
+      3. Configuration → winning_scenario (user's current setting)
+      4. Fallback → H1
+
+    WHY: Rules found on M15 must be validated on M15 candles.
+    CHANGED: April 2026 — reads TF from rules, not hardcoded H1
+    """
+    entry_tf = None
+
+    # 1. Try backtest_matrix.json
+    try:
+        matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                   'outputs', 'backtest_matrix.json')
+        if os.path.exists(matrix_path):
+            import json as _json
+            with open(matrix_path, 'r') as f:
+                meta = _json.load(f)
+            entry_tf = meta.get('entry_timeframe') or None
+    except Exception:
+        pass
+
+    # 2. Try analysis_report.json
+    if not entry_tf:
+        try:
+            report_path = os.path.join(project_root, 'project1_reverse_engineering',
+                                       'outputs', 'analysis_report.json')
+            if os.path.exists(report_path):
+                import json as _json
+                with open(report_path, 'r') as f:
+                    report = _json.load(f)
+                entry_tf = report.get('entry_timeframe') or None
+        except Exception:
+            pass
+
+    # 3. Try Configuration
+    if not entry_tf:
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            cfg = load_config()
+            entry_tf = cfg.get('winning_scenario') or None
+        except Exception:
+            pass
+
+    # 4. Fallback
+    if not entry_tf:
+        entry_tf = 'H1'
+
+    symbol = 'xauusd'
     for p in [
-        os.path.join(project_root, 'data', 'xauusd_H1.csv'),
-        os.path.join(project_root, 'data', 'xauusd', 'H1.csv'),
+        os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
+        os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
+        os.path.join(project_root, 'data', f'{symbol}_H1.csv'),  # last resort
     ]:
         if os.path.exists(p):
             return p
@@ -1392,46 +1446,205 @@ def _make_progress_cb(label_text):
     return _cb
 
 
+def _display_batch_summary(batch_results):
+    """Show a summary table of all validated strategies after batch run."""
+    if _verdict_frame is None:
+        return
+    for w in _verdict_frame.winfo_children():
+        w.destroy()
+
+    if not batch_results:
+        return
+
+    # Title
+    tk.Label(_verdict_frame, text=f"✅ Batch Validation Summary — {len(batch_results)} strategies",
+             font=("Segoe UI", 13, "bold"), bg=BG, fg=DARK).pack(anchor="w", padx=5, pady=(10, 8))
+
+    # Sort by score descending
+    batch_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+
+    # Table frame
+    table = tk.Frame(_verdict_frame, bg=WHITE, padx=10, pady=8)
+    table.pack(fill="x", padx=5, pady=(0, 8))
+
+    # Header
+    hdr = tk.Frame(table, bg="#e8ecf0")
+    hdr.pack(fill="x")
+    cols = [
+        ("Strategy", 28), ("Trades", 8), ("WR", 7), ("PF", 7),
+        ("WF Verdict", 16), ("MC", 12), ("Slip", 12),
+        ("Grade", 7), ("Score", 7),
+    ]
+    for text, w in cols:
+        tk.Label(hdr, text=text, font=("Consolas", 8, "bold"),
+                 bg="#e8ecf0", fg="#333", width=w, anchor="w").pack(side=tk.LEFT, padx=1)
+
+    # Rows
+    grade_colors = {'A': "#28a745", 'B': "#2d8a4e", 'C': "#996600", 'D': "#e67e00", 'F': "#e94560"}
+    verdict_short = {
+        'LIKELY_REAL': '✅ Real', 'INCONCLUSIVE': '⚠️ Unclear',
+        'LIKELY_OVERFITTING': '❌ Overfit', 'INSUFFICIENT_DATA': '⚪ No data',
+        'ROBUST': '✅ Robust', 'MODERATE': '⚠️ Moderate', 'FRAGILE': '❌ Fragile',
+        'NO_EDGE': '❌ No edge', 'N/A': '—', 'ERROR': '❌ Error',
+    }
+
+    for i, br in enumerate(batch_results):
+        grade = br.get('grade', '?')
+        score = br.get('score', 0)
+        g_color = grade_colors.get(grade, GREY)
+        row_bg = "#f8f9fa" if i % 2 == 0 else WHITE
+
+        row = tk.Frame(table, bg=row_bg)
+        row.pack(fill="x")
+
+        strategy_name = f"{br.get('rule_combo', '?')} × {br.get('exit_name', '?')}"
+        wr = br.get('win_rate', 0)
+        wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+
+        values = [
+            (strategy_name, 28, "#333"),
+            (str(br.get('total_trades', 0)), 8, "#333"),
+            (wr_str, 7, "#333"),
+            (f"{br.get('net_profit_factor', 0):.2f}", 7, "#333"),
+            (verdict_short.get(br.get('wf_verdict', 'N/A'), br.get('wf_verdict', '?')), 16, "#333"),
+            (verdict_short.get(br.get('mc_verdict', 'N/A'), br.get('mc_verdict', '?')), 12, "#333"),
+            (verdict_short.get(br.get('slip_verdict', 'N/A'), br.get('slip_verdict', '?')), 12, "#333"),
+            (grade, 7, g_color),
+            (str(score), 7, g_color),
+        ]
+
+        for text, w, fg in values:
+            tk.Label(row, text=text, font=("Consolas", 8),
+                     bg=row_bg, fg=fg, width=w, anchor="w").pack(side=tk.LEFT, padx=1)
+
+    # Best strategy highlight
+    best = batch_results[0]
+    best_name = f"{best.get('rule_combo', '?')} × {best.get('exit_name', '?')}"
+
+    highlight = tk.Frame(_verdict_frame, bg="#e8f5e9", padx=12, pady=8)
+    highlight.pack(fill="x", padx=5, pady=(4, 8))
+    tk.Label(highlight,
+        text=f"🏆 Best: {best_name} — Grade {best.get('grade', '?')} ({best.get('score', 0)}/100)",
+        font=("Segoe UI", 10, "bold"), bg="#e8f5e9", fg="#2d8a4e").pack(anchor="w")
+
+    grade_val = best.get('grade')
+    if grade_val in ('A', 'B'):
+        rec = "Proceed to Prop Firm Test with this strategy."
+    elif grade_val == 'C':
+        rec = "Some edge found — consider refining before prop firm testing."
+    else:
+        rec = "No strong edge — go back to Refiner and improve."
+    tk.Label(highlight, text=rec,
+             font=("Segoe UI", 9), bg="#e8f5e9", fg="#555").pack(anchor="w")
+
+    # Navigation buttons
+    nav_row = tk.Frame(_verdict_frame, bg=BG)
+    nav_row.pack(anchor="w", padx=5, pady=(0, 10))
+
+    tk.Button(nav_row, text="Proceed to Prop Firm Test →",
+              command=lambda: _nav('p2_prop_test'),
+              bg="#667eea", fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT, padx=(0, 8))
+
+    tk.Button(nav_row, text="Back to Refiner",
+              command=lambda: _nav('p2_refiner'),
+              bg=GREY, fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT)
+
+    # Update scroll region
+    if _scroll_canvas:
+        try:
+            _verdict_frame.update_idletasks()
+            _scroll_canvas.configure(scrollregion=_scroll_canvas.bbox("all"))
+        except Exception:
+            pass
+
+
 def _run_multi(mode):
     """Run validation on all selected strategies, one at a time."""
+    global _batch_mode
     indices = _get_all_selected_indices()
     if not indices:
         messagebox.showwarning("No Selection", "Select at least one strategy from the table.")
         return
 
     if len(indices) == 1:
-        # Single selection — run as before using original _run
         _run(mode)
         return
 
-    # Multiple selection — confirm first
     if not messagebox.askyesno("Batch Validation",
                                f"Run {mode} validation on {len(indices)} selected strategies?\n\n"
-                               f"This may take several minutes."):
+                               f"This may take a while."):
         return
 
-    # Run sequentially - wait for each validation to complete
     def _worker():
+        global _batch_mode
+        _batch_mode = True
+
+        # Clear once at the start
         state.window.after(0, lambda: _set_buttons(True))
+        state.window.after(0, _clear_results)
+
+        batch_results = []  # collect (idx, label, combined) for summary
+
         try:
             for i, idx in enumerate(indices):
                 strat = next((s for s in _strategies if s['index'] == idx), None)
                 if not strat:
                     continue
 
+                label = strat.get('label', f'Strategy {idx}')
                 if _status_lbl:
-                    state.window.after(0, lambda lbl=strat['label'], i=i, total=len(indices):
-                                        _status_lbl.config(text=f"[{i+1}/{total}] {lbl}..."))
+                    state.window.after(0, lambda lbl=label, i=i, total=len(indices):
+                                        _status_lbl.config(text=f"[{i+1}/{total}] Validating: {lbl}..."))
 
-                # Run validation and WAIT for it to finish
                 done = threading.Event()
                 _run(mode, override_idx=idx, done_event=done)
-                done.wait(timeout=600)  # Wait up to 10 minutes per strategy
+                done.wait(timeout=600)
+
+                # Read the saved result
+                try:
+                    from project2_backtesting.strategy_validator import get_validation_for_strategy
+                    result = get_validation_for_strategy(idx)
+                    combined = result.get('combined', {}) if result else {}
+                    batch_results.append({
+                        'idx': idx,
+                        'label': label,
+                        'rule_combo': strat.get('rule_combo', '?'),
+                        'exit_name': strat.get('exit_name', '?'),
+                        'total_trades': strat.get('total_trades', 0),
+                        'win_rate': strat.get('win_rate', 0),
+                        'net_profit_factor': strat.get('net_profit_factor', 0),
+                        'grade': combined.get('grade', '?'),
+                        'score': combined.get('confidence_score', 0),
+                        'wf_verdict': combined.get('verdicts', {}).get('walk_forward', 'N/A'),
+                        'mc_verdict': combined.get('verdicts', {}).get('monte_carlo', 'N/A'),
+                        'slip_verdict': combined.get('verdicts', {}).get('slippage', 'N/A'),
+                    })
+                except Exception:
+                    batch_results.append({
+                        'idx': idx, 'label': label,
+                        'rule_combo': strat.get('rule_combo', '?'),
+                        'exit_name': strat.get('exit_name', '?'),
+                        'total_trades': 0, 'win_rate': 0, 'net_profit_factor': 0,
+                        'grade': '?', 'score': 0,
+                        'wf_verdict': 'ERROR', 'mc_verdict': 'N/A', 'slip_verdict': 'N/A',
+                    })
+
+            # Show batch summary
+            state.window.after(0, lambda br=list(batch_results): _display_batch_summary(br))
 
             if _status_lbl:
                 state.window.after(0, lambda: _status_lbl.config(
-                    text=f"✅ Done — validated {len(indices)} strategies"))
+                    text=f"✅ Done — validated {len(batch_results)} strategies"))
+
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            if _status_lbl:
+                state.window.after(0, lambda: _status_lbl.config(
+                    text=f"Batch error: {e}"))
         finally:
+            _batch_mode = False
             state.window.after(0, lambda: _set_buttons(False))
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -1489,8 +1702,9 @@ def _run(mode, override_idx=None, done_event=None):
         messagebox.showerror("Invalid Settings", "Check that all settings are valid numbers.")
         return
 
-    _set_buttons(True)
-    _clear_results()
+    if not _batch_mode:
+        _set_buttons(True)
+        _clear_results()
     if _status_lbl:
         _status_lbl.configure(text="Starting...", fg=GREY)
     if _progress_bar:
@@ -1602,7 +1816,8 @@ def _run(mode, override_idx=None, done_event=None):
             state.window.after(0, lambda: _status_lbl.configure(
                 text=f"Error: {e}", fg=RED))
         finally:
-            state.window.after(0, lambda: _set_buttons(False))
+            if not _batch_mode:
+                state.window.after(0, lambda: _set_buttons(False))
             if done_event:
                 done_event.set()
 

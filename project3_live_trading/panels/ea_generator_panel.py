@@ -24,14 +24,34 @@ DARK    = "#1a1a2a"
 GREY    = "#666666"
 MIDGREY = "#555566"
 
-PROP_FIRM_PRESETS = {
-    "FTMO":        {"daily_dd_pct": 5.0,  "total_dd_pct": 10.0, "safety_pct": 80.0, "consistency_pct": 0.0,  "max_per_day": 5},
-    "Topstep":     {"daily_dd_pct": 3.0,  "total_dd_pct": 6.0,  "safety_pct": 80.0, "consistency_pct": 0.0,  "max_per_day": 3},
-    "Apex":        {"daily_dd_pct": 3.0,  "total_dd_pct": 6.0,  "safety_pct": 80.0, "consistency_pct": 30.0, "max_per_day": 4},
-    "FundedNext":  {"daily_dd_pct": 5.0,  "total_dd_pct": 10.0, "safety_pct": 80.0, "consistency_pct": 0.0,  "max_per_day": 5},
-    "The5ers":     {"daily_dd_pct": 4.0,  "total_dd_pct": 8.0,  "safety_pct": 80.0, "consistency_pct": 0.0,  "max_per_day": 5},
-    "Custom":      {"daily_dd_pct": 5.0,  "total_dd_pct": 10.0, "safety_pct": 80.0, "consistency_pct": 0.0,  "max_per_day": 5},
-}
+# ── Load prop firms dynamically from JSON files ──────────────────────────────
+# WHY: No hardcoding. Adding a firm = drop JSON in prop_firms/.
+#      Each firm has its own DD mechanics, trading_rules, and restrictions.
+def _load_firms():
+    """Load all prop firms from prop_firms/*.json. Returns {display_name: full_data}."""
+    import glob
+    prop_dir = os.path.join(project_root, 'prop_firms')
+    firms = {}
+    for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+        try:
+            with open(fp, encoding='utf-8') as f:
+                data = json.load(f)
+            firms[data.get('firm_name', data.get('firm_id', '?'))] = data
+        except Exception:
+            pass
+    firms['Custom'] = {
+        'firm_id': 'custom', 'firm_name': 'Custom',
+        'challenges': [{'challenge_id': 'custom', 'challenge_name': 'Custom',
+                         'account_sizes': [10000, 25000, 50000, 100000],
+                         'phases': [{'phase_name': 'Evaluation', 'profit_target_pct': 8.0,
+                                     'max_daily_drawdown_pct': 5.0, 'max_total_drawdown_pct': 10.0}],
+                         'funded': {'profit_split_pct': 80, 'max_total_drawdown_pct': 10.0,
+                                    'max_daily_drawdown_pct': 5.0, 'payout_period_days': 14}}],
+        'trading_rules': [], 'drawdown_mechanics': {},
+    }
+    return firms
+
+_FIRMS = _load_firms()
 
 # ── Module-level state ────────────────────────────────────────────────────────
 _strategies       = []
@@ -53,6 +73,11 @@ _cooldown_var     = None
 _news_cb_var      = None
 _news_min_var     = None
 _firm_var         = None
+_ea_stage_var     = None   # 'Evaluation' or 'Funded'
+_ea_challenge_var = None
+_ea_account_var   = None
+_rules_info_lbl   = None
+_dd_info_lbl      = None   # shows DD alert levels vs blow levels
 _daily_dd_var     = None
 _total_dd_var     = None
 _safety_var       = None
@@ -186,13 +211,6 @@ def _refresh_condition_vars(idx):
 _condition_frame = None
 
 
-def _apply_firm_preset(firm_name):
-    preset = PROP_FIRM_PRESETS.get(firm_name, PROP_FIRM_PRESETS['Custom'])
-    if _daily_dd_var:  _daily_dd_var.set(str(preset['daily_dd_pct']))
-    if _total_dd_var:  _total_dd_var.set(str(preset['total_dd_pct']))
-    if _safety_var:    _safety_var.set(str(preset['safety_pct']))
-    if _consistency_var: _consistency_var.set(str(preset['consistency_pct']))
-    if _max_day_var:   _max_day_var.set(str(preset['max_per_day']))
 
 
 def _generate_test():
@@ -289,14 +307,36 @@ def _generate():
                 cvar_idx += 1
 
     try:
+        # WHY: Pass the full firm data + trading_rules + drawdown_mechanics to the generator.
+        #      The generator reads each rule type and generates MQL5 code for it.
+        #      No hardcoding of firm-specific behavior.
         firm_name = _firm_var.get() if _firm_var else 'Custom'
-        prop_firm = dict(PROP_FIRM_PRESETS.get(firm_name, PROP_FIRM_PRESETS['Custom']))
-        prop_firm['name'] = firm_name
-        if _daily_dd_var:   prop_firm['daily_dd_pct']    = float(_daily_dd_var.get())
-        if _total_dd_var:   prop_firm['total_dd_pct']    = float(_total_dd_var.get())
-        if _safety_var:     prop_firm['safety_pct']      = float(_safety_var.get())
-        if _consistency_var: prop_firm['consistency_pct'] = float(_consistency_var.get())
-        if _max_day_var:    prop_firm['max_per_day']      = int(_max_day_var.get())
+        firm_data = _FIRMS.get(firm_name, _FIRMS.get('Custom', {}))
+        stage = _ea_stage_var.get().lower() if _ea_stage_var else 'evaluation'
+
+        # Find the selected challenge
+        chs = firm_data.get('challenges', [])
+        ch_name = _ea_challenge_var.get() if _ea_challenge_var else ''
+        challenge = next((c for c in chs if c.get('challenge_name', c.get('challenge_id')) == ch_name),
+                        chs[0] if chs else {})
+
+        try:
+            acct_size = int(_ea_account_var.get()) if _ea_account_var else 10000
+        except Exception:
+            acct_size = 10000
+
+        prop_firm = {
+            'name': firm_name,
+            'firm_data': firm_data,
+            'challenge': challenge,
+            'stage': stage,
+            'account_size': acct_size,
+            'daily_dd_pct': float(_daily_dd_var.get()) if _daily_dd_var else 3.0,
+            'total_dd_pct': float(_total_dd_var.get()) if _total_dd_var else 6.0,
+            'trading_rules': firm_data.get('trading_rules', []),
+            'drawdown_mechanics': firm_data.get('drawdown_mechanics', {}),
+            'restrictions': challenge.get('restrictions', {}),
+        }
     except ValueError:
         messagebox.showerror("Invalid Settings", "Check prop firm settings are valid numbers.")
         return
@@ -332,11 +372,20 @@ def _generate():
         except Exception:
             magic = 12345
 
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            _cfg = load_config()
+            entry_tf = _cfg.get('winning_scenario', 'H1')
+        except Exception:
+            entry_tf = 'H1'
+
         from project3_live_trading.ea_generator import generate_ea
         code = generate_ea(
             strategy=strategy,
             platform=platform,
             prop_firm=prop_firm,
+            stage=stage,
+            entry_timeframe=entry_tf,
             symbol=_symbol_var.get() if _symbol_var else 'XAUUSD',
             magic_number=magic,
             risk_per_trade_pct=float(_risk_var.get()) if _risk_var else 1.0,
@@ -417,7 +466,8 @@ def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _badge_lbl, _scroll_canvas
     global _platform_var, _code_text, _generate_btn, _status_lbl
     global _symbol_var, _magic_var, _risk_var, _spread_var, _cooldown_var
-    global _news_cb_var, _news_min_var, _firm_var
+    global _news_cb_var, _news_min_var, _firm_var, _ea_stage_var, _ea_challenge_var
+    global _ea_account_var, _rules_info_lbl, _dd_info_lbl
     global _daily_dd_var, _total_dd_var, _safety_var, _consistency_var, _max_day_var
     global _session_vars, _day_vars, _condition_frame
     global _sl_var, _tp_var, _trail_var
@@ -526,22 +576,163 @@ def build_panel(parent):
         tk.Entry(r, textvariable=var, width=width).pack(side=tk.LEFT)
         return var
 
-    # Prop firm settings
+    # ── Prop Firm Settings — from JSON ────────────────────────────────────
+    # WHY: User selects firm → challenge → account → stage.
+    #      Panel shows DD ALERT levels (where EA stops) vs BLOW levels (where firm closes account).
+    #      All values come from JSON, not hardcoded.
     pf_frame = _section("Prop Firm Settings")
-    firm_row = tk.Frame(pf_frame, bg=WHITE)
-    firm_row.pack(fill="x", pady=2)
-    tk.Label(firm_row, text="Preset:", font=("Segoe UI", 9),
-             bg=WHITE, fg=DARK, width=24, anchor="w").pack(side=tk.LEFT)
-    _firm_var = tk.StringVar(value="FTMO")
-    firm_dd = ttk.Combobox(firm_row, textvariable=_firm_var,
-                            values=list(PROP_FIRM_PRESETS.keys()), state="readonly", width=16)
-    firm_dd.pack(side=tk.LEFT, padx=(0, 8))
-    firm_dd.bind("<<ComboboxSelected>>", lambda e: _apply_firm_preset(_firm_var.get()))
-    _daily_dd_var    = _field(pf_frame, "Daily DD limit %:", "5.0", 6)
-    _total_dd_var    = _field(pf_frame, "Total DD limit %:", "10.0", 6)
-    _safety_var      = _field(pf_frame, "Daily safety %:", "80.0", 6)
-    _consistency_var = _field(pf_frame, "Consistency rule %:", "0.0", 6)
-    _max_day_var     = _field(pf_frame, "Max trades/day:", "5", 4)
+
+    # Row 1: Firm + Stage
+    r1 = tk.Frame(pf_frame, bg=WHITE)
+    r1.pack(fill="x", pady=2)
+    tk.Label(r1, text="Prop Firm:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
+    _firm_var = tk.StringVar(value=list(_FIRMS.keys())[0])
+    ttk.Combobox(r1, textvariable=_firm_var,
+                 values=list(_FIRMS.keys()), state="readonly", width=20).pack(side=tk.LEFT, padx=(0,10))
+
+    tk.Label(r1, text="Stage:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(5,3))
+    _ea_stage_var = tk.StringVar(value="Evaluation")
+    ttk.Combobox(r1, textvariable=_ea_stage_var,
+                 values=["Evaluation", "Funded"], state="readonly", width=12).pack(side=tk.LEFT)
+
+    # Row 2: Challenge + Account
+    r2 = tk.Frame(pf_frame, bg=WHITE)
+    r2.pack(fill="x", pady=2)
+    tk.Label(r2, text="Challenge:", font=("Segoe UI", 9),
+             bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
+    _ea_challenge_var = tk.StringVar(value="")
+    _ch_dd = ttk.Combobox(r2, textvariable=_ea_challenge_var, values=[], state="readonly", width=25)
+    _ch_dd.pack(side=tk.LEFT, padx=(0,10))
+
+    tk.Label(r2, text="Account:", font=("Segoe UI", 9),
+             bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(5,3))
+    _ea_account_var = tk.StringVar(value="10000")
+    _acct_dd = ttk.Combobox(r2, textvariable=_ea_account_var, values=[], state="readonly", width=12)
+    _acct_dd.pack(side=tk.LEFT)
+
+    # DD settings — auto-filled from JSON, editable
+    # WHY: "BLOW" = where firm closes your account. EA stops BEFORE this (alert levels in JSON).
+    _daily_dd_var = _field(pf_frame, "Daily DD limit % (BLOW):", "3.0", 6)
+    _total_dd_var = _field(pf_frame, "Total DD limit % (BLOW):", "6.0", 6)
+    _safety_var   = None   # removed — EA uses rules-driven alert levels, not a safety %
+    _consistency_var = None
+
+    # DD info display — shows alert vs blow levels
+    # WHY: User needs to see BOTH the level where the EA stops (alert)
+    #      and the level where the firm closes the account (blow).
+    _dd_info_lbl = tk.Label(pf_frame, text="", font=("Segoe UI", 8),
+                             bg="#fff3cd", fg="#856404", wraplength=550,
+                             justify="left", padx=8, pady=5, relief="solid", bd=1)
+    _dd_info_lbl.pack(fill="x", pady=(4,0))
+
+    # Trading rules info
+    _rules_info_lbl = tk.Label(pf_frame, text="", font=("Segoe UI", 8),
+                                bg=WHITE, fg="#1a5276", wraplength=550, justify="left")
+    _rules_info_lbl.pack(fill="x", pady=(4,0))
+
+    # Max trades/day — from user's strategy, NOT from JSON ranges
+    _max_day_var = _field(pf_frame, "Max trades/day (from strategy):", "5", 4)
+
+    # ── Callbacks ─────────────────────────────────────────────────────────
+    def _on_firm_change(*_):
+        fd = _FIRMS.get(_firm_var.get(), {})
+        chs = fd.get('challenges', [])
+        names = [c.get('challenge_name', c.get('challenge_id','?')) for c in chs]
+        _ch_dd['values'] = names
+        if names:
+            _ea_challenge_var.set(names[0])
+
+    def _on_challenge_or_stage_change(*_):
+        fd = _FIRMS.get(_firm_var.get(), {})
+        chs = fd.get('challenges', [])
+        ch = next((c for c in chs if c.get('challenge_name', c.get('challenge_id')) == _ea_challenge_var.get()), None)
+        if not ch:
+            return
+        stage = _ea_stage_var.get().lower()
+
+        # Account sizes
+        sizes = ch.get('account_sizes', [10000])
+        _acct_dd['values'] = [str(s) for s in sizes]
+        if _ea_account_var.get() not in [str(s) for s in sizes]:
+            _ea_account_var.set(str(sizes[0]))
+
+        # DD limits — depends on stage
+        if stage == "funded":
+            funded = ch.get('funded', {})
+            _daily_dd_var.set(str(funded.get('max_daily_drawdown_pct', 3.0) or 3.0))
+            _total_dd_var.set(str(funded.get('max_total_drawdown_pct', 6.0) or 6.0))
+        else:
+            phases = ch.get('phases', [])
+            if phases:
+                _daily_dd_var.set(str(phases[0].get('max_daily_drawdown_pct', 3.0) or 3.0))
+                _total_dd_var.set(str(phases[0].get('max_total_drawdown_pct', 6.0) or 6.0))
+
+        try:
+            acct = int(_ea_account_var.get())
+        except Exception:
+            acct = 10000
+
+        # Show DD alert vs blow levels
+        # WHY: The EA stops at the ALERT level (buffer before blow).
+        #      The firm closes the account at the BLOW level.
+        rules = fd.get('trading_rules', [])
+        stage_rules = [r for r in rules if r.get('stage','') == stage]
+
+        blow_daily = float(_daily_dd_var.get())
+        blow_total = float(_total_dd_var.get())
+        alert_daily = blow_daily
+        alert_total = blow_total
+        emergency = None
+
+        for r in stage_rules:
+            p = r.get('parameters', {})
+            if 'daily_dd_alert_pct' in p:
+                alert_daily = p['daily_dd_alert_pct']
+            if 'total_dd_alert_pct' in p:
+                alert_total = p['total_dd_alert_pct']
+            if 'emergency_total_dd_pct' in p:
+                emergency = p['emergency_total_dd_pct']
+
+        dd_text = (
+            f"\u26a0\ufe0f DD Levels for {_firm_var.get()} \u2014 {stage.title()} (${acct:,}):\n"
+            f"  Daily:  EA stops at {alert_daily}% (${acct*alert_daily/100:,.0f})  |  "
+            f"Firm blows at {blow_daily}% (${acct*blow_daily/100:,.0f})\n"
+            f"  Total:  EA stops at {alert_total}% (${acct*alert_total/100:,.0f})  |  "
+            f"Firm blows at {blow_total}% (${acct*blow_total/100:,.0f})")
+        if emergency:
+            dd_text += (f"\n  Emergency: EA stops for PERIOD at {emergency}% "
+                       f"(${acct*emergency/100:,.0f}) \u2014 protect account, lose period")
+        _dd_info_lbl.config(text=dd_text)
+
+        # Show trading rules + DD mechanics
+        if stage_rules:
+            lines = [f"📋 {_firm_var.get()} \u2014 {stage.title()} rules the EA will enforce:"]
+            for r in stage_rules:
+                rtype = r.get('type', '')
+                desc = r.get('description', r.get('name', '?'))
+                lines.append(f"  \u2022 [{rtype}] {desc}")
+            rules_text = "\n".join(lines)
+        else:
+            rules_text = f"No special trading rules for {stage} \u2014 basic DD protection only."
+
+        dd_mech = fd.get('drawdown_mechanics', {})
+        if dd_mech:
+            trailing = dd_mech.get('trailing_dd', {})
+            daily_mech = dd_mech.get('daily_dd', {})
+            if trailing:
+                rules_text += f"\n\n\U0001f4d0 DD Mechanic: {trailing.get('description', '')}"
+            if daily_mech:
+                rules_text += f"\n\U0001f4d0 Daily DD: {daily_mech.get('description', '')}"
+
+        _rules_info_lbl.config(text=rules_text)
+
+    _firm_var.trace_add("write", _on_firm_change)
+    _ea_challenge_var.trace_add("write", _on_challenge_or_stage_change)
+    _ea_stage_var.trace_add("write", _on_challenge_or_stage_change)
+    _ea_account_var.trace_add("write", _on_challenge_or_stage_change)
+    _on_firm_change()
 
     # Trading settings
     tr_frame = _section("Trading Settings")
@@ -659,7 +850,39 @@ def build_panel(parent):
                            bg="#a0a0a0", fg="white", font=("Segoe UI", 10, "bold"),
                            relief=tk.FLAT, cursor="hand2", padx=16, pady=8,
                            state="normal")  # always clickable, but visually grey until step 1 done
-    _step2_btn.pack(side=tk.LEFT)
+    _step2_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+    def _generate_both():
+        """Generate Eval + Funded EAs for firms that have rules for both stages."""
+        firm_name = _firm_var.get() if _firm_var else 'Custom'
+        firm_data = _FIRMS.get(firm_name, {})
+        trading_rules = firm_data.get('trading_rules', [])
+        has_eval   = any(r.get('stage') == 'evaluation' for r in trading_rules)
+        has_funded = any(r.get('stage') == 'funded' for r in trading_rules)
+
+        if not (has_eval and has_funded):
+            messagebox.showinfo("Not Available",
+                f"{firm_name} does not have rules for both stages.\n"
+                "Use the Stage selector + Generate for each stage individually.")
+            return
+
+        original_stage = _ea_stage_var.get() if _ea_stage_var else "Evaluation"
+        try:
+            for s in ["Evaluation", "Funded"]:
+                _ea_stage_var.set(s)
+                _on_challenge_or_stage_change()
+                _generate()
+            messagebox.showinfo("Generated Both",
+                f"Generated Evaluation + Funded EAs for {firm_name}.\n"
+                "Use 'Save File' to save the currently displayed code.")
+        finally:
+            _ea_stage_var.set(original_stage)
+            _on_challenge_or_stage_change()
+
+    tk.Button(step2_btn_row, text="Generate Both (Eval + Funded)",
+              command=_generate_both,
+              bg="#764ba2", fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=12, pady=7).pack(side=tk.LEFT)
 
     _generate_btn = _step2_btn  # alias for external disable/enable
 

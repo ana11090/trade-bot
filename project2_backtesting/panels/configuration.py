@@ -18,6 +18,16 @@ _output_text = None
 # Config file location
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'backtest_config.json')
 
+# WHY: Many places need to convert candles_held to minutes, or get the MQL5 period
+#      constant. One mapping used everywhere — no hardcoded "× 60" assumptions.
+TF_MINUTES = {
+    'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240, 'D1': 1440, 'W1': 10080,
+}
+TF_MQL5_PERIOD = {
+    'M1': 'PERIOD_M1', 'M5': 'PERIOD_M5', 'M15': 'PERIOD_M15',
+    'H1': 'PERIOD_H1', 'H4': 'PERIOD_H4', 'D1': 'PERIOD_D1',
+}
+
 # Known instrument specs — pip value per standard lot, pip size, typical spread
 INSTRUMENT_SPECS = {
     'XAUUSD': {'pip_value': 10.0, 'pip_size': 0.01, 'typical_spread': 2.5, 'name': 'Gold'},

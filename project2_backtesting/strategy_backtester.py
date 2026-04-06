@@ -234,11 +234,12 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
     Returns a single DataFrame indexed 0..len(entry_timestamps)-1 with all
     prefixed indicator columns (e.g. M5_rsi_14, H4_adx_14, D1_kst, …).
     """
-    h1_spine = pd.DataFrame({'timestamp': normalize_timestamp(pd.Series(entry_timestamps))})
-    h1_spine['timestamp'] = h1_spine['timestamp'].astype('datetime64[ns]')
-    h1_spine = h1_spine.sort_values('timestamp').reset_index(drop=True)
+    # WHY: This is NOT always H1 — it's whatever entry TF the user selected.
+    entry_spine = pd.DataFrame({'timestamp': normalize_timestamp(pd.Series(entry_timestamps))})
+    entry_spine['timestamp'] = entry_spine['timestamp'].astype('datetime64[ns]')
+    entry_spine = entry_spine.sort_values('timestamp').reset_index(drop=True)
 
-    combined = h1_spine.copy()
+    combined = entry_spine.copy()
 
     for tf in _TIMEFRAMES:
         needed = required_indicators.get(tf) if required_indicators else None
@@ -883,9 +884,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         summary.append(result)
 
     summary_path = os.path.join(output_dir, 'backtest_matrix.json')
+    # WHY: Downstream panels (validator, refiner, EA generator) need to know which
+    #      entry TF was used so they load the correct candle file and calculate
+    #      correct hold times.
     with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump({
             "generated_at":    time.strftime("%Y-%m-%d %H:%M"),
+            "entry_timeframe": timeframe,
             "combinations":    total,
             "elapsed_seconds": round(elapsed, 1),
             "spread_pips":     spread_pips,
@@ -908,14 +913,22 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
 
 if __name__ == "__main__":
+    # WHY: Read entry TF from config instead of hardcoding H1
+    try:
+        from project2_backtesting.panels.configuration import load_config
+        cfg = load_config()
+        entry_tf = cfg.get('winning_scenario', 'H1')
+    except Exception:
+        entry_tf = 'H1'
+
     try:
         from shared.instrument_config import get_candle_path, get_active_symbol
-        candles_path = get_candle_path(get_active_symbol(), 'H1')
+        candles_path = get_candle_path(get_active_symbol(), entry_tf)
     except Exception:
-        candles_path = os.path.join(_here, '..', 'data', 'xauusd_H1.csv')
+        candles_path = os.path.join(_here, '..', 'data', f'xauusd_{entry_tf}.csv')
 
     if not os.path.exists(candles_path):
         print(f"ERROR: Candle data not found: {candles_path}")
         sys.exit(1)
 
-    run_comparison_matrix(candles_path, timeframe="H1")
+    run_comparison_matrix(candles_path, timeframe=entry_tf)

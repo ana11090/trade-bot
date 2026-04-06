@@ -1190,7 +1190,7 @@ def deep_optimize_generate(
     trades,
     base_rules,
     candles_path,
-    timeframe='H1',
+    timeframe=None,  # WHY: None = read from config. Don't default to H1.
     pip_size=0.01,
     spread_pips=2.5,
     commission_pips=0.0,
@@ -1212,6 +1212,14 @@ def deep_optimize_generate(
 
     The output trades will be DIFFERENT from the input trades.
     """
+    if timeframe is None:
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            cfg = load_config()
+            timeframe = cfg.get('winning_scenario', 'H1')
+        except Exception:
+            timeframe = 'H1'
+
     _stop_flag.clear()
     start_time = time.time()
     candidates = []

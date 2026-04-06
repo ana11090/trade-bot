@@ -136,24 +136,34 @@ def _build_inner(inner):
 
     # Resolve paths relative to project root
     _project_root = os.path.abspath(os.path.join(_HERE, '..', '..'))
-    _candles_path = os.path.join(_project_root, 'data', 'xauusd_H1.csv')
     _data_dir     = os.path.join(_project_root, 'data')
+
+    # Determine entry TF from config
+    try:
+        import sys as _sys
+        _sys.path.insert(0, _project_root)
+        from project2_backtesting.panels.configuration import load_config as _load_cfg
+        _entry_tf = _load_cfg().get('winning_scenario', 'H1')
+    except Exception:
+        _entry_tf = 'H1'
+    _candles_fname = f"xauusd_{_entry_tf}.csv"
+    _candles_path  = os.path.join(_data_dir, _candles_fname)
 
     status_frame = tk.Frame(inner, bg="#f0f2f5")
     status_frame.pack(fill="x", **pad)
 
-    # H1 candle file
+    # Entry TF candle file
     if os.path.exists(_candles_path):
         try:
             import pandas as _pd
             _nc = sum(1 for _ in open(_candles_path)) - 1
-            candle_status = f"\u2705 Found H1 candles: {_nc:,} candles  ({_candles_path})"
+            candle_status = f"\u2705 Found {_entry_tf} candles: {_nc:,} candles  ({_candles_path})"
             candle_color  = "#1e8449"
         except Exception:
-            candle_status = f"\u2705 Found H1 candles  ({_candles_path})"
+            candle_status = f"\u2705 Found {_entry_tf} candles  ({_candles_path})"
             candle_color  = "#1e8449"
     else:
-        candle_status = f"\u274c No H1 candle data found at data/xauusd_H1.csv"
+        candle_status = f"\u274c No {_entry_tf} candle data found at data/{_candles_fname}"
         candle_color  = "#922b21"
 
     tk.Label(status_frame, text=candle_status,
@@ -312,6 +322,62 @@ def _build_inner(inner):
                   command=lambda s=sl, t=tp, h=hold, m=minwr:
                       _apply_preset(s, t, h, m)
                   ).pack(fill="x", pady=2)
+
+    # ── Discovery Mode ────────────────────────────────────────────────────────
+    # WHY: The current approach (Quick) uses greedy search that can miss
+    #      combinations that only work TOGETHER. Deep and Exhaustive search
+    #      more thoroughly at the cost of time.
+    # CHANGED: April 2026 — added Deep + Exhaustive modes
+    _section(inner, "Discovery Mode")
+
+    mode_frame = tk.Frame(inner, bg="#f0f2f5")
+    mode_frame.pack(fill="x", padx=20, pady=6)
+
+    discovery_mode_var = tk.StringVar(value="quick")
+    _widgets['discovery_mode_var'] = discovery_mode_var
+
+    modes = [
+        (
+            "quick",
+            "Quick  (~5 minutes)",
+            "Trains XGBoost once, picks the top 30 most important features,\n"
+            "then fits decision trees to extract rules. Fast but greedy — tests\n"
+            "features one at a time, so it can miss combinations that only\n"
+            "work together. Good for a first look."
+        ),
+        (
+            "deep",
+            "Deep  (~20-30 minutes)",
+            "Runs XGBoost 10 times with different random feature subsets.\n"
+            "Collects the top 50 most important features across ALL runs.\n"
+            "Then tests EVERY possible combination of those 50 features\n"
+            "(up to your max depth). For depth=4, that's 230,300 combinations\n"
+            "— each one scored. Finds combos that greedy search misses."
+        ),
+        (
+            "exhaustive",
+            "Exhaustive  (~1-2 hours)",
+            "Genetic algorithm that searches ALL 670+ features, not just\n"
+            "the top 50. Starts with 500 random combinations, scores each,\n"
+            "keeps the best, breeds new combos from winners, mutates by\n"
+            "swapping in random features. Repeats for 100 generations.\n"
+            "Evolves toward the best combination without testing all 8 billion.\n"
+            "Most thorough — highest chance of finding the absolute best rules."
+        ),
+    ]
+
+    for value, label, description in modes:
+        row = tk.Frame(mode_frame, bg="#f0f2f5")
+        row.pack(fill="x", pady=3)
+
+        rb = tk.Radiobutton(row, text=label, variable=discovery_mode_var,
+                            value=value, bg="#f0f2f5", fg="#2c3e50",
+                            font=("Segoe UI", 10, "bold"),
+                            activebackground="#f0f2f5", selectcolor="#f0f2f5")
+        rb.pack(anchor="w")
+
+        tk.Label(row, text=description, bg="#f0f2f5", fg="#666",
+                 font=("Segoe UI", 8), justify="left", padx=28).pack(anchor="w")
 
     # ── Spacer ────────────────────────────────────────────────────────────────
     tk.Frame(inner, bg="#f0f2f5", height=1).pack(fill="x", pady=(10, 0))
@@ -746,12 +812,29 @@ def _render_results():
         f"Time:              {r.get('computation_time_s', 0):.0f}s\n"
         f"Features used:     {r.get('features_used', 0)}"
         f"  ({r.get('original_features', 0)} standard"
-        f" + {r.get('smart_features', 0)} smart)"
+        f" + {r.get('smart_features', 0)} smart)\n"
+        f"Discovery mode:    {r.get('discovery_mode', 'quick').upper()}"
     )
     tk.Label(sc, text=summary_text,
              bg="#2c3e50", fg="white",
              font=("Courier", 10), justify="left",
              padx=14).pack(anchor="w")
+
+    disc_mode = metrics.get('discovery_mode', r.get('discovery_mode', 'quick'))
+    if disc_mode == 'deep':
+        extra = (f"XGBoost runs: {metrics.get('xgb_runs', '?')}  |  "
+                 f"Feature pool: {metrics.get('features_pool', '?')}  |  "
+                 f"Combos tested: {metrics.get('combos_tested', 0):,}  |  "
+                 f"Candidates: {metrics.get('candidates_found', 0):,}")
+        tk.Label(sc, text=extra, bg="#2c3e50", fg="#7fb3d8",
+                 font=("Courier", 9), padx=14).pack(anchor="w")
+    elif disc_mode == 'exhaustive':
+        extra = (f"Generations: {metrics.get('generations', '?')}  |  "
+                 f"Population: {metrics.get('population_size', '?')}  |  "
+                 f"Total features: {metrics.get('total_features', '?')}  |  "
+                 f"Candidates: {metrics.get('candidates_found', 0):,}")
+        tk.Label(sc, text=extra, bg="#2c3e50", fg="#7fb3d8",
+                 font=("Courier", 9), padx=14).pack(anchor="w")
 
     # Top features
     top_feats = metrics.get('feature_importance_top_20', [])
@@ -933,6 +1016,9 @@ def _on_run():
         prop_challenge = _widgets['prop_challenge_var'].get()
         prop_account   = _widgets['prop_account_var'].get()
 
+        discovery_mode_widget = _widgets.get('discovery_mode_var')
+        discovery_mode = discovery_mode_widget.get() if discovery_mode_widget else 'quick'
+
     except ValueError as exc:
         messagebox.showerror("Invalid Input", f"Check your settings:\n{exc}")
         return
@@ -1004,6 +1090,7 @@ def _on_run():
                 prop_firm_name=firm_name_param,
                 prop_firm_data=prop_data,
                 compare_all_tfs=compare_all,
+                discovery_mode=discovery_mode,
                 progress_callback=_progress,
             )
             _panel.after(0, _on_done)

@@ -243,8 +243,16 @@ def export_trades_csv(trades, filepath, account_size=None):
         net       = t.get('net_pips', 0)
         dollar_pnl = t.get('dollar_pnl')
         candles   = t.get('candles_held', 0)
-        # Estimate hold time: candles_held × 60 min (H1 assumption)
-        hold_min  = candles * 60 if candles else None
+        # WHY: Hold time depends on the entry TF candle duration.
+        #      M5 candle = 5 min, H1 = 60 min, H4 = 240 min.
+        try:
+            from project2_backtesting.panels.configuration import TF_MINUTES, load_config
+            _cfg = load_config()
+            _tf = _cfg.get('winning_scenario', 'H1')
+            candle_min = TF_MINUTES.get(_tf, 60)
+        except Exception:
+            candle_min = 60
+        hold_min  = candles * candle_min if candles else None
 
         pnl_pct = None
         if dollar_pnl is not None and account_size:

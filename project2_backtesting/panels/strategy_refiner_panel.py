@@ -619,11 +619,27 @@ def _start_optimization():
                 symbol = cfg.get('symbol', 'XAUUSD').lower()
                 entry_tf = cfg.get('winning_scenario', 'H1')
 
+                # If rules were discovered on a different TF than config, use the rules' TF.
+                # WHY: Rules from P4 might have been discovered on M15 but config still says
+                #      H1 from a previous session.
+                # CHANGED: April 2026 — read TF from rules
+                try:
+                    if os.path.exists(rules_path):
+                        saved_tf = report.get('entry_timeframe')
+                        if saved_tf and saved_tf != entry_tf:
+                            print(f"[OPTIMIZER] Rules were discovered on {saved_tf}, "
+                                  f"but config says {entry_tf}. Using {saved_tf}.")
+                            entry_tf = saved_tf
+                except Exception:
+                    pass
+
+                # WHY: Use the entry TF from the rules, not H1 fallback.
+                #      Removed xauusd_H1.csv fallback — wrong TF = wrong results.
+                # CHANGED: April 2026 — no H1 fallback
                 candles_path = None
                 for p in [
                     os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                     os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
-                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
                 ]:
                     if os.path.exists(p):
                         candles_path = p
