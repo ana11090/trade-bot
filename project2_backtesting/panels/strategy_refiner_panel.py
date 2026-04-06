@@ -121,21 +121,26 @@ def _get_selected_index():
 def _load_selected_strategy():
     """Load the selected strategy's trades for filtering/optimizing.
 
-    WHY: Different strategy sources need different loading logic:
-      - backtest results → load trades from backtest_matrix.json
-      - optimizer results → load from _validator_optimized.json
-      - saved rules → no trades available, prompt user to re-backtest
+    WHY: Different strategy sources need different loading:
+      - Backtest results (int index) → load trades from matrix directly
+      - Optimizer results ('optimizer_latest') → load from optimizer output
+      - Saved rules ('saved_X') → MATCH by rule_combo + exit_strategy against
+        the matrix, then load those trades. Saved rules don't store trades,
+        but they remember which backtest result they came from.
 
-    CHANGED: April 2026 — handle saved rules gracefully
+    CHANGED: April 2026 — saved rules match to matrix by name
     """
     global _base_trades, _filtered_trades
     idx = _get_selected_index()
     if idx is None:
         return
 
-    # ── Saved rules have no trade data ────────────────────────────────────
-    # WHY: Saved rules store conditions + stats but not individual trades.
-    #      The user needs to run the backtest with these rules first.
+    # ── Saved rule: find matching strategy in backtest matrix ─────────────
+    # WHY: Saved rules store rule_combo + exit_strategy but no trades.
+    #      We search the matrix for a strategy with the same name and load
+    #      its trades. This way the user can save a strategy, come back later,
+    #      and load it without re-running the backtest.
+    # CHANGED: April 2026 — match saved rules to matrix
     if isinstance(idx, str) and idx.startswith('saved_'):
         saved_rule = None
         for s in _strategies:
@@ -143,25 +148,88 @@ def _load_selected_strategy():
                 saved_rule = s.get('saved_rule', {})
                 break
 
-        if saved_rule:
-            conditions = saved_rule.get('conditions', [])
-            n_conds = len(conditions)
-            exit_name = saved_rule.get('exit_name', 'Not set')
-            entry_tf = saved_rule.get('entry_timeframe', 'H1')
-            msg = (f"This saved rule has {n_conds} condition(s) but no trade data.\n\n"
-                   f"Exit strategy: {exit_name}\n"
-                   f"Entry timeframe: {entry_tf}\n\n"
-                   f"To use this rule:\n"
-                   f"1. Go to Run Backtest and run the backtest\n"
-                   f"2. The results will appear in this dropdown\n"
-                   f"3. Select the matching result and click Load\n\n"
-                   f"Or use the rules directly in the Validator for walk-forward testing.")
-        else:
-            msg = "No trade data available for saved rules.\nRun the backtest first."
-        messagebox.showinfo("Saved Rule — No Trade Data", msg)
-        return
+        if not saved_rule:
+            messagebox.showwarning("No Data", "Saved rule data not found.")
+            return
 
-    # ── Normal strategy loading ───────────────────────────────────────────
+        # Try to match against backtest matrix
+        rule_combo = saved_rule.get('rule_combo', '')
+        exit_strategy = saved_rule.get('exit_strategy', '')
+        exit_name = saved_rule.get('exit_name', '')
+
+        matched_idx = None
+        if rule_combo:
+            # WHY: Search for a backtest result with the same rule_combo + exit name.
+            #      Multiple strategies might have the same rule_combo but different exits.
+            for s in _strategies:
+                if s.get('source') != 'backtest':
+                    continue
+                if s.get('rule_combo', '') == rule_combo:
+                    # Check exit match
+                    if exit_strategy and exit_strategy in s.get('label', ''):
+                        matched_idx = s.get('index')
+                        break
+                    if exit_name and exit_name == s.get('exit_name', ''):
+                        matched_idx = s.get('index')
+                        break
+
+            # If exact exit match failed, try just rule_combo
+            if matched_idx is None:
+                for s in _strategies:
+                    if s.get('source') != 'backtest':
+                        continue
+                    if s.get('rule_combo', '') == rule_combo:
+                        matched_idx = s.get('index')
+                        break
+
+        if matched_idx is not None:
+            # WHY: Found the matching backtest result — load its trades
+            print(f"[REFINER] Saved rule matched to matrix index {matched_idx}")
+            try:
+                from project2_backtesting.strategy_refiner import (
+                    load_trades_from_matrix, enrich_trades
+                )
+                raw = load_trades_from_matrix(matched_idx)
+                if raw:
+                    _base_trades = enrich_trades(list(raw))
+                    _filtered_trades = list(_base_trades)
+
+                    # If saved rule had filters, show them
+                    filters = saved_rule.get('filters_applied')
+                    if filters:
+                        print(f"[REFINER] Saved rule had filters: {filters}")
+                        # Apply the saved filters to show filtered results
+                        try:
+                            from project2_backtesting.strategy_refiner import apply_filters
+                            kept, _ = apply_filters(_base_trades, filters)
+                            _filtered_trades = list(kept)
+                        except Exception:
+                            pass
+
+                    _update_strat_info()
+                    _schedule_update()
+                    return
+                else:
+                    messagebox.showwarning("No Trades",
+                        f"Matched strategy '{rule_combo}' but it has no trade data.\n\n"
+                        "Re-run the backtest to generate trades.")
+                    return
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                messagebox.showerror("Load Error", str(e))
+                return
+        else:
+            # WHY: Can't find a matching strategy in the matrix.
+            #      Maybe the backtest was re-run with different rules.
+            messagebox.showinfo("Saved Rule — No Match",
+                f"Could not find a matching strategy in the backtest matrix.\n\n"
+                f"Rule: {rule_combo}\n"
+                f"Exit: {exit_name or exit_strategy or 'Unknown'}\n\n"
+                f"The backtest may have been re-run with different rules.\n"
+                f"Select the matching strategy from the backtest results above instead.")
+            return
+
+    # ── Normal strategy loading (backtest result or optimizer) ────────────
     try:
         from project2_backtesting.strategy_refiner import (
             load_trades_from_matrix, enrich_trades
