@@ -1136,6 +1136,41 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap):
         try:
             from shared.saved_rules import save_rule
+
+            # WHY: A saved strategy needs EVERYTHING to reproduce it:
+            #      rules (what triggers a trade), exit strategy (how it exits),
+            #      filters (what gets filtered out), and entry TF (candle frequency).
+            #      Without exit strategy, the validator can't reconstruct the trade logic.
+            #      Without entry TF, the backtester loads the wrong candle file.
+            # CHANGED: April 2026 — save complete strategy
+            idx = _get_selected_index()
+            exit_class = ''
+            exit_params = {}
+            exit_name = ''
+            if idx is not None:
+                try:
+                    matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                               'outputs', 'backtest_matrix.json')
+                    if os.path.exists(matrix_path):
+                        import json as _json
+                        with open(matrix_path) as _mf:
+                            _matrix = _json.load(_mf)
+                        if idx < len(_matrix.get('results', [])):
+                            _strat = _matrix['results'][idx]
+                            exit_class = _strat.get('exit_class', _strat.get('exit_strategy', ''))
+                            exit_params = _strat.get('exit_params', _strat.get('exit_strategy_params', {}))
+                            exit_name = _strat.get('exit_name', '')
+                except Exception:
+                    pass
+
+            entry_tf = 'H1'
+            try:
+                from project2_backtesting.panels.configuration import load_config
+                _cfg = load_config()
+                entry_tf = _cfg.get('winning_scenario', 'H1')
+            except Exception:
+                pass
+
             data = {
                 'conditions': [],
                 'prediction': 'WIN',
@@ -1148,6 +1183,10 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 'net_profit_factor': s.get('profit_factor', 0),
                 'optimized_rules': r,
                 'filters_applied': f,
+                'exit_class': exit_class,
+                'exit_params': exit_params,
+                'exit_name': exit_name,
+                'entry_timeframe': entry_tf,
             }
             for rule in r:
                 if rule.get('prediction') == 'WIN':
@@ -1179,15 +1218,43 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
     print(f"[OPTIMIZER] Card #{rank}: Play button created")
 
-    def _validate(t=trades_snap, r=rules_snap, n=strategy_name):
+    def _validate(t=trades_snap, r=rules_snap, n=strategy_name, f=filters_snap):
         try:
             import json
+            # WHY: Validator needs rules + exit + filters to reproduce the exact strategy.
+            # CHANGED: April 2026 — pass complete strategy to validator
+            idx = _get_selected_index()
+            exit_info = {}
+            if idx is not None:
+                try:
+                    matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                               'outputs', 'backtest_matrix.json')
+                    if os.path.exists(matrix_path):
+                        with open(matrix_path) as _mf:
+                            _matrix = json.load(_mf)
+                        if idx < len(_matrix.get('results', [])):
+                            _strat = _matrix['results'][idx]
+                            exit_info = {
+                                'exit_class': _strat.get('exit_class', ''),
+                                'exit_params': _strat.get('exit_params', {}),
+                                'exit_name': _strat.get('exit_name', ''),
+                            }
+                except Exception:
+                    pass
+
             p = os.path.join(project_root, 'project2_backtesting', 'outputs', '_validator_optimized.json')
             with open(p, 'w') as fp:
-                json.dump({'rules': r, 'trades': t, 'name': n, 'source': 'optimizer'},
-                          fp, indent=2, default=str)
+                json.dump({
+                    'rules': r,
+                    'trades': t,
+                    'name': n,
+                    'source': 'optimizer',
+                    'filters': f,
+                    **exit_info,
+                }, fp, indent=2, default=str)
             messagebox.showinfo("Ready", f"Go to ✅ Strategy Validator")
         except Exception as e:
+            import traceback; traceback.print_exc()
             messagebox.showerror("Error", str(e))
 
     tk.Button(btn, text="✅ Validate", command=_validate,

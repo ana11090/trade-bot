@@ -5,7 +5,7 @@ Scans ALL historical candles, labels each WIN/LOSS based on what happened
 after entry, then trains XGBoost with 670 features to find profitable
 entry conditions.  No robot trade history needed.
 
-No bind_all calls here — scroll routing is owned by main_app.py.
+Per-canvas scroll binding only — no bind_all (breaks other panels).
 All heavy computation runs in a daemon thread; UI updates via .after().
 """
 
@@ -93,9 +93,16 @@ def _build(parent):
     # Mousewheel scrolling
     def _on_mousewheel(e):
         canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
-    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+    # WHY: bind_all captures ALL mousewheel events globally, breaking scrolling
+    #      in every other panel. Per-canvas bind only scrolls when mouse is over THIS canvas.
+    # CHANGED: April 2026 — replaced bind_all with per-widget bind
+    canvas.bind("<MouseWheel>", _on_mousewheel)
+    canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+    # Also bind to inner frame so scrolling works when mouse is over content
+    inner.bind("<MouseWheel>", _on_mousewheel)
+    inner.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    inner.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
 
     _build_inner(inner)
     return root
