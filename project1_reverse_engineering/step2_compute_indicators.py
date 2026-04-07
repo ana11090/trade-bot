@@ -80,10 +80,16 @@ def compute_features(aligned_trades_path=None, output_dir=None):
 
         # Add auto-detected features (no candle data needed)
         print("  Computing auto-detected features...")
+        # WHY: Only safe time-based features go into the feature matrix.
+        #      is_winner IS the target → leakage. trade_duration_minutes
+        #      leaks because winning trades naturally run longer than losers.
+        #      Both are stored nowhere here; step3_label_trades.py adds the
+        #      proper `outcome` target column separately.
+        # CHANGED: April 2026 — defense-in-depth against leakage
         feature_matrix['hour_of_day'] = trades_df['open_time'].dt.hour
         feature_matrix['day_of_week'] = trades_df['open_time'].dt.dayofweek
-        feature_matrix['trade_duration_minutes'] = (trades_df['close_time'] - trades_df['open_time']).dt.total_seconds() / 60
-        feature_matrix['is_winner'] = (trades_df['pips'] > 0).astype(int)
+        # NOTE: trade_duration_minutes and is_winner are NOT added here.
+        # If you need them for analysis, compute them from trades_df at point of use.
 
         # Handle different possible column names for direction
         if 'action' in trades_df.columns:

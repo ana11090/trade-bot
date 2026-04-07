@@ -446,49 +446,111 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     if funded_risk_pct is not None and stage == 'funded':
         risk_per_trade_pct = funded_risk_pct
 
-    # ── DD tracking — depends on drawdown_mechanics from JSON ────────────
-    # WHY: Different firms calculate DD differently. Leveraged uses trailing on
-    #      closed balance with HWM lock after +6%. Other firms use static or equity-based DD.
-    #      The JSON describes HOW, the generator produces the matching MQL5 code.
-    trailing_dd  = dd_mechanics.get('trailing_dd', {})
+    # ── DD tracking — generic for any firm ───────────────────────────────
+    # WHY: Works for any prop firm. Reads behavior from drawdown_mechanics JSON.
+    #      Falls back to safe defaults (equity trailing, no lock) if not defined.
+    # CHANGED: April 2026 — full payout cycle system, generic + persistent
+    trailing_dd   = dd_mechanics.get('trailing_dd', {})
     daily_dd_mech = dd_mechanics.get('daily_dd', {})
+    post_payout   = dd_mechanics.get('post_payout', {})
 
-    # Always add DD tracking globals
-    extra_globals.append(f'double g_hwm = 0.0;            // High water mark for total DD')
-    extra_globals.append(f'double g_dailyReference = 0.0; // Daily DD reference point')
-    extra_globals.append(f'double g_startingBalance = 0.0; // Balance at period/session start')
-    extra_globals.append(f'bool   g_ddLocked = false;      // True when trailing DD locks at starting balance')
+    basis    = trailing_dd.get('basis', 'equity')
+    lock_pct = trailing_dd.get('lock_after_gain_pct')
 
-    # Init
-    extra_init.append(f'   g_startingBalance = AccountInfoDouble(ACCOUNT_BALANCE);')
-    extra_init.append(f'   g_hwm = g_startingBalance;')
-    extra_init.append(f'   g_dailyReference = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
+    # Core DD globals (always)
+    extra_globals.append('double  g_hwm             = 0.0;   // High water mark')
+    extra_globals.append('double  g_ddFloor         = 0.0;   // Equity level that triggers breach')
+    extra_globals.append('double  g_dailyReference  = 0.0;   // Daily DD reference point')
+    extra_globals.append('double  g_startingBalance = 0.0;   // Balance when period started')
+    extra_globals.append('bool    g_ddLocked        = false;  // True when trailing DD has locked')
 
-    # HWM update logic depends on trailing type
-    if trailing_dd.get('basis') == 'closed_balance':
-        # WHY: Leveraged tracks HWM on closed trades, not floating equity.
-        #      HWM only moves up when balance increases from a closed trade.
+    # Payout cycle tracking globals (always)
+    extra_globals.append('datetime g_payoutWaitStart    = 0;     // When bot entered waiting state')
+    extra_globals.append('datetime g_lastReminderSent   = 0;     // Last reminder email time')
+    extra_globals.append('bool     g_initialAlertSent   = false; // True after first stopped-state email')
+    extra_globals.append('bool     g_prevPayoutFlag     = false; // Rising-edge for PayoutReceived')
+    extra_globals.append('bool     g_postPayoutLockApplied = false;')
+    extra_globals.append('bool     g_prevWithdrawnFlag     = false;')
+
+    # Payout inputs (always — manual confirmation flow)
+    extra_inputs.append('input bool   PayoutReceived          = false; // Set TRUE after confirming payout in firm dashboard')
+    extra_inputs.append('input int    ReminderFirstAfterDays  = 5;     // Send first reminder after N days')
+    extra_inputs.append('input int    ReminderRepeatEveryDays = 2;     // Repeat every N days until confirmed')
+
+    if post_payout.get('dd_locks_at') == 'initial_balance':
+        extra_inputs.append('input bool   PayoutWithdrawn         = false; // Set TRUE after withdrawing payout — locks DD floor permanently')
+
+    # OnInit: init all globals + restore from GlobalVariables (survives MT5 restart)
+    extra_init.append(f'   g_startingBalance  = AccountInfoDouble(ACCOUNT_BALANCE);')
+    extra_init.append(f'   g_hwm              = g_startingBalance;')
+    extra_init.append(f'   g_ddFloor          = g_startingBalance * (1.0 - {dd_total_pct}/100.0);')
+    extra_init.append(f'   g_dailyReference   = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
+    extra_init.append(f'   g_payoutWaitStart  = 0;')
+    extra_init.append(f'   g_lastReminderSent = 0;')
+    extra_init.append(f'   g_initialAlertSent = false;')
+    extra_init.append(f'   g_prevPayoutFlag   = PayoutReceived;')
+    if post_payout.get('dd_locks_at') == 'initial_balance':
+        extra_init.append(f'   g_prevWithdrawnFlag     = PayoutWithdrawn;')
+        extra_init.append(f'   g_postPayoutLockApplied = false;')
+    extra_init.append(f'   if(GlobalVariableCheck("EA_ddLocked_" + _Symbol))')
+    extra_init.append(f'   {{')
+    extra_init.append(f'      g_ddLocked              = (GlobalVariableGet("EA_ddLocked_" + _Symbol) > 0.5);')
+    extra_init.append(f'      g_ddFloor               = GlobalVariableGet("EA_ddFloor_" + _Symbol);')
+    extra_init.append(f'      g_hwm                   = GlobalVariableGet("EA_hwm_" + _Symbol);')
+    extra_init.append(f'      g_postPayoutLockApplied = (GlobalVariableGet("EA_postPayout_" + _Symbol) > 0.5);')
+    extra_init.append(f'      Print("[DD] Restored from globals. ddFloor=$", DoubleToString(g_ddFloor,2),')
+    extra_init.append(f'            " hwm=$", DoubleToString(g_hwm,2), " locked=", g_ddLocked);')
+    extra_init.append(f'   }}')
+
+    # HWM + ddFloor update logic
+    if basis == 'closed_balance':
         extra_on_trade.append(
-            f'   // DD Mechanic: trailing on closed balance (not floating equity)\n'
+            f'   // DD basis: closed balance (HWM moves only on closed trades)\n'
             f'   double newBalance = AccountInfoDouble(ACCOUNT_BALANCE);\n'
             f'   if(newBalance > g_hwm && !g_ddLocked)\n'
-            f'      g_hwm = newBalance;')
-
-        lock_pct = trailing_dd.get('lock_after_gain_pct')
+            f'   {{\n'
+            f'      g_hwm     = newBalance;\n'
+            f'      g_ddFloor = g_hwm * (1.0 - {dd_total_pct}/100.0);\n'
+            f'      SaveDDState();\n'
+            f'   }}')
         if lock_pct:
             extra_on_trade.append(
-                f'   // DD lock: after +{lock_pct}% gain, floor locks at starting balance\n'
+                f'   // Lock-after-gain: when balance reaches +{lock_pct}%, lock DD floor\n'
                 f'   if(!g_ddLocked && newBalance >= g_startingBalance * (1.0 + {lock_pct}/100.0))\n'
                 f'   {{\n'
                 f'      g_ddLocked = true;\n'
-                f'      g_hwm = g_startingBalance + g_startingBalance * ({lock_pct}/100.0);\n'
-                f'      Print("[DD] Trailing DD LOCKED at starting balance $", g_startingBalance);\n'
+                f'      g_ddFloor  = g_startingBalance;\n'
+                f'      SaveDDState();\n'
+                f'      Print("[DD] LOCKED — floor at $", DoubleToString(g_ddFloor, 2));\n'
+                f'      string subj = "[DD] " + _Symbol + " — Drawdown LOCKED";\n'
+                f'      string body = "Reached +{lock_pct}% on starting balance.\\n";\n'
+                f'      body += "DD floor locked at: $" + DoubleToString(g_ddFloor, 2);\n'
+                f'      SendMail(subj, body);\n'
                 f'   }}')
     else:
-        # Default: HWM updates on equity (standard trailing)
         extra_tick_checks.insert(0,
-            f'   // DD Mechanic: standard trailing on equity\n'
-            f'   if(equity > g_hwm && !g_ddLocked) g_hwm = equity;')
+            f'   // DD basis: floating equity (standard trailing)\n'
+            f'   if(equity > g_hwm && !g_ddLocked)\n'
+            f'   {{\n'
+            f'      g_hwm     = equity;\n'
+            f'      g_ddFloor = g_hwm * (1.0 - {dd_total_pct}/100.0);\n'
+            f'      SaveDDState();\n'
+            f'   }}')
+        if lock_pct:
+            extra_tick_checks.insert(1,
+                f'   // Lock-after-gain: when equity reaches +{lock_pct}%, lock DD floor\n'
+                f'   if(!g_ddLocked && equity >= g_startingBalance * (1.0 + {lock_pct}/100.0))\n'
+                f'   {{\n'
+                f'      g_ddLocked = true;\n'
+                f'      g_ddFloor  = g_startingBalance;\n'
+                f'      SaveDDState();\n'
+                f'      Print("[DD] LOCKED — floor at $", DoubleToString(g_ddFloor, 2));\n'
+                f'      string subj = "[DD] " + _Symbol + " — Drawdown LOCKED";\n'
+                f'      string body = "Reached +{lock_pct}% on starting balance.\\n";\n'
+                f'      body += "DD floor locked at: $" + DoubleToString(g_ddFloor, 2);\n'
+                f'      SendMail(subj, body);\n'
+                f'   }}')
+
 
     # Daily reference depends on firm's daily DD mechanic
     if daily_dd_mech.get('reference') == 'max_balance_equity':
@@ -535,96 +597,153 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'      Alert("[PAYOUT] CONDITIONS MET. Collect your payout!");\n'
                 f'   }}')
 
-    # ── Fallback: funded strategies without explicit period_reset rule ───
-    # WHY: CheckPeriodReset() needs PayoutPeriodDays and g_periodStart.
-    #      If the JSON has protect/payout logic but no period_reset rule,
-    #      add the inputs/globals so the function compiles.
-    # CHANGED: April 2026 — cycle-aware resume for all funded strategies
-    if (has_protect_phase or has_payout_conds if 'has_payout_conds' in dir() else has_protect_phase) and not has_period_reset:
-        extra_inputs.append('input int PayoutPeriodDays = 14; // Payout cycle length (days)')
-        extra_globals.append('datetime g_periodStart = 0;')
-        if not has_consistency:
-            extra_globals.append('double g_periodProfit = 0.0;')
-        if not has_min_profit_days:
-            extra_globals.append('int g_profitDayCount = 0;')
-        if not has_consistency:
-            extra_globals.append('double g_bestDayProfit = 0.0;')
-        has_period_reset = True
+    # ── SaveDDState() helper — persist DD state across EA restarts ──────────
+    # WHY: g_ddFloor must survive MT5 restarts. Without GlobalVariable saves
+    #      the floor reverts to the raw formula value and may be wrong.
+    # CHANGED: April 2026 — payout cycle system
+    extra_functions.append(
+        f'//+------------------------------------------------------------------+\n'
+        f'//| SaveDDState — persist DD floor/lock state to GlobalVariables    |\n'
+        f'//+------------------------------------------------------------------+\n'
+        f'void SaveDDState()\n'
+        f'{{\n'
+        f'   GlobalVariableSet("EA_ddLocked_"   + _Symbol, g_ddLocked ? 1.0 : 0.0);\n'
+        f'   GlobalVariableSet("EA_ddFloor_"    + _Symbol, g_ddFloor);\n'
+        f'   GlobalVariableSet("EA_hwm_"        + _Symbol, g_hwm);\n'
+        f'   GlobalVariableSet("EA_postPayout_" + _Symbol, g_postPayoutLockApplied ? 1.0 : 0.0);\n'
+        f'}}'
+    )
 
-    # ── Period reset (14 days) ────────────────────────────────────────────
-    if has_period_reset:
-        reset_items = []
-        if has_min_profit_days:
-            reset_items.append('g_profitDayCount = 0;')
-        if has_consistency:
-            reset_items.append('g_bestDayProfit = 0;')
-            reset_items.append('g_periodProfit = 0;')
-        if has_protect_phase:
-            reset_items.append('g_payoutCondsMet = false;')
-        if any('g_stoppedForPeriod' in e for e in extra_globals):
-            reset_items.append('g_stoppedForPeriod = false;')
-        # WHY: Also reset g_stopForever so the bot resumes trading after a
-        #      payout cycle ends. Without this, a total DD safety stop would
-        #      keep the bot frozen forever instead of resetting each cycle.
-        # CHANGED: April 2026 — resume after payout period
-        reset_items.append('g_stopForever = false;')
-        reset_items.append('g_startingBalance = AccountInfoDouble(ACCOUNT_BALANCE);')
-        reset_block = '\n      '.join(reset_items)
-        extra_daily_reset.append(
-            f'   // Period reset check (every PayoutPeriodDays-day cycle)\n'
-            f'   if(g_periodStart == 0) g_periodStart = TimeCurrent();\n'
-            f'   if(TimeCurrent() - g_periodStart >= PayoutPeriodDays * 86400)\n'
-            f'   {{\n'
-            f'      g_periodStart = TimeCurrent();\n'
-            f'      {reset_block}\n'
-            f'      Print("[PERIOD] New period started. Balance: $", g_startingBalance);\n'
-            f'      Alert("[CYCLE] New payout period started — bot resumed trading");\n'
-            f'   }}')
+    # ── CheckPayoutFlag() — manual payout confirmation via input toggle ───
+    # WHY: User toggles PayoutReceived=true after collecting payout from the
+    #      firm dashboard. Rising-edge detection starts a fresh trading cycle
+    #      without restarting the EA. While waiting, periodic email reminders
+    #      prompt the user to confirm.
+    # CHANGED: April 2026 — replaces time-based auto-resume
+    payout_reset_items = []
+    if has_min_profit_days:
+        payout_reset_items.append('g_profitDayCount      = 0;')
+    if has_consistency:
+        payout_reset_items.append('g_bestDayProfit       = 0;')
+        payout_reset_items.append('g_periodProfit        = 0;')
+    if has_protect_phase:
+        payout_reset_items.append('g_payoutCondsMet      = false;')
+    payout_reset_items.append('g_stopForever         = false;')
+    payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
+    payout_reset_items.append(f'g_ddFloor             = g_startingBalance * (1.0 - {dd_total_pct}/100.0);')
+    payout_reset_items.append('g_hwm                 = g_startingBalance;')
+    payout_reset_items.append('g_ddLocked            = false;')
+    payout_reset_items.append('g_payoutWaitStart     = 0;')
+    payout_reset_items.append('g_lastReminderSent    = 0;')
+    payout_reset_items.append('g_initialAlertSent    = false;')
+    payout_reset_items.append('g_postPayoutLockApplied = false;')
+    payout_reset_items.append('SaveDDState();')
+    payout_reset_block = '\n      '.join(payout_reset_items)
 
-        # ── CheckPeriodReset(): called at top of OnTick so g_stopForever can
-        #    be cleared BEFORE the early-return guard checks it.
-        # WHY: OnTick checks `if(g_stopForever) return;` as its FIRST line.
-        #      If CheckPeriodReset() runs AFTER that line, a stopped bot can
-        #      never wake up. It must run first to clear the flag.
-        # CHANGED: April 2026 — cycle-aware OnTick
+    # Which gate variable means "bot is in waiting-for-payout state"
+    waiting_cond = 'g_payoutCondsMet' if has_protect_phase else 'g_stopForever'
+
+    extra_functions.append(
+        f'//+------------------------------------------------------------------+\n'
+        f'//| CheckPayoutFlag — detect rising edge of PayoutReceived input    |\n'
+        f'//| WHY: Bot halts after payout conditions met. User manually sets  |\n'
+        f'//|      PayoutReceived=true once payout is confirmed. This detects |\n'
+        f'//|      that toggle and starts a fresh cycle.                      |\n'
+        f'//| CHANGED: April 2026 — manual confirmation + reminder system    |\n'
+        f'//+------------------------------------------------------------------+\n'
+        f'void CheckPayoutFlag()\n'
+        f'{{\n'
+        f'   // ── Rising edge: payout just confirmed ───────────────────────\n'
+        f'   if(PayoutReceived && !g_prevPayoutFlag)\n'
+        f'   {{\n'
+        f'      g_prevPayoutFlag = true;\n'
+        f'      Print("[PAYOUT] Confirmed — starting new cycle. Balance: $",\n'
+        f'            DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2));\n'
+        f'      {payout_reset_block}\n'
+        f'      Alert("[CYCLE] Payout confirmed — new trading cycle started!");\n'
+        f'      SendNotification("[PAYOUT] " + _Symbol + " — New cycle started after payout confirmation");\n'
+        f'      return;\n'
+        f'   }}\n'
+        f'   g_prevPayoutFlag = PayoutReceived;\n'
+        f'\n'
+        f'   // ── While stopped and awaiting payout confirmation ───────────\n'
+        f'   if(!{waiting_cond} || PayoutReceived) return;\n'
+        f'\n'
+        f'   // Send initial alert once when we first enter waiting state\n'
+        f'   if(!g_initialAlertSent)\n'
+        f'   {{\n'
+        f'      g_payoutWaitStart  = TimeCurrent();\n'
+        f'      g_lastReminderSent = TimeCurrent();\n'
+        f'      g_initialAlertSent = true;\n'
+        f'      string s0 = GetPayoutStatus();\n'
+        f'      SendNotification("[PAYOUT] WAITING — set PayoutReceived=true when collected | " + s0);\n'
+        f'      SendMail("[PAYOUT] " + _Symbol + " — Waiting for confirmation",\n'
+        f'               "Payout conditions met. Bot stopped.\\n" + s0 +\n'
+        f'               "\\n\\nSet PayoutReceived=true in EA inputs once payout is in your account.");\n'
+        f'   }}\n'
+        f'\n'
+        f'   // Send scheduled reminder emails\n'
+        f'   if(g_payoutWaitStart <= 0) return;\n'
+        f'   double waitDays    = (TimeCurrent() - g_payoutWaitStart)  / 86400.0;\n'
+        f'   double sinceRemind = (TimeCurrent() - g_lastReminderSent) / 86400.0;\n'
+        f'   bool sendFirst  = (waitDays  >= ReminderFirstAfterDays && sinceRemind >= ReminderFirstAfterDays);\n'
+        f'   bool sendRepeat = (waitDays  >  ReminderFirstAfterDays && sinceRemind >= ReminderRepeatEveryDays\n'
+        f'                      && ReminderRepeatEveryDays > 0);\n'
+        f'   if(sendFirst || sendRepeat)\n'
+        f'   {{\n'
+        f'      g_lastReminderSent = TimeCurrent();\n'
+        f'      string sr = GetPayoutStatus();\n'
+        f'      SendMail("[PAYOUT REMINDER] " + _Symbol,\n'
+        f'               "Waiting " + DoubleToString(waitDays, 1) + " days for payout confirmation.\\n"\n'
+        f'               + sr + "\\n\\nSet PayoutReceived=true in EA inputs to resume trading.");\n'
+        f'   }}\n'
+        f'}}'
+    )
+
+    # Insert CheckPayoutFlag at the very start of tick checks so it runs
+    # BEFORE the g_stopForever guard — allows the bot to resume if payout confirmed.
+    # CHANGED: April 2026 — manual payout confirmation
+    extra_tick_checks.insert(0,
+        f'   // ── Payout confirmation (MUST run before g_stopForever guard) ─\n'
+        f'   // WHY: Clears g_stopForever when user confirms payout received.\n'
+        f'   // CHANGED: April 2026 — manual confirmation system\n'
+        f'   CheckPayoutFlag();'
+    )
+
+    # ── CheckPostPayoutLock() — only if firm locks DD at initial_balance ──
+    # WHY: Some firms (e.g. FTMO) lock trailing DD to initial balance after
+    #      first withdrawal. User confirms via PayoutWithdrawn=true toggle.
+    # CHANGED: April 2026 — post-payout lock system
+    if post_payout.get('dd_locks_at') == 'initial_balance':
         extra_functions.append(
             f'//+------------------------------------------------------------------+\n'
-            f'//| CheckPeriodReset — resume trading after payout period ends      |\n'
-            f'//| WHY: Bot stops when payout conditions met or total DD safety    |\n'
-            f'//|      hit. After PayoutPeriodDays, the cycle resets and trading  |\n'
-            f'//|      can resume on the new period.                              |\n'
-            f'//| CHANGED: April 2026 — cycle-aware EA                            |\n'
+            f'//| CheckPostPayoutLock — lock DD floor after withdrawal confirmed  |\n'
+            f'//| WHY: After first withdrawal, firm locks trailing DD floor to    |\n'
+            f'//|      initial balance. User confirms via PayoutWithdrawn toggle. |\n'
+            f'//| CHANGED: April 2026 — post-payout DD lock                      |\n'
             f'//+------------------------------------------------------------------+\n'
-            f'void CheckPeriodReset()\n'
+            f'void CheckPostPayoutLock()\n'
             f'{{\n'
-            f'   if(g_periodStart == 0)\n'
+            f'   if(g_postPayoutLockApplied) return;\n'
+            f'   // Rising edge: withdrawal confirmed\n'
+            f'   if(PayoutWithdrawn && !g_prevWithdrawnFlag)\n'
             f'   {{\n'
-            f'      g_periodStart = TimeCurrent();\n'
-            f'      return;\n'
+            f'      g_prevWithdrawnFlag     = true;\n'
+            f'      g_postPayoutLockApplied = true;\n'
+            f'      g_ddLocked              = true;\n'
+            f'      g_ddFloor               = g_startingBalance;\n'
+            f'      SaveDDState();\n'
+            f'      Print("[DD] Post-payout lock applied: floor = $",\n'
+            f'            DoubleToString(g_startingBalance, 2));\n'
+            f'      SendMail("[DD] " + _Symbol + " — Post-payout DD floor locked",\n'
+            f'               "Withdrawal confirmed. DD floor locked at starting balance $" +\n'
+            f'               DoubleToString(g_startingBalance, 2) + ".");\n'
             f'   }}\n'
-            f'   long elapsed_seconds = (long)(TimeCurrent() - g_periodStart);\n'
-            f'   double elapsed_days = elapsed_seconds / 86400.0;\n'
-            f'   if(elapsed_days >= PayoutPeriodDays)\n'
-            f'   {{\n'
-            f'      Print("[CYCLE] Payout period ended (", DoubleToString(elapsed_days, 1), " days). Resuming trading.");\n'
-            f'      g_payoutCondsMet = false;\n' if has_protect_phase else
-            f'      // (g_payoutCondsMet not used in this config)\n'
-            f'      g_stopForever    = false;\n'
-            f'      g_periodStart    = TimeCurrent();\n'
-            f'      g_periodProfit   = 0.0;\n'
-            f'      g_bestDayProfit  = 0.0;\n'
-            f'      g_profitDayCount = 0;\n'
-            f'      Alert("[CYCLE] New payout period started — bot resumed trading");\n'
-            f'   }}\n'
+            f'   g_prevWithdrawnFlag = PayoutWithdrawn;\n'
             f'}}'
         )
-
-        # Insert at the very start of tick checks so it runs before g_stopForever guard
-        extra_tick_checks.insert(0,
-            f'   // ── Period reset (must run BEFORE g_stopForever check) ───────\n'
-            f'   // WHY: If period ended, clears g_stopForever so the bot can resume.\n'
-            f'   // CHANGED: April 2026\n'
-            f'   CheckPeriodReset();'
+        extra_tick_checks.insert(1,
+            f'   CheckPostPayoutLock();'
         )
 
     # ── GetPayoutStatus function ──────────────────────────────────────────

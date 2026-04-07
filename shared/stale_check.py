@@ -63,9 +63,16 @@ def check_analysis_report():
     #      themselves carry direction info via their `prediction` field.
     # CHANGED: April 2026 — check rule contents, not just top-level fields
 
-    # Check entry_timeframe (only warn if also no rules — otherwise rules have it)
+    # Check entry_timeframe — but don't warn if multi-TF backtest gave per-row TF
+    # WHY: When using multi-TF backtest, entry_tf is per strategy row, not global.
+    #      Reporting a missing global entry_timeframe would be a false alarm.
+    # CHANGED: April 2026 — multi-TF support
     entry_tf = report.get('entry_timeframe')
-    if (not entry_tf or entry_tf == 'None') and not win_rules:
+    has_per_row_entry_tf = any(
+        r.get('entry_tf') or r.get('entry_timeframe')
+        for r in win_rules
+    )
+    if (not entry_tf or entry_tf == 'None') and not win_rules and not has_per_row_entry_tf:
         issues.append('Missing entry_timeframe — EA and backtester may use wrong timeframe')
 
     # Check rules have conditions (real problem regardless of other fields)

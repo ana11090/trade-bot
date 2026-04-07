@@ -33,24 +33,31 @@ def _save(starred):
         print(f"[STARRED] Error saving: {e}")
 
 
-def make_key(rule_combo, exit_strategy):
+def make_key(rule_combo, exit_strategy, entry_tf=''):
     """Create a unique key for a strategy.
 
     WHY: We need a stable identifier that doesn't change when stats update.
          rule_combo + exit_strategy is unique across backtest results.
+         entry_tf included when provided so multi-TF runs get separate star slots.
+    CHANGED: April 2026 — multi-TF support (entry_tf optional for backwards compat)
     """
+    if entry_tf:
+        return f"{rule_combo}|{exit_strategy}|{entry_tf}"
     return f"{rule_combo}|{exit_strategy}"
 
 
-def is_starred(rule_combo, exit_strategy):
+def is_starred(rule_combo, exit_strategy, entry_tf=''):
     """Check if a strategy is starred."""
-    key = make_key(rule_combo, exit_strategy)
-    return key in _load()
+    key = make_key(rule_combo, exit_strategy, entry_tf)
+    # Also check old key format (without TF) for backwards compatibility
+    old_key = f"{rule_combo}|{exit_strategy}"
+    loaded = _load()
+    return key in loaded or (entry_tf and old_key in loaded)
 
 
-def star(rule_combo, exit_strategy):
+def star(rule_combo, exit_strategy, entry_tf=''):
     """Star a strategy."""
-    key = make_key(rule_combo, exit_strategy)
+    key = make_key(rule_combo, exit_strategy, entry_tf)
     starred = _load()
     if key not in starred:
         starred.append(key)
@@ -58,23 +65,28 @@ def star(rule_combo, exit_strategy):
         print(f"[STARRED] Added: {key}")
 
 
-def unstar(rule_combo, exit_strategy):
+def unstar(rule_combo, exit_strategy, entry_tf=''):
     """Remove star from a strategy."""
-    key = make_key(rule_combo, exit_strategy)
+    key = make_key(rule_combo, exit_strategy, entry_tf)
     starred = _load()
     if key in starred:
         starred.remove(key)
         _save(starred)
         print(f"[STARRED] Removed: {key}")
+    # Also remove old key format if present
+    old_key = f"{rule_combo}|{exit_strategy}"
+    if entry_tf and old_key in starred:
+        starred.remove(old_key)
+        _save(starred)
 
 
-def toggle(rule_combo, exit_strategy):
+def toggle(rule_combo, exit_strategy, entry_tf=''):
     """Toggle star on/off. Returns new state (True = starred)."""
-    if is_starred(rule_combo, exit_strategy):
-        unstar(rule_combo, exit_strategy)
+    if is_starred(rule_combo, exit_strategy, entry_tf):
+        unstar(rule_combo, exit_strategy, entry_tf)
         return False
     else:
-        star(rule_combo, exit_strategy)
+        star(rule_combo, exit_strategy, entry_tf)
         return True
 
 

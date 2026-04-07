@@ -239,23 +239,44 @@ def build_robot_profile(df):
 def compute_feature_importance(df):
     """
     Train a Random Forest to predict trade outcome and extract importances.
+
+    WHY: This is the legacy standalone analysis. The 7-step pipeline doesn't
+         call it, but it can be run directly. Leak-guard: is_winner and
+         trade_duration_minutes must NEVER appear as features (X), only
+         is_winner is used as the target (y).
+    CHANGED: April 2026 — explicit leak guard
     """
     from sklearn.ensemble import RandomForestClassifier
 
-    exclude_cols = {
+    # Hard exclude list — these are targets or target-correlated.
+    # is_winner IS the target → must not appear in X.
+    # trade_duration_minutes leaks because winners run longer than losers.
+    LEAK_COLS = {
         'trade_id', 'open_time', 'close_time', 'action', 'pips',
         'profit', 'lots', 'sl', 'tp', 'open_price', 'close_price',
         'is_winner', 'trade_direction', 'trade_duration_minutes',
+        'outcome',
         'symbol', 'duration', 'change_pct', 'hour_of_day',
         'day_of_week', 'day_of_month',
     }
     feature_cols = [
         c for c in df.columns
-        if c not in exclude_cols
+        if c not in LEAK_COLS
         and 'candle_idx'  not in c
         and 'candle_time' not in c
         and df[c].dtype in ['float64', 'int64', 'float32', 'int32']
     ]
+
+    if not feature_cols:
+        print("[ANALYZE] ERROR: no usable features after excluding leak columns")
+        return None
+
+    if 'is_winner' not in df.columns:
+        print("[ANALYZE] ERROR: is_winner column missing — cannot train")
+        return None
+
+    print(f"[ANALYZE] Training on {len(feature_cols)} features "
+          f"(excluded {len(LEAK_COLS)} leak/meta cols)")
 
     y = df['is_winner'].values
     X = df[feature_cols].copy()

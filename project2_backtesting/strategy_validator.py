@@ -35,9 +35,19 @@ def _load_data_cached(candles_path):
     global _cached_candles_path, _cached_candles_df, _cached_indicators_df
 
     candles_path = os.path.abspath(candles_path)
-    if _cached_candles_path == candles_path and _cached_candles_df is not None:
+    # FIX 5: also guard _cached_indicators_df — if a previous load failed mid-way,
+    #         indicators may be None while candles_path matches, returning partial data.
+    # CHANGED: April 2026 — cache reliability fix
+    if (_cached_candles_path == candles_path
+            and _cached_candles_df is not None
+            and _cached_indicators_df is not None):
         print(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
         return _cached_candles_df, _cached_indicators_df
+
+    # Reset all cache vars before load so a partial failure leaves no stale state
+    _cached_candles_path  = None
+    _cached_candles_df    = None
+    _cached_indicators_df = None
 
     print(f"[VALIDATOR] Loading data: {os.path.basename(candles_path)}")
     candles_df = pd.read_csv(candles_path)
@@ -867,7 +877,8 @@ def slippage_stress_test(
 # Combined Score
 # ─────────────────────────────────────────────────────────────────────────────
 
-def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result=None):
+def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result=None,
+                   live_firm_results=None):
     """
     Compute 0-100 confidence score from walk-forward + Monte Carlo results.
 
@@ -947,6 +958,25 @@ def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result
             warnings.append("Barely profitable edge — near breakeven at just 2 pip slippage")
 
     verdicts['slippage'] = slip_verdict
+
+    # Live firm simulation scoring
+    # WHY: Tests against ACTUAL firm rules — most accurate survival prediction.
+    # CHANGED: April 2026
+    if live_firm_results:
+        viable_firms = [r for r in live_firm_results
+                        if r.get('blow_count', 99) == 0 and r.get('payout_cycles_completed', 0) >= 1]
+        if len(viable_firms) >= 3:
+            score += 15
+            verdicts['live_firm'] = 'EXCELLENT'
+        elif len(viable_firms) >= 1:
+            score += 5
+            verdicts['live_firm'] = 'ACCEPTABLE'
+        else:
+            score -= 15
+            verdicts['live_firm'] = 'NO_VIABLE_FIRM'
+            warnings.append("Strategy doesn't survive on any prop firm under real rules")
+    else:
+        verdicts['live_firm'] = 'N/A'
 
     # Clamp
     score = max(0, min(100, score))
@@ -1047,15 +1077,29 @@ def run_full_validation(
             progress_callback=mc_progress_callback,
         )
 
-    combined = combined_score(wf_result, mc_result, slippage_result)
+    # ── Live Firm Simulation ─────────────────────────────────────────────
+    # WHY: Tests the strategy against each prop firm's exact rules.
+    # CHANGED: April 2026
+    live_firm_results = None
+    if trades:
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(_HERE), '..'))
+            from shared.live_firm_sim import simulate_all_firms
+            live_firm_results = simulate_all_firms(trades, account_size=account_size)
+        except Exception as e:
+            print(f"[validator] live firm simulation failed: {e}")
+
+    combined = combined_score(wf_result, mc_result, slippage_result, live_firm_results)
 
     result = {
-        'strategy_index': strategy_index,
-        'validated_at':   validated_at,
-        'walk_forward':   wf_result,
-        'monte_carlo':    mc_result,
-        'slippage':       slippage_result,
-        'combined':       combined,
+        'strategy_index':   strategy_index,
+        'validated_at':     validated_at,
+        'walk_forward':     wf_result,
+        'monte_carlo':      mc_result,
+        'slippage':         slippage_result,
+        'live_firm_results': live_firm_results,
+        'combined':         combined,
     }
 
     _save_validation(strategy_index, result)

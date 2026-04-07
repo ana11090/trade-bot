@@ -27,7 +27,8 @@ _current_source_path = [None]
 _source_var    = None
 _rule_canvas   = None
 _rule_inner    = None
-_use_safety_var = None  # BooleanVar for safety stops toggle
+_use_safety_var  = None  # BooleanVar for safety stops toggle
+_multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 
 # Step weights: loading data, running matrix, completion
 _STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
@@ -85,10 +86,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             cfg = load_config()
             entry_tf = cfg.get('winning_scenario', 'H1')
             symbol = cfg.get('symbol', 'XAUUSD').lower()
+            multi_tf = _multi_tf_var.get() if _multi_tf_var is not None else False
 
             output_text.insert(tk.END, f"Entry timeframe: {entry_tf}\n")
 
-            # Find candle data for the selected timeframe
+            # Find candle data for the selected (base) timeframe
             candle_path = None
             candidates = [
                 os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
@@ -211,19 +213,79 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             ui(lambda: _set_progress(progress_bar, step_label, 10, "Running comparison matrix..."))
 
             use_safety = _use_safety_var.get() if _use_safety_var is not None else True
-            output_text.insert(tk.END, f"Safety stops: {'ON' if use_safety else 'OFF'}\n\n")
+            output_text.insert(tk.END, f"Safety stops: {'ON' if use_safety else 'OFF'}\n")
+            output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n\n")
+
+            # Determine which TFs to test
+            if multi_tf:
+                tfs_to_test = ['M5', 'M15', 'H1', 'H4']
+            else:
+                tfs_to_test = [entry_tf]
 
             capture = io.StringIO()
             with contextlib.redirect_stdout(capture):
                 sys.path.insert(0, project_root)
                 from project2_backtesting.strategy_backtester import run_comparison_matrix
-                results = run_comparison_matrix(
-                    candles_path=candle_path,
-                    timeframe=entry_tf,
-                    report_path=temp_path,
-                    progress_callback=_progress,
-                    use_safety_stops=use_safety,
+
+                # Run matrix for each TF and combine results
+                # WHY: Testing all TFs in one run finds the best entry frequency
+                #      without the user having to switch config and re-run manually.
+                # CHANGED: April 2026 — multi-TF entry testing
+                all_matrix   = []
+                total_elapsed = 0
+
+                for tf_idx, tf in enumerate(tfs_to_test):
+                    if multi_tf:
+                        output_text.insert(tk.END,
+                            f"\n>>> Testing entry TF: {tf} ({tf_idx+1}/{len(tfs_to_test)})\n")
+                        output_text.see(tk.END)
+
+                    # Resolve candle file for this TF
+                    tf_candle_path = None
+                    for cand in [
+                        os.path.join(project_root, 'data', f'{symbol}_{tf}.csv'),
+                        os.path.join(project_root, 'data', symbol, f'{tf}.csv'),
+                    ]:
+                        if os.path.exists(cand):
+                            tf_candle_path = cand
+                            break
+
+                    if tf_candle_path is None:
+                        if multi_tf:
+                            output_text.insert(tk.END, f"    Skipping {tf} — no candle file found\n")
+                        continue
+
+                    tf_results = run_comparison_matrix(
+                        candles_path=tf_candle_path,
+                        timeframe=tf,
+                        report_path=temp_path,
+                        progress_callback=_progress,
+                        use_safety_stops=use_safety,
+                    )
+
+                    # Tag each result row with entry TF when running multi-TF
+                    # WHY: Put entry_tf at both top-level and inside stats so every
+                    #      downstream tool can find it regardless of how it reads the row.
+                    # CHANGED: April 2026 — multi-TF support
+                    if multi_tf:
+                        for row in tf_results.get('matrix', []):
+                            row['entry_tf'] = tf
+                            if isinstance(row.get('stats'), dict):
+                                row['stats']['entry_tf'] = tf
+
+                    all_matrix.extend(tf_results.get('matrix', []))
+                    total_elapsed += tf_results.get('elapsed', 0)
+
+                # Sort combined results by net pips descending
+                all_matrix.sort(
+                    key=lambda r: r.get('stats', {}).get('net_total_pips', 0),
+                    reverse=True,
                 )
+
+                results = {
+                    'matrix':  all_matrix,
+                    'elapsed': total_elapsed,
+                }
 
             # Clean up temp file
             try:
@@ -637,6 +699,34 @@ def build_panel(parent):
         safety_frame,
         text="    ON  = matches live EA behavior (recommended)\n"
              "    OFF = raw strategy test, no safety net (shows true risk)",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Multi-TF entry testing ────────────────────────────────────────────────
+    # WHY: A rule that wins on H1 might be even better on M15 or H4. Without
+    #      testing all entry TFs, you only see one slice of reality.
+    # CHANGED: April 2026 — multi-TF entry testing
+    global _multi_tf_var
+    multi_tf_frame = tk.Frame(panel, bg="white", pady=6)
+    multi_tf_frame.pack(fill="x", padx=20)
+
+    multi_tf_var = tk.BooleanVar(value=False)
+    _multi_tf_var = multi_tf_var
+    tk.Checkbutton(
+        multi_tf_frame,
+        text="🔍 Test on all entry timeframes (M5, M15, H1, H4)",
+        variable=multi_tf_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    tk.Label(
+        multi_tf_frame,
+        text="    OFF = test only on the configured entry TF (faster)\n"
+             "    ON  = run 4x — once per entry TF — to find the best entry frequency",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",

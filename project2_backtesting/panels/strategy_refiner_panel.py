@@ -675,11 +675,13 @@ def _start_optimization():
             spread_pips = 2.5
             commission_pips = 0.0
             idx = _get_selected_index()
+            selected_strategy_row = None
             if idx is not None:
                 for s in _strategies:
                     if s['index'] == idx:
                         spread_pips = s.get('spread_pips', 2.5)
                         commission_pips = s.get('commission_pips', 0.0)
+                        selected_strategy_row = s
                         break
 
             all_candidates = []
@@ -720,6 +722,10 @@ def _start_optimization():
                     target_firm=target_data,
                     account_size=account_size,
                     progress_callback=_cb,
+                    lock_entry=lock_entry_var.get(),
+                    lock_exit=lock_exit_var.get(),
+                    lock_sltp=lock_sltp_var.get(),
+                    lock_filters=lock_filters_var.get(),
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -745,25 +751,35 @@ def _start_optimization():
                 base_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
                 print(f"[OPTIMIZER] Loaded {len(base_rules)} WIN rules from analysis_report.json")
 
-                # Find candle path from config
+                # Find candle path — use per-strategy entry_tf first (multi-TF backtest)
                 from project2_backtesting.panels.configuration import load_config
                 cfg = load_config()
                 symbol = cfg.get('symbol', 'XAUUSD').lower()
-                entry_tf = cfg.get('winning_scenario', 'H1')
 
-                # If rules were discovered on a different TF than config, use the rules' TF.
-                # WHY: Rules from P4 might have been discovered on M15 but config still says
-                #      H1 from a previous session.
-                # CHANGED: April 2026 — read TF from rules
-                try:
-                    if os.path.exists(rules_path):
-                        saved_tf = report.get('entry_timeframe')
-                        if saved_tf and saved_tf != entry_tf:
-                            print(f"[OPTIMIZER] Rules were discovered on {saved_tf}, "
-                                  f"but config says {entry_tf}. Using {saved_tf}.")
-                            entry_tf = saved_tf
-                except Exception:
-                    pass
+                # WHY: When multi-TF backtest is used, each strategy row carries its
+                #      own entry_tf. Use that first, fall back to analysis_report,
+                #      then fall back to global config.
+                # CHANGED: April 2026 — multi-TF support
+                entry_tf = (
+                    (selected_strategy_row or {}).get('entry_tf') or
+                    (selected_strategy_row or {}).get('entry_timeframe') or
+                    (selected_strategy_row or {}).get('stats', {}).get('entry_tf') or
+                    None
+                )
+
+                if not entry_tf:
+                    entry_tf = cfg.get('winning_scenario', 'H1')
+                    try:
+                        if os.path.exists(rules_path):
+                            saved_tf = report.get('entry_timeframe')
+                            if saved_tf and saved_tf != entry_tf:
+                                print(f"[OPTIMIZER] Rules were discovered on {saved_tf}, "
+                                      f"but config says {entry_tf}. Using {saved_tf}.")
+                                entry_tf = saved_tf
+                    except Exception:
+                        pass
+
+                print(f"[OPTIMIZER] Using entry timeframe: {entry_tf}")
 
                 # WHY: Use the entry TF from the rules, not H1 fallback.
                 #      Removed xauusd_H1.csv fallback — wrong TF = wrong results.
@@ -2395,6 +2411,43 @@ def build_panel(parent):
     add_tooltip(quick_desc, _build_quick_tooltip(), wraplength=450)
     add_tooltip(deep_rb, _build_deep_tooltip(), wraplength=450)
     add_tooltip(deep_desc, _build_deep_tooltip(), wraplength=450)
+
+    # ── Lock & protect mode ───────────────────────────────────────────────────
+    # WHY: Sometimes you want to optimize ONLY the filters and leave the entry
+    #      rule alone. Or test "is the exit fine but I need better SL/TP?"
+    #      Lock checkboxes restrict what the optimizer is allowed to change.
+    # CHANGED: April 2026 — surgical optimization mode
+    lock_frame = tk.LabelFrame(
+        sf,
+        text="🔒 Lock & Protect (restrict what the optimizer changes)",
+        font=("Segoe UI", 9, "bold"),
+        bg=WHITE,
+        padx=10,
+        pady=8,
+    )
+    lock_frame.pack(fill="x", padx=10, pady=(8, 5))
+
+    lock_entry_var   = tk.BooleanVar(value=False)
+    lock_exit_var    = tk.BooleanVar(value=False)
+    lock_sltp_var    = tk.BooleanVar(value=False)
+    lock_filters_var = tk.BooleanVar(value=False)
+
+    tk.Checkbutton(lock_frame, text="Lock entry rule (don't modify conditions)",
+                   variable=lock_entry_var, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(anchor="w")
+    tk.Checkbutton(lock_frame, text="Lock exit type (don't change FixedSL/ATR/Hybrid/etc)",
+                   variable=lock_exit_var, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(anchor="w")
+    tk.Checkbutton(lock_frame, text="Lock SL/TP values (don't change pip distances)",
+                   variable=lock_sltp_var, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(anchor="w")
+    tk.Checkbutton(lock_frame, text="Lock filters (don't change cooldown/min_hold/max_trades)",
+                   variable=lock_filters_var, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(anchor="w")
+
+    tk.Label(lock_frame,
+             text="Tip: Lock 3 of these and the optimizer focuses on the 4th — surgical.",
+             font=("Segoe UI", 8), fg="#666", bg=WHITE).pack(anchor="w", pady=(4, 0))
 
     opt_controls = tk.Frame(sf, bg=WHITE, padx=20, pady=8)
     opt_controls.pack(fill="x", padx=5, pady=(0, 5))

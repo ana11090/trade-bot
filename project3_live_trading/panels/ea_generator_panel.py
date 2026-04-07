@@ -238,8 +238,15 @@ def _refresh_condition_vars(idx):
     # ── Auto-fill entry timeframe ─────────────────────────────────────────
     # WHY: Rules discovered on M15 need PERIOD_M15 in the EA. The entry TF
     #      should be read from the strategy data, not defaulted to H1.
-    # CHANGED: April 2026 — entry TF flows to EA
-    entry_tf = strat_data.get('entry_timeframe')
+    #      With multi-TF backtest, each row now carries its own entry_tf —
+    #      check that first (highest priority).
+    # CHANGED: April 2026 — multi-TF support + entry TF flows to EA
+    entry_tf = (
+        strat_data.get('entry_tf') or                  # multi-TF backtest row
+        strat_data.get('entry_timeframe') or           # legacy field name
+        strat_data.get('stats', {}).get('entry_tf') or # nested fallback
+        None
+    )
     if not entry_tf:
         try:
             report_path = os.path.join(project_root, 'project1_reverse_engineering',
@@ -250,8 +257,13 @@ def _refresh_condition_vars(idx):
                 entry_tf = report.get('entry_timeframe')
         except Exception:
             pass
-    # Note: entry_tf is used in _generate when reading from config
-    # The config already has winning_scenario, this is just a double-check
+    if not entry_tf:
+        try:
+            from project2_backtesting.panels.configuration import load_config as _lc
+            entry_tf = _lc().get('winning_scenario', 'H1')
+        except Exception:
+            entry_tf = 'H1'
+    print(f"[EA GEN] Using entry timeframe: {entry_tf}")
 
 
 _condition_frame = None
@@ -557,12 +569,34 @@ def _generate():
         except Exception:
             magic = 12345
 
-        try:
-            from project2_backtesting.panels.configuration import load_config
-            _cfg = load_config()
-            entry_tf = _cfg.get('winning_scenario', 'H1')
-        except Exception:
-            entry_tf = 'H1'
+        # WHY: With multi-TF backtest, each strategy row carries its own entry_tf.
+        #      Use that first. Fall back to analysis_report, then global config.
+        # CHANGED: April 2026 — multi-TF support
+        entry_tf = (
+            strat_data.get('entry_tf') or
+            strat_data.get('entry_timeframe') or
+            strat_data.get('stats', {}).get('entry_tf') or
+            None
+        )
+        if not entry_tf:
+            try:
+                _rpt_path = os.path.join(project_root, 'project1_reverse_engineering',
+                                         'outputs', 'analysis_report.json')
+                if os.path.exists(_rpt_path):
+                    import json as _j
+                    with open(_rpt_path, 'r') as _f:
+                        _rpt = _j.load(_f)
+                    entry_tf = _rpt.get('entry_timeframe')
+            except Exception:
+                pass
+        if not entry_tf:
+            try:
+                from project2_backtesting.panels.configuration import load_config
+                _cfg = load_config()
+                entry_tf = _cfg.get('winning_scenario', 'H1')
+            except Exception:
+                entry_tf = 'H1'
+        print(f"[EA GEN] Generating EA with entry timeframe: {entry_tf}")
 
         from project3_live_trading.ea_generator import generate_ea
         code = generate_ea(

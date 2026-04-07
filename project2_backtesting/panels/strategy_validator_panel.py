@@ -195,6 +195,7 @@ _scroll_canvas   = None
 _wf_frame        = None
 _mc_frame        = None
 _slip_frame      = None
+_live_firm_frame = None
 _verdict_frame   = None
 
 
@@ -419,31 +420,35 @@ def _get_strategy_meta(idx):
         return [], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0
 
 
-def _get_candles_path():
+def _get_candles_path(entry_tf_hint=None):
     """Get candle CSV path for the entry TF the rules were discovered on.
 
     Priority:
+      0. entry_tf_hint — per-strategy TF from a multi-TF backtest row (highest)
       1. backtest_matrix.json → entry_timeframe (what the backtest ran on)
       2. analysis_report.json → entry_timeframe (what P4 discovery used)
       3. Configuration → winning_scenario (user's current setting)
       4. Fallback → H1
 
     WHY: Rules found on M15 must be validated on M15 candles.
-    CHANGED: April 2026 — reads TF from rules, not hardcoded H1
+         With multi-TF backtest each row has its own entry_tf — use it first.
+    CHANGED: April 2026 — multi-TF support (entry_tf_hint parameter)
     """
-    entry_tf = None
+    # 0. Use per-row entry TF if provided (multi-TF backtest)
+    entry_tf = entry_tf_hint or None
 
-    # 1. Try backtest_matrix.json
-    try:
-        matrix_path = os.path.join(project_root, 'project2_backtesting',
-                                   'outputs', 'backtest_matrix.json')
-        if os.path.exists(matrix_path):
-            import json as _json
-            with open(matrix_path, 'r') as f:
-                meta = _json.load(f)
-            entry_tf = meta.get('entry_timeframe') or None
-    except Exception:
-        pass
+    # 1. Try backtest_matrix.json (only if no hint)
+    if not entry_tf:
+        try:
+            matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                       'outputs', 'backtest_matrix.json')
+            if os.path.exists(matrix_path):
+                import json as _json
+                with open(matrix_path, 'r') as f:
+                    meta = _json.load(f)
+                entry_tf = meta.get('entry_timeframe') or None
+        except Exception:
+            pass
 
     # 2. Try analysis_report.json
     if not entry_tf:
@@ -630,8 +635,183 @@ def _display_slip_results(slip_result):
              fg=verdict_colors.get(verdict, WHITE)).pack(anchor="w", pady=(6, 0))
 
 
+def _verdict_explanation(verdict):
+    """Plain-language explanation of each live-firm verdict."""
+    explanations = {
+        'EXCELLENT': (
+            "Zero blows AND 3+ payout cycles completed.\n\n"
+            "Ideal result. The strategy survived the entire test period without "
+            "ever breaching the firm's DD limits, AND completed multiple successful "
+            "payout cycles. You should feel confident deploying this live."
+        ),
+        'GOOD': (
+            "Zero blows AND 1-2 payout cycles completed.\n\n"
+            "Solid result. Strategy works but the test period may be too short to "
+            "show many cycles. Consider running on a longer date range to confirm."
+        ),
+        'ACCEPTABLE': (
+            "1 blow AND at least 1 payout cycle completed.\n\n"
+            "Risky but viable. The strategy lost an account once but recovered "
+            "and made payouts. Only deploy if you can afford the occasional "
+            "account replacement fee."
+        ),
+        'MARGINAL': (
+            "Inconsistent — neither clearly profitable nor dangerous.\n\n"
+            "Strategy doesn't show a clear edge on this firm. Either the rules "
+            "don't suit this firm's setup, or the strategy needs refinement."
+        ),
+        'RISKY': (
+            "Account blew but never completed a payout cycle.\n\n"
+            "Worst kind of result — you lose money before ever making any. "
+            "Do not deploy this strategy on this firm."
+        ),
+        'DANGEROUS': (
+            "Account blew 3+ times during the test period.\n\n"
+            "Strategy is fundamentally incompatible with this firm's rules. "
+            "Either the DD limits are too tight or the strategy is too "
+            "aggressive. Do not deploy."
+        ),
+        'INSUFFICIENT_DATA': (
+            "Not enough trades or days to run a meaningful simulation.\n\n"
+            "Try running the strategy on a longer historical period."
+        ),
+        'ERROR': (
+            "Simulation crashed for this firm.\n\n"
+            "Likely a missing field in the firm JSON. Check the console for details."
+        ),
+    }
+    return explanations.get(verdict, "No explanation available.")
+
+
+def _display_live_firm_results(live_firm_results):
+    """Render the Live Firm Simulation section."""
+    if _live_firm_frame is None:
+        return
+    for w in _live_firm_frame.winfo_children():
+        w.destroy()
+
+    tk.Label(_live_firm_frame, text="Live Firm Simulation",
+             font=("Segoe UI", 11, "bold"), bg=BG, fg=DARK).pack(anchor="w", padx=5, pady=(8, 4))
+
+    header_lbl = tk.Label(
+        _live_firm_frame,
+        text=(
+            "Replays your strategy's trades day-by-day using each prop firm's EXACT rules\n"
+            "(closed-balance trailing, lock-after-gain, post-payout lock). Hover for details."
+        ),
+        font=("Segoe UI", 8, "italic"), bg=BG, fg=GREY,
+        wraplength=600, justify="left",
+        cursor="question_arrow",
+    )
+    header_lbl.pack(anchor="w", padx=5, pady=(0, 6))
+    _Tooltip(header_lbl,
+        "LIVE FIRM SIMULATION — what this tests\n\n"
+        "This test replays your strategy's trades through each prop firm's EXACT\n"
+        "rules, day by day. Unlike the basic prop firm sim that uses generic\n"
+        "percentage-based DD checks, this models:\n\n"
+        "  • The firm's DD trailing method (closed-balance vs equity)\n"
+        "  • Lock-after-gain rules (e.g. DD locks at +6% on Leveraged)\n"
+        "  • Post-payout DD lock (some firms lock floor after first withdrawal)\n"
+        "  • Payout cycles (default 14 days) with 80% withdrawal assumed\n\n"
+        "FOR EACH FIRM you see:\n"
+        "  Blow count — how many times the account would have died\n"
+        "  Lock day — when the lock-after-gain fired (if at all)\n"
+        "  Payout cycles — how many successful payout windows\n"
+        "  Avg/cycle — typical dollars withdrawn per payout\n"
+        "  Annual estimate — extrapolated yearly income from this firm\n\n"
+        "VERDICTS:\n"
+        "  EXCELLENT  — Zero blows, 3+ cycles completed\n"
+        "  GOOD       — Zero blows, 1+ cycles\n"
+        "  ACCEPTABLE — 1 blow max, 1+ cycles\n"
+        "  MARGINAL   — Inconsistent results\n"
+        "  RISKY      — Blows but no payouts\n"
+        "  DANGEROUS  — 3+ blows in the test period"
+    )
+
+    if not live_firm_results:
+        tk.Label(_live_firm_frame, text="Not run.",
+                 font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY).pack(anchor="w", padx=5)
+        return
+
+    verdict_colors = {
+        'EXCELLENT':        '#27ae60',
+        'GOOD':             '#2ecc71',
+        'ACCEPTABLE':       '#f39c12',
+        'MARGINAL':         '#e67e22',
+        'RISKY':            '#e74c3c',
+        'DANGEROUS':        '#c0392b',
+        'INSUFFICIENT_DATA': '#95a5a6',
+        'ERROR':            '#95a5a6',
+        'N/A':              '#95a5a6',
+    }
+
+    for firm_result in live_firm_results:
+        firm_name = firm_result.get('firm_name', 'Unknown')
+        verdict   = firm_result.get('verdict', 'N/A')
+        color     = verdict_colors.get(verdict, GREY)
+
+        firm_card = tk.Frame(_live_firm_frame, bg=WHITE, padx=12, pady=8,
+                             highlightbackground=color, highlightthickness=2)
+        firm_card.pack(fill="x", padx=5, pady=3)
+
+        # Top row: firm name + verdict badge
+        top_row = tk.Frame(firm_card, bg=WHITE)
+        top_row.pack(fill="x")
+
+        tk.Label(top_row, text=firm_name, font=("Segoe UI", 10, "bold"),
+                 bg=WHITE, fg=DARK).pack(side="left")
+
+        verdict_lbl = tk.Label(top_row, text=verdict,
+                               font=("Segoe UI", 8, "bold"),
+                               bg=color, fg="white", padx=8, pady=2,
+                               cursor="question_arrow")
+        verdict_lbl.pack(side="right")
+        _Tooltip(verdict_lbl,
+            f"Verdict: {verdict}\n\n" + _verdict_explanation(verdict))
+
+        # Stats row
+        blow_count = firm_result.get('blow_count', 0)
+        cycles     = firm_result.get('payout_cycles_completed', 0)
+        avg_cycle  = firm_result.get('avg_per_cycle', 0)
+        annual     = firm_result.get('estimated_annual', 0)
+        lock_day   = firm_result.get('lock_day')
+        pd_days    = firm_result.get('payout_period_days', 14)
+
+        stats_parts = [
+            f"Blows: {blow_count}",
+            f"Cycles: {cycles}",
+            f"Avg/cycle: ${avg_cycle:,.0f}",
+            f"Est. annual: ${annual:,.0f}",
+        ]
+        if lock_day is not None:
+            stats_parts.append(f"DD locked: day {lock_day}")
+        stats_text = "   |   ".join(stats_parts)
+
+        stats_lbl = tk.Label(firm_card, text=stats_text,
+                             font=("Segoe UI", 9), bg=WHITE, fg="#333",
+                             cursor="question_arrow")
+        stats_lbl.pack(anchor="w", pady=(4, 0))
+        _Tooltip(stats_lbl,
+            "BLOWS: How many times the account hit total DD breach.\n"
+            "  Goal: 0. Each blow = a lost account + account fee.\n\n"
+            f"PAYOUT CYCLES: Full {pd_days}-day periods completed with profit.\n"
+            "  More cycles = more income. Aim for regular cycles.\n\n"
+            "AVG/CYCLE: Average dollars withdrawn per payout window\n"
+            "  (assumes withdrawing 80% of period profit).\n\n"
+            "EST. ANNUAL: Extrapolated yearly income from this firm.\n"
+            "  Formula: avg_per_cycle × cycles_per_year × (1 − blow_rate).\n\n"
+            "DD LOCKED: Day the lock-after-gain rule fired.\n"
+            "  Earlier = better. Once locked, DD floor stops trailing up."
+        )
+
+        # Warnings
+        for warn_text in firm_result.get('warnings', []):
+            tk.Label(firm_card, text=f"⚠  {warn_text}",
+                     font=("Segoe UI", 8), bg=WHITE, fg=RED).pack(anchor="w", pady=(2, 0))
+
+
 def _clear_results():
-    for frame in (_wf_frame, _mc_frame, _slip_frame, _verdict_frame):
+    for frame in (_wf_frame, _mc_frame, _slip_frame, _live_firm_frame, _verdict_frame):
         if frame:
             for w in frame.winfo_children():
                 w.destroy()
@@ -1330,6 +1510,137 @@ def _display_verdict(combined, trades=None):
     verdicts = combined.get('verdicts', {})
     grade_color = GRADE_COLORS.get(grade, GREY)
 
+    # ── Real-World Expectations Summary ───────────────────────────────────────
+    # WHY: Walk-forward + MC + slippage tested separately gives 3 numbers to
+    #      interpret. This card combines them into ONE "expected real-world
+    #      performance" estimate so the user sees what to actually expect live.
+    # CHANGED: April 2026 — combined summary
+    if trades and len(trades) >= 20:
+        # Compute in-sample stats from trades
+        pips_vals  = [float(t.get('pips', t.get('net_pips', 0))) for t in trades]
+        wins       = [p for p in pips_vals if p > 0]
+        losses     = [p for p in pips_vals if p <= 0]
+        in_pips    = int(sum(pips_vals))
+        in_wr      = round(len(wins) / max(len(pips_vals), 1) * 100, 1)
+        gross_win  = sum(wins)
+        gross_loss = abs(sum(losses)) or 1
+        in_pf      = round(gross_win / gross_loss, 2)
+        # Max drawdown: largest cumulative dip from peak
+        equity_curve = []
+        running = 0
+        for p in pips_vals:
+            running += p
+            equity_curve.append(running)
+        peak = 0
+        max_dd_pips = 0
+        for eq in equity_curve:
+            if eq > peak:
+                peak = eq
+            dd = peak - eq
+            if dd > max_dd_pips:
+                max_dd_pips = dd
+        in_dd = int(max_dd_pips)
+
+        # Pull validation factors from combined
+        wf_degrad    = combined.get('avg_degradation', 0) / 100  # e.g. -0.15
+        edge_held    = combined.get('edge_held_ratio', 0.5)       # 0.0–1.0
+        mc_v         = verdicts.get('monte_carlo', 'N/A')
+        mc_pass_rate = {'ROBUST': 0.80, 'MODERATE': 0.60, 'FRAGILE': 0.35,
+                        'N/A': 0.50}.get(mc_v, 0.50)
+
+        # Realism factor = weighted combination of the 3 test results
+        realism_factor = max(0.30, min(1.0,
+            (1 + wf_degrad) * 0.40 +
+            edge_held       * 0.30 +
+            mc_pass_rate    * 0.30
+        ))
+
+        real_pf   = round(in_pf   * realism_factor, 2)
+        real_wr   = round(in_wr   * realism_factor, 1)
+        real_pips = int(in_pips   * realism_factor)
+        real_dd   = int(in_dd     * (2 - realism_factor))  # DD gets WORSE in reality
+
+        if realism_factor >= 0.85:
+            real_color = GREEN   # barely degraded
+        elif realism_factor >= 0.65:
+            real_color = AMBER   # moderate degradation
+        else:
+            real_color = RED     # heavy degradation
+
+        summary_card = tk.Frame(_verdict_frame, bg="#e8f4fd", padx=15, pady=12,
+                                highlightbackground="#1565C0", highlightthickness=2)
+        summary_card.pack(fill="x", padx=5, pady=(8, 4))
+
+        header_lbl = tk.Label(summary_card,
+                              text="💡 Real-World Expectations",
+                              font=("Segoe UI", 12, "bold"),
+                              bg="#e8f4fd", fg=DARK, cursor="question_arrow")
+        header_lbl.pack(anchor="w")
+        _Tooltip(header_lbl,
+            "HOW THE REAL-WORLD ESTIMATE IS CALCULATED\n\n"
+            "This combines the 3 validation tests into a single realistic\n"
+            "performance estimate.\n\n"
+            "FORMULA:\n"
+            "  realism_factor = (1 + walk_forward_degradation) x 40%\n"
+            "                 + edge_held_ratio x 30%\n"
+            "                 + monte_carlo_pass_rate x 30%\n\n"
+            "Then:\n"
+            "  realistic_PF   = in_sample_PF   x realism_factor\n"
+            "  realistic_WR   = in_sample_WR   x realism_factor\n"
+            "  realistic_pips = in_sample_pips x realism_factor\n"
+            "  realistic_DD   = in_sample_DD   x (2 - realism_factor)\n"
+            "                   (DD always gets WORSE in real trading)\n\n"
+            "WHY: Backtests show what HAPPENED on historical data.\n"
+            "Walk-forward shows if the edge holds on UNSEEN data.\n"
+            "Monte Carlo shows if profit was real or sequence luck.\n\n"
+            "INTERPRETATION:\n"
+            "  85%+ realism = robust — expect close to in-sample numbers\n"
+            "  65-85%       = noticeable drop but still profitable\n"
+            "  <65%         = fragile — real performance will disappoint\n\n"
+            "DRAWDOWN: Real-world DD is typically 1.5-2x in-sample\n"
+            "because losing streaks hit at the worst possible times."
+        )
+
+        tk.Label(summary_card,
+                 text="What to actually expect when trading live, after accounting "
+                      "for walk-forward decay, sequence luck, and slippage:",
+                 font=("Segoe UI", 8), bg="#e8f4fd", fg="#666",
+                 wraplength=600, justify="left").pack(anchor="w", pady=(2, 8))
+
+        comparison_frame = tk.Frame(summary_card, bg="#e8f4fd")
+        comparison_frame.pack(fill="x")
+
+        # In-sample column
+        in_col = tk.Frame(comparison_frame, bg="#e8f4fd")
+        in_col.pack(side="left", expand=True, fill="x", padx=10)
+        tk.Label(in_col, text="IN-SAMPLE (backtest shows)",
+                 font=("Segoe UI", 9, "bold"), bg="#e8f4fd", fg="#666").pack(anchor="w")
+        tk.Label(in_col, text=f"Profit Factor: {in_pf}",
+                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(in_col, text=f"Win Rate: {in_wr}%",
+                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(in_col, text=f"Net Pips: {in_pips:+,}",
+                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(in_col, text=f"Max DD: {in_dd:,} pips",
+                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
+
+        tk.Label(comparison_frame, text="→",
+                 font=("Segoe UI", 20), bg="#e8f4fd", fg="#1565C0").pack(side="left", padx=10)
+
+        # Real-world column
+        real_col = tk.Frame(comparison_frame, bg="#e8f4fd")
+        real_col.pack(side="left", expand=True, fill="x", padx=10)
+        tk.Label(real_col, text=f"REAL-WORLD ESTIMATE ({realism_factor*100:.0f}% realism)",
+                 font=("Segoe UI", 9, "bold"), bg="#e8f4fd", fg=real_color).pack(anchor="w")
+        tk.Label(real_col, text=f"Profit Factor: {real_pf}",
+                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(real_col, text=f"Win Rate: {real_wr}%",
+                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(real_col, text=f"Net Pips: {real_pips:+,}",
+                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(real_col, text=f"Max DD: ~{real_dd:,} pips (typically worse)",
+                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
+
     card = tk.Frame(_verdict_frame, bg=WHITE,
                     highlightbackground=grade_color, highlightthickness=2,
                     padx=16, pady=12)
@@ -1351,18 +1662,23 @@ def _display_verdict(combined, trades=None):
              bg=WHITE, fg=grade_color).pack(anchor="w", pady=(0, 8))
 
     # Verdicts
-    wf_v   = verdicts.get('walk_forward', 'N/A')
-    mc_v   = verdicts.get('monte_carlo', 'N/A')
-    slip_v = verdicts.get('slippage', 'N/A')
+    wf_v    = verdicts.get('walk_forward', 'N/A')
+    mc_v    = verdicts.get('monte_carlo', 'N/A')
+    slip_v  = verdicts.get('slippage', 'N/A')
+    firm_v  = verdicts.get('live_firm', 'N/A')
     verdict_icons = {
         'LIKELY_REAL': '✅', 'INCONCLUSIVE': '⚠️',
         'LIKELY_OVERFITTING': '❌', 'INSUFFICIENT_DATA': '⚪',
-        'ROBUST': '✅', 'MODERATE': '⚠️', 'FRAGILE': '❌', 'NO_EDGE': '❌', 'N/A': '—',
+        'ROBUST': '✅', 'MODERATE': '⚠️', 'FRAGILE': '❌', 'NO_EDGE': '❌',
+        'EXCELLENT': '✅', 'ACCEPTABLE': '⚠️', 'NO_VIABLE_FIRM': '❌',
+        'N/A': '—',
     }
     verdict_colors = {
         'LIKELY_REAL': GREEN, 'INCONCLUSIVE': AMBER,
         'LIKELY_OVERFITTING': RED, 'INSUFFICIENT_DATA': GREY,
-        'ROBUST': GREEN, 'MODERATE': AMBER, 'FRAGILE': RED, 'NO_EDGE': RED, 'N/A': GREY,
+        'ROBUST': GREEN, 'MODERATE': AMBER, 'FRAGILE': RED, 'NO_EDGE': RED,
+        'EXCELLENT': GREEN, 'ACCEPTABLE': AMBER, 'NO_VIABLE_FIRM': RED,
+        'N/A': GREY,
     }
     tk.Label(card,
              text=f"Walk-Forward:  {wf_v.replace('_', ' ')}  {verdict_icons.get(wf_v, '')}",
@@ -1375,7 +1691,11 @@ def _display_verdict(combined, trades=None):
     tk.Label(card,
              text=f"Slippage Test: {slip_v.replace('_', ' ')}  {verdict_icons.get(slip_v, '')}",
              font=("Segoe UI", 10), bg=WHITE,
-             fg=verdict_colors.get(slip_v, GREY)).pack(anchor="w", pady=(1, 8))
+             fg=verdict_colors.get(slip_v, GREY)).pack(anchor="w", pady=1)
+    tk.Label(card,
+             text=f"Live Firms:    {firm_v.replace('_', ' ')}  {verdict_icons.get(firm_v, '')}",
+             font=("Segoe UI", 10), bg=WHITE,
+             fg=verdict_colors.get(firm_v, GREY)).pack(anchor="w", pady=(1, 8))
 
     # Recommendation
     tk.Label(card, text=rec, font=("Segoe UI", 10),
@@ -1671,7 +1991,25 @@ def _run(mode, override_idx=None, done_event=None):
         messagebox.showerror("No Strategy", "Select a strategy first.")
         return
 
-    candles_path = _get_candles_path()
+    # Read per-strategy entry_tf first (multi-TF backtest support)
+    # WHY: Each row from a multi-TF backtest carries its own entry_tf.
+    #      Pass it as a hint so the validator uses the correct candle file.
+    # CHANGED: April 2026 — multi-TF support
+    _row_entry_tf = None
+    try:
+        _matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                    'outputs', 'backtest_matrix.json')
+        with open(_matrix_path, 'r', encoding='utf-8') as _mf:
+            _mdata = json.load(_mf)
+        _row = _mdata.get('results', [])[idx] if isinstance(idx, int) else {}
+        _row_entry_tf = (_row.get('entry_tf') or
+                         _row.get('stats', {}).get('entry_tf'))
+        if _row_entry_tf:
+            print(f"[VALIDATOR] Using per-strategy entry TF: {_row_entry_tf}")
+    except Exception:
+        pass
+
+    candles_path = _get_candles_path(entry_tf_hint=_row_entry_tf)
     if not candles_path and mode in ('wf', 'full', 'slip'):
         messagebox.showerror("No Candle Data",
                              "H1 candle CSV not found in data/ folder.\n"
@@ -1791,18 +2129,34 @@ def _run(mode, override_idx=None, done_event=None):
                 )
                 state.window.after(0, lambda r=slip_result: _display_slip_results(r))
 
-            if wf_result or mc_result or slip_result:
-                combined = combined_score(wf_result, mc_result, slip_result)
+            # ── Live Firm Simulation ────────────────────────────────────────
+            # WHY: Tests against each firm's exact rules — most realistic estimate.
+            # CHANGED: April 2026
+            live_firm_results = None
+            if trades and mode in ('full', 'mc'):
+                try:
+                    from shared.live_firm_sim import simulate_all_firms
+                    if _status_lbl:
+                        state.window.after(0, lambda: _status_lbl.configure(
+                            text="Running live firm simulation...", fg=GREY))
+                    live_firm_results = simulate_all_firms(trades, account_size=account_size)
+                    state.window.after(0, lambda r=live_firm_results: _display_live_firm_results(r))
+                except Exception as e:
+                    print(f"[validator] live firm sim failed: {e}")
+
+            if wf_result or mc_result or slip_result or live_firm_results:
+                combined = combined_score(wf_result, mc_result, slip_result, live_firm_results)
                 state.window.after(0, lambda c=combined, t=trades: _display_verdict(c, t))
 
                 # Save
                 result = {
-                    'strategy_index': idx,
-                    'validated_at':   __import__('datetime').datetime.now().isoformat(),
-                    'walk_forward':   wf_result,
-                    'monte_carlo':    mc_result,
-                    'slippage':       slip_result,
-                    'combined':       combined,
+                    'strategy_index':    idx,
+                    'validated_at':      __import__('datetime').datetime.now().isoformat(),
+                    'walk_forward':      wf_result,
+                    'monte_carlo':       mc_result,
+                    'slippage':          slip_result,
+                    'live_firm_results': live_firm_results,
+                    'combined':          combined,
                 }
                 _save_validation(idx, result)
                 state.window.after(0, _update_strat_info)
@@ -1835,7 +2189,7 @@ def build_panel(parent):
     global _account_var, _spread_var, _comm_var, _risk_var, _sl_var, _pipval_var, _pip_size_var
     global _start_wf_btn, _start_mc_btn, _start_full_btn, _start_slip_btn, _stop_btn
     global _status_lbl, _progress_bar, _scroll_canvas
-    global _wf_frame, _mc_frame, _slip_frame, _verdict_frame
+    global _wf_frame, _mc_frame, _slip_frame, _live_firm_frame, _verdict_frame
     global _firm_name_to_id
 
     _load_strategies()
@@ -2384,6 +2738,11 @@ def build_panel(parent):
 
     _slip_frame    = tk.Frame(scroll_frame, bg=BG)
     _slip_frame.pack(fill="x", padx=5)
+
+    tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
+
+    _live_firm_frame = tk.Frame(scroll_frame, bg=BG)
+    _live_firm_frame.pack(fill="x", padx=5)
 
     tk.Frame(scroll_frame, bg="#c0c0c0", height=1).pack(fill="x", padx=10, pady=8)
 

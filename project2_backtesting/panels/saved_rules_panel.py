@@ -120,6 +120,14 @@ def _refresh_list(inner, canvas, window_id):
         tk.Label(header, text=f"  from {entry.get('source', '?')}  •  {entry.get('saved_at', '?')[:10]}",
                  font=("Arial", 9), bg="#f8f9fa", fg="#888888").pack(side=tk.LEFT)
 
+        # TF badge — show entry_tf if present on the rule
+        # WHY: multi-TF backtest saves separate rules per TF; badge makes it visible
+        # CHANGED: April 2026 — multi-TF support
+        rule_tf = rule.get('entry_tf', '')
+        if rule_tf:
+            tk.Label(header, text=f"[{rule_tf}]", bg="#667eea", fg="white",
+                     font=("Arial", 8, "bold"), padx=4, pady=1).pack(side=tk.LEFT, padx=(6, 0))
+
         rid = entry.get('id')
         tk.Button(header, text="🗑️", font=("Arial", 8),
                   bg="#dc3545", fg="white", relief=tk.FLAT, padx=4,
@@ -181,6 +189,18 @@ def _activate_selected(inner, canvas, window_id):
 
     current['rules'] = rules
     current['discovery_method'] = 'saved_rules'
+
+    # FIX 3: carry entry_tf from saved rules into the top-level report field.
+    # WHY: Downstream tools (Refiner, Validator, EA Generator) read entry_timeframe
+    #      from analysis_report.json. If all saved rules share the same TF, set it.
+    #      If mixed, set 'multi' so downstream tools know to check per-row entry_tf.
+    # CHANGED: April 2026 — multi-TF support
+    rule_tfs = sorted(set(r.get('entry_tf', '') for r in rules if r.get('entry_tf', '')))
+    if len(rule_tfs) == 1:
+        current['entry_timeframe'] = rule_tfs[0]
+    elif len(rule_tfs) > 1:
+        current['entry_timeframe'] = 'multi'
+        current['tested_timeframes'] = rule_tfs
 
     with open(report_path, 'w', encoding='utf-8') as f:
         json.dump(current, f, indent=2, default=str)

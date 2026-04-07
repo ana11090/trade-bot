@@ -1318,20 +1318,35 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         }
         summary.append(result)
 
+    # FIX 2: ensure every result row carries its entry_tf (multi-TF run tags each row)
+    # WHY: downstream tools (Refiner, Validator, EA Generator) read entry_tf per-row
+    #      to load the correct candle file. Without this, rows from multi-TF runs lose
+    #      their TF tag when saved to JSON.
+    # CHANGED: April 2026 — multi-TF support
+    for row in summary:
+        if 'entry_tf' not in row:
+            row['entry_tf'] = timeframe
+        if isinstance(row.get('stats'), dict) and 'entry_tf' not in row['stats']:
+            row['stats']['entry_tf'] = row['entry_tf']
+
+    unique_tfs = sorted(set(r.get('entry_tf', timeframe) for r in summary))
+    top_level_tf = 'multi' if len(unique_tfs) > 1 else (unique_tfs[0] if unique_tfs else timeframe)
+
     summary_path = os.path.join(output_dir, 'backtest_matrix.json')
     # WHY: Downstream panels (validator, refiner, EA generator) need to know which
     #      entry TF was used so they load the correct candle file and calculate
     #      correct hold times.
     with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump({
-            "generated_at":    time.strftime("%Y-%m-%d %H:%M"),
-            "entry_timeframe": timeframe,
-            "combinations":    total,
-            "elapsed_seconds": round(elapsed, 1),
-            "spread_pips":     spread_pips,
-            "commission_pips": commission_pips,
-            "slippage_pips":   slippage_pips,
-            "results":         summary,
+            "generated_at":      time.strftime("%Y-%m-%d %H:%M"),
+            "entry_timeframe":   top_level_tf,
+            "tested_timeframes": unique_tfs,
+            "combinations":      total,
+            "elapsed_seconds":   round(elapsed, 1),
+            "spread_pips":       spread_pips,
+            "commission_pips":   commission_pips,
+            "slippage_pips":     slippage_pips,
+            "results":           summary,
         }, f, indent=2, default=str)
     print(f"Saved: {summary_path}")
 

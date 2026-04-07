@@ -195,12 +195,33 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     bg="#ffffff", font=("Arial", 8),
                     command=lambda: display_summary(output_text, summary_frame)).pack(side=tk.RIGHT)
 
+    # ── TF filter (only shown when multiple TFs present) ──
+    # WHY: Multi-TF backtest produces rows for M5/M15/H1/H4 — user needs to filter
+    #      to a single TF or view all.
+    # CHANGED: April 2026 — multi-TF support
+    all_tfs = sorted(set(r.get('entry_tf', '') for r in results if r.get('entry_tf', '')))
+    tf_filter_var = tk.StringVar(value='All TFs')
+    if len(all_tfs) > 1:
+        tf_filter_frame = tk.Frame(sort_frame, bg="#ffffff")
+        tf_filter_frame.pack(side=tk.RIGHT, padx=(0, 8))
+        tk.Label(tf_filter_frame, text="TF:", font=("Arial", 8), bg="#ffffff", fg="#555").pack(side=tk.LEFT)
+        tf_choices = ['All TFs'] + all_tfs
+        tf_menu = tk.OptionMenu(tf_filter_frame, tf_filter_var, *tf_choices,
+                                command=lambda _: display_summary(output_text, summary_frame))
+        tf_menu.config(font=("Arial", 8), bg="#fff", relief=tk.FLAT, padx=2, pady=1)
+        tf_menu.pack(side=tk.LEFT)
+
     # ── Sort results ──
     sorted_results = sorted(results, key=lambda r: r.get(_sort_key[0], 0), reverse=_sort_reverse[0])
 
     # Filter 0-trade if checkbox unchecked
     if not show_zero_var.get():
         sorted_results = [r for r in sorted_results if r.get('total_trades', 0) > 0]
+
+    # Filter by TF if selected
+    selected_tf = tf_filter_var.get()
+    if selected_tf and selected_tf != 'All TFs':
+        sorted_results = [r for r in sorted_results if r.get('entry_tf', '') == selected_tf]
 
     # ── Scrollable results area ──
     results_canvas = tk.Canvas(summary_frame, bg="#ffffff", highlightthickness=0)
@@ -262,6 +283,15 @@ def _display_results_inner(output_text, summary_frame, data, results,
             tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
                      font=("Arial", 10, "bold")).pack(side=tk.LEFT)
 
+            # TF badge — only shown when entry_tf is present
+            # WHY: Multi-TF runs produce rows with different entry_tf values.
+            #      Badge makes the TF immediately visible without reading the tooltip.
+            # CHANGED: April 2026 — multi-TF support
+            card_tf = r.get('entry_tf', '')
+            if card_tf:
+                tk.Label(header_row, text=f"[{card_tf}]", bg="#667eea", fg="white",
+                         font=("Arial", 8, "bold"), padx=4, pady=1).pack(side=tk.LEFT, padx=(6, 0))
+
             # Save button
             try:
                 from shared.saved_rules import build_save_button
@@ -275,6 +305,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     'net_profit_factor': pf,
                     'total_trades': trades,
                     'max_dd_pips': dd,
+                    'entry_tf': r.get('entry_tf', ''),
                 }
                 sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
                 sb.pack(side=tk.RIGHT, padx=3)
@@ -289,12 +320,13 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 from shared.starred import toggle, is_starred
                 rc = r.get('rule_combo', '?')
                 es = r.get('exit_strategy', r.get('exit_name', '?'))
-                starred = is_starred(rc, es)
+                etf = r.get('entry_tf', '')
+                starred = is_starred(rc, es, etf)
 
-                def _make_star_toggle(combo_name, exit_name, btn_ref):
+                def _make_star_toggle(combo_name, exit_name, tf, btn_ref):
                     def _toggle():
                         from shared.starred import toggle as _t
-                        new_state = _t(combo_name, exit_name)
+                        new_state = _t(combo_name, exit_name, tf)
                         btn_ref[0].configure(
                             text="⭐" if new_state else "☆",
                             bg="#f39c12" if new_state else "#ddd",
@@ -305,7 +337,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 star_btn_ref[0] = tk.Button(
                     header_row,
                     text="⭐" if starred else "☆",
-                    command=_make_star_toggle(rc, es, star_btn_ref),
+                    command=_make_star_toggle(rc, es, etf, star_btn_ref),
                     bg="#f39c12" if starred else "#ddd",
                     fg="white" if starred else "#666",
                     font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",

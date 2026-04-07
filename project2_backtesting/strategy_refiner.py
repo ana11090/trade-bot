@@ -1094,6 +1094,10 @@ def deep_optimize(
     target_firm=None,
     account_size=100000,
     progress_callback=None,
+    lock_entry=False,
+    lock_exit=False,
+    lock_sltp=False,
+    lock_filters=False,
 ):
     """
     Deep optimization starting from existing trades.
@@ -1206,33 +1210,48 @@ def deep_optimize(
 
     total_steps = len(preset_list) + 20 + 5 + 3
 
+    # ── Apply locks ───────────────────────────────────────────────────────────
+    # WHY: User explicitly told us not to touch certain parts of the strategy.
+    # CHANGED: April 2026 — surgical optimization mode
+    if lock_entry:
+        print("[LOCK] Entry rule locked — skipping condition optimization")
+    if lock_exit:
+        print("[LOCK] Exit type locked — keeping current exit strategy")
+    if lock_sltp:
+        print("[LOCK] SL/TP locked — keeping current pip distances")
+    if lock_filters:
+        print("[LOCK] Filters locked — skipping all filter combinations")
+
     # ── Step 1: Preset filters ────────────────────────────────────────────────
-    for i, (pname, pvals) in enumerate(preset_list):
-        if _stop_flag.is_set():
-            break
-        _report(f"Testing preset: {pname}", total_steps, i + 1)
-        filt = {k: v for k, v in pvals.items() if k not in ('description', 'firm_data', 'stage')}
-        kept, _ = apply_filters(trades, filt)
-        _maybe_add(f"{pname} filters", kept, pname, filt)
+    if not lock_filters:
+        for i, (pname, pvals) in enumerate(preset_list):
+            if _stop_flag.is_set():
+                break
+            _report(f"Testing preset: {pname}", total_steps, i + 1)
+            filt = {k: v for k, v in pvals.items() if k not in ('description', 'firm_data', 'stage')}
+            kept, _ = apply_filters(trades, filt)
+            _maybe_add(f"{pname} filters", kept, pname, filt)
 
     # ── Step 2: Min hold time sweep ───────────────────────────────────────────
     hold_values = [1, 2, 5, 10, 15, 20, 30]
-    for i, hv in enumerate(hold_values):
-        if _stop_flag.is_set():
-            break
-        step_n = len(preset_list) + i + 1
-        _report(f"Testing min hold: {hv} min", total_steps, step_n)
-        kept, _ = apply_filters(trades, {'min_hold_minutes': hv})
-        _maybe_add(f"Min hold {hv}m", kept, f"min hold {hv}m", {'min_hold_minutes': hv})
+    if not lock_filters:
+        for i, hv in enumerate(hold_values):
+            if _stop_flag.is_set():
+                break
+            step_n = len(preset_list) + i + 1
+            _report(f"Testing min hold: {hv} min", total_steps, step_n)
+            kept, _ = apply_filters(trades, {'min_hold_minutes': hv})
+            _maybe_add(f"Min hold {hv}m", kept, f"min hold {hv}m", {'min_hold_minutes': hv})
 
     # ── Step 3: Max trades per day sweep ──────────────────────────────────────
-    for i, maxn in enumerate([1, 2, 3, 5, 8]):
-        if _stop_flag.is_set():
-            break
-        step_n = len(preset_list) + len(hold_values) + i + 1
-        _report(f"Testing max trades/day: {maxn}", total_steps, step_n)
-        kept, _ = apply_filters(trades, {'max_trades_per_day': maxn})
-        _maybe_add(f"Max {maxn} trades/day", kept, f"max {maxn}/day", {'max_trades_per_day': maxn})
+    if not lock_filters:
+        for i, maxn in enumerate([1, 2, 3, 5, 8]):
+            if _stop_flag.is_set():
+                break
+            step_n = len(preset_list) + len(hold_values) + i + 1
+            _report(f"Testing max trades/day: {maxn}", total_steps, step_n)
+            kept, _ = apply_filters(trades, {'max_trades_per_day': maxn})
+            _maybe_add(f"Max {maxn} trades/day", kept, f"max {maxn}/day", {'max_trades_per_day': maxn})
 
     # ── Step 4: Session combos ────────────────────────────────────────────────
     session_combos = [
@@ -1242,24 +1261,26 @@ def deep_optimize(
         (["Asian", "London"],    "Asian + London"),
     ]
     base_step = len(preset_list) + len(hold_values) + 5
-    for i, (sess, desc) in enumerate(session_combos):
-        if _stop_flag.is_set():
-            break
-        _report(f"Testing sessions: {desc}", total_steps, base_step + i + 1)
-        kept, _ = apply_filters(trades, {'sessions': sess})
-        _maybe_add(f"Session: {desc}", kept, f"sessions={desc}", {'sessions': sess})
+    if not lock_filters:
+        for i, (sess, desc) in enumerate(session_combos):
+            if _stop_flag.is_set():
+                break
+            _report(f"Testing sessions: {desc}", total_steps, base_step + i + 1)
+            kept, _ = apply_filters(trades, {'sessions': sess})
+            _maybe_add(f"Session: {desc}", kept, f"sessions={desc}", {'sessions': sess})
 
     # ── Step 5: Combination — hold + max/day ──────────────────────────────────
     combos = [(5, 3), (5, 5), (10, 3), (2, 5), (15, 2)]
     base_step2 = base_step + len(session_combos)
-    for i, (hold, maxd) in enumerate(combos):
-        if _stop_flag.is_set():
-            break
-        _report(f"Combo: min hold {hold}m + max {maxd}/day", total_steps, base_step2 + i + 1)
-        filt = {'min_hold_minutes': hold, 'max_trades_per_day': maxd}
-        kept, _ = apply_filters(trades, filt)
-        _maybe_add(f"Hold {hold}m + max {maxd}/day", kept,
-                   f"min hold {hold}m, max {maxd}/day", filt)
+    if not lock_filters:
+        for i, (hold, maxd) in enumerate(combos):
+            if _stop_flag.is_set():
+                break
+            _report(f"Combo: min hold {hold}m + max {maxd}/day", total_steps, base_step2 + i + 1)
+            filt = {'min_hold_minutes': hold, 'max_trades_per_day': maxd}
+            kept, _ = apply_filters(trades, filt)
+            _maybe_add(f"Hold {hold}m + max {maxd}/day", kept,
+                       f"min hold {hold}m, max {maxd}/day", filt)
 
     # Sort by score descending
     candidates.sort(key=lambda c: c['score'], reverse=True)
@@ -1311,12 +1332,16 @@ def deep_optimize_generate(
     The output trades will be DIFFERENT from the input trades.
     """
     if timeframe is None:
+        # WHY: Caller should always pass the per-strategy timeframe explicitly.
+        #      This fallback exists only as a safety net.
+        # CHANGED: April 2026 — multi-TF support note
         try:
             from project2_backtesting.panels.configuration import load_config
             cfg = load_config()
             timeframe = cfg.get('winning_scenario', 'H1')
         except Exception:
             timeframe = 'H1'
+    print(f"[REFINER] deep_optimize_generate using entry TF: {timeframe}")
 
     _stop_flag.clear()
     start_time = time.time()
