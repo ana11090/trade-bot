@@ -74,12 +74,17 @@ def extract_rules_for_scenario(scenario):
                 print(f"  Loaded top 10 features from model importance")
             else:
                 print(f"  WARNING: No feature importance data found, using all features")
-                exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-                top_features = [col for col in data.columns if col not in exclude_cols]
+                # WHY: Use shared transform — see step4_train_model.prepare_features.
+                # CHANGED: April 2026 — fix string→float crash
+                from step4_train_model import prepare_features as _prep
+                _data_copy, _all_numeric = _prep(data.copy())
+                top_features = _all_numeric
 
-        # Identify feature columns
-        exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-        feature_cols = [col for col in data.columns if col not in exclude_cols]
+        # Apply the same transform that step4 used so feature columns match
+        # the trained model. WHY: timestamps would crash X_test = data[cols].
+        # CHANGED: April 2026 — shared transform helper
+        from step4_train_model import prepare_features
+        data, feature_cols = prepare_features(data)
 
         # Extract rules from the best-performing tree
         print(f"\n  Extracting rules from Random Forest trees...")

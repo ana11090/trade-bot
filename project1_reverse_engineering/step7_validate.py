@@ -81,9 +81,11 @@ def validate_rules_for_scenario(scenario):
                 import joblib
                 model = joblib.load(model_file)
 
-                exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-                feature_cols = [col for col in data.columns if col not in exclude_cols]
-
+                # WHY: Use shared transform from step4 — handles timestamps,
+                #      label-encoding, and excludes leakage features.
+                # CHANGED: April 2026 — shared transform helper
+                from step4_train_model import prepare_features
+                data, feature_cols = prepare_features(data)
                 X = data[feature_cols].fillna(0)
                 y_pred = model.predict(X)
                 y_true = data['outcome']
@@ -108,9 +110,9 @@ def validate_rules_for_scenario(scenario):
                 import joblib
                 model = joblib.load(model_file)
 
-                exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-                feature_cols = [col for col in data.columns if col not in exclude_cols]
-
+                # CHANGED: April 2026 — shared transform helper
+                from step4_train_model import prepare_features
+                data, feature_cols = prepare_features(data)
                 X = data[feature_cols].fillna(0)
                 y_pred = model.predict(X)
                 y_true = data['outcome']
