@@ -1030,7 +1030,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           pip_size=0.01,
                           account_size=None, risk_per_trade_pct=1.0,
                           default_sl_pips=150.0, pip_value_per_lot=10.0,
-                          progress_callback=None):
+                          progress_callback=None,
+                          use_safety_stops=True):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -1288,13 +1289,17 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     summary = []
     for m in matrix:
         # Compute breach stats for this strategy
+        # WHY: safety_pct=None disables safety stops (passes None through to simulator).
+        # CHANGED: April 2026 — respect use_safety_stops UI toggle
+        _safety_daily = 4.0 if use_safety_stops else None
+        _safety_total = 8.0 if use_safety_stops else None
         breaches = count_dd_breaches(
             m["trades"],
             account_size=100000,
             daily_dd_limit_pct=5.0,
             total_dd_limit_pct=10.0,
-            daily_dd_safety_pct=4.0,
-            total_dd_safety_pct=8.0
+            daily_dd_safety_pct=_safety_daily,
+            total_dd_safety_pct=_safety_total,
         )
 
         result = {

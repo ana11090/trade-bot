@@ -27,6 +27,7 @@ _current_source_path = [None]
 _source_var    = None
 _rule_canvas   = None
 _rule_inner    = None
+_use_safety_var = None  # BooleanVar for safety stops toggle
 
 # Step weights: loading data, running matrix, completion
 _STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
@@ -209,6 +210,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # Run the backtest with captured output
             ui(lambda: _set_progress(progress_bar, step_label, 10, "Running comparison matrix..."))
 
+            use_safety = _use_safety_var.get() if _use_safety_var is not None else True
+            output_text.insert(tk.END, f"Safety stops: {'ON' if use_safety else 'OFF'}\n\n")
+
             capture = io.StringIO()
             with contextlib.redirect_stdout(capture):
                 sys.path.insert(0, project_root)
@@ -218,6 +222,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     timeframe=entry_tf,
                     report_path=temp_path,
                     progress_callback=_progress,
+                    use_safety_stops=use_safety,
                 )
 
             # Clean up temp file
@@ -609,6 +614,34 @@ def build_panel(parent):
         toggle_widget.pack(fill="x", padx=20, pady=(15, 5))
     except ImportError:
         pass  # Shared module not available, skip toggles
+
+    # ── Safety stops toggle ───────────────────────────────────────────────────
+    # WHY: Lets user compare with/without safety stops enabled. Default ON
+    #      because that matches the live EA behavior.
+    # CHANGED: April 2026 — UI toggle for safety stops
+    safety_frame = tk.Frame(panel, bg="white", pady=6)
+    safety_frame.pack(fill="x", padx=20)
+
+    global _use_safety_var
+    use_safety_var = tk.BooleanVar(value=True)
+    _use_safety_var = use_safety_var
+    tk.Checkbutton(
+        safety_frame,
+        text="🛡️ Use safety stops (bot pauses before firm DD limits)",
+        variable=use_safety_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    tk.Label(
+        safety_frame,
+        text="    ON  = matches live EA behavior (recommended)\n"
+             "    OFF = raw strategy test, no safety net (shows true risk)",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
 
     # ── Run button ────────────────────────────────────────────────────────────
     _run_button = tk.Button(
