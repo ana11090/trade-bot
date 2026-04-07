@@ -86,14 +86,29 @@ def shap_analysis_for_scenario(scenario):
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X_test_shap)
 
-        # For binary classification, shap_values is a list [shap_for_class_0, shap_for_class_1]
-        # We want shap_values for class 1 (win)
+        # For binary classification, SHAP can return:
+        #   - List of arrays: [shap_for_class_0, shap_for_class_1]  (older SHAP)
+        #   - 3D array of shape (samples, features, classes)        (newer SHAP)
+        #   - 2D array of shape (samples, features)                 (regression / single output)
+        # We want shap_values for class 1 (WIN).
+        # WHY: Newer SHAP versions return 3D arrays which crash DataFrame construction.
+        # CHANGED: April 2026 — handle 3D SHAP output
         if isinstance(shap_values, list):
+            # Old SHAP: list of [class0_array, class1_array]
             shap_values_win = shap_values[1]
+        elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+            # New SHAP: 3D array (samples, features, classes) — slice class 1
+            shap_values_win = shap_values[:, :, 1]
         else:
+            # 2D array (samples, features) — already what we want
             shap_values_win = shap_values
 
-        print(f"  SHAP values computed successfully")
+        # Final sanity check: must be 2D
+        if shap_values_win.ndim != 2:
+            print(f"  WARNING: Unexpected SHAP shape {shap_values_win.shape} — flattening")
+            shap_values_win = shap_values_win.reshape(len(X_test_shap), -1)
+
+        print(f"  SHAP values computed successfully (shape: {shap_values_win.shape})")
 
         # Calculate mean absolute SHAP values for each feature
         mean_abs_shap = pd.DataFrame({
