@@ -97,8 +97,15 @@ def _prep_Xy(df, train_split):
 
 # ── Rule extraction ───────────────────────────────────────────────────────────
 
-def _extract_rules_from_tree(tree, feature_cols, X, y, min_coverage, min_win_rate):
-    """Walk a single decision tree and collect WIN leaf paths."""
+def _extract_rules_from_tree(tree, feature_cols, X_train, y_train,
+                              X_test, y_test, min_coverage, min_win_rate):
+    """Walk a single decision tree and collect WIN leaf paths.
+
+    WHY: Old version verified rules on TRAIN data → reported in-sample win
+         rate as if it were generalizable. Now verifies on TEST data so the
+         user sees realistic numbers, with TRAIN kept as an overfit signal.
+    CHANGED: April 2026 — held-out validation
+    """
     tree_  = tree.tree_
     rules  = []
 
@@ -108,33 +115,67 @@ def _extract_rules_from_tree(tree, feature_cols, X, y, min_coverage, min_win_rat
             values     = tree_.value[node_id][0]
             total      = values.sum()
             win_count  = values[1] if len(values) > 1 else 0
-            win_rate   = win_count / total if total > 0 else 0
+            train_wr_internal = win_count / total if total > 0 else 0
 
-            if win_count >= (total - win_count) and samples >= min_coverage and win_rate >= min_win_rate:
-                # Verify on actual X/y
-                mask = pd.Series(True, index=X.index)
-                for cond in conditions:
-                    col_vals = X[cond['feature']]
-                    if cond['operator'] == '<=':
-                        mask &= col_vals <= cond['value']
-                    else:
-                        mask &= col_vals > cond['value']
+            # Pre-filter on training-side metrics (cheap)
+            if not (win_count >= (total - win_count)
+                    and samples >= min_coverage
+                    and train_wr_internal >= min_win_rate):
+                return
 
-                real_cov = int(mask.sum())
-                if real_cov >= min_coverage:
-                    real_wr = float(y[mask].mean()) if real_cov > 0 else 0.0
-                    avg_pips = 0.0
-                    if real_wr >= min_win_rate:
-                        rules.append({
-                            'conditions':   conditions.copy(),
-                            'prediction':   'WIN',
-                            'confidence':   round(float(win_rate), 3),
-                            'coverage':     real_cov,
-                            'coverage_pct': round(real_cov / len(X) * 100, 1),
-                            'win_rate':     round(real_wr, 3),
-                            'avg_pips':     avg_pips,
-                            'source':       'xgboost',
-                        })
+            # ── Verify on TRAIN data (for overfit gap reference) ──────────
+            train_mask = pd.Series(True, index=X_train.index)
+            for cond in conditions:
+                col_vals = X_train[cond['feature']]
+                if cond['operator'] == '<=':
+                    train_mask &= col_vals <= cond['value']
+                else:
+                    train_mask &= col_vals > cond['value']
+
+            train_cov = int(train_mask.sum())
+            if train_cov < min_coverage:
+                return
+            train_wr = float(y_train[train_mask].mean()) if train_cov > 0 else 0.0
+
+            # ── Verify on TEST data (the real validation) ─────────────────
+            # WHY: This is what determines if the rule generalizes. Train
+            #      win rate is just how well the tree memorized.
+            # CHANGED: April 2026 — held-out test
+            test_mask = pd.Series(True, index=X_test.index)
+            for cond in conditions:
+                col_vals = X_test[cond['feature']]
+                if cond['operator'] == '<=':
+                    test_mask &= col_vals <= cond['value']
+                else:
+                    test_mask &= col_vals > cond['value']
+
+            test_cov = int(test_mask.sum())
+            test_wr  = float(y_test[test_mask].mean()) if test_cov > 0 else 0.0
+
+            # Filter: rule must perform on TEST set, not just train
+            if test_cov < max(5, min_coverage // 4):
+                return  # not enough test samples to be confident
+            if test_wr < min_win_rate:
+                return  # looks good on train but failed on test → overfit
+
+            overfit_gap = train_wr - test_wr
+
+            rules.append({
+                'conditions':     conditions.copy(),
+                'prediction':     'WIN',
+                # Headline numbers from TEST set
+                'confidence':     round(test_wr, 3),
+                'win_rate':       round(test_wr, 3),
+                'coverage':       test_cov,
+                'coverage_pct':   round(test_cov / len(X_test) * 100, 1),
+                # Train metrics for overfit detection
+                'train_win_rate': round(train_wr, 3),
+                'train_coverage': train_cov,
+                'overfit_gap':    round(overfit_gap, 3),
+                'is_overfit':     overfit_gap > 0.15,
+                'avg_pips':       0.0,
+                'source':         'xgboost',
+            })
             return
 
         feature   = feature_cols[tree_.feature[node_id]]
@@ -184,8 +225,10 @@ def _extract_xgboost_leaf_rules(booster, X_train, y_train, X_test, y_test,
     )
     dt.fit(X_train, y_train)
 
-    raw_rules = _extract_rules_from_tree(dt, feature_cols, X_train, y_train,
-                                         min_coverage, min_win_rate)
+    raw_rules = _extract_rules_from_tree(dt, feature_cols,
+                                          X_train, y_train,
+                                          X_test, y_test,
+                                          min_coverage, min_win_rate)
     return raw_rules
 
 
