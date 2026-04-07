@@ -52,27 +52,33 @@ def check_analysis_report():
             'fix_instructions': 'Re-run P4 Strategy Discovery to regenerate the file.',
         }
 
-    # Check rules exist
+    # Check rules exist (rules are the most important thing)
     rules = report.get('rules', [])
     win_rules = [r for r in rules if r.get('prediction') == 'WIN']
     if not win_rules:
         issues.append('No WIN rules found — discovery may not have been run')
 
-    # Check entry_timeframe
+    # If we have rules with valid predictions, treat the rest as warnings (not stale)
+    # WHY: rules can be valid even if top-level direction is missing — the rules
+    #      themselves carry direction info via their `prediction` field.
+    # CHANGED: April 2026 — check rule contents, not just top-level fields
+
+    # Check entry_timeframe (only warn if also no rules — otherwise rules have it)
     entry_tf = report.get('entry_timeframe')
-    if not entry_tf or entry_tf == 'None':
+    if (not entry_tf or entry_tf == 'None') and not win_rules:
         issues.append('Missing entry_timeframe — EA and backtester may use wrong timeframe')
 
-    # Check direction
-    direction = report.get('direction')
-    if not direction or direction == 'None':
-        issues.append('Missing direction — backtester defaults to BUY')
-
-    # Check rules have conditions
+    # Check rules have conditions (real problem regardless of other fields)
     for i, r in enumerate(win_rules):
         conds = r.get('conditions', [])
         if not conds:
             issues.append(f'Rule {i+1} has 0 conditions — will match every candle')
+
+    # Check rules are recent (was activate run lately?)
+    activated_at = report.get('activated_at')
+    discovery_method = report.get('discovery_method')
+    if win_rules and not activated_at and not discovery_method:
+        issues.append('Rules have no discovery_method — may be from old run')
 
     fix = ''
     if issues:

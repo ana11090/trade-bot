@@ -625,16 +625,26 @@ def activate_scratch_rules():
         current = {}
 
     current['rules'] = scratch['rules']
-    # WHY: P2 reads entry_timeframe from this file to load the correct candle CSV.
-    #      Without this, everything defaults to H1 even if rules were found on M15.
-    # CHANGED: April 2026 — entry TF travels with the rules
-    current['entry_timeframe'] = scratch.get('entry_timeframe', 'H1')
+
+    # WHY: P2 reads these from analysis_report.json. Without them, the backtester
+    #      defaults to H1 + BUY even if discovery found rules on a different TF
+    #      or for SELL trades. Stale check also depends on these fields.
+    # CHANGED: April 2026 — write all fields the downstream pipeline expects
+    entry_tf = scratch.get('entry_timeframe') or 'H1'
+    current['entry_timeframe'] = entry_tf
+    current['winning_scenario'] = entry_tf  # Same value, different field name in P2
+    current['direction'] = scratch.get('direction', 'BUY')
+
     current['feature_importance'] = {
         'top_20':         scratch['model_metrics'].get('feature_importance_top_20', []),
         'train_accuracy': scratch['model_metrics']['train_accuracy'],
         'test_accuracy':  scratch['model_metrics']['test_accuracy'],
     }
     current['discovery_method'] = 'scratch_xgboost'
+
+    # Mark when this was activated for the stale check
+    import time
+    current['activated_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
 
     with open(report_path, 'w', encoding='utf-8') as f:
         json.dump(current, f, indent=2, default=str)
