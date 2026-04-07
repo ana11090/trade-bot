@@ -150,6 +150,9 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
     balance   = float(account_size)
     hwm       = float(account_size)   # high water mark
     profit_target_abs = account_size * profit_target_pct / 100.0
+    # WHY: Track DD floor explicitly so lock-after-gain breach math is correct.
+    # CHANGED: April 2026 — explicit floor variable
+    dd_floor  = account_size * (1.0 - max_total_dd_pct / 100.0) if max_total_dd_pct < 999.0 else 0.0
 
     daily_breakdown   = []
     max_daily_dd_hit  = 0.0
@@ -192,38 +195,58 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
         #      Leveraged locks HWM once gain reaches +6% of starting balance.
         #      After lock, HWM stays at starting balance permanently.
         # CHANGED: April 2026 — HWM lock support
+        # ── HWM and DD floor update ───────────────────────────────────────
+        # WHY: After lock-after-gain fires, the rule says the DD FLOOR locks
+        #      at account_size. Old code set hwm=account_size then checked
+        #      (hwm-balance)/account_size, which required balance to drop
+        #      BELOW account_size by max_total_dd_pct before breaching. Wrong.
+        #      Now dd_floor is tracked explicitly: breach fires when balance
+        #      hits or drops below dd_floor (not some percentage below it).
+        # CHANGED: April 2026 — explicit dd_floor; remove account_size floor
+        #          from daily DD reference
         if drawdown_type in ("trailing", "trailing_eod"):
             if hwm_lock_gain_pct and not hwm_locked:
                 gain_pct = (balance - account_size) / account_size * 100.0
                 if gain_pct >= hwm_lock_gain_pct:
                     hwm_locked = True
-                    hwm = account_size
+                    dd_floor   = account_size   # floor locks at starting balance
                 else:
-                    hwm = max(hwm, balance)
+                    hwm      = max(hwm, balance)
+                    dd_floor = hwm * (1.0 - max_total_dd_pct / 100.0)
             elif hwm_locked:
-                pass  # HWM permanently locked at account_size
+                dd_floor = account_size   # stays locked
             else:
-                hwm = max(hwm, balance)
-        # For static, hwm stays at account_size (not used in calculation but track anyway)
+                hwm      = max(hwm, balance)
+                dd_floor = hwm * (1.0 - max_total_dd_pct / 100.0)
+        else:
+            # Static: floor is fixed below account_size
+            dd_floor = account_size * (1.0 - max_total_dd_pct / 100.0)
 
         # ── Daily DD — respect firm-specific reference ────────────────────
-        # WHY: Leveraged uses max(balance, equity) at 23:00 GMT+3 as the daily
-        #      DD reference. Generic uses fixed account_size. Using the wrong
-        #      reference means daily DD checks are too lenient or too strict.
-        # CHANGED: April 2026 — dynamic daily DD reference
+        # WHY: Leveraged rule uses yesterday's closing balance as reference —
+        #      no artificial floor at account_size.
+        # CHANGED: April 2026 — remove artificial account_size floor
         daily_dd_pct = 0.0
         if day_pnl < 0:
             if daily_dd_ref_type == 'max_balance_equity':
-                dd_ref = max(day_start_balance, account_size)
+                # Reference is yesterday's closing balance (no floor)
+                dd_ref = day_start_balance if day_start_balance > 0 else account_size
                 daily_dd_pct = abs(day_pnl) / dd_ref * 100.0
             else:
                 daily_dd_pct = abs(day_pnl) / account_size * 100.0
 
-        # Total DD based on type
-        if drawdown_type == "static":
-            total_dd_pct = max(0.0, (account_size - balance) / account_size * 100.0)
-        else:  # trailing or trailing_eod
-            total_dd_pct = max(0.0, (hwm - balance) / account_size * 100.0)
+        # ── Total DD — check balance against explicit floor ───────────────
+        # WHY: Checking `balance <= dd_floor` is exact. When floor = account_size
+        #      (post-lock), the moment balance ≤ account_size → breach.
+        # CHANGED: April 2026 — floor-based breach check
+        if balance <= dd_floor:
+            total_dd_pct = max_total_dd_pct + 0.01   # exceeds limit → triggers breach
+        else:
+            if drawdown_type != "static":
+                consumed = max(0.0, hwm - balance)
+            else:
+                consumed = max(0.0, account_size - balance)
+            total_dd_pct = (consumed / max(1.0, account_size)) * 100.0
 
         max_daily_dd_hit = max(max_daily_dd_hit, daily_dd_pct)
         max_total_dd_hit = max(max_total_dd_hit, total_dd_pct)

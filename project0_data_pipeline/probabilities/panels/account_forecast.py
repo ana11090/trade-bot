@@ -187,20 +187,24 @@ def _on_run_sim():
     survived      = 0
 
     for _ in range(n_sims):
-        sampled    = rng.choice(trade_pnl, size=n_trades, replace=True)
-        cumulative = np.cumsum(sampled)
-        ruined     = bool(np.any(np.minimum.accumulate(cumulative) < ruin_threshold))
-
-        # Drawdown = how far below the running peak at each trade step
+        sampled      = rng.choice(trade_pnl, size=n_trades, replace=True)
+        cumulative   = np.cumsum(sampled)
         running_peak = np.maximum.accumulate(cumulative)
-        drawdown     = cumulative - running_peak   # always <= 0
+        drawdown     = cumulative - running_peak  # always <= 0
 
+        # WHY: Old code checked `cumulative < ruin_threshold` — absolute loss
+        #      from start, not peak-to-trough DD. Profitable strategies that
+        #      pulled back from a peak were not correctly caught.
+        # CHANGED: April 2026 — use drawdown for ruin check (same fix as
+        #          account_survival.py)
+        ruined = bool(np.any(drawdown < ruin_threshold))
+
+        final_pnls.append(float(cumulative[-1]))
         all_paths.append(cumulative)
         all_drawdowns.append(drawdown)
 
         if not ruined:
             survived += 1
-            final_pnls.append(float(cumulative[-1]))
 
     all_paths     = np.array(all_paths)
     all_drawdowns = np.array(all_drawdowns)
