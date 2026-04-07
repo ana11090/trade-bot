@@ -57,16 +57,20 @@ def shap_analysis_for_scenario(scenario):
         # Load labeled feature matrix
         feature_file = os.path.join(output_dir, 'feature_matrix_labeled.csv')
         data = pd.read_csv(feature_file)
-        data['open_time'] = pd.to_datetime(data['open_time'])
 
-        # Get test data
+        # WHY: Use the same transform as step4 so feature columns match exactly.
+        #      Otherwise SHAP gets timestamps and crashes, OR uses different
+        #      features than the trained model expects.
+        # CHANGED: April 2026 — shared transform helper
+        from step4_train_model import prepare_features
+        data, feature_cols = prepare_features(data)
+
+        print(f"  Feature count: {len(feature_cols)} (numeric)")
+
+        # Get test data AFTER transform so new columns exist
         test_data = data[data['dataset'] == 'test'].copy()
 
         print(f"  Loaded test data: {len(test_data)} trades")
-
-        # Identify feature columns
-        exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-        feature_cols = [col for col in data.columns if col not in exclude_cols]
 
         X_test = test_data[feature_cols].fillna(0)
 

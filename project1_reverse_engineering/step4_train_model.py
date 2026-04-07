@@ -19,6 +19,85 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared import data_utils
 
 
+def prepare_features(data):
+    """Transform raw labeled data into clean numeric features for ML.
+
+    WHY: Both step4 (training) and step5 (SHAP analysis) need the same
+         transform. Putting it in a shared function prevents drift.
+
+    Drops target leakage:
+        - is_winner: target itself
+        - trade_duration_minutes: losses cut short, wins run long → leaks outcome
+        - profit, pips, outcome, direction: target-related
+
+    CHANGED: April 2026 — shared helper, plus leakage fix
+    """
+    # Columns we never want as features
+    leak_cols = {
+        # Target columns and direct leakage
+        'trade_id', 'profit', 'pips', 'outcome', 'direction', 'dataset',
+        'is_winner',               # LEAKAGE: this IS the target
+        'trade_duration_minutes',  # LEAKAGE: wins held longer than losses
+        # Pure metadata
+        'order_id', 'ticket', 'magic', 'comment', 'symbol',
+    }
+
+    # Extract time features from timestamp columns
+    for ts_col in ['open_time', 'close_time']:
+        if ts_col not in data.columns:
+            continue
+        try:
+            ts = pd.to_datetime(data[ts_col], errors='coerce')
+            prefix = ts_col.replace('_time', '')
+
+            hour = ts.dt.hour.fillna(0)
+            dow = ts.dt.dayofweek.fillna(0)
+            month = ts.dt.month.fillna(1)
+
+            data[f'{prefix}_hour'] = hour
+            data[f'{prefix}_dow'] = dow
+            data[f'{prefix}_month'] = month
+            data[f'{prefix}_hour_sin'] = np.sin(2 * np.pi * hour / 24)
+            data[f'{prefix}_hour_cos'] = np.cos(2 * np.pi * hour / 24)
+            data[f'{prefix}_dow_sin'] = np.sin(2 * np.pi * dow / 7)
+            data[f'{prefix}_dow_cos'] = np.cos(2 * np.pi * dow / 7)
+
+            leak_cols.add(ts_col)
+        except Exception as e:
+            print(f"  Could not extract time features from {ts_col}: {e}")
+            leak_cols.add(ts_col)
+
+    # Label-encode any remaining string columns
+    for col in list(data.columns):
+        if col in leak_cols:
+            continue
+        if pd.api.types.is_numeric_dtype(data[col]):
+            continue
+        try:
+            converted = pd.to_numeric(data[col], errors='coerce')
+            if converted.notna().sum() > len(converted) * 0.8:
+                data[col] = converted.fillna(0)
+                continue
+        except Exception:
+            pass
+        try:
+            unique_vals = data[col].astype(str).unique()
+            if len(unique_vals) <= 50:
+                mapping = {v: i for i, v in enumerate(sorted(unique_vals))}
+                data[col] = data[col].astype(str).map(mapping).fillna(-1)
+            else:
+                leak_cols.add(col)
+        except Exception:
+            leak_cols.add(col)
+
+    feature_cols = [
+        col for col in data.columns
+        if col not in leak_cols and pd.api.types.is_numeric_dtype(data[col])
+    ]
+
+    return data, feature_cols
+
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -62,97 +141,16 @@ def train_model_for_scenario(scenario):
 
         print(f"  Loaded labeled data: {len(data)} trades")
 
-        # WHY: Train/test split MUST happen AFTER the feature transform below.
-        #      The transform adds new columns (open_hour, close_hour_sin, etc.)
-        #      and if we split first, train_data/test_data won't have them.
-        # CHANGED: April 2026 — split moved to after transform
+        # Transform features and split AFTER (shared with step5 SHAP analysis)
+        data, feature_cols = prepare_features(data)
 
-        # ── Transform non-numeric columns into useful features ────────────
-        # WHY: Timestamps and categoricals contain real signal:
-        #        - hour of day: London open vs Asian session matters
-        #        - day of week: Mon/Fri effects exist
-        #        - month: seasonality is real for gold
-        #        - action (BUY/SELL): directional bias
-        #      Instead of dropping these, extract numeric features from them.
-        # CHANGED: April 2026 — feature engineering for non-numeric columns
-        import numpy as np
-
-        # Columns we never want as features (target leakage or pure metadata)
-        leak_cols = {
-            'trade_id', 'profit', 'pips', 'outcome', 'direction', 'dataset',
-            'order_id', 'ticket', 'magic', 'comment', 'symbol',
-        }
-
-        # Find timestamp columns and extract time features
-        for ts_col in ['open_time', 'close_time']:
-            if ts_col not in data.columns:
-                continue
-            try:
-                ts = pd.to_datetime(data[ts_col], errors='coerce')
-                prefix = ts_col.replace('_time', '')  # 'open' or 'close'
-
-                hour = ts.dt.hour.fillna(0)
-                dow = ts.dt.dayofweek.fillna(0)
-                month = ts.dt.month.fillna(1)
-
-                data[f'{prefix}_hour'] = hour
-                data[f'{prefix}_dow'] = dow
-                data[f'{prefix}_month'] = month
-                data[f'{prefix}_hour_sin'] = np.sin(2 * np.pi * hour / 24)
-                data[f'{prefix}_hour_cos'] = np.cos(2 * np.pi * hour / 24)
-                data[f'{prefix}_dow_sin'] = np.sin(2 * np.pi * dow / 7)
-                data[f'{prefix}_dow_cos'] = np.cos(2 * np.pi * dow / 7)
-
-                if ts_col == 'close_time' and 'open_time' in data.columns:
-                    open_ts = pd.to_datetime(data['open_time'], errors='coerce')
-                    data['trade_duration_minutes'] = (ts - open_ts).dt.total_seconds().div(60).fillna(0)
-
-                leak_cols.add(ts_col)
-                print(f"  Extracted 7 time features from {ts_col}")
-            except Exception as e:
-                print(f"  Could not extract time features from {ts_col}: {e}")
-                leak_cols.add(ts_col)
-
-        # Label-encode any remaining string columns (e.g., action='BUY'/'SELL')
-        for col in list(data.columns):
-            if col in leak_cols:
-                continue
-            if pd.api.types.is_numeric_dtype(data[col]):
-                continue
-            try:
-                converted = pd.to_numeric(data[col], errors='coerce')
-                if converted.notna().sum() > len(converted) * 0.8:
-                    data[col] = converted.fillna(0)
-                    continue
-            except Exception:
-                pass
-            try:
-                unique_vals = data[col].astype(str).unique()
-                if len(unique_vals) <= 50:
-                    mapping = {v: i for i, v in enumerate(sorted(unique_vals))}
-                    data[col] = data[col].astype(str).map(mapping).fillna(-1)
-                    print(f"  Label-encoded {col}: {len(unique_vals)} unique values")
-                else:
-                    leak_cols.add(col)
-                    print(f"  Dropped {col}: {len(unique_vals)} unique values (too high cardinality)")
-            except Exception:
-                leak_cols.add(col)
-
-        # Final feature_cols = everything numeric, excluding leak/metadata
-        feature_cols = [
-            col for col in data.columns
-            if col not in leak_cols and pd.api.types.is_numeric_dtype(data[col])
-        ]
-
-        print(f"  Feature count: {len(feature_cols)} (numeric)")
-        print(f"  Dropped (target/metadata): {len(leak_cols & set(data.columns))}")
+        print(f"  Feature count: {len(feature_cols)} (numeric, no leakage)")
 
         if not feature_cols:
             print(f"  ERROR: No usable feature columns found!")
             return False
 
-        # NOW split train/test (after transform so new columns exist in both)
-        # CHANGED: April 2026 — split moved here
+        # Split AFTER transform so new columns exist in both subsets
         train_data = data[data['dataset'] == 'train'].copy()
         test_data = data[data['dataset'] == 'test'].copy()
         print(f"  Train set: {len(train_data)} trades")
