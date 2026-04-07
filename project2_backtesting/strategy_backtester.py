@@ -1000,8 +1000,16 @@ def compute_stats(trades):
         "worst_trade":       round(min(net), 1),
     }
 
-    # Dollar P&L equity tracking (when account_size was supplied to run_backtest)
-    dollar_pnls = [t["dollar_pnl"] for t in trades if t.get("dollar_pnl") is not None]
+    # Dollar P&L equity tracking — only run_backtest sets dollar_pnl.
+    # Vectorized + fast_backtest set 'net_profit' instead. Try both.
+    # CHANGED: April 2026 — accept dollar_pnl OR net_profit
+    dollar_pnls = []
+    for t in trades:
+        d = t.get("dollar_pnl")
+        if d is None:
+            d = t.get("net_profit")  # vectorized/fast use this name
+        if d is not None:
+            dollar_pnls.append(d)
     if dollar_pnls:
         cum_d  = np.cumsum(dollar_pnls)
         peak_d = np.maximum.accumulate(cum_d)
