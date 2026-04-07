@@ -87,10 +87,20 @@ def build_stats_charts():
         deposit = 0.0
     net_pct = (net_profit / deposit * 100) if deposit != 0 else 0
 
+    # WHY: Compounding % only makes sense when the balance entering the trade
+    #      was POSITIVE. Dividing by zero or negative balance gives nonsense.
+    # CHANGED: April 2026 — mask non-positive balance entries
     running_bal  = deposit + df["profit_scaled"].shift(1).fillna(0).cumsum()
-    pct_series   = df["profit_scaled"] / running_bal.replace(0, float("nan")) * 100
-    avg_win_pct  = pct_series[df["profit_scaled"] > 0].mean() if n_win  > 0 else 0
-    avg_loss_pct = pct_series[df["profit_scaled"] < 0].mean() if n_loss > 0 else 0
+    valid_mask   = running_bal > 0
+    safe_balance = running_bal.where(valid_mask, float("nan"))
+    pct_series   = df["profit_scaled"] / safe_balance * 100
+
+    win_mask  = (df["profit_scaled"] > 0) & valid_mask
+    loss_mask = (df["profit_scaled"] < 0) & valid_mask
+    avg_win_pct  = pct_series[win_mask].mean()  if win_mask.any()  else 0
+    avg_loss_pct = pct_series[loss_mask].mean() if loss_mask.any() else 0
+    if pd.isna(avg_win_pct):  avg_win_pct  = 0
+    if pd.isna(avg_loss_pct): avg_loss_pct = 0
 
     pf_text   = f"{profit_factor:.2f}" if profit_factor != float("inf") else "∞"
     net_color = "#27ae60" if net_profit >= 0 else "#e94560"

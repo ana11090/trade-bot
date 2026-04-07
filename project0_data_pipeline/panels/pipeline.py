@@ -8,6 +8,19 @@ import threading
 
 import state
 
+# WHY: Default file dialog directory — falls back to project root if running
+#      from inside the repo, otherwise the user's home folder.
+# CHANGED: April 2026 — remove hardcoded user-specific path
+def _default_dialog_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    cur  = here
+    for _ in range(5):
+        if os.path.isdir(os.path.join(cur, 'data')):
+            return cur
+        cur = os.path.dirname(cur)
+    return os.path.expanduser('~')
+
+
 # Module-level StringVar references — created in build_panel() once Tk root exists
 account_type    = None
 starting_balance = None
@@ -44,7 +57,7 @@ def build_panel(content):
     def browse_file():
         path = filedialog.askopenfilename(
             title="Select your trade file",
-            initialdir=r"C:\Users\anani\my git delete\trade-bot",
+            initialdir=_default_dialog_dir(),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if path:
@@ -137,7 +150,7 @@ def build_panel(content):
         path = filedialog.asksaveasfilename(
             title="Save as CSV",
             defaultextension=".csv",
-            initialdir=r"C:\Users\anani\my git delete\trade-bot",
+            initialdir=_default_dialog_dir(),
             filetypes=[("CSV files", "*.csv")]
         )
         if path:
@@ -151,7 +164,7 @@ def build_panel(content):
         path = filedialog.asksaveasfilename(
             title="Save as TXT",
             defaultextension=".txt",
-            initialdir=r"C:\Users\anani\my git delete\trade-bot",
+            initialdir=_default_dialog_dir(),
             filetypes=[("Text files", "*.txt")]
         )
         if path:
@@ -342,18 +355,32 @@ def check_data():
     df = state.loaded_data
     problem_indices = set()
 
-    bad_open_count = sum(1 for v in df.iloc[:, 0] if str(v).strip() == "NaT")
+    # WHY: Invalid dates can be either the string "NaT" (legacy) OR
+    #      pandas NaN (after to_datetime+strftime). Check both.
+    # CHANGED: April 2026 — detect both representations
+    def _is_bad_date(v):
+        if pd.isna(v):
+            return True
+        return str(v).strip() in ("NaT", "nan", "NaN", "")
+
+    bad_open_count = 0
     for i, v in enumerate(df.iloc[:, 0]):
-        if str(v).strip() == "NaT":
+        if _is_bad_date(v):
+            bad_open_count += 1
             problem_indices.add(i)
 
-    bad_close_count = sum(1 for v in df.iloc[:, 1] if str(v).strip() == "NaT")
+    bad_close_count = 0
     for i, v in enumerate(df.iloc[:, 1]):
-        if str(v).strip() == "NaT":
+        if _is_bad_date(v):
+            bad_close_count += 1
             problem_indices.add(i)
 
-    dup_mask  = df.duplicated(keep=False)
-    dup_count = int(dup_mask.sum()) // 2
+    # WHY: `duplicated(keep=False)` flags ALL copies; `keep='first'` flags
+    #      only the EXTRAS — exactly the count of rows that will be removed.
+    # CHANGED: April 2026 — count extras, not half of total
+    dup_mask        = df.duplicated(keep=False)
+    extras_mask     = df.duplicated(keep='first')
+    dup_count       = int(extras_mask.sum())
     for i, is_dup in enumerate(dup_mask):
         if is_dup:
             problem_indices.add(i)
@@ -382,7 +409,7 @@ def check_data():
     _write_check_result("\n".join([
         f"Invalid Open Date:    {bad_open_count}",
         f"Invalid Close Date:   {bad_close_count}",
-        f"Duplicate pairs:      {dup_count}  (both copies shown so you can compare)",
+        f"Duplicate rows:       {dup_count} extras  (all copies shown so you can compare)",
         f"Missing Profit:       {missing_profit_count}",
         "",
         "No issues found — data is clean." if total_issues == 0
@@ -398,8 +425,13 @@ def clean_data():
     df     = state.loaded_data.copy()
     before = len(df)
 
-    df = df[df.iloc[:, 0] != "NaT"]
-    df = df[df.iloc[:, 1] != "NaT"]
+    # WHY: After to_datetime+strftime, invalid dates become NaN (float), not
+    #      the string "NaT". The old filter did nothing for those rows.
+    # CHANGED: April 2026 — actually drop rows with invalid dates
+    date_cols = [df.columns[0], df.columns[1]]
+    for c in date_cols:
+        df = df[df[c].astype(str).str.strip() != "NaT"]
+    df = df.dropna(subset=date_cols)
     df = df.drop_duplicates()
     if "Profit" in df.columns:
         df = df.dropna(subset=["Profit"])

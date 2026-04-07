@@ -10,14 +10,19 @@ from widgets import _sep, _rule_box
 
 # ── Firm defaults ──────────────────────────────────────────────────────────────
 _FIRM_DD_DEFAULTS = {
-    "Levereged": {"trailing_pct": "6", "daily_pct": "5"},
+    # WHY: lock_at_gain_pct is the gain % that locks the DD floor at the
+    #      starting balance. For Leveraged this equals trailing_pct (6%),
+    #      but other firms may differ — so it's explicit now.
+    # CHANGED: April 2026 — explicit lock threshold
+    "Levereged": {"trailing_pct": "6", "daily_pct": "5", "lock_at_gain_pct": "6"},
 }
 
 # ── Module-level refs set in build_panel() ────────────────────────────────────
 min_hold_var = None
 firm_var     = None
-total_dd_var = None
-daily_dd_var = None
+total_dd_var  = None
+daily_dd_var  = None
+lock_gain_var = None   # gain % at which DD floor locks at starting balance
 
 p7_hold_results     = None
 p7_dd_results       = None
@@ -51,8 +56,10 @@ def _on_firm_change(*_):
     if not firm:
         return
     defs = _FIRM_DD_DEFAULTS.get(firm, {})
-    if "trailing_pct" in defs: total_dd_var.set(defs["trailing_pct"])
-    if "daily_pct"    in defs: daily_dd_var.set(defs["daily_pct"])
+    if "trailing_pct"     in defs: total_dd_var.set(defs["trailing_pct"])
+    if "daily_pct"        in defs: daily_dd_var.set(defs["daily_pct"])
+    if "lock_at_gain_pct" in defs and lock_gain_var is not None:
+        lock_gain_var.set(defs["lock_at_gain_pct"])
     p7_firm_rules_frame.pack(fill="x", after=p7_firm_row)
     p7_dd_row.pack(fill="x", padx=16, pady=(0, 14), after=p7_firm_rules_frame)
 
@@ -97,13 +104,20 @@ def build_compliance_chart():
     profits      = df.loc[secs.notna(), "profit_scaled"]
     profit_total = profits.sum()
     profit_sub_v = profits[sub].sum()
-    pct_profit   = (profit_sub_v / profit_total * 100) if profit_total != 0 else 0
+    # WHY: For losing strategies, profit_total < 0 and a positive sub_v gives
+    #      a NEGATIVE percentage — verdict thresholds (> 25) never fire.
+    #      Use abs() so the metric measures share-of-magnitude correctly.
+    # CHANGED: April 2026 — use abs(profit_total) as denominator
+    if abs(profit_total) > 0.01:
+        pct_profit = (profit_sub_v / abs(profit_total)) * 100
+    else:
+        pct_profit = 0
 
     if pct_sub == 0:
         verdict, vcol = "PASS — no sub-threshold trades", "#27ae60"
     elif pct_profit > 25:
         verdict, vcol = "FAIL — strategy depends on speed", "#e94560"
-    elif pct_sub < 5 and pct_profit < 10:
+    elif pct_sub < 5 and abs(pct_profit) < 10:
         verdict, vcol = "PASS — minor violations only", "#27ae60"
     else:
         verdict, vcol = "CAUTION — review required", "#f39c12"
@@ -242,17 +256,36 @@ def build_drawdown_charts():
                    color="#aaaaaa", va="bottom")
 
     # ── Trailing DD with lock ──────────────────────────────────────────────────
-    dd_amount  = deposit * trailing_pct / 100.0
+    # WHY: Old code used min(h - dd_amount, deposit) which only coincidentally
+    #      worked when lock_threshold == trailing_pct. Explicit lock state is
+    #      more accurate and generalizes to other firms.
+    # CHANGED: April 2026 — explicit lock threshold + state tracking
+    try:
+        lock_gain_pct = float(lock_gain_var.get()) if lock_gain_var is not None else trailing_pct
+    except (ValueError, AttributeError):
+        lock_gain_pct = trailing_pct
+
+    dd_amount    = deposit * trailing_pct / 100.0
+    lock_trigger = deposit * (1.0 + lock_gain_pct / 100.0)
+
     closed_bal = list(deposit + df["profit_scaled"].cumsum().values)
     hwm        = []
+    floor      = []
     cur_hwm    = closed_bal[0]
-    for cb in closed_bal:
-        if cb > cur_hwm: cur_hwm = cb
+    locked     = False
+    locked_at  = None
+
+    for i, cb in enumerate(closed_bal):
+        if not locked and cb > cur_hwm:
+            cur_hwm = cb
+        if not locked and cb >= lock_trigger:
+            locked    = True
+            locked_at = i
         hwm.append(cur_hwm)
-    floor       = [min(h - dd_amount, deposit) for h in hwm]
-    buffer_usd  = [cb - f for cb, f in zip(closed_bal, floor)]
-    buffer_pct  = [b / deposit * 100 for b in buffer_usd]
-    locked_at   = next((i for i, f in enumerate(floor) if f >= deposit - 0.01), None)
+        floor.append(deposit if locked else cur_hwm - dd_amount)
+
+    buffer_usd   = [cb - f for cb, f in zip(closed_bal, floor)]
+    buffer_pct   = [b / deposit * 100 if deposit > 0 else 0 for b in buffer_usd]
     breach_count = sum(1 for b in buffer_usd if b <= 0)
 
     n_trades = len(closed_bal)
@@ -412,7 +445,7 @@ def _run_drawdown():
 
 
 def build_panel(content):
-    global min_hold_var, firm_var, total_dd_var, daily_dd_var
+    global min_hold_var, firm_var, total_dd_var, daily_dd_var, lock_gain_var
     global p7_hold_results, p7_dd_results
     global p7_firm_rules_frame, p7_dd_row, p7_firm_row
     global p7_fig, p7_ax, p7_canvas
@@ -557,8 +590,9 @@ def build_panel(content):
 
     # inputs + Calculate
     p7_dd_row = tk.Frame(p7_dd_card, bg="white")
-    total_dd_var = tk.StringVar(value="")
-    daily_dd_var = tk.StringVar(value="")
+    total_dd_var  = tk.StringVar(value="")
+    daily_dd_var  = tk.StringVar(value="")
+    lock_gain_var = tk.StringVar(value="6")
     tk.Label(p7_dd_row, text="Trailing DD %:", bg="white",
              font=("Segoe UI", 10)).pack(side="left")
     tk.Entry(p7_dd_row, textvariable=total_dd_var, width=5, font=("Segoe UI", 10),
@@ -571,6 +605,10 @@ def build_panel(content):
              bd=1, relief="solid").pack(side="left", padx=(6, 2))
     tk.Label(p7_dd_row, text="%  (0 = no daily limit)",
              bg="white", fg="#aaaaaa", font=("Segoe UI", 9)).pack(side="left", padx=(2, 0))
+    tk.Label(p7_dd_row, text="   Lock at gain %:", bg="white",
+             font=("Segoe UI", 10)).pack(side="left")
+    tk.Entry(p7_dd_row, textvariable=lock_gain_var, width=4, font=("Segoe UI", 10),
+             bd=1, relief="solid").pack(side="left", padx=(6, 0))
     tk.Button(p7_dd_row, text="Calculate", font=("Segoe UI", 10, "bold"),
               bg="#e94560", fg="white", bd=0, padx=14, pady=6,
               activebackground="#e94560", activeforeground="white",

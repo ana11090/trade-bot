@@ -79,7 +79,7 @@ def build_equity_chart():
                 return
             idx = min(range(len(_ex)), key=lambda i: abs(_ex[i] - event.xdata))
             bal = _eb[idx]
-            pct = (bal - _dep) / _dep * 100 if _dep else 0
+            pct = (bal - _dep) / _dep * 100 if _dep > 0 else 0   # CHANGED: April 2026 — reject non-positive deposit
             sign = "+" if pct >= 0 else ""
             date_str = ""
             try:

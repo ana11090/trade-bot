@@ -93,11 +93,15 @@ def build_risk_charts():
                     transform=r6_ax1.transAxes, color="#aaaaaa")
 
     # ── Streak analysis ────────────────────────────────────────────────────────
+    # WHY: Break-even trades (v == 0) shouldn't interrupt a winning or losing
+    #      streak. W,W,W,BE,W,W is intuitively a 5-win streak, not "max 3".
+    #      Streak numbers will be HIGHER after this fix for users with BEs.
+    # CHANGED: April 2026 — exclude break-evens from streak segmentation
     outcomes = []
     for v in df["profit_scaled"].dropna():
         if v > 0:   outcomes.append(1)
         elif v < 0: outcomes.append(-1)
-        else:       outcomes.append(0)
+        # break-even (v == 0) skipped — does not interrupt streaks
 
     win_streaks, loss_streaks = [], []
     if outcomes:
