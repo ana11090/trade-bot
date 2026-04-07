@@ -144,7 +144,7 @@ def build_panel(parent):
                        font=("Segoe UI", 12, "bold"),
                        bd=0, pady=15, cursor="hand2",
                        command=lambda: run_scenarios(scenario_vars, output_text,
-                                                     progress_label, progress_bar, pct_label))
+                                                     progress_label, progress_bar, pct_label, run_btn))
     run_btn.pack(fill="x", pady=(0, 10))
 
     # Progress indicator
@@ -189,7 +189,7 @@ def build_panel(parent):
     return panel
 
 
-def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label):
+def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label, run_btn=None):
     """Run selected scenarios"""
     # Check if trade data is loaded from Project 0
     if state.loaded_data is None:
@@ -210,6 +210,9 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
     if not selected:
         messagebox.showwarning("No Selection", "Please select at least one scenario to run.")
         return
+
+    if run_btn:
+        run_btn.configure(state="disabled", text="⏳ Running...", bg="#95a5a6")
 
     output_text.delete('1.0', tk.END)
     output_text.insert(tk.END, f"Starting execution of {len(selected)} scenario(s)...\n")
@@ -256,9 +259,22 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 step1_already_run[0] = (result is not None)
                 return step1_already_run[0]
 
+            # WHY: compute_features() processes ALL timeframes at once —
+            #      same pattern as step1. Only run it on the first iteration.
+            # CHANGED: April 2026 — fix step2 function name + run-once logic
+            step2_already_run = [False]
+
+            def _step2_wrapper(scenario):
+                if step2_already_run[0]:
+                    print(f"  (Step 2 already run for previous scenario — skipping)")
+                    return True
+                result = step2_compute_indicators.compute_features()
+                step2_already_run[0] = (result is not None)
+                return step2_already_run[0]
+
             steps = [
                 ("Step 1: Align Price",        _step1_wrapper),
-                ("Step 2: Compute Indicators", step2_compute_indicators.compute_indicators_for_scenario),
+                ("Step 2: Compute Indicators", _step2_wrapper),
                 ("Step 3: Label Trades",       step3_label_trades.label_trades_for_scenario),
                 ("Step 4: Train Model",        step4_train_model.train_model_for_scenario),
                 ("Step 5: SHAP Analysis",      step5_shap_analysis.shap_analysis_for_scenario),
@@ -362,6 +378,11 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 output_text.insert(tk.END, traceback.format_exc())
                 messagebox.showerror("Error", f"Execution failed:\n{str(e)}")
             output_text.after(0, show_error)
+
+        finally:
+            if run_btn:
+                run_btn.after(0, lambda: run_btn.configure(
+                    state="normal", text="🚀 Run Selected Scenarios", bg="#27ae60"))
 
     # Run in background thread
     thread = threading.Thread(target=run_in_background, daemon=True)
