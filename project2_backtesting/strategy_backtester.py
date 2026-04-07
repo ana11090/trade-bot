@@ -868,11 +868,21 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: April 2026 — match actual exit strategy interface
         future_candles = df.iloc[entry_pos_int + 1:]
 
+        # WHY: Exit strategies (TimeBased, ATRBased, etc.) read candles_held and
+        #      current_pnl_pips to decide when to exit. Without these fields,
+        #      time-based exits silently KeyError → are caught → never fire →
+        #      trades run to END_OF_DATA → astronomical fake pip wins.
+        # CHANGED: April 2026 — fix missing candles_held / minutes_held
         pos_info = {
-            'entry_price':  entry_price,
-            'direction':    direction,
-            'entry_time':   entry_time,
-            'entry_candle': df.iloc[entry_pos_int],
+            'entry_price':      entry_price,
+            'direction':        direction,
+            'entry_time':       entry_time,
+            'entry_candle':     df.iloc[entry_pos_int],
+            'candles_held':     0,    # incremented per candle below
+            'minutes_held':     0,    # incremented per candle below
+            'current_pnl_pips': 0,    # updated per candle below
+            'highest_since_entry': float(df.iloc[entry_pos_int]['high']),
+            'lowest_since_entry':  float(df.iloc[entry_pos_int]['low']),
         }
 
         # Some exits (ATRBased) need on_entry hook for setup
@@ -882,14 +892,39 @@ def fast_backtest(df, ind, rules, exit_strategy,
             except Exception:
                 pass
 
+        # Infer candle duration once per trade (for minutes_held)
+        candle_minutes = 60
+        if len(future_candles) >= 2:
+            try:
+                t0 = pd.to_datetime(future_candles.iloc[0]['timestamp'])
+                t1 = pd.to_datetime(future_candles.iloc[1]['timestamp'])
+                candle_minutes = max(1, int((t1 - t0).total_seconds() / 60))
+            except Exception:
+                pass
+
         result = None
         exit_idx = -1
         for ci in range(len(future_candles)):
             candle = future_candles.iloc[ci]
+
+            # Update position state before calling exit strategy
+            pos_info['candles_held'] = ci
+            pos_info['minutes_held'] = ci * candle_minutes
+            close = float(candle['close'])
+            pos_info['current_pnl_pips'] = (
+                (close - entry_price) / pip_size if direction == "BUY"
+                else (entry_price - close) / pip_size
+            )
+            pos_info['highest_since_entry'] = max(pos_info['highest_since_entry'], float(candle['high']))
+            pos_info['lowest_since_entry']  = min(pos_info['lowest_since_entry'],  float(candle['low']))
+
             try:
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
-            except Exception:
+            except Exception as e:
+                if ci == 0:  # log once per trade, not per candle
+                    print(f"  [fast_backtest exit error] {type(exit_strategy).__name__}: {e}")
                 step_result = None
+
             if step_result is not None:
                 result = step_result
                 exit_idx = ci
@@ -916,6 +951,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
             pips = (exit_price - entry_price) / pip_size
         else:
             pips = (entry_price - exit_price) / pip_size
+
+        # WHY: Sanity check — if pips is absurdly large the exit strategy
+        #      silently failed and the trade ran to END_OF_DATA years later.
+        #      Skip rather than poison the stats with fake results.
+        # CHANGED: April 2026 — pip sanity check
+        SANE_PIP_LIMIT = 50_000  # 50K pips = $5000 on XAUUSD per 0.01 lot
+        if abs(pips) > SANE_PIP_LIMIT:
+            print(f"  [SKIP] Absurd pips: {pips:.0f} "
+                  f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
+                  f"reason={exit_reason}) — likely silent exit failure")
+            continue
 
         net_pips = pips - commission_pips
 
