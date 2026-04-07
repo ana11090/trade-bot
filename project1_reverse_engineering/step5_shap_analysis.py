@@ -63,7 +63,7 @@ def shap_analysis_for_scenario(scenario):
         #      features than the trained model expects.
         # CHANGED: April 2026 — shared transform helper
         from step4_train_model import prepare_features
-        data, feature_cols = prepare_features(data)
+        data, feature_cols = prepare_features(data, scenario=scenario)
 
         print(f"  Feature count: {len(feature_cols)} (numeric)")
 
@@ -122,7 +122,7 @@ def shap_analysis_for_scenario(scenario):
 
         # Save top features
         top_features_file = os.path.join(output_dir, 'top_features_shap.txt')
-        with open(top_features_file, 'w') as f:
+        with open(top_features_file, 'w', encoding='utf-8') as f:
             f.write(f"TOP FEATURES BY SHAP IMPORTANCE — {scenario}\n")
             f.write(f"{'=' * 60}\n\n")
             for idx, row in mean_abs_shap.iterrows():

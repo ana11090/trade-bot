@@ -19,7 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared import data_utils
 
 
-def prepare_features(data):
+def prepare_features(data, scenario=None):
     """Transform raw labeled data into clean numeric features for ML.
 
     WHY: Both step4 (training) and step5 (SHAP analysis) need the same
@@ -30,7 +30,19 @@ def prepare_features(data):
         - trade_duration_minutes: losses cut short, wins run long → leaks outcome
         - profit, pips, outcome, direction: target-related
 
-    CHANGED: April 2026 — shared helper, plus leakage fix
+    Filters by scenario so each scenario trains on its own TF features only:
+        scenario='M5'      → only M5_* features (+ time/cyclic)
+        scenario='M15'     → only M15_* features (+ time/cyclic)
+        scenario='H1'      → only H1_* features (+ time/cyclic)
+        scenario='H4'      → only H4_* features (+ time/cyclic)
+        scenario='D1'      → only D1_* features (+ time/cyclic)
+        scenario='H1_M15'  → H1_* + M15_* features (+ time/cyclic)
+        scenario=None      → all features (legacy behavior)
+
+    WHY: Without this, all 5 scenarios train on all 638 features and produce
+         identical models. With it, each scenario answers a different question:
+         "can I predict outcome from ONLY [TF] data?"
+    CHANGED: April 2026 — scenario-aware feature filtering
     """
     # Columns we never want as features
     leak_cols = {
@@ -90,10 +102,52 @@ def prepare_features(data):
         except Exception:
             leak_cols.add(col)
 
-    feature_cols = [
+    # All numeric non-leak columns are candidates
+    candidate_cols = [
         col for col in data.columns
         if col not in leak_cols and pd.api.types.is_numeric_dtype(data[col])
     ]
+
+    # ── Apply scenario filter ─────────────────────────────────────────────────
+    # WHY: Each scenario trains on features from ITS timeframe(s) only.
+    #      Without this, all scenarios see all 638 features and produce
+    #      identical models — the "5 scenarios, 5 same answers" bug.
+    # CHANGED: April 2026 — scenario-aware feature filtering
+    if scenario is None or scenario == 'all':
+        feature_cols = candidate_cols
+        print(f"  [SCENARIO=all] Using all {len(feature_cols)} features")
+    else:
+        scenario_tfs = {
+            'M5':     ['M5'],
+            'M15':    ['M15'],
+            'H1':     ['H1'],
+            'H4':     ['H4'],
+            'D1':     ['D1'],
+            'H1_M15': ['H1', 'M15'],
+            'H4_H1':  ['H4', 'H1'],
+            'H1_M5':  ['H1', 'M5'],
+        }
+        allowed_prefixes = scenario_tfs.get(scenario, [scenario])
+
+        # Time/cyclic features have no TF prefix — always include them
+        non_tf_keepers = {
+            'open_hour', 'open_dow', 'open_month',
+            'open_hour_sin', 'open_hour_cos', 'open_dow_sin', 'open_dow_cos',
+            'close_hour', 'close_dow', 'close_month',
+            'close_hour_sin', 'close_hour_cos', 'close_dow_sin', 'close_dow_cos',
+            'hour_of_day', 'day_of_week', 'trade_direction',
+        }
+
+        feature_cols = []
+        for col in candidate_cols:
+            if col in non_tf_keepers:
+                feature_cols.append(col)
+                continue
+            if any(col.startswith(f'{tf}_') for tf in allowed_prefixes):
+                feature_cols.append(col)
+
+        print(f"  [SCENARIO={scenario}] Filtered to {len(feature_cols)} features "
+              f"from prefixes {allowed_prefixes} (out of {len(candidate_cols)} total)")
 
     return data, feature_cols
 
@@ -142,7 +196,7 @@ def train_model_for_scenario(scenario):
         print(f"  Loaded labeled data: {len(data)} trades")
 
         # Transform features and split AFTER (shared with step5 SHAP analysis)
-        data, feature_cols = prepare_features(data)
+        data, feature_cols = prepare_features(data, scenario=scenario)
 
         print(f"  Feature count: {len(feature_cols)} (numeric, no leakage)")
 
@@ -247,7 +301,7 @@ def train_model_for_scenario(scenario):
 
         # Save metrics to file
         metrics_file = os.path.join(output_dir, 'model_metrics.txt')
-        with open(metrics_file, 'w') as f:
+        with open(metrics_file, 'w', encoding='utf-8') as f:
             f.write(f"MODEL EVALUATION METRICS — {scenario}\n")
             f.write(f"{'=' * 60}\n\n")
             f.write(f"Test Set Performance:\n")

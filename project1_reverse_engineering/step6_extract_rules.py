@@ -77,14 +77,14 @@ def extract_rules_for_scenario(scenario):
                 # WHY: Use shared transform — see step4_train_model.prepare_features.
                 # CHANGED: April 2026 — fix string→float crash
                 from step4_train_model import prepare_features as _prep
-                _data_copy, _all_numeric = _prep(data.copy())
+                _data_copy, _all_numeric = _prep(data.copy(), scenario=scenario)
                 top_features = _all_numeric
 
         # Apply the same transform that step4 used so feature columns match
         # the trained model. WHY: timestamps would crash X_test = data[cols].
         # CHANGED: April 2026 — shared transform helper
         from step4_train_model import prepare_features
-        data, feature_cols = prepare_features(data)
+        data, feature_cols = prepare_features(data, scenario=scenario)
 
         # Extract rules from the best-performing tree
         print(f"\n  Extracting rules from Random Forest trees...")

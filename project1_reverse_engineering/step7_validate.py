@@ -58,15 +58,20 @@ def validate_rules_for_scenario(scenario):
         metrics_file = os.path.join(output_dir, 'model_metrics.txt')
         model_accuracy = None
         if os.path.exists(metrics_file):
-            with open(metrics_file, 'r') as f:
-                for line in f:
-                    if 'Accuracy:' in line and 'Test Set' in open(metrics_file).read():
-                        try:
-                            # Extract accuracy from line like "  Accuracy:  0.723 (72.3%)"
-                            model_accuracy = float(line.split(':')[1].split('(')[0].strip())
-                            break
-                        except:
-                            pass
+            with open(metrics_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # WHY: Previously opened the file twice per line (nested open call).
+            # CHANGED: April 2026 — read once, scan in memory
+            in_test_section = False
+            for line in content.splitlines():
+                if 'Test Set Performance' in line:
+                    in_test_section = True
+                if in_test_section and 'Accuracy:' in line:
+                    try:
+                        model_accuracy = float(line.split(':')[1].split('(')[0].strip())
+                        break
+                    except Exception:
+                        pass
 
         # Check if rules exist
         rules_file = os.path.join(output_dir, 'rules_summary.csv')
@@ -85,7 +90,7 @@ def validate_rules_for_scenario(scenario):
                 #      label-encoding, and excludes leakage features.
                 # CHANGED: April 2026 — shared transform helper
                 from step4_train_model import prepare_features
-                data, feature_cols = prepare_features(data)
+                data, feature_cols = prepare_features(data, scenario=scenario)
                 X = data[feature_cols].fillna(0)
                 y_pred = model.predict(X)
                 y_true = data['outcome']
@@ -112,7 +117,7 @@ def validate_rules_for_scenario(scenario):
 
                 # CHANGED: April 2026 — shared transform helper
                 from step4_train_model import prepare_features
-                data, feature_cols = prepare_features(data)
+                data, feature_cols = prepare_features(data, scenario=scenario)
                 X = data[feature_cols].fillna(0)
                 y_pred = model.predict(X)
                 y_true = data['outcome']
@@ -139,7 +144,10 @@ def validate_rules_for_scenario(scenario):
 
         # Create validation report
         validation_report_file = os.path.join(output_dir, 'validation_report.txt')
-        with open(validation_report_file, 'w') as f:
+        # WHY: Windows defaults to cp1252 which can't encode ✓ or other
+        #      Unicode characters. Force UTF-8.
+        # CHANGED: April 2026 — encoding fix
+        with open(validation_report_file, 'w', encoding='utf-8') as f:
             f.write(f"VALIDATION REPORT — {scenario}\n")
             f.write(f"{'=' * 60}\n\n")
 
