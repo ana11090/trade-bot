@@ -119,9 +119,70 @@ def extract_rules_for_scenario(scenario):
 
         print(f"  Saved raw tree rules: {raw_rules_file}")
 
-        # Extract simplified high-confidence rules
-        print(f"\n  Analyzing tree paths for high-confidence WIN rules...")
-        rules = extract_win_rules_from_tree(best_tree, feature_cols, X_test, y_test)
+        # ── Multi-depth rule extraction ───────────────────────────────────
+        # WHY: A single tree at one depth finds limited rule patterns.
+        #      Trying depths 2-8 gives us simple rules (2-3 conditions) AND
+        #      complex rules (6-8 conditions) so we can pick the best of each.
+        #      Same Random Forest, just fitting fresh trees at each depth.
+        # CHANGED: April 2026 — multi-depth extraction
+        from sklearn.tree import DecisionTreeClassifier
+
+        print(f"\n  Multi-depth rule extraction (depths 2-8)...")
+
+        train_data = data[data['dataset'] == 'train'].copy()
+        X_train = train_data[feature_cols].fillna(0)
+        y_train = train_data['outcome']
+
+        depths_to_try = [2, 3, 4, 5, 6, 7, 8]
+        all_rules = []
+
+        for depth in depths_to_try:
+            try:
+                tree_d = DecisionTreeClassifier(
+                    max_depth=depth,
+                    min_samples_leaf=max(15, 30 // depth),
+                    min_samples_split=max(20, 50 // depth),
+                    random_state=42,
+                    class_weight='balanced',
+                )
+                tree_d.fit(X_train, y_train)
+
+                rules_d = extract_win_rules_from_tree(tree_d, feature_cols, X_test, y_test)
+
+                for r in rules_d:
+                    r['tree_depth'] = depth
+
+                all_rules.extend(rules_d)
+                print(f"    Depth {depth}: {len(rules_d)} rules extracted")
+            except Exception as e:
+                print(f"    Depth {depth}: error — {e}")
+                continue
+
+        # Deduplicate by condition signature (same rule from different depths)
+        # WHY: Depths 4 and 5 might produce the same 4-condition rule.
+        seen_signatures = set()
+        unique_rules = []
+        for rule in all_rules:
+            sig = tuple(sorted(
+                f"{c.get('feature','')}{c.get('operator','')}{c.get('value','')}"
+                for c in rule.get('conditions', [])
+            ))
+            if sig in seen_signatures:
+                continue
+            seen_signatures.add(sig)
+            unique_rules.append(rule)
+
+        # Sort by confidence × coverage (existing scoring approach)
+        unique_rules.sort(
+            key=lambda r: r.get('confidence', 0) * r.get('coverage', 0),
+            reverse=True
+        )
+
+        rules = unique_rules[:20]
+
+        print(f"  Total candidates: {len(all_rules)}")
+        print(f"  Unique rules: {len(unique_rules)}")
+        print(f"  Keeping top 20 for filtering")
 
         # Filter rules by confidence and coverage
         filtered_rules = []
