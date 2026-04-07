@@ -265,12 +265,48 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             step2_already_run = [False]
 
             def _step2_wrapper(scenario):
-                if step2_already_run[0]:
-                    print(f"  (Step 2 already run for previous scenario — skipping)")
-                    return True
-                result = step2_compute_indicators.compute_features()
-                step2_already_run[0] = (result is not None)
-                return step2_already_run[0]
+                # WHY: step2 saves feature_matrix.csv to outputs/, but step3+ look
+                #      for it inside outputs/scenario_{name}/. Copy it to every
+                #      selected scenario folder so the per-scenario steps find it.
+                # CHANGED: April 2026 — copy feature matrix to scenario folders
+                import shutil
+
+                if not step2_already_run[0]:
+                    result = step2_compute_indicators.compute_features()
+                    step2_already_run[0] = (result is not None)
+                    if not step2_already_run[0]:
+                        return False
+
+                # Always copy to the current scenario folder (even if step2 was already run)
+                outputs_dir = os.path.normpath(
+                    os.path.join(os.path.dirname(__file__), '..', 'outputs')
+                )
+                master_file = os.path.join(outputs_dir, 'feature_matrix.csv')
+
+                if not os.path.exists(master_file):
+                    print(f"  ERROR: master feature_matrix.csv not found at {master_file}")
+                    return False
+
+                scenario_dir = os.path.join(outputs_dir, f'scenario_{scenario}')
+                os.makedirs(scenario_dir, exist_ok=True)
+
+                target_file = os.path.join(scenario_dir, 'feature_matrix.csv')
+                try:
+                    shutil.copy2(master_file, target_file)
+                    print(f"  Copied feature_matrix.csv -> scenario_{scenario}/")
+                except Exception as e:
+                    print(f"  ERROR copying to scenario_{scenario}: {e}")
+                    return False
+
+                # Also copy aligned_trades.csv if step3 needs it
+                master_aligned = os.path.join(outputs_dir, 'aligned_trades.csv')
+                if os.path.exists(master_aligned):
+                    try:
+                        shutil.copy2(master_aligned, os.path.join(scenario_dir, 'aligned_trades.csv'))
+                    except Exception:
+                        pass
+
+                return True
 
             steps = [
                 ("Step 1: Align Price",        _step1_wrapper),
