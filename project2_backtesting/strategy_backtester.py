@@ -931,9 +931,15 @@ def compute_stats(trades):
             "best_trade": 0, "worst_trade": 0,
         }
 
-    gross  = [t["pnl_pips"]               for t in trades]
-    net    = [t.get("net_pips", t["pnl_pips"]) for t in trades]
-    costs  = sum(t.get("cost_pips", 0)    for t in trades)
+    # WHY: Vectorized backtest writes 'pips', non-vectorized writes 'pnl_pips'.
+    #      Accept either to avoid KeyError.
+    # CHANGED: April 2026 — accept both key names
+    def _gross(t):
+        return t.get("pnl_pips", t.get("pips", 0))
+
+    gross  = [_gross(t) for t in trades]
+    net    = [t.get("net_pips", _gross(t)) for t in trades]
+    costs  = sum(t.get("cost_pips", 0) for t in trades)
 
     net_winners = [p for p in net if p > 0]
     net_losers  = [p for p in net if p <= 0]
