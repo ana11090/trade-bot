@@ -226,7 +226,11 @@ def extract_rules_for_scenario(scenario):
 
                 for idx, rule in enumerate(filtered_rules, 1):
                     f.write(f"RULE #{idx}\n")
-                    f.write(f"  Confidence: {rule['confidence']:.1%} ({rule['wins']}/{rule['coverage']} trades won)\n")
+                    f.write(f"  Test Confidence:  {rule['confidence']:.1%} ({rule['wins']}/{rule['coverage']} trades won)\n")
+                    f.write(f"  Train Confidence: {rule.get('train_confidence', rule['confidence']):.1%}\n")
+                    overfit_gap = rule.get('overfit_gap', 0)
+                    if overfit_gap > 0.15:
+                        f.write(f"  *** OVERFIT WARNING: train−test gap = {overfit_gap:.1%} (>15%) ***\n")
                     f.write(f"  Coverage: {rule['coverage']} trades\n")
                     f.write(f"  Conditions:\n")
                     for condition in rule['conditions']:
@@ -386,7 +390,11 @@ def extract_win_rules_from_tree(tree, feature_names, X_test, y_test):
             loss_samples = value[0]
 
             if win_samples > loss_samples:  # Predicts WIN
-                confidence = win_samples / total_samples
+                # WHY: tree_.value gives train-set class distribution — that's
+                #      train confidence. Separately compute test confidence from
+                #      actual test samples to detect overfitting.
+                # CHANGED: April 2026 — split train vs test confidence
+                train_confidence = win_samples / total_samples
 
                 # Find which test samples satisfy these conditions
                 mask = np.ones(len(X_test), dtype=bool)
@@ -408,13 +416,17 @@ def extract_win_rules_from_tree(tree, feature_names, X_test, y_test):
                 matching_trades = mask.sum()
                 if matching_trades > 0:
                     actual_wins = y_test[mask].sum()
+                    test_confidence = float(actual_wins) / float(matching_trades)
+                    overfit_gap = train_confidence - test_confidence
 
                     rules.append({
-                        'conditions': conditions,
-                        'confidence': confidence,
-                        'coverage': int(matching_trades),
-                        'wins': int(actual_wins),
-                        'action': 'BUY or SELL'  # Would need directional model to determine
+                        'conditions':       conditions,
+                        'confidence':       test_confidence,    # test-based (primary)
+                        'train_confidence': train_confidence,   # for overfit detection
+                        'overfit_gap':      overfit_gap,
+                        'coverage':         int(matching_trades),
+                        'wins':             int(actual_wins),
+                        'action':           'BUY or SELL'
                     })
 
     recurse(0, [])

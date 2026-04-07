@@ -91,9 +91,14 @@ def validate_rules_for_scenario(scenario):
                 # CHANGED: April 2026 — shared transform helper
                 from step4_train_model import prepare_features
                 data, feature_cols = prepare_features(data, scenario=scenario)
-                X = data[feature_cols].fillna(0)
+                # WHY: Validating on the full dataset (train+test) inflates
+                #      match_rate by ~20% since the model was fit on train.
+                #      Only the test set gives an honest out-of-sample number.
+                # CHANGED: April 2026 — test-only validation
+                test_mask = data['dataset'] == 'test'
+                X = data.loc[test_mask, feature_cols].fillna(0)
                 y_pred = model.predict(X)
-                y_true = data['outcome']
+                y_true = data.loc[test_mask, 'outcome']
 
                 match_rate = (y_pred == y_true).mean()
 
@@ -118,9 +123,11 @@ def validate_rules_for_scenario(scenario):
                 # CHANGED: April 2026 — shared transform helper
                 from step4_train_model import prepare_features
                 data, feature_cols = prepare_features(data, scenario=scenario)
-                X = data[feature_cols].fillna(0)
+                # WHY: test-only validation — same reason as fallback path above
+                test_mask = data['dataset'] == 'test'
+                X = data.loc[test_mask, feature_cols].fillna(0)
                 y_pred = model.predict(X)
-                y_true = data['outcome']
+                y_true = data.loc[test_mask, 'outcome']
 
                 match_rate = (y_pred == y_true).mean()
             else:
