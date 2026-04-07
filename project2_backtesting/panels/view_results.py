@@ -19,6 +19,17 @@ _sort_key = ['net_total_pips']  # default sort
 _sort_reverse = [True]
 
 
+# WHY: Used by both display_summary() and _display_results_inner().
+#      Was originally a nested function inside display_summary() but
+#      _display_results_inner() is a sibling scope and crashed with NameError.
+# CHANGED: April 2026 — promoted to module level; explicit params (no closure)
+def _calc_dollar_per_pip(strategy_sl_pips, risk_dollars, pip_value):
+    """Return $ per pip for a strategy given its SL distance and risk model."""
+    sl  = strategy_sl_pips if strategy_sl_pips and strategy_sl_pips > 0 else 150
+    lot = max(0.01, risk_dollars / (sl * pip_value))
+    return pip_value * lot
+
+
 def load_summary_stats():
     """Load backtest matrix results from strategy_backtester output"""
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -104,15 +115,9 @@ def display_summary(output_text, summary_frame):
 
     # WHY: Each strategy can have a different SL distance. Hardcoding 150 made
     #      the dollar display wrong for any strategy with SL ≠ 150.
-    # CHANGED: April 2026 — per-strategy lot sizing via _calc_dollar_per_pip
-    risk_dollars = account_size * (risk_pct / 100)
-
-    def _calc_dollar_per_pip(strategy_sl_pips):
-        sl = strategy_sl_pips if strategy_sl_pips and strategy_sl_pips > 0 else 150
-        lot = max(0.01, risk_dollars / (sl * pip_value))
-        return pip_value * lot
-
-    dollar_per_pip = _calc_dollar_per_pip(150)  # default for legacy code paths
+    # CHANGED: April 2026 — per-strategy lot sizing via module-level helper
+    risk_dollars   = account_size * (risk_pct / 100)
+    dollar_per_pip = _calc_dollar_per_pip(150, risk_dollars, pip_value)
 
     for widget in summary_frame.winfo_children():
         widget.destroy()
@@ -133,7 +138,8 @@ def display_summary(output_text, summary_frame):
             return
 
         _display_results_inner(output_text, summary_frame, data, results,
-                               account_size, risk_pct, pip_value, dollar_per_pip)
+                               account_size, risk_pct, pip_value, dollar_per_pip,
+                               risk_dollars)
 
     except Exception as e:
         import traceback
@@ -151,8 +157,11 @@ def display_summary(output_text, summary_frame):
 
 
 def _display_results_inner(output_text, summary_frame, data, results,
-                           account_size, risk_pct, pip_value, dollar_per_pip):
+                           account_size, risk_pct, pip_value, dollar_per_pip,
+                           risk_dollars=None):
     """Inner display logic — separated so errors are caught by display_summary."""
+    if risk_dollars is None:
+        risk_dollars = account_size * (risk_pct / 100)
     # ── Header info ──
     info_frame = tk.Frame(summary_frame, bg="#e8f5e9", padx=15, pady=10)
     info_frame.pack(fill="x", padx=10, pady=(0, 5))
@@ -368,7 +377,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     r.get('exit_strategy_params', {}).get('sl_pips') or
                     150
                 )
-                this_dollar_per_pip = _calc_dollar_per_pip(strat_sl)
+                this_dollar_per_pip = _calc_dollar_per_pip(strat_sl, risk_dollars, pip_value)
                 profit_dollars = net_pips * this_dollar_per_pip
                 profit_pct = (profit_dollars / account_size) * 100
 
