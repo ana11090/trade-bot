@@ -2395,7 +2395,9 @@ def build_panel(parent):
                     report = _json.load(f)
 
                 # Current rules' indicators
-                win_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+                from helpers import normalize_conditions
+                win_rules = [normalize_conditions(r) for r in report.get('rules', [])
+                             if r.get('prediction') == 'WIN']
                 current_features = set()
                 for r in win_rules:
                     for c in r.get('conditions', []):
@@ -2421,7 +2423,7 @@ def build_panel(parent):
                 for i, r in enumerate(win_rules[:5]):
                     wr = r.get('win_rate', 0)
                     wr_str = f"{wr:.0%}" if wr <= 1 else f"{wr:.0f}%"
-                    conds = [c['feature'] for c in r.get('conditions', [])]
+                    conds = [c['feature'] for c in r.get('conditions', [])]  # already normalized above
                     text += f"  Rule {i+1} (WR {wr_str}): {', '.join(conds[:3])}\n"
                 if len(win_rules) > 5:
                     text += f"  ... +{len(win_rules) - 5} more rules\n"

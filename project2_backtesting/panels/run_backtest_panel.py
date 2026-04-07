@@ -547,6 +547,10 @@ def build_panel(parent):
         else:
             rules = data.get('rules', [])
 
+        # Normalize conditions to dict format (analysis_report stores them as strings)
+        from helpers import normalize_conditions
+        rules = [normalize_conditions(r) for r in rules]
+
         # Filter WIN only
         win_rules = [r for r in rules if r.get('prediction', 'WIN') == 'WIN']
         _current_rules = win_rules

@@ -3,6 +3,38 @@ import pandas as pd
 import state
 
 
+def normalize_condition(c):
+    """Convert a condition to dict form regardless of source format.
+
+    Handles:
+      - dict already: {"feature": ..., "operator": ..., "value": ...} → returned as-is
+      - string: "M15_roc_5 <= 0.1920" → {"feature": "M15_roc_5", "operator": "<=", "value": 0.192}
+    """
+    if isinstance(c, dict):
+        return c
+    # Parse string like "FEATURE OP VALUE"
+    s = str(c).strip()
+    for op in ['<=', '>=', '<', '>', '==', '!=']:
+        if op in s:
+            parts = s.split(op, 1)
+            feat = parts[0].strip()
+            try:
+                val = float(parts[1].strip())
+            except ValueError:
+                val = parts[1].strip()
+            return {'feature': feat, 'operator': op, 'value': val}
+    # Fallback: treat whole string as feature name
+    return {'feature': s, 'operator': '>', 'value': 0}
+
+
+def normalize_conditions(rule):
+    """Return rule with conditions normalized to list-of-dicts. Does not mutate original."""
+    conds = rule.get('conditions', [])
+    if not conds or isinstance(conds[0], dict):
+        return rule  # already correct format
+    return {**rule, 'conditions': [normalize_condition(c) for c in conds]}
+
+
 def make_copyable(widget):
     """Add right-click 'Copy' context menu to any tk.Label (or similar widget)."""
     menu = tk.Menu(widget, tearoff=0)
