@@ -165,13 +165,16 @@ def extract_rules_for_scenario(scenario):
 
         # Deduplicate by condition signature (same rule from different depths)
         # WHY: Depths 4 and 5 might produce the same 4-condition rule.
+        # Deduplicate by condition signature (same rule from different depths).
+        # WHY: extract_win_rules_from_tree() returns conditions as STRINGS
+        #      like "M5_lower_shadow > 0.5", not dicts. We use the sorted
+        #      tuple of those strings as the signature.
+        # CHANGED: April 2026 — fix string vs dict bug
         seen_signatures = set()
         unique_rules = []
         for rule in all_rules:
-            sig = tuple(sorted(
-                f"{c.get('feature','')}{c.get('operator','')}{c.get('value','')}"
-                for c in rule.get('conditions', [])
-            ))
+            conds = rule.get('conditions', [])
+            sig = tuple(sorted(str(c) for c in conds))
             if sig in seen_signatures:
                 continue
             seen_signatures.add(sig)
