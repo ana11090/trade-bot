@@ -767,27 +767,45 @@ def _start_optimization():
                     None
                 )
 
+                _known_tfs = {'M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'}
+
+                def _resolve_tf(raw_tf):
+                    """Extract a valid single TF from a raw value.
+                    Handles composite labels like 'H1_M15' by taking the first segment.
+                    """
+                    if not raw_tf:
+                        return None
+                    for part in str(raw_tf).split('_'):
+                        candidate = part.upper()
+                        if candidate in _known_tfs:
+                            return candidate
+                    return None
+
                 if not entry_tf:
                     entry_tf = cfg.get('winning_scenario', 'H1')
                     try:
                         if os.path.exists(rules_path):
                             saved_tf = report.get('entry_timeframe')
-                            if saved_tf and saved_tf != entry_tf:
-                                print(f"[OPTIMIZER] Rules were discovered on {saved_tf}, "
-                                      f"but config says {entry_tf}. Using {saved_tf}.")
-                                entry_tf = saved_tf
+                            resolved = _resolve_tf(saved_tf)
+                            if resolved and resolved != entry_tf:
+                                print(f"[OPTIMIZER] Rules were discovered on {saved_tf} → using {resolved}, "
+                                      f"config says {entry_tf}.")
+                                entry_tf = resolved
                     except Exception:
                         pass
 
+                # Normalise in case entry_tf itself is a composite like 'H1_M15'
+                entry_tf = _resolve_tf(entry_tf) or entry_tf
+
                 print(f"[OPTIMIZER] Using entry timeframe: {entry_tf}")
 
-                # WHY: Use the entry TF from the rules, not H1 fallback.
-                #      Removed xauusd_H1.csv fallback — wrong TF = wrong results.
-                # CHANGED: April 2026 — no H1 fallback
+                # Probe candidate paths; also try plain H1 as last resort
                 candles_path = None
                 for p in [
                     os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                     os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
+                    os.path.join(project_root, 'data', f'{symbol}_H1.csv'),
+                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
                 ]:
                     if os.path.exists(p):
                         candles_path = p
@@ -795,7 +813,7 @@ def _start_optimization():
 
                 if not candles_path:
                     print(f"[OPTIMIZER] ERROR: No candle CSV found for {symbol}_{entry_tf}")
-                    _update_status(f"Error: candle CSV not found.", error=True)
+                    _update_status(f"Error: candle CSV not found for {entry_tf}.", error=True)
                     return
 
                 print(f"[OPTIMIZER] Using candles: {candles_path}")
