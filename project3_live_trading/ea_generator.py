@@ -566,11 +566,21 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # ── Payout condition tracking ─────────────────────────────────────────
     if has_consistency or has_min_profit_days:
         if has_min_profit_days:
+            # WHY: g_sessionEquity holds yesterday's starting balance at this point
+            #      because the template now resets g_sessionEquity AFTER this block.
+            #      So ydayPnl is computed correctly from yesterday's baseline.
+            # CHANGED: April 2026 — explicit ordering + Print diagnostic
             extra_daily_reset.append(
                 f'   // Count profitable days (payout condition)\n'
+                f'   // g_sessionEquity is still yesterday\'s baseline here (reset happens after this block)\n'
                 f'   double ydayPnl = AccountInfoDouble(ACCOUNT_BALANCE) - g_sessionEquity;\n'
-                f'   if(ydayPnl >= g_sessionEquity * MinDayProfitPct / 100.0 && g_sessionEquity > 0)\n'
-                f'      g_profitDayCount++;')
+                f'   if(g_sessionEquity > 0 && ydayPnl >= g_sessionEquity * MinDayProfitPct / 100.0)\n'
+                f'   {{\n'
+                f'      g_profitDayCount++;\n'
+                f'      Print("[PAYOUT] Profitable day #", g_profitDayCount,\n'
+                f'             " P&L=$", DoubleToString(ydayPnl, 2),\n'
+                f'             " start=$", DoubleToString(g_sessionEquity, 2));\n'
+                f'   }}')
         if has_consistency:
             extra_daily_reset.append(
                 f'   // Track best day and total profit (consistency)\n'
@@ -925,7 +935,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      double _curSL = PositionGetDouble(POSITION_SL);\n'
             f'      double _curTP = PositionGetDouble(POSITION_TP);\n'
             f'      double _bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);\n'
-            f'      double _profitPips = (_bid - _openP) / (_Point * 10);\n'
+            f'      double _profitPips = (_bid - _openP) / GetPipSize();\n'
             f'      // Breakeven: move SL to entry once profit reaches threshold\n'
             f'      if(!g_breakevenSet && _profitPips >= BreakevenPips)\n'
             f'      {{\n'
@@ -936,7 +946,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      // Trailing: move SL up as price moves\n'
             f'      if(g_breakevenSet && TrailPips > 0)\n'
             f'      {{\n'
-            f'         double _newSL = _bid - TrailPips * _Point * 10;\n'
+            f'         double _newSL = _bid - TrailPips * GetPipSize();\n'
             f'         if(_newSL > _curSL + _Point)\n'
             f'            trade.PositionModify(_ht, _newSL, _curTP);\n'
             f'      }}\n'
@@ -996,6 +1006,11 @@ input double DailyDDLimitPct    = {dd_daily_pct};           // Daily DD blow lim
 input double TotalDDLimitPct    = {dd_total_pct};           // Total DD blow limit % (firm closes account here)
 input bool   LogTrades          = true;                      // Log trades to CSV
 input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file path
+// WHY: Static DST offset misses the reset on DST change days — adjust this
+//      input twice a year if your broker observes DST. Default from firm JSON.
+// CHANGED: April 2026 — user-adjustable DST-safe reset time
+input int    DailyResetHourServer = {reset_hour_gmt};        // Daily reset hour (server time, adjust for DST)
+input int    DailyResetMinute     = 0;                       // Daily reset minute
 //--- Exit parameters
 input double SLPips             = {sl_pips};                 // Stop loss (pips)
 input double TPPips             = {tp_pips};                 // Take profit (pips)
@@ -1015,6 +1030,7 @@ double g_sessionEquity   = 0.0;
 double g_dailyHighEquity = 0.0;
 bool   g_stopForDay      = false;
 bool   g_stopForever     = false;
+bool   g_dailyResetDone  = false;   // DST-safe: prevents double-reset within same hour
 datetime g_lastTradeTime = 0;
 datetime g_lastBarTime   = 0;
 int    g_logHandle       = INVALID_HANDLE;
@@ -1090,37 +1106,28 @@ void OnTick()
    if(currentBarTime == g_lastBarTime) return;
    g_lastBarTime = currentBarTime;
 
-   //--- Reset daily counter
-   MqlDateTime now_gmt;
-   TimeToStruct(TimeGMT(), now_gmt);
-   int _resetHour = {reset_hour_gmt}; // From firm JSON ({daily_dd_mech.get('reset_time', '00:00')} {daily_dd_mech.get('reset_timezone', 'GMT')} = {reset_hour_gmt}:00 GMT)
-   static int _lastResetDay = -1;
-   // WHY: Leveraged resets at 23:00 GMT+3 (= 20:00 GMT), not midnight.
-   //      We check if current GMT hour >= reset hour AND we haven't reset today.
-   bool _shouldReset = false;
-   if(_resetHour == 0)
+   //--- DST-safe daily reset
+   // WHY: Static reset-hour computation failed on DST change days — the hour
+   //      could shift ±1 and the reset would be missed or fire twice.
+   //      Now uses an input the user can adjust manually twice a year.
+   //      g_dailyResetDone prevents double-firing within the reset hour window.
+   // CHANGED: April 2026 — DST-safe + correct g_sessionEquity ordering
+   MqlDateTime _now_srv;
+   TimeToStruct(TimeCurrent(), _now_srv);
+   if(_now_srv.hour == DailyResetHourServer && _now_srv.min >= DailyResetMinute
+      && !g_dailyResetDone)
    {{
-      // Standard midnight reset
-      if(now_gmt.day != _lastResetDay) _shouldReset = true;
-   }}
-   else
-   {{
-      // Custom reset hour (e.g., 20:00 GMT for Leveraged)
-      if(now_gmt.hour >= _resetHour && now_gmt.day != _lastResetDay)
-         _shouldReset = true;
-      // Handle day wrap: if reset hour is late (e.g., 23), also check next day
-      if(now_gmt.hour < _resetHour && now_gmt.day != _lastResetDay && _lastResetDay != -1)
-         _shouldReset = false; // wait until reset hour
-   }}
-   if(_shouldReset)
-   {{
-      _lastResetDay    = now_gmt.day;
-      g_dailyTrades    = 0;
-      g_stopForDay     = false;
-      g_sessionEquity  = equity;
+      g_dailyResetDone  = true;
+      g_dailyTrades     = 0;
+      g_stopForDay      = false;
       g_dailyHighEquity = equity;
+      // NOTE: g_sessionEquity is reset AFTER extra_daily_reset_block so that
+      //       profit-day counters still read yesterday's baseline correctly.
 {extra_daily_reset_block}
+      g_sessionEquity   = equity;   // NOW reset: tomorrow's baseline
    }}
+   if(_now_srv.hour != DailyResetHourServer)
+      g_dailyResetDone = false;   // re-arm for next day
 
    //--- Skip checks
    double spreadPips = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) / 10.0;
@@ -1166,13 +1173,25 @@ void OnTick()
    }}
 
    //--- Position sizing
-   double sl = SLPips * _Point * 10;
-   double tp = TPPips * _Point * 10;
+   // WHY: GetPipSize() detects instrument-specific pip size (5-digit forex vs
+   //      4-digit vs metals etc.) rather than hardcoding _Point * 10.
+   // CHANGED: April 2026 — proper pip size + atomic SL/TP
+   double pipSize = GetPipSize();
+   double sl = SLPips * pipSize;
+   double tp = TPPips * pipSize;
    double lots = CalculateLots(sl);
    if(lots <= 0.0) return;
 
-   //--- Place order
-   if(trade.Buy(lots, _Symbol, 0, 0, 0, "EA_Entry"))
+   //--- Calculate SL/TP prices BEFORE placing the order
+   //    WHY: Passing 0 for SL/TP then calling PositionModify after leaves the
+   //         position unprotected if the EA crashes between the two calls.
+   //    CHANGED: April 2026 — atomic SL/TP placement
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double slPrice = NormalizeDouble(ask - sl, _Digits);
+   double tpPrice = NormalizeDouble(ask + tp, _Digits);
+
+   //--- Place order WITH SL and TP attached
+   if(trade.Buy(lots, _Symbol, 0, slPrice, tpPrice, "EA_Entry"))
    {{
       double entryPrice = trade.ResultPrice();
 {exit_on_entry_block}
@@ -1184,10 +1203,25 @@ void OnTick()
 }}
 
 //+------------------------------------------------------------------+
+//| Get pip size in price units (handles all instrument types)        |
+//| WHY: _Point * 10 hardcoded only works for 5-digit forex. Metals, |
+//|      JPY pairs, and indices all have different digit counts.      |
+//| CHANGED: April 2026 — proper instrument-aware pip detection       |
+//+------------------------------------------------------------------+
+double GetPipSize()
+{{
+   int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   // 3 or 5 digit pricing: pip = 10 points; 2 or 4 digit: pip = 1 point
+   return (digits == 3 || digits == 5) ? point * 10.0 : point;
+}}
+
+//+------------------------------------------------------------------+
 //| Calculate position size from risk %                                |
 //+------------------------------------------------------------------+
 double CalculateLots(double slDistance)
 {{
+   //--- Read account and symbol info
    double equity     = AccountInfoDouble(ACCOUNT_EQUITY);
    double riskAmount = equity * RiskPercent / 100.0;
    double tickValue  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
@@ -1196,13 +1230,40 @@ double CalculateLots(double slDistance)
    double minLot     = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxLot     = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
 
-   if(tickValue == 0 || slDistance == 0) return minLot;
+   //--- Validate symbol info
+   // WHY: Without these checks, bad symbol info silently returned minLot
+   //      and the user never knew their risk model was broken.
+   // CHANGED: April 2026 — validation + diagnostic logging
+   if(tickValue <= 0 || tickSize <= 0 || slDistance <= 0 || lotStep <= 0)
+   {{
+      Print("[LOTS] WARNING: invalid symbol info"
+            " tickValue=", tickValue, " tickSize=", tickSize,
+            " slDistance=", slDistance, " lotStep=", lotStep, ". Using minLot.");
+      return minLot;
+   }}
 
-   double lots = riskAmount / (slDistance / tickSize * tickValue);
-   lots = MathFloor(lots / lotStep) * lotStep;
-   lots = MathMax(lots, minLot);
-   lots = MathMin(lots, maxLot);
-   return NormalizeDouble(lots, 2);
+   //--- Risk-based sizing: lots = riskAmount / ((slDistance / tickSize) * tickValue)
+   double lotsRaw     = riskAmount / ((slDistance / tickSize) * tickValue);
+   double lotsRounded = MathFloor(lotsRaw / lotStep) * lotStep;
+
+   //--- Apply broker limits with diagnostic logging
+   double lots       = lotsRounded;
+   if(lots < minLot)
+   {{
+      Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
+            " lots but minLot=", minLot, " — risking MORE than configured!");
+      lots = minLot;
+   }}
+   if(lots > maxLot)
+   {{
+      Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
+            " lots but maxLot=", maxLot, " — risking LESS than configured.");
+      lots = maxLot;
+   }}
+
+   //--- Auto-detect decimal places from lotStep
+   int decimals = (lotStep >= 1.0) ? 0 : (lotStep >= 0.1) ? 1 : (lotStep >= 0.01) ? 2 : 3;
+   return NormalizeDouble(lots, decimals);
 }}
 
 //+------------------------------------------------------------------+
@@ -1212,7 +1273,7 @@ void ManageTrailingStop()
 {{
    if(TrailPips <= 0) return; // trailing stop disabled
 
-   double trailDistance = TrailPips * _Point * 10;
+   double trailDistance = TrailPips * GetPipSize();
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {{
@@ -1231,7 +1292,7 @@ void ManageTrailingStop()
       if(posType == POSITION_TYPE_BUY)
       {{
          // Only trail if price has moved enough in profit
-         double profitPips = (bid - openPrice) / (_Point * 10);
+         double profitPips = (bid - openPrice) / GetPipSize();
          if(profitPips >= TrailPips)
          {{
             double newSL = bid - trailDistance;
@@ -1244,7 +1305,7 @@ void ManageTrailingStop()
       }}
       else if(posType == POSITION_TYPE_SELL)
       {{
-         double profitPips = (openPrice - ask) / (_Point * 10);
+         double profitPips = (openPrice - ask) / GetPipSize();
          if(profitPips >= TrailPips)
          {{
             double newSL = ask + trailDistance;
