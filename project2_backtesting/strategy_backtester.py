@@ -1005,6 +1005,11 @@ def compute_stats(trades):
             "max_dd_pips": 0, "total_costs": 0,
             "avg_winner": 0, "avg_loser": 0,
             "best_trade": 0, "worst_trade": 0,
+            "expectancy": 0, "risk_reward_ratio": 0,
+            "std_pips": 0, "sharpe_ish": 0,
+            "max_win_streak": 0, "max_loss_streak": 0,
+            "trades_per_day": 0, "days_per_trade": 0,
+            "recovery_factor": 0, "winners": 0, "losers": 0,
         }
 
     # WHY: Vectorized backtest writes 'pips', non-vectorized writes 'pnl_pips'.
@@ -1022,28 +1027,86 @@ def compute_stats(trades):
     gross_pos   = [p for p in gross if p > 0]
     gross_neg   = [p for p in gross if p <= 0]
 
-    net_win_sum  = sum(net_winners) if net_winners else 0
-    net_loss_sum = abs(sum(net_losers)) if net_losers else 0.001
+    # WHY: Old code used 0.001 divisor fallback → produced fake PF=50,000 when
+    #      there are no losing trades. Cap at 99.99 instead — clearly a sentinel.
+    # CHANGED: April 2026 — proper PF cap + additional metrics
+    def _safe_pf(wins_sum, losses_sum):
+        if losses_sum < 1.0:
+            return 99.99 if wins_sum > 0 else 0.0
+        return round(wins_sum / losses_sum, 2)
+
+    n_winners = len(net_winners)
+    n_losers  = len(net_losers)
+    win_rate  = n_winners / len(trades) * 100
+    avg_w     = float(np.mean(net_winners)) if net_winners else 0.0
+    avg_l     = float(np.mean(net_losers))  if net_losers  else 0.0
+
+    # Expectancy: average pips per trade (the most important single metric)
+    expectancy = (win_rate / 100 * avg_w) + ((1 - win_rate / 100) * avg_l)
+
+    # Risk:Reward ratio
+    rr_ratio = abs(avg_w / avg_l) if avg_l != 0 else 0.0
+
+    # Consistency (Sharpe-ish)
+    std_pips   = float(np.std(net)) if len(net) > 1 else 0.0
+    sharpe_ish = round(float(np.mean(net)) / std_pips, 2) if std_pips > 0 else 0.0
+
+    # Streak analysis
+    max_win_streak = max_loss_streak = cur_win = cur_loss = 0
+    for p in net:
+        if p > 0:
+            cur_win += 1; cur_loss = 0
+            max_win_streak = max(max_win_streak, cur_win)
+        else:
+            cur_loss += 1; cur_win = 0
+            max_loss_streak = max(max_loss_streak, cur_loss)
+
+    # Trade frequency
+    trades_per_day = days_per_trade = 0.0
+    try:
+        first_t    = pd.to_datetime(trades[0].get('entry_time', ''))
+        last_t     = pd.to_datetime(trades[-1].get('entry_time', ''))
+        total_days = max(1, (last_t - first_t).days)
+        trades_per_day = round(len(trades) / total_days, 2)
+        days_per_trade = round(total_days / len(trades), 1)
+    except Exception:
+        pass
 
     cum  = np.cumsum(net)
     peak = np.maximum.accumulate(cum)
     dd   = peak - cum
+    max_dd_pips = float(dd.max()) if len(dd) > 0 else 0.0
+
+    # Recovery factor: net profit / max drawdown
+    recovery_factor = round(float(sum(net)) / max_dd_pips, 2) if max_dd_pips > 0 else 0.0
 
     stats = {
         "total_trades":      len(trades),
-        "win_rate":          round(len(net_winners) / len(trades) * 100, 1),
+        "win_rate":          round(win_rate, 1),
         "avg_pips":          round(float(np.mean(gross)), 1),
         "net_avg_pips":      round(float(np.mean(net)), 1),
         "total_pips":        round(float(sum(gross)), 0),
         "net_total_pips":    round(float(sum(net)), 0),
-        "profit_factor":     round(sum(gross_pos) / max(abs(sum(gross_neg)), 0.001), 2),
-        "net_profit_factor": round(net_win_sum / net_loss_sum, 2),
-        "max_dd_pips":       round(float(dd.max()) if len(dd) > 0 else 0, 0),
+        "profit_factor":     _safe_pf(sum(gross_pos), abs(sum(gross_neg))),
+        "net_profit_factor": _safe_pf(sum(net_winners), abs(sum(net_losers))),
+        "max_dd_pips":       round(max_dd_pips, 0),
         "total_costs":       round(costs, 0),
-        "avg_winner":        round(float(np.mean(net_winners)), 1) if net_winners else 0,
-        "avg_loser":         round(float(np.mean(net_losers)),  1) if net_losers  else 0,
+        "avg_winner":        round(avg_w, 1),
+        "avg_loser":         round(avg_l, 1),
         "best_trade":        round(max(net), 1),
         "worst_trade":       round(min(net), 1),
+        # Extended metrics
+        "expectancy":        round(expectancy, 2),
+        "risk_reward_ratio": round(rr_ratio, 2),
+        "std_pips":          round(std_pips, 1),
+        "sharpe_ish":        sharpe_ish,
+        "max_win_streak":    max_win_streak,
+        "max_loss_streak":   max_loss_streak,
+        "trades_per_day":    trades_per_day,
+        "days_per_trade":    days_per_trade,
+        "recovery_factor":   recovery_factor,
+        "winners":           n_winners,
+        "losers":            n_losers,
     }
 
     # Dollar P&L equity tracking — only run_backtest sets dollar_pnl.

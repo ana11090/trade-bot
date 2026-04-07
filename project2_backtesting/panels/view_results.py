@@ -102,11 +102,17 @@ def display_summary(output_text, summary_frame):
         risk_pct = 1.0
         pip_value = 10.0
 
-    # Calculate $ per pip based on risk settings
-    sl_pips = 150
+    # WHY: Each strategy can have a different SL distance. Hardcoding 150 made
+    #      the dollar display wrong for any strategy with SL ≠ 150.
+    # CHANGED: April 2026 — per-strategy lot sizing via _calc_dollar_per_pip
     risk_dollars = account_size * (risk_pct / 100)
-    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
-    dollar_per_pip = pip_value * lot_size
+
+    def _calc_dollar_per_pip(strategy_sl_pips):
+        sl = strategy_sl_pips if strategy_sl_pips and strategy_sl_pips > 0 else 150
+        lot = max(0.01, risk_dollars / (sl * pip_value))
+        return pip_value * lot
+
+    dollar_per_pip = _calc_dollar_per_pip(150)  # default for legacy code paths
 
     for widget in summary_frame.winfo_children():
         widget.destroy()
@@ -347,12 +353,23 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 pass
 
             if trades > 0:
-                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
-                wr_color = "#28a745" if (wr if wr > 1 else wr*100) >= 55 else "#dc3545"
+                # WHY: compute_stats returns win_rate as percent already.
+                # CHANGED: April 2026 — single clean format (no dual-format guessing)
+                wr_normalized = wr if wr > 1 else wr * 100
+                wr_str   = f"{wr_normalized:.1f}%"
+                wr_color = "#28a745" if wr_normalized >= 55 else "#dc3545"
                 pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
                 net_color = "#28a745" if net_pips > 0 else "#dc3545"
 
-                profit_dollars = net_pips * dollar_per_pip
+                # Use this strategy's actual SL for correct $/pip sizing
+                # CHANGED: April 2026 — per-row dollar calc
+                strat_sl = (
+                    r.get('sl_pips') or
+                    r.get('exit_strategy_params', {}).get('sl_pips') or
+                    150
+                )
+                this_dollar_per_pip = _calc_dollar_per_pip(strat_sl)
+                profit_dollars = net_pips * this_dollar_per_pip
                 profit_pct = (profit_dollars / account_size) * 100
 
                 # FIX 3: safe trades access
@@ -392,15 +409,89 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 extra_row.pack(fill="x", pady=(1, 0))
                 pct_color = "#28a745" if profit_pct > 0 else "#dc3545"
 
+                exp = r.get('stats', {}).get('expectancy',
+                      r.get('expectancy', 0))
+                exp_color = "#28a745" if exp > 0 else "#dc3545"
+
                 for label, value, color in [
                     ("Profit", f"{profit_pct:+.1f}% of ${account_size:,.0f}", pct_color),
                     ("Median", f"{median_pips:+.1f} pips", "#28a745" if median_pips > 0 else "#dc3545"),
                     ("Average", f"{avg_pips_calc:+.1f} pips", "#28a745" if avg_pips_calc > 0 else "#dc3545"),
+                    ("Expectancy", f"{exp:+.2f} pips/trade", exp_color),
                 ]:
                     tk.Label(extra_row, text=f"{label}: ", bg=bg_color, fg="#888",
                              font=("Arial", 8)).pack(side=tk.LEFT)
                     tk.Label(extra_row, text=value, bg=bg_color, fg=color,
                              font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 12))
+
+                # ── Hover tooltip: detailed metrics ────────────────────────────
+                # WHY: Expectancy, R:R, streaks, frequency are critical for
+                #      evaluating a strategy but too noisy for the main card.
+                # CHANGED: April 2026 — detailed metrics on hover
+                try:
+                    from shared.tooltip import add_tooltip
+                    _s = r.get('stats', {})
+                    _exp     = _s.get('expectancy', exp)
+                    _rr      = _s.get('risk_reward_ratio', 0)
+                    _sharpe  = _s.get('sharpe_ish', 0)
+                    _mws     = _s.get('max_win_streak', 0)
+                    _mls     = _s.get('max_loss_streak', 0)
+                    _tpd     = _s.get('trades_per_day', 0)
+                    _dpt     = _s.get('days_per_trade', 0)
+                    _rec     = _s.get('recovery_factor', 0)
+                    _std     = _s.get('std_pips', 0)
+                    _avgw    = _s.get('avg_winner', 0)
+                    _avgl    = _s.get('avg_loser', 0)
+                    _nw      = _s.get('winners', 0)
+                    _nl      = _s.get('losers', 0)
+
+                    verdict = []
+                    if _exp > 0:
+                        verdict.append(f"  ✓ Positive expectancy ({_exp:+.1f} pips/trade)")
+                    else:
+                        verdict.append(f"  ✗ NEGATIVE expectancy ({_exp:+.1f}) — loses long-term")
+                    if _rr >= 1.5:
+                        verdict.append(f"  ✓ Good R:R ({_rr:.2f}) — wins are 1.5x+ losses")
+                    elif _rr < 1.0:
+                        verdict.append(f"  ✗ Weak R:R ({_rr:.2f}) — needs high WR to survive")
+                    if _mls >= 10:
+                        verdict.append(f"  ⚠ Long loss streak ({_mls}) — emotionally hard to trade")
+                    if _dpt > 30:
+                        verdict.append(f"  ⚠ Trades rarely ({_dpt} days between) — slow data")
+                    elif _tpd > 5:
+                        verdict.append(f"  ⚠ High frequency ({_tpd}/day) — sensitive to slippage")
+                    if _rec > 0 and _rec < 2:
+                        verdict.append(f"  ⚠ Low recovery factor ({_rec}) — DD large vs profit")
+
+                    tooltip_text = (
+                        f"━━━ DETAILED METRICS ━━━\n\n"
+                        f"📊 BREAKDOWN\n"
+                        f"  Winners:  {_nw}  (avg {_avgw:+.1f} pips)\n"
+                        f"  Losers:   {_nl}  (avg {_avgl:+.1f} pips)\n"
+                        f"  Std dev:  {_std:.1f} pips per trade\n\n"
+                        f"💰 EDGE METRICS\n"
+                        f"  Expectancy:      {_exp:+.2f} pips/trade\n"
+                        f"  Risk:Reward:     {_rr:.2f}\n"
+                        f"  Sharpe-ish:      {_sharpe:.2f}\n"
+                        f"  Recovery factor: {_rec:.2f}\n\n"
+                        f"📈 STREAKS\n"
+                        f"  Max win streak:  {_mws} trades\n"
+                        f"  Max loss streak: {_mls} trades\n\n"
+                        f"⏱ FREQUENCY\n"
+                        f"  Trades/day:  {_tpd}\n"
+                        f"  Days/trade:  {_dpt}\n\n"
+                        f"━━━ VERDICT ━━━\n"
+                        + "\n".join(verdict) +
+                        f"\n\n━━━ HOW TO READ ━━━\n"
+                        f"Expectancy = avg pips per trade. Must be POSITIVE.\n"
+                        f"R:R = avg winner / avg loser. >1.5 is good.\n"
+                        f"Sharpe-ish = mean/stdev. >0.5 decent, >1.0 great.\n"
+                        f"Recovery = profit ÷ max DD. >3 bounces back fast.\n"
+                        f"Streaks = worst case to expect emotionally."
+                    )
+                    add_tooltip(card, tooltip_text)
+                except Exception:
+                    pass
 
                 breaches = r.get('breaches', {})
                 if breaches:
