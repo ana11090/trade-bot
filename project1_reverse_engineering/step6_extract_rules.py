@@ -254,6 +254,78 @@ def extract_rules_for_scenario(scenario):
             rules_df.to_csv(rules_csv_file, index=False)
             print(f"  Saved rules summary CSV: {rules_csv_file}")
 
+        # ── Write analysis_report.json (so P2 can read it directly) ──────────
+        # WHY: Without this, P2 reads analysis_report.json and finds
+        #      direction/entry_timeframe missing, forcing the user to run
+        #      P4 → "Use These Rules" just to populate those fields. That's a
+        #      bad dependency. Now P1 → P2 works directly with no P4 needed.
+        # NOTE: Write to OUTPUT_FOLDER (main outputs dir), NOT output_dir
+        #       (scenario subdir) — P2 reads from outputs/analysis_report.json.
+        # CHANGED: April 2026 — decouple P2 from P4
+        import json as _json, time as _time
+
+        # Detect direction from the action column (most bots are directional)
+        direction = 'BUY'
+        try:
+            if 'action' in data.columns:
+                actions = data['action'].astype(str).str.upper()
+                buy_count  = actions.str.contains('BUY').sum()
+                sell_count = actions.str.contains('SELL').sum()
+                if sell_count > buy_count * 2:
+                    direction = 'SELL'
+                elif buy_count > sell_count * 2:
+                    direction = 'BUY'
+                else:
+                    direction = 'BOTH'
+            elif 'trade_direction' in data.columns:
+                avg_dir = data['trade_direction'].mean()
+                direction = 'BUY' if avg_dir > 0 else ('SELL' if avg_dir < 0 else 'BOTH')
+        except Exception:
+            pass
+
+        # Format rules into the structure P2 expects:
+        # rule['conditions'] (list of condition strings) + rule['prediction'] = 'WIN'
+        formatted_rules = []
+        for rule in filtered_rules:
+            formatted_rules.append({
+                'conditions':  rule.get('conditions', []),
+                'prediction':  'WIN',
+                'confidence':  rule.get('confidence', 0),
+                'coverage':    rule.get('coverage', 0),
+                'wins':        rule.get('wins', 0),
+                'win_rate':    rule.get('confidence', 0),
+                'action':      direction,
+            })
+
+        # Build the report — matches exactly what P2 / stale_check reads
+        analysis_report = {
+            'generated_at':       _time.strftime('%Y-%m-%d %H:%M:%S'),
+            'discovery_method':   'p1_seven_step_pipeline',
+            'scenario':           scenario,
+            'direction':          direction,
+            'entry_timeframe':    scenario,
+            'winning_scenario':   scenario,
+            'activated_at':       _time.strftime('%Y-%m-%d %H:%M:%S'),
+            'rules':              formatted_rules,
+            'rule_count':         len(formatted_rules),
+            'best_tree_accuracy': float(best_tree_acc),
+            'feature_importance': {
+                'top_features':     top_features[:20],
+            },
+            'trade_count':        len(data),
+        }
+
+        analysis_report_path = os.path.join(OUTPUT_FOLDER, 'analysis_report.json')
+        try:
+            with open(analysis_report_path, 'w', encoding='utf-8') as f:
+                _json.dump(analysis_report, f, indent=2, default=str)
+            print(f"  Saved analysis report: {analysis_report_path}")
+            print(f"  → direction={direction}, entry_timeframe={scenario}, "
+                  f"{len(formatted_rules)} WIN rules")
+            print(f"  → P2 can now read this directly (no P4 needed)")
+        except Exception as _e:
+            print(f"  WARNING: Could not save analysis_report.json: {_e}")
+
         print(f"\n[STEP 6/7] COMPLETE — scenario: {scenario}\n")
 
         return True
