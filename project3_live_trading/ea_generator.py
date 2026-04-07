@@ -535,6 +535,22 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'      Alert("[PAYOUT] CONDITIONS MET. Collect your payout!");\n'
                 f'   }}')
 
+    # ── Fallback: funded strategies without explicit period_reset rule ───
+    # WHY: CheckPeriodReset() needs PayoutPeriodDays and g_periodStart.
+    #      If the JSON has protect/payout logic but no period_reset rule,
+    #      add the inputs/globals so the function compiles.
+    # CHANGED: April 2026 — cycle-aware resume for all funded strategies
+    if (has_protect_phase or has_payout_conds if 'has_payout_conds' in dir() else has_protect_phase) and not has_period_reset:
+        extra_inputs.append('input int PayoutPeriodDays = 14; // Payout cycle length (days)')
+        extra_globals.append('datetime g_periodStart = 0;')
+        if not has_consistency:
+            extra_globals.append('double g_periodProfit = 0.0;')
+        if not has_min_profit_days:
+            extra_globals.append('int g_profitDayCount = 0;')
+        if not has_consistency:
+            extra_globals.append('double g_bestDayProfit = 0.0;')
+        has_period_reset = True
+
     # ── Period reset (14 days) ────────────────────────────────────────────
     if has_period_reset:
         reset_items = []
@@ -547,17 +563,69 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             reset_items.append('g_payoutCondsMet = false;')
         if any('g_stoppedForPeriod' in e for e in extra_globals):
             reset_items.append('g_stoppedForPeriod = false;')
+        # WHY: Also reset g_stopForever so the bot resumes trading after a
+        #      payout cycle ends. Without this, a total DD safety stop would
+        #      keep the bot frozen forever instead of resetting each cycle.
+        # CHANGED: April 2026 — resume after payout period
+        reset_items.append('g_stopForever = false;')
         reset_items.append('g_startingBalance = AccountInfoDouble(ACCOUNT_BALANCE);')
         reset_block = '\n      '.join(reset_items)
         extra_daily_reset.append(
-            f'   // Period reset check (every {{}}-day cycle)\n'
+            f'   // Period reset check (every PayoutPeriodDays-day cycle)\n'
             f'   if(g_periodStart == 0) g_periodStart = TimeCurrent();\n'
             f'   if(TimeCurrent() - g_periodStart >= PayoutPeriodDays * 86400)\n'
             f'   {{\n'
             f'      g_periodStart = TimeCurrent();\n'
             f'      {reset_block}\n'
             f'      Print("[PERIOD] New period started. Balance: $", g_startingBalance);\n'
+            f'      Alert("[CYCLE] New payout period started — bot resumed trading");\n'
             f'   }}')
+
+        # ── CheckPeriodReset(): called at top of OnTick so g_stopForever can
+        #    be cleared BEFORE the early-return guard checks it.
+        # WHY: OnTick checks `if(g_stopForever) return;` as its FIRST line.
+        #      If CheckPeriodReset() runs AFTER that line, a stopped bot can
+        #      never wake up. It must run first to clear the flag.
+        # CHANGED: April 2026 — cycle-aware OnTick
+        extra_functions.append(
+            f'//+------------------------------------------------------------------+\n'
+            f'//| CheckPeriodReset — resume trading after payout period ends      |\n'
+            f'//| WHY: Bot stops when payout conditions met or total DD safety    |\n'
+            f'//|      hit. After PayoutPeriodDays, the cycle resets and trading  |\n'
+            f'//|      can resume on the new period.                              |\n'
+            f'//| CHANGED: April 2026 — cycle-aware EA                            |\n'
+            f'//+------------------------------------------------------------------+\n'
+            f'void CheckPeriodReset()\n'
+            f'{{\n'
+            f'   if(g_periodStart == 0)\n'
+            f'   {{\n'
+            f'      g_periodStart = TimeCurrent();\n'
+            f'      return;\n'
+            f'   }}\n'
+            f'   long elapsed_seconds = (long)(TimeCurrent() - g_periodStart);\n'
+            f'   double elapsed_days = elapsed_seconds / 86400.0;\n'
+            f'   if(elapsed_days >= PayoutPeriodDays)\n'
+            f'   {{\n'
+            f'      Print("[CYCLE] Payout period ended (", DoubleToString(elapsed_days, 1), " days). Resuming trading.");\n'
+            f'      g_payoutCondsMet = false;\n' if has_protect_phase else
+            f'      // (g_payoutCondsMet not used in this config)\n'
+            f'      g_stopForever    = false;\n'
+            f'      g_periodStart    = TimeCurrent();\n'
+            f'      g_periodProfit   = 0.0;\n'
+            f'      g_bestDayProfit  = 0.0;\n'
+            f'      g_profitDayCount = 0;\n'
+            f'      Alert("[CYCLE] New payout period started — bot resumed trading");\n'
+            f'   }}\n'
+            f'}}'
+        )
+
+        # Insert at the very start of tick checks so it runs before g_stopForever guard
+        extra_tick_checks.insert(0,
+            f'   // ── Period reset (must run BEFORE g_stopForever check) ───────\n'
+            f'   // WHY: If period ended, clears g_stopForever so the bot can resume.\n'
+            f'   // CHANGED: April 2026\n'
+            f'   CheckPeriodReset();'
+        )
 
     # ── GetPayoutStatus function ──────────────────────────────────────────
     parts = ['"Status: "']
