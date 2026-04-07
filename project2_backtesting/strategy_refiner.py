@@ -290,17 +290,25 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     for day in days:
         day_pnl = daily_pnls[day]
 
+        # ── Apply daily safety stop (bot stops trading when threshold hit) ──
+        # WHY: If safety stop is set at 4% and the day's losses reach 4%, the
+        #      bot pauses and CAN'T lose more. Previously the simulator counted
+        #      the safety stop AND applied the full loss, which could let the day
+        #      "blow up" the account even though trading had already stopped —
+        #      logically impossible. Cap the loss at the safety threshold.
+        # CHANGED: April 2026 — cap losses at safety threshold
+        daily_safety_triggered = False
+        if daily_dd_safety and day_pnl < 0 and abs(day_pnl) >= daily_dd_safety:
+            day_pnl = -daily_dd_safety   # cap the loss at the safety level
+            daily_safety_triggered = True
+            daily_safety_dates.append(day)
+
         if day_pnl < 0:
             daily_pct = abs(day_pnl) / account_size * 100
             worst_daily_pct = max(worst_daily_pct, daily_pct)
 
-        # Check daily safety stop (bot pauses before firm limit)
-        if daily_dd_safety and day_pnl < 0 and abs(day_pnl) >= daily_dd_safety:
-            if abs(day_pnl) < daily_dd_limit:  # Only count if not also a breach
-                daily_safety_dates.append(day)
-
-        # Check daily breach (firm limit - account blown)
-        if day_pnl < 0 and abs(day_pnl) >= daily_dd_limit:
+        # Check daily breach — only possible if safety didn't trigger first
+        if not daily_safety_triggered and day_pnl < 0 and abs(day_pnl) >= daily_dd_limit:
             daily_breach_dates.append(day)
             blown_count += 1
             if last_blown_day:
@@ -321,13 +329,20 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         total_dd_pct = total_dd / account_size * 100
         worst_total_pct = max(worst_total_pct, total_dd_pct)
 
-        # Check total safety stop (bot pauses before firm limit)
-        if total_dd_safety and total_dd >= total_dd_safety:
-            if total_dd < total_dd_limit:  # Only count if not also a breach
-                total_safety_dates.append(day)
+        # ── Apply total safety stop (cap total DD at safety threshold) ───────
+        # WHY: Same logic — if total DD reaches safety threshold, the bot pauses
+        #      and total DD can't grow further from new trades.
+        # CHANGED: April 2026 — cap total DD at safety threshold
+        total_safety_triggered = False
+        if total_dd_safety and total_dd >= total_dd_safety and total_dd < total_dd_limit:
+            balance = high_water - total_dd_safety   # restore balance to safety level
+            total_dd = total_dd_safety
+            total_dd_pct = total_dd / account_size * 100
+            total_safety_triggered = True
+            total_safety_dates.append(day)
 
-        # Check total breach (firm limit - account blown)
-        if total_dd >= total_dd_limit:
+        # Check total breach — only possible if total safety didn't trigger
+        if not total_safety_triggered and total_dd >= total_dd_limit:
             total_breach_dates.append(day)
             blown_count += 1
             if last_blown_day:
