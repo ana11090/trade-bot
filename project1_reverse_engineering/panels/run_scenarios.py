@@ -242,8 +242,22 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             import step6_extract_rules
             import step7_validate
 
+            # WHY: align_all_timeframes runs once for ALL TFs together —
+            #      it doesn't need to run per scenario. Only run it on the
+            #      first iteration.
+            # CHANGED: April 2026 — fix step1 function name + run-once logic
+            step1_already_run = [False]
+
+            def _step1_wrapper(scenario):
+                if step1_already_run[0]:
+                    print(f"  (Step 1 already run for previous scenario — skipping)")
+                    return True
+                result = step1_align_price.align_all_timeframes()
+                step1_already_run[0] = (result is not None)
+                return step1_already_run[0]
+
             steps = [
-                ("Step 1: Align Price",        step1_align_price.align_price_for_scenario),
+                ("Step 1: Align Price",        _step1_wrapper),
                 ("Step 2: Compute Indicators", step2_compute_indicators.compute_indicators_for_scenario),
                 ("Step 3: Label Trades",       step3_label_trades.label_trades_for_scenario),
                 ("Step 4: Train Model",        step4_train_model.train_model_for_scenario),

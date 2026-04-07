@@ -24,6 +24,20 @@ import step7_validate
 SCENARIOS = ['M5', 'M15', 'H1', 'H4', 'H1_M15']
 
 
+# WHY: align_all_timeframes runs once for ALL TFs at once.
+#      Wrapper makes it compatible with the per-scenario step interface.
+# CHANGED: April 2026 — fix step1 function name
+_step1_already_run = [False]
+
+def _step1_wrapper(scenario):
+    if _step1_already_run[0]:
+        print(f"  (Step 1 already run — skipping)")
+        return True
+    result = step1_align_price.align_all_timeframes()
+    _step1_already_run[0] = (result is not None)
+    return _step1_already_run[0]
+
+
 def run_full_pipeline_for_scenario(scenario):
     """
     Run all 7 steps for a single scenario.
@@ -41,7 +55,7 @@ def run_full_pipeline_for_scenario(scenario):
     print(f"\n")
 
     steps = [
-        ("Step 1: Align Price Data", step1_align_price.align_price_for_scenario),
+        ("Step 1: Align Price Data", _step1_wrapper),
         ("Step 2: Compute Indicators", step2_compute_indicators.compute_indicators_for_scenario),
         ("Step 3: Label Trades", step3_label_trades.label_trades_for_scenario),
         ("Step 4: Train Model", step4_train_model.train_model_for_scenario),
