@@ -861,24 +861,54 @@ def fast_backtest(df, ind, rules, exit_strategy,
         else:
             entry_price -= slippage_pips * pip_size
 
-        # Simulate trade exit
+        # Simulate trade exit by stepping through future candles
+        # WHY: Exit strategies implement on_new_candle(candle, pos) which is
+        #      called per-candle and returns None until an exit triggers.
+        #      They DON'T have a single check_exit() method.
+        # CHANGED: April 2026 — match actual exit strategy interface
         future_candles = df.iloc[entry_pos_int + 1:]
-        result = exit_strategy.check_exit(
-            entry_price=entry_price,
-            direction=direction,
-            candles=future_candles,
-            pip_size=pip_size,
-        )
 
+        pos_info = {
+            'entry_price':  entry_price,
+            'direction':    direction,
+            'entry_time':   entry_time,
+            'entry_candle': df.iloc[entry_pos_int],
+        }
+
+        # Some exits (ATRBased) need on_entry hook for setup
+        if hasattr(exit_strategy, 'on_entry'):
+            try:
+                exit_strategy.on_entry(df.iloc[entry_pos_int])
+            except Exception:
+                pass
+
+        result = None
+        exit_idx = -1
+        for ci in range(len(future_candles)):
+            candle = future_candles.iloc[ci]
+            try:
+                step_result = exit_strategy.on_new_candle(candle, pos_info)
+            except Exception:
+                step_result = None
+            if step_result is not None:
+                result = step_result
+                exit_idx = ci
+                break
+
+        # If no exit triggered, close at last candle
         if result is None:
-            continue
+            if len(future_candles) == 0:
+                continue
+            last_candle = future_candles.iloc[-1]
+            result = {
+                'exit_price': float(last_candle['close']),
+                'reason':     'END_OF_DATA',
+            }
+            exit_idx = len(future_candles) - 1
 
         exit_price  = result['exit_price']
-        exit_reason = result.get('exit_reason', 'unknown')
-        exit_idx    = result.get('exit_candle_idx', len(future_candles) - 1)
+        exit_reason = result.get('reason', result.get('exit_reason', 'unknown'))
 
-        if exit_idx >= len(future_candles):
-            exit_idx = len(future_candles) - 1
         exit_candle = future_candles.iloc[exit_idx]
         exit_time   = exit_candle['timestamp']
 
