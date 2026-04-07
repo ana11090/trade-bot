@@ -65,6 +65,12 @@ _scroll_canvas      = None
 
 _update_pending = False   # debounce flag
 
+# Optimizer lock vars (set in build_panel)
+_lock_entry_var   = None
+_lock_exit_var    = None
+_lock_sltp_var    = None
+_lock_filters_var = None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -722,10 +728,10 @@ def _start_optimization():
                     target_firm=target_data,
                     account_size=account_size,
                     progress_callback=_cb,
-                    lock_entry=lock_entry_var.get(),
-                    lock_exit=lock_exit_var.get(),
-                    lock_sltp=lock_sltp_var.get(),
-                    lock_filters=lock_filters_var.get(),
+                    lock_entry=_lock_entry_var.get() if _lock_entry_var else False,
+                    lock_exit=_lock_exit_var.get() if _lock_exit_var else False,
+                    lock_sltp=_lock_sltp_var.get() if _lock_sltp_var else False,
+                    lock_filters=_lock_filters_var.get() if _lock_filters_var else False,
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -2445,22 +2451,23 @@ def build_panel(parent):
     )
     lock_frame.pack(fill="x", padx=10, pady=(8, 5))
 
-    lock_entry_var   = tk.BooleanVar(value=False)
-    lock_exit_var    = tk.BooleanVar(value=False)
-    lock_sltp_var    = tk.BooleanVar(value=False)
-    lock_filters_var = tk.BooleanVar(value=False)
+    global _lock_entry_var, _lock_exit_var, _lock_sltp_var, _lock_filters_var
+    _lock_entry_var   = tk.BooleanVar(value=False)
+    _lock_exit_var    = tk.BooleanVar(value=False)
+    _lock_sltp_var    = tk.BooleanVar(value=False)
+    _lock_filters_var = tk.BooleanVar(value=False)
 
     tk.Checkbutton(lock_frame, text="Lock entry rule (don't modify conditions)",
-                   variable=lock_entry_var, bg=WHITE,
+                   variable=_lock_entry_var, bg=WHITE,
                    font=("Segoe UI", 9)).pack(anchor="w")
     tk.Checkbutton(lock_frame, text="Lock exit type (don't change FixedSL/ATR/Hybrid/etc)",
-                   variable=lock_exit_var, bg=WHITE,
+                   variable=_lock_exit_var, bg=WHITE,
                    font=("Segoe UI", 9)).pack(anchor="w")
     tk.Checkbutton(lock_frame, text="Lock SL/TP values (don't change pip distances)",
-                   variable=lock_sltp_var, bg=WHITE,
+                   variable=_lock_sltp_var, bg=WHITE,
                    font=("Segoe UI", 9)).pack(anchor="w")
     tk.Checkbutton(lock_frame, text="Lock filters (don't change cooldown/min_hold/max_trades)",
-                   variable=lock_filters_var, bg=WHITE,
+                   variable=_lock_filters_var, bg=WHITE,
                    font=("Segoe UI", 9)).pack(anchor="w")
 
     tk.Label(lock_frame,
