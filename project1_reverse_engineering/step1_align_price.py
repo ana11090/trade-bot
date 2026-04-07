@@ -40,6 +40,91 @@ def _get_trades_path():
     raise FileNotFoundError("No active trade history found. Load trades first.")
 
 
+def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
+    """
+    Find the timezone offset (in hours) that maximizes verification rate.
+
+    WHY: Broker server timezone often differs from candle data timezone.
+         Instead of asking the user to figure it out, we try each offset
+         from -12 to +12 hours and pick the one where the most trades
+         have entry_price inside the matching candle's high-low range.
+
+    Args:
+        trades_df: DataFrame with 'open_time' and 'entry_price'
+        candles_dict: dict of {tf: candles_df} for sampling
+        candidate_offsets: list of hours to try (default: -12 to +12)
+
+    Returns:
+        Best offset in hours (int).
+
+    CHANGED: April 2026 — auto-detect timezone offset
+    """
+    if candidate_offsets is None:
+        candidate_offsets = list(range(-12, 13))  # -12 to +12 hours
+
+    # Use H1 for the detection (faster than M5, more precise than D1)
+    detect_tf = 'H1' if 'H1' in candles_dict else list(candles_dict.keys())[0]
+    detect_candles = candles_dict[detect_tf]
+
+    if detect_candles is None or len(detect_candles) == 0:
+        print(f"    No {detect_tf} candles for offset detection — using offset 0")
+        return 0
+
+    # Sample up to 200 trades for speed (more than enough to detect offset)
+    sample_size = min(200, len(trades_df))
+    sample = trades_df.sample(n=sample_size, random_state=42) if len(trades_df) > sample_size else trades_df
+
+    print(f"    Auto-detecting timezone offset (testing {len(candidate_offsets)} offsets on {len(sample)} trades)...")
+
+    best_offset = 0
+    best_verified = 0
+    results = []
+
+    candles_sorted = detect_candles.sort_values('timestamp')
+
+    for offset_hours in candidate_offsets:
+        shifted = sample.copy()
+        shifted['open_time'] = pd.to_datetime(shifted['open_time']) + pd.Timedelta(hours=offset_hours)
+
+        try:
+            shifted_sorted = shifted.sort_values('open_time')
+
+            merged = pd.merge_asof(
+                shifted_sorted[['open_time', 'entry_price']],
+                candles_sorted[['timestamp', 'high', 'low']],
+                left_on='open_time',
+                right_on='timestamp',
+                direction='backward',
+            )
+
+            # Count how many trades have entry_price in [low, high]
+            tolerance = 0.20  # 20 pips tolerance for XAUUSD
+            in_range = (
+                (merged['entry_price'] >= merged['low'] - tolerance) &
+                (merged['entry_price'] <= merged['high'] + tolerance)
+            )
+            verified = int(in_range.sum())
+            results.append((offset_hours, verified))
+
+            if verified > best_verified:
+                best_verified = verified
+                best_offset = offset_hours
+        except Exception:
+            results.append((offset_hours, 0))
+            continue
+
+    # Print top 5 offsets
+    results.sort(key=lambda x: x[1], reverse=True)
+    print(f"    Top offsets (verified count out of {len(sample)}):")
+    for off, ver in results[:5]:
+        marker = " <- BEST" if off == best_offset else ""
+        pct = ver / len(sample) * 100
+        print(f"      Offset {off:+d}h: {ver:3d} ({pct:5.1f}%){marker}")
+
+    print(f"    -> Using offset: {best_offset:+d} hours")
+    return best_offset
+
+
 def align_all_timeframes(trades_csv_path=None, output_dir=None):
     """
     Align trades against ALL timeframes at once.
@@ -97,6 +182,35 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             trades_df['trade_id'] = range(len(trades_df))
 
         print(f"  Loaded {len(trades_df)} trades\n")
+
+        # ── AUTO-DETECT TIMEZONE OFFSET ───────────────────────────────────
+        # WHY: Broker server timezone often differs from candle CSV timezone.
+        #      Try every offset and pick the one with the best verification.
+        # CHANGED: April 2026 — auto-detect timezone
+        _candles_for_detection = {}
+        for _tf in ['H1']:
+            _candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{_tf}.csv')
+            if os.path.exists(_candle_file):
+                try:
+                    _cdf = pd.read_csv(_candle_file)
+                    if 'timestamp' not in _cdf.columns:
+                        for _col in _cdf.columns:
+                            if _col.lower() in ('time', 'date', 'datetime', 'open_time'):
+                                _cdf = _cdf.rename(columns={_col: 'timestamp'})
+                                break
+                    _cdf['timestamp'] = pd.to_datetime(_cdf['timestamp'])
+                    _candles_for_detection[_tf] = _cdf
+                except Exception:
+                    pass
+
+        if _candles_for_detection and 'entry_price' in trades_df.columns:
+            detected_offset = _detect_best_offset(trades_df, _candles_for_detection)
+            if detected_offset != 0:
+                print(f"    Applying timezone offset {detected_offset:+d}h to trade timestamps")
+                trades_df['open_time'] = trades_df['open_time'] + pd.Timedelta(hours=detected_offset)
+                trades_df['close_time'] = trades_df['close_time'] + pd.Timedelta(hours=detected_offset)
+        else:
+            print(f"    Could not load candles for offset detection — proceeding without offset")
 
         # Create output directory
         if output_dir is None:
