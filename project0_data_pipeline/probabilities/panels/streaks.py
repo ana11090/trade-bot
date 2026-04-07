@@ -86,8 +86,19 @@ def _on_calculate():
     else:
         expected_max_loss = 0
 
-    # Probability of N consecutive losses
-    streak_probs = {k: lr**k * 100 for k in [2, 3, 4, 5, 6, 7, 8, 10]}
+    # WHY: lr**k is the probability a specific K-trade window is all losses,
+    #      NOT the probability of seeing such a streak somewhere in N trades.
+    #      For WR=50%, n=500, k=10: lr^10=0.098% but in-sample ~38%.
+    #      Formula: P(≥1 streak of k in n trades) = 1-(1-lr^k)^(n-k+1)
+    # CHANGED: April 2026 — proper in-sample streak probability
+    streak_probs          = {}   # headline: in-N-trades probability
+    streak_probs_isolated = {}   # context: isolated K-window (old formula)
+    for k in [2, 3, 4, 5, 6, 7, 8, 10]:
+        p_isolated = lr ** k
+        streak_probs_isolated[k] = p_isolated * 100
+        trials = max(n - k + 1, 0)
+        p_at_least_once = 1 - (1 - p_isolated) ** trials if trials > 0 else p_isolated
+        streak_probs[k] = p_at_least_once * 100
 
     _clear_results()
 
@@ -125,29 +136,37 @@ def _on_calculate():
              bg="#f0f2f5", fg="#16213e",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
     tk.Label(_result_frame,
-             text="This is the probability that any given sequence of N trades is all losses. "
-                  "This does NOT mean it happens once — in 500 trades it may happen several times.",
+             text=f"Headline: probability of seeing such a streak AT LEAST ONCE in {n} trades.\n"
+                  f"In parentheses: probability for any specific K-trade window (always smaller — the old formula).\n"
+                  f"Use the headline number to set realistic expectations.",
              bg="#f0f2f5", fg="#666", font=("Segoe UI", 8),
              wraplength=820).pack(anchor="w", pady=(0, 6))
 
     tbl = tk.Frame(_result_frame, bg="#f0f2f5")
     tbl.pack(fill="x", pady=(0, 12))
 
-    headers = ["Streak length", "Probability", "Meaning", "Actual occurrences"]
+    headers = ["Streak length", f"P(≥1 in {n} trades)", "Isolated K-window", "Actual occurrences"]
     for col, h in enumerate(headers):
         tk.Label(tbl, text=h, bg="#dde3ed", fg="#333",
                  font=("Segoe UI", 8, "bold"), anchor="center",
                  padx=8, pady=4).grid(row=0, column=col, sticky="ew", padx=1, pady=1)
-    tbl.columnconfigure(2, weight=1)
+    tbl.columnconfigure(1, weight=1)
 
-    for i, (k, prob) in enumerate(streak_probs.items(), start=1):
+    for i, k in enumerate(streak_probs.keys(), start=1):
+        prob_in_n     = streak_probs[k]
+        prob_isolated = streak_probs_isolated[k]
         actual = sum(1 for s in loss_streaks if s >= k)
-        bg = "#d4edda" if prob < 1 else "#fff3cd" if prob < 10 else "#f8d7da"
-        meaning = (f"1 in {1/prob*100:.0f}" if prob > 0.1 else "< 1 in 1000") + " sequences"
-        vals = [f"{k} losses in a row", f"{prob:.3f}%", meaning, f"{actual} times in data"]
+        # Color based on the realistic in-N-trades probability
+        bg = "#d4edda" if prob_in_n < 5 else "#fff3cd" if prob_in_n < 20 else "#f8d7da"
+        vals = [
+            f"{k} losses in a row",
+            f"{prob_in_n:.1f}%",
+            f"{prob_isolated:.4f}%",
+            f"{actual} times in data",
+        ]
         for col, val in enumerate(vals):
             tk.Label(tbl, text=val, bg=bg, fg="#333",
-                     font=("Segoe UI", 8), anchor="center" if col != 2 else "w",
+                     font=("Segoe UI", 8), anchor="center",
                      padx=6, pady=3).grid(row=i, column=col, sticky="ew", padx=1, pady=1)
 
     # ── Charts ────────────────────────────────────────────────────────────────

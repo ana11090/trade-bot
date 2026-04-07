@@ -143,7 +143,12 @@ def _on_run_sim():
         cumulative   = np.cumsum(sampled)
         running_peak = np.maximum.accumulate(cumulative)
         drawdown     = cumulative - running_peak
-        ruined       = bool(np.any(np.minimum.accumulate(cumulative) < ruin_threshold))
+        # WHY: Old code checked `cumulative < ruin_threshold` — absolute loss
+        #      from start. Real account ruin = DD from peak exceeds limit.
+        #      A profitable path that retraces -10% is NOT ruined by a $0
+        #      reference; it IS ruined if the -10% DD hits the DD limit.
+        # CHANGED: April 2026 — use drawdown for ruin check
+        ruined = bool(np.any(drawdown < ruin_threshold))
         all_paths.append(cumulative)
         all_drawdowns.append(drawdown)
         if not ruined:
