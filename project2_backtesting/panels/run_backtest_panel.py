@@ -592,7 +592,12 @@ def build_panel(parent):
             wr = rule.get('win_rate', 0)
             pips = rule.get('avg_pips', 0)
             conds = rule.get('conditions', [])
-            features = [c['feature'] for c in conds]
+            # Conditions can be dicts {'feature':...} or plain strings depending on source
+            def _feat_name(c):
+                if isinstance(c, dict):
+                    return c.get('feature', str(c))
+                return str(c).split(' ')[0]  # "M15_roc_5 <= 0.19" → "M15_roc_5"
+            features = [_feat_name(c) for c in conds]
             feat_str = ', '.join(features[:3])
             if len(features) > 3:
                 feat_str += f" +{len(features)-3}"
@@ -604,9 +609,10 @@ def build_panel(parent):
 
             # Delete button (permanently removes from source file)
             def _delete(idx=i, r=rule):
+                feat_names = [_feat_name(c) for c in r.get('conditions', [])]
                 if messagebox.askyesno("Delete Rule",
                     f"Permanently delete Rule {idx+1} from this source file?\n"
-                    f"Features: {', '.join(c['feature'] for c in r.get('conditions',[]))}"):
+                    f"Features: {', '.join(feat_names)}"):
                     _delete_rule_from_source(idx, source_paths)
                     _load_rules_from_source(source_paths)  # refresh
 
