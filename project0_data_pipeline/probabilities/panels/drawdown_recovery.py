@@ -193,8 +193,12 @@ def _find_dd_episodes(drawdown_abs):
                 trough   = i
                 trough_v = v
             if v >= 0:
+                # WHY: i - start measured recovery from drawdown start, not from
+                #      the trough. The useful number is how long it took to climb
+                #      back from the worst point.
+                # CHANGED: April 2026 — measure recovery from trough
                 episodes.append({"start": start, "trough": trough,
-                                  "depth": trough_v, "recovery": i - start})
+                                  "depth": trough_v, "recovery": i - trough})
                 in_dd = False
 
     if in_dd:

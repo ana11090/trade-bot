@@ -203,8 +203,12 @@ def _on_run_sim():
     ax1.fill_between(x, p10p, p90p, alpha=0.12, color="#1a73e8", label="10–90th pct (80% of runs)")
     ax1.fill_between(x, p25p, p75p, alpha=0.22, color="#1a73e8", label="25–75th pct (50% of runs)")
     ax1.plot(x, p50p, color="#1a73e8", linewidth=2, label="Median path")
-    ax1.axhline(ruin_threshold, color="#e94560", linewidth=1.3,
-                linestyle="--", label=f"Ruin level ({ruin_threshold:+.0f})")
+    # WHY: Ruin is a drawdown-from-peak condition, not an absolute P&L level.
+    #      A fixed axhline at ruin_threshold on the cumulative-P&L fan chart is
+    #      wrong — it would only be correct when the peak is at 0. After a +2000
+    #      run, ruin triggers at +1000 (−1000 DD from peak), not at −1000.
+    #      The ruin line belongs on the drawdown chart (ax2), not here.
+    # CHANGED: April 2026 — removed mismatched ruin line from equity fan chart
     ax1.axhline(0, color="#aaa", linewidth=0.7, linestyle=":")
     ax1.set_title(f"Equity Fan Chart  ({horizon_days}d / {n_trades} trades)\n"
                   "Each band = a range of possible futures. Dark blue line = median outcome. "
@@ -290,7 +294,13 @@ def _on_calc_target():
 
     first_hit_trades = []
     for path in all_paths:
-        ruin_at  = int(np.argmax(np.minimum.accumulate(path) < ruin_threshold)) if np.any(np.minimum.accumulate(path) < ruin_threshold) else n_trades
+        # WHY: np.minimum.accumulate(path) measures absolute running minimum
+        #      from start — not drawdown from peak. Ruin is a DD condition.
+        # CHANGED: April 2026 — use peak-to-trough drawdown for ruin detection
+        running_peak_b = np.maximum.accumulate(path)
+        drawdown_b     = path - running_peak_b
+        ruin_indices   = np.where(drawdown_b < ruin_threshold)[0]
+        ruin_at        = ruin_indices[0] if len(ruin_indices) > 0 else n_trades
         hit_idxs = np.where(path >= target_abs)[0]
         if len(hit_idxs) > 0 and hit_idxs[0] < ruin_at:
             first_hit_trades.append(hit_idxs[0])

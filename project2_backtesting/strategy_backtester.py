@@ -264,6 +264,27 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
     return combined
 
 
+def _count_swap_nights(entry_dt, exit_dt):
+    """Count effective swap nights with FX/CFD Wednesday triple-roll.
+
+    WHY: Forex and most CFD instruments apply 3× swap on Wednesday night
+         to compensate for the Saturday + Sunday settlement days that are
+         skipped on those days. Using raw calendar days therefore understates
+         the true swap cost for any trade that spans a Wednesday.
+    CHANGED: April 2026 — rollover-aware swap count
+    """
+    days = (exit_dt.date() - entry_dt.date()).days
+    if days <= 0:
+        return 0
+    # Add 2 extra nights for every Wednesday crossed (Wednesday = weekday 2)
+    import datetime as _dt
+    extra = sum(
+        2 for i in range(days)
+        if (entry_dt.date() + _dt.timedelta(days=i)).weekday() == 2
+    )
+    return days + extra
+
+
 def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   exit_strategy, direction, pip_size,
                                   spread_pips, commission_pips, slippage_pips,
@@ -420,12 +441,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         net_pips = pnl_pips - commission_pips
 
-        # Swap costs
+        # Swap costs (Wednesday triple-roll aware)
         swap_cost_pips = 0.0
         if swap_cost_per_lot_per_night > 0:
-            entry_dt   = pd.Timestamp(entry_time)
-            exit_dt    = pd.Timestamp(exit_time)
-            swap_nights = (exit_dt.date() - entry_dt.date()).days
+            entry_dt    = pd.Timestamp(entry_time)
+            exit_dt     = pd.Timestamp(exit_time)
+            swap_nights = _count_swap_nights(entry_dt, exit_dt)
             if swap_nights > 0:
                 swap_cost_pips = (swap_nights * swap_cost_per_lot_per_night) / pip_value_per_lot
                 net_pips -= swap_cost_pips
@@ -712,14 +733,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         cost     = spread_pips + commission_pips
         net_pips = pnl_pips - cost
 
-        # Swap costs for overnight holds
+        # Swap costs for overnight holds (Wednesday triple-roll aware)
         swap_nights = 0
         swap_cost_pips = 0.0
         if swap_cost_per_lot_per_night > 0:
-            # Count how many midnight boundaries the trade crosses
-            entry_dt = pd.to_datetime(entry_time)
-            exit_dt = pd.to_datetime(exit_time)
-            swap_nights = (exit_dt.date() - entry_dt.date()).days
+            entry_dt    = pd.to_datetime(entry_time)
+            exit_dt     = pd.to_datetime(exit_time)
+            swap_nights = _count_swap_nights(entry_dt, exit_dt)
             if swap_nights > 0:
                 # Convert swap cost to pips (swap is $/lot/night, pip_value is $/pip/lot)
                 swap_total_per_lot = swap_nights * swap_cost_per_lot_per_night
@@ -729,9 +749,16 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # Position sizing and dollar P&L (optional, when account_size is provided)
         if account_size is not None:
             risk_dollars = account_size * (risk_per_trade_pct / 100.0)
-            lot_size     = risk_dollars / (default_sl_pips * pip_value_per_lot)
-            lot_size     = max(0.01, min(lot_size, 100.0))
-            dollar_pnl   = round(net_pips * pip_value_per_lot * lot_size, 2)
+            lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
+            # WHY: Silent min(lot_size, 100.0) hid absurdly large positions
+            #      (e.g. 500-lot size on a $10M virtual account) and made stats
+            #      look better than they would be on a real broker.
+            # CHANGED: April 2026 — warn instead of silently capping
+            if lot_size > 100.0:
+                print(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
+                      f"check account_size / risk_pct / sl_pips settings")
+            lot_size   = max(0.01, lot_size)
+            dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
         else:
             lot_size   = None
             dollar_pnl = None
@@ -740,8 +767,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "entry_time":  entry_time,
             "exit_time":   exit_time,
             "direction":   trade_dir,
-            "entry_price": round(entry_price, 2),
-            "exit_price":  round(exit_price, 2),
+            # WHY: round(,2) truncates forex prices (5 decimal places).
+            # CHANGED: April 2026 — use 5 decimal places like vectorized path
+            "entry_price": round(entry_price, 5),
+            "exit_price":  round(exit_price, 5),
             "pnl_pips":    round(pnl_pips, 1),
             "cost_pips":   round(cost, 1),
             "net_pips":    round(net_pips, 1),
@@ -780,6 +809,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
     trades = []
+    _skipped_count = 0   # FIX 12E: track SANE_PIP_LIMIT skips
 
     if len(df) == 0:
         return trades
@@ -893,12 +923,21 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 pass
 
         # Infer candle duration once per trade (for minutes_held)
+        # WHY: Using only the first two candles can pick a gap (e.g. session
+        #      open after weekend) and give a wildly wrong duration. Median of
+        #      up to 10 consecutive gaps is robust against isolated outliers.
+        # CHANGED: April 2026 — median-gap inference
         candle_minutes = 60
         if len(future_candles) >= 2:
             try:
-                t0 = pd.to_datetime(future_candles.iloc[0]['timestamp'])
-                t1 = pd.to_datetime(future_candles.iloc[1]['timestamp'])
-                candle_minutes = max(1, int((t1 - t0).total_seconds() / 60))
+                _sample = future_candles.iloc[:min(11, len(future_candles))]
+                _ts     = pd.to_datetime(_sample['timestamp'])
+                _gaps   = [
+                    max(1, int((_ts.iloc[i+1] - _ts.iloc[i]).total_seconds() / 60))
+                    for i in range(len(_ts) - 1)
+                ]
+                if _gaps:
+                    candle_minutes = int(np.median(_gaps))
             except Exception:
                 pass
 
@@ -958,9 +997,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: April 2026 — pip sanity check
         SANE_PIP_LIMIT = 50_000  # 50K pips = $5000 on XAUUSD per 0.01 lot
         if abs(pips) > SANE_PIP_LIMIT:
-            print(f"  [SKIP] Absurd pips: {pips:.0f} "
-                  f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
-                  f"reason={exit_reason}) — likely silent exit failure")
+            _skipped_count += 1
+            if _skipped_count <= 5:   # log first few occurrences
+                print(f"  [SKIP] Absurd pips: {pips:.0f} "
+                      f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
+                      f"reason={exit_reason}) — likely silent exit failure")
             continue
 
         net_pips = pips - commission_pips
@@ -991,6 +1032,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # Mark occupied candles
         occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
 
+    if _skipped_count > 0:
+        print(f"  [fast_backtest] Skipped {_skipped_count} trade(s) with absurd pips "
+              f"(SANE_PIP_LIMIT={50_000}). Check exit strategy for silent failures.")
+
     return trades
 
 
@@ -1009,7 +1054,7 @@ def compute_stats(trades):
             "std_pips": 0, "sharpe_ish": 0,
             "max_win_streak": 0, "max_loss_streak": 0,
             "trades_per_day": 0, "days_per_trade": 0,
-            "recovery_factor": 0, "winners": 0, "losers": 0,
+            "recovery_factor": 0, "winners": 0, "losers": 0, "breakeven": 0,
         }
 
     # WHY: Vectorized backtest writes 'pips', non-vectorized writes 'pnl_pips'.
@@ -1022,10 +1067,16 @@ def compute_stats(trades):
     net    = [t.get("net_pips", _gross(t)) for t in trades]
     costs  = sum(t.get("cost_pips", 0) for t in trades)
 
-    net_winners = [p for p in net if p > 0]
-    net_losers  = [p for p in net if p <= 0]
-    gross_pos   = [p for p in gross if p > 0]
-    gross_neg   = [p for p in gross if p <= 0]
+    # WHY: Including break-even (p==0) in net_losers inflated loser count and
+    #      deflated avg_l, making the strategy look worse than it is.
+    #      Expectancy formula (wr*avg_w + (1-wr)*avg_l) also misallocated
+    #      break-evens; np.mean(net) is exact and needs no decomposition.
+    # CHANGED: April 2026 — separate break-evens; direct expectancy
+    net_winners  = [p for p in net if p > 0]
+    net_losers   = [p for p in net if p < 0]
+    net_breakeven = [p for p in net if p == 0]
+    gross_pos    = [p for p in gross if p > 0]
+    gross_neg    = [p for p in gross if p <= 0]
 
     # WHY: Old code used 0.001 divisor fallback → produced fake PF=50,000 when
     #      there are no losing trades. Cap at 99.99 instead — clearly a sentinel.
@@ -1035,14 +1086,15 @@ def compute_stats(trades):
             return 99.99 if wins_sum > 0 else 0.0
         return round(wins_sum / losses_sum, 2)
 
-    n_winners = len(net_winners)
-    n_losers  = len(net_losers)
-    win_rate  = n_winners / len(trades) * 100
-    avg_w     = float(np.mean(net_winners)) if net_winners else 0.0
-    avg_l     = float(np.mean(net_losers))  if net_losers  else 0.0
+    n_winners   = len(net_winners)
+    n_losers    = len(net_losers)
+    n_breakeven = len(net_breakeven)
+    win_rate    = n_winners / len(trades) * 100
+    avg_w       = float(np.mean(net_winners)) if net_winners else 0.0
+    avg_l       = float(np.mean(net_losers))  if net_losers  else 0.0
 
-    # Expectancy: average pips per trade (the most important single metric)
-    expectancy = (win_rate / 100 * avg_w) + ((1 - win_rate / 100) * avg_l)
+    # Expectancy: direct mean — no decomposition needed, handles break-evens correctly
+    expectancy = float(np.mean(net))
 
     # Risk:Reward ratio
     rr_ratio = abs(avg_w / avg_l) if avg_l != 0 else 0.0
@@ -1051,15 +1103,17 @@ def compute_stats(trades):
     std_pips   = float(np.std(net)) if len(net) > 1 else 0.0
     sharpe_ish = round(float(np.mean(net)) / std_pips, 2) if std_pips > 0 else 0.0
 
-    # Streak analysis
+    # Streak analysis (break-even trades reset both streaks — they are neither wins nor losses)
     max_win_streak = max_loss_streak = cur_win = cur_loss = 0
     for p in net:
         if p > 0:
             cur_win += 1; cur_loss = 0
             max_win_streak = max(max_win_streak, cur_win)
-        else:
+        elif p < 0:
             cur_loss += 1; cur_win = 0
             max_loss_streak = max(max_loss_streak, cur_loss)
+        else:  # break-even
+            cur_win = 0; cur_loss = 0
 
     # Trade frequency
     trades_per_day = days_per_trade = 0.0
@@ -1107,6 +1161,7 @@ def compute_stats(trades):
         "recovery_factor":   recovery_factor,
         "winners":           n_winners,
         "losers":            n_losers,
+        "breakeven":         n_breakeven,
     }
 
     # Dollar P&L equity tracking — only run_backtest sets dollar_pnl.

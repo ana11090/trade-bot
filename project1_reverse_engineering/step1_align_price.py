@@ -26,6 +26,10 @@ SYMBOL               = _cfg['symbol']
 ALIGN_TIMEFRAMES     = _cfg['align_timeframes'].split(',')
 MIN_LOOKBACK_CANDLES = int(_cfg['min_lookback_candles'])
 ALIGNMENT_TOLERANCE  = float(_cfg['alignment_tolerance_pips'])
+# WHY: Hardcoded 0.01 only applies to XAUUSD with 2-decimal pricing.
+#      Reading from config lets forex (0.0001) and JPY pairs (0.01) work correctly.
+# CHANGED: April 2026 — pip size from config
+PIP_SIZE             = float(_cfg.get('pip_size', '0.01'))
 
 
 def _get_trades_path():
@@ -98,7 +102,7 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
             )
 
             # Count how many trades have entry_price in [low, high]
-            tolerance = 0.20  # 20 pips tolerance for XAUUSD
+            tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
             in_range = (
                 (merged['entry_price'] >= merged['low'] - tolerance) &
                 (merged['entry_price'] <= merged['high'] + tolerance)
@@ -249,8 +253,13 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             )
 
             # Add columns to main DataFrame
-            trades_df[f'{tf}_candle_idx'] = aligned.set_index('trade_id')['candle_idx']
-            trades_df[f'{tf}_candle_time'] = aligned.set_index('trade_id')['timestamp']
+            # WHY: merge_asof can produce duplicate trade_id rows if two candles
+            #      have identical timestamps. drop_duplicates keeps the first
+            #      match (closest candle) and prevents index ambiguity.
+            # CHANGED: April 2026 — drop_duplicates before set_index
+            aligned_dedup = aligned.drop_duplicates(subset=['trade_id'])
+            trades_df[f'{tf}_candle_idx']  = aligned_dedup.set_index('trade_id')['candle_idx']
+            trades_df[f'{tf}_candle_time'] = aligned_dedup.set_index('trade_id')['timestamp']
 
             # Count aligned trades
             aligned_count = trades_df[f'{tf}_candle_idx'].notna().sum()
@@ -258,9 +267,7 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
 
             # Verify alignment: check if entry_price falls within candle high-low range
             # Allow some tolerance for spread and slippage
-            tolerance_pips = ALIGNMENT_TOLERANCE
-            pip_size = 0.01  # For XAUUSD
-            tolerance = tolerance_pips * pip_size
+            tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
 
             verified = 0
             if aligned_count > 0:

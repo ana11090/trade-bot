@@ -532,6 +532,32 @@ def build_panel(content):
     return panel
 
 
+def _pick_leverage(leverage_map, account_size=None):
+    """Return leverage for the given account size (or the median entry if no size given).
+
+    WHY: leverage_map keys are numeric strings like "10000", "25000", etc.
+         Picking list()[0] depends on dict insertion order and may return
+         the wrong tier (e.g., the $10K leverage for a $100K row).
+    CHANGED: April 2026 — leverage lookup by account size
+    """
+    if not leverage_map:
+        return '—'
+    parsed = []
+    for k, v in leverage_map.items():
+        try:
+            parsed.append((int(k), v))
+        except (ValueError, TypeError):
+            pass
+    if not parsed:
+        return list(leverage_map.values())[0]
+    parsed.sort(key=lambda x: x[0])
+    if account_size is not None:
+        best = min(parsed, key=lambda x: abs(x[0] - account_size))
+        return best[1]
+    # No specific size — return median entry
+    return parsed[len(parsed) // 2][1]
+
+
 def _format_sizes(sizes):
     if not sizes:
         return "—"
@@ -566,11 +592,13 @@ def _load_data():
         name = data.get('firm_name', '?')
         firm_names.add(name)
         leverage_map = data.get('leverage_by_size', {})
-        default_leverage = list(leverage_map.values())[0] if leverage_map else '—'
 
         for challenge in data.get('challenges', []):
             ch_name = challenge.get('challenge_name', '?')
             sizes = challenge.get('account_sizes', [])
+            # Pick leverage representative of this challenge's account sizes
+            median_size = sizes[len(sizes) // 2] if sizes else None
+            default_leverage = _pick_leverage(leverage_map, median_size)
             sizes_str = ', '.join(f'${s//1000}K' for s in sizes[:4])
             funded = challenge.get('funded', {})
 

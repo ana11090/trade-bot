@@ -129,10 +129,14 @@ def _on_calculate():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.8))
     fig.patch.set_facecolor("#f0f2f5")
 
-    # Trade P&L histogram
+    # Trade P&L histogram — green bins for profit, red for loss
+    # WHY: colors list was computed but never applied; hist() used a flat
+    #      "#1a73e8" for every bar, ignoring the intent.
+    # CHANGED: April 2026 — apply per-bin colors via patch.set_facecolor
     ax1.set_facecolor("#f8f9fb")
-    colors = ["#27ae60" if v > 0 else "#e94560" if v < 0 else "#aaa" for v in pnl]
-    ax1.hist(pnl, bins=40, color="#1a73e8", alpha=0.75, edgecolor="white")
+    counts_h, edges_h, patches_h = ax1.hist(pnl, bins=40, edgecolor="white", alpha=0.85)
+    for patch, left_edge in zip(patches_h, edges_h[:-1]):
+        patch.set_facecolor("#27ae60" if left_edge >= 0 else "#e94560")
     ax1.axvline(0, color="#e94560", linewidth=1.3, linestyle="--", label="Break-even")
     ax1.axvline(ev, color="#16213e", linewidth=1.5,
                 linestyle="-", label=f"EV ({ev:+.2f})")

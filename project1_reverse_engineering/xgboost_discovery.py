@@ -194,29 +194,16 @@ def _extract_xgboost_leaf_rules(booster, X_train, y_train, X_test, y_test,
                                   feature_cols, max_rules, max_depth,
                                   min_coverage, min_win_rate):
     """
-    Fit shallow decision trees on XGBoost leaf indices (embedding approach).
+    Fit a shallow decision tree on the original feature space and extract rules.
     Returns de-duplicated rule list.
+
+    WHY: The previous version built leaf-index embeddings (OneHotEncoder on
+         booster.apply() output) and computed combo_train, but then fitted the
+         DecisionTree on X_train/y_train anyway — the embedding was never used.
+         Dead code removed; the DT now fits directly on the original features
+         so rules reference real indicator names, not opaque leaf IDs.
+    CHANGED: April 2026 — removed dead leaf-encoding block
     """
-    # Get leaf indices from every tree in the booster
-    leaf_train = booster.apply(X_train)
-    leaf_test  = booster.apply(X_test)
-
-    # Build leaf-encoded feature matrices (sparse representation)
-    from sklearn.preprocessing import OneHotEncoder
-    enc = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    enc.fit(leaf_train)
-    leaf_train_enc = enc.transform(leaf_train)
-    leaf_test_enc  = enc.transform(leaf_test)
-
-    leaf_train_df = pd.DataFrame(leaf_train_enc, index=X_train.index)
-    leaf_test_df  = pd.DataFrame(leaf_test_enc,  index=X_test.index)
-
-    # Combine leaf features with original features for richer rules
-    combo_train = pd.concat([X_train.reset_index(drop=True),
-                              leaf_train_df.reset_index(drop=True)], axis=1)
-    combo_train.index = X_train.index
-
-    # Fit shallow DT on combo to extract rules that reference real indicators
     dt = DecisionTreeClassifier(
         max_depth=max_depth,
         min_samples_leaf=max(min_coverage, 10),
@@ -419,15 +406,24 @@ def activate_xgboost_rules():
     if not rules:
         return False, "XGBoost result contains no rules."
 
-    # Backup original
-    shutil.copy2(ANALYSIS_PATH, BACKUP_PATH)
+    # WHY: If backup already exists, overwriting it with the currently-patched
+    #      analysis_report would corrupt the clean original. Skip the copy so the
+    #      user can always restore to the pre-XGBoost state.
+    # CHANGED: April 2026 — skip backup if one already exists
+    if not os.path.exists(BACKUP_PATH):
+        shutil.copy2(ANALYSIS_PATH, BACKUP_PATH)
 
     with open(ANALYSIS_PATH) as f:
         report = json.load(f)
 
-    report['rules'] = rules
-    report['_xgboost_active'] = True
-    report['_xgboost_metrics'] = xgb_result.get('xgb_metrics', {})
+    report['rules']             = rules
+    report['_xgboost_active']   = True
+    report['_xgboost_metrics']  = xgb_result.get('xgb_metrics', {})
+    # Sync metadata fields so P2 picks up the correct scenario / feature info
+    report['_xgboost_scenario'] = xgb_result.get('scenario', '')
+    report['_xgboost_n_train']  = xgb_result.get('n_train', 0)
+    report['_xgboost_n_test']   = xgb_result.get('n_test', 0)
+    report['_xgboost_n_features'] = xgb_result.get('n_features', 0)
 
     with open(ANALYSIS_PATH, 'w') as f:
         json.dump(report, f, indent=2, default=str)

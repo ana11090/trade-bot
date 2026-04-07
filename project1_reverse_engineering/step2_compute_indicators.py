@@ -175,7 +175,11 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                 candle_idx = int(candle_idx)
 
                 # Need at least LOOKBACK_CANDLES of history for indicators to be valid
-                if candle_idx < 50 or candle_idx >= len(full_indicators_df):
+                # WHY: Hardcoded 50 was less than LOOKBACK_CANDLES (often 200).
+                #      Rows with fewer than LOOKBACK_CANDLES preceding candles
+                #      produce NaN-heavy indicators that pollute the feature matrix.
+                # CHANGED: April 2026 — use config LOOKBACK_CANDLES
+                if candle_idx < LOOKBACK_CANDLES or candle_idx >= len(full_indicators_df):
                     indicator_values.append({})
                     continue
 

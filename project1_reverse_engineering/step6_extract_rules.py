@@ -269,18 +269,24 @@ def extract_rules_for_scenario(scenario):
         import json as _json, time as _time
 
         # Detect direction from the action column (most bots are directional)
+        # WHY: Previous thresholds (>2x) implied >66% one-sided for BUY/SELL.
+        #      DIR_THRESHOLD = 0.60 is used consistently everywhere else.
+        # CHANGED: April 2026 — consistent DIR_THRESHOLD
+        DIR_THRESHOLD = 0.60
         direction = 'BUY'
         try:
             if 'action' in data.columns:
-                actions = data['action'].astype(str).str.upper()
-                buy_count  = actions.str.contains('BUY').sum()
-                sell_count = actions.str.contains('SELL').sum()
-                if sell_count > buy_count * 2:
-                    direction = 'SELL'
-                elif buy_count > sell_count * 2:
-                    direction = 'BUY'
-                else:
-                    direction = 'BOTH'
+                actions    = data['action'].astype(str).str.upper()
+                buy_count  = int(actions.str.contains('BUY').sum())
+                sell_count = int(actions.str.contains('SELL').sum())
+                total_dir  = buy_count + sell_count
+                if total_dir > 0:
+                    if sell_count / total_dir >= DIR_THRESHOLD:
+                        direction = 'SELL'
+                    elif buy_count / total_dir >= DIR_THRESHOLD:
+                        direction = 'BUY'
+                    else:
+                        direction = 'BOTH'
             elif 'trade_direction' in data.columns:
                 avg_dir = data['trade_direction'].mean()
                 direction = 'BUY' if avg_dir > 0 else ('SELL' if avg_dir < 0 else 'BOTH')

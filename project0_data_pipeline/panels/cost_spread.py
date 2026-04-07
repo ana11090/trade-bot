@@ -65,8 +65,16 @@ def build_cost_charts():
         fg="#e94560" if swap_total < 0 else "#1a1a2a")
     _p8_labels["net_profit"].configure(text=f"{net:+.2f} USD",
                                         fg="#27ae60" if net >= 0 else "#e94560")
+    # WHY: Some broker export formats (e.g. MT4 with ECN commission) already
+    #      subtract commission from the Profit column before export. Adding the
+    #      Commission column on top would double-count. Warn the user.
+    # CHANGED: April 2026 — double-count warning for ECN exports
+    if ecn_mode:
+        note_text = "ECN — full breakdown available  ⚠ Check export format: if broker already deducted commission from Profit, adding it again here double-counts it"
+    else:
+        note_text = "Standard spread — costs hidden in price"
     _p8_labels["account_note"].configure(
-        text="ECN — full breakdown available" if ecn_mode else "Standard spread — costs hidden in price",
+        text=note_text,
         fg="#27ae60" if ecn_mode else "#f39c12")
 
     try:

@@ -293,8 +293,12 @@ def _on_run_sim():
     ax1.fill_between(x, p10p, p90p, alpha=0.12, color="#1a73e8", label="10–90th pct (80% of runs)")
     ax1.fill_between(x, p25p, p75p, alpha=0.22, color="#1a73e8", label="25–75th pct (50% of runs)")
     ax1.plot(x, p50p, color="#1a73e8", linewidth=2, label="Median path")
-    ax1.axhline(ruin_threshold, color="#e94560", linewidth=1.3,
-                linestyle="--", label=f"Ruin level (−{max_dd_pct*100:.0f}% = {ruin_threshold:+.0f})")
+    # WHY: Ruin is triggered when peak-to-trough drawdown exceeds the limit.
+    #      A horizontal line at ruin_threshold on the cumulative-P&L fan chart
+    #      is misleading — it only equals the ruin boundary when the peak is 0.
+    #      After any gain the real trigger is higher. The ruin line is correctly
+    #      shown on the drawdown chart (ax3) below.
+    # CHANGED: April 2026 — removed mismatched ruin line from equity fan chart
     ax1.axhline(0, color="#aaaaaa", linewidth=0.7, linestyle=":")
     ax1.set_title(f"Equity Fan Chart  ({horizon_days} days / ~{n_trades} trades)",
                   fontsize=10, color="#333")
@@ -403,8 +407,13 @@ def _on_calc_target():
     # (only if it hasn't been ruined before that point)
     first_hit_trades = []
     for path in all_paths:
-        ruin_indices = np.where(np.minimum.accumulate(path) < ruin_threshold)[0]
-        ruin_at      = ruin_indices[0] if len(ruin_indices) > 0 else n_trades
+        # WHY: np.minimum.accumulate is the running absolute minimum (P&L from
+        #      start), not peak-to-trough drawdown. Ruin is a DD condition.
+        # CHANGED: April 2026 — use drawdown for ruin detection
+        running_peak_c = np.maximum.accumulate(path)
+        drawdown_c     = path - running_peak_c
+        ruin_indices   = np.where(drawdown_c < ruin_threshold)[0]
+        ruin_at        = ruin_indices[0] if len(ruin_indices) > 0 else n_trades
 
         hit_indices = np.where(path >= target_abs)[0]
         if len(hit_indices) > 0 and hit_indices[0] < ruin_at:
