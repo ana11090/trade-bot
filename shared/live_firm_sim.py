@@ -15,7 +15,9 @@ from datetime import datetime, timedelta
 
 
 def simulate_live_firm(trades, prop_firm_data, account_size=100000,
-                       payout_period_days=14, withdrawal_pct=80.0):
+                       payout_period_days=14, withdrawal_pct=80.0,
+                       pip_value_per_lot=10.0, risk_pct=1.0,
+                       default_sl_pips=150.0):
     """
     Replay trades through the exact firm rules.
 
@@ -116,13 +118,21 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         day_trades = daily_trades[day]
         day_pnl_dollars = 0
 
-        # Use net_pips * $10 per pip (XAUUSD 0.10 lot approx; dollar P&L used if present)
+        # WHY: Old code hardcoded $10/pip (XAUUSD 1 lot) — wrong for any other
+        #      instrument or lot size. Use risk-based sizing from params.
+        # CHANGED: April 2026 — use config values, not hardcoded $10/pip
+        risk_dollars   = account_size * (risk_pct / 100.0)
+        sl_denom       = default_sl_pips * pip_value_per_lot
+        lot_size       = max(0.01, risk_dollars / sl_denom) if sl_denom > 0 else 0.01
+        dollar_per_pip = pip_value_per_lot * lot_size
+
         for t in day_trades:
-            if 'net_profit' in t or 'dollar_pnl' in t:
+            # Prefer pre-computed dollar P&L if available (run_backtest sets this)
+            if t.get('net_profit') is not None or t.get('dollar_pnl') is not None:
                 day_pnl_dollars += float(t.get('net_profit') or t.get('dollar_pnl') or 0)
             else:
                 net_pips = t.get('net_pips', t.get('pips', 0))
-                day_pnl_dollars += float(net_pips) * 10
+                day_pnl_dollars += float(net_pips) * dollar_per_pip
 
         # Apply daily P&L
         balance += day_pnl_dollars
@@ -191,15 +201,23 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
             period_high = balance
 
     # ── Calculate annual estimate ────────────────────────────────────────
+    # WHY: Old formula assumed blows were uniformly distributed — uniform
+    #      blow rate * (1 - rate) gave odd results when blows were clustered.
+    #      Use actual success rate (completed / attempted) + cost-of-blow.
+    # CHANGED: April 2026 — success-rate based annual estimate
+    avg_per_cycle    = 0
+    estimated_annual = 0
+    success_rate     = 0.0
     if days_simulated > 0 and payout_cycles_completed > 0:
-        cycles_per_year = 365 / payout_period_days
-        avg_per_cycle   = total_withdrawn / payout_cycles_completed
-        # Scale down by blow rate
-        blow_rate        = blow_count / max(days_simulated / payout_period_days, 1)
-        estimated_annual = avg_per_cycle * cycles_per_year * (1 - min(blow_rate, 0.95))
-    else:
-        avg_per_cycle    = 0
-        estimated_annual = 0
+        cycles_per_year   = 365.0 / payout_period_days
+        avg_per_cycle     = total_withdrawn / payout_cycles_completed
+        attempted_cycles  = max(days_simulated / payout_period_days, 1)
+        success_rate      = max(0.0, min(1.0, payout_cycles_completed / attempted_cycles))
+        # Each blow costs ~5% of account (conservative challenge fee estimate)
+        blow_cost         = blow_count * (account_size * 0.05)
+        gross_annual      = avg_per_cycle * cycles_per_year * success_rate
+        annual_blow_cost  = blow_cost * (cycles_per_year / max(days_simulated / 365.0, 0.1))
+        estimated_annual  = max(0.0, gross_annual - annual_blow_cost)
 
     # ── Determine verdict ────────────────────────────────────────────────
     if blow_count == 0 and payout_cycles_completed >= 3:
@@ -244,6 +262,7 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         'total_withdrawn':         round(total_withdrawn, 2),
         'avg_per_cycle':           round(avg_per_cycle, 2),
         'estimated_annual':        round(estimated_annual, 2),
+        'success_rate':            round(success_rate, 3),
         'final_equity':            round(balance, 2),
         'days_simulated':          days_simulated,
         'verdict':                 verdict,
@@ -272,9 +291,10 @@ def _empty_result(reason):
     }
 
 
-def simulate_all_firms(trades, account_size=100000):
+def simulate_all_firms(trades, account_size=100000, **kwargs):
     """
     Run live firm simulation for all available prop firms.
+    kwargs are forwarded to simulate_live_firm (pip_value_per_lot, risk_pct, etc.)
     Returns list of results, one per firm.
     """
     import os, json, glob
@@ -289,7 +309,8 @@ def simulate_all_firms(trades, account_size=100000):
         try:
             with open(fp, 'r', encoding='utf-8') as f:
                 firm_data = json.load(f)
-            result = simulate_live_firm(trades, firm_data, account_size=account_size)
+            result = simulate_live_firm(trades, firm_data,
+                                        account_size=account_size, **kwargs)
             results.append(result)
         except Exception as e:
             results.append({

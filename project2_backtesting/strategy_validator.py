@@ -500,8 +500,13 @@ def walk_forward_validate(
             degradation = 0.0
             edge_held = False  # No data = no edge
         elif in_wr > 0:
-            degradation = (out_wr - in_wr) / in_wr * 100.0
-            edge_held = out_wr >= 0.50
+            # WHY: compute_stats returns WR as percent (65.0), but older code
+            #      paths may return fraction (0.65). Normalize before ratio.
+            # CHANGED: April 2026 — normalize WR before degradation calc
+            in_wr_frac  = in_wr  / 100.0 if in_wr  > 1 else in_wr
+            out_wr_frac = out_wr / 100.0 if out_wr > 1 else out_wr
+            degradation = (out_wr_frac - in_wr_frac) / in_wr_frac * 100.0
+            edge_held   = out_wr_frac >= 0.50
         else:
             degradation = 0.0
             edge_held = out_wr >= 0.50
@@ -842,15 +847,25 @@ def slippage_stress_test(
             max_safe = lvl['slippage_pips']
 
     # Estimate breakeven by linear interpolation between last profitable and first unprofitable
+    # WHY: Find the slippage level where profit = 0 by linear interpolation.
+    #      Formula: x = a.slip + (a.profit / (a.profit - b.profit)) * (b.slip - a.slip)
+    #      This is cleaner than the previous version and handles edge cases
+    #      where profit_diff is near zero.
+    # CHANGED: April 2026 — clearer interpolation
     breakeven_slip = None
     for i in range(len(levels_results) - 1):
         a = levels_results[i]
         b = levels_results[i + 1]
-        if a['total_pips'] > 0 and b['total_pips'] <= 0:
-            denom = a['total_pips'] - b['total_pips']
-            if denom != 0:
-                t = a['total_pips'] / denom
-                breakeven_slip = round(a['slippage_pips'] + t * (b['slippage_pips'] - a['slippage_pips']), 1)
+        a_profit = a['total_pips']
+        b_profit = b['total_pips']
+        if a_profit > 0 and b_profit <= 0:
+            profit_diff = a_profit - b_profit   # always > 0 here
+            if profit_diff > 0.01:
+                fraction = a_profit / profit_diff   # 0 < fraction <= 1
+                slip_diff = b['slippage_pips'] - a['slippage_pips']
+                breakeven_slip = round(a['slippage_pips'] + fraction * slip_diff, 1)
+            else:
+                breakeven_slip = a['slippage_pips']
             break
     if breakeven_slip is None:
         last = levels_results[-1]

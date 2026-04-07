@@ -996,7 +996,12 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000)
     # Profit factor
     gross_profit = sum(p for p in net if p > 0)
     gross_loss = abs(sum(p for p in net if p < 0))
-    pf = gross_profit / max(gross_loss, 0.01)
+    # WHY: 0.01 fallback → strategies with no losers got fake PF=50,000+.
+    # CHANGED: April 2026 — proper PF cap at 99.99
+    if gross_loss < 1.0:
+        pf = 99.99 if gross_profit > 0 else 0.0
+    else:
+        pf = gross_profit / gross_loss
 
     # Trades per day
     try:
@@ -1036,11 +1041,20 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000)
 
         score += min(total_pips / 1000, 20)
 
-        # Calculate actual DD% using lot size from risk settings
-        sl_pips = 150
-        pip_value = 10.0
-        risk_dollars = account_size * 0.01  # assume 1% risk
-        lot_size = risk_dollars / (sl_pips * pip_value)
+        # WHY: Was hardcoded to sl_pips=150 and risk=1%. Different strategies
+        #      use different SL distances, so DD math was systematically wrong.
+        #      Read actual values from config when available.
+        # CHANGED: April 2026 — use config values instead of hardcoded
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            _cfg = load_config()
+            sl_pips      = float(_cfg.get('default_sl_pips', 150))
+            pip_value    = float(_cfg.get('pip_value_per_lot', 10.0))
+            risk_pct_cfg = float(_cfg.get('risk_pct', 1.0))
+        except Exception:
+            sl_pips = 150.0; pip_value = 10.0; risk_pct_cfg = 1.0
+        risk_dollars  = account_size * (risk_pct_cfg / 100)
+        lot_size      = max(0.01, risk_dollars / (sl_pips * pip_value)) if (sl_pips * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
@@ -1069,11 +1083,17 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000)
         elif tpd > 5:
             score -= (tpd - 5) * 3
 
-        # DD penalty - calculate actual DD% using lot size from risk settings
-        sl_pips = 150
-        pip_value = 10.0
-        risk_dollars = account_size * 0.01  # assume 1% risk
-        lot_size = risk_dollars / (sl_pips * pip_value)
+        # DD penalty — use config values (same block as challenge phase above)
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            _cfg = load_config()
+            sl_pips      = float(_cfg.get('default_sl_pips', 150))
+            pip_value    = float(_cfg.get('pip_value_per_lot', 10.0))
+            risk_pct_cfg = float(_cfg.get('risk_pct', 1.0))
+        except Exception:
+            sl_pips = 150.0; pip_value = 10.0; risk_pct_cfg = 1.0
+        risk_dollars  = account_size * (risk_pct_cfg / 100)
+        lot_size      = max(0.01, risk_dollars / (sl_pips * pip_value)) if (sl_pips * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
