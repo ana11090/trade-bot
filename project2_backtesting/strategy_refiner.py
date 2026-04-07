@@ -1347,15 +1347,28 @@ def deep_optimize_generate(
     The output trades will be DIFFERENT from the input trades.
     """
     if timeframe is None:
-        # WHY: Caller should always pass the per-strategy timeframe explicitly.
-        #      This fallback exists only as a safety net.
-        # CHANGED: April 2026 — multi-TF support note
+        # WHY: The panel (strategy_refiner_panel.py) resolves entry_tf from the
+        #      selected strategy row and passes it explicitly. This block only
+        #      runs when called directly without a timeframe (e.g. in tests).
+        #      Try analysis_report first, fall back to global config.
+        # CHANGED: April 2026 — multi-TF support; try report before config
         try:
-            from project2_backtesting.panels.configuration import load_config
-            cfg = load_config()
-            timeframe = cfg.get('winning_scenario', 'H1')
+            import json as _json, os as _os
+            _here = _os.path.dirname(_os.path.abspath(__file__))
+            _report = _os.path.join(_here, '..', 'project1_reverse_engineering',
+                                    'outputs', 'analysis_report.json')
+            if _os.path.exists(_report):
+                with open(_report, 'r', encoding='utf-8') as _f:
+                    _r = _json.load(_f)
+                timeframe = _r.get('entry_timeframe') or None
         except Exception:
-            timeframe = 'H1'
+            pass
+        if not timeframe:
+            try:
+                from project2_backtesting.panels.configuration import load_config
+                timeframe = load_config().get('winning_scenario', 'H1')
+            except Exception:
+                timeframe = 'H1'
     print(f"[REFINER] deep_optimize_generate using entry TF: {timeframe}")
 
     _stop_flag.clear()
