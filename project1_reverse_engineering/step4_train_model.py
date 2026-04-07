@@ -62,12 +62,10 @@ def train_model_for_scenario(scenario):
 
         print(f"  Loaded labeled data: {len(data)} trades")
 
-        # Separate train and test sets
-        train_data = data[data['dataset'] == 'train'].copy()
-        test_data = data[data['dataset'] == 'test'].copy()
-
-        print(f"  Train set: {len(train_data)} trades")
-        print(f"  Test set: {len(test_data)} trades")
+        # WHY: Train/test split MUST happen AFTER the feature transform below.
+        #      The transform adds new columns (open_hour, close_hour_sin, etc.)
+        #      and if we split first, train_data/test_data won't have them.
+        # CHANGED: April 2026 — split moved to after transform
 
         # ── Transform non-numeric columns into useful features ────────────
         # WHY: Timestamps and categoricals contain real signal:
@@ -152,6 +150,13 @@ def train_model_for_scenario(scenario):
         if not feature_cols:
             print(f"  ERROR: No usable feature columns found!")
             return False
+
+        # NOW split train/test (after transform so new columns exist in both)
+        # CHANGED: April 2026 — split moved here
+        train_data = data[data['dataset'] == 'train'].copy()
+        test_data = data[data['dataset'] == 'test'].copy()
+        print(f"  Train set: {len(train_data)} trades")
+        print(f"  Test set: {len(test_data)} trades")
 
         # Prepare training data
         X_train = train_data[feature_cols].fillna(0)  # Fill any remaining NaN values
