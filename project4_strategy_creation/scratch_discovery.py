@@ -714,7 +714,17 @@ def _discover_quick(X, y, pips, merged, valid_cols,
     _cb(6, "[Quick] Extracting rules from decision tree...")
 
     top_feat_names = [f[0] for f in top_features[:30]]
-    X_top = X[top_feat_names]
+
+    # WHY: Old code did tree.fit(X_top, y) on the FULL dataset, then
+    #      _extract_rules evaluated rules on the FULL dataset too — no
+    #      out-of-sample validation at all. The train_test_split variable
+    #      was computed above (lines split_idx) but never used in this loop.
+    #      Now we fit on TRAIN, evaluate on TEST.
+    # CHANGED: April 2026 — actually use the train/test split
+    X_top_train = X_train[top_feat_names]
+    X_top_test  = X_test[top_feat_names]
+    pips_test   = pips.iloc[split_idx:]  if hasattr(pips,   'iloc') else pips[split_idx:]
+    merged_test = merged.iloc[split_idx:] if hasattr(merged, 'iloc') else merged[split_idx:]
 
     all_rules = []
     for depth in [3, 4, 5]:
@@ -722,9 +732,15 @@ def _discover_quick(X, y, pips, merged, valid_cols,
             max_depth=depth, min_samples_leaf=min_coverage,
             random_state=42 + depth,
         )
-        tree.fit(X_top, y)
-        rules = _extract_rules(tree, top_feat_names, X_top, y, pips, merged,
-                               max_rules=10, min_coverage=min_coverage)
+        tree.fit(X_top_train, y_train)   # fit on TRAIN only
+        rules = _extract_rules(
+            tree, top_feat_names,
+            X_top_test, y_test,          # evaluate on TEST set
+            pips_test, merged_test,
+            max_rules=10,
+            min_coverage=max(min_coverage // 4, 5),   # smaller threshold for test set
+            train_X=X_top_train, train_y=y_train,     # for overfit gap reporting
+        )
         all_rules.extend(rules)
 
     # ── Enhancement: Grid Threshold Search ────────────────────────────────
@@ -1582,8 +1598,15 @@ def _walkforward_score_rules(rules, X, y, pips, timestamps=None,
     return rules
 
 
-def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100):
-    """Extract rules from a fitted DecisionTreeClassifier."""
+def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100,
+                   train_X=None, train_y=None):
+    """Extract rules from a fitted DecisionTreeClassifier.
+
+    WHY: When called with separate train_X/train_y, computes both the
+         test win_rate (the honest number) and the train win_rate (overfit
+         indicator). Without this, win_rate was always in-sample.
+    CHANGED: April 2026 — train vs test gap reporting
+    """
     from sklearn.tree import _tree
 
     tree_  = tree.tree_
@@ -1622,17 +1645,35 @@ def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_covera
             if mask.sum() < min_coverage:
                 return
 
-            win_rate = float(y[mask].mean())
+            win_rate = float(y[mask].mean())   # test (or full-set) win rate
             avg_p    = float(pips[mask].mean())
 
+            # Optionally compute train win rate for overfit gap detection
+            train_wr    = None
+            overfit_gap = None
+            if train_X is not None and train_y is not None:
+                train_mask = np.ones(len(train_X), dtype=bool)
+                for cond in rule_conditions:
+                    col = train_X[cond['feature']].values
+                    if cond['operator'] == '<=':
+                        train_mask &= col <= cond['value']
+                    else:
+                        train_mask &= col > cond['value']
+                if train_mask.sum() > 0:
+                    train_wr    = float(train_y[train_mask].mean())
+                    overfit_gap = train_wr - win_rate
+
             rules.append({
-                "conditions":   rule_conditions,
-                "prediction":   prediction,
-                "confidence":   round(confidence, 3),
-                "coverage":     int(mask.sum()),
-                "coverage_pct": round(mask.sum() / len(df) * 100, 1),
-                "win_rate":     round(win_rate, 3),
-                "avg_pips":     round(avg_p, 1),
+                "conditions":    rule_conditions,
+                "prediction":    prediction,
+                "confidence":    round(confidence, 3),
+                "coverage":      int(mask.sum()),
+                "coverage_pct":  round(mask.sum() / len(df) * 100, 1),
+                "win_rate":      round(win_rate, 3),
+                "train_win_rate": round(train_wr, 3) if train_wr is not None else None,
+                "overfit_gap":   round(overfit_gap, 3) if overfit_gap is not None else None,
+                "is_overfit":    (overfit_gap is not None and overfit_gap > 0.15),
+                "avg_pips":      round(avg_p, 1),
             })
             return
 

@@ -131,14 +131,16 @@ def label_candles(
                     tp_hit = candle_high >= tp_price
 
                     if sl_hit and tp_hit:
-                        if abs(candle_open - sl_price) < abs(candle_open - tp_price):
-                            label       = 0
-                            pips_result = (min(candle_open, sl_price) - entry_price) / pip_size
-                            exit_reason = "STOP_LOSS"
-                        else:
-                            label       = 1
-                            pips_result = (max(candle_open, tp_price) - entry_price) / pip_size
-                            exit_reason = "TAKE_PROFIT"
+                        # WHY: Both SL and TP hit in the same candle. Without
+                        #      sub-candle (M1) data we cannot know the actual
+                        #      order. Conservative best practice: always label
+                        #      LOSS. The old "closer to open = hit first"
+                        #      heuristic is geometrically wrong — distance from
+                        #      open does not predict the intra-candle path.
+                        # CHANGED: April 2026 — conservative tie-break
+                        label       = 0
+                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size
+                        exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
@@ -156,14 +158,11 @@ def label_candles(
                     tp_hit = candle_low  <= tp_price
 
                     if sl_hit and tp_hit:
-                        if abs(candle_open - sl_price) < abs(candle_open - tp_price):
-                            label       = 0
-                            pips_result = (entry_price - max(candle_open, sl_price)) / pip_size
-                            exit_reason = "STOP_LOSS"
-                        else:
-                            label       = 1
-                            pips_result = (entry_price - min(candle_open, tp_price)) / pip_size
-                            exit_reason = "TAKE_PROFIT"
+                        # WHY: same as BUY — conservative loss labeling.
+                        # CHANGED: April 2026 — conservative tie-break
+                        label       = 0
+                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size
+                        exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
