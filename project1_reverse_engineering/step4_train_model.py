@@ -69,11 +69,89 @@ def train_model_for_scenario(scenario):
         print(f"  Train set: {len(train_data)} trades")
         print(f"  Test set: {len(test_data)} trades")
 
-        # Identify feature columns (exclude metadata and target columns)
-        exclude_cols = ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']
-        feature_cols = [col for col in data.columns if col not in exclude_cols]
+        # ── Transform non-numeric columns into useful features ────────────
+        # WHY: Timestamps and categoricals contain real signal:
+        #        - hour of day: London open vs Asian session matters
+        #        - day of week: Mon/Fri effects exist
+        #        - month: seasonality is real for gold
+        #        - action (BUY/SELL): directional bias
+        #      Instead of dropping these, extract numeric features from them.
+        # CHANGED: April 2026 — feature engineering for non-numeric columns
+        import numpy as np
 
-        print(f"  Feature count: {len(feature_cols)}")
+        # Columns we never want as features (target leakage or pure metadata)
+        leak_cols = {
+            'trade_id', 'profit', 'pips', 'outcome', 'direction', 'dataset',
+            'order_id', 'ticket', 'magic', 'comment', 'symbol',
+        }
+
+        # Find timestamp columns and extract time features
+        for ts_col in ['open_time', 'close_time']:
+            if ts_col not in data.columns:
+                continue
+            try:
+                ts = pd.to_datetime(data[ts_col], errors='coerce')
+                prefix = ts_col.replace('_time', '')  # 'open' or 'close'
+
+                hour = ts.dt.hour.fillna(0)
+                dow = ts.dt.dayofweek.fillna(0)
+                month = ts.dt.month.fillna(1)
+
+                data[f'{prefix}_hour'] = hour
+                data[f'{prefix}_dow'] = dow
+                data[f'{prefix}_month'] = month
+                data[f'{prefix}_hour_sin'] = np.sin(2 * np.pi * hour / 24)
+                data[f'{prefix}_hour_cos'] = np.cos(2 * np.pi * hour / 24)
+                data[f'{prefix}_dow_sin'] = np.sin(2 * np.pi * dow / 7)
+                data[f'{prefix}_dow_cos'] = np.cos(2 * np.pi * dow / 7)
+
+                if ts_col == 'close_time' and 'open_time' in data.columns:
+                    open_ts = pd.to_datetime(data['open_time'], errors='coerce')
+                    data['trade_duration_minutes'] = (ts - open_ts).dt.total_seconds().div(60).fillna(0)
+
+                leak_cols.add(ts_col)
+                print(f"  Extracted 7 time features from {ts_col}")
+            except Exception as e:
+                print(f"  Could not extract time features from {ts_col}: {e}")
+                leak_cols.add(ts_col)
+
+        # Label-encode any remaining string columns (e.g., action='BUY'/'SELL')
+        for col in list(data.columns):
+            if col in leak_cols:
+                continue
+            if pd.api.types.is_numeric_dtype(data[col]):
+                continue
+            try:
+                converted = pd.to_numeric(data[col], errors='coerce')
+                if converted.notna().sum() > len(converted) * 0.8:
+                    data[col] = converted.fillna(0)
+                    continue
+            except Exception:
+                pass
+            try:
+                unique_vals = data[col].astype(str).unique()
+                if len(unique_vals) <= 50:
+                    mapping = {v: i for i, v in enumerate(sorted(unique_vals))}
+                    data[col] = data[col].astype(str).map(mapping).fillna(-1)
+                    print(f"  Label-encoded {col}: {len(unique_vals)} unique values")
+                else:
+                    leak_cols.add(col)
+                    print(f"  Dropped {col}: {len(unique_vals)} unique values (too high cardinality)")
+            except Exception:
+                leak_cols.add(col)
+
+        # Final feature_cols = everything numeric, excluding leak/metadata
+        feature_cols = [
+            col for col in data.columns
+            if col not in leak_cols and pd.api.types.is_numeric_dtype(data[col])
+        ]
+
+        print(f"  Feature count: {len(feature_cols)} (numeric)")
+        print(f"  Dropped (target/metadata): {len(leak_cols & set(data.columns))}")
+
+        if not feature_cols:
+            print(f"  ERROR: No usable feature columns found!")
+            return False
 
         # Prepare training data
         X_train = train_data[feature_cols].fillna(0)  # Fill any remaining NaN values
