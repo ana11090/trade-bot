@@ -1195,7 +1195,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           account_size=None, risk_per_trade_pct=1.0,
                           default_sl_pips=150.0, pip_value_per_lot=10.0,
                           progress_callback=None,
-                          use_safety_stops=True):
+                          use_safety_stops=True,
+                          # NEW: firm-specific breach thresholds (optional)
+                          breach_account_size=100_000,
+                          breach_daily_dd_limit_pct=5.0,
+                          breach_total_dd_limit_pct=10.0,
+                          breach_daily_safety_pct=4.0,
+                          breach_total_safety_pct=8.0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -1437,9 +1443,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     print(f"\nTop 5 by net pips (after {spread_pips} pip spread):")
     for m in matrix[:5]:
         s = m["stats"]
-        # Fix win rate display
+        # WHY: compute_stats always stores win_rate as percent (0-100). The old
+        #      `wr > 1` band-aid was dead — kept here as a comment so no one
+        #      reintroduces the inconsistent format expectation.
+        # CHANGED: April 2026 — remove dead band-aid
         wr = s['win_rate']
-        wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+        wr_str = f"{wr:.1f}%"
         print(f"  {m['rule_combo']:20s} x {m['exit_name']:15s}: "
               f"{s['total_trades']:>4d} trades, WR {wr_str:>6s}, "
               f"Net PF {s['net_profit_factor']:>5.2f}, "
@@ -1454,14 +1463,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     for m in matrix:
         # Compute breach stats for this strategy
         # WHY: safety_pct=None disables safety stops (passes None through to simulator).
-        # CHANGED: April 2026 — respect use_safety_stops UI toggle
-        _safety_daily = 4.0 if use_safety_stops else None
-        _safety_total = 8.0 if use_safety_stops else None
+        #      Old code hardcoded firm parameters; now they're parameters with
+        #      firm-default values, so callers can pass actual firm config.
+        # CHANGED: April 2026 — parameterized breach thresholds
+        _safety_daily = breach_daily_safety_pct if use_safety_stops else None
+        _safety_total = breach_total_safety_pct if use_safety_stops else None
         breaches = count_dd_breaches(
             m["trades"],
-            account_size=100000,
-            daily_dd_limit_pct=5.0,
-            total_dd_limit_pct=10.0,
+            account_size=breach_account_size,
+            daily_dd_limit_pct=breach_daily_dd_limit_pct,
+            total_dd_limit_pct=breach_total_dd_limit_pct,
             daily_dd_safety_pct=_safety_daily,
             total_dd_safety_pct=_safety_total,
         )
