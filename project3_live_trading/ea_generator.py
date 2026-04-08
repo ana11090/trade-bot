@@ -1344,10 +1344,9 @@ void OnTick()
    {{ LogSkip("outside_session", 0); return; }}
 
    // WHY: _now_gmt is in scope here (declared above in daily-reset block).
-   //      _now_srv was removed as part of the DailyResetHourGMT fix and this
-   //      log-only reference was missed. CheckDayFilter() internally uses
-   //      TimeCurrent() for the real filter, so the log value is cosmetic.
-   // CHANGED: April 2026 — fix dangling _now_srv after GMT rename (audit bug #6 follow-up)
+   //      Use GMT time for day-of-week logging. CheckDayFilter() internally
+   //      uses TimeCurrent() for the real filter, so the log value is cosmetic.
+   // CHANGED: April 2026 — use GMT time consistently (audit bug #6 follow-up)
    if(!CheckDayFilter())
    {{ LogSkip("day_filtered", (double)_now_gmt.day_of_week); return; }}
 
