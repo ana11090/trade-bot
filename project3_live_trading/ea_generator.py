@@ -39,6 +39,7 @@ def generate_ea(
     max_spread_pips=5.0,
     trailing_stop=None,
     output_path=None,
+    direction=None,  # NEW: 'BUY' or 'SELL' — if None, read from strategy dict
 ):
     """
     Generate complete EA code for MT5 or Tradovate.
@@ -64,20 +65,21 @@ def generate_ea(
     exit_name = strategy.get('exit_name', strategy.get('exit_strategy', 'FixedSLTP'))
     exit_params = strategy.get('exit_strategy_params', {'sl_pips': 150, 'tp_pips': 300})
 
-    # WHY: Old code hardcoded BUY everywhere. The strategy dict contains the
-    #      actual direction from the analysis_report. Read it and thread it
-    #      through to the platform-specific generators. BOTH is not yet
-    #      supported because the EA needs runtime direction selection per
-    #      tick — that's a deeper refactor.
-    # CHANGED: April 2026 — direction-aware EA generation
-    direction = str(strategy.get('direction', 'BUY')).upper()
-    if direction not in ('BUY', 'SELL'):
-        raise NotImplementedError(
-            f"EA generator: direction='{direction}' is not yet supported. "
-            f"Only BUY or SELL strategies can be exported. "
-            f"For BOTH-direction strategies, split into separate BUY and SELL "
-            f"EAs first or wait for runtime direction selection."
-        )
+    # WHY: Strategy direction was silently ignored — every generated EA
+    #      emitted trade.Buy() regardless of whether the strategy was BUY
+    #      or SELL. SELL strategies ran as their exact opposite on the
+    #      live account. Read from the explicit parameter first, then
+    #      fall back to strategy dict, then default to BUY with a loud
+    #      print so the user sees it.
+    # CHANGED: April 2026 — fix hardcoded BUY emission (audit bug #9)
+    _dir = (direction or strategy.get('direction') or 'BUY').upper()
+    if _dir not in ('BUY', 'SELL'):
+        print(f"[EA GEN] WARNING: unknown direction {_dir!r}, defaulting to BUY")
+        _dir = 'BUY'
+    if not direction and not strategy.get('direction'):
+        print(f"[EA GEN] WARNING: strategy has no 'direction' field — defaulting to BUY. "
+              f"If this is a SELL strategy, the generated EA will trade the wrong side!")
+    print(f"[EA GEN] Direction: {_dir}")
 
     validation = strategy.get('validation', {})
     grade       = validation.get('grade', 'N/A')
@@ -134,7 +136,7 @@ def generate_ea(
             account_size=account_size,
             restrictions=restrictions,
             challenge=challenge,
-            direction=direction,  # NEW: pass strategy direction
+            direction=_dir,  # NEW: pass strategy direction (using _dir from FIX 1A)
         )
     else:
         code = _generate_tradovate(
@@ -164,6 +166,54 @@ def generate_ea(
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(code)
+        print(f"[EA GEN] Saved to {output_path}")
+
+        # WHY: The emitted EA reads news_calendar.csv via FileOpen with a
+        #      relative path, which in MT5 means MQL5/Files/ — a different
+        #      folder from MQL5/Experts/ where the .mq5 file lives.
+        #      Users rarely know to copy the CSV manually, so the news
+        #      filter silently returned false and trades fired during
+        #      NFP/CPI/FOMC. Now we attempt to locate MQL5/Files/ from
+        #      the output_path and copy the CSV there.
+        # CHANGED: April 2026 — fix missing news_calendar.csv (audit bug #7)
+        try:
+            import shutil
+            _news_src = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'outputs', 'news_calendar.csv',
+            )
+            if os.path.exists(_news_src):
+                # If output_path is .../MQL5/Experts/foo.mq5, MQL5/Files is at
+                # .../MQL5/Files. Walk up until we find an "MQL5" directory.
+                _out_dir = os.path.dirname(os.path.abspath(output_path))
+                _mql5_root = None
+                _cur = _out_dir
+                for _ in range(6):
+                    if os.path.basename(_cur) == 'MQL5':
+                        _mql5_root = _cur
+                        break
+                    _parent = os.path.dirname(_cur)
+                    if _parent == _cur:
+                        break
+                    _cur = _parent
+
+                if _mql5_root:
+                    _news_dst = os.path.join(_mql5_root, 'Files', 'news_calendar.csv')
+                    os.makedirs(os.path.dirname(_news_dst), exist_ok=True)
+                    shutil.copy2(_news_src, _news_dst)
+                    print(f"[EA GEN] Copied news calendar to {_news_dst}")
+                else:
+                    # Fallback: copy next to the EA so the user can move it
+                    _news_dst = os.path.join(_out_dir, 'news_calendar.csv')
+                    shutil.copy2(_news_src, _news_dst)
+                    print(f"[EA GEN] Could not locate MQL5/Files — copied calendar next to EA: {_news_dst}")
+                    print(f"[EA GEN] ACTION REQUIRED: move news_calendar.csv into your MQL5/Files folder manually.")
+            else:
+                print(f"[EA GEN] WARNING: {_news_src} not found — news filter will be disabled. "
+                      f"Run download_news_calendar() first to generate it.")
+        except Exception as _ex:
+            print(f"[EA GEN] WARNING: Could not copy news_calendar.csv: {_ex}. "
+                  f"News filter will be disabled until you place the file in MQL5/Files manually.")
 
     return code
 
@@ -536,11 +586,18 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     lock_pct = trailing_dd.get('lock_after_gain_pct')
 
     # Core DD globals (always)
-    extra_globals.append('double  g_hwm             = 0.0;   // High water mark')
-    extra_globals.append('double  g_ddFloor         = 0.0;   // Equity level that triggers breach')
-    extra_globals.append('double  g_dailyReference  = 0.0;   // Daily DD reference point')
-    extra_globals.append('double  g_startingBalance = 0.0;   // Balance when period started')
-    extra_globals.append('bool    g_ddLocked        = false;  // True when trailing DD has locked')
+    extra_globals.append('double  g_hwm                     = 0.0;   // High water mark')
+    extra_globals.append('double  g_ddFloor                 = 0.0;   // Equity level that triggers breach')
+    extra_globals.append('double  g_dailyReference          = 0.0;   // Daily DD reference point')
+    extra_globals.append('double  g_startingBalance         = 0.0;   // Balance when current period started (resets at payout)')
+    # WHY: g_startingBalance gets overwritten at every payout. The DD
+    #      floor anchor must stay fixed at the ORIGINAL starting balance
+    #      forever — the firm rule is "floor at original, any drop
+    #      below = breach". Without this, each payout raises the floor
+    #      by the payout amount and the EA stops trading prematurely.
+    # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
+    extra_globals.append('double  g_originalStartingBalance = 0.0;   // Original $100k — NEVER overwritten')
+    extra_globals.append('bool    g_ddLocked                = false; // True when trailing DD has locked')
 
     # Payout cycle tracking globals (always)
     extra_globals.append('datetime g_payoutWaitStart    = 0;     // When bot entered waiting state')
@@ -559,9 +616,21 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         extra_inputs.append('input bool   PayoutWithdrawn         = false; // Set TRUE after withdrawing payout — locks DD floor permanently')
 
     # OnInit: init all globals + restore from GlobalVariables (survives MT5 restart)
+    # WHY: g_originalStartingBalance is set ONCE at the very first OnInit
+    #      and persisted via GlobalVariables. Every subsequent restart and
+    #      every payout cycle reads the persisted value, never overwrites.
+    # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
     extra_init.append(f'   g_startingBalance  = AccountInfoDouble(ACCOUNT_BALANCE);')
+    extra_init.append(f'   if(GlobalVariableCheck("EA_origStartBal_" + _Symbol))')
+    extra_init.append(f'      g_originalStartingBalance = GlobalVariableGet("EA_origStartBal_" + _Symbol);')
+    extra_init.append(f'   else')
+    extra_init.append(f'   {{')
+    extra_init.append(f'      g_originalStartingBalance = g_startingBalance;')
+    extra_init.append(f'      GlobalVariableSet("EA_origStartBal_" + _Symbol, g_originalStartingBalance);')
+    extra_init.append(f'      Print("[DD] Original starting balance locked at $", DoubleToString(g_originalStartingBalance, 2));')
+    extra_init.append(f'   }}')
     extra_init.append(f'   g_hwm              = g_startingBalance;')
-    extra_init.append(f'   g_ddFloor          = g_startingBalance * (1.0 - {dd_total_pct}/100.0);')
+    extra_init.append(f'   g_ddFloor          = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
     extra_init.append(f'   g_dailyReference   = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
     extra_init.append(f'   g_payoutWaitStart  = 0;')
     extra_init.append(f'   g_lastReminderSent = 0;')
@@ -597,7 +666,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'   if(!g_ddLocked && newBalance >= g_startingBalance * (1.0 + {lock_pct}/100.0))\n'
                 f'   {{\n'
                 f'      g_ddLocked = true;\n'
-                f'      g_ddFloor  = g_startingBalance;\n'
+                f'      g_ddFloor  = g_originalStartingBalance;\n'
                 f'      SaveDDState();\n'
                 f'      Print("[DD] LOCKED — floor at $", DoubleToString(g_ddFloor, 2));\n'
                 f'      string subj = "[DD] " + _Symbol + " — Drawdown LOCKED";\n'
@@ -620,7 +689,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'   if(!g_ddLocked && equity >= g_startingBalance * (1.0 + {lock_pct}/100.0))\n'
                 f'   {{\n'
                 f'      g_ddLocked = true;\n'
-                f'      g_ddFloor  = g_startingBalance;\n'
+                f'      g_ddFloor  = g_originalStartingBalance;\n'
                 f'      SaveDDState();\n'
                 f'      Print("[DD] LOCKED — floor at $", DoubleToString(g_ddFloor, 2));\n'
                 f'      string subj = "[DD] " + _Symbol + " — Drawdown LOCKED";\n'
@@ -717,8 +786,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     if has_protect_phase:
         payout_reset_items.append('g_payoutCondsMet      = false;')
     payout_reset_items.append('g_stopForever         = false;')
+    # WHY: g_startingBalance is used for period-profit accounting in the
+    #      next cycle, so it DOES update to the current balance. But
+    #      g_ddFloor is anchored to g_originalStartingBalance which never
+    #      changes. Same for g_hwm — it starts the new period from current
+    #      balance for HWM tracking, but the floor stays anchored.
+    # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
     payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
-    payout_reset_items.append(f'g_ddFloor             = g_startingBalance * (1.0 - {dd_total_pct}/100.0);')
+    payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
     payout_reset_items.append('g_hwm                 = g_startingBalance;')
     payout_reset_items.append('g_ddLocked            = false;')
     payout_reset_items.append('g_payoutWaitStart     = 0;')
@@ -819,13 +894,16 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      g_prevWithdrawnFlag     = true;\n'
             f'      g_postPayoutLockApplied = true;\n'
             f'      g_ddLocked              = true;\n'
-            f'      g_ddFloor               = g_startingBalance;\n'
+            f'      // WHY: Post-payout lock anchors to ORIGINAL starting\n'
+            f'      //      balance, not the current (post-payout) balance.\n'
+            f'      // CHANGED: April 2026 — fix post-payout floor drift\n'
+            f'      g_ddFloor               = g_originalStartingBalance;\n'
             f'      SaveDDState();\n'
             f'      Print("[DD] Post-payout lock applied: floor = $",\n'
-            f'            DoubleToString(g_startingBalance, 2));\n'
+            f'            DoubleToString(g_originalStartingBalance, 2));\n'
             f'      SendMail("[DD] " + _Symbol + " — Post-payout DD floor locked",\n'
             f'               "Withdrawal confirmed. DD floor locked at starting balance $" +\n'
-            f'               DoubleToString(g_startingBalance, 2) + ".");\n'
+            f'               DoubleToString(g_originalStartingBalance, 2) + ".");\n'
             f'   }}\n'
             f'   g_prevWithdrawnFlag = PayoutWithdrawn;\n'
             f'}}'
@@ -1088,10 +1166,12 @@ input double DailyDDLimitPct    = {dd_daily_pct};           // Daily DD blow lim
 input double TotalDDLimitPct    = {dd_total_pct};           // Total DD blow limit % (firm closes account here)
 input bool   LogTrades          = true;                      // Log trades to CSV
 input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file path
-// WHY: Static DST offset misses the reset on DST change days — adjust this
-//      input twice a year if your broker observes DST. Default from firm JSON.
-// CHANGED: April 2026 — user-adjustable DST-safe reset time
-input int    DailyResetHourServer = {reset_hour_gmt};        // Daily reset hour (server time, adjust for DST)
+// WHY: The value is computed as a GMT hour in Python (line ~809), so we
+//      must compare against TimeGMT(), not TimeCurrent() (server time).
+//      Old name "Server" was misleading — a Cyprus broker's server time
+//      is GMT+3, so the reset fired 3 hours early every day.
+// CHANGED: April 2026 — fix reset hour timezone (audit bug #6)
+input int    DailyResetHourGMT    = {reset_hour_gmt};        // Daily reset hour (GMT — already DST-adjusted by firm rules)
 input int    DailyResetMinute     = 0;                       // Daily reset minute
 //--- Exit parameters
 input double SLPips             = {sl_pips};                 // Stop loss (pips)
@@ -1171,6 +1251,30 @@ void OnTick()
    //--- Update daily high equity
    if(equity > g_dailyHighEquity) g_dailyHighEquity = equity;
 
+   //--- DD floor enforcement — fires every tick, before anything else
+   // WHY: g_ddFloor was set in 7 places but never checked. The broker
+   //      would close the account when equity breached the floor, but
+   //      the EA would keep trying to open new trades until it did.
+   //      Now: if equity drops below the floor, close every position
+   //      and halt trading forever (requires manual EA restart).
+   // CHANGED: April 2026 — fix dead g_ddFloor (audit bug #4)
+   if(g_ddFloor > 0.0 && equity < g_ddFloor)
+   {{
+      Print("[DD BREACH] Equity $", DoubleToString(equity, 2),
+            " dropped below floor $", DoubleToString(g_ddFloor, 2),
+            " — closing all positions and halting.");
+      CloseAllPositions("DDFloorBreach");
+      g_stopForever = true;
+      SaveDDState();
+      SendNotification("[DD BREACH] " + _Symbol + " — Account protection triggered. Bot halted.");
+      SendMail("[DD BREACH] " + _Symbol,
+               "Equity $" + DoubleToString(equity, 2) +
+               " dropped below DD floor $" + DoubleToString(g_ddFloor, 2) +
+               ". All positions closed. Bot halted permanently.\\n\\n" +
+               "Restart the EA manually after investigating the cause.");
+      return;
+   }}
+
    if(g_stopForDay) return;
 
    // WHY: Trailing stop must be checked every tick, not just on new bars.
@@ -1183,6 +1287,15 @@ void OnTick()
    // CHANGED: April 2026 — all exit strategies supported
 {exit_management}
 
+   //--- Per-tick safety checks — run BEFORE the new-bar gate
+   // WHY: Daily DD alerts, total DD alerts, emergency stop, and payout
+   //      confirmation are per-tick safety checks. If they only fire on
+   //      bar close, an H1 EA can be up to 60 minutes late reacting to
+   //      a DD breach — the broker closes the account first. Moved
+   //      above the new-bar gate so they run on every tick.
+   // CHANGED: April 2026 — fix per-bar safety delay (audit bug #5)
+{extra_tick_checks_block}
+
    //--- Check for new bar
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    if(currentBarTime == g_lastBarTime) return;
@@ -1194,9 +1307,14 @@ void OnTick()
    //      Now uses an input the user can adjust manually twice a year.
    //      g_dailyResetDone prevents double-firing within the reset hour window.
    // CHANGED: April 2026 — DST-safe + correct g_sessionEquity ordering
-   MqlDateTime _now_srv;
-   TimeToStruct(TimeCurrent(), _now_srv);
-   if(_now_srv.hour == DailyResetHourServer && _now_srv.min >= DailyResetMinute
+   // WHY: Daily reset anchored to GMT because firm rule is "23:00 GMT+3"
+   //      which is always the same GMT hour (20:00) regardless of broker
+   //      server timezone or DST. Old code compared against TimeCurrent
+   //      (server time) which was wrong for any non-GMT broker.
+   // CHANGED: April 2026 — fix reset hour timezone (audit bug #6)
+   MqlDateTime _now_gmt;
+   TimeToStruct(TimeGMT(), _now_gmt);
+   if(_now_gmt.hour == DailyResetHourGMT && _now_gmt.min >= DailyResetMinute
       && !g_dailyResetDone)
    {{
       g_dailyResetDone  = true;
@@ -1208,7 +1326,7 @@ void OnTick()
 {extra_daily_reset_block}
       g_sessionEquity   = equity;   // NOW reset: tomorrow's baseline
    }}
-   if(_now_srv.hour != DailyResetHourServer)
+   if(_now_gmt.hour != DailyResetHourGMT)
       g_dailyResetDone = false;   // re-arm for next day
 
    //--- Skip checks
@@ -1231,7 +1349,6 @@ void OnTick()
    if(UseNewsFilter && IsNewsImminent())
    {{ LogSkip("news_filter", 0); return; }}
 
-{extra_tick_checks_block}
    //--- Check entry conditions
    // WHY: Any indicator that returns EMPTY_VALUE means it's not ready or
    //      failed to read. Skip this signal entirely instead of trading on

@@ -598,6 +598,17 @@ def _generate():
                 entry_tf = 'H1'
         print(f"[EA GEN] Generating EA with entry timeframe: {entry_tf}")
 
+        # WHY: Propagate direction from the selected strategy so the EA
+        #      generator emits Buy OR Sell (not hardcoded BUY). Reads from
+        #      strategy dict first; falls back to None which lets
+        #      generate_ea do its own lookup.
+        # CHANGED: April 2026 — fix hardcoded BUY (audit bug #9)
+        _strat_direction = strategy.get('direction')
+        if _strat_direction:
+            print(f"[EA GEN PANEL] Strategy direction: {_strat_direction}")
+        else:
+            print(f"[EA GEN PANEL] WARNING: selected strategy has no direction field")
+
         from project3_live_trading.ea_generator import generate_ea
         code = generate_ea(
             strategy=strategy,
@@ -615,6 +626,7 @@ def _generate():
             min_hold_minutes=_auto_min_hold[0],
             news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 5,
             max_spread_pips=float(_spread_var.get()) if _spread_var else 5.0,
+            direction=_strat_direction,
         )
     except Exception as e:
         import traceback; traceback.print_exc()

@@ -497,7 +497,13 @@ def load_strategy_list():
                     for i, r in enumerate(data.get('results', [])):
                         stats = r.get('stats', r)  # stats might be nested or at top level
                         wr = stats.get('win_rate', r.get('win_rate', 0))
-                        wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+                        # WHY: compute_stats in strategy_backtester.py always
+                        #      stores win_rate as percent (0-100). The old
+                        #      `wr > 1` ternary was a band-aid for an
+                        #      inconsistency that no longer exists — the
+                        #      else branch was dead code. Single format now.
+                        # CHANGED: April 2026 — remove dead band-aid
+                        wr_str = f"{wr:.0f}%"
                         net = stats.get('net_total_pips', r.get('net_total_pips', 0))
                         trades_count = stats.get('total_trades', r.get('total_trades', 0))
                         pf = stats.get('net_profit_factor', r.get('net_profit_factor', 0))
@@ -557,7 +563,13 @@ def load_strategy_list():
                 gross_loss = abs(sum(t.get('net_pips', 0) for t in opt_trades if t.get('net_pips', 0) < 0))
                 pf = gross_profit / max(gross_loss, 0.01) if gross_loss > 0 else 0
 
-            wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+            # WHY: compute_stats in strategy_backtester.py always
+            #      stores win_rate as percent (0-100). The old
+            #      `wr > 1` ternary was a band-aid for an
+            #      inconsistency that no longer exists — the
+            #      else branch was dead code. Single format now.
+            # CHANGED: April 2026 — remove dead band-aid
+            wr_str = f"{wr*100:.0f}%"
 
             results.append({
                 'index':             'optimizer_latest',
@@ -602,7 +614,13 @@ def load_strategy_list():
                 for entry in saved:
                     rule = entry.get('rule', {})
                     wr = rule.get('win_rate', 0)
-                    wr_str = f"{wr:.0f}%" if wr > 1 else f"{wr*100:.0f}%"
+                    # WHY: compute_stats in strategy_backtester.py always
+                    #      stores win_rate as percent (0-100). The old
+                    #      `wr > 1` ternary was a band-aid for an
+                    #      inconsistency that no longer exists — the
+                    #      else branch was dead code. Single format now.
+                    # CHANGED: April 2026 — remove dead band-aid
+                    wr_str = f"{wr:.0f}%"
                     pf = rule.get('net_profit_factor', 0)
                     source = entry.get('source', '?')
                     notes = entry.get('notes', '')
@@ -1428,6 +1446,7 @@ def deep_optimize_generate(
     filters=None,
     progress_callback=None,
     feature_matrix_path=None,
+    direction='BUY',  # NEW: pass strategy direction; was hardcoded BUY
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -1657,12 +1676,17 @@ def deep_optimize_generate(
         """
         nonlocal best_so_far
         try:
+            # WHY: Old code hardcoded direction="BUY". For SELL strategies the
+            #      optimizer would generate BUY trades unrelated to what the
+            #      strategy actually does. Use the strategy direction passed
+            #      to the outer function.
+            # CHANGED: April 2026 — respect strategy direction
             new_trades = fast_backtest(
                 df=_candles_trimmed,
                 ind=_indicators_trimmed,
                 rules=rules,
                 exit_strategy=exit_strat,
-                direction="BUY",
+                direction=direction,
                 pip_size=pip_size,
                 spread_pips=spread_pips,
                 commission_pips=commission_pips,
@@ -1751,7 +1775,13 @@ def deep_optimize_generate(
                         continue
                     modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
                     change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
-                    _test_rules(f"Threshold shift: {change}", modified_rules, exit_strategies[0], change)
+                    # WHY: Old code only tested exit_strategies[0] — if user
+                    #      provided multiple exits, all but the first were
+                    #      ignored in step 1. Test all of them per shift.
+                    # CHANGED: April 2026 — test all exits per shift
+                    for _es_idx, _es in enumerate(exit_strategies):
+                        _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
+                        _test_rules(f"Threshold shift: {change} ({_es_name})", modified_rules, _es, change)
                     _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
             except Exception as e:
                 print(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
@@ -1790,7 +1820,11 @@ def deep_optimize_generate(
                         'value':    float(threshold),
                     })
                     change = f"Added {ind_name} {operator} {threshold:.4f} to Rule 1"
-                    _test_rules(f"+ {ind_name} {operator} {threshold:.2f}", modified_rules, exit_strategies[0], change)
+                    # WHY: Same fix as step 1 — test ALL provided exits.
+                    # CHANGED: April 2026 — test all exits per indicator add
+                    for _es_idx, _es in enumerate(exit_strategies):
+                        _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
+                        _test_rules(f"+ {ind_name} {operator} {threshold:.2f} ({_es_name})", modified_rules, _es, change)
             _report(2, f"Testing indicator: {ind_name}")
         except Exception as e:
             print(f"[OPTIMIZER] Step 2 error on indicator '{ind_name}': {e}")
@@ -1819,7 +1853,11 @@ def deep_optimize_generate(
                 modified_rules[rule_idx]['conditions'] = rule_conds
                 feat = removed_cond.get('feature', '?')
                 change = f"Removed {feat} from Rule {rule_idx+1}"
-                _test_rules(f"- {feat} from R{rule_idx+1}", modified_rules, exit_strategies[0], change)
+                # WHY: Same fix as steps 1+2 — test ALL provided exits.
+                # CHANGED: April 2026 — test all exits per condition removal
+                for _es_idx, _es in enumerate(exit_strategies):
+                    _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
+                    _test_rules(f"- {feat} from R{rule_idx+1} ({_es_name})", modified_rules, _es, change)
                 _report(3, f"Remove: {feat} from R{rule_idx+1}")
             except Exception as e:
                 print(f"[OPTIMIZER] Step 3 error at rule {rule_idx}, cond {cond_idx}: {e}")

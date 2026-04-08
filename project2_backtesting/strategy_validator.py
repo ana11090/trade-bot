@@ -21,6 +21,17 @@ VALIDATION_PATH = os.path.join(_HERE, 'outputs', 'validation_results.json')
 
 _stop_flag = threading.Event()
 
+# WHY: Magic thresholds extracted from inline code so they're easy to find
+#      and adjust. Changing one value here updates every place that reads it.
+#      The defaults match the previous hardcoded values exactly — no behavior
+#      change unless someone deliberately overrides them.
+# CHANGED: April 2026 — extract magic numbers
+_DEFAULT_DAILY_DD_TOUCH_PCT  = 4.0   # was hardcoded in _compute_rich_window_stats
+_DEFAULT_TOTAL_DD_TOUCH_PCT  = 8.0   # was hardcoded in _compute_rich_window_stats
+_DEFAULT_RECOVERY_THRESHOLD  = 0.98  # within 2% of peak = recovered
+_DEFAULT_PROFIT_SPLIT_PCT    = 80.0  # default firm profit split
+_DEFAULT_EDGE_HELD_WR        = 0.50  # walk-forward "edge held" win rate floor (fraction)
+
 # ── Module-level data cache ────────────────────────────────────────────────────
 # WHY: walk_forward_validate and slippage_stress_test both load the same
 #      candles CSV + parquet. When called in sequence (validation panel runs
@@ -238,16 +249,18 @@ def _compute_rich_window_stats(trades, account_size=100000, risk_per_trade_pct=1
         # Daily DD: loss from start of day
         daily_dd = (daily_start - equity) / account_size * 100 if equity < daily_start else 0
         max_daily_dd_pct = max(max_daily_dd_pct, daily_dd)
-        if daily_dd >= 4.0:
+        # WHY: Threshold extracted to module constant — see top of file.
+        # CHANGED: April 2026 — no magic numbers
+        if daily_dd >= _DEFAULT_DAILY_DD_TOUCH_PCT:
             daily_dd_touches += 1
 
         # Total DD: loss from peak
         total_dd = (peak - equity) / account_size * 100 if equity < peak else 0
         max_total_dd_pct = max(max_total_dd_pct, total_dd)
-        if total_dd >= 8.0:
+        if total_dd >= _DEFAULT_TOTAL_DD_TOUCH_PCT:
             total_dd_touches += 1
 
-    dd_recovered = equity >= peak * 0.98  # within 2% of peak = recovered
+    dd_recovered = equity >= peak * _DEFAULT_RECOVERY_THRESHOLD
 
     # ── Monthly profits ───────────────────────────────────────────────────────
     monthly = {}
@@ -283,9 +296,13 @@ def _compute_rich_window_stats(trades, account_size=100000, risk_per_trade_pct=1
     month_counts = list(trades_by_month.values()) if trades_by_month else [0]
 
     # ── Payout estimation (14-day windows) ────────────────────────────────────
+    # WHY: Old code stepped by 7 days but windows are 14 days long → overlapping
+    #      windows counted each ~14-day period TWICE, distorting min/max
+    #      payout stats. Step by 14 days (non-overlapping) for clean stats.
+    # CHANGED: April 2026 — non-overlapping windows + module constant for split
     window_payouts = []
     if len(days_sorted) >= 5:
-        for start_i in range(0, len(days_sorted) - 3, 7):
+        for start_i in range(0, len(days_sorted) - 3, 14):
             start_day = pd.to_datetime(days_sorted[start_i])
             window_pnl = 0
             for d in days_sorted[start_i:]:
@@ -293,7 +310,7 @@ def _compute_rich_window_stats(trades, account_size=100000, risk_per_trade_pct=1
                     break
                 window_pnl += daily_pnl[d]
             if window_pnl > 0:
-                window_payouts.append(window_pnl * 0.80)  # 80% split default
+                window_payouts.append(window_pnl * (_DEFAULT_PROFIT_SPLIT_PCT / 100.0))
 
     base.update({
         'daily_dd_max_pct':   round(max_daily_dd_pct, 2),
@@ -495,21 +512,33 @@ def walk_forward_validate(
         in_wr  = in_stats['win_rate']
         out_wr = out_stats['win_rate']
 
+        # WHY: Helper to normalize win_rate from either percent (0..100) or
+        #      fraction (0..1) format. compute_stats stores percent;
+        #      compute_stats_summary stores fraction. Don't trust the source.
+        # CHANGED: April 2026 — single normalization helper
+        def _wr_to_fraction(wr):
+            try:
+                wr = float(wr)
+            except (TypeError, ValueError):
+                return 0.0
+            return wr / 100.0 if wr > 1 else wr
+
         # Fix: 0-trade windows should not show as "no degradation"
         if in_stats['count'] == 0 and out_stats['count'] == 0:
             degradation = 0.0
             edge_held = False  # No data = no edge
         elif in_wr > 0:
-            # WHY: compute_stats returns WR as percent (65.0), but older code
-            #      paths may return fraction (0.65). Normalize before ratio.
-            # CHANGED: April 2026 — normalize WR before degradation calc
-            in_wr_frac  = in_wr  / 100.0 if in_wr  > 1 else in_wr
-            out_wr_frac = out_wr / 100.0 if out_wr > 1 else out_wr
+            in_wr_frac  = _wr_to_fraction(in_wr)
+            out_wr_frac = _wr_to_fraction(out_wr)
             degradation = (out_wr_frac - in_wr_frac) / in_wr_frac * 100.0
-            edge_held   = out_wr_frac >= 0.50
+            edge_held   = out_wr_frac >= _DEFAULT_EDGE_HELD_WR
         else:
+            # WHY: Old fallback used out_wr without normalizing → percent
+            #      format always >= 0.50 → edge_held was always True even
+            #      when the out-of-sample win rate was actually low.
+            # CHANGED: April 2026 — normalize in fallback too
             degradation = 0.0
-            edge_held = out_wr >= 0.50
+            edge_held = _wr_to_fraction(out_wr) >= _DEFAULT_EDGE_HELD_WR
 
         results_windows.append({
             'window_idx':   i + 1,
