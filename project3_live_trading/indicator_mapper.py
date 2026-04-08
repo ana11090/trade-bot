@@ -77,20 +77,32 @@ INDICATOR_PATTERNS = [
         "description": "MACD histogram on {tf}",
     }),
     # SMA distance
+    # WHY: Python formula (shared/indicator_utils.py line 58) is
+    #      (close - sma) / sma * 100 — a PERCENTAGE. Old MQL5 divided
+    #      by _Point which gave POINTS (~100,000× different scale).
+    #      Rules trained on % would never fire in live.
+    #      Tradovate also updated to match: divide by sma and ×100.
+    # CHANGED: April 2026 — fix sma_distance scale mismatch (audit bug family #7)
     (r"^sma_(\d+)_distance$", {
-        "mt5_code":       "(iClose(NULL,{mt5_tf},1) - iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1)) / _Point",
-        "tradovate_code": "(df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1])",
+        "mt5_code":       "(((iClose(NULL,{mt5_tf},1) - iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1)) / MathMax(iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1), 0.000001)) * 100.0)",
+        "tradovate_code": "((df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1]) / max(ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
-        "description": "Distance from SMA({p}) on {tf}",
+        "description": "Distance from SMA({p}) as % on {tf}",
     }),
     # Bollinger Band width
+    # WHY: Python ta library's bollinger_wband() returns
+    #      (upper - lower) / middle × 100 — a PERCENTAGE (~1-10 typical).
+    #      Old MQL5 returned raw (upper - lower) which is price units
+    #      (~20-200 on XAUUSD). ~1000× scale difference.
+    #      MT5 iBands: buffer 0=middle, 1=upper, 2=lower.
+    # CHANGED: April 2026 — fix bb_width scale mismatch (audit bug family #7)
     (r"^bb_(\d+)_(\d+(?:\.\d+)?)_width$", {
         "mt5_handle_var":  "int handle_bb_{tf}_{p1}_{p2s};",
         "mt5_handle_init": "handle_bb_{tf}_{p1}_{p2s} = iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE); if(handle_bb_{tf}_{p1}_{p2s}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2); if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = _tmp1 - _tmp2; }",
+        "mt5_buffer_read": "double _tmp0 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 0); double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2); if(_tmp0 == EMPTY_VALUE || _tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = (_tmp0 > 0) ? ((_tmp1 - _tmp2) / _tmp0 * 100.0) : 0.0; }",
         "tradovate_code":  "ta.bbands(df_m{tv_tf}['close'], length={p1}, std={p2})['BBB_{p1}_{p2}_0'].iloc[-1]",
         "custom_indicator_mt5": False,
-        "description": "Bollinger Band({p1},{p2}) width on {tf}",
+        "description": "Bollinger Band({p1},{p2}) width as % of middle on {tf}",
     }),
     # Aroon
     (r"^aroon_(?:down|up)$", {
@@ -161,11 +173,16 @@ INDICATOR_PATTERNS = [
         "description": "Close position in bar range on {tf}",
     }),
     # Distance from high
+    # WHY: Python (indicator_utils.py line 174) computes
+    #      (high - close) / close × 100 — a PERCENTAGE (~0.0-2.0 typical).
+    #      Old MQL5 divided by _Point → POINTS (~0-2000 on XAUUSD).
+    #      ~100,000× scale difference.
+    # CHANGED: April 2026 — fix distance_from_high scale (audit bug family #7)
     (r"^distance_from_high$", {
-        "mt5_code":       "(iHigh(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},1))/_Point",
-        "tradovate_code": "df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['close'].iloc[-1]",
+        "mt5_code":       "((iHigh(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},1)) / MathMax(iClose(NULL,{mt5_tf},1), 0.000001) * 100.0)",
+        "tradovate_code": "((df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
-        "description": "Distance from bar high on {tf}",
+        "description": "Distance from bar high as % on {tf}",
     }),
     # Fibonacci distance
     (r"^distance_to_fib_(\d+)$", {
@@ -320,16 +337,26 @@ INDICATOR_PATTERNS = [
     }),
 
     # ── Standard Deviation ────────────────────────────────────────────────
+    # WHY: Python pandas .rolling().std() uses ddof=1 (sample std,
+    #      divisor N-1). MT5 iStdDev uses ddof=0 (population, divisor N).
+    #      Ratio: sqrt(N / (N-1)). At N=14 that's 1.037 (3.7% bigger
+    #      in Python). Multiply MQL5 value by this ratio to match.
+    # CHANGED: April 2026 — fix std_dev ddof mismatch (audit bug family #7)
     (r"^std_dev_(\d+)$", {
         "mt5_handle_var":  "int handle_std_{tf}_{p};",
         "mt5_handle_init": "handle_std_{tf}_{p} = iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_std_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double _raw_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); if(_raw_{var} == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = _raw_{var} * MathSqrt((double){p} / MathMax((double){p} - 1.0, 1.0)); }",
         "tradovate_code":  "df_m{tv_tf}['close'].rolling({p}).std().iloc[-1]",
         "custom_indicator_mt5": False,
-        "description": "Standard Deviation({p}) on {tf}",
+        "description": "Standard Deviation({p}) on {tf} (ddof=1 to match Python)",
     }),
 
     # ── Keltner Channel width ─────────────────────────────────────────────
+    # WHY: Python ta.keltner_channel_wband() returns
+    #      (upper - lower) / middle × 100 — a PERCENTAGE of middle line.
+    #      Old MQL5 returned raw (2 × ATR) in price units (~1000× different).
+    #      Keltner middle = EMA(20), so we normalize by EMA.
+    # CHANGED: April 2026 — fix keltner_width scale (audit bug family #7)
     (r"^keltner_width$", {
         "mt5_handle_var":  "int handle_ema_{tf}_20_kc; int handle_atr_{tf}_10_kc;",
         "mt5_handle_init": (
@@ -340,13 +367,13 @@ INDICATOR_PATTERNS = [
         "mt5_buffer_read": (
             "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0); "
             "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0); "
-            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
-            "else { double val_{var} = _tmp_atr * 2.0; }  "
-            "// Keltner width = 2 x ATR(10)"
+            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE || _tmp_ema <= 0) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double val_{var} = (_tmp_atr * 4.0) / _tmp_ema * 100.0; }  "
+            "// Keltner width % = (upper - lower) / middle × 100 = (4 × ATR) / EMA × 100"
         ),
-        "tradovate_code":  "ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 2",
+        "tradovate_code":  "((ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 4) / max(ta.ema(df_m{tv_tf}['close'],20).iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
-        "description": "Keltner Channel width (2×ATR(10)) on {tf}",
+        "description": "Keltner Channel width as % of middle on {tf}",
     }),
 ]
 
@@ -521,12 +548,15 @@ def _mql5_sub_expr(feat_name, uid=''):
     # Body-to-range ratio
     if ind == 'body_to_range_ratio':
         return ([], f'(MathAbs(iClose(NULL,{mt5_tf},1)-iOpen(NULL,{mt5_tf},1))/MathMax(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1),0.000001))')
-    # Pivot point = (H+L+C)/3 of previous D1 bar
+    # WHY: Python pivot uses previous bar of CURRENT timeframe
+    #      ((prev_high + prev_low + prev_close) / 3 via .shift(1)).
+    #      Old MQL5 hardcoded PERIOD_D1 which meant an H1 feature
+    #      would read YESTERDAY's D1 bar — completely different value.
+    # CHANGED: April 2026 — fix pivot_point timeframe (audit bug family #7)
     if ind == 'pivot_point':
-        return ([], f'((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0)')
-    # Pivot point distance = close - pivot
+        return ([], f'((iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
     if ind == 'pivot_point_distance':
-        return ([], f'(iClose(NULL,{mt5_tf},1)-(iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0)')
+        return ([], f'(iClose(NULL,{mt5_tf},0)-(iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
     # ROC (rate of change)
     if re.match(r'^roc_\d+$', ind):
         n = int(p) + 1
@@ -539,9 +569,16 @@ def _mql5_sub_expr(feat_name, uid=''):
             f'for(int _si=1;_si<20;_si++){{double _sc=iClose(NULL,{mt5_tf},_si);if(_sc<{lo_buf}){lo_buf}=_sc;if(_sc>{hi_buf}){hi_buf}=_sc;}}',
         ]
         return (lines, f'((iClose(NULL,{mt5_tf},1)-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
-    # TSI — complex, fallback to 0
+    # WHY: TSI (True Strength Index) requires double EMA of momentum which MT5 lacks as built-in.
+    #      Inline computation is complex (25+ lines with nested loops). Risk of subtle bugs.
+    #      Instead of silently returning 0, FAIL LOUD so user knows TSI features are broken.
+    # CHANGED: April 2026 — make TSI failure loud instead of silent (audit bug family #7, FIX 8 Option B)
     if ind == 'tsi':
-        return ([f'// TODO: TSI for {feat_name} — install TSI custom indicator'], '0.0')
+        return ([
+            f'Print("ERROR: TSI indicator not implemented for feature {feat_name}");',
+            f'Print("FIX: Either remove TSI features from rules OR implement custom TSI indicator");',
+            f'indicatorFailed = true;'
+        ], '0.0')
     # Unknown
     return ([f'// TODO: {feat_name} — unknown sub-feature'], '0.0')
 
@@ -591,11 +628,15 @@ def _py_sub_expr(feat_name):
         return f"({df}['high'].iloc[-1] - {df}['low'].iloc[-1])"
     if ind == 'body_to_range_ratio':
         return f"(abs({df}['close'].iloc[-1]-{df}['open'].iloc[-1])/max({df}['high'].iloc[-1]-{df}['low'].iloc[-1],1e-6))"
+    # WHY: Python indicator_utils computes pivot from previous bar of
+    #      CURRENT timeframe, not D1. Old code used df_d1440 which
+    #      produced different values for H1/M15/H4 features.
+    # CHANGED: April 2026 — fix pivot_point timeframe (audit bug family #7)
     if ind == 'pivot_point':
-        return "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+        return f"({df}['high'].iloc[-2]+{df}['low'].iloc[-2]+{df}['close'].iloc[-2])/3.0"
     if ind == 'pivot_point_distance':
         return (f"({df}['close'].iloc[-1]"
-                " - (df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0)")
+                f" - ({df}['high'].iloc[-2]+{df}['low'].iloc[-2]+{df}['close'].iloc[-2])/3.0)")
     if re.match(r'^roc_\d+$', ind):
         n = int(p) + 1
         return f"(({df}['close'].iloc[-1]-{df}['close'].iloc[-{n}])/max({df}['close'].iloc[-{n}],0.001))"
@@ -634,18 +675,24 @@ def _generate_smart_mql(feature_name, formula, platform):
             lines = ls_n + ls_d + [f'double val_{var_name} = (MathAbs({ed})>0)?({en}/MathMax(MathAbs({ed}),0.001)):0.0;']
 
         elif ftype == 'ratio_safe_price':
+            # WHY: Old code used D1 pivot as price proxy for normalization.
+            #      After FIX 4A/4B, pivot_point uses current timeframe, so
+            #      ratio features should normalize by current close, not D1 pivot.
+            # CHANGED: April 2026 — fix ratio normalization base (audit bug family #7)
             ls_n, en = _mql5_sub_expr(formula['num'], '_n')
             s = formula.get('scale', 100)
             lines = ls_n + [
-                'double _ps = MathMax((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0,1.0);',
+                'double _ps = MathMax(iClose(NULL,PERIOD_H1,0),1.0);',
                 f'double val_{var_name} = ({en}/_ps)*{s}.0;',
             ]
 
         elif ftype == 'ratio_safe_price_abs':
+            # WHY: Same as ratio_safe_price above.
+            # CHANGED: April 2026 — fix ratio normalization base (audit bug family #7)
             ls_n, en = _mql5_sub_expr(formula['num'], '_n')
             s = formula.get('scale', 100)
             lines = ls_n + [
-                'double _ps = MathMax((iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0,1.0);',
+                'double _ps = MathMax(iClose(NULL,PERIOD_H1,0),1.0);',
                 f'double val_{var_name} = (MathAbs({en})/_ps)*{s}.0;',
             ]
 
@@ -839,6 +886,11 @@ def _generate_smart_mql(feature_name, formula, platform):
             ]
 
         elif ftype == 'crossed_above':
+            # WHY: Old code hardcoded iRSI regardless of what indicator
+            #      formula['col'] referred to. 'SMART_adx_crossed_25' would
+            #      read RSI(14) instead of ADX(14) — silent wrong indicator.
+            #      Now dispatch based on the indicator in col.
+            # CHANGED: April 2026 — fix crossed_above indicator dispatch (audit bug family #7)
             col = formula['col']
             thr = formula['threshold']
             p_info = parse_feature_name(col)
@@ -846,12 +898,49 @@ def _generate_smart_mql(feature_name, formula, platform):
             mt5_tf  = tf_info['mt5']
             pr      = (p_info['params'] or ['14'])[0]
             buf     = f'_cx_{var_name}'
+            ind_name = p_info['indicator']
+
+            # Dispatch by indicator type — reads 2 consecutive values
+            if re.match(r'^rsi_\d+$', ind_name):
+                handle_expr = f'iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE)'
+                buf_idx = 0
+            elif re.match(r'^adx_\d+$', ind_name):
+                handle_expr = f'iADX(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            elif re.match(r'^cci_\d+$', ind_name):
+                handle_expr = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
+                buf_idx = 0
+            elif re.match(r'^stoch_\d+_k$', ind_name):
+                handle_expr = f'iStochastic(NULL,{mt5_tf},{pr},3,3,MODE_SMA,STO_LOWHIGH)'
+                buf_idx = 0  # %K main line
+            elif re.match(r'^williams_r_\d+$', ind_name):
+                handle_expr = f'iWPR(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            elif re.match(r'^atr_\d+$', ind_name):
+                handle_expr = f'iATR(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            else:
+                # Fallback: warn and disable this rule (better than silently wrong)
+                print(f"[WARN] crossed_above: unsupported indicator {ind_name!r} in {col!r} — rule will always be 0")
+                lines = [f'double val_{var_name} = 0.0; // crossed_above unsupported for {ind_name}']
+                return {
+                    'var_name':        var_name,
+                    'handle_var':      '',
+                    'handle_init':     '',
+                    'read_code':       _rc(lines),
+                    'custom_indicator': False,
+                    'description':     f'{feature_name} (unsupported indicator {ind_name})',
+                }
+
             lines = [
-                f'double {buf}[2]; CopyBuffer(iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE),0,0,2,{buf});',
+                f'double {buf}[2]; CopyBuffer({handle_expr},{buf_idx},0,2,{buf});',
                 f'double val_{var_name} = ({buf}[0]>{thr}&&{buf}[1]<={thr})?1.0:0.0;',
             ]
 
         elif ftype == 'crossed_below':
+            # WHY: Same fix as crossed_above — dispatch by indicator type
+            #      instead of hardcoding iRSI.
+            # CHANGED: April 2026 — fix crossed_below indicator dispatch (audit bug family #7)
             col = formula['col']
             thr = formula['threshold']
             p_info = parse_feature_name(col)
@@ -859,20 +948,58 @@ def _generate_smart_mql(feature_name, formula, platform):
             mt5_tf  = tf_info['mt5']
             pr      = (p_info['params'] or ['14'])[0]
             buf     = f'_cx_{var_name}'
+            ind_name = p_info['indicator']
+
+            if re.match(r'^rsi_\d+$', ind_name):
+                handle_expr = f'iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE)'
+                buf_idx = 0
+            elif re.match(r'^adx_\d+$', ind_name):
+                handle_expr = f'iADX(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            elif re.match(r'^cci_\d+$', ind_name):
+                handle_expr = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
+                buf_idx = 0
+            elif re.match(r'^stoch_\d+_k$', ind_name):
+                handle_expr = f'iStochastic(NULL,{mt5_tf},{pr},3,3,MODE_SMA,STO_LOWHIGH)'
+                buf_idx = 0
+            elif re.match(r'^williams_r_\d+$', ind_name):
+                handle_expr = f'iWPR(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            elif re.match(r'^atr_\d+$', ind_name):
+                handle_expr = f'iATR(NULL,{mt5_tf},{pr})'
+                buf_idx = 0
+            else:
+                print(f"[WARN] crossed_below: unsupported indicator {ind_name!r} in {col!r} — rule will always be 0")
+                lines = [f'double val_{var_name} = 0.0; // crossed_below unsupported for {ind_name}']
+                return {
+                    'var_name':        var_name,
+                    'handle_var':      '',
+                    'handle_init':     '',
+                    'read_code':       _rc(lines),
+                    'custom_indicator': False,
+                    'description':     f'{feature_name} (unsupported indicator {ind_name})',
+                }
+
             lines = [
-                f'double {buf}[2]; CopyBuffer(iRSI(NULL,{mt5_tf},{pr},PRICE_CLOSE),0,0,2,{buf});',
+                f'double {buf}[2]; CopyBuffer({handle_expr},{buf_idx},0,2,{buf});',
                 f'double val_{var_name} = ({buf}[0]<{thr}&&{buf}[1]>={thr})?1.0:0.0;',
             ]
 
         elif ftype == 'price_bucket':
+            # WHY: _px here represents current price for bucketing. Old
+            #      code computed previous D1 pivot which is a different
+            #      concept. Use current close to match Python semantics.
+            # CHANGED: April 2026 — fix price bucketing base (audit bug family #7)
             lines = [
-                'double _px = (iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0;',
+                'double _px = iClose(NULL,PERIOD_CURRENT,0);',
                 f'double val_{var_name} = (_px<1000)?0.0:(_px<2000)?1.0:(_px<3000)?2.0:3.0;',
             ]
 
         elif ftype == 'price_gt':
+            # WHY: Same as price_bucket above.
+            # CHANGED: April 2026 — fix price comparison base (audit bug family #7)
             lines = [
-                'double _px = (iHigh(NULL,PERIOD_D1,1)+iLow(NULL,PERIOD_D1,1)+iClose(NULL,PERIOD_D1,1))/3.0;',
+                'double _px = iClose(NULL,PERIOD_CURRENT,0);',
                 f'double val_{var_name} = (_px>{formula["value"]})?1.0:0.0;',
             ]
 
@@ -899,12 +1026,14 @@ def _generate_smart_mql(feature_name, formula, platform):
             en = _py(formula['num']); ed = _py(formula['den'])
             expr = f"(({en}) / max(abs({ed}), 0.001) if abs({ed}) > 0 else 0.0)"
         elif ftype in ('ratio_safe_price', 'ratio_safe_price_abs'):
+            # WHY: Match MQL5 side - use current H1 close for normalization.
+            # CHANGED: April 2026 — fix ratio normalization base (audit bug family #7)
             en = _py(formula['num']); s = formula.get('scale', 100)
-            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
+            price_proxy = "df_m60['close'].iloc[-1]"
             if ftype == 'ratio_safe_price_abs':
-                expr = f"(abs({en}) / max({pivot}, 1.0)) * {s}"
+                expr = f"(abs({en}) / max({price_proxy}, 1.0)) * {s}"
             else:
-                expr = f"(({en}) / max({pivot}, 1.0)) * {s}"
+                expr = f"(({en}) / max({price_proxy}, 1.0)) * {s}"
         elif ftype == 'count_gt':
             parts = [f"(1 if ({_py(c)}) > {formula['threshold']} else 0)" for c in formula['cols']]
             expr = f"float({' + '.join(parts)})"
@@ -1005,11 +1134,15 @@ def _generate_smart_mql(feature_name, formula, platform):
             expr = (f"(1.0 if ta.rsi({df}['close'],length={pr}).iloc[-1]<{thr}"
                     f" and ta.rsi({df}['close'],length={pr}).iloc[-2]>={thr} else 0.0)")
         elif ftype == 'price_bucket':
-            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
-            expr = f"(lambda p: 0.0 if p<1000 else 1.0 if p<2000 else 2.0 if p<3000 else 3.0)({pivot})"
+            # WHY: Match MQL5 side - use current close for price bucketing.
+            # CHANGED: April 2026 — fix price bucketing base (audit bug family #7)
+            price = "df_m60['close'].iloc[-1]"
+            expr = f"(lambda p: 0.0 if p<1000 else 1.0 if p<2000 else 2.0 if p<3000 else 3.0)({price})"
         elif ftype == 'price_gt':
-            pivot = "(df_d1440['high'].iloc[-2]+df_d1440['low'].iloc[-2]+df_d1440['close'].iloc[-2])/3.0"
-            expr = f"(1.0 if ({pivot}) > {formula['value']} else 0.0)"
+            # WHY: Match MQL5 side - use current close for price comparison.
+            # CHANGED: April 2026 — fix price comparison base (audit bug family #7)
+            price = "df_m60['close'].iloc[-1]"
+            expr = f"(1.0 if ({price}) > {formula['value']} else 0.0)"
         else:
             expr = f"0.0  # TODO: formula type {ftype}"
 
