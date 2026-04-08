@@ -780,11 +780,46 @@ def _build_inner(inner):
         max_daily_dd_dollars = account_size * (daily_dd_pct / 100)
         safe_risk_per_trade = max_daily_dd_dollars * 0.5  # Conservative: 50% of daily limit
 
-        # Assume pip value for gold (standard lot = $10/pip)
+        # WHY: Old code hardcoded pip_value_per_lot=10 for XAUUSD, which
+        #      is WRONG for the actual MT5 broker-side calculation.
+        #      1 XAUUSD lot = 100 oz × $0.01/pip = $1/pip, not $10.
+        #      The cancellation math elsewhere in the codebase hides
+        #      this error in P&L computations, but this panel displays
+        #      the lot size directly to the user who then enters it
+        #      into MT5 — so the displayed value was 10× too small
+        #      (user typed 0.07 when they should have typed 0.67).
+        # CHANGED: April 2026 — use correct per-symbol pip value
+        #                       (audit bug family #1)
+        try:
+            from project2_backtesting.panels.configuration import INSTRUMENT_SPECS
+            _symbol = state.selected_symbol.get() if hasattr(state, 'selected_symbol') else 'XAUUSD'
+            _specs = INSTRUMENT_SPECS.get(_symbol, {})
+            # INSTRUMENT_SPECS has pip_value=10 for XAUUSD (cancels in backtest math),
+            # but for direct-to-MT5 lot size we need the REAL pip value.
+            # Override per-symbol here:
+            _real_pip_value = {
+                'XAUUSD':  1.0,   # 100 oz × $0.01 = $1/pip/lot
+                'XAGUSD':  5.0,   # 5000 oz × $0.001 = $5/pip/lot
+                'EURUSD': 10.0,   # 100000 × 0.0001 = $10/pip/lot
+                'GBPUSD': 10.0,
+                'USDJPY':  6.7,   # approximate, depends on rate
+                'GBPJPY':  6.7,
+                'AUDUSD': 10.0,
+                'USDCAD':  7.3,   # approximate
+                'USDCHF': 11.0,   # approximate
+                'NZDUSD': 10.0,
+                'US30':    1.0,
+                'NAS100':  1.0,
+                'BTCUSD':  1.0,
+            }.get(_symbol, 10.0)
+        except Exception:
+            _symbol = 'XAUUSD'
+            _real_pip_value = 1.0
+
         # Calculate lot size based on safe risk
         # For conservative approach, assume 150-pip SL
         assumed_sl_pips = 150
-        pip_value_per_lot = 10
+        pip_value_per_lot = _real_pip_value
         safe_lot_size = safe_risk_per_trade / (assumed_sl_pips * pip_value_per_lot)
 
         # Calculate actual risk% based on account size
@@ -801,12 +836,16 @@ def _build_inner(inner):
             f"Total DD Limit: {total_dd_pct}% (${account_size * (total_dd_pct/100):,.0f})"
         )
 
-        # Display safe parameters
+        # Display safe parameters (showing which symbol the lot size is for)
+        # WHY: Users need to see that the lot size is symbol-specific
+        #      so they don't apply it to a different instrument by mistake.
+        # CHANGED: April 2026 — show symbol + lot-size tooltip
         prop_safe_sl_var.set(
-            f"✅ Auto-Calculated Safe Parameters:\n"
+            f"✅ Auto-Calculated Safe Parameters ({_symbol}):\n"
             f"   Risk per trade: {safe_risk_pct:.2f}% (${safe_risk_per_trade:,.0f})  |  "
             f"SL: {suggested_sl} pips  |  TP: {suggested_tp} pips  |  "
-            f"Lot Size: {safe_lot_size:.2f}"
+            f"Lot Size: {safe_lot_size:.2f} lots  "
+            f"(enter this value directly in MT5)"
         )
 
         # Auto-update SL/TP fields in Settings section

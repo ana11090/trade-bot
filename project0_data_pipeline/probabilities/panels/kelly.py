@@ -109,47 +109,104 @@ def _on_calculate():
                  padx=14, pady=10).pack(fill="x")
         return
 
+    # WHY: The Kelly formula returns a BET FRACTION — the fraction of
+    #      bankroll to put at risk of being lost ENTIRELY. For trading
+    #      with a stop loss, the bet's downside is the SL distance in
+    #      dollars (avg_loss), NOT the full position. So the equivalent
+    #      per-trade account risk is kelly_fraction × avg_loss / account.
+    #      Example: Kelly=25%, avg_loss=$200, account=$10k →
+    #      account_risk = 0.25 × 200 / 10000 = 0.5% per trade.
+    #      Users who read "25%" as "risk 25% per trade" would over-bet
+    #      by 50×. Relabel as bet fraction and add a separate risk row.
+    # CHANGED: April 2026 — distinguish bet fraction from per-trade risk
+    #                       (audit bug #13)
+    full_risk_pct    = (kelly_pct    / 100) * avg_loss / starting_bal * 100
+    half_risk_pct    = (half_kelly   / 100) * avg_loss / starting_bal * 100
+    quarter_risk_pct = (quarter_kelly/ 100) * avg_loss / starting_bal * 100
+
     kc = "#27ae60" if kelly_pct <= 25 else "#e67e22" if kelly_pct <= 50 else "#e94560"
-    _row("Full Kelly", f"{kelly_pct:.1f}%  (${kelly_dollar:,.2f})",
-         "Mathematically optimal but very volatile. NOT recommended to use in full.",
+
+    # Header for the bet-fraction block
+    tk.Label(stats_frame,
+             text="Bet fraction (fraction of bankroll the Kelly formula says to wager)",
+             bg="#f0f2f5", fg="#555",
+             font=("Segoe UI", 9, "italic")).pack(anchor="w", pady=(4, 2))
+
+    _row("Full Kelly (bet fraction)", f"{kelly_pct:.1f}%  (${kelly_dollar:,.2f})",
+         "Mathematically optimal bet fraction — NOT a per-trade risk figure.",
          vc=kc)
-    _row("Half-Kelly  ← recommended", f"{half_kelly:.1f}%  (${half_kelly_dollar:,.2f})",
-         "Half of Kelly. Captures most of the growth with much lower drawdown risk.",
+    _row("Half-Kelly (bet fraction)", f"{half_kelly:.1f}%  (${half_kelly_dollar:,.2f})",
+         "Half of the Kelly bet fraction. Captures most growth, lower drawdown.",
          vc="#27ae60")
-    _row("Quarter-Kelly  ← conservative", f"{quarter_kelly:.1f}%  (${quarter_kelly_dollar:,.2f})",
-         "Very safe. Slower growth but minimal risk of ruin.",
+    _row("Quarter-Kelly (bet fraction)", f"{quarter_kelly:.1f}%  (${quarter_kelly_dollar:,.2f})",
+         "Quarter Kelly bet fraction. Very conservative.",
+         vc="#27ae60")
+
+    ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", pady=4)
+
+    # WHY: This is the number the user should actually enter as their
+    #      per-trade risk. Different from the bet fraction above.
+    # CHANGED: April 2026 — add equivalent per-trade risk values
+    tk.Label(stats_frame,
+             text=f"Equivalent per-trade risk (use THIS in your risk settings — based on avg loss ${avg_loss:.2f})",
+             bg="#f0f2f5", fg="#16213e",
+             font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
+
+    _row("Full Kelly → risk per trade",
+         f"{full_risk_pct:.2f}%",
+         "This is the per-trade account risk equivalent to Full Kelly.",
+         vc=kc)
+    _row("Half-Kelly → risk per trade  ← recommended",
+         f"{half_risk_pct:.2f}%",
+         "Use this number in your risk settings. Balanced growth vs volatility.",
+         vc="#27ae60")
+    _row("Quarter-Kelly → risk per trade",
+         f"{quarter_risk_pct:.2f}%",
+         "Conservative per-trade risk. Very safe, slower growth.",
          vc="#27ae60")
 
     ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", pady=6)
 
+    # WHY: Advice text now refers to the per-trade risk number (the
+    #      thing the user should actually enter), not the bet fraction.
+    # CHANGED: April 2026 — rewrite advice in terms of per-trade risk
     # Interpretation
     if kelly_pct < 10:
-        advice = (f"Full Kelly is only {kelly_pct:.1f}% — the edge exists but is thin. "
-                  f"Use Half-Kelly ({half_kelly:.1f}%) and focus on improving win rate or avg win.")
+        advice = (f"Kelly edge is thin (full Kelly bet fraction = {kelly_pct:.1f}%). "
+                  f"Recommended per-trade risk: {half_risk_pct:.2f}% (half-Kelly equivalent). "
+                  f"Focus on improving win rate or avg win before increasing risk.")
     elif kelly_pct <= 25:
-        advice = (f"Full Kelly is {kelly_pct:.1f}% — a solid edge. "
-                  f"Half-Kelly ({half_kelly:.1f}%) is a good practical choice.")
+        advice = (f"Solid edge (full Kelly bet fraction = {kelly_pct:.1f}%). "
+                  f"Recommended per-trade risk: {half_risk_pct:.2f}% (half-Kelly equivalent). "
+                  f"This is the number to enter in your risk settings.")
     elif kelly_pct <= 50:
-        advice = (f"Full Kelly is {kelly_pct:.1f}% — a strong edge but full Kelly is very risky at this level. "
-                  f"Use Half-Kelly ({half_kelly:.1f}%) or Quarter-Kelly ({quarter_kelly:.1f}%).")
+        advice = (f"Strong edge (full Kelly bet fraction = {kelly_pct:.1f}%) but full Kelly is very risky. "
+                  f"Recommended per-trade risk: {half_risk_pct:.2f}% (half-Kelly) or "
+                  f"{quarter_risk_pct:.2f}% (quarter-Kelly) for lower volatility.")
     else:
-        advice = (f"Full Kelly is {kelly_pct:.1f}% — extremely high, which often signals a small sample size. "
-                  f"Use Quarter-Kelly ({quarter_kelly:.1f}%) until you have more trades to confirm the edge.")
+        advice = (f"Extremely high Kelly bet fraction ({kelly_pct:.1f}%) — often a sign of small sample size. "
+                  f"Use conservative per-trade risk: {quarter_risk_pct:.2f}% (quarter-Kelly equivalent) "
+                  f"until you have more trades to confirm the edge.")
 
     tk.Label(_result_frame, text=advice,
              bg="#fff3cd", fg="#856404", font=("Segoe UI", 9),
              wraplength=820, justify="left", padx=14, pady=10).pack(fill="x", pady=(0, 10))
 
     # ── Chart: Kelly fraction vs growth rate ──────────────────────────────────
+    # WHY: Chart x-axis is bet fraction, not risk-per-trade. Label
+    #      accordingly so users don't misread the x-values.
+    # CHANGED: April 2026 — clarify x-axis is bet fraction
     tk.Label(_result_frame,
-             text="Chart — Risk % vs Long-Term Growth Rate",
+             text="Chart — Bet Fraction vs Long-Term Growth Rate",
              bg="#f0f2f5", fg="#16213e",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
     tk.Label(_result_frame,
-             text="This chart shows what happens to long-term account growth as you change "
-                  "how much you risk per trade. The peak of the curve is the Full Kelly point. "
-                  "Going past the peak actually makes you grow SLOWER (or lose money). "
-                  "The recommended zone is around Half-Kelly.",
+             text="This chart shows long-term account growth as a function of the BET FRACTION "
+                  "(fraction of bankroll wagered on each trade, assuming full bet at risk). "
+                  "The peak is the Full Kelly point. Going past the peak actually makes you "
+                  "grow SLOWER. The x-axis shows bet fraction, NOT per-trade account risk — "
+                  "see the 'Equivalent per-trade risk' rows above for the number to actually "
+                  "use in your risk settings.",
              bg="#f0f2f5", fg="#666", font=("Segoe UI", 8),
              wraplength=820).pack(anchor="w", pady=(0, 6))
 

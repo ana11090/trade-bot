@@ -596,15 +596,36 @@ def _on_calc_health():
                 color=be_color)
 
     if kelly_pct is not None:
+        # WHY: Kelly returns a BET FRACTION, not per-trade risk. The
+        #      equivalent per-trade account risk for a trading strategy
+        #      with stop-loss is kelly_fraction × avg_loss / account.
+        #      Old label "Mathematically optimal risk per trade" was
+        #      wrong — users following that number would over-bet
+        #      by 10-100×.
+        # CHANGED: April 2026 — distinguish bet fraction from risk per trade
+        #                       (audit bug #13)
         kelly_color = "#27ae60" if kelly_pct > 0 else "#e94560"
-        _metric(container, "Kelly Criterion (full)",
-                f"{kelly_pct:.1f}% of account",
-                "Mathematically optimal risk per trade. Above 25% is considered very aggressive.",
+
+        # Equivalent per-trade account risk
+        full_risk_pct = (kelly_pct  / 100) * abs(avg_loss) / starting_bal * 100
+        half_risk_pct = (half_kelly / 100) * abs(avg_loss) / starting_bal * 100
+
+        _metric(container, "Kelly bet fraction (full)",
+                f"{kelly_pct:.1f}% of bankroll",
+                "Kelly formula output — the fraction of bankroll to WAGER (not risk per trade).",
                 color=kelly_color)
-        _metric(container, "Half-Kelly (recommended)",
-                f"{half_kelly:.1f}% of account",
-                "Half of Kelly — the practical recommendation to reduce volatility.",
+        _metric(container, "Kelly bet fraction (half)",
+                f"{half_kelly:.1f}% of bankroll",
+                "Half the Kelly bet fraction. Lower volatility than full Kelly.",
                 color=kelly_color)
+        _metric(container, "→ Per-trade risk (full Kelly equiv.)",
+                f"{full_risk_pct:.2f}% of account",
+                f"Actual per-trade risk to enter in your settings (based on avg loss ${abs(avg_loss):.2f}).",
+                color=kelly_color)
+        _metric(container, "→ Per-trade risk (half-Kelly equiv.) ← recommended",
+                f"{half_risk_pct:.2f}% of account",
+                "The per-trade risk to actually use. Safer than full Kelly equivalent.",
+                color="#27ae60")
 
     ttk.Separator(container, orient="horizontal").pack(fill="x", pady=6)
 

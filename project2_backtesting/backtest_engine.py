@@ -441,7 +441,15 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
 
         gross_wins = sum(t['gross_profit'] for t in trades if t['gross_profit'] > 0)
         gross_losses = abs(sum(t['gross_profit'] for t in trades if t['gross_profit'] < 0))
-        profit_factor = gross_wins / gross_losses if gross_losses > 0 else 0
+        # WHY: Lossless strategies got PF=0 and ranked at bottom. See
+        #      compute_stats.py Fix 5.4a for full explanation.
+        # CHANGED: April 2026 — fix lossless profit_factor (audit family #6)
+        if gross_losses > 0:
+            profit_factor = gross_wins / gross_losses
+        elif gross_wins > 0:
+            profit_factor = 99.99
+        else:
+            profit_factor = 0.0
 
         print(f"[BACKTEST ENGINE] {period_name} complete: {len(trades)} trades. "
               f"Win rate: {win_rate:.1f}%. Profit factor: {profit_factor:.2f}. "

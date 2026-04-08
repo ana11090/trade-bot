@@ -61,7 +61,19 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
     total_loss = abs(losses.sum()) if len(losses) > 0 else 0
     net_profit = total_profit - total_loss
 
-    profit_factor = (total_profit / total_loss) if total_loss > 0 else 0
+    # WHY: Old code returned 0 when there were no losing trades, which
+    #      meant lossless strategies got ranked at the BOTTOM instead
+    #      of the top when sorting by profit_factor. Return 99.99 as a
+    #      sentinel (matches strategy_backtester._safe_pf convention).
+    #      99.99 is "basically infinity" for display purposes and
+    #      sorts correctly. Zero profit AND zero loss → genuine 0.
+    # CHANGED: April 2026 — fix lossless profit_factor (audit family #6)
+    if total_loss > 0:
+        profit_factor = total_profit / total_loss
+    elif total_profit > 0:
+        profit_factor = 99.99  # sentinel for "effectively infinite"
+    else:
+        profit_factor = 0.0    # genuinely zero (no trades / flat)
 
     avg_win = wins.mean() if len(wins) > 0 else 0
     avg_loss = losses.mean() if len(losses) > 0 else 0

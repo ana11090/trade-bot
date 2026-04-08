@@ -1070,13 +1070,22 @@ def stop_optimization():
     _stop_flag.set()
 
 
-def _score_trades(trades, target_firm=None, stage="funded", account_size=100000):
+def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
+                  sl_pips=None):
     """
     Score trades for prop firm suitability.
 
     stage="evaluation": maximize profit speed, ignore consistency
     stage="funded": maximize consistency + survival, penalize spiky days
     account_size: account size for proper DD% calculation
+    sl_pips: the ACTUAL SL distance of the strategy being scored.
+             If None, falls back to config default. Used in DD math
+             so strategies with wide/narrow SL are scored fairly.
+
+    # WHY: Old code read default_sl_pips from global config and used it
+    #      for every strategy. A strategy with sl_pips=300 got lot size
+    #      computed with 150, producing DD% that was 2× reality.
+    # CHANGED: April 2026 — accept per-strategy sl_pips (audit family #2)
     """
     if not trades or len(trades) < 5:
         return -999.0
@@ -1134,20 +1143,24 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000)
 
         score += min(total_pips / 1000, 20)
 
-        # WHY: Was hardcoded to sl_pips=150 and risk=1%. Different strategies
-        #      use different SL distances, so DD math was systematically wrong.
-        #      Read actual values from config when available.
-        # CHANGED: April 2026 — use config values instead of hardcoded
+        # WHY: Prefer per-strategy sl_pips passed into this function.
+        #      Fall back to config only when caller didn't provide one.
+        #      Old code ALWAYS used config, ignoring the specific
+        #      strategy's actual SL — DD math was 2× off for a
+        #      strategy with sl_pips=300 (config default = 150).
+        # CHANGED: April 2026 — use per-strategy sl_pips (audit family #2)
         try:
             from project2_backtesting.panels.configuration import load_config
             _cfg = load_config()
-            sl_pips      = float(_cfg.get('default_sl_pips', 150))
-            pip_value    = float(_cfg.get('pip_value_per_lot', 10.0))
-            risk_pct_cfg = float(_cfg.get('risk_pct', 1.0))
+            _sl_pips_eval = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
+            pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
+            risk_pct_cfg  = float(_cfg.get('risk_pct', 1.0))
         except Exception:
-            sl_pips = 150.0; pip_value = 10.0; risk_pct_cfg = 1.0
+            _sl_pips_eval = float(sl_pips) if sl_pips is not None else 150.0
+            pip_value    = 10.0
+            risk_pct_cfg = 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
-        lot_size      = max(0.01, risk_dollars / (sl_pips * pip_value)) if (sl_pips * pip_value) > 0 else 0.01
+        lot_size      = max(0.01, risk_dollars / (_sl_pips_eval * pip_value)) if (_sl_pips_eval * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
@@ -1176,17 +1189,22 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000)
         elif tpd > 5:
             score -= (tpd - 5) * 3
 
+        # WHY: Same fix as eval-stage block above — respect per-strategy
+        #      sl_pips. See Fix 5.3b comment for full explanation.
+        # CHANGED: April 2026 — use per-strategy sl_pips (audit family #2)
         # DD penalty — use config values (same block as challenge phase above)
         try:
             from project2_backtesting.panels.configuration import load_config
             _cfg = load_config()
-            sl_pips      = float(_cfg.get('default_sl_pips', 150))
-            pip_value    = float(_cfg.get('pip_value_per_lot', 10.0))
-            risk_pct_cfg = float(_cfg.get('risk_pct', 1.0))
+            _sl_pips_fund = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
+            pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
+            risk_pct_cfg  = float(_cfg.get('risk_pct', 1.0))
         except Exception:
-            sl_pips = 150.0; pip_value = 10.0; risk_pct_cfg = 1.0
+            _sl_pips_fund = float(sl_pips) if sl_pips is not None else 150.0
+            pip_value    = 10.0
+            risk_pct_cfg = 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
-        lot_size      = max(0.01, risk_dollars / (sl_pips * pip_value)) if (sl_pips * pip_value) > 0 else 0.01
+        lot_size      = max(0.01, risk_dollars / (_sl_pips_fund * pip_value)) if (_sl_pips_fund * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
@@ -1257,8 +1275,25 @@ def deep_optimize(
     if target_firm_data and isinstance(target_firm_data, dict):
         stage = target_firm_data.get('stage', 'funded')
 
+    # WHY: Extract actual SL from the first exit strategy so DD scoring
+    #      can reflect the real per-trade risk. If exit_strategies is
+    #      empty or the first one has no sl_pips attribute, fall back
+    #      to None (which makes _score_trades use the config default).
+    # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
+    _base_sl_pips = None
+    try:
+        if exit_strategies and len(exit_strategies) > 0:
+            _first_exit = exit_strategies[0]
+            if hasattr(_first_exit, 'sl_pips'):
+                _base_sl_pips = float(_first_exit.sl_pips)
+            elif isinstance(_first_exit, dict):
+                _base_sl_pips = float(_first_exit.get('sl_pips', 150))
+    except Exception:
+        _base_sl_pips = None
+
     base_stats  = compute_stats_summary(trades)
-    base_score  = _score_trades(trades, target_firm_data, stage, account_size)
+    base_score  = _score_trades(trades, target_firm_data, stage, account_size,
+                                sl_pips=_base_sl_pips)
     best_so_far = {
         'name':           'Base (no changes)',
         'trades':         len(trades),
@@ -1290,7 +1325,12 @@ def deep_optimize(
         if len(kept_trades) < 5:
             return
         s = compute_stats_summary(kept_trades)
-        score = _score_trades(kept_trades, target_firm_data, stage, account_size)
+        # WHY: Use the base strategy's sl_pips since candidates derived
+        #      from filter scanning don't change SL. Candidates that
+        #      change the exit strategy will need separate handling.
+        # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
+        score = _score_trades(kept_trades, target_firm_data, stage, account_size,
+                              sl_pips=_base_sl_pips)
         candidate = {
             'name':             name,
             'rules':            base_rules,
@@ -1638,8 +1678,22 @@ def deep_optimize_generate(
     if target_firm_data and isinstance(target_firm_data, dict):
         stage = target_firm_data.get('stage', 'funded')
 
+    # WHY: Extract actual SL from the first exit strategy for proper DD scoring.
+    # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
+    _base_sl_pips = None
+    try:
+        if exit_strategies and len(exit_strategies) > 0:
+            _first_exit = exit_strategies[0]
+            if hasattr(_first_exit, 'sl_pips'):
+                _base_sl_pips = float(_first_exit.sl_pips)
+            elif isinstance(_first_exit, dict):
+                _base_sl_pips = float(_first_exit.get('sl_pips', 150))
+    except Exception:
+        _base_sl_pips = None
+
     base_stats = compute_stats_summary(trades)
-    base_score = _score_trades(trades, target_firm_data, stage, account_size)
+    base_score = _score_trades(trades, target_firm_data, stage, account_size,
+                                sl_pips=_base_sl_pips)
     best_so_far = {
         'name':           'Base (original)',
         'trades':         len(trades),
@@ -1708,7 +1762,18 @@ def deep_optimize_generate(
             final_trades = enriched
 
         stats = compute_stats_summary(final_trades)
-        score = _score_trades(final_trades, target_firm_data, stage, account_size)
+        # WHY: Extract sl_pips from the exit strategy being tested for proper DD scoring.
+        # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
+        _exit_sl_pips = None
+        try:
+            if hasattr(exit_strat, 'sl_pips'):
+                _exit_sl_pips = float(exit_strat.sl_pips)
+            elif isinstance(exit_strat, dict):
+                _exit_sl_pips = float(exit_strat.get('sl_pips', 150))
+        except Exception:
+            _exit_sl_pips = None
+        score = _score_trades(final_trades, target_firm_data, stage, account_size,
+                              sl_pips=_exit_sl_pips)
 
         exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
         exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name
