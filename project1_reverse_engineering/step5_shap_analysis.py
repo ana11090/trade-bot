@@ -18,6 +18,10 @@ import shap
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+# WHY: share the NaN sentinel with step4 so train/test encode NaN identically
+# CHANGED: April 2026 — replace fillna(0) (audit bug #12)
+from step4_train_model import fill_feature_nans
+
 
 # ============================================================
 # CONFIGURATION
@@ -72,7 +76,7 @@ def shap_analysis_for_scenario(scenario):
 
         print(f"  Loaded test data: {len(test_data)} trades")
 
-        X_test = test_data[feature_cols].fillna(0)
+        X_test = fill_feature_nans(test_data[feature_cols])
 
         # Limit to SHAP_MAX_SAMPLES for faster computation
         if len(X_test) > SHAP_MAX_SAMPLES:

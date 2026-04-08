@@ -24,6 +24,10 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.tree import DecisionTreeClassifier
 
+# WHY: share the NaN sentinel with step4
+# CHANGED: April 2026 — replace fillna(0) (audit bug #12)
+from step4_train_model import fill_feature_nans
+
 _HERE      = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(_HERE, 'outputs')
 
@@ -87,9 +91,9 @@ def _prep_Xy(df, train_split):
         train_df  = df.iloc[:split_idx].copy()
         test_df   = df.iloc[split_idx:].copy()
 
-    X_train = train_df[feature_cols].fillna(0)
+    X_train = fill_feature_nans(train_df[feature_cols])
     y_train = train_df['outcome']
-    X_test  = test_df[feature_cols].fillna(0)
+    X_test  = fill_feature_nans(test_df[feature_cols])
     y_test  = test_df['outcome']
 
     return X_train, y_train, X_test, y_test, feature_cols

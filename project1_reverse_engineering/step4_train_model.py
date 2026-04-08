@@ -19,6 +19,26 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared import data_utils
 
 
+# WHY: fillna(0) on indicator features is semantically wrong because 0 is a
+#      meaningful value for RSI (max oversold), ADX (no trend), MACD (zero
+#      cross), Stochastic, CCI, and many others. Warmup-period NaN must be
+#      distinguishable from real 0s. -999 is a sentinel that no real
+#      indicator can produce, and tree-based models (RandomForest, XGBoost)
+#      naturally isolate sentinel rows in their own split branch.
+# CHANGED: April 2026 — replace fillna(0) with sentinel (audit bug #12)
+NAN_SENTINEL = -999.0
+
+def fill_feature_nans(X):
+    """Replace NaN/inf in a feature DataFrame with NAN_SENTINEL.
+
+    Used by step4/5/6/7 + xgboost_discovery to handle indicator warmup
+    periods without corrupting semantics. Trees will split on
+    `feature < -500` to isolate sentinel rows from real values.
+    """
+    import numpy as np
+    return X.replace([np.inf, -np.inf], np.nan).fillna(NAN_SENTINEL)
+
+
 def prepare_features(data, scenario=None):
     """Transform raw labeled data into clean numeric features for ML.
 
@@ -210,12 +230,13 @@ def train_model_for_scenario(scenario):
         print(f"  Train set: {len(train_data)} trades")
         print(f"  Test set: {len(test_data)} trades")
 
-        # Prepare training data
-        X_train = train_data[feature_cols].fillna(0)  # Fill any remaining NaN values
+        # WHY: Sentinel fill preserves indicator semantics (RSI=0 is max
+        #      oversold, not missing). See NAN_SENTINEL comment above.
+        # CHANGED: April 2026 — replace fillna(0) with sentinel (audit bug #12)
+        X_train = fill_feature_nans(train_data[feature_cols])
         y_train = train_data['outcome']
 
-        # Prepare test data
-        X_test = test_data[feature_cols].fillna(0)
+        X_test = fill_feature_nans(test_data[feature_cols])
         y_test = test_data['outcome']
 
         # Train Random Forest classifier

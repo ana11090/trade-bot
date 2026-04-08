@@ -84,7 +84,21 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     best_verified = 0
     results = []
 
-    candles_sorted = detect_candles.sort_values('timestamp')
+    # WHY: Old code used merge_asof(direction='backward') which assigns each
+    #      trade to its CONTAINING candle, then checks if the trade price is
+    #      in that candle's OHLC range. Since the trade happened INSIDE that
+    #      candle, it's definitionally in the range — every offset scored
+    #      ~100% and the "best" was just whichever won the tie. Detector was
+    #      statistically broken.
+    #
+    #      Correct test: trade entry_price should match the OPEN of the
+    #      candle that STARTS at or just after open_time. If we shift the
+    #      trade time by `offset_hours` and the entry_price matches the
+    #      open of the candle immediately following, the offset is correct.
+    #      This is NOT something we can satisfy for every offset by accident
+    #      — there's one right answer.
+    # CHANGED: April 2026 — fix tautological offset detection (audit bug #14)
+    candles_sorted = detect_candles.sort_values('timestamp').reset_index(drop=True)
 
     for offset_hours in candidate_offsets:
         shifted = sample.copy()
@@ -93,20 +107,33 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
         try:
             shifted_sorted = shifted.sort_values('open_time')
 
+            # Use direction='forward' to find the candle that starts AT or
+            # AFTER the shifted trade time — that's the candle whose OPEN
+            # price is what the trader saw.
             merged = pd.merge_asof(
                 shifted_sorted[['open_time', 'entry_price']],
-                candles_sorted[['timestamp', 'high', 'low']],
+                candles_sorted[['timestamp', 'open']] if 'open' in candles_sorted.columns
+                    else candles_sorted[['timestamp', 'high', 'low']],
                 left_on='open_time',
                 right_on='timestamp',
-                direction='backward',
+                direction='forward',
+                tolerance=pd.Timedelta(hours=2),
             )
 
-            # Count how many trades have entry_price in [low, high]
-            tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
-            in_range = (
-                (merged['entry_price'] >= merged['low'] - tolerance) &
-                (merged['entry_price'] <= merged['high'] + tolerance)
-            )
+            if 'open' in merged.columns:
+                # Match if entry_price is within a few pips of the candle open
+                match_tol = ALIGNMENT_TOLERANCE * PIP_SIZE * 5  # looser than range check
+                in_range = (merged['entry_price'] - merged['open']).abs() <= match_tol
+            else:
+                # Fallback: candles_df has no 'open' column — fall back to the
+                # looser check (entry_price in low..high of NEXT candle). Still
+                # meaningful because we use direction='forward', so the candle
+                # is the one AFTER the trade, not the containing one.
+                tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
+                in_range = (
+                    (merged['entry_price'] >= merged['low'] - tolerance) &
+                    (merged['entry_price'] <= merged['high'] + tolerance)
+                )
             verified = int(in_range.sum())
             results.append((offset_hours, verified))
 
@@ -124,6 +151,21 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
         marker = " <- BEST" if off == best_offset else ""
         pct = ver / len(sample) * 100
         print(f"      Offset {off:+d}h: {ver:3d} ({pct:5.1f}%){marker}")
+
+    # WHY: If the best verification rate is still low, the detector didn't
+    #      find a reliable match. Before the FIX 1C rewrite, every offset
+    #      scored ~100% so there was no way to detect failure. Now we can
+    #      actually tell when the detection is unreliable.
+    # CHANGED: April 2026 — warn on low verification (audit bug #14)
+    best_pct = best_verified / len(sample) * 100 if len(sample) > 0 else 0
+    if best_pct < 50:
+        print(f"    ⚠️  WARNING: best offset only verified {best_pct:.1f}% of trades.")
+        print(f"       The candles file and the trades file may use incompatible")
+        print(f"       time formats, have a DST mismatch, or the 'open' price in")
+        print(f"       the candles file may not match the broker execution price.")
+        print(f"       Consider manually setting the timezone offset.")
+    elif best_pct < 80:
+        print(f"    ⚠️  Moderate confidence: best offset verified {best_pct:.1f}%.")
 
     print(f"    -> Using offset: {best_offset:+d} hours")
     return best_offset
@@ -241,8 +283,14 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             # Sort candles by timestamp and reset index
             candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
 
-            # Use merge_asof to find the last candle before each trade's open_time
-            # This finds the candle that was active when the trade was opened
+            # Use merge_asof to find the candle CONTAINING each trade's open_time,
+            # then shift by -1 to get the PREVIOUS (closed) candle.
+            # WHY: direction='backward' finds the candle whose timestamp ≤ open_time,
+            #      which is the CURRENTLY OPEN candle containing the trade. Its OHLC
+            #      includes data from AFTER the trade was placed — a look-ahead leak.
+            #      The trader only had data through the end of the PREVIOUS candle,
+            #      so that's the candle we must read features from.
+            # CHANGED: April 2026 — fix containing-candle look-ahead (audit bug #10)
             aligned = pd.merge_asof(
                 trades_df[['trade_id', 'open_time', 'entry_price']].sort_values('open_time'),
                 candles_df.reset_index().rename(columns={'index': 'candle_idx'})[['timestamp', 'candle_idx', 'high', 'low']],
@@ -252,6 +300,23 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                 tolerance=pd.Timedelta(days=7)  # Max gap allowed
             )
 
+            # Shift candle_idx to point at the PREVIOUS (closed) candle.
+            # high/low/timestamp stay pointing at the containing candle — they
+            # are used only for verification (checking entry_price is in the
+            # range of the candle the trader saw the PRICE of, which is the
+            # containing one). Features are read from (candle_idx - 1) downstream.
+            aligned['containing_candle_idx']  = aligned['candle_idx']
+            aligned['containing_candle_time'] = aligned['timestamp']
+            aligned['candle_idx'] = aligned['candle_idx'] - 1
+
+            # Drop trades that would map to candle_idx < 0 (trade occurred
+            # before any closed candle existed — not enough warmup).
+            pre_count = len(aligned)
+            aligned = aligned[aligned['candle_idx'] >= 0]
+            dropped = pre_count - len(aligned)
+            if dropped > 0:
+                print(f"    Dropped {dropped} trades with no prior closed candle")
+
             # Add columns to main DataFrame
             # WHY: merge_asof can produce duplicate trade_id rows if two candles
             #      have identical timestamps. drop_duplicates keeps the first
@@ -259,14 +324,27 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             # CHANGED: April 2026 — drop_duplicates before set_index
             aligned_dedup = aligned.drop_duplicates(subset=['trade_id'])
             trades_df[f'{tf}_candle_idx']  = aligned_dedup.set_index('trade_id')['candle_idx']
-            trades_df[f'{tf}_candle_time'] = aligned_dedup.set_index('trade_id')['timestamp']
+            # WHY: Store the CONTAINING candle's timestamp for display. The
+            #      previously-closed candle's time is (containing_time - tf)
+            #      but downstream code displays trade time vs "current candle"
+            #      in the UI, so the containing time is what the user expects.
+            # CHANGED: April 2026 — store containing time for display
+            trades_df[f'{tf}_candle_time'] = aligned_dedup.set_index('trade_id')['containing_candle_time']
 
             # Count aligned trades
             aligned_count = trades_df[f'{tf}_candle_idx'].notna().sum()
             aligned_counts[tf] = aligned_count
 
-            # Verify alignment: check if entry_price falls within candle high-low range
-            # Allow some tolerance for spread and slippage
+            # Verify alignment: check if entry_price falls within the CONTAINING
+            # candle's high-low range. (Not the previously-closed candle that we
+            # use for features — the trader's actual entry price happens INSIDE
+            # the containing candle, so verification must use the containing
+            # candle's OHLC.)
+            # WHY: Old code verified against whatever candle merge_asof returned.
+            #      After FIX 1A, candle_idx points at the previous candle, so
+            #      the verification now uses containing_candle_idx — the bar
+            #      where the trade actually happened.
+            # CHANGED: April 2026 — verify against containing bar (audit bug #10)
             tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
 
             verified = 0
@@ -274,10 +352,10 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                 for idx, row in aligned.iterrows():
                     if pd.notna(row['candle_idx']):
                         entry_price = row['entry_price']
-                        candle_high = row['high']
-                        candle_low = row['low']
+                        candle_high = row['high']   # containing candle high
+                        candle_low = row['low']     # containing candle low
 
-                        # Check if entry price is within candle range (with tolerance)
+                        # Check if entry price is within containing candle range
                         if (entry_price >= candle_low - tolerance and
                             entry_price <= candle_high + tolerance):
                             verified += 1

@@ -15,6 +15,10 @@ from sklearn.tree import export_text
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+# WHY: share the NaN sentinel with step4
+# CHANGED: April 2026 — replace fillna(0) (audit bug #12)
+from step4_train_model import fill_feature_nans
+
 
 # ============================================================
 # CONFIGURATION
@@ -90,23 +94,40 @@ def extract_rules_for_scenario(scenario):
         print(f"\n  Extracting rules from Random Forest trees...")
         print(f"    Total trees in forest: {len(model.estimators_)}")
 
-        # Get test data to evaluate tree performance
+        # WHY: Selecting the "best tree" by test-set accuracy makes the test
+        #      set useless as held-out evaluation — the extracted rule is
+        #      literally chosen on the numbers we want to report. That's
+        #      test-set peeking. Instead, select on the TRAINING set, then
+        #      report the test accuracy as a genuinely held-out number.
+        # CHANGED: April 2026 — fix test-set peeking (audit bug #6 tree peek)
+        train_data = data[data['dataset'] == 'train'].copy()
+        X_train_eval = fill_feature_nans(train_data[feature_cols])
+        y_train_eval = train_data['outcome']
+
         test_data = data[data['dataset'] == 'test'].copy()
-        X_test = test_data[feature_cols].fillna(0)
+        X_test = fill_feature_nans(test_data[feature_cols])
         y_test = test_data['outcome']
 
-        # Find the best individual tree (highest test accuracy)
+        # Find the best individual tree by TRAINING accuracy (no peeking)
         best_tree_idx = 0
-        best_tree_acc = 0
+        best_tree_train_acc = 0
 
         for idx, tree in enumerate(model.estimators_):
-            tree_pred = tree.predict(X_test)
-            tree_acc = (tree_pred == y_test).mean()
-            if tree_acc > best_tree_acc:
-                best_tree_acc = tree_acc
+            tree_pred = tree.predict(X_train_eval)
+            tree_acc = (tree_pred == y_train_eval).mean()
+            if tree_acc > best_tree_train_acc:
+                best_tree_train_acc = tree_acc
                 best_tree_idx = idx
 
-        print(f"    Best tree index: {best_tree_idx} (accuracy: {best_tree_acc:.3f})")
+        # Report both training and test accuracy for the chosen tree.
+        # The test accuracy is now a genuinely held-out number.
+        best_tree = model.estimators_[best_tree_idx]
+        best_tree_test_acc = (best_tree.predict(X_test) == y_test).mean()
+        best_tree_acc = best_tree_test_acc  # kept as `best_tree_acc` for downstream compat
+
+        print(f"    Best tree index: {best_tree_idx}")
+        print(f"      Training accuracy (selection criterion): {best_tree_train_acc:.3f}")
+        print(f"      Test accuracy (held-out): {best_tree_test_acc:.3f}")
 
         best_tree = model.estimators_[best_tree_idx]
 
@@ -135,7 +156,7 @@ def extract_rules_for_scenario(scenario):
         print(f"\n  Multi-depth rule extraction (depths 2-8)...")
 
         train_data = data[data['dataset'] == 'train'].copy()
-        X_train = train_data[feature_cols].fillna(0)
+        X_train = fill_feature_nans(train_data[feature_cols])
         y_train = train_data['outcome']
 
         depths_to_try = [2, 3, 4, 5, 6, 7, 8]

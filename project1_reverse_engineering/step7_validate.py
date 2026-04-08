@@ -13,6 +13,10 @@ import numpy as np
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+# WHY: share the NaN sentinel with step4
+# CHANGED: April 2026 — replace fillna(0) (audit bug #12)
+from step4_train_model import fill_feature_nans
+
 
 # ============================================================
 # CONFIGURATION
@@ -22,6 +26,147 @@ OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output
 from config_loader import load as _load_cfg
 _cfg                 = _load_cfg()
 MATCH_RATE_THRESHOLD = float(_cfg['match_rate_threshold'])
+
+
+# WHY: step7 was using model predictions as a proxy for "rule match rate",
+#      which means the rules were never actually tested. Implement a real
+#      rule evaluator that parses analysis_report.json rules and evaluates
+#      them against the feature matrix.
+# CHANGED: April 2026 — implement real rule validation (audit bug #11)
+def _evaluate_rule(rule, df):
+    """Return a boolean Series indicating which rows of df satisfy the rule.
+
+    A rule is a dict with:
+        prediction: 'WIN' or 'LOSS'
+        conditions: list of dicts with {feature, operator, value}
+                    where operator is one of: >, <, >=, <=, ==, !=
+
+    All conditions in a rule are AND'd together.
+    """
+    import numpy as np
+    import operator as op
+
+    ops = {
+        '>':  op.gt,
+        '<':  op.lt,
+        '>=': op.ge,
+        '<=': op.le,
+        '==': op.eq,
+        '!=': op.ne,
+    }
+
+    if not rule.get('conditions'):
+        return np.zeros(len(df), dtype=bool)
+
+    mask = np.ones(len(df), dtype=bool)
+    for cond in rule['conditions']:
+        feat = cond.get('feature')
+        opname = cond.get('operator', '>').strip()
+        value = cond.get('value')
+
+        if feat not in df.columns:
+            # Feature doesn't exist in the feature matrix → rule can't fire
+            return np.zeros(len(df), dtype=bool)
+
+        op_fn = ops.get(opname)
+        if op_fn is None:
+            print(f"    [rule eval] Unknown operator {opname!r}, treating as no-match")
+            return np.zeros(len(df), dtype=bool)
+
+        try:
+            col_vals = df[feat].values.astype(float)
+            # Treat sentinel (-999) as non-matching — warmup periods
+            # should not trigger rules
+            from step4_train_model import NAN_SENTINEL
+            sentinel_mask = col_vals <= NAN_SENTINEL + 1
+            cond_mask = op_fn(col_vals, float(value))
+            cond_mask = cond_mask & ~sentinel_mask
+            mask = mask & cond_mask
+        except Exception as e:
+            print(f"    [rule eval] Error evaluating {feat} {opname} {value}: {e}")
+            return np.zeros(len(df), dtype=bool)
+
+    return mask
+
+
+def _validate_rules_on_test_set(rules, test_df, feature_cols):
+    """Evaluate each rule on test_df and return a dict of per-rule stats.
+
+    Returns a list of dicts, one per rule:
+        {
+            'rule_id':       int or str,
+            'prediction':    'WIN' or 'LOSS',
+            'conditions':    [...],
+            'hit_count':     int  (how many test trades this rule fires on),
+            'hit_rate':      float (hit_count / len(test_df)),
+            'wins_in_hits':  int,
+            'losses_in_hits':int,
+            'win_rate':      float  (wins_in_hits / hit_count),
+            'accuracy':      float  (how often the rule's prediction matched outcome),
+        }
+    """
+    import numpy as np
+
+    results = []
+    if len(test_df) == 0:
+        return results
+
+    # Ensure numeric features (use sentinel-filled copy)
+    X = fill_feature_nans(test_df[feature_cols]) if feature_cols else test_df
+    y = test_df['outcome'].astype(int).values
+
+    for i, rule in enumerate(rules):
+        try:
+            mask = _evaluate_rule(rule, X)
+            hit_count = int(mask.sum())
+            hit_rate = hit_count / len(test_df) if len(test_df) > 0 else 0.0
+
+            if hit_count == 0:
+                results.append({
+                    'rule_id':       rule.get('id', i),
+                    'prediction':    rule.get('prediction', 'WIN'),
+                    'conditions':    rule.get('conditions', []),
+                    'hit_count':     0,
+                    'hit_rate':      0.0,
+                    'wins_in_hits':  0,
+                    'losses_in_hits':0,
+                    'win_rate':      0.0,
+                    'accuracy':      0.0,
+                })
+                continue
+
+            hit_outcomes = y[mask]
+            wins = int((hit_outcomes == 1).sum())
+            losses = int((hit_outcomes == 0).sum())
+
+            win_rate = wins / hit_count
+            # Accuracy = how often the rule's prediction matched reality
+            target = 1 if rule.get('prediction') == 'WIN' else 0
+            accuracy = float((hit_outcomes == target).mean())
+
+            results.append({
+                'rule_id':       rule.get('id', i),
+                'prediction':    rule.get('prediction', 'WIN'),
+                'conditions':    rule.get('conditions', []),
+                'hit_count':     hit_count,
+                'hit_rate':      hit_rate,
+                'wins_in_hits':  wins,
+                'losses_in_hits':losses,
+                'win_rate':      win_rate,
+                'accuracy':      accuracy,
+            })
+        except Exception as e:
+            print(f"    [rule eval] Rule {i} failed: {e}")
+            results.append({
+                'rule_id': rule.get('id', i),
+                'error':   str(e),
+                'hit_count': 0,
+                'hit_rate': 0.0,
+                'win_rate': 0.0,
+                'accuracy': 0.0,
+            })
+
+    return results
 
 
 def validate_rules_for_scenario(scenario):
@@ -96,7 +241,7 @@ def validate_rules_for_scenario(scenario):
                 #      Only the test set gives an honest out-of-sample number.
                 # CHANGED: April 2026 — test-only validation
                 test_mask = data['dataset'] == 'test'
-                X = data.loc[test_mask, feature_cols].fillna(0)
+                X = fill_feature_nans(data.loc[test_mask, feature_cols])
                 y_pred = model.predict(X)
                 y_true = data.loc[test_mask, 'outcome']
 
@@ -107,31 +252,65 @@ def validate_rules_for_scenario(scenario):
                 print(f"  ERROR: Neither rules nor model found for validation")
                 return False
         else:
-            # Load rules and calculate match rate
-            rules_df = pd.read_csv(rules_file)
-            print(f"  Loaded {len(rules_df)} rules")
-
-            # For this validation, we'll use the model's predictions as proxy
-            # since parsing complex rule conditions is non-trivial
-            # In a production system, you'd implement a full rule engine
-
-            model_file = os.path.join(output_dir, 'trained_model.pkl')
-            if os.path.exists(model_file):
-                import joblib
-                model = joblib.load(model_file)
-
-                # CHANGED: April 2026 — shared transform helper
-                from step4_train_model import prepare_features
-                data, feature_cols = prepare_features(data, scenario=scenario)
-                # WHY: test-only validation — same reason as fallback path above
-                test_mask = data['dataset'] == 'test'
-                X = data.loc[test_mask, feature_cols].fillna(0)
-                y_pred = model.predict(X)
-                y_true = data.loc[test_mask, 'outcome']
-
-                match_rate = (y_pred == y_true).mean()
+            # WHY: Old code used model.predict() as a "proxy" for rule
+            #      validation — but that's just the model's test accuracy
+            #      with a different label, not a test of the rules at all.
+            #      Now we load the actual rules from analysis_report.json
+            #      and evaluate each one's conditions against the feature
+            #      matrix on the test set. Real per-rule win rate, real
+            #      hit count.
+            # CHANGED: April 2026 — real rule validation (audit bug #11)
+            import json
+            analysis_report_path = os.path.join(output_dir, 'analysis_report.json')
+            rules = []
+            if os.path.exists(analysis_report_path):
+                try:
+                    with open(analysis_report_path, 'r', encoding='utf-8') as f:
+                        report = json.load(f)
+                    rules = [r for r in report.get('rules', []) if r.get('conditions')]
+                    print(f"  Loaded {len(rules)} rules from analysis_report.json")
+                except Exception as e:
+                    print(f"  Could not load analysis_report.json: {e}")
             else:
-                match_rate = 0.5
+                print(f"  analysis_report.json not found at {analysis_report_path}")
+
+            # Load and prepare the feature matrix exactly the same way
+            # step4 did so indicator column names match what the rules expect
+            from step4_train_model import prepare_features
+            data, feature_cols = prepare_features(data, scenario=scenario)
+
+            test_mask = data['dataset'] == 'test'
+            test_df = data.loc[test_mask].copy()
+            print(f"  Evaluating rules on {len(test_df)} test trades...")
+
+            rule_results = _validate_rules_on_test_set(rules, test_df, feature_cols)
+
+            # Compute aggregate numbers for the old `match_rate` slot
+            total_hits = sum(r['hit_count'] for r in rule_results)
+            total_correct = sum(r.get('accuracy', 0) * r['hit_count'] for r in rule_results)
+            match_rate = (total_correct / total_hits) if total_hits > 0 else 0.0
+
+            # Per-rule breakdown for the report
+            print(f"\n  Per-rule results on test set:")
+            for r in rule_results[:10]:  # show up to 10
+                if r.get('hit_count', 0) > 0:
+                    print(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
+                          f"{r['hit_count']:4d} hits, WR {r['win_rate']:5.1%}, "
+                          f"accuracy {r['accuracy']:5.1%}")
+                else:
+                    print(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
+                          f"0 hits (never fired on test set)")
+            if len(rule_results) > 10:
+                print(f"    ... {len(rule_results) - 10} more rules")
+
+            # Save per-rule results alongside the validation report
+            rule_results_file = os.path.join(output_dir, 'rule_validation_results.json')
+            try:
+                with open(rule_results_file, 'w', encoding='utf-8') as f:
+                    json.dump(rule_results, f, indent=2, default=str)
+                print(f"  Saved per-rule results: {rule_results_file}")
+            except Exception as e:
+                print(f"  Could not save rule results: {e}")
 
         # Analyze performance by dataset split
         train_data = data[data['dataset'] == 'train']

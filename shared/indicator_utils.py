@@ -381,8 +381,14 @@ def compute_all_indicators(candles_df, prefix=""):
     indicators[f'{prefix}std_dev_20'] = candles_df['close'].rolling(window=20).std()
     indicators[f'{prefix}std_dev_50'] = candles_df['close'].rolling(window=50).std()
 
-    # Fill NaN values with forward fill then backward fill (for initial periods where rolling calculations produce NaN)
-    indicators = indicators.ffill().bfill()
+    # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
+    #      never saw those values at the time of the early trades, so
+    #      training on them is a look-ahead leak. Keep ffill (which is
+    #      causal — carries PAST values forward) but drop bfill. Warmup
+    #      rows will remain NaN and be handled by the sentinel-based NaN
+    #      fill in the downstream pipeline.
+    # CHANGED: April 2026 — remove bfill leak (audit bug: indicator_utils)
+    indicators = indicators.ffill()
 
     print(f"  Computed {len(indicators.columns)} indicators")
 
@@ -783,7 +789,14 @@ def compute_indicators(df, only=None, prefix=""):
         indicators[f'{prefix}std_dev_20'] = df['close'].rolling(window=20).std()
         indicators[f'{prefix}std_dev_50'] = df['close'].rolling(window=50).std()
 
-    indicators = indicators.ffill().bfill()
+    # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
+    #      never saw those values at the time of the early trades, so
+    #      training on them is a look-ahead leak. Keep ffill (which is
+    #      causal — carries PAST values forward) but drop bfill. Warmup
+    #      rows will remain NaN and be handled by the sentinel-based NaN
+    #      fill in the downstream pipeline.
+    # CHANGED: April 2026 — remove bfill leak (audit bug: indicator_utils)
+    indicators = indicators.ffill()
 
     # Use timestamp as index so reset_index() yields a named 'timestamp' column
     indicators.index = df['timestamp']
