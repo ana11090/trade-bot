@@ -78,6 +78,12 @@ class SimulationSummary:
     expected_roi_pct: Optional[float]
 
     # Configuration used
+    # WHY: These are XAUUSD defaults. Other instruments should override:
+    #      - default_sl_pips: 15-30 for forex
+    #      - risk_per_trade_pct: typically 0.5-2.0 for prop accounts
+    #      - daily_dd_safety_pct: % of firm's daily DD limit at which the
+    #        bot self-stops; 80 = stop at 80% of the firm limit
+    # CHANGED: April 2026 — explicit XAUUSD assumption
     risk_per_trade_pct: float = 1.0
     default_sl_pips: float = 150.0
     calculated_lot_size: float = 0.0

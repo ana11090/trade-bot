@@ -443,9 +443,17 @@ def build_panel(parent):
         firm_name = firm_var.get()
         fc = firm_configs.get(firm_name)
         if fc:
-            c = fc['challenges'][0]
-            daily_dd = c['funded']['max_daily_drawdown_pct']
-            total_dd = c['funded']['max_total_drawdown_pct']
+            # WHY: Direct subscripting of fc['challenges'][0] without try/except
+            #      caused TypeError crashes for some firms (e.g., Get Leveraged)
+            #      when firm data structure was unexpected.
+            # CHANGED: April 2026 — defensive try/except around firm data access
+            try:
+                c = fc['challenges'][0]
+                daily_dd = c['funded']['max_daily_drawdown_pct']
+                total_dd = c['funded']['max_total_drawdown_pct']
+            except (KeyError, IndexError, TypeError):
+                daily_dd = 5.0
+                total_dd = 10.0
         else:
             daily_dd = 5.0
             total_dd = 10.0
