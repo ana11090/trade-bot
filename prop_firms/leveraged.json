@@ -14,8 +14,8 @@
       "basis": "closed_balance",
       "breach_check": "equity",
       "lock_after_gain_pct": 6.0,
-      "lock_level": "starting_balance",
-      "lock_description": "Once closed balance reaches starting + 6%, the DD floor locks at starting balance permanently. No more trailing."
+      "lock_level": "starting_balance_strict",
+      "lock_description": "Once closed balance reaches starting + 6%, the DD floor locks at starting balance (zero buffer). Any drop to or below starting balance = breach. See Leveraged docs: the $100k example locks at exactly $100k, not $94k."
     },
 
     "daily_dd": {
