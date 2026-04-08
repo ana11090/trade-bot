@@ -193,6 +193,18 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
         dd_mechanics = {}
     trailing_dd       = dd_mechanics.get('trailing_dd', {})
     hwm_lock_gain_pct = trailing_dd.get('lock_after_gain_pct')
+    # WHY: Two interpretations of "lock at starting balance":
+    #        'starting_balance'        → HWM stops trailing, floor
+    #                                    becomes (starting × (1 - dd_pct/100)),
+    #                                    DD buffer preserved. Default.
+    #        'starting_balance_strict' → Floor = starting balance itself,
+    #                                    zero buffer. For firms with the
+    #                                    "any drop below initial = breach"
+    #                                    rule (e.g., post-payout on many firms).
+    #      live_firm_sim.py already honors this field. prop_firm_simulator.py
+    #      was ignoring it — both simulators must agree or pass rates diverge.
+    # CHANGED: April 2026 — honor lock_level (audit bug #1)
+    hwm_lock_level    = trailing_dd.get('lock_level', 'starting_balance')
     hwm_locked        = False
     daily_dd_config   = dd_mechanics.get('daily_dd', {})
     daily_dd_ref_type = daily_dd_config.get('reference', '')
@@ -217,14 +229,30 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
 
         cal_days = (cur_date - phase_start).days + 1
 
-        # WHY: HWM lock — once gain hits threshold, HWM stops trailing
-        # CHANGED: April 2026 — HWM lock for Leveraged
+        # WHY: HWM lock — once gain hits threshold, HWM stops trailing.
+        #      After lock, two modes depending on firm rule:
+        #        'starting_balance' (default): hwm anchored at account_size,
+        #            floor becomes account_size × (1 - dd_pct/100) — buffer
+        #            preserved. This is what the old code did.
+        #        'starting_balance_strict': hwm anchored higher so floor
+        #            lands exactly at account_size — zero buffer.
+        # CHANGED: April 2026 — honor lock_level (audit bug #1)
         if drawdown_type in ("trailing", "trailing_eod"):
             if hwm_lock_gain_pct and not hwm_locked:
                 gain_pct = (balance - account_size) / account_size * 100.0
                 if gain_pct >= hwm_lock_gain_pct:
                     hwm_locked = True
-                    hwm = account_size
+                    if hwm_lock_level == 'starting_balance_strict':
+                        # Zero buffer: total_dd = (hwm - balance) / account_size
+                        # must reach max_total_dd_pct exactly when balance
+                        # drops to account_size. Since total_dd formula below
+                        # uses hwm, set hwm so (hwm - account_size)/account_size
+                        # = max_total_dd_pct/100. Then balance<account_size
+                        # immediately exceeds the limit.
+                        hwm = account_size * (1.0 + max_total_dd_pct / 100.0)
+                    else:
+                        # 'starting_balance' — buffer preserved (default)
+                        hwm = account_size
                 else:
                     hwm = max(hwm, balance)
             elif hwm_locked:
@@ -233,10 +261,29 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
                 hwm = max(hwm, balance)
 
         # ── Daily DD calculation — firm-specific reference ────────────────
-        # WHY: Leveraged uses max(balance, equity) as daily DD reference.
-        # CHANGED: April 2026 — respect DD mechanics from JSON
+        # WHY: Old code floored dd_ref at account_size, which over-counts
+        #      the reference on losing-streak days. The real firm rule is
+        #      "reference = balance at start of day" (or max(balance,equity)
+        #      at snapshot time), with no floor. Removed the floor.
+        #
+        # NOTE (audit bug #2): This simulator only has DAILY P&L aggregates,
+        #      not tick-level equity. So it CANNOT model:
+        #        • Intraday equity excursions that recover before close
+        #        • max(balance, equity) where equity > balance due to
+        #          unrealized profit on open positions at snapshot time
+        #      On a strategy that swings hard intraday and recovers, the
+        #      real firm would register a bigger DD than this simulator.
+        #      On a strategy with overnight unrealized profit, the real
+        #      firm would register a smaller DD. Simulator daily DD is
+        #      accurate ONLY for strategies that are flat at snapshot time
+        #      with small intraday excursions.
+        # CHANGED: April 2026 — remove spurious floor + document limitations
         if daily_dd_ref_type == 'max_balance_equity':
-            dd_ref = max(balance - day_pnl, account_size)  # balance at start of day
+            # Simulator approximation: use balance at start of day as the
+            # reference. Cannot model equity component without tick data.
+            dd_ref = balance - day_pnl  # balance at start of day (no floor)
+            if dd_ref <= 0:
+                dd_ref = account_size  # pathological — account wiped mid-day
             daily_dd = abs(min(0.0, day_pnl)) / dd_ref * 100.0
         else:
             drawdown_basis = phase.get("drawdown_basis", "balance")
@@ -409,6 +456,9 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         dd_mechanics = {}
     _trailing_dd_f       = dd_mechanics.get('trailing_dd', {})
     hwm_lock_gain_pct_f  = _trailing_dd_f.get('lock_after_gain_pct')
+    # WHY: Funded stage mirrors eval stage — see B1 for full explanation.
+    # CHANGED: April 2026 — honor lock_level in funded (audit bug #1)
+    hwm_lock_level_f     = _trailing_dd_f.get('lock_level', 'starting_balance')
     hwm_locked           = False
     _daily_dd_cfg_f      = dd_mechanics.get('daily_dd', {})
     daily_dd_ref_type_f  = _daily_dd_cfg_f.get('reference', '')
@@ -465,14 +515,17 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         day_str = str(cur_date)
         period_daily_pnls[day_str] = period_daily_pnls.get(day_str, 0) + day_pnl
 
-        # WHY: HWM lock — Leveraged locks at starting balance after +6% gain
-        # CHANGED: April 2026 — HWM lock for funded stage
+        # WHY: HWM lock — same logic as eval stage. See B1/B2 for details.
+        # CHANGED: April 2026 — honor lock_level in funded (audit bug #1)
         if dd_type in ("trailing", "trailing_eod"):
             if hwm_lock_gain_pct_f and not hwm_locked:
                 gain_pct = (balance - account_size) / account_size * 100.0
                 if gain_pct >= hwm_lock_gain_pct_f:
                     hwm_locked = True
-                    hwm = account_size
+                    if hwm_lock_level_f == 'starting_balance_strict':
+                        hwm = account_size * (1.0 + max_total_dd / 100.0)
+                    else:
+                        hwm = account_size
                 else:
                     hwm = max(hwm, balance)
             elif hwm_locked:
@@ -481,9 +534,13 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                 hwm = max(hwm, balance)
 
         # ── Daily DD — firm-specific reference ────────────────────────────
-        # CHANGED: April 2026 — respect DD mechanics from JSON
+        # WHY: Same fix as eval stage — remove spurious account_size floor.
+        #      See C1 comment for full explanation of simulator limitations.
+        # CHANGED: April 2026 — remove spurious floor (audit bug #2)
         if daily_dd_ref_type_f == 'max_balance_equity':
-            dd_ref_f = max(balance - day_pnl, account_size)
+            dd_ref_f = balance - day_pnl  # balance at start of day (no floor)
+            if dd_ref_f <= 0:
+                dd_ref_f = account_size
             daily_dd = abs(min(0.0, day_pnl)) / dd_ref_f * 100.0
         else:
             drawdown_basis = funded_cfg.get("drawdown_basis", "balance")

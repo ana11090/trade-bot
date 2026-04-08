@@ -596,7 +596,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      below = breach". Without this, each payout raises the floor
     #      by the payout amount and the EA stops trading prematurely.
     # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
-    extra_globals.append('double  g_originalStartingBalance = 0.0;   // Original $100k — NEVER overwritten')
+    extra_globals.append('double  g_originalStartingBalance = 0.0;   // Original starting balance — NEVER overwritten')
     extra_globals.append('bool    g_ddLocked                = false; // True when trailing DD has locked')
 
     # Payout cycle tracking globals (always)
