@@ -87,7 +87,6 @@ _session_vars     = {}
 _day_vars         = {}
 
 _auto_min_hold = [0]     # WHY: Stores optimizer's min_hold value for generate call
-_auto_min_pips = [0]     # WHY: Stores optimizer's min_pips value for generate call
 
 # Per-condition threshold entry vars: list of (feature, op, tk.StringVar)
 _condition_vars   = []
@@ -244,7 +243,9 @@ def _refresh_condition_vars(idx):
     entry_tf = (
         strat_data.get('entry_tf') or                  # multi-TF backtest row
         strat_data.get('entry_timeframe') or           # legacy field name
-        strat_data.get('stats', {}).get('entry_tf') or # nested fallback
+        # WHY: Same as view_results.py fix — stats are flattened to top level
+        # CHANGED: April 2026 — read flattened stats from strat_data top level
+        (strat_data.get('stats') or strat_data).get('entry_tf') or # nested fallback
         None
     )
     if not entry_tf:
@@ -350,10 +351,7 @@ def _auto_fill_filters(idx, strat_data):
         _auto_min_hold[0] = int(min_hold)
         applied.append(f"min hold {min_hold}min")
 
-    min_pips = filters.get('min_pips')
-    if min_pips and min_pips > 0:
-        _auto_min_pips[0] = int(min_pips)
-        applied.append(f"min {min_pips} pips")
+    # WHY: min_pips removed April 2026 — look-ahead bias.
 
     sessions = filters.get('sessions', [])
     if sessions and _session_vars:
@@ -575,7 +573,9 @@ def _generate():
         entry_tf = (
             strat_data.get('entry_tf') or
             strat_data.get('entry_timeframe') or
-            strat_data.get('stats', {}).get('entry_tf') or
+            # WHY: Same as view_results.py fix — stats are flattened to top level
+            # CHANGED: April 2026 — read flattened stats from strat_data top level
+            (strat_data.get('stats') or strat_data).get('entry_tf') or
             None
         )
         if not entry_tf:

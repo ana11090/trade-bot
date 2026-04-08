@@ -35,7 +35,7 @@ INDICATOR_PATTERNS = [
     (r"^rsi_(\d+)$", {
         "mt5_handle_var":  "int handle_rsi_{tf}_{p};",
         "mt5_handle_init": "handle_rsi_{tf}_{p} = iRSI(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_rsi_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_rsi_{tf}_{p}[1]; CopyBuffer(handle_rsi_{tf}_{p},0,0,1,buf_rsi_{tf}_{p}); double val_{var} = buf_rsi_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_rsi_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.rsi(df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "RSI({p}) on {tf}",
@@ -44,7 +44,7 @@ INDICATOR_PATTERNS = [
     (r"^adx_(\d+)$", {
         "mt5_handle_var":  "int handle_adx_{tf}_{p};",
         "mt5_handle_init": "handle_adx_{tf}_{p} = iADX(NULL,{mt5_tf},{p}); if(handle_adx_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_adx_{tf}_{p}[1]; CopyBuffer(handle_adx_{tf}_{p},0,0,1,buf_adx_{tf}_{p}); double val_{var} = buf_adx_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['ADX_{p}'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "ADX({p}) on {tf}",
@@ -53,7 +53,7 @@ INDICATOR_PATTERNS = [
     (r"^cci_(\d+)$", {
         "mt5_handle_var":  "int handle_cci_{tf}_{p};",
         "mt5_handle_init": "handle_cci_{tf}_{p} = iCCI(NULL,{mt5_tf},{p},PRICE_TYPICAL); if(handle_cci_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_cci_{tf}_{p}[1]; CopyBuffer(handle_cci_{tf}_{p},0,0,1,buf_cci_{tf}_{p}); double val_{var} = buf_cci_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_cci_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.cci(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "CCI({p}) on {tf}",
@@ -62,7 +62,7 @@ INDICATOR_PATTERNS = [
     (r"^atr_(\d+)$", {
         "mt5_handle_var":  "int handle_atr_{tf}_{p};",
         "mt5_handle_init": "handle_atr_{tf}_{p} = iATR(NULL,{mt5_tf},{p}); if(handle_atr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_atr_{tf}_{p}[1]; CopyBuffer(handle_atr_{tf}_{p},0,0,1,buf_atr_{tf}_{p}); double val_{var} = buf_atr_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_atr_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.atr(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "ATR({p}) on {tf}",
@@ -71,7 +71,7 @@ INDICATOR_PATTERNS = [
     (r"^macd_fast_diff$", {
         "mt5_handle_var":  "int handle_macd_{tf};",
         "mt5_handle_init": "handle_macd_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_macd_{tf}[1]; CopyBuffer(handle_macd_{tf},2,0,1,buf_macd_{tf}); double val_{var} = buf_macd_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_{tf}, 2); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDh_12_26_9'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "MACD histogram on {tf}",
@@ -87,7 +87,7 @@ INDICATOR_PATTERNS = [
     (r"^bb_(\d+)_(\d+(?:\.\d+)?)_width$", {
         "mt5_handle_var":  "int handle_bb_{tf}_{p1}_{p2s};",
         "mt5_handle_init": "handle_bb_{tf}_{p1}_{p2s} = iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE); if(handle_bb_{tf}_{p1}_{p2s}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_bb_u_{tf}[1],buf_bb_l_{tf}[1]; CopyBuffer(handle_bb_{tf}_{p1}_{p2s},1,0,1,buf_bb_u_{tf}); CopyBuffer(handle_bb_{tf}_{p1}_{p2s},2,0,1,buf_bb_l_{tf}); double val_{var} = buf_bb_u_{tf}[0] - buf_bb_l_{tf}[0];",
+        "mt5_buffer_read": "double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2); if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = _tmp1 - _tmp2; }",
         "tradovate_code":  "ta.bbands(df_m{tv_tf}['close'], length={p1}, std={p2})['BBB_{p1}_{p2}_0'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Bollinger Band({p1},{p2}) width on {tf}",
@@ -96,7 +96,7 @@ INDICATOR_PATTERNS = [
     (r"^aroon_(?:down|up)$", {
         "mt5_handle_var":  "int handle_aroon_{tf};",
         "mt5_handle_init": "handle_aroon_{tf} = iCustom(NULL,{mt5_tf},\"Aroon\",14); if(handle_aroon_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_aroon_{tf}[1]; CopyBuffer(handle_aroon_{tf},0,0,1,buf_aroon_{tf}); double val_{var} = buf_aroon_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_aroon_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.aroon(df_m{tv_tf}['high'], df_m{tv_tf}['low'], length=14)['AROOND_14'].iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "Aroon on {tf} (custom indicator)",
@@ -105,7 +105,7 @@ INDICATOR_PATTERNS = [
     (r"^bear_power$", {
         "mt5_handle_var":  "int handle_bears_{tf};",
         "mt5_handle_init": "handle_bears_{tf} = iBearsPower(NULL,{mt5_tf},13); if(handle_bears_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_bears_{tf}[1]; CopyBuffer(handle_bears_{tf},0,0,1,buf_bears_{tf}); double val_{var} = buf_bears_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_bears_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "df_m{tv_tf}['low'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length=13).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Bears Power on {tf}",
@@ -121,7 +121,7 @@ INDICATOR_PATTERNS = [
     (r"^ultimate_oscillator$", {
         "mt5_handle_var":  "int handle_uo_{tf};",
         "mt5_handle_init": "handle_uo_{tf} = iCustom(NULL,{mt5_tf},\"UltimateOscillator\",7,14,28); if(handle_uo_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_uo_{tf}[1]; CopyBuffer(handle_uo_{tf},0,0,1,buf_uo_{tf}); double val_{var} = buf_uo_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_uo_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.uo(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close']).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "Ultimate Oscillator on {tf} (custom indicator)",
@@ -130,7 +130,7 @@ INDICATOR_PATTERNS = [
     (r"^dpo$", {
         "mt5_handle_var":  "int handle_dpo_{tf};",
         "mt5_handle_init": "handle_dpo_{tf} = iCustom(NULL,{mt5_tf},\"DPO\",20); if(handle_dpo_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_dpo_{tf}[1]; CopyBuffer(handle_dpo_{tf},0,0,1,buf_dpo_{tf}); double val_{var} = buf_dpo_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_dpo_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.dpo(df_m{tv_tf}['close'], length=20).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "DPO(20) on {tf} (custom indicator)",
@@ -139,7 +139,7 @@ INDICATOR_PATTERNS = [
     (r"^kst$", {
         "mt5_handle_var":  "int handle_kst_{tf};",
         "mt5_handle_init": "handle_kst_{tf} = iCustom(NULL,{mt5_tf},\"KST\",10,15,20,30); if(handle_kst_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_kst_{tf}[1]; CopyBuffer(handle_kst_{tf},0,0,1,buf_kst_{tf}); double val_{var} = buf_kst_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_kst_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.kst(df_m{tv_tf}['close'])['KST_10_15_20_30_10_10_10_15'].iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "KST on {tf} (custom indicator)",
@@ -148,7 +148,7 @@ INDICATOR_PATTERNS = [
     (r"^vpt$", {
         "mt5_handle_var":  "int handle_vpt_{tf};",
         "mt5_handle_init": "handle_vpt_{tf} = iCustom(NULL,{mt5_tf},\"VPT\"); if(handle_vpt_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_vpt_{tf}[1]; CopyBuffer(handle_vpt_{tf},0,0,1,buf_vpt_{tf}); double val_{var} = buf_vpt_{tf}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_vpt_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.vpt(df_m{tv_tf}['close'], df_m{tv_tf}['volume']).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "VPT on {tf} (custom indicator)",
@@ -187,8 +187,9 @@ INDICATOR_PATTERNS = [
         "mt5_handle_var":  "int handle_mom_{tf}_{p};",
         "mt5_handle_init": "handle_mom_{tf}_{p} = iMomentum(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_mom_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
         "mt5_buffer_read": (
-            "double buf_mom_{tf}_{p}[1]; CopyBuffer(handle_mom_{tf}_{p},0,0,1,buf_mom_{tf}_{p}); "
-            "double val_{var} = (buf_mom_{tf}_{p}[0] - 100.0);  "
+            "double _tmp = SafeCopyBuf(handle_mom_{tf}_{p}, 0); "
+            "if(_tmp == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double val_{var} = (_tmp - 100.0);  "
             "// iMomentum returns 100-based, subtract 100 to match Python roc % change"
         ),
         "tradovate_code":  "ta.roc(df_m{tv_tf}['close'], length={p}).iloc[-1]",
@@ -202,7 +203,7 @@ INDICATOR_PATTERNS = [
     (r"^ema_(\d+)$", {
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_ema_{tf}_{p}[1]; CopyBuffer(handle_ema_{tf}_{p},0,0,1,buf_ema_{tf}_{p}); double val_{var} = buf_ema_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_ema_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "EMA({p}) on {tf}",
@@ -217,10 +218,11 @@ INDICATOR_PATTERNS = [
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
         "mt5_buffer_read": (
-            "double buf_ema_{tf}_{p}[1]; CopyBuffer(handle_ema_{tf}_{p},0,0,1,buf_ema_{tf}_{p}); "
-            "double _ema_val_{tf}_{p} = buf_ema_{tf}_{p}[0]; "
+            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0); "
+            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double _ema_val_{tf}_{p} = _tmp_buf; "
             "double _close_{tf} = iClose(NULL,{mt5_tf},0); "
-            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0;"
+            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
         "custom_indicator_mt5": False,
@@ -236,9 +238,10 @@ INDICATOR_PATTERNS = [
             "if(handle_ema_{tf}_{p1}==INVALID_HANDLE || handle_ema_{tf}_{p2}==INVALID_HANDLE) return(INIT_FAILED);"
         ),
         "mt5_buffer_read": (
-            "double buf_ema_{tf}_{p1}[1]; CopyBuffer(handle_ema_{tf}_{p1},0,0,1,buf_ema_{tf}_{p1}); "
-            "double buf_ema_{tf}_{p2}[1]; CopyBuffer(handle_ema_{tf}_{p2},0,0,1,buf_ema_{tf}_{p2}); "
-            "double val_{var} = (buf_ema_{tf}_{p1}[0] > buf_ema_{tf}_{p2}[0]) ? 1.0 : 0.0;"
+            "double _tmp1 = SafeCopyBuf(handle_ema_{tf}_{p1}, 0); "
+            "double _tmp2 = SafeCopyBuf(handle_ema_{tf}_{p2}, 0); "
+            "if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double val_{var} = (_tmp1 > _tmp2) ? 1.0 : 0.0; }"
         ),
         "tradovate_code":  "1.0 if ta.ema(df_m{tv_tf}['close'],{p1}).iloc[-1] > ta.ema(df_m{tv_tf}['close'],{p2}).iloc[-1] else 0.0",
         "custom_indicator_mt5": False,
@@ -300,7 +303,7 @@ INDICATOR_PATTERNS = [
     (r"^stoch_(\d+)_k$", {
         "mt5_handle_var":  "int handle_stoch_{tf}_{p};",
         "mt5_handle_init": "handle_stoch_{tf}_{p} = iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH); if(handle_stoch_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_stoch_{tf}_{p}[1]; CopyBuffer(handle_stoch_{tf}_{p},0,0,1,buf_stoch_{tf}_{p}); double val_{var} = buf_stoch_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_stoch_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Stochastic %K({p}) on {tf}",
@@ -310,7 +313,7 @@ INDICATOR_PATTERNS = [
     (r"^williams_r_(\d+)$", {
         "mt5_handle_var":  "int handle_wpr_{tf}_{p};",
         "mt5_handle_init": "handle_wpr_{tf}_{p} = iWPR(NULL,{mt5_tf},{p}); if(handle_wpr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_wpr_{tf}_{p}[1]; CopyBuffer(handle_wpr_{tf}_{p},0,0,1,buf_wpr_{tf}_{p}); double val_{var} = buf_wpr_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_wpr_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.willr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Williams %R({p}) on {tf}",
@@ -320,7 +323,7 @@ INDICATOR_PATTERNS = [
     (r"^std_dev_(\d+)$", {
         "mt5_handle_var":  "int handle_std_{tf}_{p};",
         "mt5_handle_init": "handle_std_{tf}_{p} = iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_std_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double buf_std_{tf}_{p}[1]; CopyBuffer(handle_std_{tf}_{p},0,0,1,buf_std_{tf}_{p}); double val_{var} = buf_std_{tf}_{p}[0];",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "df_m{tv_tf}['close'].rolling({p}).std().iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Standard Deviation({p}) on {tf}",
@@ -335,9 +338,10 @@ INDICATOR_PATTERNS = [
             "if(handle_ema_{tf}_20_kc==INVALID_HANDLE || handle_atr_{tf}_10_kc==INVALID_HANDLE) return(INIT_FAILED);"
         ),
         "mt5_buffer_read": (
-            "double buf_ema_{tf}_20_kc[1]; CopyBuffer(handle_ema_{tf}_20_kc,0,0,1,buf_ema_{tf}_20_kc); "
-            "double buf_atr_{tf}_10_kc[1]; CopyBuffer(handle_atr_{tf}_10_kc,0,0,1,buf_atr_{tf}_10_kc); "
-            "double val_{var} = buf_atr_{tf}_10_kc[0] * 2.0;  "
+            "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0); "
+            "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0); "
+            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double val_{var} = _tmp_atr * 2.0; }  "
             "// Keltner width = 2 x ATR(10)"
         ),
         "tradovate_code":  "ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 2",

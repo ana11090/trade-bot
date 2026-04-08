@@ -77,7 +77,12 @@ class PropFirmProfile:
 # ── Load firms ────────────────────────────────────────────────────────────────
 
 def load_all_firms() -> dict:
-    """Scan prop_firms/ and load all JSON profiles. Returns dict keyed by firm_id."""
+    """Scan prop_firms/ and load all JSON profiles. Returns dict keyed by firm_id.
+
+    WHY: Old code silently swallowed all exceptions, making typos in firm
+         JSON files invisible. Now we print a warning so the user notices.
+    CHANGED: April 2026 — visible firm load errors
+    """
     firms = {}
     if not os.path.isdir(_PROP_FIRMS_DIR):
         return firms
@@ -88,8 +93,9 @@ def load_all_firms() -> dict:
         try:
             profile = PropFirmProfile(path)
             firms[profile.firm_id] = profile
-        except (KeyError, json.JSONDecodeError, OSError):
-            pass
+        except (KeyError, json.JSONDecodeError, OSError) as _e:
+            # Surface the error so the user knows the file is broken
+            print(f"[PROP_FIRMS] WARNING: failed to load {fname}: {type(_e).__name__}: {_e}")
     return firms
 
 

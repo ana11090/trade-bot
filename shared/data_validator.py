@@ -6,6 +6,27 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 
+# WHY: Hardcoded magic numbers scattered through validation logic make it hard
+#      to tune sensitivity without hunting for every occurrence.
+# CHANGED: April 2026 — centralized validation thresholds
+WEEKEND_GAP_MULTIPLIER = 3     # Expected delta × 3 for weekend/holiday gaps
+LARGE_GAP_MULTIPLIER = 5       # Expected delta × 5 for backtest large gaps
+MAX_GAPS_TO_DISPLAY = 10       # Keep first N gaps in reports
+ZERO_VOLUME_THRESHOLD_VALIDATE = 0.10  # Warn if >10% zero-volume candles (validation)
+ZERO_VOLUME_THRESHOLD_BACKTEST = 0.20  # Warn if >20% zero-volume candles (backtest)
+
+# WHY: Hardcoded XAUUSD price range ($200-$5000) fails for other instruments.
+#      EURUSD realistic range is ~0.80-1.60, USDJPY is ~75-160, etc.
+# CHANGED: April 2026 — per-symbol price validation ranges
+SYMBOL_PRICE_RANGES = {
+    'XAUUSD': (200, 5000),      # Gold: $250 (2001) to $2700+ (2024)
+    'EURUSD': (0.80, 1.60),     # Euro: 0.83 (2000) to 1.60 (2008)
+    'GBPUSD': (1.00, 2.20),     # Pound: 1.04 (1985) to 2.11 (2007)
+    'USDJPY': (75, 160),        # Yen: 75.56 (2011) to 160 (1990)
+    'BTCUSD': (100, 100000),    # Bitcoin: ~$100 (2013) to $69k (2021)
+    'ETHUSD': (10, 10000),      # Ethereum: ~$10 (2015) to $4.8k (2021)
+}
+
 
 def validate_candle_file(csv_path, symbol="XAUUSD"):
     """
@@ -65,16 +86,19 @@ def validate_candle_file(csv_path, symbol="XAUUSD"):
     max_price = all_prices.max()
     result["price_range"] = (round(min_price, 2), round(max_price, 2))
 
-    # Check if prices are in realistic range for XAUUSD
-    # Historical range roughly $250 (2001) to $2700+ (2020-2024)
-    if symbol.upper() == "XAUUSD":
-        if min_price < 200 or max_price > 5000:
+    # Check if prices are in realistic range (symbol-specific validation)
+    symbol_upper = symbol.upper()
+    if symbol_upper in SYMBOL_PRICE_RANGES:
+        min_valid, max_valid = SYMBOL_PRICE_RANGES[symbol_upper]
+        if min_price < min_valid or max_price > max_valid:
             result["price_ok"] = False
-            result["issues"].append(f"Price range ${min_price:.2f}-${max_price:.2f} outside realistic XAUUSD range ($200-$5000)")
+            result["issues"].append(
+                f"Price range {min_price:.5f}-{max_price:.5f} outside realistic "
+                f"{symbol_upper} range ({min_valid}-{max_valid})")
         else:
             result["price_ok"] = True
     else:
-        result["price_ok"] = True  # Don't validate other symbols
+        result["price_ok"] = True  # Unknown symbol — skip validation
 
     # OHLC sanity checks
     invalid_ohlc = df[(df["high"] < df["low"]) |
@@ -93,7 +117,7 @@ def validate_candle_file(csv_path, symbol="XAUUSD"):
 
     # Check for zero-volume candles (might indicate data issues)
     zero_vol = df[df["volume"] == 0]
-    if len(zero_vol) > len(df) * 0.1:  # More than 10% zero volume
+    if len(zero_vol) > len(df) * ZERO_VOLUME_THRESHOLD_VALIDATE:
         result["issues"].append(f"{len(zero_vol)} zero-volume candles ({len(zero_vol)/len(df)*100:.1f}%)")
 
     # Gap detection (simplified - just check for large time jumps)
@@ -118,24 +142,54 @@ def validate_candle_file(csv_path, symbol="XAUUSD"):
 
     if tf and tf in tf_map:
         expected_delta = tf_map[tf]
-        # Check gaps (allow 3x expected delta for weekends/holidays)
+        # Check gaps (allow multiplier × expected delta for weekends/holidays)
         df["time_diff"] = df["timestamp"].diff()
-        large_gaps = df[df["time_diff"] > expected_delta * 3]
+        large_gaps = df[df["time_diff"] > expected_delta * WEEKEND_GAP_MULTIPLIER]
 
-        # Filter out weekend gaps (Friday close to Monday open)
+        # WHY: Large gaps flagged for Christmas, New Year, Good Friday, etc.
+        #      are expected market closures, not data quality issues.
+        # CHANGED: April 2026 — skip known holiday gaps
+        # NOTE: Dates are (month, day) tuples for common forex/stock holidays
+        known_holidays = [
+            (12, 24), (12, 25), (12, 26),  # Christmas Eve, Christmas, Boxing Day
+            (12, 31), (1, 1),               # New Year's Eve, New Year's Day
+            (7, 4),                         # US Independence Day
+            # Add more as needed (Good Friday varies, so not included)
+        ]
+
+        # Filter out weekend gaps + holiday gaps
         weekday_gaps = []
         for idx, row in large_gaps.iterrows():
             prev_idx = df.index[df.index.get_loc(idx) - 1]
             prev_row = df.loc[prev_idx]
+
             # Check if gap is over a weekend (Friday to Monday)
             if prev_row["timestamp"].weekday() == 4 and row["timestamp"].weekday() == 0:
                 continue  # Weekend gap is expected
+
+            # Check if gap overlaps a known holiday
+            gap_start = prev_row["timestamp"]
+            gap_end = row["timestamp"]
+            is_holiday_gap = False
+            for month, day in known_holidays:
+                # Check if holiday falls between gap_start and gap_end
+                try:
+                    holiday_date = pd.Timestamp(year=gap_start.year, month=month, day=day)
+                    if gap_start <= holiday_date <= gap_end:
+                        is_holiday_gap = True
+                        break
+                except ValueError:
+                    continue  # Invalid date (e.g., Feb 30)
+
+            if is_holiday_gap:
+                continue  # Holiday gap is expected
+
             weekday_gaps.append((str(prev_row["timestamp"]), str(row["timestamp"]), str(row["time_diff"])))
 
         if len(weekday_gaps) > 0:
-            result["gaps"] = weekday_gaps[:10]  # Keep first 10 gaps
-            if len(weekday_gaps) > 10:
-                result["issues"].append(f"{len(weekday_gaps)} large gaps detected (showing first 10)")
+            result["gaps"] = weekday_gaps[:MAX_GAPS_TO_DISPLAY]
+            if len(weekday_gaps) > MAX_GAPS_TO_DISPLAY:
+                result["issues"].append(f"{len(weekday_gaps)} large gaps detected (showing first {MAX_GAPS_TO_DISPLAY})")
             else:
                 result["issues"].append(f"{len(weekday_gaps)} large gaps detected")
 
@@ -239,7 +293,7 @@ def check_backtest_data_quality(candles_df, timeframe="H1"):
     # Check for zero-volume candles
     if "volume" in candles_df.columns:
         zero_vol = candles_df[candles_df["volume"] == 0]
-        if len(zero_vol) > len(candles_df) * 0.2:  # More than 20%
+        if len(zero_vol) > len(candles_df) * ZERO_VOLUME_THRESHOLD_BACKTEST:
             warnings.append({
                 "severity": "info",
                 "message": f"{len(zero_vol)} zero-volume candles ({len(zero_vol)/len(candles_df)*100:.1f}%)"
@@ -261,8 +315,8 @@ def check_backtest_data_quality(candles_df, timeframe="H1"):
     if timeframe in tf_delta:
         expected = tf_delta[timeframe]
         time_diff = candles_df["timestamp"].diff()
-        large_gaps = time_diff[time_diff > expected * 5]  # Allow 5x for weekends
-        if len(large_gaps) > 10:
+        large_gaps = time_diff[time_diff > expected * LARGE_GAP_MULTIPLIER]
+        if len(large_gaps) > MAX_GAPS_TO_DISPLAY:
             warnings.append({
                 "severity": "info",
                 "message": f"{len(large_gaps)} large time gaps detected"
@@ -300,6 +354,12 @@ def cross_check_trades_vs_candles(trades_csv, candles_csv, tolerance_pct=5.0):
 
     trades = trades.dropna(subset=["entry_time", "entry_price"])
     candles = candles.dropna(subset=["timestamp"])
+
+    # WHY: Duplicate timestamps cause set_index to fail with "cannot reindex
+    #      from a duplicate axis". Drop duplicates first (keep='last' to
+    #      prefer the most recent data if broker sent duplicate candles).
+    # CHANGED: April 2026 — drop duplicates before set_index
+    candles = candles.drop_duplicates(subset=["timestamp"], keep="last")
 
     # Set candles timestamp as index for easier lookup
     candles = candles.set_index("timestamp").sort_index()

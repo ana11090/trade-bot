@@ -44,9 +44,12 @@ def load_trades_csv(filepath):
 
     df = pd.read_csv(filepath)
 
-    # Parse date columns - handle DD/MM/YYYY HH:MM format
-    df['Open Date'] = pd.to_datetime(df['Open Date'], format='%d/%m/%Y %H:%M')
-    df['Close Date'] = pd.to_datetime(df['Close Date'], format='%d/%m/%Y %H:%M')
+    # WHY: Hardcoded format='%d/%m/%Y %H:%M' fails when broker exports use
+    #      YYYY-MM-DD or other formats. Use format='mixed' + dayfirst=True
+    #      to auto-detect DD/MM/YYYY vs MM/DD/YYYY vs ISO formats.
+    # CHANGED: April 2026 — auto-detect date format
+    df['Open Date'] = pd.to_datetime(df['Open Date'], format='mixed', dayfirst=True)
+    df['Close Date'] = pd.to_datetime(df['Close Date'], format='mixed', dayfirst=True)
 
     # Rename columns to snake_case for easier coding
     df = df.rename(columns={
@@ -106,11 +109,11 @@ def load_trades_from_state(state_module):
     if 'Close Date' not in date_col_map and 'Close Date' in df.columns:
         date_col_map['Close Date'] = 'Close Date'
 
-    # Parse dates
+    # Parse dates (auto-detect format — see fix in load_trades_csv)
     if 'Open Date' in date_col_map:
-        df['Open Date'] = pd.to_datetime(df[date_col_map['Open Date']], format='%d/%m/%Y %H:%M', errors='coerce')
+        df['Open Date'] = pd.to_datetime(df[date_col_map['Open Date']], format='mixed', dayfirst=True, errors='coerce')
     if 'Close Date' in date_col_map:
-        df['Close Date'] = pd.to_datetime(df[date_col_map['Close Date']], format='%d/%m/%Y %H:%M', errors='coerce')
+        df['Close Date'] = pd.to_datetime(df[date_col_map['Close Date']], format='mixed', dayfirst=True, errors='coerce')
 
     # Rename columns to snake_case for easier coding
     df = df.rename(columns={
@@ -196,6 +199,8 @@ def convert_to_utc(df, timestamp_col, source_timezone='EET'):
         df: DataFrame containing timestamps
         timestamp_col: Name of the timestamp column
         source_timezone: Source timezone string (e.g., 'EET', 'GMT', 'US/Eastern')
+                        NOTE: Default 'EET' is the MT5 server time used by most
+                        European brokers (UTC+2 standard, UTC+3 daylight).
 
     Returns:
         DataFrame with timestamps converted to UTC (timezone-aware)
@@ -266,7 +271,7 @@ def align_trades_to_candles(trades_df, candles_df, lookback_candles=200):
     return aligned, dropped_count
 
 
-def verify_alignment(trades_df, candles_df, tolerance_pips=5.0):
+def verify_alignment(trades_df, candles_df, tolerance_pips=5.0, pip_size=0.01):
     """
     Verify that trade open prices fall within the candle's high/low range.
 
@@ -274,6 +279,7 @@ def verify_alignment(trades_df, candles_df, tolerance_pips=5.0):
         trades_df: Aligned trades with 'aligned_candle_idx' column
         candles_df: Candle data
         tolerance_pips: How many pips outside the candle range is acceptable
+        pip_size: Pip size in price units (0.01 for XAUUSD, 0.0001 for EURUSD, etc.)
 
     Returns:
         Number of trades that failed verification
@@ -281,6 +287,14 @@ def verify_alignment(trades_df, candles_df, tolerance_pips=5.0):
     print(f"  Verifying alignment: checking trade open prices vs candle ranges...")
 
     misaligned_count = 0
+
+    # WHY: Old code used tolerance_pips directly as price units, causing
+    #      100x error for XAUUSD (5 pips = 0.05 price units, not 5.0).
+    # CHANGED: April 2026 — convert pips to price units
+    # WHY: For small pip_size (0.00001 crypto), tolerance could become
+    #      microscopic (5*0.00001=0.00005). Enforce min 0.50 absolute floor.
+    # CHANGED: April 2026 — add minimum tolerance floor
+    tolerance_price_units = max(tolerance_pips * pip_size, 0.50)
 
     for idx, trade in trades_df.iterrows():
         candle_idx = int(trade['aligned_candle_idx'])
@@ -291,7 +305,7 @@ def verify_alignment(trades_df, candles_df, tolerance_pips=5.0):
         candle_low = candle['low']
 
         # Check if trade price is within candle range (with tolerance)
-        if trade_price < (candle_low - tolerance_pips) or trade_price > (candle_high + tolerance_pips):
+        if trade_price < (candle_low - tolerance_price_units) or trade_price > (candle_high + tolerance_price_units):
             misaligned_count += 1
 
     if misaligned_count > 0:

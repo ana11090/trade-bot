@@ -54,9 +54,18 @@ def run_scratch_discovery(
 ):
     """
     Full scratch discovery pipeline.
+
+    WHY default values: sl_pips=150, tp_pips=300, pip_size=0.01, spread_pips=2.5
+    are XAUUSD defaults. For other instruments (EURUSD, etc.) the caller MUST
+    pass instrument-specific values:
+        EURUSD: sl_pips=15, tp_pips=30, pip_size=0.0001, spread_pips=0.5
+        USDJPY: sl_pips=15, tp_pips=30, pip_size=0.01, spread_pips=0.5
+    Otherwise the discovery will mislabel candles using XAUUSD pip math on
+    a different instrument.
+
     Returns result dict and saves to discovery_scratch.json.
 
-    New Parameters:
+    Parameters:
     - prop_firm_name: Optional prop firm name for Monte Carlo pass probability estimation
     - prop_firm_data: Optional prop firm config dict (DD limits, account size, etc.)
     - compare_all_tfs: If True, runs discovery on M5/M15/H1/H4 and returns comparison
@@ -228,7 +237,12 @@ def run_scratch_discovery(
                 if rules:
                     best_wr = max(r.get('win_rate', 0) for r in rules)
                     best_pips = max(r.get('avg_pips', 0) for r in rules)
-                    score = best_wr * max(1 + best_pips / 200, 0.1)
+                    # WHY: Old code had `best_pips / 200` — magic constant 200
+                    #      was a normalizer for XAUUSD pip scale. Now scale by
+                    #      sl_pips so the formula works for any instrument.
+                    # CHANGED: April 2026 — instrument-relative scoring
+                    pip_scale = max(sl_pips, 1)
+                    score = best_wr * max(1 + best_pips / pip_scale, 0.1)
 
                     for r in rules:
                         r['optimal_sl_pips'] = test_sl
@@ -1139,13 +1153,22 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
                 child = []
                 for i in range(max_depth):
                     child.append(p1[i] if rng.random() < 0.5 else p2[i])
-                # Ensure no duplicates
-                child = list(set(child))
-                while len(child) < max_depth:
-                    child.append(rng.randint(0, n_features - 1))
+                # WHY: Old code: dedup → top up with random ints → those ints
+                #      could be ALREADY in the child set, restoring duplicates.
+                #      New code: track seen set explicitly, top up with random
+                #      ints that are NOT already present.
+                # CHANGED: April 2026 — guarantee unique features in child
+                seen = set(child)
+                if len(seen) < max_depth:
+                    # Need more uniques — sample from features NOT yet in set
+                    remaining = [i for i in range(n_features) if i not in seen]
+                    rng.shuffle(remaining)
+                    while len(seen) < max_depth and remaining:
+                        seen.add(remaining.pop())
+                child = list(seen)
                 next_gen.append(tuple(child[:max_depth]))
             else:
-                # Random new combo (exploration)
+                # Random new combo (exploration) — rng.sample already guarantees uniqueness
                 next_gen.append(tuple(rng.sample(range(n_features), max_depth)))
 
         # Mutation: randomly swap one feature
@@ -1169,8 +1192,13 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
             if len(feats) >= 2:
                 seen_combos.add(feats)
 
+        # WHY: Old code did `list(seen_combos)[:50]` which is non-deterministic
+        #      because set ordering varies between Python runs. Sort first so
+        #      the same input always grid-searches the same combos.
+        # CHANGED: April 2026 — deterministic ordering
+        sorted_combos = sorted(seen_combos)
         grid_rules = []
-        for combo in list(seen_combos)[:50]:
+        for combo in sorted_combos[:50]:
             feat_names_combo = list(combo)
             if all(f in X.columns for f in feat_names_combo):
                 grid_rules.extend(_grid_search_thresholds(

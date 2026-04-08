@@ -45,13 +45,39 @@ def generate_ea(
 
     Returns the code as a string. Also saves to output_path if provided.
     """
+    # WHY: Reproducible magic numbers from strategy id. Old code used
+    #      random.randint, so re-running generate_ea on the same strategy
+    #      produced different magic numbers — confusing if user has multiple
+    #      copies. Now: derive deterministically from strategy name+symbol
+    #      hash. User can still override via magic_number param.
+    # CHANGED: April 2026 — deterministic magic number
     if magic_number is None:
-        magic_number = random.randint(10000, 99999)
+        seed_str = f"{symbol}_{strategy.get('rule_combo', 'default')}_{strategy.get('exit_name', 'default')}"
+        # Simple hash → 5-digit magic number, stable across runs
+        h = 0
+        for c in seed_str:
+            h = (h * 31 + ord(c)) & 0xFFFFFFFF
+        magic_number = 10000 + (h % 90000)
 
     rules     = strategy.get('rules', [])
     win_rules = [r for r in rules if r.get('prediction') == 'WIN']
     exit_name = strategy.get('exit_name', strategy.get('exit_strategy', 'FixedSLTP'))
     exit_params = strategy.get('exit_strategy_params', {'sl_pips': 150, 'tp_pips': 300})
+
+    # WHY: Old code hardcoded BUY everywhere. The strategy dict contains the
+    #      actual direction from the analysis_report. Read it and thread it
+    #      through to the platform-specific generators. BOTH is not yet
+    #      supported because the EA needs runtime direction selection per
+    #      tick — that's a deeper refactor.
+    # CHANGED: April 2026 — direction-aware EA generation
+    direction = str(strategy.get('direction', 'BUY')).upper()
+    if direction not in ('BUY', 'SELL'):
+        raise NotImplementedError(
+            f"EA generator: direction='{direction}' is not yet supported. "
+            f"Only BUY or SELL strategies can be exported. "
+            f"For BOTH-direction strategies, split into separate BUY and SELL "
+            f"EAs first or wait for runtime direction selection."
+        )
 
     validation = strategy.get('validation', {})
     grade       = validation.get('grade', 'N/A')
@@ -108,6 +134,7 @@ def generate_ea(
             account_size=account_size,
             restrictions=restrictions,
             challenge=challenge,
+            direction=direction,  # NEW: pass strategy direction
         )
     else:
         code = _generate_tradovate(
@@ -129,6 +156,8 @@ def generate_ea(
             grade=grade,
             score=score,
             base_stats=base_stats,
+            direction=direction,  # NEW: pass strategy direction
+            entry_timeframe=entry_timeframe,  # NEW: needed for TF subscription fix
         )
 
     if output_path:
@@ -152,7 +181,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   stage='evaluation', trading_rules=None,
                   dd_mechanics=None, account_size=10000,
                   restrictions=None, challenge=None,
-                  entry_timeframe='H1'):
+                  entry_timeframe='H1',
+                  direction='BUY'):  # NEW
+    """Generate MQL5 EA code. direction must be 'BUY' or 'SELL'."""
+    if direction not in ('BUY', 'SELL'):
+        raise ValueError(f"_generate_mt5: direction must be BUY or SELL, got {direction!r}")
+    is_buy = (direction == 'BUY')
 
     handles = get_all_handles_for_rules(win_rules, platform='mt5')
     generated_at = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -160,6 +194,44 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
     trail_pips = exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))
+
+    # WHY: Direction-dependent code fragments. Old code hardcoded BUY logic
+    #      everywhere — for SELL strategies, the EA placed BUY orders with
+    #      inverted SL/TP and lost money on every trade. Now we build
+    #      direction-aware fragments once and substitute them throughout.
+    # CHANGED: April 2026 — direction-aware code generation
+    if is_buy:
+        # For BUY: SL below ask, TP above ask, profit when bid > entry
+        _entry_call         = "trade.Buy(lots, _Symbol, 0, slPrice, tpPrice, \"EA_Entry\")"
+        _sl_price_expr      = "ask - sl"
+        _tp_price_expr      = "ask + tp"
+        _entry_price_src    = "ask"
+        _profit_pips_expr   = "(_bid - _openP) / GetPipSize()"      # for trailing/hybrid
+        _be_new_sl_expr     = "_openP + _Point"                      # breakeven SL
+        _trail_new_sl_expr  = "_bid - TrailPips * GetPipSize()"
+        _trail_sl_compare   = "_newSL > _curSL + _Point"
+        _direction_label    = "BUY"
+        _trade_dir_const    = "ORDER_TYPE_BUY"
+    else:
+        # For SELL: SL above bid, TP below bid, profit when ask < entry
+        _entry_call         = "trade.Sell(lots, _Symbol, 0, slPrice, tpPrice, \"EA_Entry\")"
+        _sl_price_expr      = "bid + sl"   # SL above current bid
+        _tp_price_expr      = "bid - tp"   # TP below current bid
+        _entry_price_src    = "bid"
+        _profit_pips_expr   = "(_openP - _ask) / GetPipSize()"      # SELL profits when price drops
+        _be_new_sl_expr     = "_openP - _Point"                      # breakeven SL ABOVE entry for sells (wait, see below)
+        _trail_new_sl_expr  = "_ask + TrailPips * GetPipSize()"     # SL above ask for sell
+        _trail_sl_compare   = "_newSL < _curSL - _Point || _curSL == 0"
+        _direction_label    = "SELL"
+        _trade_dir_const    = "ORDER_TYPE_SELL"
+
+    # NOTE: For a SELL position, "breakeven" means moving the SL DOWN to entry
+    #       price (since SL was originally ABOVE entry). The SL value moves
+    #       toward the entry, which is BELOW the current SL. So new SL = entry.
+    #       (Same as BUY: new SL = entry, but for sells _openP < _curSL.)
+    # Override the breakeven SL expressions to be just _openP (entry) — same
+    # for both directions, since "move SL to entry" is direction-agnostic.
+    _be_new_sl_expr = "_openP"
 
     # ── Determine exit strategy type ──────────────────────────────────────
     # WHY: Different exit strategies need different MQL5 code.
@@ -330,9 +402,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 extra_inputs.append(f'input double EvalDailyDDAlert = {daily_alert}; // EA stops here (firm blows at {dd_daily_pct}%)')
                 extra_tick_checks.append(
                     f'   // [{rname}] Daily DD alert at {daily_alert}% (firm limit: {dd_daily_pct}%)\n'
+                    f'   // WHY: Daily DD is % of starting balance per firm rules.\n'
                     f'   if(UsePropFirmMode && !g_stopForDay)\n'
                     f'   {{\n'
-                    f'      double dailyLossPct = (g_dailyReference > 0) ? (g_dailyReference - equity) / g_dailyReference * 100.0 : 0;\n'
+                    f'      double dailyLossPct = (g_startingBalance > 0) ? (g_dailyReference - equity) / g_startingBalance * 100.0 : 0;\n'
                     f'      if(dailyLossPct >= EvalDailyDDAlert)\n'
                     f'      {{\n'
                     f'         g_stopForDay = true;\n'
@@ -346,9 +419,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 extra_inputs.append(f'input double EvalTotalDDAlert = {total_alert}; // EA stops here (firm blows at {dd_total_pct}%)')
                 extra_tick_checks.append(
                     f'   // [{rname}] Total DD alert at {total_alert}% (firm limit: {dd_total_pct}%)\n'
+                    f'   // WHY: DD is % of starting balance, not % of HWM. Old code\n'
+                    f'   //      used g_hwm as denominator → wrong alert thresholds\n'
+                    f'   //      whenever balance grew above starting. April 2026 fix.\n'
                     f'   if(UsePropFirmMode)\n'
                     f'   {{\n'
-                    f'      double totalDDPct = (g_hwm > 0) ? (g_hwm - equity) / g_hwm * 100.0 : 0;\n'
+                    f'      double totalDDPct = (g_startingBalance > 0) ? (g_hwm - equity) / g_startingBalance * 100.0 : 0;\n'
                     f'      if(totalDDPct >= EvalTotalDDAlert)\n'
                     f'      {{\n'
                     f'         g_stopForever = true;\n'
@@ -373,9 +449,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 extra_daily_reset.append(f'   g_dailyAlertSent = false;')
                 extra_tick_checks.append(
                     f'   // [{rname}] Daily DD alert at {da}%\n'
+                    f'   // WHY: Daily DD is % of starting balance per firm rules.\n'
                     f'   if(UsePropFirmMode && !g_dailyAlertSent)\n'
                     f'   {{\n'
-                    f'      double dailyLossPct = (g_dailyReference > 0) ? (g_dailyReference - equity) / g_dailyReference * 100.0 : 0;\n'
+                    f'      double dailyLossPct = (g_startingBalance > 0) ? (g_dailyReference - equity) / g_startingBalance * 100.0 : 0;\n'
                     f'      if(dailyLossPct >= FundedDailyDDAlert)\n'
                     f'      {{\n'
                     f'         string cs = GetPayoutStatus();\n'
@@ -394,9 +471,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 extra_tick_checks.append(
                     f'   // [{rname}] Emergency: stop for rest of period at {em}%\n'
                     f'   if(g_stoppedForPeriod) {{ LogSkip("stopped_for_period", 0); return; }}\n'
+                    f'   // WHY: Total DD is % of starting balance per firm rules.\n'
                     f'   if(UsePropFirmMode)\n'
                     f'   {{\n'
-                    f'      double totalDDPct = (g_hwm > 0) ? (g_hwm - equity) / g_hwm * 100.0 : 0;\n'
+                    f'      double totalDDPct = (g_startingBalance > 0) ? (g_hwm - equity) / g_startingBalance * 100.0 : 0;\n'
                     f'      if(totalDDPct >= EmergencyDDPct)\n'
                     f'      {{\n'
                     f'         string cs = GetPayoutStatus();\n'
@@ -925,7 +1003,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      g_breakevenSet = false;\n'
         )
         exit_management = (
-            f'   // Hybrid exit: breakeven + trailing + time limit\n'
+            f'   // Hybrid exit: breakeven + trailing + time limit ({_direction_label})\n'
+            f'   // WHY: Old code hardcoded BUY math here. For SELL trades, breakeven\n'
+            f'   //      and trailing direction is inverted: profit grows as price\n'
+            f'   //      DROPS, SL moves DOWN. April 2026 fix.\n'
             f'   for(int _hi = PositionsTotal() - 1; _hi >= 0; _hi--)\n'
             f'   {{\n'
             f'      ulong _ht = PositionGetTicket(_hi);\n'
@@ -935,19 +1016,20 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      double _curSL = PositionGetDouble(POSITION_SL);\n'
             f'      double _curTP = PositionGetDouble(POSITION_TP);\n'
             f'      double _bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);\n'
-            f'      double _profitPips = (_bid - _openP) / GetPipSize();\n'
+            f'      double _ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);\n'
+            f'      double _profitPips = {_profit_pips_expr};\n'
             f'      // Breakeven: move SL to entry once profit reaches threshold\n'
             f'      if(!g_breakevenSet && _profitPips >= BreakevenPips)\n'
             f'      {{\n'
-            f'         trade.PositionModify(_ht, _openP + _Point, _curTP);\n'
+            f'         trade.PositionModify(_ht, {_be_new_sl_expr}, _curTP);\n'
             f'         g_breakevenSet = true;\n'
             f'         Print("[EA] Breakeven set at ", _openP);\n'
             f'      }}\n'
-            f'      // Trailing: move SL up as price moves\n'
+            f'      // Trailing: move SL toward profit as price moves\n'
             f'      if(g_breakevenSet && TrailPips > 0)\n'
             f'      {{\n'
-            f'         double _newSL = _bid - TrailPips * GetPipSize();\n'
-            f'         if(_newSL > _curSL + _Point)\n'
+            f'         double _newSL = {_trail_new_sl_expr};\n'
+            f'         if({_trail_sl_compare})\n'
             f'            trade.PositionModify(_ht, _newSL, _curTP);\n'
             f'      }}\n'
             f'   }}\n'
@@ -1144,17 +1226,23 @@ void OnTick()
    {{ LogSkip("outside_session", 0); return; }}
 
    if(!CheckDayFilter())
-   {{ LogSkip("day_filtered", now_struct.day_of_week); return; }}
+   {{ LogSkip("day_filtered", (double)_now_srv.day_of_week); return; }}
 
    if(UseNewsFilter && IsNewsImminent())
    {{ LogSkip("news_filter", 0); return; }}
 
 {extra_tick_checks_block}
    //--- Check entry conditions
+   // WHY: Any indicator that returns EMPTY_VALUE means it's not ready or
+   //      failed to read. Skip this signal entirely instead of trading on
+   //      garbage data.
+   // CHANGED: April 2026 — short-circuit on indicator failure
    bool entrySignal = true;
+   bool indicatorFailed = false;
 
 {conditions_check_block}
 
+   if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
    if(!entrySignal) return;
 
    //--- No existing position with our magic
@@ -1185,20 +1273,21 @@ void OnTick()
    //--- Calculate SL/TP prices BEFORE placing the order
    //    WHY: Passing 0 for SL/TP then calling PositionModify after leaves the
    //         position unprotected if the EA crashes between the two calls.
-   //    CHANGED: April 2026 — atomic SL/TP placement
+   //    CHANGED: April 2026 — atomic SL/TP placement + direction-aware
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double slPrice = NormalizeDouble(ask - sl, _Digits);
-   double tpPrice = NormalizeDouble(ask + tp, _Digits);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double slPrice = NormalizeDouble({_sl_price_expr}, _Digits);
+   double tpPrice = NormalizeDouble({_tp_price_expr}, _Digits);
 
    //--- Place order WITH SL and TP attached
-   if(trade.Buy(lots, _Symbol, 0, slPrice, tpPrice, "EA_Entry"))
+   if({_entry_call})
    {{
       double entryPrice = trade.ResultPrice();
 {exit_on_entry_block}
       g_dailyTrades++;
       g_lastTradeTime = TimeCurrent();
-      LogTrade("OPEN", "BUY", lots, entryPrice, 0, 0, "entry_signal");
-      Print("[EA] BUY opened @ ", entryPrice, " lots=", lots);
+      LogTrade("OPEN", "{_direction_label}", lots, entryPrice, 0, 0, "entry_signal");
+      Print("[EA] {_direction_label} opened @ ", entryPrice, " lots=", lots);
    }}
 }}
 
@@ -1214,6 +1303,23 @@ double GetPipSize()
    double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    // 3 or 5 digit pricing: pip = 10 points; 2 or 4 digit: pip = 1 point
    return (digits == 3 || digits == 5) ? point * 10.0 : point;
+}}
+
+//+------------------------------------------------------------------+
+//| SafeCopyBuffer — wrapper that returns sentinel on failure         |
+//| WHY: Indicator handles aren't always ready (warmup, errors). The  |
+//|      old code called CopyBuffer and read buf[0] unconditionally,  |
+//|      which reads uninitialized memory. This wrapper returns       |
+//|      EMPTY_VALUE on any failure so callers can short-circuit.     |
+//| CHANGED: April 2026 — defensive indicator reads                   |
+//+------------------------------------------------------------------+
+double SafeCopyBuf(int handle, int bufNum)
+{{
+   if(handle == INVALID_HANDLE) return EMPTY_VALUE;
+   double tmp[1];
+   int copied = CopyBuffer(handle, bufNum, 0, 1, tmp);
+   if(copied <= 0) return EMPTY_VALUE;
+   return tmp[0];
 }}
 
 //+------------------------------------------------------------------+
@@ -1431,7 +1537,20 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
                         risk_per_trade_pct, max_trades_per_day, session_filter,
                         day_filter, cooldown_minutes, news_filter_minutes,
                         max_spread_pips, dd_daily_pct, dd_total_pct, dd_safety_pct,
-                        grade, score, base_stats):
+                        grade, score, base_stats,
+                        direction='BUY',           # NEW
+                        entry_timeframe='H1'):     # NEW
+    """Generate Tradovate Python bot. direction must be 'BUY' or 'SELL'."""
+    if direction not in ('BUY', 'SELL'):
+        raise ValueError(f"_generate_tradovate: direction must be BUY or SELL, got {direction!r}")
+
+    # Map entry_timeframe to Tradovate minute interval + dataframe variable
+    _tf_intervals = {'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240, 'D1': 1440}
+    tf_minutes = _tf_intervals.get(entry_timeframe, 60)
+    tf_df_var  = f'df_m{tf_minutes}'
+
+    # Tradovate API uses "Buy"/"Sell" capitalization
+    tradovate_action = 'Buy' if direction == 'BUY' else 'Sell'
 
     handles  = get_all_handles_for_rules(win_rules, platform='tradovate')
     generated_at = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -1597,7 +1716,7 @@ async def on_new_bar(api_client):
     if daily_trades >= MAX_TRADES_PER_DAY:
         log_trade("SKIP", 0, 0, 0, 0, "", "max_trades_per_day"); return
 
-    if last_trade_time and (now - last_trade_time).seconds < COOLDOWN_MINUTES * 60:
+    if last_trade_time and (now - last_trade_time).total_seconds() < COOLDOWN_MINUTES * 60:
         log_trade("SKIP", 0, 0, 0, 0, "", "cooldown"); return
 
     if not check_entry_conditions():
@@ -1606,21 +1725,22 @@ async def on_new_bar(api_client):
     # Place order
     try:
         balance = await api_client.get_balance()
-        price   = df_m60["close"].iloc[-1]
+        price   = {tf_df_var}["close"].iloc[-1]
         sl_dist = SL_PIPS * 0.01
+
         lots    = calculate_lots(balance, sl_dist)
 
         order = await api_client.place_order(
             symbol=SYMBOL,
-            action="Buy",
+            action="{tradovate_action}",
             qty=lots,
             order_type="Market",
         )
         if order:
             daily_trades += 1
             last_trade_time = now
-            log_trade("BUY", lots, price, 0, 0, "entry_signal")
-            print(f"[TRADE] BUY {{lots}} lots @ {{price:.2f}} SL={{SL_PIPS}}pips TP={{TP_PIPS}}pips")
+            log_trade("{direction}", lots, price, 0, 0, "entry_signal")
+            print(f"[TRADE] {direction} {{{{lots}}}} lots @ {{{{price:.2f}}}} SL={{{{SL_PIPS}}}}pips TP={{{{TP_PIPS}}}}pips")
     except Exception as e:
         print(f"[ORDER] Error: {{e}}")
 
@@ -1653,14 +1773,16 @@ async def main():
     await client.connect()
     print(f"[BOT] Started. Symbol={{SYMBOL}} Risk={{RISK_PCT}}%")
 
-    # Subscribe to H1 candles (main timeframe)
-    async def on_h1_candle(candle):
-        global df_m60
+    # WHY: Old code hardcoded H1 (60 minutes). Now subscribe to the
+    #      strategy's actual entry timeframe.
+    # CHANGED: April 2026 — entry_timeframe-aware subscription
+    async def on_entry_candle(candle):
+        global {tf_df_var}
         new_row = pd.DataFrame([candle])[["open","high","low","close","volume"]]
-        df_m60 = pd.concat([df_m60, new_row], ignore_index=True).tail(500)
+        {tf_df_var} = pd.concat([{tf_df_var}, new_row], ignore_index=True).tail(500)
         await on_new_bar(client)
 
-    await client.subscribe_candles(SYMBOL, 60, on_h1_candle)
+    await client.subscribe_candles(SYMBOL, {tf_minutes}, on_entry_candle)
 
     # Keep running
     while True:

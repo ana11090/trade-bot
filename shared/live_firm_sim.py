@@ -92,10 +92,16 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
     payout_cycles_completed = 0
     total_withdrawn    = 0.0
 
-    period_start_day   = 0
-    period_high        = balance
+    period_start_day      = 0
+    period_start_balance  = balance   # WHY: was named period_high — see Fix
 
     warnings = []
+
+    # WHY: payout_period_days is CALENDAR days but the loop uses index
+    #      positions in sorted_days (trading days). Convert ~14 calendar
+    #      days → ~10 trading days using a 5/7 ratio (excluding weekends).
+    # CHANGED: April 2026 — calendar/trading day distinction
+    _trading_days_per_period = max(1, int(round(payout_period_days * 5.0 / 7.0)))
 
     # ── Group trades by day ───────────────────────────────────────────────
     daily_trades = {}
@@ -153,8 +159,18 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         if lock_pct and not dd_locked:
             if balance >= starting_balance * (1.0 + lock_pct / 100.0):
                 dd_locked = True
+                # WHY: Old code set dd_floor = starting_balance, leaving zero
+                #      buffer. After lock, the floor is "starting balance
+                #      minus the DD allowance" — same buffer as before, just
+                #      anchored to the initial balance instead of trailing.
+                #      For firms with the strict "no drop below initial"
+                #      rule, use 'starting_balance_strict'.
+                # CHANGED: April 2026 — preserve DD buffer after lock
                 if lock_level == 'starting_balance':
-                    dd_floor = starting_balance
+                    dd_floor = starting_balance * (1.0 - total_dd_pct / 100.0)
+                elif lock_level == 'starting_balance_strict':
+                    dd_floor = starting_balance  # zero buffer (strict firms only)
+                # else: leave dd_floor as-is (locks at current level)
                 lock_triggered = True
                 lock_day = day_idx
 
@@ -166,20 +182,29 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
                 first_blow_day = day_idx
 
             # Simulate buying a new account for this period
-            balance          = starting_balance
-            equity           = starting_balance
-            hwm              = starting_balance
-            dd_floor         = starting_balance * (1.0 - total_dd_pct / 100.0)
-            dd_locked        = False
-            post_payout_lock = False
-            period_start_day = day_idx
-            period_high      = balance
+            balance              = starting_balance
+            equity               = starting_balance
+            hwm                  = starting_balance
+            dd_floor             = starting_balance * (1.0 - total_dd_pct / 100.0)
+            dd_locked            = False
+            post_payout_lock     = False
+            period_start_day     = day_idx
+            period_start_balance = balance
             continue
 
         # ── Payout cycle check ───────────────────────────────────────────
+        # WHY: Old code computed period_profit as `balance - period_high` where
+        #      period_high was the running max balance during the period. Since
+        #      period_high >= balance always, period_profit was always ≤ 0 and
+        #      payouts NEVER triggered. The variable was conceptually
+        #      period_start_balance (balance at the START of the period). Renamed
+        #      and removed the running-max tracking.
+        # CHANGED: April 2026 — fix payout trigger
+        # NOTE: days_in_period counts ELEMENTS in sorted_days (trading days),
+        #      not calendar days. See Fix 2 for the calendar-vs-trading distinction.
         days_in_period = day_idx - period_start_day
-        if days_in_period >= payout_period_days:
-            period_profit = balance - period_high
+        if days_in_period >= _trading_days_per_period:
+            period_profit = balance - period_start_balance
             if period_profit > 0:
                 withdraw_amount = period_profit * (withdrawal_pct / 100.0)
                 total_withdrawn += withdraw_amount
@@ -193,31 +218,42 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
                     post_payout_lock = True
 
             # Reset period
-            period_start_day = day_idx
-            period_high      = balance
-
-        # Track period high
-        if balance > period_high:
-            period_high = balance
+            period_start_day     = day_idx
+            period_start_balance = balance
+        # End payout check — period_high tracking removed (was unused after fix)
 
     # ── Calculate annual estimate ────────────────────────────────────────
-    # WHY: Old formula assumed blows were uniformly distributed — uniform
-    #      blow rate * (1 - rate) gave odd results when blows were clustered.
-    #      Use actual success rate (completed / attempted) + cost-of-blow.
-    # CHANGED: April 2026 — success-rate based annual estimate
+    # WHY: Old formula assumed blows were uniformly distributed and used a
+    #      hardcoded 5% challenge fee. Now: configurable fee, and the unit
+    #      error in the annual cost formula is fixed (was: dollars/year²).
+    # CHANGED: April 2026 — fix unit error + parameterize fee
+    #
+    # NOTE: challenge_fee_pct can be added to prop_firm_data later. For now
+    #       it falls back to a 5% default unless the firm specifies fees.
+    challenge_fee_pct = float(prop_firm_data.get('challenge_fee_pct', 5.0))
     avg_per_cycle    = 0
     estimated_annual = 0
     success_rate     = 0.0
     if days_simulated > 0 and payout_cycles_completed > 0:
-        cycles_per_year   = 365.0 / payout_period_days
+        cycles_per_year   = 365.0 / max(payout_period_days, 1)
         avg_per_cycle     = total_withdrawn / payout_cycles_completed
-        attempted_cycles  = max(days_simulated / payout_period_days, 1)
+        # Attempted cycles uses calendar days, not trading days
+        attempted_cycles  = max(days_simulated / max(payout_period_days, 1), 1)
         success_rate      = max(0.0, min(1.0, payout_cycles_completed / attempted_cycles))
-        # Each blow costs ~5% of account (conservative challenge fee estimate)
-        blow_cost         = blow_count * (account_size * 0.05)
-        gross_annual      = avg_per_cycle * cycles_per_year * success_rate
-        annual_blow_cost  = blow_cost * (cycles_per_year / max(days_simulated / 365.0, 0.1))
-        estimated_annual  = max(0.0, gross_annual - annual_blow_cost)
+
+        # Cost per blow = challenge fee for a new account
+        blow_cost_per_blow = account_size * (challenge_fee_pct / 100.0)
+
+        gross_annual = avg_per_cycle * cycles_per_year * success_rate
+
+        # Annualize blow cost: total blows over the simulation, scaled to per-year
+        # WHY: Old formula was: blow_count * fee * (cycles_per_year / years_simulated)
+        #      → units of dollars/year². Correct: blow_count * fee / years_simulated.
+        # CHANGED: April 2026 — fix unit error
+        years_simulated  = max(days_simulated / 365.0, 0.01)
+        annual_blow_cost = (blow_count * blow_cost_per_blow) / years_simulated
+
+        estimated_annual = max(0.0, gross_annual - annual_blow_cost)
 
     # ── Determine verdict ────────────────────────────────────────────────
     if blow_count == 0 and payout_cycles_completed >= 3:

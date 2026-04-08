@@ -439,7 +439,16 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 # CHANGED: April 2026 — detailed metrics on hover
                 try:
                     from shared.tooltip import add_tooltip
-                    _s = r.get('stats', {})
+                    # WHY: The matrix writer in strategy_backtester.py flattens
+                    #      m["stats"] into the top-level result dict via
+                    #      **m["stats"], so r['stats'] does not exist as a
+                    #      sub-dict — the keys live at the top level of r.
+                    #      Fall back to r itself when 'stats' is missing.
+                    #      Without this, every detailed metric in the hover
+                    #      tooltip displays 0 (winners 0, losers 0, expectancy
+                    #      +0.00, etc.).
+                    # CHANGED: April 2026 — read flattened stats from r top level
+                    _s = r.get('stats') or r
                     _exp     = _s.get('expectancy', exp)
                     _rr      = _s.get('risk_reward_ratio', 0)
                     _sharpe  = _s.get('sharpe_ish', 0)
