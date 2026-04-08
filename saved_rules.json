@@ -56,5 +56,64 @@
         "min_pips": 5
       }
     }
+  },
+  {
+    "id": 4,
+    "saved_at": "2026-04-07T22:12:36.603902",
+    "source": "Optimizer: Get Leveraged filters",
+    "notes": "{'max_trades_per_day': 3, 'cooldown_minutes': 60, 'min_pips': 5, 'min_hold_minutes': 2}",
+    "rule": {
+      "conditions": [],
+      "prediction": "WIN",
+      "win_rate": 1.0,
+      "avg_pips": 290.14,
+      "total_pips": 707647.5,
+      "net_total_pips": 707647.5,
+      "total_trades": 2439,
+      "max_dd_pips": 0.0,
+      "net_profit_factor": 99.99,
+      "optimized_rules": [],
+      "filters_applied": {
+        "max_trades_per_day": 3,
+        "cooldown_minutes": 60,
+        "min_pips": 5,
+        "min_hold_minutes": 2
+      },
+      "exit_class": "FixedSLTP",
+      "exit_params": {
+        "sl_pips": 150,
+        "tp_pips": 200
+      },
+      "exit_name": "Fixed SL/TP",
+      "entry_timeframe": "H1"
+    }
+  },
+  {
+    "id": 5,
+    "saved_at": "2026-04-07T22:27:19.672577",
+    "source": "Optimizer: Max 1 trades/day",
+    "notes": "{'max_trades_per_day': 1}",
+    "rule": {
+      "conditions": [],
+      "prediction": "WIN",
+      "win_rate": 0.8653,
+      "avg_pips": 220.82,
+      "total_pips": 399896.5,
+      "net_total_pips": 399896.5,
+      "total_trades": 1811,
+      "max_dd_pips": 834.0,
+      "net_profit_factor": 9.41,
+      "optimized_rules": [],
+      "filters_applied": {
+        "max_trades_per_day": 1
+      },
+      "exit_class": "FixedSLTP",
+      "exit_params": {
+        "sl_pips": 150,
+        "tp_pips": 200
+      },
+      "exit_name": "Fixed SL/TP",
+      "entry_timeframe": "H1"
+    }
   }
 ]

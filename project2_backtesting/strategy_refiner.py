@@ -28,15 +28,21 @@ _SESSIONS = {
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.0):
+def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
+                        default_sl_pips=150.0):
     """
     Group trades by month, return monthly P&L breakdown with daily trade frequency stats.
     Returns list of dicts: [{month: '2020-01', pnl_pips: +340, trades: 12, wins: 8,
                              avg_trades_per_day: 2.4, min_trades_per_day: 1, max_trades_per_day: 5,
                              pnl_dollars: +2267, pnl_pct: +2.27}, ...]
+
+    WHY default_sl_pips: dollar values depend on lot sizing, which depends on
+    the strategy's actual SL distance. Old code hardcoded 150 for XAUUSD. Now
+    callers should pass the actual SL pips from the strategy's exit_params.
     """
     # Calculate $ per pip based on risk settings
-    sl_pips = 150
+    # CHANGED: April 2026 — sl_pips from parameter, not hardcoded
+    sl_pips = float(default_sl_pips) if default_sl_pips and default_sl_pips > 0 else 150.0
     risk_dollars = account_size * (risk_pct / 100)
     lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
     dollar_per_pip = pip_value * lot_size
@@ -51,15 +57,24 @@ def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.
             continue
 
         if key not in monthly:
-            monthly[key] = {'month': key, 'pnl_pips': 0, 'trades': 0, 'wins': 0, 'losses': 0, 'daily_counts': {}}
+            monthly[key] = {'month': key, 'pnl_pips': 0, 'trades': 0,
+                            'wins': 0, 'losses': 0, 'breakeven': 0,
+                            'daily_counts': {}}
 
         pnl = t.get('net_pips', 0)
         monthly[key]['pnl_pips'] += pnl
         monthly[key]['trades'] += 1
+        # WHY: Old code lumped BE (pnl == 0) into losses, distorting the
+        #      win/loss count. Now BE is its own bucket so it doesn't pollute
+        #      either side. Total trades still includes BE.
+        # CHANGED: April 2026 — separate BE bucket
         if pnl > 0:
             monthly[key]['wins'] += 1
-        else:
+        elif pnl < 0:
             monthly[key]['losses'] += 1
+        else:
+            monthly[key].setdefault('breakeven', 0)
+            monthly[key]['breakeven'] += 1
 
         monthly[key]['daily_counts'][day] = monthly[key]['daily_counts'].get(day, 0) + 1
 
@@ -80,7 +95,7 @@ def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.
 
 
 def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
-                             daily_reset_hour=0):
+                             daily_reset_hour=0, default_sl_pips=150.0):
     """
     Compute three types of drawdown:
 
@@ -115,30 +130,58 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
 
     # Convert to account %
     # Each pip value depends on lot size. Approximate:
-    sl_pips = 150  # default assumption
+    # WHY: Old code hardcoded sl_pips=150 (XAUUSD-only). Now from parameter.
+    # CHANGED: April 2026 — parameterized sl_pips
+    sl_pips = float(default_sl_pips) if default_sl_pips and default_sl_pips > 0 else 150.0
     risk_dollars = account_size * (risk_pct / 100)
     lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
     realized_dd_dollars = realized_dd_pips * pip_value * lot_size
     realized_dd_pct = (realized_dd_dollars / account_size) * 100
 
     # ── 2. Floating DD (intra-trade: includes unrealized P&L) ──
+    # WHY: Old code branched only on direction == 'BUY' and silently skipped
+    #      SELL trades, returning realized DD as floating DD for any strategy
+    #      with sells. Now both directions compute the worst unrealized point
+    #      relative to the equity peak before the trade.
+    #      Also: pip_size hardcoded to 0.01 (XAUUSD). New parameter pip_size
+    #      added — but to keep the function signature stable, we infer it
+    #      from the first trade's metadata or fall back to 0.01.
+    # CHANGED: April 2026 — handle SELL trades + remove pip_size hardcode
     floating_dd_pips = realized_dd_pips  # start with realized
 
-    # If trades have highest/lowest since entry, we can compute floating DD
+    # Try to infer pip_size from a trade hint; default to XAUUSD 0.01
+    pip_size_local = 0.01
+    for _t in trades:
+        _ps = _t.get('pip_size')
+        if _ps and _ps > 0:
+            pip_size_local = float(_ps)
+            break
+
     equity = 0
     equity_peak = 0
     worst_floating = 0
 
     for t in trades:
-        # Worst point during this trade
-        if t.get('direction') == 'BUY':
-            worst_during = t.get('lowest_since_entry', t.get('entry_price', 0))
-            entry = t.get('entry_price', 0)
-            if entry > 0 and worst_during > 0:
-                worst_unrealized = (worst_during - entry) / 0.01  # pip_size
-                temp_equity = equity + worst_unrealized
-                if equity_peak - temp_equity > worst_floating:
-                    worst_floating = equity_peak - temp_equity
+        entry = t.get('entry_price', 0)
+        tdir  = t.get('direction', 'BUY')
+        worst_unrealized = 0.0
+
+        if entry > 0:
+            if tdir == 'BUY':
+                # Worst point for a BUY = lowest price reached during the trade
+                worst_during = t.get('lowest_since_entry', entry)
+                if worst_during > 0:
+                    worst_unrealized = (worst_during - entry) / pip_size_local
+            elif tdir == 'SELL':
+                # Worst point for a SELL = HIGHEST price reached during the trade
+                worst_during = t.get('highest_since_entry', entry)
+                if worst_during > 0:
+                    worst_unrealized = (entry - worst_during) / pip_size_local
+            # worst_unrealized is <= 0 (a loss in pips) for both directions
+
+            temp_equity = equity + worst_unrealized
+            if equity_peak - temp_equity > worst_floating:
+                worst_floating = equity_peak - temp_equity
 
         # After trade closes
         pnl = t.get('net_pips', 0)
@@ -220,7 +263,8 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
 
 def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
                        daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0,
-                       daily_dd_safety_pct=None, total_dd_safety_pct=None):
+                       daily_dd_safety_pct=None, total_dd_safety_pct=None,
+                       default_sl_pips=150.0):
     """
     Simulate equity curve, count prop firm DD breaches and safety stops.
 
@@ -241,7 +285,9 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             'worst_daily_pct': 0, 'worst_total_pct': 0,
         }
 
-    sl_pips = 150
+    # WHY: Old code hardcoded sl_pips=150 (XAUUSD-only). Now from parameter.
+    # CHANGED: April 2026 — parameterized sl_pips
+    sl_pips = float(default_sl_pips) if default_sl_pips and default_sl_pips > 0 else 150.0
     risk_dollars = account_size * (risk_pct / 100)
     lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
 
@@ -672,12 +718,26 @@ def _fmt_hold(minutes):
 
 
 def _get_session(hour):
-    """Return session name for a given UTC hour."""
-    # Assign to first matching session (London wins over Asian overlap)
-    for name, (start, end) in _SESSIONS.items():
-        if start <= hour < end:
-            return name
-    return "Asian"  # late night defaults
+    """Return session name for a given UTC hour.
+
+    WHY: Hours where multiple sessions overlap (e.g. hour 7 = end of Asian +
+         start of London; hours 12-15 = London + NY) need a tiebreaker.
+         The OLD code claimed "London wins" in a comment but actually
+         returned whichever session appeared first in the dict (Asian).
+         Standard convention: London wins over Asian, NY wins over London
+         (the higher-volume session takes the hour).
+    CHANGED: April 2026 — explicit priority order
+    """
+    # Priority order: NY > London > Asian > Sydney
+    # Higher-volume session wins overlapping hours.
+    if 13 <= hour < 22:
+        return "New York"
+    if 7 <= hour < 16:
+        return "London"
+    if 0 <= hour < 8:
+        return "Asian"
+    # 22-23: Sydney/late
+    return "Asian"
 
 
 def enrich_trades(trades):
@@ -732,13 +792,27 @@ def compute_stats_summary(trades):
     avg_hold = float(np.mean(hold_vals)) if hold_vals else 0.0
 
     # Profit factor
+    # WHY: Old code used max(gross_loss, 0.01) → fake 5000x PFs. Old code also
+    #      returned raw gross_profit when gross_loss == 0, which is a pip count
+    #      not a profit factor. Now: 99.99 sentinel for "no losses", 0.0 for
+    #      "no trades", correct ratio otherwise.
+    # CHANGED: April 2026 — proper PF cap
     gross_profit = sum(p for p in net if p > 0)
     gross_loss = abs(sum(p for p in net if p < 0))
-    profit_factor = gross_profit / max(gross_loss, 0.01) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 0.0)
+    if gross_loss < 1.0:  # Treat <1 pip total losses as "no losses"
+        profit_factor = 99.99 if gross_profit > 0 else 0.0
+    else:
+        profit_factor = gross_profit / gross_loss
 
+    # WHY: This function returns win_rate as a FRACTION (0..1). The refiner
+    #      panel multiplies by *100 to display. Do NOT change this — would
+    #      break the panel. compute_stats() in strategy_backtester returns
+    #      win_rate as a PERCENT (0..100). The two formats are deliberately
+    #      different per their caller expectations.
+    # CHANGED: April 2026 — explicit format documentation
     return {
         'count':            total,
-        'win_rate':         round(float(winners / total), 4),
+        'win_rate':         round(float(winners / total), 4),  # FRACTION (0-1)
         'avg_pips':         round(float(np.mean(net)), 2),
         'total_pips':       round(float(np.sum(net)), 1),
         'max_dd_pips':      round(max_dd, 1),
@@ -759,8 +833,13 @@ def apply_filters(trades, filters):
     filters keys:
         min_hold_minutes, max_hold_minutes,
         max_trades_per_day, sessions (list), days (list),
-        min_pips, cooldown_minutes,
+        cooldown_minutes,
         custom_filters: [{"feature": str, "operator": str, "value": float}]
+
+    WHY no min_pips: The old min_pips filter dropped trades whose final P&L
+    was below a threshold. That uses information not available at entry time
+    (look-ahead bias), so it inflated backtest stats but could not be applied
+    in live trading. Removed April 2026.
     """
     if not trades or not filters:
         return list(trades), []
@@ -793,9 +872,9 @@ def apply_filters(trades, filters):
     max_hold    = filters.get('max_hold_minutes')
     sessions    = filters.get('sessions')    # None = all
     days        = filters.get('days')        # None = all
-    min_pips    = filters.get('min_pips')
     cooldown    = filters.get('cooldown_minutes')
     custom      = filters.get('custom_filters', [])
+    # WHY: min_pips filter removed April 2026 — look-ahead bias.
 
     # Sort by entry time for cooldown check
     sorted_trades = sorted(trades, key=lambda t: str(t.get('entry_time', '')))
@@ -814,11 +893,6 @@ def apply_filters(trades, filters):
             day_abbrevs = [d[:3] for d in days]
             if t.get('day_abbrev', 'Mon') not in day_abbrevs and t.get('day_of_week', '') not in days:
                 reason = 'day'
-        # NOTE: min_pips is a post-hoc filter — it removes trades based on
-        # outcome, which creates look-ahead bias. Results using this filter
-        # will be better than real trading. Use with caution.
-        elif min_pips is not None and t.get('net_pips', 0) < min_pips:
-            reason = 'min_pips_WARNING_LOOK_AHEAD'
         elif allowed_ids is not None and id(t) not in allowed_ids:
             reason = 'max_per_day'
         elif cooldown and last_exit_time is not None:
@@ -939,21 +1013,22 @@ def get_prop_firm_presets():
                 }
 
                 # Auto-generate smart filters based on firm's DD limits
+                # WHY: min_pips removed April 2026 — look-ahead bias.
+                #      The remaining filters (max_trades_per_day, cooldown,
+                #      min_hold) are all decidable at entry time, so they
+                #      stay.
                 if daily_dd <= 2:
                     preset['max_trades_per_day'] = 2
                     preset['cooldown_minutes'] = 90
-                    preset['min_pips'] = 10
                 elif daily_dd <= 3:
                     preset['max_trades_per_day'] = 3
                     preset['cooldown_minutes'] = 60
-                    preset['min_pips'] = 5
                 else:
                     preset['max_trades_per_day'] = 5
                     preset['cooldown_minutes'] = 30
 
                 if dd_type in ('trailing', 'trailing_eod'):
                     preset['min_hold_minutes'] = 2
-                    preset['min_pips'] = max(preset.get('min_pips', 0), 5)
                 else:
                     preset['min_hold_minutes'] = 5
 

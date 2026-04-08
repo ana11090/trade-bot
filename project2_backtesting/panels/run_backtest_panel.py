@@ -277,8 +277,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     total_elapsed += tf_results.get('elapsed', 0)
 
                 # Sort combined results by net pips descending
+                # WHY: Same as view_results.py fix — backtest matrix flattens stats
+                #      to top level, so r.get('stats', {}) returns empty dict.
+                # CHANGED: April 2026 — read flattened stats from r top level
                 all_matrix.sort(
-                    key=lambda r: r.get('stats', {}).get('net_total_pips', 0),
+                    key=lambda r: (r.get('stats') or r).get('net_total_pips', 0),
                     reverse=True,
                 )
 
