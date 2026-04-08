@@ -15,16 +15,33 @@ _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 
 BACKTEST_MATRIX_PATH = os.path.join(_HERE, 'outputs', 'backtest_matrix.json')
 
+# WHY: backtest_matrix.json can be 40+ MB. Loading it every time freezes the GUI.
+#      Cache the parsed result and only reload if the file changes (mtime check).
+# CHANGED: April 2026 — add caching to prevent GUI freeze
+_strategy_list_cache = None
+_cache_mtime = None
+
 
 def load_strategy_list():
     """
     Load the list of tested strategies from backtest_matrix.json.
     Returns list of dicts with: rule_combo, exit_strategy, stats summary, trade_count.
     Returns None if file doesn't exist.
+
+    WHY: Caches the result to avoid re-parsing the 43MB JSON file on every panel open.
+    CHANGED: April 2026 — add mtime-based caching
     """
+    global _strategy_list_cache, _cache_mtime
+
     if not os.path.exists(BACKTEST_MATRIX_PATH):
         return None
 
+    # Check if cached version is still valid
+    current_mtime = os.path.getmtime(BACKTEST_MATRIX_PATH)
+    if _strategy_list_cache is not None and _cache_mtime == current_mtime:
+        return _strategy_list_cache
+
+    # Load and parse (this is slow for 43MB files)
     with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
@@ -43,6 +60,11 @@ def load_strategy_list():
             'net_profit_factor': r.get('net_profit_factor', 0),
             'has_trades': 'trades' in r and bool(r.get('trades')),
         })
+
+    # Update cache
+    _strategy_list_cache = strategies
+    _cache_mtime = current_mtime
+
     return strategies
 
 

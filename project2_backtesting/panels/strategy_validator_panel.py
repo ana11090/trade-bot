@@ -245,21 +245,55 @@ def _get_selected_index():
 
 
 def _get_all_selected_indices():
-    """Get all checked strategy indices (from checkboxes)."""
+    """Get all checked strategy indices (from checkboxes).
+
+    WHY: Treeview iids can be int (backtest results) or string ('saved_3', 'optimizer_latest').
+         Old code forced int(), silently dropping non-int rows.
+    CHANGED: April 2026 — preserve original type, exclude separators
+    """
     global _check_vars
     if not _check_vars:
         return []
 
     checked = []
-    for idx_str, is_checked in _check_vars.items():
+    for idx_key, is_checked in _check_vars.items():
         if is_checked:
-            try:
-                checked.append(int(idx_str))
-            except (ValueError, TypeError) as e:
-                print(f"[validator] Warning: Could not convert checkbox key '{idx_str}' to int: {e}")
+            # Skip separator rows (not selectable strategies)
+            if isinstance(idx_key, str) and idx_key.startswith('__separator_'):
                 continue
 
-    return sorted(checked)  # Return sorted list for consistent ordering
+            # Preserve original type: int for backtest results, str for saved/optimizer
+            try:
+                # Try int conversion for numeric strings
+                checked.append(int(idx_key))
+            except (ValueError, TypeError):
+                # Keep as string for 'saved_3', 'optimizer_latest', etc.
+                checked.append(idx_key)
+
+    # Sort with int first, then str (for consistent ordering)
+    return sorted(checked, key=lambda x: (isinstance(x, str), x))
+
+
+def _strategy_for_iid(iid):
+    """Look up strategy dict from _strategies by iid (type-safe).
+
+    WHY: iid can be int (backtest results) or str ('saved_3', 'optimizer_latest').
+         Matching must respect type or '3' != 3 will cause silent misses.
+    CHANGED: April 2026 — type-safe lookup for checkbox bug fix
+    """
+    global _strategies
+    for s in _strategies:
+        s_idx = s.get('index')
+        # Exact type+value match
+        if s_idx == iid:
+            return s
+        # Fallback: if both convert to same int, accept (for robustness)
+        try:
+            if int(s_idx) == int(iid):
+                return s
+        except (ValueError, TypeError):
+            pass
+    return None
 
 
 def _parse_exit_strategy(exit_name, exit_str):
@@ -394,17 +428,122 @@ def _resolve_rules(r):
 
 
 def _get_strategy_meta(idx):
-    """Return (rules, exit_class, exit_params, trades, spread, commission) for strategy idx."""
+    """Return (rules, exit_class, exit_params, trades, spread, commission) for strategy idx.
+
+    Handles three index types:
+      - int → row N of backtest_matrix.json's results array
+      - 'saved_N' → look up saved rule N from saved_rules.json (which now
+        embeds rule_combo + trades + exit_class + exit_params per Edit 1)
+      - 'optimizer_latest' → look up the latest optimizer result
+
+    WHY: Old code did data['results'][idx] unconditionally, which raised
+         TypeError on string indices. The bare except returned an empty
+         trades list silently — so the validator ran on [] and reported
+         '0 trades validated' for any row that came from saved rules or
+         the optimizer.
+    CHANGED: April 2026 — handle saved + optimizer index types
+    """
+    # Default fallback for total failure
+    _empty = ([], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0)
+
     try:
+        # ── Saved rule branch ──────────────────────────────────────────────
+        if isinstance(idx, str) and idx.startswith('saved_'):
+            try:
+                rule_id = int(idx.split('_', 1)[1])
+            except (ValueError, IndexError):
+                print(f"[validator] Bad saved rule id: {idx!r}")
+                return _empty
+
+            from shared.saved_rules import load_all
+            for entry in load_all():
+                if entry.get('id') != rule_id:
+                    continue
+                rule = entry.get('rule', {})
+                # Reconstruct (rules, exit_class, exit_params, trades, ...)
+                # from the saved fields. Edit 1 ensures rule_combo, trades,
+                # exit_class, exit_params, and entry_timeframe are present
+                # for newly-saved strategies. Older saves may be missing
+                # them — fall back to whatever we can find.
+                _rules = rule.get('optimized_rules', [])
+                if not _rules:
+                    # Fall back to conditions list wrapped as a single rule
+                    conds = rule.get('conditions', [])
+                    if conds:
+                        _rules = [{'prediction': 'WIN', 'conditions': conds}]
+                _exit_class  = rule.get('exit_class', 'FixedSLTP')
+                _exit_params = rule.get('exit_params', {'sl_pips': 150, 'tp_pips': 300})
+                _trades      = rule.get('trades', [])
+                _spread      = rule.get('spread_pips', 2.5)
+                _comm        = rule.get('commission_pips', 0.0)
+                if not _trades:
+                    print(f"[validator] WARNING: saved rule {idx} has no trades — "
+                          f"this is a stale save from before April 2026. "
+                          f"Re-save it from the optimizer to pick up the new format.")
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm
+
+            print(f"[validator] Saved rule {idx} not found in saved_rules.json")
+            return _empty
+
+        # ── Optimizer-latest branch ────────────────────────────────────────
+        # WHY: Reads the file written by the ✅ Validate button on each
+        #      optimizer result card in strategy_refiner_panel.py. Filename
+        #      is _validator_optimized.json (NOT optimizer_latest.json — the
+        #      previous fix used the wrong name). Shape is a single dict
+        #      with top-level keys: rules, trades, name, exit_class,
+        #      exit_params, exit_name.
+        # CHANGED: April 2026 — corrected filename + shape
+        if isinstance(idx, str) and idx == 'optimizer_latest':
+            try:
+                opt_path = os.path.join(project_root, 'project2_backtesting',
+                                        'outputs', '_validator_optimized.json')
+                if not os.path.exists(opt_path):
+                    print(f"[validator] _validator_optimized.json not found at {opt_path}")
+                    print(f"[validator] Click ✅ Validate on an optimizer card first.")
+                    return _empty
+                with open(opt_path, 'r', encoding='utf-8') as f:
+                    opt = json.load(f)
+                _rules       = opt.get('rules', [])
+                _trades      = opt.get('trades', [])
+                _exit_class  = opt.get('exit_class', 'FixedSLTP')
+                _exit_params = opt.get('exit_params', {'sl_pips': 150, 'tp_pips': 300})
+                # Spread / commission are not stored in _validator_optimized.json
+                # — fall back to the standard defaults the optimizer used.
+                _spread      = opt.get('spread_pips', 2.5)
+                _comm        = opt.get('commission_pips', 0.0)
+                if not _trades:
+                    print(f"[validator] _validator_optimized.json exists but contains no trades. "
+                          f"Re-click ✅ Validate on the optimizer card you want to test.")
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                print(f"[validator] Failed to load _validator_optimized.json: {e}")
+                return _empty
+
+        # ── Skip separator rows ────────────────────────────────────────────
+        if isinstance(idx, str) and idx.startswith('__separator'):
+            print(f"[validator] Cannot validate separator row: {idx!r}")
+            return _empty
+
+        # ── Integer index branch (backtest matrix row) ─────────────────────
+        # Coerce digit strings to int (Tk Treeview iids are always strings,
+        # so a backtest row's iid is e.g. '5' even though s['index'] is 5).
+        if isinstance(idx, str) and idx.isdigit():
+            idx = int(idx)
+        if not isinstance(idx, int):
+            print(f"[validator] Unrecognized index type {type(idx).__name__}: {idx!r}")
+            return _empty
+
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
         with open(backtest_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        r = data['results'][idx]
+        results = data.get('results', [])
+        if not (0 <= idx < len(results)):
+            print(f"[validator] Index {idx} out of range (0..{len(results)-1})")
+            return _empty
+        r = results[idx]
 
-        # Get rules — from saved data or from analysis_report.json
         rules = _resolve_rules(r)
-
-        # Get exit strategy — from saved class/params or by parsing the description string
         exit_class = r.get('exit_class', '')
         exit_params = r.get('exit_params')
         if not exit_class or exit_params is None:
@@ -415,9 +554,11 @@ def _get_strategy_meta(idx):
         spread     = r.get('spread_pips', 2.5)
         commission = r.get('commission_pips', 0.0)
         return rules, exit_class, exit_params, trades, spread, commission
+
     except Exception as e:
         import traceback; traceback.print_exc()
-        return [], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0
+        print(f"[validator] _get_strategy_meta({idx!r}) failed: {e}")
+        return _empty
 
 
 def _get_candles_path(entry_tf_hint=None):
@@ -493,7 +634,19 @@ def _update_strat_info():
         return
 
     # Show info for last checked item (or first selected)
-    checked_indices = [int(idx) for idx, is_checked in _check_vars.items() if is_checked]
+    # WHY: Same as _get_all_selected_indices fix — idx can be int or string
+    # CHANGED: April 2026 — preserve original index type
+    checked_indices = []
+    for idx_key, is_checked in _check_vars.items():
+        if is_checked:
+            # Skip separators
+            if isinstance(idx_key, str) and idx_key.startswith('__separator_'):
+                continue
+            # Preserve type: int for backtest, str for saved/optimizer
+            try:
+                checked_indices.append(int(idx_key))
+            except (ValueError, TypeError):
+                checked_indices.append(idx_key)
     idx = checked_indices[-1] if checked_indices else None
 
     if idx is None:
@@ -1909,7 +2062,9 @@ def _run_multi(mode):
 
         try:
             for i, idx in enumerate(indices):
-                strat = next((s for s in _strategies if s['index'] == idx), None)
+                # WHY: Use type-safe lookup (idx can be int or str)
+                # CHANGED: April 2026 — use _strategy_for_iid() helper (checkbox bug fix)
+                strat = _strategy_for_iid(idx)
                 if not strat:
                     continue
 
@@ -1983,7 +2138,9 @@ def _run(mode, override_idx=None, done_event=None):
         # Get from checkboxes first, fallback to dropdown
         indices = _get_all_selected_indices()
         if indices:
-            idx = int(indices[0])  # Use first checked item
+            # WHY: indices now preserve original type (int or str)
+            # CHANGED: April 2026 — removed int() cast (checkbox bug fix)
+            idx = indices[0]  # Use first checked item
         else:
             idx = _get_selected_index()  # Fallback to dropdown
 
@@ -2001,9 +2158,24 @@ def _run(mode, override_idx=None, done_event=None):
                                     'outputs', 'backtest_matrix.json')
         with open(_matrix_path, 'r', encoding='utf-8') as _mf:
             _mdata = json.load(_mf)
-        _row = _mdata.get('results', [])[idx] if isinstance(idx, int) else {}
+        # WHY: Only backtest matrix rows (int idx) carry per-row entry_tf.
+        #      Saved/optimizer rows store entry_timeframe in their own data
+        #      structures — _get_strategy_meta handles those branches.
+        # CHANGED: April 2026 — safe int check for string indices
+        _row = {}
+        if isinstance(idx, int):
+            _results = _mdata.get('results', [])
+            if idx < len(_results):
+                _row = _results[idx]
+        elif isinstance(idx, str) and idx.isdigit():
+            _ii = int(idx)
+            _results = _mdata.get('results', [])
+            if _ii < len(_results):
+                _row = _results[_ii]
+        # WHY: Same as view_results.py fix — stats are flattened to top level
+        # CHANGED: April 2026 — read flattened stats from row top level
         _row_entry_tf = (_row.get('entry_tf') or
-                         _row.get('stats', {}).get('entry_tf'))
+                         (_row.get('stats') or _row).get('entry_tf'))
         if _row_entry_tf:
             print(f"[VALIDATOR] Using per-strategy entry TF: {_row_entry_tf}")
     except Exception:
@@ -2020,6 +2192,27 @@ def _run(mode, override_idx=None, done_event=None):
             return
 
     rules, exit_class, exit_params, trades, spread_meta, comm_meta = _get_strategy_meta(idx)
+
+    # WHY: Old code silently ran validation on empty trade lists, producing
+    #      "validated 0 trades" results that looked like normal output but
+    #      were actually a sign that _get_strategy_meta had failed to load
+    #      the strategy. Now: fail loudly so the user knows to re-save the
+    #      strategy or pick a different one.
+    # CHANGED: April 2026 — guard against silent empty-strategy validation
+    if not trades and not rules:
+        messagebox.showerror(
+            "Strategy Has No Data",
+            f"Could not load strategy {idx!r} — got 0 trades and 0 rules.\n\n"
+            f"Most likely causes:\n"
+            f"  • The strategy was saved before April 2026 and is missing\n"
+            f"    embedded trades — re-save it from the Refiner Optimizer.\n"
+            f"  • The backtest_matrix.json file was deleted or moved.\n"
+            f"  • The _validator_optimized.json file is empty or missing.\n\n"
+            f"Check the terminal for [validator] messages with more detail."
+        )
+        if not _batch_mode:
+            _set_buttons(False)
+        return
 
     try:
         account_size  = int(_account_var.get())

@@ -39,7 +39,6 @@ _strategies      = []
 _min_hold_var    = None
 _max_hold_var    = None
 _max_per_day_var = None
-_min_pips_var    = None
 _cooldown_var    = None
 _session_vars    = {}        # "Asian/London/New York" -> BooleanVar
 _day_vars        = {}        # "Mon".."Fri" -> BooleanVar
@@ -80,7 +79,7 @@ _lock_filters_var = None
 _strategies_cache = []
 _cache_mtime = 0
 
-def _load_strategies():
+def _load_strategies(force=False):
     """Load strategy list from backtest matrix + saved rules.
 
     WHY: The dropdown needs to show all available strategies:
@@ -89,16 +88,24 @@ def _load_strategies():
       3. Saved rules (from Save button in refiner/optimizer)
     If any source fails, the others still load (handled inside load_strategy_list).
 
+    The cache is keyed on backtest_matrix.json mtime to avoid re-parsing the
+    44MB file on every panel switch. But changes that don't touch that file
+    (e.g. star/unstar a strategy, which writes to shared.starred storage)
+    are invisible to the cache. Pass force=True to bypass the cache and
+    re-run load_strategy_list, which re-applies the star sort.
+
     CHANGED: April 2026 — always call load_strategy_list so saved rules load
              even when backtest_matrix.json doesn't exist.
+    CHANGED: April 2026 — force parameter for star toggle refresh
     """
     global _strategies, _strategies_cache, _cache_mtime
     try:
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
         if os.path.exists(backtest_path):
             current_mtime = os.path.getmtime(backtest_path)
-            if current_mtime == _cache_mtime and _strategies_cache:
-                # WHY: Don't re-parse 44MB JSON on every panel switch
+            # WHY: force=True skips the cache so star toggles take effect
+            #      immediately without restarting the panel.
+            if not force and current_mtime == _cache_mtime and _strategies_cache:
                 _strategies = _strategies_cache
                 return
             _cache_mtime = current_mtime
@@ -310,12 +317,6 @@ def _get_current_filters():
     except Exception:
         pass
 
-    try:
-        v = float(_min_pips_var.get()) if _min_pips_var else 0
-        if v != 0:
-            filters['min_pips'] = v
-    except Exception:
-        pass
 
     try:
         v = float(_cooldown_var.get()) if _cooldown_var else 0
@@ -713,6 +714,53 @@ def _start_optimization():
             opt_mode = _opt_mode_var.get() if _opt_mode_var else "quick"
             print(f"[OPTIMIZER] Mode: {opt_mode}")
 
+            # ── Extract rules from selected strategy ──────────────────────────────
+            # WHY: The optimizer needs the base rules that generated the trades
+            #      it's optimizing. Without them, _validator_optimized.json gets
+            #      written with empty rules, and the validator can't run walk-forward.
+            # CHANGED: April 2026 — extract rules from selected strategy
+            base_strategy_rules = []
+            if selected_strategy_row:
+                # Try direct 'rules' field first (if saved in matrix)
+                base_strategy_rules = selected_strategy_row.get('rules', [])
+                if not base_strategy_rules or not any(r.get('conditions') for r in base_strategy_rules):
+                    # Fallback: load from analysis_report.json using rule_combo
+                    try:
+                        report_path = os.path.join(project_root,
+                            'project1_reverse_engineering', 'outputs', 'analysis_report.json')
+                        with open(report_path, 'r', encoding='utf-8') as f:
+                            report = json.load(f)
+                        all_rules = [r for r in report.get('rules', []) if r.get('prediction') == 'WIN']
+
+                        # Check for saved rule_indices
+                        rule_indices = selected_strategy_row.get('rule_indices')
+                        if rule_indices is not None:
+                            base_strategy_rules = [all_rules[i] for i in rule_indices if i < len(all_rules)]
+                        else:
+                            # Parse rule_combo name
+                            combo_name = selected_strategy_row.get('rule_combo', '')
+                            if combo_name == 'All rules combined':
+                                base_strategy_rules = all_rules
+                            else:
+                                import re
+                                m = re.match(r'^Rule\s+(\d+)', combo_name)
+                                if m:
+                                    idx_r = int(m.group(1)) - 1
+                                    if 0 <= idx_r < len(all_rules):
+                                        base_strategy_rules = [all_rules[idx_r]]
+                                else:
+                                    m = re.match(r'^Top\s+(\d+)\s+rules', combo_name)
+                                    if m:
+                                        n = int(m.group(1))
+                                        base_strategy_rules = all_rules[:n]
+                    except Exception as e:
+                        print(f"[OPTIMIZER] Could not load rules from analysis_report: {e}")
+
+            if base_strategy_rules:
+                print(f"[OPTIMIZER] Loaded {len(base_strategy_rules)} base rules from selected strategy")
+            else:
+                print(f"[OPTIMIZER] WARNING: No base rules found — optimizer results won't be validatable")
+
             # ── Quick optimize (filter existing trades) ──
             if opt_mode == "quick":
                 print("[OPTIMIZER] Running Quick Optimize mode...")
@@ -723,7 +771,7 @@ def _start_optimization():
                     trades=current_trades,
                     candles_df=None,
                     indicators_df=None,
-                    base_rules=[],
+                    base_rules=base_strategy_rules,
                     exit_strategies=[],
                     target_firm=target_data,
                     account_size=account_size,
@@ -769,7 +817,9 @@ def _start_optimization():
                 entry_tf = (
                     (selected_strategy_row or {}).get('entry_tf') or
                     (selected_strategy_row or {}).get('entry_timeframe') or
-                    (selected_strategy_row or {}).get('stats', {}).get('entry_tf') or
+                    # WHY: Same as view_results.py fix — stats are flattened to top level
+                    # CHANGED: April 2026 — read flattened stats from row top level
+                    ((selected_strategy_row or {}).get('stats') or (selected_strategy_row or {})).get('entry_tf') or
                     None
                 )
 
@@ -960,13 +1010,18 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 phase_data = firm_data['challenges'][0]['phases'][0]
                 daily_limit = phase_data.get('max_daily_drawdown_pct', 5.0)
                 total_limit = phase_data.get('max_total_drawdown_pct', 10.0)
-            except (KeyError, IndexError):
+            except (KeyError, IndexError, TypeError):
+                # WHY: Old code caught KeyError/IndexError but not TypeError. If
+                #      firm_data or firm_data['challenges'] was a string instead of
+                #      a dict/list, subscripting it raised TypeError which wasn't
+                #      caught, crashing the entire optimizer for some firms.
+                # CHANGED: April 2026 — catch TypeError (Get Leveraged bug fix)
                 # Fallback to funded phase
                 try:
                     funded = firm_data['challenges'][0]['funded']
                     daily_limit = funded.get('max_daily_drawdown_pct', 5.0)
                     total_limit = funded.get('max_total_drawdown_pct', 10.0)
-                except (KeyError, IndexError):
+                except (KeyError, IndexError, TypeError):
                     pass
 
         trades = cand.get('trades', [])
@@ -1273,7 +1328,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             'max_trades_per_day': lambda v: f"max {v}/day",
             'min_hold_minutes': lambda v: f"hold ≥{v}m",
             'cooldown_minutes': lambda v: f"cooldown {v}m",
-            'min_pips': lambda v: f"⚠️ skip <{v} pips (WARNING: look-ahead bias — not realistic)",
             'sessions': lambda v: f"sessions: {', '.join(v) if isinstance(v, list) else str(v)}",
         }
         parts = []
@@ -1343,7 +1397,17 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             except Exception:
                 pass
 
+            # WHY: rule_combo + trades_snap were missing from the saved data.
+            #      Without rule_combo, downstream lookup-by-name fails.
+            #      Without trades, the validator gets [] and reports 0 trades
+            #      validated even though the optimizer found 300+. Now we
+            #      embed the actual trades list (typically <500 KB even for
+            #      large strategies) so the validator can use them directly
+            #      without re-running a backtest.
+            # CHANGED: April 2026 — include rule_combo + trades in saved data
             data = {
+                'rule_combo': n,                       # NEW — strategy name
+                'trades': list(trades_snap),           # NEW — actual trade list
                 'conditions': [],
                 'prediction': 'WIN',
                 'win_rate': s.get('win_rate', 0),
@@ -1573,7 +1637,11 @@ def _show_opt_results(candidates):
             saved = 0
             for c, s in filtered:
                 try:
+                    # WHY: Same as _save fix — need rule_combo + trades for validator
+                    # CHANGED: April 2026 — include rule_combo + trades in batch save
                     save_data = {
+                        'rule_combo': c.get('name', '?'),                    # NEW
+                        'trades': list(c.get('trades', [])),                 # NEW
                         'conditions': [],
                         'prediction': 'WIN',
                         'win_rate': s.get('win_rate', 0),
@@ -1583,6 +1651,11 @@ def _show_opt_results(candidates):
                         'total_trades': s.get('count', 0),
                         'filters_applied': {k: v for k, v in (c.get('filters_applied') or {}).items()
                                            if k not in ('firm_data', 'description', 'stage')},
+                        # Also preserve exit strategy info if available
+                        'exit_class': c.get('exit_class', ''),
+                        'exit_params': c.get('exit_params', {}),
+                        'exit_name': c.get('exit_name', ''),
+                        'entry_timeframe': c.get('entry_timeframe', 'H1'),
                     }
                     for rule in c.get('rules', []):
                         if rule.get('prediction') == 'WIN':
@@ -1926,7 +1999,7 @@ def _update_breach_display(trades):
 
 def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _base_stats_frame
-    global _min_hold_var, _max_hold_var, _max_per_day_var, _min_pips_var, _cooldown_var
+    global _min_hold_var, _max_hold_var, _max_per_day_var, _cooldown_var
     global _session_vars, _day_vars, _results_card, _trade_list_frame
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
@@ -1988,13 +2061,35 @@ def build_panel(parent):
                         text="⭐ Starred" if is_now_starred else "☆ Star",
                         bg="#f39c12" if is_now_starred else "#95a5a6",
                     )
-                    _load_strategies()
+                    # WHY: Two things must happen for the dropdown to actually
+                    #      reflect the new star state:
+                    #      1. _load_strategies must bypass its mtime cache
+                    #         (force=True), because toggling a star writes to
+                    #         shared.starred storage, NOT backtest_matrix.json,
+                    #         so the cache mtime check passes and the OLD
+                    #         strategies list is returned.
+                    #      2. dd['values'] must be reassigned because the
+                    #         Combobox widget caches its values list — setting
+                    #         _strategy_var alone updates the displayed text
+                    #         but not the available options.
+                    # CHANGED: April 2026 — force-refresh + dd values update
+                    _load_strategies(force=True)
                     if _strategies:
-                        labels = [s['label'] for s in _strategies]
-                        for lbl in labels:
-                            if rc in lbl:
-                                _strategy_var.set(lbl)
+                        new_labels = [s['label'] for s in _strategies]
+                        # Push new values to the Combobox widget
+                        try:
+                            dd['values'] = new_labels
+                        except (NameError, tk.TclError):
+                            pass  # dd not in scope (no strategies branch) or destroyed
+                        # Re-select the same strategy by index (more reliable
+                        # than substring match — index is stable across re-sorts)
+                        new_label = None
+                        for s2 in _strategies:
+                            if s2.get('index') == idx:
+                                new_label = s2.get('label')
                                 break
+                        if new_label:
+                            _strategy_var.set(new_label)
                 except ImportError:
                     pass
                 break
@@ -2092,8 +2187,7 @@ def build_panel(parent):
     _cooldown_var = tk.DoubleVar(value=0)
     _filter_row(filters_frame, "Cooldown between trades (min):", _cooldown_var, 0, 480, resolution=5)
 
-    _min_pips_var = tk.DoubleVar(value=0)
-    _filter_row(filters_frame, "Min net pips (0=no filter):", _min_pips_var, -50, 200, resolution=5)
+    # WHY: min_pips slider removed April 2026 — look-ahead bias.
 
     # Sessions
     sess_row = tk.Frame(filters_frame, bg=WHITE)
@@ -2136,8 +2230,6 @@ def build_panel(parent):
             _max_per_day_var.set(vals.get('max_trades_per_day', 0))
         if _cooldown_var:
             _cooldown_var.set(vals.get('cooldown_minutes', 0))
-        if _min_pips_var:
-            _min_pips_var.set(vals.get('min_pips', 0))
         for sess, var in _session_vars.items():
             var.set(True)
         for day, var in _day_vars.items():
@@ -2485,7 +2577,12 @@ def build_panel(parent):
     # Firm selector
     tk.Label(ctrl_row, text="Target firm:", font=("Segoe UI", 9), bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(0, 8))
 
-    firm_options = ["None — maximize pips", "FTMO", "Topstep", "Apex", "FundedNext", "The5ers", "Get Leveraged"]
+    # WHY: Hardcoded firm list required manual updates when adding new firms.
+    #      Now dynamically loaded from prop_firms/*.json files.
+    # CHANGED: April 2026 — dynamic firm dropdown population
+    from project2_backtesting.strategy_refiner import get_prop_firm_presets
+    presets = get_prop_firm_presets()
+    firm_options = ["None — maximize pips"] + [name for name in sorted(presets.keys()) if name != "Custom"]
     _opt_target_var = tk.StringVar(value=firm_options[0])
     ttk.Combobox(ctrl_row, textvariable=_opt_target_var,
                  values=firm_options, state="readonly", width=25).pack(side=tk.LEFT, padx=(0, 15))
@@ -2579,18 +2676,28 @@ def build_panel(parent):
         preset = presets.get(firm, {})
         firm_data = preset.get('firm_data')
         if firm_data:
-            sizes = firm_data['challenges'][0].get('account_sizes', [100000])
-            _acct_combo['values'] = [str(s) for s in sizes]
-            if sizes and _acct_var.get() not in [str(s) for s in sizes]:
-                _acct_var.set(str(sizes[-1]))
+            # WHY: Direct subscripting of firm_data['challenges'][0] without
+            #      try/except caused TypeError crashes when firm_data structure
+            #      was unexpected (e.g., if firm_data itself was a string).
+            # CHANGED: April 2026 — defensive try/except around firm data access
+            try:
+                sizes = firm_data['challenges'][0].get('account_sizes', [100000])
+                _acct_combo['values'] = [str(s) for s in sizes]
+                if sizes and _acct_var.get() not in [str(s) for s in sizes]:
+                    _acct_var.set(str(sizes[-1]))
 
-            funded = firm_data['challenges'][0].get('funded', {})
-            daily = funded.get('max_daily_drawdown_pct', 5)
-            total = funded.get('max_total_drawdown_pct', 10)
-            dd_type = funded.get('drawdown_type', 'static')
-            leverage = firm_data.get('leverage_by_size', {})
-            lev = leverage.get(_acct_var.get(), list(leverage.values())[0] if leverage else '—')
-            _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
+                funded = firm_data['challenges'][0].get('funded', {})
+                daily = funded.get('max_daily_drawdown_pct', 5)
+                total = funded.get('max_total_drawdown_pct', 10)
+                dd_type = funded.get('drawdown_type', 'static')
+                leverage = firm_data.get('leverage_by_size', {})
+                lev = leverage.get(_acct_var.get(), list(leverage.values())[0] if leverage else '—')
+                _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
+            except (KeyError, IndexError, TypeError):
+                # Firm data structure unexpected — use defaults
+                _acct_combo['values'] = ['100000']
+                _acct_var.set('100000')
+                _acct_info.config(text="DD: 5%/10% static | Leverage: —")
 
         # Also update risk based on stage + firm
         _on_stage_change()
