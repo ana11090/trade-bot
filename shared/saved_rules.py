@@ -33,8 +33,20 @@ def save_rule(rule, source="unknown", notes=""):
     """
     all_rules = load_all()
 
+    # WHY: Old code used id = len(all_rules) + 1 which produces DUPLICATE
+    #      IDs after a middle-delete:
+    #        1. save A→id=1, B→id=2, C→id=3  (list: [A,B,C])
+    #        2. delete_rule(2) → [A,C] (len=2)
+    #        3. save D → id = len+1 = 3  ← COLLISION with C.id=3
+    #        4. delete_rule(3) → removes BOTH C and D (silent data loss)
+    #      Fix: use max(existing_ids)+1. Monotonic growth means IDs are
+    #      never reused even after deletes.
+    # CHANGED: April 2026 — unique IDs via max+1 (audit MED)
+    existing_ids = [r.get("id", 0) for r in all_rules if isinstance(r.get("id"), int)]
+    new_id       = max(existing_ids, default=0) + 1
+
     entry = {
-        "id": len(all_rules) + 1,
+        "id": new_id,
         "saved_at": datetime.now().isoformat(),
         "source": source,
         "notes": notes,

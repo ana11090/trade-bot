@@ -86,11 +86,18 @@ def _on_calculate():
     max_recovery = int(max(recovery_trades_list))        if recovery_trades_list else None
 
     # Trades per day for time conversion
+    # WHY: Old code divided by calendar span which overcounts weekends
+    #      and holidays that the strategy never traded. Weekday-only
+    #      strategies get trades_per_day ~30% too low, making all
+    #      downstream recovery time estimates (avg_days, max_days) ~30%
+    #      too long. Fix: count UNIQUE trading days instead. Same fix
+    #      Phase 12 applied to account_survival.py and account_forecast.py.
+    # CHANGED: April 2026 — trading-day rate (audit MED — Family #2)
     df_t = df.dropna(subset=["open_dt"]).sort_values("open_dt")
     trades_per_day = 1.0
     if len(df_t) >= 2:
-        span = max((df_t["open_dt"].iloc[-1] - df_t["open_dt"].iloc[0]).days, 1)
-        trades_per_day = len(df_t) / span
+        unique_trading_days = int(df_t["open_dt"].dt.floor("D").nunique())
+        trades_per_day      = len(df_t) / max(unique_trading_days, 1)
 
     _clear_results()
 

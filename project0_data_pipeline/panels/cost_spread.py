@@ -34,7 +34,15 @@ def build_cost_charts():
         p8_canvas.draw()
         return
 
-    scale   = {"Standard": 1.0, "Cent": 0.01, "Micro": 0.1}.get(state.account_type.get(), 1.0)
+    # WHY: Old scale dict had Micro: 0.1 which is WRONG. Micro accounts
+    #      trade smaller lots, but broker P&L is already reported in
+    #      account currency — no scaling needed. The 0.1 made Micro
+    #      account commission/swap values look 10× smaller than reality.
+    #      Same bug Phase 12 fixed in helpers.py get_scaled_df(). That
+    #      fix covered profit_scaled (via get_scaled_df above) but this
+    #      local dict was missed — it only applies to Commission/Swap.
+    # CHANGED: April 2026 — fix Micro scale (audit MED — Family #6)
+    scale   = {"Standard": 1.0, "Cent": 0.01, "Micro": 1.0}.get(state.account_type.get(), 1.0)
     profits = df["profit_scaled"].fillna(0)
 
     has_comm  = "Commission" in df.columns
