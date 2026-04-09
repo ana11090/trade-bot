@@ -486,19 +486,36 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         if stopped_for_period:
             # Check if new payout period started
             if (cur_date - last_payout_date).days >= payout_interval:
+                # WHY: Old code reset payout_conditions_met=False BEFORE
+                #      the payout check, so the check always saw False and
+                #      no payout was ever paid from a stopped period. Fix:
+                #      snapshot the flag first, reset second, check the
+                #      snapshot when processing the payout.
+                # CHANGED: April 2026 — fix payout deadlock (audit HIGH)
+                _conditions_were_met = payout_conditions_met
+
                 # New period — reset
                 stopped_for_period = False
                 payout_conditions_met = False
                 period_daily_pnls = {}
-                # Process payout for previous period
+
+                # Process payout for previous period (using snapshot)
                 profit = balance - account_size
-                if profit > 0 and payout_conditions_met:
+                if profit > 0 and _conditions_were_met:
                     payout = profit * split_pct / 100.0
                     if payout >= min_payout:
                         total_payout += payout
                         payout_count += 1
                         balance      -= payout
-                        if dd_reset:
+                        # WHY: Post-payout DD lock — mirrors the main payout
+                        #      branch logic at line 615-620. Stopped-period
+                        #      payouts must respect the same lock semantics.
+                        # CHANGED: April 2026 — post-payout lock in deadlock path
+                        post_payout = dd_mechanics.get('post_payout', {}) if dd_mechanics else {}
+                        if post_payout.get('dd_locks_at') == 'initial_balance':
+                            hwm = account_size
+                            hwm_locked = True
+                        elif dd_reset:
                             hwm = balance
                 last_payout_date = cur_date
             else:

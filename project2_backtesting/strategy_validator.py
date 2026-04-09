@@ -378,6 +378,22 @@ def walk_forward_validate(
     account_size=100000,
     progress_callback=None,
     custom_windows=None,
+    # WHY: Old signature had no direction parameter, so run_backtest
+    #      defaulted to "BUY". Every SELL strategy was validated as
+    #      if it were BUY, producing completely garbage walk-forward
+    #      results for the wrong direction. BUY default preserves
+    #      backward compat — callers must now pass the real direction.
+    # CHANGED: April 2026 — direction parameter (audit CRITICAL)
+    direction="BUY",
+    # WHY: Phase 8 added news_blackout + parameterized risk/pip_value
+    #      to run_backtest. Walk-forward was not updated to pass these
+    #      through, so validated backtests never enforced news blackout
+    #      and always used default lot sizing. Add optional pass-through.
+    # CHANGED: April 2026 — news + sizing pass-through (audit HIGH)
+    news_blackout_minutes=0,
+    risk_per_trade_pct=1.0,
+    pip_value_per_lot=10.0,
+    default_sl_pips=150.0,
 ):
     """
     Walk-forward validation: train on N years, test on following M years,
@@ -461,17 +477,28 @@ def walk_forward_validate(
         # In-sample
         in_error = None
         try:
+            # WHY: Pass all strategy execution parameters through to
+            #      run_backtest. Old code defaulted direction to BUY,
+            #      news_blackout to 0, and risk/pip values to builtin
+            #      defaults — producing wrong backtests for any strategy
+            #      that didn't match those defaults.
+            # CHANGED: April 2026 — full parameter pass-through (audit CRITICAL + HIGH)
             in_trades = run_backtest(
                 candles_df=candles_df,
                 indicators_df=indicators_df,
                 rules=rules,
                 exit_strategy=exit_strat,
+                direction=direction,
                 start_date=train_start.strftime('%Y-%m-%d'),
                 end_date=train_end.strftime('%Y-%m-%d'),
                 pip_size=pip_size,
                 spread_pips=spread_pips,
                 commission_pips=commission_pips,
                 account_size=account_size,
+                news_blackout_minutes=news_blackout_minutes,
+                risk_per_trade_pct=risk_per_trade_pct,
+                pip_value_per_lot=pip_value_per_lot,
+                default_sl_pips=default_sl_pips,
             )
         except Exception as e:
             in_trades = []
@@ -487,17 +514,24 @@ def walk_forward_validate(
         # Out-of-sample
         out_error = None
         try:
+            # WHY: same pass-through as in-sample call above.
+            # CHANGED: April 2026 — full parameter pass-through (audit CRITICAL + HIGH)
             out_trades = run_backtest(
                 candles_df=candles_df,
                 indicators_df=indicators_df,
                 rules=rules,
                 exit_strategy=exit_strat,
+                direction=direction,
                 start_date=test_start.strftime('%Y-%m-%d'),
                 end_date=test_end.strftime('%Y-%m-%d'),
                 pip_size=pip_size,
                 spread_pips=spread_pips,
                 commission_pips=commission_pips,
                 account_size=account_size,
+                news_blackout_minutes=news_blackout_minutes,
+                risk_per_trade_pct=risk_per_trade_pct,
+                pip_value_per_lot=pip_value_per_lot,
+                default_sl_pips=default_sl_pips,
             )
         except Exception as e:
             out_trades = []
@@ -682,6 +716,29 @@ def monte_carlo_test(
     has_pips    = 'Pips' in trades_df.columns
     shuffled_rates = []
 
+    # WHY: Old code did random.shuffle on the full pip sequence, which is
+    #      IID — destroys serial dependence. Strategies with autocorrelated
+    #      losing streaks look much safer than reality because the IID
+    #      shuffle disperses clustered losses evenly. Fix: moving block
+    #      shuffle. Draw contiguous blocks of ~sqrt(n) trades and
+    #      concatenate until the same length is filled. Preserves short-
+    #      range autocorrelation (same heuristic as Phase 12 Fix 1).
+    # CHANGED: April 2026 — block shuffle (audit HIGH)
+    _rng_mc   = np.random.default_rng()
+    _n_pips   = len(pips_values)
+    _block_len = max(5, int(np.sqrt(_n_pips)))
+    _pips_arr  = np.asarray(pips_values)
+
+    def _block_shuffle(n_needed):
+        out = np.empty(n_needed, dtype=_pips_arr.dtype)
+        pos = 0
+        while pos < n_needed:
+            start = int(_rng_mc.integers(0, _n_pips))
+            take  = min(_block_len, n_needed - pos, _n_pips - start)
+            out[pos:pos + take] = _pips_arr[start:start + take]
+            pos += take
+        return list(out)
+
     for sim_i in range(n_simulations):
         if _stop_flag.is_set():
             break
@@ -689,8 +746,7 @@ def monte_carlo_test(
             progress_callback(sim_i, n_simulations,
                               f"Monte Carlo: shuffle {sim_i}/{n_simulations}...")
 
-        shuffled_pips = pips_values[:]
-        random.shuffle(shuffled_pips)
+        shuffled_pips = _block_shuffle(_n_pips)
         if has_pips:
             shuffled_df = pd.DataFrame({'Close Date': dates, 'Pips': shuffled_pips, 'Profit': 0.0})
         else:
@@ -1085,6 +1141,10 @@ def run_full_validation(
     wf_progress_callback=None,
     mc_progress_callback=None,
     slippage_result=None,
+    # WHY: Orchestrator must accept and thread direction through to
+    #      walk_forward_validate so panel callers can pass it once here.
+    # CHANGED: April 2026 — direction parameter (audit CRITICAL)
+    direction="BUY",
 ):
     """
     Run walk-forward + Monte Carlo + combined score, save to validation_results.json.
@@ -1105,6 +1165,9 @@ def run_full_validation(
         commission_pips=commission_pips,
         account_size=account_size,
         progress_callback=wf_progress_callback,
+        direction=direction,
+        risk_per_trade_pct=risk_per_trade_pct,
+        pip_value_per_lot=pip_value_per_lot,
     )
 
     mc_result = None

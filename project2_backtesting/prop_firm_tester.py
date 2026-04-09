@@ -96,12 +96,28 @@ def convert_trades_for_prop_sim(trades):
     Output: DataFrame with columns: Open Date, Close Date, Action, Pips, Profit, Lots
             (Profit is a placeholder — the simulator's _rescale_trades recalculates it)
     """
+    # WHY: Old code used .capitalize() which works for BUY/buy/Buy/SELL/sell
+    #      but silently mangles LONG, L, B, "BUY " (trailing space), etc.,
+    #      into nonsense strings that the simulator treats as unknown.
+    #      Fix: explicit normalization with allowlist + fallback warning.
+    # CHANGED: April 2026 — robust direction normalization (audit LOW)
+    def _normalize_direction(raw):
+        if not raw:
+            return "Buy"
+        s = str(raw).strip().upper()
+        if s in ("BUY", "LONG", "L", "B"):
+            return "Buy"
+        if s in ("SELL", "SHORT", "S"):
+            return "Sell"
+        print(f"  [prop_tester] WARNING: unknown direction '{raw}' — defaulting to Buy")
+        return "Buy"
+
     rows = []
     for t in trades:
         rows.append({
             "Open Date":  str(t.get("entry_time", "")),
             "Close Date": str(t.get("exit_time", "")),
-            "Action":     t.get("direction", "Buy").capitalize(),
+            "Action":     _normalize_direction(t.get("direction")),
             "Pips":       t.get("net_pips", 0),
             "Profit":     t.get("net_pips", 0),  # Placeholder — _rescale_trades recalculates
             "Lots":       1.0,  # Placeholder — _rescale_trades recalculates
@@ -147,7 +163,12 @@ def run_prop_test(
     account_size,
     risk_per_trade_pct=1.0,
     default_sl_pips=150.0,
-    pip_value_per_lot=10.0,
+    # WHY: Old default was 10.0 which is correct for forex majors but
+    #      WRONG for XAUUSD ($1/pip/lot). Since the project's primary
+    #      instrument is XAUUSD, default to 1.0. Forex callers must
+    #      explicitly override.
+    # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
+    pip_value_per_lot=1.0,
     daily_dd_safety_pct=80.0,
 ):
     """
@@ -184,7 +205,9 @@ def run_multi_firm_test(
     firm_challenges,   # list of {firm_id, challenge_id, account_size, firm_name, challenge_name}
     risk_per_trade_pct=1.0,
     default_sl_pips=150.0,
-    pip_value_per_lot=10.0,
+    # WHY: See run_prop_test — XAUUSD-correct default.
+    # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
+    pip_value_per_lot=1.0,
     daily_dd_safety_pct=80.0,
     progress_callback=None,
 ):
