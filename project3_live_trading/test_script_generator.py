@@ -77,6 +77,7 @@ def _generate_mt5_test(win_rules, strategy_name):
             handle_decls.append(f"{hv}{suffix}")
 
     # Build test blocks
+    handle_names = []  # track handle variable names for explicit cleanup (Fix 7)
     test_blocks = []
     for h in unique_handles:
         feat = h.get('description', h.get('var_name', '?'))
@@ -98,14 +99,17 @@ def _generate_mt5_test(win_rules, strategy_name):
             is_custom  = h.get('custom_indicator', False)
             fail_msg   = (f'"   Download/install {feat} from MQL5 Marketplace"'
                           if is_custom else f'"   Error code: ", GetLastError()')
+            # Track handle variable name for explicit release (Fix 7)
+            # Fix 8: removed no-op var.replace('val_', '') — var never has that prefix
+            handle_names.append(var)
             block = f"""\
    // --- {feat}{'  [CUSTOM]' if is_custom else ''} ---
    total++;
    {init_code}
-   if(handle_{var.replace('val_', '')} != INVALID_HANDLE)
+   if(handle_{var} != INVALID_HANDLE)
    {{
       double buf_{var}[1];
-      if(CopyBuffer(handle_{var.replace('val_', '')}, 0, 0, 1, buf_{var}) > 0)
+      if(CopyBuffer(handle_{var}, 0, 0, 1, buf_{var}) > 0)
       {{
          Print("OK  {feat} = ", DoubleToString(buf_{var}[0], 4));
          passed++;
@@ -126,6 +130,15 @@ def _generate_mt5_test(win_rules, strategy_name):
 
     handle_decls_str = '\n'.join(handle_decls) if handle_decls else '// No handle-based indicators'
     test_blocks_str  = '\n\n'.join(test_blocks) if test_blocks else '   // No indicators to test'
+
+    # WHY: Old code called IndicatorRelease(0). 0 is INVALID_HANDLE, so the
+    #      call did nothing. Handles leaked until script exit. Fix: emit
+    #      one explicit IndicatorRelease() per handle created by the script.
+    # CHANGED: April 2026 — explicit per-handle release (audit HIGH)
+    release_block = '\n'.join(
+        f'   if(handle_{h} != INVALID_HANDLE) IndicatorRelease(handle_{h});'
+        for h in handle_names
+    ) or '   // No handles to release'
 
     custom_warning = ''
     if custom_list:
@@ -178,9 +191,10 @@ void OnStart()
    }}
    Print("=========================================");
 
-   //--- Release all handles
-   for(int i = IndicatorsTotal() - 1; i >= 0; i--)
-      IndicatorRelease(0);
+   //--- Release all handles (per-handle explicit release)
+   // WHY: Old code called IndicatorRelease(0). 0 is INVALID_HANDLE — does nothing.
+   // CHANGED: April 2026 — explicit per-handle release (audit HIGH)
+{release_block}
 }}
 //+------------------------------------------------------------------+
 """

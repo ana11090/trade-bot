@@ -46,7 +46,8 @@ def _parse_dt(val):
     return None
 
 
-def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90):
+def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90,
+                     pip_size=0.01):
     """
     Compare EA's logged trades to backtest predictions.
 
@@ -58,6 +59,14 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90):
     ea_log_path       : str   — path to EA-generated trade log CSV
     backtest_trades   : list  — trade dicts from backtest_matrix.json
     tolerance_minutes : int   — entry time tolerance for matching
+    pip_size          : float — pip size in price units (default 0.01 for
+                                XAUUSD/JPY pairs; use 0.0001 for forex majors,
+                                1.0 for indices). Wrong value gives slippage
+                                100× off between 0.01 and 0.0001 instruments.
+
+    WHY: Old code hardcoded pip_size=0.01 in the slippage calc.
+         XAUUSD-only. Forex pairs showed 100× wrong slippage.
+    CHANGED: April 2026 — parameterize pip_size (audit HIGH — Family #1)
 
     Returns
     -------
@@ -119,7 +128,10 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90):
             try:
                 bt_entry  = float(bt.get('entry_price', 0))
                 ea_entry_ = float(ea_t.get('entry_price', 0))
-                slippage  = abs(ea_entry_ - bt_entry) / 0.01  # pips (assume pip=0.01)
+                # WHY: Uses per-symbol pip_size parameter. Old code
+                #      hardcoded 0.01 which was XAUUSD-only.
+                # CHANGED: April 2026 — per-symbol pip_size (audit HIGH)
+                slippage  = abs(ea_entry_ - bt_entry) / pip_size if pip_size > 0 else 0.0
             except Exception:
                 slippage = 0.0
 
@@ -140,10 +152,24 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90):
             })
         else:
             # Find skip reason if the signal was logged but skipped
+            # WHY: Old code matched skips by time only. A SELL skip 30 min
+            #      after a missed BUY signal would be mis-attributed as the
+            #      "reason" for the BUY miss. Now also require direction
+            #      match — a skip only counts if it has the same BUY/SELL
+            #      direction as the backtest signal. Skips with no direction
+            #      field (generic, like "daily_dd_hit") still match any
+            #      direction.
+            # CHANGED: April 2026 — direction-aware skip match (audit MED)
             skip_reason = 'unknown'
             for sk in ea_skipped:
                 sk_dt = _parse_dt(sk.get('timestamp') or sk.get('entry_time'))
-                if sk_dt and bt_dt and abs((sk_dt - bt_dt).total_seconds() / 60.0) <= tolerance_minutes:
+                if sk_dt is None or bt_dt is None:
+                    continue
+                # Direction match (allow missing direction — generic skips)
+                sk_dir = str(sk.get('direction', '')).upper()
+                if sk_dir and sk_dir != bt_dir:
+                    continue
+                if abs((sk_dt - bt_dt).total_seconds() / 60.0) <= tolerance_minutes:
                     skip_reason = sk.get('skip_reason', 'unknown')
                     break
             missed_trades.append({'backtest': bt, 'skip_reason': skip_reason})

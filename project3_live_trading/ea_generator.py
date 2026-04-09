@@ -259,7 +259,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         _profit_pips_expr   = "(_bid - _openP) / GetPipSize()"      # for trailing/hybrid
         _be_new_sl_expr     = "_openP + _Point"                      # breakeven SL
         _trail_new_sl_expr  = "_bid - TrailPips * GetPipSize()"
-        _trail_sl_compare   = "_newSL > _curSL + _Point"
+        # WHY: SELL has "|| _curSL == 0" fallback for positions opened
+        #      without an SL. BUY technically works without it (because
+        #      _newSL > 0 + _Point is true anyway), but adding the
+        #      fallback makes the two branches symmetric and handles the
+        #      edge case more explicitly.
+        # CHANGED: April 2026 — symmetric trail fallback (audit HIGH)
+        _trail_sl_compare   = "_newSL > _curSL + _Point || _curSL == 0"
         _direction_label    = "BUY"
         _trade_dir_const    = "ORDER_TYPE_BUY"
     else:
@@ -621,12 +627,22 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      every payout cycle reads the persisted value, never overwrites.
     # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
     extra_init.append(f'   g_startingBalance  = AccountInfoDouble(ACCOUNT_BALANCE);')
-    extra_init.append(f'   if(GlobalVariableCheck("EA_origStartBal_" + _Symbol))')
-    extra_init.append(f'      g_originalStartingBalance = GlobalVariableGet("EA_origStartBal_" + _Symbol);')
+    # WHY: Old code keyed GlobalVariables by _Symbol only. Two EAs with
+    #      different magic numbers on the same chart would overwrite each
+    #      other's DD state. Now keyed by _Symbol + "_" + MagicNumber so
+    #      each EA has isolated state.
+    # CHANGED: April 2026 — per-magic GlobalVariable keys (audit HIGH)
+    extra_init.append(f'   string _gvPrefix = _Symbol + "_" + IntegerToString(MagicNumber);')
+    extra_init.append(f'   // WHY: Phase 11 migrated GlobalVariable keys from _Symbol to')
+    extra_init.append(f'   //      _Symbol + "_" + MagicNumber. Old deployments will see a')
+    extra_init.append(f'   //      fresh state on first run after upgrade.')
+    extra_init.append(f'   Print("[INIT] Per-magic state: ", _Symbol, " magic=", MagicNumber);')
+    extra_init.append(f'   if(GlobalVariableCheck("EA_origStartBal_" + _gvPrefix))')
+    extra_init.append(f'      g_originalStartingBalance = GlobalVariableGet("EA_origStartBal_" + _gvPrefix);')
     extra_init.append(f'   else')
     extra_init.append(f'   {{')
     extra_init.append(f'      g_originalStartingBalance = g_startingBalance;')
-    extra_init.append(f'      GlobalVariableSet("EA_origStartBal_" + _Symbol, g_originalStartingBalance);')
+    extra_init.append(f'      GlobalVariableSet("EA_origStartBal_" + _gvPrefix, g_originalStartingBalance);')
     extra_init.append(f'      Print("[DD] Original starting balance locked at $", DoubleToString(g_originalStartingBalance, 2));')
     extra_init.append(f'   }}')
     extra_init.append(f'   g_hwm              = g_startingBalance;')
@@ -639,12 +655,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     if post_payout.get('dd_locks_at') == 'initial_balance':
         extra_init.append(f'   g_prevWithdrawnFlag     = PayoutWithdrawn;')
         extra_init.append(f'   g_postPayoutLockApplied = false;')
-    extra_init.append(f'   if(GlobalVariableCheck("EA_ddLocked_" + _Symbol))')
+    # WHY: _gvPrefix already set above — same per-magic key pattern.
+    # CHANGED: April 2026 — per-magic GlobalVariable keys (audit HIGH)
+    extra_init.append(f'   if(GlobalVariableCheck("EA_ddLocked_" + _gvPrefix))')
     extra_init.append(f'   {{')
-    extra_init.append(f'      g_ddLocked              = (GlobalVariableGet("EA_ddLocked_" + _Symbol) > 0.5);')
-    extra_init.append(f'      g_ddFloor               = GlobalVariableGet("EA_ddFloor_" + _Symbol);')
-    extra_init.append(f'      g_hwm                   = GlobalVariableGet("EA_hwm_" + _Symbol);')
-    extra_init.append(f'      g_postPayoutLockApplied = (GlobalVariableGet("EA_postPayout_" + _Symbol) > 0.5);')
+    extra_init.append(f'      g_ddLocked              = (GlobalVariableGet("EA_ddLocked_" + _gvPrefix) > 0.5);')
+    extra_init.append(f'      g_ddFloor               = GlobalVariableGet("EA_ddFloor_" + _gvPrefix);')
+    extra_init.append(f'      g_hwm                   = GlobalVariableGet("EA_hwm_" + _gvPrefix);')
+    extra_init.append(f'      g_postPayoutLockApplied = (GlobalVariableGet("EA_postPayout_" + _gvPrefix) > 0.5);')
     extra_init.append(f'      Print("[DD] Restored from globals. ddFloor=$", DoubleToString(g_ddFloor,2),')
     extra_init.append(f'            " hwm=$", DoubleToString(g_hwm,2), " locked=", g_ddLocked);')
     extra_init.append(f'   }}')
@@ -764,10 +782,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         f'//+------------------------------------------------------------------+\n'
         f'void SaveDDState()\n'
         f'{{\n'
-        f'   GlobalVariableSet("EA_ddLocked_"   + _Symbol, g_ddLocked ? 1.0 : 0.0);\n'
-        f'   GlobalVariableSet("EA_ddFloor_"    + _Symbol, g_ddFloor);\n'
-        f'   GlobalVariableSet("EA_hwm_"        + _Symbol, g_hwm);\n'
-        f'   GlobalVariableSet("EA_postPayout_" + _Symbol, g_postPayoutLockApplied ? 1.0 : 0.0);\n'
+        # WHY: Per-magic keys. SaveDDState is a standalone function so
+        #      _gvPrefix from OnInit is out of scope; rebuild it here.
+        # CHANGED: April 2026 — per-magic GlobalVariable keys (audit HIGH)
+        f'   string _gvPrefix = _Symbol + "_" + IntegerToString(MagicNumber);\n'
+        f'   GlobalVariableSet("EA_ddLocked_"   + _gvPrefix, g_ddLocked ? 1.0 : 0.0);\n'
+        f'   GlobalVariableSet("EA_ddFloor_"    + _gvPrefix, g_ddFloor);\n'
+        f'   GlobalVariableSet("EA_hwm_"        + _gvPrefix, g_hwm);\n'
+        f'   GlobalVariableSet("EA_postPayout_" + _gvPrefix, g_postPayoutLockApplied ? 1.0 : 0.0);\n'
         f'}}'
     )
 
@@ -795,11 +817,25 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
     payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
     payout_reset_items.append('g_hwm                 = g_startingBalance;')
-    payout_reset_items.append('g_ddLocked            = false;')
+    # WHY: Firms with permanent post-payout lock (e.g. FTMO where trailing
+    #      DD locks to initial balance after first withdrawal) need
+    #      g_ddLocked to STAY true across payout cycles. Old code
+    #      unconditionally reset it to false, breaking the rule on the
+    #      second payout. Now: only reset when the firm allows the lock
+    #      to release after each payout (non-strict firms).
+    # CHANGED: April 2026 — preserve permanent post-payout lock (audit MED)
+    if post_payout.get('dd_locks_at') == 'initial_balance':
+        # Strict firm — lock is permanent after first payout.
+        # Don't reset g_ddLocked, don't reset g_postPayoutLockApplied.
+        payout_reset_items.append('// g_ddLocked preserved (permanent post-payout lock firm)')
+        payout_reset_items.append('// g_postPayoutLockApplied preserved (lock already applied)')
+    else:
+        # Non-strict firm — lock releases on new cycle.
+        payout_reset_items.append('g_ddLocked            = false;')
+        payout_reset_items.append('g_postPayoutLockApplied = false;')
     payout_reset_items.append('g_payoutWaitStart     = 0;')
     payout_reset_items.append('g_lastReminderSent    = 0;')
     payout_reset_items.append('g_initialAlertSent    = false;')
-    payout_reset_items.append('g_postPayoutLockApplied = false;')
     payout_reset_items.append('SaveDDState();')
     payout_reset_block = '\n      '.join(payout_reset_items)
 
@@ -1523,8 +1559,10 @@ void ManageTrailingStop()
          if(profitPips >= TrailPips)
          {{
             double newSL = bid - trailDistance;
-            // Only move SL up, never down
-            if(newSL > currentSL + _Point)
+            // Only move SL up, never down (|| currentSL==0 handles positions opened without SL)
+            // WHY: SELL has "|| currentSL==0" fallback; BUY needs it too for symmetry.
+            // CHANGED: April 2026 — symmetric trail fallback (audit HIGH)
+            if(newSL > currentSL + _Point || currentSL == 0)
             {{
                trade.PositionModify(ticket, newSL, currentTP);
             }}
@@ -1808,15 +1846,52 @@ def check_entry_conditions():
         return False
 
 # ── Position sizing ──────────────────────────────────────────────────────────
+# WHY: Old stub hardcoded pip_value_per_lot=10.0 for XAUUSD, which is
+#      WRONG. 1 XAUUSD lot = 100 oz, 1 pip = $0.01 price move → $1/pip/lot.
+#      The 10× error made computed lot sizes 10× too small. This is
+#      the same bug Phase 5 fixed in scratch_panel.py — caught here
+#      in the Tradovate stub which was missed.
+# CHANGED: April 2026 — per-symbol pip value (audit MED — Family #1)
+_SYMBOL_PIP_VALUE = {{
+    'XAUUSD':  1.0,   # 100 oz × $0.01 = $1/pip/lot
+    'XAGUSD':  5.0,   # 5000 oz × $0.001 = $5/pip/lot
+    'EURUSD': 10.0,   # 100000 × 0.0001 = $10/pip/lot
+    'GBPUSD': 10.0,
+    'USDJPY':  6.7,   # approximate, depends on JPY rate
+    'GBPJPY':  6.7,
+    'AUDUSD': 10.0,
+    'USDCAD':  7.3,   # approximate
+    'USDCHF': 11.0,   # approximate
+    'NZDUSD': 10.0,
+    'US30':    1.0,
+    'NAS100':  1.0,
+    'BTCUSD':  1.0,
+}}
+
+_SYMBOL_PIP_SIZE = {{
+    'XAUUSD': 0.01,
+    'XAGUSD': 0.001,
+    'EURUSD': 0.0001,
+    'GBPUSD': 0.0001,
+    'USDJPY': 0.01,
+    'GBPJPY': 0.01,
+    'AUDUSD': 0.0001,
+    'USDCAD': 0.0001,
+    'USDCHF': 0.0001,
+    'NZDUSD': 0.0001,
+    'US30':   1.0,
+    'NAS100': 1.0,
+    'BTCUSD': 1.0,
+}}
+
 def calculate_lots(account_balance, sl_distance_price):
-    """Risk-based position sizing."""
-    risk_amount = account_balance * RISK_PCT / 100.0
-    # For XAUUSD: 1 pip = $0.01 price move, pip value ≈ $10/lot
-    pip_value_per_lot = 10.0  # adjust for your broker/contract
-    pip_size = 0.01
-    sl_pips_actual = sl_distance_price / pip_size
-    lots = risk_amount / (sl_pips_actual * pip_value_per_lot)
-    lots = round(lots, 2)
+    """Risk-based position sizing with per-symbol pip value."""
+    risk_amount       = account_balance * RISK_PCT / 100.0
+    pip_value_per_lot = _SYMBOL_PIP_VALUE.get(SYMBOL, 10.0)
+    pip_size          = _SYMBOL_PIP_SIZE.get(SYMBOL, 0.0001)
+    sl_pips_actual    = sl_distance_price / pip_size
+    lots              = risk_amount / (sl_pips_actual * pip_value_per_lot)
+    lots              = round(lots, 2)
     return max(0.01, min(lots, 100.0))
 
 # ── Main on-bar logic ────────────────────────────────────────────────────────
