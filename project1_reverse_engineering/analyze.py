@@ -67,7 +67,31 @@ def build_robot_profile(df):
         profile['date_range'] = (None, None)
 
     # Duration
-    if 'trade_duration_minutes' in df.columns:
+    # WHY: Old code read trade_duration_minutes directly. But step2
+    #      explicitly does NOT write that column (it's a leak source —
+    #      winning trades naturally run longer than losers). Result:
+    #      every robot profile silently reported 'unknown' duration.
+    #      Fix: compute duration from open_time and close_time at
+    #      point of use, which are both present in step2's output.
+    # CHANGED: April 2026 — derive duration on the fly (audit HIGH)
+    if 'open_time' in df.columns and 'close_time' in df.columns:
+        try:
+            ot = pd.to_datetime(df['open_time'])
+            ct = pd.to_datetime(df['close_time'])
+            duration_minutes = (ct - ot).dt.total_seconds() / 60.0
+            median_dur = float(duration_minutes.median())
+            profile['avg_duration_minutes'] = round(median_dur, 1)
+            if median_dur < 15:
+                profile['duration_category'] = 'scalper'
+            elif median_dur < 240:
+                profile['duration_category'] = 'day_trader'
+            else:
+                profile['duration_category'] = 'swing'
+        except Exception:
+            profile['avg_duration_minutes'] = 0
+            profile['duration_category'] = 'unknown'
+    elif 'trade_duration_minutes' in df.columns:
+        # Legacy path — some older feature matrices may have this column
         median_dur = df['trade_duration_minutes'].median()
         profile['avg_duration_minutes'] = round(float(median_dur), 1)
         if median_dur < 15:
@@ -81,8 +105,14 @@ def build_robot_profile(df):
         profile['duration_category'] = 'unknown'
 
     # Win rate and pip stats
+    # WHY: Old code read is_winner directly — but step2 explicitly does
+    #      NOT write that column. Result: win_rate was always 0.0 for
+    #      every robot profile. Fix: derive from pips at point of use.
+    # CHANGED: April 2026 — derive is_winner from pips (audit HIGH)
     if 'is_winner' in df.columns:
         profile['win_rate'] = round(float(df['is_winner'].mean()), 4)
+    elif 'pips' in df.columns:
+        profile['win_rate'] = round(float((df['pips'] > 0).mean()), 4)
     else:
         profile['win_rate'] = 0.0
 
@@ -223,7 +253,13 @@ def build_robot_profile(df):
             yearly.append({
                 'year':            int(year),
                 'count':           len(grp),
-                'win_rate':        round(float(grp['is_winner'].mean()), 3) if 'is_winner' in grp else 0,
+                # WHY: Same derivation as the top-level profile —
+                #      is_winner doesn't exist in step2 output, so
+                #      derive from pips.
+                # CHANGED: April 2026 — derive from pips (audit HIGH)
+                'win_rate':        round(float(grp['is_winner'].mean()), 3) if 'is_winner' in grp else (
+                    round(float((grp['pips'] > 0).mean()), 3) if 'pips' in grp else 0
+                ),
                 'avg_pips':        round(float(grp['pips'].mean()), 1),
                 'trades_per_month': round(len(grp) / max(n_months, 1), 1),
             })

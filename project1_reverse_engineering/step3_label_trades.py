@@ -56,13 +56,32 @@ def label_trades_for_scenario(scenario):
         print(f"  Loaded feature matrix: {len(feature_matrix)} trades × {len(feature_matrix.columns)} columns")
 
         # PRIMARY LABEL — Win/Loss (outcome)
-        # A trade is a win (1) if profit > 0, loss (0) if profit <= 0
-        feature_matrix['outcome'] = (feature_matrix['profit'] > 0).astype(int)
+        # WHY: Old code used profit > 0 which is broker-dependent — some
+        #      brokers report gross profit, others report net (after
+        #      commissions + swap). Trades that were profitable in pips
+        #      but broke even after costs were labeled WIN on some
+        #      broker exports and LOSS on others. Using pips is
+        #      broker-independent: pips > 0 means price moved in favor.
+        #      This matches what live rule execution can actually
+        #      measure (price movement, not broker P&L).
+        #      The config flag `label_by` lets users choose:
+        #         'pips'   — label by raw pip outcome (default, honest)
+        #         'profit' — legacy behavior, broker-dependent
+        # CHANGED: April 2026 — pips-based label, broker-independent (audit HIGH)
+        label_by = _cfg.get('label_by', 'pips')
+        if label_by == 'profit':
+            feature_matrix['outcome'] = (feature_matrix['profit'] > 0).astype(int)
+            label_source = 'profit (broker P&L)'
+        else:
+            # Default: pips-based (broker-independent)
+            feature_matrix['outcome'] = (feature_matrix['pips'] > 0).astype(int)
+            label_source = 'pips (raw price movement)'
 
         win_count = feature_matrix['outcome'].sum()
         loss_count = len(feature_matrix) - win_count
         win_rate = win_count / len(feature_matrix) * 100
 
+        print(f"  Label source: {label_source}")
         print(f"  Labeled outcomes: {win_count} wins ({win_rate:.1f}%), {loss_count} losses")
 
         # SECONDARY LABEL — Direction

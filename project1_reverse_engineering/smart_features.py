@@ -154,20 +154,29 @@ def _add_tf_divergences(df):
 
 
 def _add_indicator_dynamics(df):
-    """Indicator direction and acceleration — what the indicator is DOING."""
-    for col_name in ['H1_rsi_14', 'H4_adx_14', 'H1_atr_14', 'H1_macd_fast_diff',
-                     'H4_rsi_14', 'H1_cci_14', 'H1_bb_20_2_width']:
-        if col_name not in df.columns:
-            continue
-        vals = df[col_name].values
-        direction = np.zeros(len(vals))
-        direction[3:] = vals[3:] - vals[:-3]
-        df[f'SMART_{col_name}_direction'] = direction
+    """Indicator dynamics — comparing current indicator state against baselines.
 
-        accel = np.zeros(len(vals))
-        accel[6:] = direction[6:] - direction[3:-3]
-        df[f'SMART_{col_name}_accel'] = accel
+    WHY: The old version computed vals[i] - vals[i-3] across TRADE rows
+         (SMART_*_direction and SMART_*_accel). But trades are not equally
+         spaced in time — trade #5 and trade #2 can be hours or weeks
+         apart depending on strategy firing frequency. The 3-trade delta
+         was mixing time scales and producing noise that downstream
+         models learned to overfit.
 
+         A proper fix would require re-reading the raw candle data and
+         computing time-aware deltas (e.g., "RSI 1 hour ago via
+         merge_asof"). That requires candle data not present in the
+         trade-row feature matrix, and adds significant complexity.
+
+         For now: remove the meaningless cross-trade deltas entirely.
+         SMART_*_direction and SMART_*_accel features are gone.
+         Downstream code that references them will get NaN columns
+         (handled by fill_feature_nans in step4).
+
+    CHANGED: April 2026 — remove cross-trade deltas (audit HIGH)
+    """
+    # WHY: cross-trade deltas removed — see docstring
+    # Kept: ATR expansion (compares same-row features, no delta needed)
     h1_atr    = _safe_col(df, 'H1_atr_14')
     h1_atr_50 = _safe_col(df, 'H1_atr_50')
     df['SMART_atr_expansion'] = np.where(
@@ -272,10 +281,28 @@ def _add_volatility_regimes(df):
 
 def _add_price_action(df):
     """Price action intelligence."""
+    # WHY: Old code used h1_pivot (H1 pivot point, which is a DERIVED
+    #      indicator from the PREVIOUS H1 candle's HLC/3). The feature
+    #      name dist_to_round_50 implies "distance from current price
+    #      to nearest 50-point round level" — but the pivot value is
+    #      not the current price. The pivot and the current price can
+    #      differ by dozens of pips on a typical H1 bar.
+    #      Fix: prefer H1_close (close of the last completed H1 candle)
+    #      when available. Fall back to H1_pivot_point only if close is
+    #      missing, and mark the feature accordingly in the column name.
+    # CHANGED: April 2026 — use current price for dist_to_round (audit MED)
+    h1_close = _safe_col(df, 'H1_close')
     h1_pivot = _safe_col(df, 'H1_pivot_point')
-    if np.any(h1_pivot > 0):
-        df['SMART_dist_to_round_50']  = np.abs(h1_pivot % 50  - 25) / 25
-        df['SMART_dist_to_round_100'] = np.abs(h1_pivot % 100 - 50) / 50
+
+    # Prefer close if present and populated; fall back to pivot otherwise.
+    if np.any(h1_close > 0):
+        price_for_round = h1_close
+    else:
+        price_for_round = h1_pivot
+
+    if np.any(price_for_round > 0):
+        df['SMART_dist_to_round_50']  = np.abs(price_for_round % 50  - 25) / 25
+        df['SMART_dist_to_round_100'] = np.abs(price_for_round % 100 - 50) / 50
 
     d1_atr   = _safe_col(df, 'D1_atr_14')
     h1_range = _safe_col(df, 'H1_candle_range')

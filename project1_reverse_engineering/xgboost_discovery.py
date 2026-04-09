@@ -79,8 +79,17 @@ def _load_feature_matrix(use_smart_features):
 
 def _prep_Xy(df, train_split):
     """Split df into train/test X, y arrays."""
-    EXCLUDE = {'trade_id', 'open_time', 'action', 'profit', 'pips',
-               'outcome', 'direction', 'dataset'}
+    # WHY: Leak guard. These columns are either the target itself
+    #      (outcome, is_winner), trivially correlated with the target
+    #      (trade_duration_minutes — winners run longer than losers),
+    #      or metadata (trade_id, times, dataset flag). Including any
+    #      of them as a feature leaks future information.
+    # CHANGED: April 2026 — expand EXCLUDE set (audit HIGH — Family #5 leak extension)
+    EXCLUDE = {
+        'trade_id', 'open_time', 'close_time', 'action',
+        'profit', 'pips', 'outcome', 'direction', 'dataset',
+        'is_winner', 'trade_duration_minutes', 'trade_direction',
+    }
     feature_cols = [c for c in df.columns if c not in EXCLUDE]
 
     if 'dataset' in df.columns:
@@ -198,16 +207,30 @@ def _extract_xgboost_leaf_rules(booster, X_train, y_train, X_test, y_test,
                                   feature_cols, max_rules, max_depth,
                                   min_coverage, min_win_rate):
     """
-    Fit a shallow decision tree on the original feature space and extract rules.
+    Fit a shallow sklearn DecisionTreeClassifier on the original feature
+    space and extract IF/THEN rules from its leaf paths.
+
+    NOTE: Despite the function name, this does NOT use XGBoost trees.
+    An earlier version built leaf-index embeddings from booster.apply()
+    output, but the code path was dead — the DT was fitted on
+    X_train/y_train anyway. The dead code was removed, and the function
+    now honestly just fits a sklearn DecisionTree on the original
+    features. The `booster` parameter is preserved for call-site
+    backward compatibility but is intentionally unused.
+
+    To actually extract rules from the XGBoost trees themselves, use
+    `booster.get_dump(with_stats=True)` or the sklearn-API interface's
+    `.get_booster().trees_to_dataframe()`. Neither is currently
+    implemented — this remains a potential future improvement.
+
     Returns de-duplicated rule list.
 
-    WHY: The previous version built leaf-index embeddings (OneHotEncoder on
-         booster.apply() output) and computed combo_train, but then fitted the
-         DecisionTree on X_train/y_train anyway — the embedding was never used.
-         Dead code removed; the DT now fits directly on the original features
-         so rules reference real indicator names, not opaque leaf IDs.
-    CHANGED: April 2026 — removed dead leaf-encoding block
+    CHANGED: April 2026 — docstring honest about sklearn DT vs XGBoost
+                         (audit MED — misleading name)
     """
+    # Mark booster as intentionally unused (silences linter warnings)
+    _ = booster
+
     dt = DecisionTreeClassifier(
         max_depth=max_depth,
         min_samples_leaf=max(min_coverage, 10),
