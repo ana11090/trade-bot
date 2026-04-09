@@ -191,19 +191,29 @@ def load_ohlcv_csv(filepath, timeframe_name):
     return df
 
 
-def convert_to_utc(df, timestamp_col, source_timezone='EET'):
+def convert_to_utc(df, timestamp_col, source_timezone='Europe/Athens'):
     """
     Convert timestamps from source timezone to UTC.
 
     Args:
         df: DataFrame containing timestamps
         timestamp_col: Name of the timestamp column
-        source_timezone: Source timezone string (e.g., 'EET', 'GMT', 'US/Eastern')
-                        NOTE: Default 'EET' is the MT5 server time used by most
-                        European brokers (UTC+2 standard, UTC+3 daylight).
+        source_timezone: Source timezone string (IANA zone name like
+                        'Europe/Athens', 'US/Eastern', etc.)
+                        Default 'Europe/Athens' matches MT5 "EET server
+                        time" used by most European brokers — UTC+2 in
+                        winter (EET), UTC+3 in summer (EEST). DST is
+                        handled automatically.
 
     Returns:
         DataFrame with timestamps converted to UTC (timezone-aware)
+
+    WHY: Old default was 'EET' which in pytz is a fixed UTC+2 zone
+         with NO DST. MT5 brokers that use "EET server time" actually
+         switch to EEST in summer, so every summer timestamp was off
+         by 1 hour. Using an IANA zone ('Europe/Athens') handles the
+         DST transition automatically.
+    CHANGED: April 2026 — DST-aware default (audit bug family #3)
     """
     print(f"  Converting {timestamp_col} from {source_timezone} to UTC...")
 
@@ -247,8 +257,14 @@ def align_trades_to_candles(trades_df, candles_df, lookback_candles=200):
     trades_df = trades_df.sort_values('open_time').reset_index(drop=True)
     candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
 
-    # Use merge_asof to find the last candle before each trade
-    # direction='backward' means: find the most recent candle where candle_time <= trade_time
+    # WHY: merge_asof(direction='backward') finds the candle whose
+    #      timestamp <= trade's open_time, which is the CONTAINING
+    #      candle — its OHLC includes data from after the trade was
+    #      opened. Features read from this candle would leak future
+    #      data. Shift by -1 to get the PREVIOUSLY CLOSED candle,
+    #      matching Phase 3's fix in step1_align_price.py.
+    # CHANGED: April 2026 — fix look-ahead leak (audit bug family #3,
+    #                       parallel to Phase 3 step1 fix)
     aligned = pd.merge_asof(
         trades_df,
         candles_df[['timestamp']].reset_index().rename(columns={'index': 'aligned_candle_idx'}),
@@ -256,6 +272,10 @@ def align_trades_to_candles(trades_df, candles_df, lookback_candles=200):
         right_on='timestamp',
         direction='backward'
     )
+
+    # Shift to previous closed candle (the one the trader actually saw)
+    aligned['containing_candle_idx'] = aligned['aligned_candle_idx']
+    aligned['aligned_candle_idx'] = aligned['aligned_candle_idx'] - 1
 
     # Drop trades where we don't have enough lookback candles
     # If aligned_candle_idx < lookback_candles, we can't compute indicators
@@ -291,10 +311,17 @@ def verify_alignment(trades_df, candles_df, tolerance_pips=5.0, pip_size=0.01):
     # WHY: Old code used tolerance_pips directly as price units, causing
     #      100x error for XAUUSD (5 pips = 0.05 price units, not 5.0).
     # CHANGED: April 2026 — convert pips to price units
-    # WHY: For small pip_size (0.00001 crypto), tolerance could become
-    #      microscopic (5*0.00001=0.00005). Enforce min 0.50 absolute floor.
-    # CHANGED: April 2026 — add minimum tolerance floor
-    tolerance_price_units = max(tolerance_pips * pip_size, 0.50)
+    #
+    # WHY: The original fix added an absolute 0.50 price-unit floor to
+    #      protect against tiny crypto pip sizes producing meaningless
+    #      tolerances. But 0.50 is absolute, not relative — for EURUSD
+    #      (pip_size=0.0001) this was 5000 pips, effectively disabling
+    #      verification. The correct fix is a RELATIVE minimum: always
+    #      at least 5 pips in price-units regardless of the caller's
+    #      `tolerance_pips` argument.
+    # CHANGED: April 2026 — relative minimum floor (audit bug family #3)
+    min_tolerance_pips = max(tolerance_pips, 5.0)
+    tolerance_price_units = min_tolerance_pips * pip_size
 
     for idx, trade in trades_df.iterrows():
         candle_idx = int(trade['aligned_candle_idx'])

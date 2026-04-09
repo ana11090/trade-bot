@@ -94,14 +94,18 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
 
     period_start_day      = 0
     period_start_balance  = balance   # WHY: was named period_high — see Fix
+    period_start_date     = None      # set on first iteration below
 
     warnings = []
 
-    # WHY: payout_period_days is CALENDAR days but the loop uses index
-    #      positions in sorted_days (trading days). Convert ~14 calendar
-    #      days → ~10 trading days using a 5/7 ratio (excluding weekends).
-    # CHANGED: April 2026 — calendar/trading day distinction
-    _trading_days_per_period = max(1, int(round(payout_period_days * 5.0 / 7.0)))
+    # WHY: Old code converted payout_period_days (calendar) to trading days
+    #      via a 5/7 ratio, then compared day_idx differences to it. But
+    #      day_idx differences ONLY equal trading days when there are no
+    #      gaps in the strategy — strategies that skip a week (no trades)
+    #      advance day_idx by 1 for what's actually 7 calendar days.
+    #      Now we track period_start_date as a real calendar date and
+    #      compare (current_date - period_start_date).days directly.
+    # CHANGED: April 2026 — use real calendar dates (audit bug family #3)
 
     # ── Group trades by day ───────────────────────────────────────────────
     daily_trades = {}
@@ -124,6 +128,13 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         day_trades = daily_trades[day]
         day_pnl_dollars = 0
 
+        # WHY: period_start_date is tracked in real calendar dates so
+        #      payout cycle timing respects actual elapsed time rather
+        #      than trading-day index differences.
+        # CHANGED: April 2026 — calendar date tracking (audit bug family #3)
+        if period_start_date is None:
+            period_start_date = day
+
         # WHY: Old code hardcoded $10/pip (XAUUSD 1 lot) — wrong for any other
         #      instrument or lot size. Use risk-based sizing from params.
         # CHANGED: April 2026 — use config values, not hardcoded $10/pip
@@ -143,6 +154,30 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         # Apply daily P&L
         balance += day_pnl_dollars
         equity   = balance  # simulation simplification (no open positions)
+
+        # ── Daily DD breach check ─────────────────────────────────────────
+        # WHY: Old code never checked daily DD at all — it read daily_dd_pct
+        #      from the firm config and reported it in the output, but the
+        #      main loop only checked total DD. A strategy losing 10% in
+        #      a single day on a 3%-daily-DD firm would survive as long as
+        #      total DD stayed under the limit. Now we enforce the daily
+        #      limit using the day's dollar loss divided by the daily
+        #      reference (balance at start of day).
+        # NOTE: This is an approximation because the simulator only has
+        #      daily P&L aggregates, not intraday equity excursions. Real
+        #      firms check equity continuously; we only check end-of-day.
+        #      Errs on the side of under-detection (safe for strategies,
+        #      not safe for the simulator's claim that accounts are OK).
+        # CHANGED: April 2026 — enforce daily DD limit (audit bug family #3)
+        daily_dd_triggered = False
+        if daily_dd_pct is not None and daily_dd_pct > 0 and day_pnl_dollars < 0:
+            # Balance at start of day = balance after P&L minus the P&L
+            dd_ref_daily = balance - day_pnl_dollars
+            if dd_ref_daily <= 0:
+                dd_ref_daily = starting_balance  # safety guard
+            daily_dd_this_day = abs(day_pnl_dollars) / dd_ref_daily * 100.0
+            if daily_dd_this_day >= daily_dd_pct:
+                daily_dd_triggered = True
 
         # ── HWM update (firm-specific basis) ──────────────────────────────
         if basis == 'closed_balance':
@@ -174,8 +209,11 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
                 lock_triggered = True
                 lock_day = day_idx
 
-        # ── Total DD breach check ─────────────────────────────────────────
-        if equity <= dd_floor:
+        # ── Total DD or daily DD breach check ─────────────────────────────
+        # WHY: Either breach type blows the account. Daily DD was
+        #      previously uncaught — Fix 1A introduced the check above.
+        # CHANGED: April 2026 — daily DD enforcement (audit bug family #3)
+        if equity <= dd_floor or daily_dd_triggered:
             blown = True
             blow_count += 1
             if first_blow_day is None:
@@ -189,6 +227,7 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
             dd_locked            = False
             post_payout_lock     = False
             period_start_day     = day_idx
+            period_start_date    = day
             period_start_balance = balance
             continue
 
@@ -197,13 +236,13 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         #      period_high was the running max balance during the period. Since
         #      period_high >= balance always, period_profit was always ≤ 0 and
         #      payouts NEVER triggered. The variable was conceptually
-        #      period_start_balance (balance at the START of the period). Renamed
-        #      and removed the running-max tracking.
-        # CHANGED: April 2026 — fix payout trigger
-        # NOTE: days_in_period counts ELEMENTS in sorted_days (trading days),
-        #      not calendar days. See Fix 2 for the calendar-vs-trading distinction.
-        days_in_period = day_idx - period_start_day
-        if days_in_period >= _trading_days_per_period:
+        #      period_start_balance (balance at the START of the period).
+        #      Old code also measured period length in trading-day indices,
+        #      which is wrong when the strategy has gaps — payout timing
+        #      is now based on real calendar days.
+        # CHANGED: April 2026 — calendar-date payout cycle (audit bug family #3)
+        calendar_days_in_period = (day - period_start_date).days
+        if calendar_days_in_period >= payout_period_days:
             period_profit = balance - period_start_balance
             if period_profit > 0:
                 withdraw_amount = period_profit * (withdrawal_pct / 100.0)
@@ -219,6 +258,7 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
 
             # Reset period
             period_start_day     = day_idx
+            period_start_date    = day
             period_start_balance = balance
         # End payout check — period_high tracking removed (was unused after fix)
 
@@ -234,11 +274,27 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
     avg_per_cycle    = 0
     estimated_annual = 0
     success_rate     = 0.0
+
+    # WHY: days_simulated counts TRADING days (entries in sorted_days), not
+    #      calendar days. A strategy trading every weekday for a full year
+    #      has ~252 trading days, not 365. Using trading-day count as
+    #      calendar-day count inflates annual_blow_cost by 365/252 ≈ 1.45×
+    #      (and shrinks attempted_cycles, which inflates success_rate).
+    #      Fix: compute real elapsed time from the first to last trade
+    #      date in the strategy's history.
+    # CHANGED: April 2026 — use calendar-day span (audit bug family #3)
+    if len(sorted_days) >= 2:
+        calendar_days_span = max((sorted_days[-1] - sorted_days[0]).days + 1, 1)
+    else:
+        calendar_days_span = max(days_simulated, 1)
+
     if days_simulated > 0 and payout_cycles_completed > 0:
         cycles_per_year   = 365.0 / max(payout_period_days, 1)
         avg_per_cycle     = total_withdrawn / payout_cycles_completed
-        # Attempted cycles uses calendar days, not trading days
-        attempted_cycles  = max(days_simulated / max(payout_period_days, 1), 1)
+        # WHY: attempted_cycles uses REAL elapsed calendar days, not the
+        #      count of trading days (which understates time by ~30%).
+        # CHANGED: April 2026 — calendar span (audit bug family #3)
+        attempted_cycles  = max(calendar_days_span / max(payout_period_days, 1), 1)
         success_rate      = max(0.0, min(1.0, payout_cycles_completed / attempted_cycles))
 
         # Cost per blow = challenge fee for a new account
@@ -249,8 +305,9 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         # Annualize blow cost: total blows over the simulation, scaled to per-year
         # WHY: Old formula was: blow_count * fee * (cycles_per_year / years_simulated)
         #      → units of dollars/year². Correct: blow_count * fee / years_simulated.
-        # CHANGED: April 2026 — fix unit error
-        years_simulated  = max(days_simulated / 365.0, 0.01)
+        #      AND years_simulated must be CALENDAR years, not trading-day years.
+        # CHANGED: April 2026 — fix unit error + calendar years (audit bug family #3)
+        years_simulated  = max(calendar_days_span / 365.0, 0.01)
         annual_blow_cost = (blow_count * blow_cost_per_blow) / years_simulated
 
         estimated_annual = max(0.0, gross_annual - annual_blow_cost)
