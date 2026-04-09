@@ -162,11 +162,14 @@ def _on_run_sim():
         _show_message("Not enough trades to run a simulation.")
         return
 
-    # Trade frequency: how many trades per calendar day
+    # Trade frequency: how many trades per trading day
     df_t = df.dropna(subset=["open_dt"]).sort_values("open_dt")
     if len(df_t) >= 2:
-        span_days      = max((df_t["open_dt"].iloc[-1] - df_t["open_dt"].iloc[0]).days, 1)
-        trades_per_day = len(df_t) / span_days
+        # WHY: Calendar span over-counts the denominator — weekends + holidays have
+        #      no trades, giving ~30% too-low rate for weekday-only strategies.
+        # CHANGED: April 2026 — unique trading days (audit HIGH — Family #2)
+        unique_trading_days = int(df_t["open_dt"].dt.floor("D").nunique())
+        trades_per_day = len(df_t) / max(unique_trading_days, 1)
     else:
         trades_per_day = 1.0
 
@@ -516,9 +519,33 @@ def _on_calc_health():
     else:
         kelly_pct = half_kelly = None
 
-    # Consecutive loss probability: P(N losses in a row) = (1 - win_rate)^N
+    # Consecutive loss probability — Monte Carlo per-horizon estimate
     loss_rate = 1 - len(wins) / len(pnl)
-    consec = {n: loss_rate ** n * 100 for n in [3, 5, 7, 10]}
+
+    def _p_streak_in_horizon(lr, streak_len, n_horizon, n_trials=2000):
+        # WHY: loss_rate^N is the probability of ONE specific run of N losses —
+        #      not the probability of seeing at least one such streak in H trades.
+        #      The per-horizon probability is much higher and grows with the
+        #      horizon. Monte Carlo gives the honest answer without approximation.
+        # CHANGED: April 2026 — Monte Carlo streak probability (audit HIGH)
+        rng_s = np.random.default_rng()
+        hits = 0
+        for _ in range(n_trials):
+            outcomes = rng_s.random(n_horizon) < lr  # True = loss
+            consec_s = 0
+            for is_loss in outcomes:
+                if is_loss:
+                    consec_s += 1
+                    if consec_s >= streak_len:
+                        hits += 1
+                        break
+                else:
+                    consec_s = 0
+        return hits / n_trials * 100
+
+    n_trades_horizon = len(pnl)
+    consec = {n: _p_streak_in_horizon(loss_rate, n, n_trades_horizon)
+              for n in [3, 5, 7, 10]}
 
     # Longest actual consecutive loss streak in the data
     max_streak = 0
@@ -552,8 +579,10 @@ def _on_calc_health():
     df_t = df.dropna(subset=["open_dt"]).sort_values("open_dt")
     trades_per_day = 1.0
     if len(df_t) >= 2:
-        span = max((df_t["open_dt"].iloc[-1] - df_t["open_dt"].iloc[0]).days, 1)
-        trades_per_day = len(df_t) / span
+        # WHY: Same calendar-day denominator bug as _on_run_sim — fix here too.
+        # CHANGED: April 2026 — unique trading days (audit HIGH — Family #2)
+        unique_trading_days_c = int(df_t["open_dt"].dt.floor("D").nunique())
+        trades_per_day = len(df_t) / max(unique_trading_days_c, 1)
 
     recovery_days = recovery_trades / trades_per_day if recovery_trades else None
 

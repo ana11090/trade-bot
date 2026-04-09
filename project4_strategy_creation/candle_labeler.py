@@ -36,6 +36,17 @@ def label_candles(
         pips_result, hold_candles, exit_reason
 
     Cached to outputs/candle_labels_{direction}_{sl}_{tp}.csv
+
+    IMPORTANT — pip_size parameter
+    --------------------------------
+    pip_size is the monetary value of ONE pip in price units for the instrument.
+      XAUUSD  : 0.01  (gold, 1 pip = $0.01 price move)
+      EURUSD  : 0.0001 (forex major, 1 pip = 0.0001 price move)
+      USDJPY  : 0.01  (JPY pair, 1 pip = 0.01 price move)
+      Indices : 1.0   (e.g. SP500, 1 pip = 1.0 price move)
+    Using the wrong pip_size shifts all pips_result values by 10–100×.
+    sl_pips and tp_pips are in pip units, not price units — they are
+    multiplied by pip_size internally.  spread_pips is also in pip units.
     """
     # Check cache
     cache_name = f"candle_labels_{direction}_{sl_pips}_{tp_pips}.csv"
@@ -139,17 +150,20 @@ def label_candles(
                         #      open does not predict the intra-candle path.
                         # CHANGED: April 2026 — conservative tie-break
                         label       = 0
-                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size
+                        # WHY: Old code subtracted only entry spread. Exit also
+                        #      costs a spread — charge it at every exit path.
+                        # CHANGED: April 2026 — round-trip spread (audit HIGH)
+                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - spread_pips
                         exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
-                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size
+                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - spread_pips
                         exit_reason = "STOP_LOSS"
                         break
                     elif tp_hit:
                         label       = 1
-                        pips_result = (max(candle_open, tp_price) - entry_price) / pip_size
+                        pips_result = (max(candle_open, tp_price) - entry_price) / pip_size - spread_pips
                         exit_reason = "TAKE_PROFIT"
                         break
 
@@ -161,26 +175,30 @@ def label_candles(
                         # WHY: same as BUY — conservative loss labeling.
                         # CHANGED: April 2026 — conservative tie-break
                         label       = 0
-                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size
+                        # WHY: round-trip spread deducted at exit (same as BUY).
+                        # CHANGED: April 2026 — round-trip spread (audit HIGH)
+                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - spread_pips
                         exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
-                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size
+                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - spread_pips
                         exit_reason = "STOP_LOSS"
                         break
                     elif tp_hit:
                         label       = 1
-                        pips_result = (entry_price - min(candle_open, tp_price)) / pip_size
+                        pips_result = (entry_price - min(candle_open, tp_price)) / pip_size - spread_pips
                         exit_reason = "TAKE_PROFIT"
                         break
             else:
                 # Max hold reached — use close of last candle
                 last_idx = min(i + max_hold_candles, n - 1)
+                # WHY: round-trip spread deducted at forced exit too.
+                # CHANGED: April 2026 — round-trip spread (audit HIGH)
                 if dir_name == "BUY":
-                    pips_result = (closes[last_idx] - entry_price) / pip_size
+                    pips_result = (closes[last_idx] - entry_price) / pip_size - spread_pips
                 else:
-                    pips_result = (entry_price - closes[last_idx]) / pip_size
+                    pips_result = (entry_price - closes[last_idx]) / pip_size - spread_pips
                 label = 1 if pips_result > 0 else 0
 
             results.append({

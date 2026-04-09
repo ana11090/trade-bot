@@ -69,13 +69,25 @@ def get_scaled_df():
     if state.loaded_data is None:
         return None
     df = state.loaded_data.copy()
-    scale = {"Standard": 1.0, "Cent": 0.01, "Micro": 0.1}.get(state.account_type.get(), 1.0)
+    # WHY: Micro broker exports report P&L already in account currency — no
+    #      further scaling needed. Old 0.1 factor was wrong (100× too small for
+    #      the typical $1 pip micro account).
+    # CHANGED: April 2026 — Micro scale 1.0 (audit MED — Family #1)
+    scale = {"Standard": 1.0, "Cent": 0.01, "Micro": 1.0}.get(state.account_type.get(), 1.0)
     if "Profit" in df.columns:
         df["profit_scaled"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0) * scale
     else:
         df["profit_scaled"] = 0.0
-    col0 = df.columns[0]
-    df["open_dt"] = pd.to_datetime(df[col0], format="%d/%m/%Y %H:%M", errors="coerce")
+    # WHY: First column is not always the date column — some exports lead with
+    #      "Ticket", "Order", or other non-date fields, causing silent parse errors.
+    #      Hardcoded EU format also fails for US broker exports (MM/DD/YYYY).
+    # CHANGED: April 2026 — explicit date column + dual EU/US parse (audit MED)
+    _date_candidates = ["Open Date", "Open Time", "OpenTime", "Open_Date",
+                        "open_date", "open_time", "opentime", "Date", "date"]
+    _date_col = next((c for c in _date_candidates if c in df.columns), df.columns[0])
+    _dt_eu = pd.to_datetime(df[_date_col], format="%d/%m/%Y %H:%M", errors="coerce")
+    _dt_us = pd.to_datetime(df[_date_col], format="%m/%d/%Y %H:%M", errors="coerce")
+    df["open_dt"] = _dt_eu if _dt_eu.notna().sum() >= _dt_us.notna().sum() else _dt_us
     return df
 
 

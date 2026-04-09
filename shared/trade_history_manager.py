@@ -16,7 +16,7 @@ import os
 import json
 import shutil
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -120,7 +120,13 @@ def _parse_trades_csv(csv_path: str) -> Tuple[int, dict, Optional[str]]:
         trade_count = len(df)
         date_range = {}
         if "Open Date" in df.columns:
-            dates = pd.to_datetime(df["Open Date"], dayfirst=True, errors="coerce").dropna()
+            # WHY: dayfirst=True hard-codes EU format (DD/MM/YYYY). US broker
+            #      exports use MM/DD/YYYY — days 1-12 parse backwards silently.
+            #      Auto-detect: try both, keep the parse with more valid results.
+            # CHANGED: April 2026 — dual-parse date format detection (audit MED)
+            dates_eu = pd.to_datetime(df["Open Date"], dayfirst=True,  errors="coerce").dropna()
+            dates_us = pd.to_datetime(df["Open Date"], dayfirst=False, errors="coerce").dropna()
+            dates = dates_eu if len(dates_eu) >= len(dates_us) else dates_us
             if not dates.empty:
                 date_range = {
                     "start": dates.min().strftime("%Y-%m-%d"),
@@ -227,7 +233,10 @@ def load_trades(
         "robot_name":   robot_name,
         "symbol":       symbol,
         "description":  description,
-        "date_loaded":  datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        # WHY: datetime.utcnow() returns a naive datetime; stdlib deprecates it
+        #      and it can silently mislabel the timezone. Use timezone.utc explicitly.
+        # CHANGED: April 2026 — timezone-aware UTC (audit LOW)
+        "date_loaded":  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
         "trade_count":  trade_count,
         "date_range":   date_range,
         "status":       "loaded",

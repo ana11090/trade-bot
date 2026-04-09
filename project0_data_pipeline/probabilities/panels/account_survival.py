@@ -119,8 +119,13 @@ def _on_run_sim():
 
     df_t = df.dropna(subset=["open_dt"]).sort_values("open_dt")
     if len(df_t) >= 2:
-        span_days      = max((df_t["open_dt"].iloc[-1] - df_t["open_dt"].iloc[0]).days, 1)
-        trades_per_day = len(df_t) / span_days
+        # WHY: Calendar span over-counts the denominator — weekends + holidays have
+        #      no trades so dividing by calendar days gives ~30% too-low rate for
+        #      weekday-only strategies.  Unique trading days (dates with ≥1 trade)
+        #      gives the real average.
+        # CHANGED: April 2026 — unique trading days (audit HIGH — Family #2)
+        unique_trading_days = int(df_t["open_dt"].dt.floor("D").nunique())
+        trades_per_day = len(df_t) / max(unique_trading_days, 1)
     else:
         trades_per_day = 1.0
 
@@ -133,13 +138,29 @@ def _on_run_sim():
 
     ruin_threshold = -starting_bal * max_dd_pct
     rng            = np.random.default_rng()
+    n_hist         = len(trade_pnl)
+    block_len      = max(5, int(np.sqrt(n_hist)))
     all_paths      = []
     all_drawdowns  = []
     final_pnls     = []
     survived       = 0
 
+    def _sample_block_path(n_needed):
+        # WHY: IID resampling (rng.choice) destroys serial dependence — losing
+        #      streaks cluster in real trading, so IID gives optimistic survival
+        #      rates. Moving-block bootstrap preserves local autocorrelation.
+        # CHANGED: April 2026 — block bootstrap (audit HIGH)
+        out = np.empty(n_needed, dtype=trade_pnl.dtype)
+        pos = 0
+        while pos < n_needed:
+            start = int(rng.integers(0, n_hist))
+            take  = min(block_len, n_needed - pos, n_hist - start)
+            out[pos:pos + take] = trade_pnl[start:start + take]
+            pos += take
+        return out
+
     for _ in range(n_sims):
-        sampled      = rng.choice(trade_pnl, size=n_trades, replace=True)
+        sampled      = _sample_block_path(n_trades)
         cumulative   = np.cumsum(sampled)
         running_peak = np.maximum.accumulate(cumulative)
         drawdown     = cumulative - running_peak
