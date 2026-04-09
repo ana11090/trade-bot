@@ -1,182 +1,114 @@
 {
   "method": "scratch_xgboost",
-  "generated_at": "2026-04-04T13:52:06.896248",
-  "computation_time_s": 1178.7,
-  "candles_analyzed": 128315,
-  "base_win_rate": 0.312,
+  "generated_at": "2026-04-08T09:15:21.177417",
+  "computation_time_s": 92.8,
+  "candles_analyzed": 256630,
+  "base_win_rate": 0.306,
+  "entry_timeframe": "H4",
   "sl_pips": 150.0,
   "tp_pips": 300.0,
-  "direction": "BUY",
-  "max_hold_candles": 50,
+  "direction": "BOTH",
+  "max_hold_candles": 100,
   "spread_pips": 2.5,
-  "features_used": 570,
+  "features_used": 625,
   "original_features": 570,
-  "smart_features": 0,
-  "rules": [
-    {
-      "conditions": [
-        {
-          "feature": "H4_roc_1",
-          "operator": ">",
-          "value": -0.007
-        },
-        {
-          "feature": "D1_roc_1",
-          "operator": ">",
-          "value": 0.1169
-        },
-        {
-          "feature": "H1_ema_9_distance",
-          "operator": "<=",
-          "value": 0.1228
-        },
-        {
-          "feature": "H4_roc_1",
-          "operator": ">",
-          "value": 0.1476
-        },
-        {
-          "feature": "M15_atr_50",
-          "operator": "<=",
-          "value": 2.1916
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.681,
-      "coverage": 6044,
-      "coverage_pct": 4.7,
-      "win_rate": 0.681,
-      "avg_pips": 156.3,
-      "score": 94.3181267006295
-    },
-    {
-      "conditions": [
-        {
-          "feature": "H4_roc_1",
-          "operator": ">",
-          "value": -0.007
-        },
-        {
-          "feature": "D1_roc_1",
-          "operator": "<=",
-          "value": 0.1169
-        },
-        {
-          "feature": "H1_ema_9_distance",
-          "operator": "<=",
-          "value": 0.0021
-        },
-        {
-          "feature": "H4_roc_1",
-          "operator": ">",
-          "value": 0.117
-        },
-        {
-          "feature": "M5_distance_to_swing_low",
-          "operator": "<=",
-          "value": 0.1711
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.61,
-      "coverage": 1993,
-      "coverage_pct": 1.6,
-      "win_rate": 0.61,
-      "avg_pips": 123.7,
-      "score": 44.0753924628179
-    }
-  ],
+  "smart_features": 55,
+  "interaction_features": 0,
+  "discovery_mode": "quick",
+  "enhancements_used": {},
+  "rules": [],
   "model_metrics": {
-    "train_accuracy": 0.7474,
-    "test_accuracy": 0.7382,
-    "n_estimators": 300,
-    "max_depth": 4,
+    "train_accuracy": 0.7114,
+    "test_accuracy": 0.6006,
     "feature_importance_top_20": [
       [
+        "H4_atr_14",
+        0.027781367301940918
+      ],
+      [
+        "H1_atr_28",
+        0.027185659855604172
+      ],
+      [
+        "SMART_H4_rsi_14_direction",
+        0.026547670364379883
+      ],
+      [
+        "D1_atr_28",
+        0.02494596131145954
+      ],
+      [
+        "M5_vwap",
+        0.02265181392431259
+      ],
+      [
+        "M5_atr_7",
+        0.022047534584999084
+      ],
+      [
+        "H4_vwap",
+        0.02032262645661831
+      ],
+      [
+        "H1_atr_100",
+        0.01925433985888958
+      ],
+      [
+        "H1_atr_7",
+        0.018429022282361984
+      ],
+      [
+        "D1_vwap",
+        0.017317671328783035
+      ],
+      [
+        "H1_vwap",
+        0.01417841762304306
+      ],
+      [
+        "H1_psar",
+        0.013186630792915821
+      ],
+      [
+        "H4_atr_100",
+        0.012985745444893837
+      ],
+      [
+        "SMART_H1_rsi_14_direction",
+        0.012234736233949661
+      ],
+      [
+        "M15_vwap",
+        0.012085242196917534
+      ],
+      [
+        "H1_vpt",
+        0.00951444637030363
+      ],
+      [
+        "SMART_rsi_h4_minus_h1",
+        0.009439541026949883
+      ],
+      [
+        "M5_std_dev_20",
+        0.00929621048271656
+      ],
+      [
+        "M5_atr_100",
+        0.008944311179220676
+      ],
+      [
         "H4_roc_1",
-        0.030601434409618378
-      ],
-      [
-        "H1_roc_5",
-        0.022894376888871193
-      ],
-      [
-        "M15_atr_28",
-        0.020951194688677788
-      ],
-      [
-        "M5_cci_50",
-        0.019169937819242477
-      ],
-      [
-        "D1_roc_1",
-        0.01723441295325756
-      ],
-      [
-        "H1_macd_fast_diff",
-        0.0167820043861866
-      ],
-      [
-        "H1_sma_20_distance",
-        0.01675676926970482
-      ],
-      [
-        "M15_ema_9_distance",
-        0.01558810193091631
-      ],
-      [
-        "H1_ema_9_distance",
-        0.015437925234436989
-      ],
-      [
-        "M15_atr_50",
-        0.01494549959897995
-      ],
-      [
-        "H1_rsi_7",
-        0.014005330391228199
-      ],
-      [
-        "M15_roc_10",
-        0.012185752391815186
-      ],
-      [
-        "M5_distance_to_fib_236",
-        0.011899598874151707
-      ],
-      [
-        "H1_std_dev_20",
-        0.011364673264324665
-      ],
-      [
-        "M5_sma_50_distance",
-        0.01101948693394661
-      ],
-      [
-        "M5_distance_to_swing_low",
-        0.010781556367874146
-      ],
-      [
-        "M15_cci_14",
-        0.010759429074823856
-      ],
-      [
-        "M15_macd_fast_diff",
-        0.010166657157242298
-      ],
-      [
-        "H1_williams_r_14",
-        0.009984315373003483
-      ],
-      [
-        "H1_roc_1",
-        0.009900102391839027
+        0.008871769532561302
       ]
-    ]
+    ],
+    "discovery_mode": "quick",
+    "n_estimators": 300,
+    "max_depth": 4
   },
   "profile": {
     "method": "Scratch Discovery (no robot needed)",
-    "candles_analyzed": 128315,
-    "feature_count": 570
+    "candles_analyzed": 256630,
+    "feature_count": 625
   }
 }
