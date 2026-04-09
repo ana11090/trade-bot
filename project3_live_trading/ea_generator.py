@@ -1727,13 +1727,18 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
             val  = cond.get('value', 0)
             tv   = get_mql_code(feat, 'tradovate')
             var_n = tv['var_name']
-            indicator_lines.append(f'    {tv.get("python_code", f"val_{var_n} = 0.0")}  # {feat}')
+            # WHY: 8-space indent so these lines sit inside the try: block
+            #      in check_entry_conditions (try: is at 4-space indent).
+            #      Old 4-space indent placed them outside the try — unhandled
+            #      exceptions from indicator computation would crash the thread.
+            # CHANGED: April 2026 — fix indicator/condition indent in try block
+            indicator_lines.append(f'        {tv.get("python_code", f"val_{var_n} = 0.0")}  # {feat}')
             mql_op = OPERATOR_MAP_PY.get(op, '>')
-            condition_lines.append(f'    if not (val_{var_n} {mql_op} {val}):')
-            condition_lines.append(f'        return False  # Rule {ri} cond {ci}: {feat} {op} {val:.4f}')
+            condition_lines.append(f'        if not (val_{var_n} {mql_op} {val}):')
+            condition_lines.append(f'            return False  # Rule {ri} cond {ci}: {feat} {op} {val:.4f}')
 
-    indicator_block   = '\n'.join(indicator_lines) or '    pass'
-    condition_block   = '\n'.join(condition_lines) or '    pass'
+    indicator_block   = '\n'.join(indicator_lines) or '        pass'
+    condition_block   = '\n'.join(condition_lines) or '        pass'
 
     code = f'''\
 #!/usr/bin/env python3
@@ -1785,11 +1790,23 @@ DD_SAFETY_PCT      = config.get("dd_safety_pct", {dd_safety_pct})
 MAX_SPREAD_PIPS    = config.get("max_spread_pips", {max_spread_pips})
 
 # ── State ───────────────────────────────────────────────────────────────────
+# WHY: session_equity tracks the reference for daily DD. It must be
+#      refreshed at every day rollover, not set once at startup.
+#      session_date lets us detect the rollover via UTC date change.
+# CHANGED: April 2026 — track day rollover (audit HIGH #33)
 daily_trades      = 0
 last_trade_time   = None
 session_equity    = None
+session_date      = None    # UTC date when session_equity was last set
 stop_for_day      = False
 stop_forever      = False
+# WHY: HWM tracks the peak equity across the entire account lifetime.
+#      Used for trailing total DD + lock-at-starting-balance rule.
+#      Populated on first check_drawdown call.
+# CHANGED: April 2026 — add HWM state (audit HIGH #34)
+account_hwm       = None   # highest equity seen so far
+hwm_locked        = False  # True after +6% gain → DD floor frozen
+starting_equity   = None   # captured at first check_drawdown call
 
 # DataFrame buffers per timeframe (populated from Tradovate WebSocket)
 df_m5   = pd.DataFrame(columns=["open","high","low","close","volume"])
@@ -1812,19 +1829,68 @@ def log_trade(direction, lots, entry, exit_p, pips, reason, skip=""):
     _log_file.flush()
 
 # ── Risk Manager ────────────────────────────────────────────────────────────
+# WHY: Old version had three bugs:
+#      1. session_equity set once, never refreshed on day rollover
+#         → daily DD reference permanently anchored to bot startup equity
+#      2. total_dd = session_equity - current_equity with no HWM tracking
+#         → profitable bot that later drew down would NOT trip trailing DD
+#         even when the firm's trailing rule would have breached
+#      3. No lock-at-starting-balance after +6% gain (user's Leveraged
+#         firm rule)
+#      Fix: refresh session_equity on UTC day rollover, track HWM
+#      explicitly, apply lock-at-starting-balance after +6% gain.
+# CHANGED: April 2026 — day rollover + HWM + lock (audit HIGH #33 + #34)
 def check_drawdown(current_equity):
-    global stop_for_day, stop_forever, session_equity
+    global stop_for_day, stop_forever, session_equity, session_date
+    global account_hwm, hwm_locked, starting_equity
+
+    today = datetime.datetime.utcnow().date()
+
+    # Initialize on first call
+    if starting_equity is None:
+        starting_equity = current_equity
     if session_equity is None:
         session_equity = current_equity
+        session_date   = today
+    if account_hwm is None:
+        account_hwm = current_equity
+
+    # Day rollover: refresh session_equity to current equity
+    if today != session_date:
+        print(f"[RISK] Day rollover UTC {{session_date}} -> {{today}}, "
+              f"session_equity refreshed from {{session_equity:.2f}} to {{current_equity:.2f}}")
+        session_equity = current_equity
+        session_date   = today
+        # Reset daily stop flag at day rollover
+        stop_for_day = False
+
+    # Daily DD check (same logic as before, but against fresh session_equity)
     daily_loss = session_equity - current_equity
     daily_limit = session_equity * DD_DAILY_PCT / 100.0
     if daily_loss >= daily_limit * DD_SAFETY_PCT / 100.0:
         stop_for_day = True
         print(f"[RISK] Daily DD limit reached ({{daily_loss:.2f}}). Stopping for today.")
-    total_dd = session_equity - current_equity
-    if total_dd >= session_equity * DD_TOTAL_PCT / 100.0:
+
+    # HWM tracking + lock-at-starting-balance after +6% gain
+    # WHY: User's Leveraged firm uses trailing DD that locks at starting
+    #      balance once the account gains +6%. Before the lock, HWM
+    #      trails the equity peak. After the lock, the DD floor is
+    #      frozen at starting_equity (not at the current peak).
+    if not hwm_locked:
+        account_hwm = max(account_hwm, current_equity)
+        gain_pct = (current_equity - starting_equity) / starting_equity * 100.0
+        if gain_pct >= 6.0:
+            hwm_locked = True
+            account_hwm = starting_equity * (1.0 + DD_TOTAL_PCT / 100.0)
+            print(f"[RISK] HWM locked at starting balance +{{DD_TOTAL_PCT}}% "
+                  f"(floor = {{account_hwm:.2f}})")
+
+    # Total DD check — uses account_hwm (trailing or locked)
+    total_dd = account_hwm - current_equity
+    if total_dd >= starting_equity * DD_TOTAL_PCT / 100.0:
         stop_forever = True
-        print("[RISK] TOTAL DD LIMIT REACHED. Bot disabled.")
+        print(f"[RISK] TOTAL DD LIMIT REACHED (hwm={{account_hwm:.2f}}, "
+              f"equity={{current_equity:.2f}}, dd={{total_dd:.2f}}). Bot disabled.")
 
 # ── Entry conditions ─────────────────────────────────────────────────────────
 def check_entry_conditions():

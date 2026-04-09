@@ -5,10 +5,36 @@ Rules are saved to saved_rules.json and can be loaded, deleted, or sent to backt
 
 import os
 import json
+import tempfile
 from datetime import datetime
 
 _SAVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            'saved_rules.json')
+
+
+# WHY: All write paths previously used open(w) which truncates the file
+#      immediately. A crash between truncate and json.dump completing
+#      leaves saved_rules.json empty or partial — all saved rules lost.
+#      Fix: write to a tempfile in the same directory, then os.replace
+#      which is atomic (POSIX-atomic on Unix, atomic on Windows since
+#      Python 3.3). The source file is never in a partial state.
+# CHANGED: April 2026 — atomic writes (audit MED #67)
+def _atomic_write_json(data, path):
+    """Write JSON data to `path` atomically via tempfile + rename."""
+    dir_name = os.path.dirname(path) or '.'
+    fd, tmp_path = tempfile.mkstemp(
+        suffix='.json', prefix='.tmp_saved_rules_', dir=dir_name
+    )
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            json.dump(data, fh, indent=2, default=str)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def load_all():
@@ -55,8 +81,8 @@ def save_rule(rule, source="unknown", notes=""):
 
     all_rules.append(entry)
 
-    with open(_SAVE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(all_rules, f, indent=2, default=str)
+    # CHANGED: April 2026 — atomic write (audit MED #67)
+    _atomic_write_json(all_rules, _SAVE_PATH)
 
     return entry["id"]
 
@@ -66,14 +92,14 @@ def delete_rule(rule_id):
     all_rules = load_all()
     all_rules = [r for r in all_rules if r.get("id") != rule_id]
 
-    with open(_SAVE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(all_rules, f, indent=2, default=str)
+    # CHANGED: April 2026 — atomic write (audit MED #67)
+    _atomic_write_json(all_rules, _SAVE_PATH)
 
 
 def delete_all():
     """Delete all saved rules."""
-    with open(_SAVE_PATH, 'w', encoding='utf-8') as f:
-        json.dump([], f)
+    # CHANGED: April 2026 — atomic write (audit MED #67)
+    _atomic_write_json([], _SAVE_PATH)
 
 
 def export_to_report(rule_ids=None):

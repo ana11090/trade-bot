@@ -3,26 +3,72 @@ import pandas as pd
 import state
 
 
+def _parse_single_condition(s):
+    """Parse a single 'FEATURE OP VALUE' string into a dict.
+
+    Returns None if the string can't be parsed (no operator or non-numeric value).
+    Checks 2-char operators before 1-char to avoid 'rsi <= 50' splitting on '<'.
+    """
+    s = s.strip()
+    for op in ['<=', '>=', '==', '!=', '<', '>']:
+        if op in s:
+            parts = s.split(op, 1)
+            if len(parts) != 2:
+                continue
+            feat = parts[0].strip()
+            val_str = parts[1].strip()
+            try:
+                val = float(val_str)
+            except ValueError:
+                return None
+            return {'feature': feat, 'operator': op, 'value': val}
+    return None
+
+
 def normalize_condition(c):
     """Convert a condition to dict form regardless of source format.
 
     Handles:
       - dict already: {"feature": ..., "operator": ..., "value": ...} → returned as-is
-      - string: "M15_roc_5 <= 0.1920" → {"feature": "M15_roc_5", "operator": "<=", "value": 0.192}
+      - string: "M15_roc_5 <= 0.1920" → single dict
+      - compound string: "rsi <= 0.5 and adx > 20" → LIST of dicts
+
+    WHY: Old version used split on the first operator found and then
+         tried float() on the rest of the string. For compound
+         conditions like "rsi <= 0.5 and adx > 20" the split produced
+         parts[1]=" 0.5 and adx > 20" which can't convert to float,
+         and the except clause silently stored the garbage string as
+         the value. Downstream rule evaluation compared a number to
+         a string and either crashed or returned False.
+         Fix: detect compound strings (containing ' and ' or ' or ')
+         and split into a list of sub-conditions, each parsed
+         individually.
+    CHANGED: April 2026 — compound condition handling (audit MED #72)
     """
     if isinstance(c, dict):
         return c
-    # Parse string like "FEATURE OP VALUE"
     s = str(c).strip()
-    for op in ['<=', '>=', '<', '>', '==', '!=']:
-        if op in s:
-            parts = s.split(op, 1)
-            feat = parts[0].strip()
-            try:
-                val = float(parts[1].strip())
-            except ValueError:
-                val = parts[1].strip()
-            return {'feature': feat, 'operator': op, 'value': val}
+
+    # Detect compound conditions (case-insensitive "and"/"or" as a word)
+    import re as _re
+    if _re.search(r'\s+(?:and|or|AND|OR|And|Or)\s+', s):
+        parts = _re.split(r'\s+(?:and|or|AND|OR|And|Or)\s+', s)
+        sub_conditions = []
+        for part in parts:
+            parsed = _parse_single_condition(part)
+            if parsed is not None:
+                sub_conditions.append(parsed)
+            else:
+                sub_conditions.append(
+                    {'feature': part.strip(), 'operator': '>', 'value': 0}
+                )
+        return sub_conditions
+
+    # Single-condition path
+    parsed = _parse_single_condition(s)
+    if parsed is not None:
+        return parsed
+
     # Fallback: treat whole string as feature name
     return {'feature': s, 'operator': '>', 'value': 0}
 
@@ -32,7 +78,19 @@ def normalize_conditions(rule):
     conds = rule.get('conditions', [])
     if not conds or isinstance(conds[0], dict):
         return rule  # already correct format
-    return {**rule, 'conditions': [normalize_condition(c) for c in conds]}
+
+    # WHY: normalize_condition may return a dict OR a list (for compound
+    #      conditions like "rsi > 50 and adx > 20"). Flatten lists into
+    #      the result so every element in 'conditions' is a dict.
+    # CHANGED: April 2026 — flatten compound conditions (audit MED #72)
+    flat = []
+    for c in conds:
+        normalized = normalize_condition(c)
+        if isinstance(normalized, list):
+            flat.extend(normalized)
+        else:
+            flat.append(normalized)
+    return {**rule, 'conditions': flat}
 
 
 def make_copyable(widget):
