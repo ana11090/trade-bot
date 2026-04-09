@@ -28,16 +28,26 @@ SYMBOL_PRICE_RANGES = {
 }
 
 
-def validate_candle_file(csv_path, symbol="XAUUSD"):
+def validate_candle_file(csv_path, symbol="XAUUSD", drop_duplicates=False):
     """
     Validate a candle CSV file. Returns a dict with:
     - file: path
-    - rows: count
+    - rows: count (after optional dedup)
     - date_range: (start, end)
     - price_range: (min, max)
     - price_ok: bool (is it in realistic range for the symbol?)
     - gaps: list of detected gaps (missing periods)
     - issues: list of issue descriptions
+    - duplicates_removed: int (count removed when drop_duplicates=True, else 0)
+
+    WHY: Old version only REPORTED duplicates as an issue but left them
+         in the file. Upstream feature computation then processed the
+         same bar twice, corrupting rolling-window indicator values.
+         When drop_duplicates=True, removes them (keeping the last
+         occurrence of each timestamp, matching cross_check_trades_vs_candles
+         convention) and reports the count. Default False preserves
+         current behavior for read-only callers.
+    CHANGED: April 2026 — add drop_duplicates option (audit MED)
     """
     result = {
         "file": csv_path,
@@ -46,7 +56,8 @@ def validate_candle_file(csv_path, symbol="XAUUSD"):
         "price_range": None,
         "price_ok": False,
         "gaps": [],
-        "issues": []
+        "issues": [],
+        "duplicates_removed": 0,
     }
 
     if not os.path.exists(csv_path):
@@ -111,9 +122,28 @@ def validate_candle_file(csv_path, symbol="XAUUSD"):
         result["issues"].append(f"{len(invalid_ohlc)} candles with invalid OHLC relationships")
 
     # Check for duplicates
+    # WHY: Detection alone isn't enough — upstream feature computation
+    #      still processes the duplicate bars and corrupts rolling-window
+    #      indicators. If caller opts in via drop_duplicates=True, remove
+    #      them here and report the count.
+    # CHANGED: April 2026 — optional dedup (audit MED)
     duplicates = df[df.duplicated(subset=["timestamp"], keep=False)]
-    if len(duplicates) > 0:
-        result["issues"].append(f"{len(duplicates)} duplicate timestamps")
+    n_dup_rows = len(duplicates)
+    if n_dup_rows > 0:
+        n_unique_timestamps = df["timestamp"].nunique()
+        n_to_remove = len(df) - n_unique_timestamps
+        if drop_duplicates:
+            df = df.drop_duplicates(subset=["timestamp"], keep="last")
+            result["duplicates_removed"] = int(n_to_remove)
+            result["rows"] = len(df)
+            result["issues"].append(
+                f"{n_to_remove} duplicate timestamps removed (kept last occurrence)"
+            )
+        else:
+            result["issues"].append(
+                f"{n_dup_rows} duplicate timestamp rows detected "
+                f"({n_to_remove} to remove). Call with drop_duplicates=True to clean."
+            )
 
     # Check for zero-volume candles (might indicate data issues)
     zero_vol = df[df["volume"] == 0]

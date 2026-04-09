@@ -530,6 +530,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     """
     trades = []
 
+    # WHY: Drop duplicate candle timestamps before any further processing.
+    #      Raw CSVs with duplicate bars produce corrupted rolling indicators.
+    #      Defense-in-depth dedup, matching backtest_engine.run_backtest.
+    #      fast_backtest is excluded — its caller is responsible for dedup.
+    # CHANGED: April 2026 — drop duplicate timestamps (audit HIGH)
+    if 'timestamp' in candles_df.columns:
+        _dedup_count = len(candles_df) - candles_df['timestamp'].nunique()
+        if _dedup_count > 0:
+            print(f"  [strategy_backtester] Dropping {_dedup_count} duplicate candle timestamps")
+            candles_df = candles_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
+            if 'timestamp' in indicators_df.columns:
+                indicators_df = indicators_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
+
     # ── Date filter ──────────────────────────────────────────────────────────
     df  = candles_df.copy().reset_index(drop=True)
     ind = indicators_df.copy().reset_index(drop=True)

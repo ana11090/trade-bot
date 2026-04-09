@@ -95,21 +95,39 @@ def quick_backtest(indicators_df, candles_df, conditions, direction="BUY",
         for j in range(entry_idx + 1, min(entry_idx + max_hold_candles + 1, n)):
             hold = j - entry_idx
 
+            # WHY: Detect same-bar SL+TP ambiguity. Label the exit as
+            #      SL_AMBIGUOUS so downstream stats can distinguish clean
+            #      SL hits from ambiguous same-bar resolutions. Resolution
+            #      stays conservative (always SL on tie), matching Fix 1
+            #      in exit_strategies._resolve_sl_tp_priority.
+            # CHANGED: April 2026 — ambiguity labeling (audit MED)
             if direction == "BUY":
-                if lows[j] <= sl_price:
+                sl_hit = lows[j]  <= sl_price
+                tp_hit = highs[j] >= tp_price
+                if sl_hit and tp_hit:
+                    exit_price = min(opens[j], sl_price)
+                    exit_reason = "SL_AMBIGUOUS"
+                    break
+                if sl_hit:
                     exit_price = min(opens[j], sl_price)  # gap fill
                     exit_reason = "SL"
                     break
-                if highs[j] >= tp_price:
+                if tp_hit:
                     exit_price = max(opens[j], tp_price)
                     exit_reason = "TP"
                     break
             else:
-                if highs[j] >= sl_price:
+                sl_hit = highs[j] >= sl_price
+                tp_hit = lows[j]  <= tp_price
+                if sl_hit and tp_hit:
+                    exit_price = max(opens[j], sl_price)
+                    exit_reason = "SL_AMBIGUOUS"
+                    break
+                if sl_hit:
                     exit_price = max(opens[j], sl_price)
                     exit_reason = "SL"
                     break
-                if lows[j] <= tp_price:
+                if tp_hit:
                     exit_price = min(opens[j], tp_price)
                     exit_reason = "TP"
                     break
@@ -123,10 +141,15 @@ def quick_backtest(indicators_df, candles_df, conditions, direction="BUY",
 
         last_exit_idx = exit_idx
 
+        # WHY: Entry spread was applied at entry_price above, but exit
+        #      spread was missing. Real round-trip = entry spread + exit
+        #      spread. Subtract one more spread_pips to match real broker
+        #      cost. Same fix as Phase 12 candle_labeler round-trip.
+        # CHANGED: April 2026 — round-trip spread (audit HIGH — Family #4)
         if direction == "BUY":
-            pnl_pips = (exit_price - entry_price) / pip_size
+            pnl_pips = (exit_price - entry_price) / pip_size - spread_pips
         else:
-            pnl_pips = (entry_price - exit_price) / pip_size
+            pnl_pips = (entry_price - exit_price) / pip_size - spread_pips
 
         trades.append({
             'entry_time': str(timestamps[entry_idx]),
@@ -173,7 +196,12 @@ def quick_backtest(indicators_df, candles_df, conditions, direction="BUY",
 
 
 def simulate_prop_firm(trades, account_size=100000, risk_pct=1.0,
-                        daily_dd_pct=5.0, total_dd_pct=10.0, pip_value=10.0):
+                        # WHY: Old default was 10.0 (forex major). XAUUSD
+                        #      correct value is 1.0. Change default to
+                        #      match the project's primary instrument.
+                        #      Forex callers must explicitly override.
+                        # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
+                        daily_dd_pct=5.0, total_dd_pct=10.0, pip_value=1.0):
     """
     Quick prop firm simulation on the trade list.
     Returns pass/fail + stats.

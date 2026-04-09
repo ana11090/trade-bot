@@ -39,12 +39,19 @@ class ExitStrategy:
     @staticmethod
     def _resolve_sl_tp_priority(candle, sl_price, tp_price, direction):
         """
-        When both SL and TP could be hit in one candle, determine which
-        was hit first based on candle open direction.
+        When both SL and TP could be hit in one candle, resolve the
+        ambiguity conservatively by always picking SL.
 
-        Returns: "SL", "TP", or None if neither was hit.
+        WHY: The old "closer to open = hit first" heuristic was
+             geometrically wrong. Distance from open does NOT predict
+             which level was hit first intra-bar. Without sub-bar
+             (M1) data there's no way to know. Phase 8's candle_labeler
+             fix applied the same reasoning — always pick SL on ties.
+        CHANGED: April 2026 — conservative tie-break (audit HIGH,
+                 matches candle_labeler fix)
+
+        Returns: "SL" (also for ambiguous ties), "TP", or None.
         """
-        candle_open = float(candle["open"])
         candle_high = float(candle["high"])
         candle_low  = float(candle["low"])
 
@@ -52,14 +59,14 @@ class ExitStrategy:
             sl_hit = candle_low  <= sl_price
             tp_hit = candle_high >= tp_price
             if sl_hit and tp_hit:
-                return "SL" if abs(candle_open - sl_price) < abs(candle_open - tp_price) else "TP"
+                return "SL"   # conservative: always pick SL on tie
             if sl_hit: return "SL"
             if tp_hit: return "TP"
         else:  # SELL
             sl_hit = candle_high >= sl_price
             tp_hit = candle_low  <= tp_price
             if sl_hit and tp_hit:
-                return "SL" if abs(candle_open - sl_price) < abs(candle_open - tp_price) else "TP"
+                return "SL"   # conservative: always pick SL on tie
             if sl_hit: return "SL"
             if tp_hit: return "TP"
         return None

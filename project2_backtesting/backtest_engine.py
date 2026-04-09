@@ -386,6 +386,18 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
     """Run backtest for a specific period"""
     print(f"[BACKTEST ENGINE] Starting {period_name} backtest ({period_start} to {period_end})...")
 
+    # WHY: Drop duplicate candle timestamps before filtering. A raw CSV
+    #      with duplicate bars (broker glitch, merge conflict) makes
+    #      rolling indicators process the same bar twice, corrupting
+    #      every rolling-window value. Defense-in-depth dedup.
+    # CHANGED: April 2026 — drop duplicate timestamps (audit HIGH)
+    _dedup_count = len(candles_df) - candles_df['timestamp'].nunique()
+    if _dedup_count > 0:
+        print(f"[BACKTEST ENGINE] Dropping {_dedup_count} duplicate candle timestamps")
+        candles_df = candles_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
+        if 'timestamp' in indicators_df.columns:
+            indicators_df = indicators_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
+
     # Filter candles to period
     period_candles = candles_df[
         (candles_df['timestamp'] >= period_start) &
