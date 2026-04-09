@@ -533,7 +533,16 @@ def run_scratch_discovery(
         _cb(4, f"Added {len(interaction_features)} interaction features "
                f"→ {len(valid_cols)} total features")
 
-    min_coverage = max(10, int(len(X) * min_coverage_pct / 100))
+    # Coverage threshold: require at least min_coverage_pct% of total data
+    # WHY: Old floor was 10 which is statistically useless — at 10 samples
+    #      a 60% win rate has a 95% CI of [0.29, 0.91]. Any rule passing
+    #      the min_win_rate filter at 10 samples is just noise. Raised to
+    #      30 (standard stats rule-of-thumb for normal approximation).
+    #      Users with very small datasets will see fewer rules surface,
+    #      which is the correct behavior — small datasets should not
+    #      produce confident conclusions.
+    # CHANGED: April 2026 — statistical floor (audit MED #41)
+    min_coverage = max(30, int(len(X) * min_coverage_pct / 100))
 
     try:
         from xgboost import XGBClassifier
@@ -1789,12 +1798,32 @@ def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_covera
 
 
 def _deduplicate(rules, threshold=0.7):
+    # WHY: Old signature was f"{feature}_{operator}" per condition.
+    #      Two rules with same (feature, op) but different values
+    #      collapsed to one rule — e.g., "rsi > 30" and "rsi > 70"
+    #      both had signature {'rsi_14_>'} and were deduped. These
+    #      are completely different strategies. Fix: include
+    #      threshold in signature, rounded to 2 decimals so
+    #      near-identical thresholds (e.g., 30.01 vs 30.02 from
+    #      float noise) still dedupe.
+    # CHANGED: April 2026 — threshold-aware dedup (audit HIGH #40)
+    def _sig_for(rule_conditions):
+        sig_parts = []
+        for c in rule_conditions:
+            try:
+                val = float(c.get('value', 0))
+                val_bucket = round(val, 2)
+            except (TypeError, ValueError):
+                val_bucket = str(c.get('value', ''))
+            sig_parts.append(f"{c['feature']}_{c['operator']}_{val_bucket}")
+        return set(sig_parts)
+
     unique = []
     for rule in rules:
-        sig    = set(f"{c['feature']}_{c['operator']}" for c in rule['conditions'])
+        sig    = _sig_for(rule['conditions'])
         is_dup = False
         for existing in unique:
-            esig = set(f"{c['feature']}_{c['operator']}" for c in existing['conditions'])
+            esig = _sig_for(existing['conditions'])
             overlap = len(sig & esig) / max(len(sig | esig), 1)
             if overlap > threshold:
                 if rule['win_rate'] > existing['win_rate']:

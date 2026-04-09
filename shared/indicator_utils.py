@@ -189,35 +189,58 @@ def compute_all_indicators(candles_df, prefix=""):
     for period in [1, 5, 10, 20, 50]:
         indicators[f'{prefix}roc_{period}'] = ((candles_df['close'] - candles_df['close'].shift(period)) / candles_df['close'].shift(period) * 100)
 
-    # GROUP P — Session & Time Features (7 features)
+    # GROUP P — Session & Time Features (8 features)
     # Extract time components from timestamp
     timestamps = pd.to_datetime(candles_df['timestamp'])
     indicators[f'{prefix}hour_of_day'] = timestamps.dt.hour
     indicators[f'{prefix}day_of_week'] = timestamps.dt.dayofweek  # Monday=0, Sunday=6
     indicators[f'{prefix}day_of_month'] = timestamps.dt.day
-    indicators[f'{prefix}is_asian_session'] = timestamps.dt.hour.between(0, 7).astype(int)  # 00:00-08:00 UTC
-    indicators[f'{prefix}is_london_session'] = timestamps.dt.hour.between(7, 15).astype(int)  # 08:00-16:00 UTC
-    indicators[f'{prefix}is_ny_session'] = timestamps.dt.hour.between(12, 20).astype(int)  # 13:00-21:00 UTC
+
+    # WHY: Old code used pd.between(lo, hi) which is inclusive on both
+    #      ends, and the three session ranges overlapped:
+    #        Asian:  between(0, 7)   → hours 0-7  (comment lied "00:00-08:00")
+    #        London: between(7, 15)  → hours 7-15 (overlap with Asian at 7)
+    #        NY:     between(12, 20) → hours 12-20 (overlap with London at 12-15)
+    #      A candle at hour 7 had is_asian_session=1 AND is_london_session=1,
+    #      breaking rules like "asian only" or "london only". Same at hours
+    #      12-15. Fix: non-overlapping sessions with priority
+    #      (NY > London > Asian), matching strategy_refiner._get_session.
+    # CHANGED: April 2026 — non-overlapping sessions (audit HIGH #54)
+    _hr = timestamps.dt.hour
+    indicators[f'{prefix}is_asian_session']  = ((_hr >= 0) & (_hr <= 6)).astype(int)   # hours 00:00-06:59 UTC
+    indicators[f'{prefix}is_london_session'] = ((_hr >= 7) & (_hr <= 11)).astype(int)  # hours 07:00-11:59 UTC
+    indicators[f'{prefix}is_ny_session']     = ((_hr >= 12) & (_hr <= 20)).astype(int) # hours 12:00-20:59 UTC
+    indicators[f'{prefix}is_late_session']   = ((_hr >= 21) & (_hr <= 23)).astype(int) # hours 21:00-23:59 UTC (Sydney open)
     indicators[f'{prefix}is_weekend'] = (timestamps.dt.dayofweek >= 5).astype(int)
 
-    # GROUP Q — Fibonacci Levels (5 features)
-    # Compute Fibonacci retracement levels based on recent swing high/low
-    fib_swing_high = indicators[f'{prefix}swing_high_{swing_period}']
-    fib_swing_low = indicators[f'{prefix}swing_low_{swing_period}']
-    fib_range = fib_swing_high - fib_swing_low
+    # GROUP Q — Rolling range levels (NOT Fibonacci)
+    # WHY: Old code named these distance_to_fib_236/382/500/618/786 but
+    #      the underlying swing_high/swing_low are 50-bar rolling min/max
+    #      which shift every bar. A real Fibonacci retracement uses
+    #      identified swing pivots (significant highs/lows) that don't
+    #      shift until a new pivot forms. Rolling levels are a
+    #      fundamentally different signal — they're a moving average of
+    #      recent range, not a reference-level retracement. Renamed to
+    #      rolling_level_* so the feature name matches what the code
+    #      actually computes. Rules referencing the old names will fail
+    #      with a missing-feature error — intentional, because the old
+    #      values were meaningless "Fibonacci" signals.
+    # CHANGED: April 2026 — honest rename (audit MED #53)
+    rng_swing_high = indicators[f'{prefix}swing_high_{swing_period}']
+    rng_swing_low  = indicators[f'{prefix}swing_low_{swing_period}']
+    rng_range      = rng_swing_high - rng_swing_low
 
-    fib_236 = fib_swing_low + 0.236 * fib_range
-    fib_382 = fib_swing_low + 0.382 * fib_range
-    fib_500 = fib_swing_low + 0.500 * fib_range
-    fib_618 = fib_swing_low + 0.618 * fib_range
-    fib_786 = fib_swing_low + 0.786 * fib_range
+    rng_236 = rng_swing_low + 0.236 * rng_range
+    rng_382 = rng_swing_low + 0.382 * rng_range
+    rng_500 = rng_swing_low + 0.500 * rng_range
+    rng_618 = rng_swing_low + 0.618 * rng_range
+    rng_786 = rng_swing_low + 0.786 * rng_range
 
-    # Distance to each Fibonacci level
-    indicators[f'{prefix}distance_to_fib_236'] = abs(candles_df['close'] - fib_236) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_fib_382'] = abs(candles_df['close'] - fib_382) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_fib_500'] = abs(candles_df['close'] - fib_500) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_fib_618'] = abs(candles_df['close'] - fib_618) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_fib_786'] = abs(candles_df['close'] - fib_786) / candles_df['close'] * 100
+    indicators[f'{prefix}distance_to_rolling_level_236'] = (candles_df['close'] - rng_236) / candles_df['close'] * 100
+    indicators[f'{prefix}distance_to_rolling_level_382'] = (candles_df['close'] - rng_382) / candles_df['close'] * 100
+    indicators[f'{prefix}distance_to_rolling_level_500'] = (candles_df['close'] - rng_500) / candles_df['close'] * 100
+    indicators[f'{prefix}distance_to_rolling_level_618'] = (candles_df['close'] - rng_618) / candles_df['close'] * 100
+    indicators[f'{prefix}distance_to_rolling_level_786'] = (candles_df['close'] - rng_786) / candles_df['close'] * 100
 
     # ══════════════════════════════════════════════════════════════════════════════
     # ADDITIONAL INDICATORS - High Priority
@@ -458,8 +481,9 @@ INDICATOR_GROUP_MAP = {
     "is_asian_session": "session",
     "is_london_session": "session",
     "is_ny_session": "session",
+    "is_late_session": "session",   # CHANGED: April 2026 — new non-overlapping 21-23 slot
     "is_weekend": "session",
-    "distance_to_fib": "fib",
+    "distance_to_rolling_level": "rolling_level",  # CHANGED: April 2026 — renamed from fib (audit MED #53)
     "ichimoku": "ichimoku",
     "price_above_cloud": "ichimoku",
     "psar": "psar",
@@ -669,21 +693,27 @@ def compute_indicators(df, only=None, prefix=""):
         indicators[f'{prefix}hour_of_day']       = ts.dt.hour
         indicators[f'{prefix}day_of_week']       = ts.dt.dayofweek
         indicators[f'{prefix}day_of_month']      = ts.dt.day
-        indicators[f'{prefix}is_asian_session']  = ts.dt.hour.between(0, 7).astype(int)
-        indicators[f'{prefix}is_london_session'] = ts.dt.hour.between(7, 15).astype(int)
-        indicators[f'{prefix}is_ny_session']     = ts.dt.hour.between(12, 20).astype(int)
+        # WHY: Same non-overlapping session fix as the main compute path.
+        # CHANGED: April 2026 — non-overlapping sessions (audit HIGH #54)
+        _hr2 = ts.dt.hour
+        indicators[f'{prefix}is_asian_session']  = ((_hr2 >= 0) & (_hr2 <= 6)).astype(int)
+        indicators[f'{prefix}is_london_session'] = ((_hr2 >= 7) & (_hr2 <= 11)).astype(int)
+        indicators[f'{prefix}is_ny_session']     = ((_hr2 >= 12) & (_hr2 <= 20)).astype(int)
+        indicators[f'{prefix}is_late_session']   = ((_hr2 >= 21) & (_hr2 <= 23)).astype(int)
         indicators[f'{prefix}is_weekend']        = (ts.dt.dayofweek >= 5).astype(int)
 
-    # GROUP Q — Fibonacci Levels (requires swing)
-    if only is None or 'fib' in only:
+    # GROUP Q — Rolling range levels (NOT Fibonacci)
+    # WHY: Same honest rename as the main compute path. See audit MED #53.
+    # CHANGED: April 2026 — renamed fib to rolling_level
+    if only is None or 'fib' in only or 'rolling_level' in only:
         sp   = 50
         sw_h = indicators.get(f'{prefix}swing_high_{sp}', df['high'].rolling(sp).max())
         sw_l = indicators.get(f'{prefix}swing_low_{sp}',  df['low'].rolling(sp).min())
-        fib_range = sw_h - sw_l
+        rng_range = sw_h - sw_l
         for level, ratio in [('236', 0.236), ('382', 0.382), ('500', 0.500),
                               ('618', 0.618), ('786', 0.786)]:
-            indicators[f'{prefix}distance_to_fib_{level}'] = (
-                abs(df['close'] - (sw_l + ratio * fib_range)) / df['close'] * 100)
+            indicators[f'{prefix}distance_to_rolling_level_{level}'] = (
+                (df['close'] - (sw_l + ratio * rng_range)) / df['close'] * 100)
 
     # GROUP R — Ichimoku
     if only is None or 'ichimoku' in only:

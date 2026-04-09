@@ -115,12 +115,48 @@ def list_all_firms() -> list[dict]:
 
 # ── Core compliance logic ─────────────────────────────────────────────────────
 
-def _prepare_trades(trades_df):
-    """Parse dates and sort by close time. Returns prepared DataFrame."""
+def _prepare_trades(trades_df, daily_reset_tz=None):
+    """Parse dates and sort by close time. Returns prepared DataFrame.
+
+    Args:
+        trades_df: Input DataFrame with 'Close Date' column
+        daily_reset_tz: Optional timezone for daily reset boundary. When
+            provided, trade timestamps are shifted into this timezone
+            before extracting the date. This matches firms that reset
+            the daily DD at a fixed local time (e.g., Leveraged uses
+            23:00 GMT+3). Accepts 'UTC', 'Etc/GMT-3', 'Europe/Athens',
+            or any IANA timezone name. Default None = UTC (old behavior).
+
+    WHY: Old code used df["_close_dt"].dt.date which extracts the date
+         in whatever timezone the Close Date column is in. For the
+         user's Leveraged firm (23:00 GMT+3 daily reset), a trade at
+         21:00 UTC on March 14 is actually 00:00 March 15 in the GMT+3
+         reset frame and should count toward March 15's daily DD. Old
+         code grouped it as March 14 — wrong day bucket, wrong daily
+         DD attribution, pass/fail rates biased.
+    CHANGED: April 2026 — daily reset timezone parameter (audit HIGH #59)
+    """
     import pandas as pd
     df = trades_df.copy()
     df["_close_dt"] = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
-    df["_close_date"] = df["_close_dt"].dt.date
+
+    if daily_reset_tz and daily_reset_tz.upper() != 'UTC':
+        # WHY: Shift close times into the firm's reset timezone, then
+        #      extract the local date. Preserves ordering (sort still
+        #      works correctly on the original UTC timestamps).
+        try:
+            # Treat raw timestamps as UTC (most common) and convert to reset TZ
+            close_utc = df["_close_dt"].dt.tz_localize('UTC', ambiguous='NaT', nonexistent='NaT')
+            close_local = close_utc.dt.tz_convert(daily_reset_tz)
+            df["_close_date"] = close_local.dt.date
+        except Exception as e:
+            # Fallback to naive UTC date extraction on error
+            print(f"[prop_firm_engine] daily_reset_tz='{daily_reset_tz}' failed: {e}")
+            print(f"[prop_firm_engine] falling back to naive UTC date extraction")
+            df["_close_date"] = df["_close_dt"].dt.date
+    else:
+        df["_close_date"] = df["_close_dt"].dt.date
+
     df = df.sort_values("_close_dt").reset_index(drop=True)
     return df
 
@@ -130,7 +166,59 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
     """
     Simulate one challenge phase against trades starting at start_idx.
     Returns (PhaseResult, next_trade_idx).
+
+    ⚠ LIMITATION — CLOSED BALANCE ONLY:
+    ==========================================================
+    This engine tracks CLOSED trade balance only, not intraday
+    equity. The user's firm rule (Leveraged) uses:
+
+        daily_dd_reference = MAX(balance, equity) at 23:00 GMT+3
+
+    where `equity` includes the floating P&L of open positions at
+    the snapshot moment. This engine does not have per-candle
+    position state tracking and cannot model open-position
+    floating P&L.
+
+    As a result, for days with either:
+      - Open positions at the daily snapshot moment, or
+      - Intraday equity swings that close profitable
+
+    the engine's daily DD attribution will be LOWER than what the
+    real firm would see. Pass rates reported by this engine should
+    be treated as an OPTIMISTIC upper bound — the real firm may
+    fail some days that this engine passes.
+
+    For a strategy that holds positions overnight or has significant
+    intraday equity volatility, use a live simulation with equity
+    snapshots (not yet implemented) or add a safety margin to the
+    pass-rate interpretation.
+
+    For a strategy that closes all positions before the daily reset
+    (flat at 23:00 GMT+3), this engine's daily DD matches the real
+    firm's daily DD exactly.
+    ==========================================================
+
+    WHY: Fix is a major refactor requiring per-candle equity state.
+         Phase 18 documents the limitation loudly so users don't
+         misinterpret the numbers. Full fix deferred.
+    CHANGED: April 2026 — document closed-balance limitation (audit HIGH #60)
     """
+    # WHY: One-time warning so users see the limitation in the console.
+    #      The _phase_limitation_warned flag lives on the function itself
+    #      so it fires once per process lifetime.
+    # CHANGED: April 2026 — runtime limitation notice (audit HIGH #60)
+    if not getattr(_check_phase, '_limitation_warned', False):
+        print("=" * 70)
+        print("⚠  PROP FIRM ENGINE — CLOSED BALANCE LIMITATION")
+        print("=" * 70)
+        print("  This engine tracks closed trade balance only. Daily DD")
+        print("  numbers are a LOWER bound on real firm behavior for")
+        print("  strategies with open positions at 23:00 GMT+3 or with")
+        print("  significant intraday equity volatility.")
+        print("  See _check_phase docstring for details.")
+        print("=" * 70)
+        _check_phase._limitation_warned = True
+
     profit_target_pct     = phase_config.get("profit_target_pct") or 0.0
     max_daily_dd_pct      = phase_config.get("max_daily_drawdown_pct")   # may be None
     max_total_dd_pct      = phase_config.get("max_total_drawdown_pct") or 999.0
@@ -407,16 +495,19 @@ def check_compliance(
     if account_size not in challenge.get("account_sizes", []):
         return None
 
-    df = _prepare_trades(trades_df)
+    # WHY: Extract the firm's daily reset timezone so day boundaries
+    #      match the firm's real rule (e.g. Leveraged 23:00 GMT+3).
+    #      Falls back to UTC if not specified in the firm config.
+    # CHANGED: April 2026 — pass daily_reset_tz (audit HIGH #59)
+    dd_mechanics = firm._data.get('drawdown_mechanics', {})
+    _dd_config = dd_mechanics.get('daily_dd', {})
+    _reset_tz  = _dd_config.get('reset_timezone', 'UTC')
+
+    df = _prepare_trades(trades_df, daily_reset_tz=_reset_tz)
 
     if start_date is not None:
         cutoff = pd.to_datetime(start_date).date()
         df = df[df["_close_date"] >= cutoff].reset_index(drop=True)
-
-    # WHY: drawdown_mechanics overrides the generic "trailing" type with
-    #      firm-specific behavior (trailing_closed_balance, HWM lock, etc.)
-    # CHANGED: April 2026 — read DD mechanics from JSON
-    dd_mechanics = firm._data.get('drawdown_mechanics', {})
 
     phases_config = challenge.get("phases", [])
     phase_results = []

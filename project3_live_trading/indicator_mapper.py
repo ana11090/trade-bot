@@ -804,25 +804,42 @@ def _generate_smart_mql(feature_name, formula, platform):
             ]
 
         elif ftype in ('time_range', 'time_since', 'count_sessions'):
+            # WHY: Old code used TimeCurrent() which returns BROKER SERVER
+            #      time (typically GMT+2 or GMT+3 depending on DST). Python
+            #      features use candle timestamps which are in UTC. Same
+            #      rule evaluated on the same candle gave different hour
+            #      values — a rule like "hour_of_day between 13 and 16"
+            #      fires at UTC 13-16 in Python training but broker 13-16
+            #      (= UTC 11-14 EDT) in live. Fix: use TimeGMT() which
+            #      returns UTC directly. Works in both live and backtest.
+            #      The EA generator already uses TimeGMT() for the news
+            #      blackout check — indicator mapper just never caught up.
+            # CHANGED: April 2026 — TimeGMT() for UTC consistency (audit CRITICAL #24)
             mdt = f'_mdt_{var_name}'
             if ftype == 'time_range':
                 lo, hi = formula['lo'], formula['hi']
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt}); int _hr_{var_name}={mdt}.hour;',
                     f'double val_{var_name} = (_hr_{var_name}>={lo}&&_hr_{var_name}<={hi})?1.0:0.0;',
                 ]
             elif ftype == 'time_since':
                 oh = formula['open_hour']
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt}); int _hr_{var_name}={mdt}.hour;',
                     f'double val_{var_name} = (_hr_{var_name}>={oh})?(double)(_hr_{var_name}-{oh}):0.0;',
                 ]
             else:  # count_sessions
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt}); int _hr_{var_name}={mdt}.hour;',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt}); int _hr_{var_name}={mdt}.hour;',
                     f'double val_{var_name} = (double)((_hr_{var_name}>=0&&_hr_{var_name}<8?1:0)+(_hr_{var_name}>=7&&_hr_{var_name}<16?1:0)+(_hr_{var_name}>=13&&_hr_{var_name}<22?1:0));',
                 ]
 
+        # WHY: All calendar features use TimeGMT() for UTC consistency
+        #      with Python candle timestamps. See audit CRITICAL #24 +
+        #      Phase 18 Fix 1. Without this, live cal_nfp / cal_dom_*
+        #      features evaluate on broker server hour which differs
+        #      from Python training hour by the broker's UTC offset.
+        # CHANGED: April 2026 — TimeGMT() throughout calendar block
         elif ftype in ('cal_dow_eq', 'cal_dow_range', 'cal_dom_le', 'cal_dom_ge',
                        'cal_nfp', 'cal_quarter_end', 'cal_week_of_month'):
             mdt = f'_mdt_{var_name}'
@@ -836,7 +853,7 @@ def _generate_smart_mql(feature_name, formula, platform):
                 #      Python via (day_of_week+6)%7 before comparing.
                 # CHANGED: April 2026 — fix MQL5 weekday convention (audit HIGH)
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = (({mdt}.day_of_week+6)%7=={formula["value"]})?1.0:0.0;',
                 ]
             elif ftype == 'cal_dow_range':
@@ -844,17 +861,17 @@ def _generate_smart_mql(feature_name, formula, platform):
                 # CHANGED: April 2026 — fix MQL5 weekday convention (audit HIGH)
                 lo, hi = formula['lo'], formula['hi']
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = ({lo}<=({mdt}.day_of_week+6)%7&&({mdt}.day_of_week+6)%7<={hi})?1.0:0.0;',
                 ]
             elif ftype == 'cal_dom_le':
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = ({mdt}.day<={formula["value"]})?1.0:0.0;',
                 ]
             elif ftype == 'cal_dom_ge':
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = ({mdt}.day>={formula["value"]})?1.0:0.0;',
                 ]
             elif ftype == 'cal_nfp':
@@ -863,17 +880,17 @@ def _generate_smart_mql(feature_name, formula, platform):
                 #      Friday (first Friday of the month, day<=7).
                 # CHANGED: April 2026 — fix MQL5 weekday for NFP (audit HIGH)
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = ({mdt}.day_of_week==5&&{mdt}.day<=7)?1.0:0.0;',
                 ]
             elif ftype == 'cal_quarter_end':
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = ({mdt}.mon==3||{mdt}.mon==6||{mdt}.mon==9||{mdt}.mon==12)?1.0:0.0;',
                 ]
             else:  # cal_week_of_month
                 lines = [
-                    f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
+                    f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt});',
                     f'double val_{var_name} = (double)(({mdt}.day-1)/7+1);',
                 ]
 
