@@ -456,11 +456,13 @@ def save_clean_data():
     if state.loaded_data is None:
         messagebox.showwarning("No data", "Please run the pipeline first.")
         return
+    # WHY: Hardcoded absolute path breaks on every other developer machine.
+    # CHANGED: April 2026 — use _default_dialog_dir() (audit LOW)
     path = filedialog.asksaveasfilename(
         title="Save clean data",
         defaultextension=".csv",
         initialfile="trades_clean.csv",
-        initialdir=r"C:\Users\anani\my git delete\trade-bot",
+        initialdir=_default_dialog_dir(),
         filetypes=[("CSV files", "*.csv")]
     )
     if path:

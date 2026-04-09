@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import time
+import tempfile
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -372,17 +373,41 @@ def run_scratch_discovery(
 
                 print(f"  [P4] {tf}: renaming '{old_name}' → 'timestamp'")
 
-                # Read entire file, rename header, write back
+                # WHY: Old code used str.replace(old_name, 'timestamp', 1) on the
+                #      raw header string — a substring match that could corrupt
+                #      other column names containing old_name (e.g., 'time' inside
+                #      'open_time'). It also wrote directly to the same file;
+                #      a crash mid-write would leave a truncated, unreadable CSV.
+                #      Fix: exact column match via CSV split/rejoin; atomic write
+                #      via tempfile + os.replace; .bak backup before overwriting.
+                # CHANGED: April 2026 — atomic CSV rewrite + exact column match (audit MED)
+
+                # Read entire file
                 with open(csv_file, 'r', encoding='utf-8-sig') as fh:
                     all_lines = fh.readlines()
 
-                # Replace ONLY in the header line
+                # Exact column replacement in header via CSV split
                 old_header = all_lines[0]
-                new_header = old_header.replace(old_name, 'timestamp', 1)
+                header_cols = old_header.rstrip('\r\n').split(',')
+                header_cols = [
+                    'timestamp' if c.strip().strip('"').strip("'") == old_name else c
+                    for c in header_cols
+                ]
+                new_header = ','.join(header_cols) + '\n'
                 all_lines[0] = new_header
 
-                with open(csv_file, 'w', encoding='utf-8', newline='') as fh:
-                    fh.writelines(all_lines)
+                # Write to temp file, backup original, then atomically replace
+                bak_path = csv_file + '.bak'
+                fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(csv_file), suffix='.tmp')
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8', newline='') as fh:
+                        fh.writelines(all_lines)
+                    import shutil
+                    shutil.copy2(csv_file, bak_path)
+                    os.replace(tmp_path, csv_file)
+                except Exception:
+                    os.unlink(tmp_path)
+                    raise
 
                 print(f"  [P4] {tf}: DONE — header is now: {new_header.strip()[:80]}")
 
@@ -940,15 +965,23 @@ def _discover_deep(X, y, pips, merged, valid_cols,
                 f"[Deep] Combo {ci:,}/{total_combos:,} ({pct:.0f}%)...")
 
         feat_names = [top_feat_names[i] for i in combo]
-        X_combo = X_pool[feat_names]
+        # WHY: X_pool contains all rows. Fitting on X_pool/y (full data) and
+        #      evaluating on X_pool/y is pure in-sample — no out-of-sample
+        #      validation. Rules pass trivially because the tree memorises the
+        #      training data. Fix: fit on X_pool_train/y_train, evaluate rules
+        #      on X_pool_test/y_test (already defined above at split_idx).
+        # CHANGED: April 2026 — fix in-sample overfit in _discover_deep combo loop (audit CRITICAL)
+        X_combo_train = X_pool_train[feat_names]
+        X_combo_test  = X_pool_test[feat_names]
 
         try:
             tree = DecisionTreeClassifier(
                 max_depth=max_depth, min_samples_leaf=min_coverage,
                 random_state=42,
             )
-            tree.fit(X_combo, y)
-            rules = _extract_rules(tree, feat_names, X_combo, y, pips, merged,
+            tree.fit(X_combo_train, y_train)
+            rules = _extract_rules(tree, feat_names, X_combo_test, y_test,
+                                   pips_test, merged_test,
                                    max_rules=2, min_coverage=min_coverage)
             all_rules.extend(rules)
         except Exception:
@@ -1099,21 +1132,30 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
     # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
     pips_train   = pips.iloc[:split_idx]  if hasattr(pips,   'iloc') else pips[:split_idx]
     merged_train = merged.iloc[:split_idx] if hasattr(merged, 'iloc') else merged[:split_idx]
+    pips_test    = pips.iloc[split_idx:]  if hasattr(pips,   'iloc') else pips[split_idx:]
+    merged_test  = merged.iloc[split_idx:] if hasattr(merged, 'iloc') else merged[split_idx:]
 
     importances = baseline_model.feature_importances_
     top_indices = np.argsort(importances)[::-1][:50]
 
     def _score_combo(feature_indices):
         """Score a feature combination: fit tree, extract best rule, return score."""
+        # WHY: Old code fit the decision tree on X_combo (full X) and scored
+        #      rules on the full dataset too — no out-of-sample validation.
+        #      This is in-sample overfitting: any rule found will trivially
+        #      overfit to training data and fail on live data.
+        #      Fix: fit on training rows only; score rules on held-out test rows.
+        # CHANGED: April 2026 — fix in-sample overfit in exhaustive _score_combo (audit CRITICAL)
         feat_names = [valid_cols[i] for i in feature_indices]
-        X_combo = X[feat_names]
+        X_combo_train = X_train[feat_names]
+        X_combo_test  = X_test[feat_names]
         try:
             tree = DecisionTreeClassifier(
                 max_depth=max_depth, min_samples_leaf=min_coverage,
                 random_state=42,
             )
-            tree.fit(X_combo, y)
-            rules = _extract_rules(tree, feat_names, X_combo, y, pips, merged,
+            tree.fit(X_combo_train, y_train)
+            rules = _extract_rules(tree, feat_names, X_combo_test, y_test, pips_test, merged_test,
                                    max_rules=1, min_coverage=min_coverage)
             if rules and rules[0]['prediction'] == 'WIN':
                 r = rules[0]

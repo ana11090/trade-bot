@@ -20,8 +20,16 @@ import pandas as pd
 from datetime import datetime
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-# Default tick data root — change this to your local path, or use --tick-root argument
-TICK_ROOT = r"D:\traiding data\trade-bot\xauusd\ticks"
+# WHY: Hardcoded absolute path to a single developer's machine broke the script
+#      for everyone else. The --tick-root argument already works, but callers
+#      that import TICK_ROOT directly (CI scripts, tests) would get the wrong
+#      path. Using os.environ.get lets users set TICK_ROOT in their environment
+#      without editing source. Falls back to xauusd/ticks/ next to this file.
+# CHANGED: April 2026 — env-var override for TICK_ROOT (audit LOW)
+TICK_ROOT = os.environ.get(
+    'TICK_ROOT',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xauusd', 'ticks')
+)
 
 # Price scaling factor (tick data prices × this = real USD prices)
 PRICE_SCALE = 100.0

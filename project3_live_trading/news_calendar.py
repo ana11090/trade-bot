@@ -88,31 +88,20 @@ def download_news_calendar(
     except Exception:
         pass
 
-    # Fallback: generate placeholder events for major known releases
+    # WHY: Old fallback generated fictional events with datetime.utcnow()+timedelta
+    #      offsets when the real calendar API failed. Those fake events had real
+    #      timestamps and would silently block trades during fabricated news windows.
+    #      A user who never noticed the API was down could lose trades to blackouts
+    #      that never existed. Removing them and surfacing a loud warning instead is
+    #      strictly safer — the user knows the calendar is unavailable.
+    # CHANGED: April 2026 — remove fake placeholder events (audit CRITICAL)
     if not events:
-        source = 'placeholder'
-        now = datetime.datetime.utcnow()
-        # Common high-impact times (approximate — user should download fresh data)
-        placeholder_events = [
-            ('USD', 'Non-Farm Payrolls', 'HIGH'),
-            ('USD', 'FOMC Rate Decision', 'HIGH'),
-            ('USD', 'CPI (YoY)', 'HIGH'),
-            ('USD', 'GDP (QoQ)', 'HIGH'),
-            ('EUR', 'ECB Rate Decision', 'HIGH'),
-            ('GBP', 'BoE Rate Decision', 'HIGH'),
-            ('USD', 'Initial Jobless Claims', 'MEDIUM'),
-            ('USD', 'ISM Manufacturing PMI', 'MEDIUM'),
-            ('EUR', 'CPI (Flash)', 'HIGH'),
-        ]
-        for i, (currency, event, impact) in enumerate(placeholder_events):
-            dt = now + datetime.timedelta(days=i * 3)
-            if impact_rank.get(impact, 0) >= min_rank:
-                events.append({
-                    'datetime_utc': dt.strftime('%Y-%m-%dT%H:%M:%S'),
-                    'currency':     currency,
-                    'event':        event,
-                    'impact':       impact,
-                })
+        source = 'unavailable'
+        print(
+            "[NEWS_CALENDAR] WARNING: Could not fetch news calendar from any source. "
+            "No blackout windows will be applied. Download a fresh calendar manually "
+            "or ensure network access to the calendar API before running live."
+        )
 
     # Write CSV
     with open(output_path, 'w', newline='', encoding='utf-8') as f:

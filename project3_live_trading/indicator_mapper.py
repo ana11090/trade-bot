@@ -520,8 +520,12 @@ def _mql5_sub_expr(feat_name, uid=''):
                 f'(2.0*{buf}[0])')
     # EMA distance from close
     if re.match(r'^ema_(\d+)_distance$', ind):
+        # WHY: Old sub-expr used MODE_SMA (wrong — should be EMA) and /_Point
+        #      which gives a POINTS value (~100k× different from % on XAUUSD).
+        #      Matches the mt5_buffer_read template that divides by close ×100.
+        # CHANGED: April 2026 — fix ema_distance MODE and scale (audit HIGH)
         return ([],
-                f'((iClose(NULL,{mt5_tf},1)-iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1))/_Point)')
+                f'((iClose(NULL,{mt5_tf},1)-iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE,1))/MathMax(iClose(NULL,{mt5_tf},1),0.000001)*100.0)')
     # EMA9 above EMA20 (binary)
     if re.match(r'^ema_(\d+)_above_(\d+)$', ind):
         return ([],
@@ -559,8 +563,13 @@ def _mql5_sub_expr(feat_name, uid=''):
         return ([], f'(iClose(NULL,{mt5_tf},0)-(iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
     # ROC (rate of change)
     if re.match(r'^roc_\d+$', ind):
+        # WHY: ROC is defined as percent change × 100. Old expr divided but
+        #      did not multiply by 100, producing a fraction (0.001–0.02) instead
+        #      of a percentage (0.1–2.0). Models trained on % values would never
+        #      fire on the live fractional values.
+        # CHANGED: April 2026 — fix roc sub-expr missing ×100 (audit HIGH)
         n = int(p) + 1
-        return ([], f'((iClose(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001))')
+        return ([], f'((iClose(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001)*100.0)')
     # Position in swing range (20-bar rolling min/max)
     if ind == 'position_in_swing_range':
         lo_buf = f'{buf}lo'; hi_buf = f'{buf}hi'
@@ -818,15 +827,25 @@ def _generate_smart_mql(feature_name, formula, platform):
                        'cal_nfp', 'cal_quarter_end', 'cal_week_of_month'):
             mdt = f'_mdt_{var_name}'
             if ftype == 'cal_dow_eq':
+                # WHY: MQL5 day_of_week is Sun=0,Mon=1,...,Sat=6.
+                #      Python .weekday() is Mon=0,...,Sun=6. SMART_INDICATOR
+                #      dict stores Python-convention values (0=Mon, 4=Fri).
+                #      Old MQL5 code compared raw day_of_week against Python
+                #      values — e.g., is_monday checked day_of_week==0 which
+                #      is Sunday in MQL5, not Monday. Fix: convert MQL5 to
+                #      Python via (day_of_week+6)%7 before comparing.
+                # CHANGED: April 2026 — fix MQL5 weekday convention (audit HIGH)
                 lines = [
                     f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
-                    f'double val_{var_name} = ({mdt}.day_of_week=={formula["value"]})?1.0:0.0;',
+                    f'double val_{var_name} = (({mdt}.day_of_week+6)%7=={formula["value"]})?1.0:0.0;',
                 ]
             elif ftype == 'cal_dow_range':
+                # WHY: Same MQL5 Sun=0 vs Python Mon=0 mismatch as cal_dow_eq.
+                # CHANGED: April 2026 — fix MQL5 weekday convention (audit HIGH)
                 lo, hi = formula['lo'], formula['hi']
                 lines = [
                     f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
-                    f'double val_{var_name} = ({mdt}.day_of_week>={lo}&&{mdt}.day_of_week<={hi})?1.0:0.0;',
+                    f'double val_{var_name} = ({lo}<=({mdt}.day_of_week+6)%7&&({mdt}.day_of_week+6)%7<={hi})?1.0:0.0;',
                 ]
             elif ftype == 'cal_dom_le':
                 lines = [
@@ -839,9 +858,13 @@ def _generate_smart_mql(feature_name, formula, platform):
                     f'double val_{var_name} = ({mdt}.day>={formula["value"]})?1.0:0.0;',
                 ]
             elif ftype == 'cal_nfp':
+                # WHY: MQL5 day_of_week: Sunday=0 Mon=1 ... Fri=5 Sat=6.
+                #      Old code used ==4 (Thursday in MQL5). NFP is always
+                #      Friday (first Friday of the month, day<=7).
+                # CHANGED: April 2026 — fix MQL5 weekday for NFP (audit HIGH)
                 lines = [
                     f'MqlDateTime {mdt}; TimeToStruct(TimeCurrent(),{mdt});',
-                    f'double val_{var_name} = ({mdt}.day_of_week==4&&{mdt}.day<=7)?1.0:0.0;',
+                    f'double val_{var_name} = ({mdt}.day_of_week==5&&{mdt}.day<=7)?1.0:0.0;',
                 ]
             elif ftype == 'cal_quarter_end':
                 lines = [

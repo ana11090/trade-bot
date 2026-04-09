@@ -3,6 +3,7 @@ Data Validator — checks candle data quality and cross-references with trade pr
 """
 
 import os
+import re
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -164,9 +165,18 @@ def validate_candle_file(csv_path, symbol="XAUUSD", drop_duplicates=False):
         "MN": timedelta(days=31)  # Approximate
     }
 
+    # WHY: Old loop iterated dict in insertion order and used plain substring
+    #      match. "M1" would match inside "M15.csv" (M1 appears at start of M15),
+    #      returning M1 when the file is actually 15-minute candles — wrong
+    #      expected delta, wrong gap detection.
+    #      Fix 1: sort keys longest-first so M15/H4/D1 are checked before the
+    #      shorter prefixes that are substrings of them.
+    #      Fix 2: use a regex word-boundary match so "M1" only matches when it
+    #      appears as a standalone token (preceded/followed by _ . or end).
+    # CHANGED: April 2026 — fix TF substring detection (audit MED)
     tf = None
-    for tf_name in tf_map:
-        if tf_name in filename:
+    for tf_name in sorted(tf_map.keys(), key=len, reverse=True):
+        if re.search(rf'(?:^|[_.]){re.escape(tf_name)}(?:[_.]|$)', filename):
             tf = tf_name
             break
 

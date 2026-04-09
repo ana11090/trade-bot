@@ -251,13 +251,29 @@ def compute_all_indicators(candles_df, prefix=""):
 
     # GROUP T — VWAP (1 feature)
     # VWAP = Cumulative(Price × Volume) / Cumulative(Volume)
-    typical_price = (candles_df['high'] + candles_df['low'] + candles_df['close']) / 3
-    indicators[f'{prefix}vwap'] = (typical_price * candles_df['volume']).cumsum() / candles_df['volume'].cumsum()
+    # WHY: Old code used a global cumsum from the start of the dataset.
+    #      VWAP resets each trading day — a Monday VWAP should not include
+    #      Friday's volume. Intraday strategies (M5/M15/H1) that compare
+    #      price to "VWAP" were actually comparing against a multi-week
+    #      average, making the feature meaningless for single-day setups.
+    # CHANGED: April 2026 — daily reset for VWAP (audit MED)
+    typical_price  = (candles_df['high'] + candles_df['low'] + candles_df['close']) / 3
+    _date_group    = pd.to_datetime(candles_df['timestamp']).dt.normalize()
+    _vwap_num      = (typical_price * candles_df['volume']).groupby(_date_group).cumsum()
+    _vwap_den      = candles_df['volume'].groupby(_date_group).cumsum()
+    indicators[f'{prefix}vwap'] = _vwap_num / _vwap_den
     indicators[f'{prefix}vwap_distance'] = ((candles_df['close'] - indicators[f'{prefix}vwap']) /
                                            indicators[f'{prefix}vwap'] * 100)
 
-    # GROUP U — Supertrend (2 features)
-    # Supertrend uses ATR for calculation
+    # GROUP U — ATR Bands (2 features)
+    # WHY: This was never a real Supertrend — Supertrend is a direction-switching
+    #      indicator that uses ATR and price-relative logic to flip between an upper
+    #      and lower band. This code simply computes hl_avg ± 3×ATR, which are
+    #      symmetric ATR bands (similar to Keltner). Calling them "supertrend"
+    #      was misleading: strategies trained on them under the name "supertrend"
+    #      produce completely different MQL5 code than a real Supertrend EA.
+    #      Renamed to atr_band_upper/lower so the name matches the actual formula.
+    # CHANGED: April 2026 — rename supertrend_upper/lower → atr_band_upper/lower (audit MED)
     atr_10 = ta.volatility.AverageTrueRange(
         high=candles_df['high'],
         low=candles_df['low'],
@@ -265,15 +281,13 @@ def compute_all_indicators(candles_df, prefix=""):
         window=10
     ).average_true_range()
 
-    # Basic Supertrend calculation
     hl_avg = (candles_df['high'] + candles_df['low']) / 2
     multiplier = 3
     basic_ub = hl_avg + (multiplier * atr_10)
     basic_lb = hl_avg - (multiplier * atr_10)
 
-    # Simplified Supertrend (full implementation is complex, this is approximation)
-    indicators[f'{prefix}supertrend_upper'] = basic_ub
-    indicators[f'{prefix}supertrend_lower'] = basic_lb
+    indicators[f'{prefix}atr_band_upper'] = basic_ub
+    indicators[f'{prefix}atr_band_lower'] = basic_lb
 
     # GROUP V — Pivot Points (7 features)
     # Classic Pivot Points calculation
@@ -451,7 +465,9 @@ INDICATOR_GROUP_MAP = {
     "psar": "psar",
     "vwap": "vwap",
     "vwap_distance": "vwap",
-    "supertrend": "supertrend",
+    "supertrend": "supertrend",       # legacy key — group still loads atr_band_upper/lower
+    "atr_band_upper": "supertrend",   # new canonical name
+    "atr_band_lower": "supertrend",   # new canonical name
     "pivot_point": "pivot",
     "resistance": "pivot",
     "support": "pivot",
@@ -688,19 +704,23 @@ def compute_indicators(df, only=None, prefix=""):
         indicators[f'{prefix}psar_signal'] = (df['close'].values > psar_vals.values).astype(int)
 
     # GROUP T — VWAP
+    # WHY: Same daily-reset fix as compute_all_indicators above.
+    # CHANGED: April 2026 — daily reset for VWAP (audit MED)
     if only is None or 'vwap' in only:
-        tp   = (df['high'] + df['low'] + df['close']) / 3
-        vwap = (tp * df['volume']).cumsum() / df['volume'].cumsum()
+        tp          = (df['high'] + df['low'] + df['close']) / 3
+        _dg         = pd.to_datetime(df['timestamp']).dt.normalize()
+        vwap        = (tp * df['volume']).groupby(_dg).cumsum() / df['volume'].groupby(_dg).cumsum()
         indicators[f'{prefix}vwap']          = vwap
         indicators[f'{prefix}vwap_distance'] = (df['close'] - vwap) / vwap * 100
 
-    # GROUP U — Supertrend (simplified)
-    if only is None or 'supertrend' in only:
+    # GROUP U — ATR Bands (renamed from supertrend — see compute_all_indicators for WHY)
+    # CHANGED: April 2026 — rename supertrend_upper/lower → atr_band_upper/lower (audit MED)
+    if only is None or 'supertrend' in only or 'atr_band' in only:
         atr_10 = ta.volatility.AverageTrueRange(
             high=df['high'], low=df['low'], close=df['close'], window=10).average_true_range()
         hl_avg = (df['high'] + df['low']) / 2
-        indicators[f'{prefix}supertrend_upper'] = hl_avg + (3 * atr_10)
-        indicators[f'{prefix}supertrend_lower'] = hl_avg - (3 * atr_10)
+        indicators[f'{prefix}atr_band_upper'] = hl_avg + (3 * atr_10)
+        indicators[f'{prefix}atr_band_lower'] = hl_avg - (3 * atr_10)
 
     # GROUP V — Pivot Points
     if only is None or 'pivot' in only:
@@ -818,8 +838,17 @@ def get_indicator_values_at_timestamp(indicators_df, timestamp):
     try:
         return indicators_df.loc[timestamp]
     except KeyError:
-        # If exact timestamp not found, find nearest
-        idx = indicators_df.index.get_indexer([timestamp], method='nearest')[0]
+        # WHY: method='nearest' can return a FUTURE row when the query
+        #      timestamp falls between two candles and the next candle is
+        #      closer. That leaks future indicator values into the feature
+        #      used for trade entry decisions (look-ahead bias).
+        #      method='pad' (forward-fill) always returns the last row whose
+        #      index is <= the query timestamp — no future data possible.
+        #      If the query is before all rows (idx==-1) return the first row.
+        # CHANGED: April 2026 — fix look-ahead bias in indicator lookup (audit CRITICAL)
+        idx = indicators_df.index.get_indexer([timestamp], method='pad')[0]
+        if idx == -1:
+            return indicators_df.iloc[0]
         return indicators_df.iloc[idx]
 
 
