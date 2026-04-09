@@ -376,12 +376,25 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         worst_total_pct = max(worst_total_pct, total_dd_pct)
 
         # ── Apply total safety stop (cap total DD at safety threshold) ───────
-        # WHY: Same logic — if total DD reaches safety threshold, the bot pauses
-        #      and total DD can't grow further from new trades.
-        # CHANGED: April 2026 — cap total DD at safety threshold
+        # WHY: The old code restored balance to (high_water - total_dd_safety)
+        #      when the safety trigger fired. But the trigger condition
+        #      (total_dd >= total_dd_safety) means balance was ALREADY at
+        #      or below the safety level. So restoration was always an
+        #      upward adjustment — phantom equity equal to the overshoot.
+        #      Example: high_water=$10,500, safety=$300, day's loss pushed
+        #      balance to $9,900. Restoration set balance to $10,200 → a
+        #      phantom $300 gain. Subsequent days compounded from the
+        #      phantom balance, inflating strategy performance.
+        #      Fix: leave balance at its real value. Cap total_dd for the
+        #      breach check (preserving the modeling intent that the bot
+        #      halted at the safety line and prevented a real breach).
+        #      Subsequent days continue from the real balance, which is
+        #      more conservative and more honest.
+        # CHANGED: April 2026 — remove phantom equity restoration (audit HIGH)
         total_safety_triggered = False
         if total_dd_safety and total_dd >= total_dd_safety and total_dd < total_dd_limit:
-            balance = high_water - total_dd_safety   # restore balance to safety level
+            # Do NOT restore balance — leave it at its real value.
+            # Only cap total_dd for the breach check below.
             total_dd = total_dd_safety
             total_dd_pct = total_dd / account_size * 100
             total_safety_triggered = True

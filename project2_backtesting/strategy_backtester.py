@@ -290,7 +290,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   spread_pips, commission_pips, slippage_pips,
                                   account_size, risk_per_trade_pct,
                                   default_sl_pips, pip_value_per_lot,
-                                  swap_cost_per_lot_per_night=0):
+                                  swap_cost_per_lot_per_night=0,
+                                  news_blackout_minutes=0):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -331,12 +332,30 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         if entry_pos + 1 >= len(df):
             continue
 
+        # WHY: The for-loop path in run_backtest checks is_news_blackout
+        #      before each entry, but this vectorized path was missing it.
+        #      Any FixedSLTP strategy routed here bypassed the news filter
+        #      entirely — every news blackout the user configured was
+        #      silently ignored for the fastest execution path.
+        # CHANGED: April 2026 — add news blackout check (audit HIGH)
+        if news_blackout_minutes > 0:
+            from project2_backtesting.news_calendar import is_news_blackout
+            entry_time_check = pd.Timestamp(all_times[entry_pos + 1])
+            if is_news_blackout(entry_time_check, news_blackout_minutes):
+                continue
+
         entry_price = all_opens[entry_pos + 1]
 
+        # WHY: Old code added spread only to BUY entries. SELL entries
+        #      receive the bid (open - spread/2), so spread should also
+        #      cost the SELL trader — entry_price should be SUBTRACTED
+        #      by spread_pips (making the SELL entry worse). Without
+        #      this fix, SELL strategies look ~2 pips better than live.
+        # CHANGED: April 2026 — fix SELL spread cost (audit Family #4)
         if direction == "BUY":
             entry_price += (spread_pips + slippage_pips) * pip_size
         else:
-            entry_price -= slippage_pips * pip_size
+            entry_price -= (spread_pips + slippage_pips) * pip_size
 
         entry_time = all_times[entry_pos + 1]
 
@@ -348,8 +367,13 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             sl_price = entry_price + sl_pips * pip_size
             tp_price = entry_price - tp_pips * pip_size
 
-        # Get future candle arrays from entry+2 onward
-        start = entry_pos + 2
+        # WHY: Old code set start two positions after the signal, skipping
+        #      the entry candle entirely. But entry happens at the OPEN of
+        #      (entry_pos + 1), and same-bar SL/TP hits happen within
+        #      that same candle's high/low range. Starting at +2 misses
+        #      those — fast scalp exits were reported one bar too late.
+        # CHANGED: April 2026 — start scan at entry candle (audit HIGH)
+        start = entry_pos + 1
         if start >= len(df):
             continue
 
@@ -452,10 +476,18 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 net_pips -= swap_cost_pips
 
         # Lot sizing
+        # WHY: Old code used default_sl_pips (=150) for every strategy.
+        #      But in the vectorized FixedSLTP path we KNOW the real SL
+        #      from exit_strategy.sl_pips (already extracted as sl_pips
+        #      at top of function). Using the actual SL gives correct
+        #      per-strategy lot sizing — strategies with wider SL get
+        #      smaller lots, narrower SL get bigger lots, all sized to
+        #      risk_per_trade_pct of the account.
+        # CHANGED: April 2026 — use actual sl_pips for lot sizing (audit Family #2)
         lot_size = 0.01
-        if account_size and risk_per_trade_pct > 0 and default_sl_pips > 0:
+        if account_size and risk_per_trade_pct > 0 and sl_pips > 0:
             risk_dollars = account_size * (risk_per_trade_pct / 100)
-            lot_size = max(0.01, round(risk_dollars / (default_sl_pips * pip_value_per_lot), 2))
+            lot_size = max(0.01, round(risk_dollars / (sl_pips * pip_value_per_lot), 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -625,6 +657,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             account_size, risk_per_trade_pct,
             default_sl_pips, pip_value_per_lot,
             swap_cost_per_lot_per_night,
+            news_blackout_minutes=news_blackout_minutes,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -748,8 +781,17 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
         # Position sizing and dollar P&L (optional, when account_size is provided)
         if account_size is not None:
+            # WHY: Old code used default_sl_pips (=150) for every strategy,
+            #      ignoring the exit strategy's actual SL. Prefer the exit
+            #      strategy's sl_pips attribute when present; fall back to
+            #      default_sl_pips otherwise (for exit strategies without a
+            #      fixed SL like trailing stops).
+            # CHANGED: April 2026 — use actual sl_pips when available (audit Family #2)
+            _actual_sl = getattr(exit_strategy, 'sl_pips', None)
+            _sl_for_sizing = float(_actual_sl) if _actual_sl else float(default_sl_pips)
+
             risk_dollars = account_size * (risk_per_trade_pct / 100.0)
-            lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
+            lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot)
             # WHY: Silent min(lot_size, 100.0) hid absurdly large positions
             #      (e.g. 500-lot size on a $10M virtual account) and made stats
             #      look better than they would be on a real broker.
@@ -886,10 +928,16 @@ def fast_backtest(df, ind, rules, exit_strategy,
         entry_time  = next_candle['timestamp']
         entry_price = float(next_candle['open'])
 
+        # WHY: Old code added spread only to BUY entries. SELL entries
+        #      receive the bid (open - spread/2), so spread should also
+        #      cost the SELL trader — entry_price should be SUBTRACTED
+        #      by spread_pips (making the SELL entry worse). Without
+        #      this fix, SELL strategies look ~2 pips better than live.
+        # CHANGED: April 2026 — fix SELL spread cost (audit Family #4)
         if direction == "BUY":
             entry_price += (spread_pips + slippage_pips) * pip_size
         else:
-            entry_price -= slippage_pips * pip_size
+            entry_price -= (spread_pips + slippage_pips) * pip_size
 
         # Simulate trade exit by stepping through future candles
         # WHY: Exit strategies implement on_new_candle(candle, pos) which is
@@ -1006,10 +1054,16 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         net_pips = pips - commission_pips
 
+        # WHY: Same as Fix 7B — prefer actual exit_strategy.sl_pips over
+        #      the default. See Fix 7B comment for full explanation.
+        # CHANGED: April 2026 — use actual sl_pips (audit Family #2)
+        _actual_sl = getattr(exit_strategy, 'sl_pips', None)
+        _sl_for_sizing = float(_actual_sl) if _actual_sl else float(default_sl_pips)
+
         lot_size = 0.01
         if account_size and risk_per_trade_pct > 0:
             risk_dollars = account_size * (risk_per_trade_pct / 100)
-            lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot) if default_sl_pips > 0 else 0.01
+            lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot) if _sl_for_sizing > 0 else 0.01
             lot_size = max(0.01, round(lot_size, 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size

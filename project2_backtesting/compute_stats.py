@@ -109,10 +109,20 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
     max_drawdown_pct = abs(trades_df['drawdown_pct'].min())
 
     # Sharpe ratio (annualized)
-    if len(trades_df) > 1:
-        daily_returns = trades_df.groupby(trades_df['entry_time'].dt.date)['net_profit'].sum()
-        if daily_returns.std() > 0:
-            sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
+    # WHY: Old code grouped dollar P&L by entry date and called it "daily
+    #      returns" — but it's daily dollar P&L, not returns. A strategy on
+    #      a $100k account with $1000/day profit got the same Sharpe as a
+    #      strategy on a $10k account with $1000/day profit, even though
+    #      the latter has 10× the real return rate. Sharpe wasn't
+    #      comparable across strategies with different account sizes.
+    #      Fix: convert dollar P&L to percentage returns by dividing by
+    #      starting_capital, then compute mean/std of the percentages.
+    # CHANGED: April 2026 — Sharpe on % returns, not dollars (audit MEDIUM)
+    if len(trades_df) > 1 and starting_capital > 0:
+        daily_pnl_dollars = trades_df.groupby(trades_df['entry_time'].dt.date)['net_profit'].sum()
+        daily_pct_returns = daily_pnl_dollars / starting_capital
+        if daily_pct_returns.std() > 0:
+            sharpe_ratio = (daily_pct_returns.mean() / daily_pct_returns.std()) * np.sqrt(252)
         else:
             sharpe_ratio = 0
     else:

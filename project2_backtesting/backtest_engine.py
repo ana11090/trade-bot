@@ -241,8 +241,14 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
         tp2_price = entry_price - (atr_value * TP2_ATR_MULTIPLIER)
 
     # Calculate lot size
-    sl_distance_pips = abs(entry_price - sl_price) / 0.01  # XAUUSD: 1 pip = $0.01
-    sl_distance_usd = sl_distance_pips * PIP_VALUE_PER_LOT * FIXED_LOT_SIZE
+    # WHY: Old formula was sl_distance_usd = sl_pips * pip_value_per_lot * FIXED_LOT_SIZE
+    #      where FIXED_LOT_SIZE=0.01. That made sl_distance_usd 100× smaller
+    #      than the dollar risk per 1 lot, so calculate_lot_size returned a
+    #      lot 100× too large. Correct formula: dollar risk per 1 lot =
+    #      sl_pips × pip_value_per_lot (no FIXED_LOT_SIZE multiplier).
+    # CHANGED: April 2026 — fix lot calc 100× scale error (audit HIGH)
+    sl_distance_pips = abs(entry_price - sl_price) / 0.01  # XAUUSD: pip_size = 0.01
+    sl_distance_usd = sl_distance_pips * PIP_VALUE_PER_LOT  # dollar risk per 1 lot
     lot_size = calculate_lot_size(balance, RISK_PER_TRADE_PCT, sl_distance_usd)
 
     # Track trade state
@@ -287,12 +293,18 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
 
             # Check TP1
             elif candle['high'] >= tp1_price:
-                # Close 50% at TP1, let 50% run to TP2
-                # For simplicity, we'll record as TP1 and adjust profit
+                # WHY: Old code halved position_size (lot_size × 0.5) with a
+                #      comment "let 50% run to TP2", but the break exited
+                #      the scan and the 50% runner was silently dropped.
+                #      Backtest reported half the intended profit.
+                #      Fix: close the full position at TP1 (matches the
+                #      common "take profit at TP1" semantic). If you want
+                #      true partial close + runner, implement it as two
+                #      separate trade records.
+                # CHANGED: April 2026 — close full position at TP1 (audit HIGH)
                 exit_price = tp1_price
                 exit_time = candle['timestamp']
                 exit_reason = 'TAKE_PROFIT_1'
-                position_size = lot_size * 0.5  # only 50% closed
                 break
 
         else:  # SELL
@@ -318,10 +330,11 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
 
             # Check TP1
             elif candle['low'] <= tp1_price:
+                # WHY: Same fix as BUY TP1 — see Fix 3 comment above.
+                # CHANGED: April 2026 — close full position at TP1 (audit HIGH)
                 exit_price = tp1_price
                 exit_time = candle['timestamp']
                 exit_reason = 'TAKE_PROFIT_1'
-                position_size = lot_size * 0.5
                 break
 
     # If no exit found, force close at last candle
@@ -393,6 +406,15 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
         candle = period_candles.iloc[i]
         candle_idx = candle.name
 
+        # WHY: Old code had the "clear open_trade" block at the BOTTOM of the
+        #      loop, after the skip-if-open check. The `continue` at the skip
+        #      jumped back to the top, never reaching the clear. Result: once
+        #      a trade opened, open_trade was never reset and the backtest
+        #      reported exactly 1 trade forever. Fix: clear BEFORE the skip.
+        # CHANGED: April 2026 — fix open_trade cleanup ordering (audit critical)
+        if open_trade is not None and candle['timestamp'] >= open_trade['exit_time']:
+            open_trade = None
+
         # Skip if we have an open trade
         if MAX_ONE_TRADE_OPEN and open_trade is not None:
             continue
@@ -429,9 +451,6 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
 
                     break  # Only one rule can fire per candle
 
-        # Clear open trade flag if trade is closed
-        if open_trade and candle['timestamp'] >= open_trade['exit_time']:
-            open_trade = None
 
     # Summary
     if len(trades) > 0:
