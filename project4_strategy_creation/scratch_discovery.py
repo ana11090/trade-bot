@@ -739,6 +739,11 @@ def _discover_quick(X, y, pips, merged, valid_cols,
     X_top_test  = X_test[top_feat_names]
     pips_test   = pips.iloc[split_idx:]  if hasattr(pips,   'iloc') else pips[split_idx:]
     merged_test = merged.iloc[split_idx:] if hasattr(merged, 'iloc') else merged[split_idx:]
+    # WHY: Grid search and walkforward below must not see the test-set rows or
+    #      they would be fitting/scoring on held-out data.
+    # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+    pips_train   = pips.iloc[:split_idx]  if hasattr(pips,   'iloc') else pips[:split_idx]
+    merged_train = merged.iloc[:split_idx] if hasattr(merged, 'iloc') else merged[:split_idx]
 
     all_rules = []
     for depth in [3, 4, 5]:
@@ -780,7 +785,7 @@ def _discover_quick(X, y, pips, merged, valid_cols,
         for ci, combo in enumerate(combo_list_g):
             _cb(6, f"[Quick+Grid] Grid search combo {ci+1}/{len(combo_list_g)}...")
             grid_rules.extend(_grid_search_thresholds(
-                X_top, y, pips, list(combo),
+                X_top_train, y_train, pips_train, list(combo),
                 min_coverage=min_coverage, min_win_rate=min_win_rate,
             ))
 
@@ -799,9 +804,11 @@ def _discover_quick(X, y, pips, merged, valid_cols,
     # CHANGED: April 2026 — Level 3 enhancement
     if enhancements.get('walkforward_score') and quality:
         _cb(6, "[Quick+WF] Re-scoring rules across 8 walk-forward windows...")
-        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        # WHY: Walk-forward must run on train data only — test rows are unseen.
+        # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+        timestamps = merged_train['timestamp'] if 'timestamp' in merged_train.columns else None
         quality = _walkforward_score_rules(
-            quality, X, y, pips,
+            quality, X_train, y_train, pips_train,
             timestamps=timestamps,
             n_windows=8,
             min_coverage=max(20, min_coverage // 5),
@@ -909,6 +916,14 @@ def _discover_deep(X, y, pips, merged, valid_cols,
     # ── Phase 3: Test ALL combinations of top features ────────────────────
     # For depth=4 with 50 features: C(50,4) = 230,300 combos
     X_pool = X[top_feat_names]
+    # WHY: Grid search and walkforward below must not see test-set rows.
+    # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+    X_pool_train = X_pool.iloc[:split_idx]
+    X_pool_test  = X_pool.iloc[split_idx:]
+    pips_train   = pips.iloc[:split_idx]  if hasattr(pips,   'iloc') else pips[:split_idx]
+    pips_test    = pips.iloc[split_idx:]  if hasattr(pips,   'iloc') else pips[split_idx:]
+    merged_train = merged.iloc[:split_idx] if hasattr(merged, 'iloc') else merged[:split_idx]
+    merged_test  = merged.iloc[split_idx:] if hasattr(merged, 'iloc') else merged[split_idx:]
     all_rules = []
     combo_list = list(combinations(range(n_top), max_depth))
     total_combos = len(combo_list)
@@ -956,7 +971,7 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         grid_rules = []
         for combo in list(seen_combos)[:30]:
             grid_rules.extend(_grid_search_thresholds(
-                X_pool, y, pips, list(combo),
+                X_pool_train, y_train, pips_train, list(combo),
                 min_coverage=min_coverage, min_win_rate=min_win_rate,
             ))
 
@@ -976,9 +991,11 @@ def _discover_deep(X, y, pips, merged, valid_cols,
     if enhancements.get('walkforward_score') and quality:
         _cb(n_runs + 2, total_steps,
             "[Deep+WF] Re-scoring rules across 8 walk-forward windows...")
-        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        # WHY: Walk-forward must run on train data only — test rows are unseen.
+        # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+        timestamps = merged_train['timestamp'] if 'timestamp' in merged_train.columns else None
         quality = _walkforward_score_rules(
-            quality, X, y, pips,
+            quality, X_train, y_train, pips_train,
             timestamps=timestamps,
             n_windows=8,
             min_coverage=max(20, min_coverage // 5),
@@ -1077,6 +1094,11 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
     baseline_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
     train_acc = baseline_model.score(X_train, y_train)
     test_acc = baseline_model.score(X_test, y_test)
+
+    # WHY: Grid search and walkforward below must not see test-set rows.
+    # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+    pips_train   = pips.iloc[:split_idx]  if hasattr(pips,   'iloc') else pips[:split_idx]
+    merged_train = merged.iloc[:split_idx] if hasattr(merged, 'iloc') else merged[:split_idx]
 
     importances = baseline_model.feature_importances_
     top_indices = np.argsort(importances)[::-1][:50]
@@ -1200,9 +1222,9 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
         grid_rules = []
         for combo in sorted_combos[:50]:
             feat_names_combo = list(combo)
-            if all(f in X.columns for f in feat_names_combo):
+            if all(f in X_train.columns for f in feat_names_combo):
                 grid_rules.extend(_grid_search_thresholds(
-                    X, y, pips, feat_names_combo,
+                    X_train, y_train, pips_train, feat_names_combo,
                     min_coverage=min_coverage, min_win_rate=min_win_rate,
                 ))
 
@@ -1223,9 +1245,11 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
     if enhancements.get('walkforward_score') and quality:
         _cb(n_generations + 2, total_steps,
             "[Exhaustive+WF] Re-scoring rules across 8 walk-forward windows...")
-        timestamps = merged['timestamp'] if 'timestamp' in merged.columns else None
+        # WHY: Walk-forward must run on train data only — test rows are unseen.
+        # CHANGED: April 2026 — train-only subsets for enhancements (audit CRITICAL)
+        timestamps = merged_train['timestamp'] if 'timestamp' in merged_train.columns else None
         quality = _walkforward_score_rules(
-            quality, X, y, pips,
+            quality, X_train, y_train, pips_train,
             timestamps=timestamps,
             n_windows=8,
             min_coverage=max(20, min_coverage // 5),
@@ -1295,18 +1319,24 @@ def _grid_search_thresholds(X, y, pips, feat_names, min_coverage=100,
     feat_arrays = {fn: X[fn].values for fn in valid_feats}
     n_rows = len(y)
 
-    # For 1-2 features test both > and <=; for 3-4 only > (keeps combos manageable)
-    operators = ['>', '<='] if len(valid_feats) <= 2 else ['>']
+    # WHY: Old code used ONE operator for ALL features in a combo — either all '>'
+    #      or all '<='. That misses patterns like "RSI > 60 AND ATR <= 0.5" where
+    #      features use opposite directions. Per-feature operator combinations
+    #      (Cartesian product of ['>', '<='] per feature) test all mixed directions.
+    #      For 1-4 features this is 2^n combos: 2, 4, 8, 16 — still manageable
+    #      multiplied against the threshold grid.
+    # CHANGED: April 2026 — per-feature operators (audit MEDIUM)
+    op_combos = list(iterproduct(['>', '<='], repeat=len(valid_feats)))
 
     threshold_lists = [thresholds_per_feat[fn] for fn in valid_feats]
-    total_combos = len(operators) * (1 if not threshold_lists else
+    total_combos = len(op_combos) * (1 if not threshold_lists else
                                      int(np.prod([len(t) for t in threshold_lists])))
 
     batch_report = max(1, total_combos // 20)
     combo_count = 0
     best_rules = []
 
-    for op in operators:
+    for op_combo in op_combos:
         for thresh_combo in iterproduct(*threshold_lists):
             combo_count += 1
             if combo_count % batch_report == 0 and progress_callback:
@@ -1319,6 +1349,7 @@ def _grid_search_thresholds(X, y, pips, feat_names, min_coverage=100,
             for fi, fname in enumerate(valid_feats):
                 threshold = thresh_combo[fi]
                 col = feat_arrays[fname]
+                op = op_combo[fi]
                 if op == '>':
                     mask &= col > threshold
                     conditions.append({'feature': fname, 'operator': '>', 'value': round(float(threshold), 4)})

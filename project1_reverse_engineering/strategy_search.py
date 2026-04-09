@@ -29,6 +29,55 @@ METADATA_COLS = {
 }
 
 
+def _evaluate_rule_on_holdout(rule_conditions, df_holdout, min_coverage_holdout):
+    """
+    Re-evaluate a discovered rule's conditions on the holdout set.
+
+    Returns dict with win_rate, matches, avg_pips, or None if coverage
+    too low to trust.
+
+    WHY: The main search operates on the train split and returns rules
+         ranked by train score. Those rankings are unreliable at scale
+         (family-wise error). This helper checks each top candidate
+         against unseen holdout data as a final gate.
+    CHANGED: April 2026 — held-out validation (audit CRITICAL)
+    """
+    import numpy as np
+    if 'pips' not in df_holdout.columns:
+        return None
+
+    holdout_pips = df_holdout['pips'].values
+    holdout_is_winner = holdout_pips > 0
+    n_holdout = len(df_holdout)
+
+    mask = np.ones(n_holdout, dtype=bool)
+    for cond_key in rule_conditions:
+        feat, op, val = cond_key
+        if feat not in df_holdout.columns:
+            return None
+        col = df_holdout[feat].values
+        nan_mask = ~np.isnan(col) if col.dtype.kind == 'f' else np.ones_like(col, dtype=bool)
+        if op == '<=':
+            mask &= (col <= val) & nan_mask
+        elif op == '>':
+            mask &= (col > val) & nan_mask
+        else:
+            return None
+
+    matches = int(mask.sum())
+    if matches < min_coverage_holdout:
+        return None
+
+    wins = int((holdout_is_winner & mask).sum())
+    wr = wins / matches if matches > 0 else 0.0
+    ap = float(holdout_pips[mask].mean()) if matches > 0 else 0.0
+    return {
+        'matches':  matches,
+        'win_rate': wr,
+        'avg_pips': ap,
+    }
+
+
 def search_strategies(
     feature_matrix_path=None,
     report_path=None,
@@ -77,8 +126,22 @@ def search_strategies(
     if not os.path.exists(feature_matrix_path):
         raise FileNotFoundError(f"Feature matrix not found: {feature_matrix_path}")
 
-    df = pd.read_csv(feature_matrix_path)
-    print(f"  Loaded {len(df)} trades")
+    df_full = pd.read_csv(feature_matrix_path)
+    print(f"  Loaded {len(df_full)} trades")
+
+    # WHY: Old code ran the entire search (6K+ single tests, up to 19M pair
+    #      tests) on the full dataset with no train/holdout split. At that
+    #      test count, the family-wise error rate under the null hypothesis
+    #      is effectively 1.0 — almost every "discovered" rule is noise.
+    #      Fix: chronological 70/30 split. Discover on the 70% train portion.
+    #      After ranking, re-evaluate top candidates on the 30% holdout and
+    #      require them to still pass min_win_rate. This filters out
+    #      overfit rules BEFORE they reach the user.
+    # CHANGED: April 2026 — held-out validation (audit CRITICAL)
+    _split_idx = int(len(df_full) * 0.7)
+    df = df_full.iloc[:_split_idx].reset_index(drop=True)  # train
+    df_holdout = df_full.iloc[_split_idx:].reset_index(drop=True)
+    print(f"  Split: {len(df)} train / {len(df_holdout)} holdout (70/30 chronological)")
 
     # Separate metadata from features
     all_cols = set(df.columns)
@@ -114,8 +177,16 @@ def search_strategies(
         raise ValueError(f"Too few features remaining ({len(feature_cols)}). Run 'Full Analysis' first to populate feature_matrix.csv")
 
     # Extract target and metrics
-    is_winner = df['is_winner'].values
+    # WHY: step2_compute_indicators.py explicitly does NOT write
+    #      'is_winner' to the feature matrix (see its line 91 NOTE:
+    #      "trade_duration_minutes and is_winner are NOT added here").
+    #      Reading df['is_winner'] throws KeyError on every run
+    #      against the canonical feature_matrix.csv. Derive from
+    #      pips instead — pips are unambiguous and match what the
+    #      score formulas below use.
+    # CHANGED: April 2026 — derive is_winner from pips (audit CRITICAL)
     pips = df['pips'].values
+    is_winner = pips > 0  # numpy bool array
     n_trades = len(df)
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -188,6 +259,14 @@ def search_strategies(
         avg_pips = pips[mask].mean()
         total_pips = pips[mask].sum()
 
+        # WHY: Old score formula went NEGATIVE for avg_pips <= -100, flipping
+        #      ranking so LOSING rules could outrank profitable ones. Drop
+        #      unprofitable rules entirely before scoring — discovery targets
+        #      profitable patterns, not just high-WR ones.
+        # CHANGED: April 2026 — drop unprofitable rules (audit HIGH)
+        if avg_pips <= 0:
+            continue
+
         # Score: balance win rate, coverage, and profitability
         score = win_rate * np.sqrt(matches) * (1 + avg_pips / 100)
 
@@ -207,8 +286,11 @@ def search_strategies(
 
     print(f"  Found {len(singles)} qualifying single conditions")
 
-    # Keep top N for pair testing
-    top_singles_for_pairs = 200 if mode == "quick" else 500
+    # WHY: Old limits were too tight — after the avg_pips > 0 filter the
+    #      qualifying pool shrinks, so a tighter cap would miss real patterns.
+    #      Increased to 500 (quick) / 1500 (full) to compensate.
+    # CHANGED: April 2026 — wider pruning limits (audit MEDIUM)
+    top_singles_for_pairs = 500 if mode == "quick" else 1500
     top_singles = singles[:top_singles_for_pairs]
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -254,6 +336,12 @@ def search_strategies(
 
                 avg_pips = pips[combined_mask].mean()
                 total_pips = pips[combined_mask].sum()
+
+                # WHY: Same negative-score bug as singles — drop unprofitable pairs.
+                # CHANGED: April 2026 — drop unprofitable rules (audit HIGH)
+                if avg_pips <= 0:
+                    continue
+
                 score = win_rate * np.sqrt(matches) * (1 + avg_pips / 100)
 
                 pairs.append({
@@ -279,7 +367,9 @@ def search_strategies(
         print(f"\n[6/7] Testing condition triples...")
 
         top_pairs = pairs[:100]
-        top_singles_for_triples = singles[:200]
+        # WHY: Same widening rationale as pairs limit — allow more candidates.
+        # CHANGED: April 2026 — wider pruning limits (audit MEDIUM)
+        top_singles_for_triples = singles[:400]
 
         total_triples = len(top_pairs) * len(top_singles_for_triples)
         triple_count = 0
@@ -319,6 +409,12 @@ def search_strategies(
 
                 avg_pips = pips[combined_mask].mean()
                 total_pips = pips[combined_mask].sum()
+
+                # WHY: Same negative-score bug as singles/pairs — drop unprofitable triples.
+                # CHANGED: April 2026 — drop unprofitable rules (audit HIGH)
+                if avg_pips <= 0:
+                    continue
+
                 score = win_rate * np.sqrt(matches) * (1 + avg_pips / 100)
 
                 triples.append({
@@ -348,6 +444,12 @@ def search_strategies(
         feat, op, val = s['condition_key']
         all_strategies.append({
             'conditions': [{'feature': feat, 'operator': op, 'value': float(val)}],
+            # WHY: Holdout validation (S2c) needs the raw condition tuples to
+            #      re-evaluate each rule on df_holdout. The 'conditions' list
+            #      above uses dicts (JSON-friendly) but loses tuple identity;
+            #      condition_key_tuple carries the original (feat, op, val) tuples.
+            # CHANGED: April 2026 — held-out validation (audit CRITICAL)
+            'condition_key_tuple': [s['condition_key']],
             'prediction': 'WIN',
             'confidence': s['win_rate'],
             'coverage': int(s['matches']),
@@ -371,6 +473,7 @@ def search_strategies(
 
         all_strategies.append({
             'conditions': conditions_list,
+            'condition_key_tuple': p['conditions'],
             'prediction': 'WIN',
             'confidence': p['win_rate'],
             'coverage': int(p['matches']),
@@ -394,6 +497,7 @@ def search_strategies(
 
         all_strategies.append({
             'conditions': conditions_list,
+            'condition_key_tuple': t['conditions'],
             'prediction': 'WIN',
             'confidence': t['win_rate'],
             'coverage': int(t['matches']),
@@ -408,6 +512,31 @@ def search_strategies(
 
     # Sort by score descending
     all_strategies.sort(key=lambda x: x['score'], reverse=True)
+
+    # WHY: Train-set rankings are unreliable at this search scale (FWER ≈ 1.0
+    #      for 6K+ single tests). Re-evaluate every candidate on the unseen
+    #      holdout set; keep only those that still pass min_win_rate AND have
+    #      positive avg_pips on holdout. This removes overfit rules before they
+    #      reach the user or downstream backtesting.
+    # CHANGED: April 2026 — held-out validation (audit CRITICAL)
+    min_coverage_holdout = max(5, int(min_coverage * 0.5))
+    validated_strategies = []
+    for strat in all_strategies:
+        rule_conds = strat.get('condition_key_tuple', [])
+        holdout_result = _evaluate_rule_on_holdout(rule_conds, df_holdout, min_coverage_holdout)
+        if holdout_result is None:
+            continue  # too few holdout trades to trust
+        if holdout_result['win_rate'] < min_win_rate:
+            continue  # failed holdout win-rate gate
+        if holdout_result['avg_pips'] <= 0:
+            continue  # unprofitable on holdout
+        # Annotate with holdout stats for transparency
+        strat['holdout_win_rate'] = round(holdout_result['win_rate'], 4)
+        strat['holdout_avg_pips'] = round(holdout_result['avg_pips'], 2)
+        strat['holdout_matches'] = holdout_result['matches']
+        validated_strategies.append(strat)
+    all_strategies = validated_strategies
+    print(f"  After holdout validation: {len(all_strategies)} strategies pass")
 
     elapsed = time.time() - start_time
 
