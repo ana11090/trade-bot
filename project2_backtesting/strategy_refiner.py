@@ -98,8 +98,16 @@ def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.
     return sorted(monthly.values(), key=lambda x: x['month'])
 
 
+# WHY (Phase 30 Fix 1): Old signature had no pip_size parameter. The body
+#      used a sniff-from-trades inference with a hardcoded 0.01 fallback,
+#      which always fired for non-XAUUSD callers because run_backtest and
+#      fast_backtest don't emit 'pip_size' on trade dicts. Add pip_size as
+#      an explicit parameter so callers have to pass it and the XAUUSD
+#      default is visible at the signature level.
+# CHANGED: April 2026 — Phase 30 Fix 1 — explicit pip_size parameter
+#          (audit Part C HIGH #26 pip_size half)
 def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
-                             daily_reset_hour=0, default_sl_pips=150.0):
+                             daily_reset_hour=0, default_sl_pips=150.0, pip_size=0.01):
     """
     Compute three types of drawdown:
 
@@ -153,13 +161,13 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
     # CHANGED: April 2026 — handle SELL trades + remove pip_size hardcode
     floating_dd_pips = realized_dd_pips  # start with realized
 
-    # Try to infer pip_size from a trade hint; default to XAUUSD 0.01
-    pip_size_local = 0.01
-    for _t in trades:
-        _ps = _t.get('pip_size')
-        if _ps and _ps > 0:
-            pip_size_local = float(_ps)
-            break
+    # WHY: Old code tried to infer pip_size from trade dicts, which almost
+    #      never carry a pip_size key. The 0.01 fallback won for every
+    #      non-XAUUSD call. Now pip_size is an explicit parameter (default
+    #      0.01 for backward compat with any caller that hasn't been
+    #      updated).
+    # CHANGED: April 2026 — Phase 30 Fix 1b — use pip_size parameter directly
+    pip_size_local = float(pip_size) if pip_size and pip_size > 0 else 0.01
 
     equity = 0
     equity_peak = 0
@@ -223,10 +231,18 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
         worst_day = days[worst_day_idx] if worst_day_idx < len(days) else None
 
         # Daily DD: worst single-day loss
+        # WHY: Old code keyed Daily DD by entry_time while EOD DD above
+        #      keyed by exit_time. Same metric card showed two different
+        #      day boundaries — a trade opening 23:50 Mon and closing
+        #      00:10 Tue got credited to Mon in Daily DD and Tue in EOD DD.
+        #      Prop firms credit the day the position closed (P&L is
+        #      realized on exit). Use exit_time consistently.
+        # CHANGED: April 2026 — Phase 30 Fix 2 — consistent day keying
+        #          (audit Part C HIGH #28)
         daily_pnls = {}
         for t in trades:
             try:
-                dt = pd.to_datetime(t.get('entry_time', ''))
+                dt = pd.to_datetime(t.get('exit_time', t.get('entry_time', '')))
                 day = dt.strftime('%Y-%m-%d')
             except Exception:
                 continue
@@ -234,9 +250,22 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
             daily_pnls[day] += t.get('net_pips', 0)
 
         if daily_pnls:
-            worst_daily_pnl = min(daily_pnls.values())
-            worst_daily_date = min(daily_pnls, key=daily_pnls.get)
-            daily_dd_worst_pips = abs(worst_daily_pnl)
+            # WHY: Old code used min(daily_pnls.values()). On an all-winning
+            #      strategy that returned the smallest WIN, and abs() then
+            #      displayed it as a drawdown magnitude. The daily DD
+            #      metric should only register actual losing days — floor
+            #      at 0. If every day is positive, worst daily DD = 0.
+            # CHANGED: April 2026 — Phase 30 Fix 3 — floor at 0 for
+            #          all-winning strategies (audit Part C HIGH #29)
+            raw_worst = min(daily_pnls.values())
+            if raw_worst < 0:
+                worst_daily_pnl  = raw_worst
+                worst_daily_date = min(daily_pnls, key=daily_pnls.get)
+                daily_dd_worst_pips = abs(worst_daily_pnl)
+            else:
+                worst_daily_pnl  = 0
+                worst_daily_date = None
+                daily_dd_worst_pips = 0
         else:
             daily_dd_worst_pips = 0
             worst_daily_date = None
@@ -1563,8 +1592,16 @@ def deep_optimize_generate(
     data_dir = os.path.dirname(candles_path)
     indicators_df = None
 
-    # Check for existing full cache
-    cache_path = candles_path.replace('.csv', '_indicators.parquet')
+    # WHY: Old code built cache_path as candles_path.replace('.csv',
+    #      '_indicators.parquet') → e.g. data/xauusd_H1_indicators.parquet,
+    #      but strategy_backtester._load_tf_indicators writes the full
+    #      cache to data_dir/.cache_{tf}_indicators.parquet. Different
+    #      filenames meant the refiner's fast-path cache check NEVER hit,
+    #      forcing a full ~5 minute rebuild on every Deep Explore run.
+    #      Match the backtester's path format so the fast-path works.
+    # CHANGED: April 2026 — Phase 30 Fix 5 — match backtester cache path
+    #          (audit Part C HIGH #30)
+    cache_path = os.path.join(data_dir, f".cache_{timeframe}_indicators.parquet")
     if os.path.exists(cache_path):
         log.info(f"  [GENERATE] Loading cached indicators: {cache_path}")
         indicators_df = pd.read_parquet(cache_path)
@@ -1888,25 +1925,49 @@ def deep_optimize_generate(
             col = indicators_df[ind_name].dropna()
             if len(col) < 100:
                 continue
+            # WHY: Old code computed quantiles over the full indicator
+            #      history, including the OOS portion. Every threshold
+            #      variation was fit with knowledge of future data the
+            #      strategy theoretically wouldn't have at deployment.
+            #      True walk-forward requires per-trade recomputation
+            #      (multi-day refactor). Minimal honest fix: compute
+            #      quantiles from the first 70% of the series so the
+            #      rightmost 30% ("the future" relative to threshold
+            #      selection) is excluded from the fit.
+            # CHANGED: April 2026 — Phase 30 Fix 6 — in-sample quantile
+            #          (audit Part C HIGH #31)
+            _is_cutoff = int(len(col) * 0.7)
+            _is_col = col.iloc[:_is_cutoff] if _is_cutoff >= 100 else col
             for pct in [25, 50, 75]:
-                threshold = col.quantile(pct / 100.0)
+                threshold = _is_col.quantile(pct / 100.0)
                 for operator in ['>', '<']:
-                    modified_rules = copy.deepcopy(win_rules)
-                    if not modified_rules:
-                        continue
-                    # WHY: setdefault ensures 'conditions' exists even if the original
-                    #      rule somehow doesn't have it (shouldn't happen but defensive)
-                    modified_rules[0].setdefault('conditions', []).append({
-                        'feature':  ind_name,
-                        'operator': operator,
-                        'value':    float(threshold),
-                    })
-                    change = f"Added {ind_name} {operator} {threshold:.4f} to Rule 1"
-                    # WHY: Same fix as step 1 — test ALL provided exits.
-                    # CHANGED: April 2026 — test all exits per indicator add
-                    for _es_idx, _es in enumerate(exit_strategies):
-                        _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
-                        _test_rules(f"+ {ind_name} {operator} {threshold:.2f} ({_es_name})", modified_rules, _es, change)
+                    # WHY: Old code hardcoded modified_rules[0] — only the
+                    #      FIRST rule ever got a new indicator condition.
+                    #      Multi-rule strategies (2-4 rules is common) lost
+                    #      2/3 of their candidate search space because rules
+                    #      1..N were never enriched. Iterate over all rule
+                    #      indices so each rule gets its own candidate.
+                    # CHANGED: April 2026 — Phase 30 Fix 7 — iterate all
+                    #          rules (audit Part C HIGH #32)
+                    for rule_idx in range(len(win_rules)):
+                        modified_rules = copy.deepcopy(win_rules)
+                        if not modified_rules:
+                            continue
+                        # setdefault ensures 'conditions' exists defensively
+                        modified_rules[rule_idx].setdefault('conditions', []).append({
+                            'feature':  ind_name,
+                            'operator': operator,
+                            'value':    float(threshold),
+                        })
+                        change = f"Added {ind_name} {operator} {threshold:.4f} to Rule {rule_idx + 1}"
+                        # WHY: Same fix as step 1 — test ALL provided exits.
+                        # CHANGED: April 2026 — test all exits per indicator add
+                        for _es_idx, _es in enumerate(exit_strategies):
+                            _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
+                            _test_rules(
+                                f"+ {ind_name} {operator} {threshold:.2f} to R{rule_idx + 1} ({_es_name})",
+                                modified_rules, _es, change,
+                            )
             _report(2, f"Testing indicator: {ind_name}")
         except Exception as e:
             log.info(f"[OPTIMIZER] Step 2 error on indicator '{ind_name}': {e}")

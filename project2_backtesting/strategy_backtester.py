@@ -15,6 +15,7 @@ import sys
 import os
 import time
 import json
+import random
 
 import pandas as pd
 import numpy as np
@@ -521,6 +522,15 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  pip_size=0.01, max_open_trades=1,
                  spread_pips=2.5, commission_pips=0.0,
                  slippage_pips=0.0,
+                 # WHY (Phase 35 Fix 3): Old code used unseeded
+                 #      random.uniform for slippage — two runs with the
+                 #      same inputs gave different results. Accept an
+                 #      optional seed so reproducible runs are possible.
+                 #      Default None = unseeded (backward compat with
+                 #      existing callers).
+                 # CHANGED: April 2026 — Phase 35 Fix 3 — optional seed
+                 #          (audit Part C MED #20)
+                 slippage_seed=None,
                  account_size=None, risk_per_trade_pct=1.0,
                  default_sl_pips=150.0, pip_value_per_lot=10.0,
                  swap_cost_per_lot_per_night=0.0,
@@ -641,6 +651,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             col_data = ind[col]
             op       = cond["operator"]
             val      = cond["value"]
+            # WHY (Phase 35 Fix 2): Old code only supported <=, >, <, >=.
+            #      Rules with == or != silently fell through, leaving
+            #      rule_mask unchanged — the condition was effectively
+            #      ignored. day_of_week == 2, hour_of_day != 0, etc.
+            #      all silently matched everywhere. Legacy backtest_engine
+            #      supports ==; bring this engine in line.
+            # CHANGED: April 2026 — Phase 35 Fix 2 — add == and != ops
+            #          (audit Part C MED #19)
             if op == "<=":
                 rule_mask &= (col_data <= val)
             elif op == ">":
@@ -649,6 +667,17 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 rule_mask &= (col_data < val)
             elif op == ">=":
                 rule_mask &= (col_data >= val)
+            elif op == "==":
+                rule_mask &= (col_data == val)
+            elif op == "!=":
+                rule_mask &= (col_data != val)
+            else:
+                log.warning(
+                    f"  [run_backtest] Unknown operator {op!r} on feature "
+                    f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                )
+                valid_rule = False
+                break
 
         if not valid_rule:
             continue
@@ -661,6 +690,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         signal_rule_ids[new_signals] = rule_idx
 
     signal_indices = df.index[signal_mask].tolist()
+
+    # WHY (Phase 35 Fix 3c): Create a local RNG for slippage so seeded
+    #      runs are reproducible without contaminating global random
+    #      state. slippage_seed=None means unseeded (matches old
+    #      behavior). slippage_seed=int enables reproducible runs.
+    # CHANGED: April 2026 — Phase 35 Fix 3c — per-run RNG
+    _slip_rng = random.Random(slippage_seed)
 
     # ── Use vectorized exit for FixedSLTP (10-50x faster) ────────────────────
     # WHY: FixedSLTP has constant SL/TP levels — numpy finds the exit candle
@@ -714,8 +750,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         entry_price = float(next_candle["open"])
         # Apply random slippage against the trader (always a worse fill)
         if slippage_pips > 0:
-            import random
-            slip = random.uniform(0, slippage_pips) * pip_size
+            # WHY: Use per-run RNG initialized above for reproducibility.
+            # CHANGED: April 2026 — Phase 35 Fix 3d — seeded slip
+            slip = _slip_rng.uniform(0, slippage_pips) * pip_size
             if trade_dir == "BUY":
                 entry_price += slip   # buy fills higher
             else:
@@ -734,14 +771,36 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         }
 
         if hasattr(exit_strategy, 'on_entry'):
-            next_idx    = next_candle.name
-            candle_dict = next_candle.to_dict()
-            if next_idx in ind.index:
-                candle_dict.update(ind.loc[next_idx].to_dict())
+            # WHY (Phase 35 Fix 6): Old code passed ind.loc[next_idx]
+            #      — the ENTRY candle's indicator values — to on_entry.
+            #      But entry happens at the OPEN of the entry candle;
+            #      the entry candle's close-based indicators (H1_atr_14,
+            #      etc.) haven't been computed yet at signal time.
+            #      That's subtle look-ahead for ATR-based exits.
+            #      Use the SIGNAL candle's indicators (ind.iloc[entry_pos_int])
+            #      which were actually available when the rule fired.
+            #      Price data stays from next_candle (that IS where
+            #      the fill happens).
+            # CHANGED: April 2026 — Phase 35 Fix 6 — signal-candle indicators
+            #          (audit Part C MED #24)
+            candle_dict = next_candle.to_dict()   # price at entry candle
+            if 0 <= entry_pos_int < len(ind.index):
+                signal_idx = ind.index[entry_pos_int]
+                candle_dict.update(ind.loc[signal_idx].to_dict())   # indicators from SIGNAL bar
             exit_strategy.on_entry(candle_dict)
 
-        # Scan forward from the candle after the entry candle
-        remaining_df = df.iloc[entry_pos_int + 2:]
+        # WHY: Old code started scanning at entry_pos_int + 2, which skipped
+        #      the entry candle entirely. Entry happens at the OPEN of the
+        #      entry candle (entry_pos_int + 1), and same-bar SL/TP hits
+        #      happen within that candle — they must be checked. fast_backtest
+        #      already uses +1; this aligns the two paths so the deep
+        #      optimizer and the displayed backtester no longer produce
+        #      different trade sets for the same strategy. pos["highest_since_entry"]
+        #      is already seeded from next_candle above, so the per-candle
+        #      max/min update is idempotent on the entry candle.
+        # CHANGED: April 2026 — Phase 28 Fix 2 — include entry candle
+        #          (audit Part C crit #5)
+        remaining_df = df.iloc[entry_pos_int + 1:]
 
         exit_price  = None
         exit_time   = None
@@ -824,6 +883,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             lot_size   = None
             dollar_pnl = None
 
+        # WHY: fast_backtest exports trade['pips'] as post-spread gross
+        #      (because spread is baked into entry_price before the pnl
+        #      calc). run_backtest previously only exported pnl_pips (gross
+        #      pre-spread), cost_pips, and net_pips — downstream code
+        #      doing trade.get('pips') silently got None from run_backtest
+        #      and a post-spread value from fast_backtest. Add a matching
+        #      'pips' key here so both backtester outputs share semantics.
+        #      pips = pnl_pips - spread_pips; net_pips = pips - commission
+        #      (equivalent to the existing pnl_pips - cost).
+        # CHANGED: April 2026 — Phase 28 Fix 3 — add 'pips' key for schema
+        #          consistency with fast_backtest (audit Part C crit #6)
+        _pips_post_spread = pnl_pips - spread_pips
         trades.append({
             "entry_time":  entry_time,
             "exit_time":   exit_time,
@@ -832,6 +903,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             # CHANGED: April 2026 — use 5 decimal places like vectorized path
             "entry_price": round(entry_price, 5),
             "exit_price":  round(exit_price, 5),
+            "pips":        round(_pips_post_spread, 1),
             "pnl_pips":    round(pnl_pips, 1),
             "cost_pips":   round(cost, 1),
             "net_pips":    round(net_pips, 1),
@@ -896,6 +968,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
             col_data = ind[col]
             op       = cond.get("operator", ">")
             val      = cond.get("value", 0)
+            # CHANGED: April 2026 — Phase 35 Fix 2b — add == and != ops
+            #          (audit Part C MED #19, mirrors Fix 2 in run_backtest)
             if op == "<=":
                 rule_mask &= (col_data <= val)
             elif op == ">":
@@ -904,6 +978,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 rule_mask &= (col_data < val)
             elif op == ">=":
                 rule_mask &= (col_data >= val)
+            elif op == "==":
+                rule_mask &= (col_data == val)
+            elif op == "!=":
+                rule_mask &= (col_data != val)
+            else:
+                log.warning(
+                    f"  [fast_backtest] Unknown operator {op!r} on feature "
+                    f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                )
+                valid_rule = False
+                break
 
         if not valid_rule:
             continue
@@ -970,16 +1055,25 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      time-based exits silently KeyError → are caught → never fire →
         #      trades run to END_OF_DATA → astronomical fake pip wins.
         # CHANGED: April 2026 — fix missing candles_held / minutes_held
+        # WHY (Phase 28 Fix 4): highest_since_entry / lowest_since_entry were
+        #      seeded from df.iloc[entry_pos_int] — the SIGNAL candle, one bar
+        #      BEFORE the entry. Trailing stops and ATR-based exits then
+        #      referenced a candle that did not exist when the trade opened.
+        #      Seed from next_candle (the actual entry candle, already
+        #      fetched above at entry_pos_int + 1). Also update entry_candle
+        #      to match. Matches run_backtest which seeds from next_candle.
+        # CHANGED: April 2026 — Phase 28 Fix 4 — seed trackers from entry
+        #          candle (audit Part C #21)
         pos_info = {
             'entry_price':      entry_price,
             'direction':        direction,
             'entry_time':       entry_time,
-            'entry_candle':     df.iloc[entry_pos_int],
+            'entry_candle':     next_candle,
             'candles_held':     0,    # incremented per candle below
             'minutes_held':     0,    # incremented per candle below
             'current_pnl_pips': 0,    # updated per candle below
-            'highest_since_entry': float(df.iloc[entry_pos_int]['high']),
-            'lowest_since_entry':  float(df.iloc[entry_pos_int]['low']),
+            'highest_since_entry': float(next_candle['high']),
+            'lowest_since_entry':  float(next_candle['low']),
         }
 
         # Some exits (ATRBased) need on_entry hook for setup
@@ -1014,8 +1108,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
             candle = future_candles.iloc[ci]
 
             # Update position state before calling exit strategy
-            pos_info['candles_held'] = ci
-            pos_info['minutes_held'] = ci * candle_minutes
+            # WHY (Phase 35 Fix 4): Old code set candles_held = ci,
+            #      where ci=0 is the first candle AFTER entry. A
+            #      TimeBased(max_candles=6) strategy exited when
+            #      candles_held reached 6, i.e. on the 7th iteration
+            #      — user asked for max 6 bars and got 7. Use ci+1
+            #      so candles_held=1 on the first post-entry bar
+            #      (matching "this position has been open for 1 bar").
+            # CHANGED: April 2026 — Phase 35 Fix 4 — off-by-one fix
+            #          (audit Part C MED #22)
+            pos_info['candles_held'] = ci + 1
+            pos_info['minutes_held'] = (ci + 1) * candle_minutes
             close = float(candle['close'])
             pos_info['current_pnl_pips'] = (
                 (close - entry_price) / pip_size if direction == "BUY"
@@ -1027,8 +1130,26 @@ def fast_backtest(df, ind, rules, exit_strategy,
             try:
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
             except Exception as e:
-                if ci == 0:  # log once per trade, not per candle
-                    log.info(f"  [fast_backtest exit error] {type(exit_strategy).__name__}: {e}")
+                # WHY (Phase 35 Fix 5): Old code logged only on ci==0.
+                #      Exit strategies that crashed on every call had
+                #      iterations 1..N silently return None, the trade
+                #      ran to END_OF_DATA, hit SANE_PIP_LIMIT, got
+                #      silently dropped. User saw reduced trade count
+                #      with no log. Track unique exception messages
+                #      per trade (dedupe) so every distinct error
+                #      surfaces exactly once. Escalate to warning.
+                # CHANGED: April 2026 — Phase 35 Fix 5 — dedupe exit errors
+                #          (audit Part C MED #23)
+                _err_key = f"{type(e).__name__}:{str(e)[:100]}"
+                if not hasattr(exit_strategy, '_seen_errors'):
+                    exit_strategy._seen_errors = set()
+                if _err_key not in exit_strategy._seen_errors:
+                    exit_strategy._seen_errors.add(_err_key)
+                    log.warning(
+                        f"  [fast_backtest exit error] "
+                        f"{type(exit_strategy).__name__}.on_new_candle: "
+                        f"{type(e).__name__}: {e}"
+                    )
                 step_result = None
 
             if step_result is not None:
@@ -1062,14 +1183,33 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      silently failed and the trade ran to END_OF_DATA years later.
         #      Skip rather than poison the stats with fake results.
         # CHANGED: April 2026 — pip sanity check
-        SANE_PIP_LIMIT = 50_000  # 50K pips = $5000 on XAUUSD per 0.01 lot
-        if abs(pips) > SANE_PIP_LIMIT:
+        # WHY (Phase 35 Fix 1): Old limit of 50,000 pips silently dropped
+        #      legitimate long-hold XAUUSD trades. A BUY from $1800 (2020)
+        #      to $2500 (2024) = 70K pips of raw movement, which is a
+        #      real trade worth ~$7000/lot on XAUUSD, not a silent exit
+        #      failure. Raise the catastrophic-skip limit to 200K
+        #      (covers any realistic multi-year hold), and add an INFO
+        #      log for trades in the [50K, 200K] range so we can still
+        #      see them in logs without dropping them.
+        # CHANGED: April 2026 — Phase 35 Fix 1 — tiered pip sanity check
+        #          (audit Part C MED #18)
+        SANE_PIP_LIMIT_SKIP  = 200_000   # catastrophic — drop silently
+        SANE_PIP_LIMIT_LARGE = 50_000    # large but plausible — keep + log
+        if abs(pips) > SANE_PIP_LIMIT_SKIP:
             _skipped_count += 1
             if _skipped_count <= 5:   # log first few occurrences
                 log.warning(f"  [SKIP] Absurd pips: {pips:.0f} "
                             f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
-                            f"reason={exit_reason}) — likely silent exit failure")
+                            f"reason={exit_reason}) — "
+                            f"exceeds {SANE_PIP_LIMIT_SKIP} pip catastrophic "
+                            f"limit; likely silent exit failure")
             continue
+        if abs(pips) > SANE_PIP_LIMIT_LARGE:
+            # INFO only — trade is kept, just flagged for attention
+            log.info(f"  [LARGE] Large pip trade kept: {pips:.0f} "
+                     f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
+                     f"reason={exit_reason}) — legitimate long hold, "
+                     f"above {SANE_PIP_LIMIT_LARGE}-pip log threshold")
 
         net_pips = pips - commission_pips
 
@@ -1106,8 +1246,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
         occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
 
     if _skipped_count > 0:
+        # CHANGED: April 2026 — Phase 35 Fix 1b — updated limit reference
         log.warning(f"  [fast_backtest] Skipped {_skipped_count} trade(s) with absurd pips "
-                    f"(SANE_PIP_LIMIT={50_000}). Check exit strategy for silent failures.")
+                    f"(SANE_PIP_LIMIT_SKIP=200_000). Check exit strategy for silent failures.")
 
     return trades
 

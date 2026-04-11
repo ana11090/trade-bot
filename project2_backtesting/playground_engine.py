@@ -91,7 +91,18 @@ def quick_backtest(indicators_df, candles_df, conditions, direction="BUY",
         exit_reason = "MAX_HOLD"
         hold = 0
 
-        for j in range(entry_idx + 1, min(entry_idx + max_hold_candles + 1, n)):
+        # WHY: Old code started the exit scan at entry_idx + 1, skipping
+        #      the entry candle. Entry happens at opens[entry_idx] at the
+        #      OPEN of that candle, so its intrabar high/low (after the
+        #      open) must be checked against SL/TP. A same-bar SL hit was
+        #      silently missed and the trade continued trading from a
+        #      position that should have closed. Same bug as run_backtest
+        #      non-vectorized path (fixed in Phase 28 Fix 2). Start at
+        #      entry_idx so the entry candle is scanned — hold=0 on that
+        #      first iteration.
+        # CHANGED: April 2026 — Phase 32 Fix 1 — include entry candle
+        #          (audit Part C HIGH #98)
+        for j in range(entry_idx, min(entry_idx + max_hold_candles + 1, n)):
             hold = j - entry_idx
 
             # WHY: Detect same-bar SL+TP ambiguity. Label the exit as
@@ -200,7 +211,17 @@ def simulate_prop_firm(trades, account_size=100000, risk_pct=1.0,
                         #      match the project's primary instrument.
                         #      Forex callers must explicitly override.
                         # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
-                        daily_dd_pct=5.0, total_dd_pct=10.0, pip_value=1.0):
+                        daily_dd_pct=5.0, total_dd_pct=10.0, pip_value=1.0,
+                        # WHY (Phase 32 Fix 2): Old code hardcoded sl_pips=150
+                        #      inside the function for lot-size calc. Users
+                        #      running the playground with SL=50 got dollar
+                        #      PnL computed from SL=150 — numbers were
+                        #      completely divorced from the real trades.
+                        #      Accept sl_pips as a parameter; callers pass
+                        #      the same sl_pips they used in quick_backtest.
+                        # CHANGED: April 2026 — Phase 32 Fix 2 — sl_pips
+                        #          parameter (audit Part C HIGH #96)
+                        sl_pips=150.0):
     """
     Quick prop firm simulation on the trade list.
     Returns pass/fail + stats.
@@ -214,6 +235,15 @@ def simulate_prop_firm(trades, account_size=100000, risk_pct=1.0,
     worst_total = 0
     daily_pnl = 0
     prev_day = None
+    # WHY (Phase 32 Fix 3): Track today's starting equity as a separate
+    #      reference for daily DD. Old code used account_size (the
+    #      account's open-date starting balance), so a $5k daily loss
+    #      on a grown $120k account was treated as 5%/100k = 5% even
+    #      though the firm rule measures 5k/120k = 4.17% against today's
+    #      opening equity. Reset day_start_balance on each day change.
+    # CHANGED: April 2026 — Phase 32 Fix 3 — daily DD from day_start_balance
+    #          (audit Part C HIGH #97)
+    day_start_balance = account_size
     blown = False
     blow_reason = None
 
@@ -222,19 +252,33 @@ def simulate_prop_firm(trades, account_size=100000, risk_pct=1.0,
         trade_day = t.get('entry_time', '')[:10]
         if trade_day != prev_day:
             daily_pnl = 0
+            day_start_balance = balance   # capture start of this trading day
             prev_day = trade_day
 
         # Calculate $ PnL based on risk
+        # WHY: Old code re-assigned sl_pips = 150 here, clobbering the
+        #      parameter. Use the parameter directly.
+        # CHANGED: April 2026 — Phase 32 Fix 2b — use sl_pips parameter
         risk_dollars = balance * (risk_pct / 100)
-        sl_pips = 150  # approximate
-        lots = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+        _sl_for_sizing = float(sl_pips) if sl_pips and sl_pips > 0 else 150.0
+        lots = risk_dollars / (_sl_for_sizing * pip_value) if _sl_for_sizing * pip_value > 0 else 0.01
         trade_pnl = t['pnl_pips'] * pip_value * lots
 
         balance += trade_pnl
         daily_pnl += trade_pnl
         high_water = max(high_water, balance)
 
-        cur_daily_dd = abs(min(0, daily_pnl)) / account_size * 100
+        # WHY: Daily DD now measured against today's starting equity
+        #      (day_start_balance), matching most challenge firms.
+        #      Total DD continues to measure against account-open
+        #      starting balance (account_size), which is the
+        #      fixed-dollar rule the audit flagged — leaving the
+        #      total DD denominator unchanged because that IS what
+        #      most firms use for the total rule. Only the daily
+        #      reference was wrong.
+        # CHANGED: April 2026 — Phase 32 Fix 3 — day_start_balance denom
+        _day_denom = day_start_balance if day_start_balance > 0 else account_size
+        cur_daily_dd = abs(min(0, daily_pnl)) / _day_denom * 100
         cur_total_dd = (high_water - balance) / account_size * 100
 
         worst_daily = max(worst_daily, cur_daily_dd)

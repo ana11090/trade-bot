@@ -41,7 +41,16 @@ class TradeLogger:
         })
         self._fh.flush()
 
-    def log_close(self, symbol, direction, lots, entry_price, exit_price, net_pips, exit_reason):
+    # WHY (Phase 34 Fix 3): Old code hardcoded entry_time = "" on close
+    #      rows, so downstream readers couldn't join close rows back to
+    #      their matching open rows except by fragile timestamp
+    #      proximity. Accept entry_time as an optional parameter
+    #      (default ""). New callers pass the open timestamp captured
+    #      at log_open time; old callers still work (empty string
+    #      stays, matching pre-fix behavior).
+    # CHANGED: April 2026 — Phase 34 Fix 3 — entry_time parameter
+    #          (audit Part C HIGH #54)
+    def log_close(self, symbol, direction, lots, entry_price, exit_price, net_pips, exit_reason, entry_time=""):
         now = datetime.now(timezone.utc).isoformat()
         self._writer.writerow({
             "timestamp":    now,
@@ -52,7 +61,7 @@ class TradeLogger:
             "exit_price":   round(exit_price, 5),
             "net_pips":     round(net_pips, 1),
             "exit_reason":  exit_reason,
-            "entry_time":   "",
+            "entry_time":   entry_time,
             "exit_time":    now,
             "skip_reason":  "",
         })

@@ -7,6 +7,21 @@ Mode 1: Instant filter impact preview. Every slider/checkbox change shows
 Mode 2: Deep optimizer that searches filter combinations and scores them.
 """
 
+# WHY (Phase 33 Fix 10): Optimizer-card dollar math hardcoded XAUUSD
+#      pip_value (10.0) and SL (150). Load from config at module import
+#      so non-XAUUSD users see correct dollar projections in optimizer.
+# CHANGED: April 2026 — Phase 33 Fix 10 — config-driven optimizer dollars
+#          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #90 pg.31)
+_srp_pip_value = 10.0
+_srp_sl_pips = 150.0
+try:
+    from project2_backtesting.panels.configuration import load_config as _srp_load_config
+    _srp_cfg = _srp_load_config()
+    _srp_pip_value = float(_srp_cfg.get('pip_value', 10.0))
+    _srp_sl_pips = float(_srp_cfg.get('default_sl_pips', 150.0))
+except Exception:
+    pass  # fallback to XAUUSD defaults
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
@@ -877,6 +892,22 @@ def _start_optimization():
                     project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
                 )
 
+                # WHY: Old code let direction default to 'BUY' in
+                #      deep_optimize_generate(). For SELL strategies the
+                #      optimizer would generate BUY-trade variants of the
+                #      strategy's entry conditions and score those —
+                #      candidates had no relationship to the actual
+                #      strategy. Derive direction from the strategy's
+                #      existing trades (majority vote, BUY on tie) and
+                #      pass it through explicitly.
+                # CHANGED: April 2026 — Phase 28 Fix 1 — derive and pass
+                #          strategy direction (audit Part C crit #1)
+                _buy_count  = sum(1 for _t in current_trades if _t.get('direction') == 'BUY')
+                _sell_count = sum(1 for _t in current_trades if _t.get('direction') == 'SELL')
+                _strategy_direction = 'SELL' if _sell_count > _buy_count else 'BUY'
+                print(f"[OPTIMIZER] Strategy direction: {_strategy_direction} "
+                      f"(BUY={_buy_count}, SELL={_sell_count})")
+
                 generate_results = deep_optimize_generate(
                     trades=current_trades,
                     base_rules=base_rules,
@@ -889,6 +920,7 @@ def _start_optimization():
                     filters=current_filters if current_filters else None,
                     progress_callback=_cb,
                     feature_matrix_path=feature_matrix_path,
+                    direction=_strategy_direction,
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
@@ -1678,8 +1710,8 @@ def _show_opt_results(candidates):
         except Exception:
             acct = 100000
             risk = 1.0
-        pip_value = 10.0
-        sl_pips = 150
+        pip_value = _srp_pip_value
+        sl_pips = _srp_sl_pips
         lot_size = (acct * risk / 100) / (sl_pips * pip_value)
         dollar_per_pip = pip_value * lot_size
 
@@ -1859,6 +1891,7 @@ def _draw_monthly_chart(canvas, tooltip, trades):
 def _update_drawdown_display(trades):
     """Update drawdown analysis display."""
     from project2_backtesting.strategy_refiner import compute_three_drawdowns
+    from project2_backtesting.panels.configuration import load_config, INSTRUMENT_SPECS
     global _dd_label
 
     if _dd_label is None:
@@ -1868,7 +1901,34 @@ def _update_drawdown_display(trades):
         _dd_label.config(text="No trade data", fg="#888")
         return
 
-    dd = compute_three_drawdowns(trades, account_size=100000)
+    # WHY: Old caller hardcoded account_size=100000 and let every other
+    #      param default — pip_value=10.0, pip_size=0.01, risk_pct=1.0,
+    #      default_sl_pips=150.0 — all XAUUSD. Users on other instruments
+    #      saw DD dollar amounts computed from XAUUSD constants. Pull the
+    #      actual values from the saved config and INSTRUMENT_SPECS lookup.
+    # CHANGED: April 2026 — Phase 30 Fix 4 — pass real config (audit Part C
+    #          HIGH #26 caller half)
+    try:
+        _cfg = load_config()
+        _symbol   = (_cfg.get('symbol') or 'XAUUSD').upper()
+        _spec     = INSTRUMENT_SPECS.get(_symbol, INSTRUMENT_SPECS.get('XAUUSD', {}))
+        _pip_size = float(_spec.get('pip_size', 0.01))
+        _pip_val  = float(_cfg.get('pip_value_per_lot', _spec.get('pip_value', 10.0)))
+        _risk_pct = float(_cfg.get('risk_pct', 1.0))
+        _acct     = float(_cfg.get('starting_capital', 100000))
+    except Exception:
+        _pip_size = 0.01
+        _pip_val  = 10.0
+        _risk_pct = 1.0
+        _acct     = 100000
+
+    dd = compute_three_drawdowns(
+        trades,
+        account_size=_acct,
+        risk_pct=_risk_pct,
+        pip_value=_pip_val,
+        pip_size=_pip_size,
+    )
 
     dd_text = (
         f"┌─────────────────────────────────────────────────────────┐\n"

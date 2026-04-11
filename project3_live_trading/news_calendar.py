@@ -57,6 +57,23 @@ def download_news_calendar(
     source = 'none'
 
     # Try fetching from a free economic calendar API
+    # WHY (Phase 34 Fix 1): Old code silently accepted days_ahead > 7
+    #      but the URL only returns this week's events (ff_calendar_thisweek.json).
+    #      Users expecting a 30-day forecast got 0-7 days with no warning.
+    #      Log a loud warning when the ask exceeds the URL's window so
+    #      the user knows to re-run the download script weekly or switch
+    #      to a paid API that supports longer ranges.
+    # CHANGED: April 2026 — Phase 34 Fix 1 — warn on days_ahead > 7
+    #          (audit Part C HIGH #45)
+    if days_ahead > 7:
+        print(
+            f"[NEWS_CALENDAR] WARNING: days_ahead={days_ahead} but the "
+            f"ForexFactory URL only returns this week's events (max 7 days). "
+            f"Only events up to 7 days from now will be available. Run this "
+            f"download weekly to keep the calendar current, or switch to a "
+            f"paid API that supports longer windows."
+        )
+
     try:
         # WHY: datetime.utcnow() returns a naive datetime and is deprecated
         #      in Python 3.12+. datetime.now(timezone.utc) returns a
@@ -89,8 +106,25 @@ def download_news_calendar(
             except Exception:
                 continue
         source = 'ForexFactory JSON'
-    except Exception:
-        pass
+    # WHY (Phase 34 Fix 2): Old code used `except Exception: pass`,
+    #      swallowing every failure category indistinguishably. Network
+    #      timeout, SSL cert error, JSON parse error, HTTP 429 rate
+    #      limit — user had no log of what went wrong when events came
+    #      back empty. Log the exception type and message before
+    #      falling through to the no-events fallback so operators can
+    #      diagnose fetch failures.
+    # CHANGED: April 2026 — Phase 34 Fix 2 — log exception details
+    #          (audit Part C HIGH #46)
+    except urllib.error.HTTPError as e:
+        print(f"[NEWS_CALENDAR] HTTP {e.code} fetching calendar: {e.reason}")
+    except urllib.error.URLError as e:
+        print(f"[NEWS_CALENDAR] URL/network error fetching calendar: {e.reason}")
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"[NEWS_CALENDAR] JSON parse error in calendar response: {e}")
+    except Exception as e:
+        # Last-resort catch so import/caller never crashes
+        print(f"[NEWS_CALENDAR] Unexpected error fetching calendar: "
+              f"{type(e).__name__}: {e}")
 
     # WHY: Old fallback generated fictional events with datetime.utcnow()+timedelta
     #      offsets when the real calendar API failed. Those fake events had real

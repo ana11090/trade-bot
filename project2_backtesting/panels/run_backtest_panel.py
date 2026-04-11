@@ -3,6 +3,23 @@ Project 2 - Run Backtest Panel
 Execute backtest and monitor progress
 """
 
+# WHY (Phase 33 Fix 7): Progress display shows approximate P&L using a
+#      hardcoded 6.67 dollar-per-pip (XAUUSD). Load from config at module
+#      import so non-XAUUSD users see correct dollar estimates.
+# CHANGED: April 2026 — Phase 33 Fix 7 — config-driven $/pip calculation
+#          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #87 pg.31)
+_rb_dollar_per_pip = 6.67
+try:
+    from project2_backtesting.panels.configuration import load_config as _rb_load_config
+    _rb_cfg = _rb_load_config()
+    _rb_account = float(_rb_cfg.get('account_size', 100000))
+    _rb_risk_pct = float(_rb_cfg.get('risk_per_trade', 1.0))
+    _rb_sl_pips = float(_rb_cfg.get('default_sl_pips', 150))
+    _rb_pip_value = float(_rb_cfg.get('pip_value', 10.0))
+    _rb_dollar_per_pip = (_rb_account * _rb_risk_pct / 100) / (_rb_sl_pips * _rb_pip_value)
+except Exception:
+    _rb_dollar_per_pip = 6.67  # fallback to XAUUSD default
+
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import os
@@ -131,9 +148,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         else:
                             wr_display = f"{wr*100:.1f}%"  # convert decimal to percent
 
-                        # Calculate approximate P&L in % (assuming $100K account, 1% risk, 150 pip SL)
-                        # Each pip ≈ $6.67 at 1% risk on $100K with 150 pip SL
-                        approx_pnl_pct = (net * 6.67) / 1000  # rough % of $100K
+                        # Calculate approximate P&L in % using config-loaded dollar-per-pip
+                        approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
 
                         # Color code: green if profitable, red if not, gray if 0 trades
                         if trades == 0:
@@ -178,7 +194,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         wr_display = f"{wr*100:.1f}%"
                     # Add P&L %
                     net = b['net_total_pips']
-                    approx_pnl_pct = (net * 6.67) / 1000
+                    approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
                     _best_label.config(
                         text=f"🏆 {b['rule_combo']} × {b['exit_name']}\n"
                              f"   {b['total_trades']} trades | WR {wr_display} | "
@@ -215,8 +231,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n\n")
 
             # Determine which TFs to test
+            # WHY (Phase 33 Fix 9): Old list missed D1 timeframe. Some users
+            #      backtest on daily candles, so include it in multi-TF test.
+            # CHANGED: April 2026 — Phase 33 Fix 9 — added D1 to TF list
+            #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #89 pg.31)
             if multi_tf:
-                tfs_to_test = ['M5', 'M15', 'H1', 'H4']
+                tfs_to_test = ['M5', 'M15', 'H1', 'H4', 'D1']
             else:
                 tfs_to_test = [entry_tf]
 
@@ -350,8 +370,12 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
         return
 
     if not os.path.exists(price_file):
+        # WHY (Phase 33 Fix 8): Old error hardcoded "XAUUSD data". Non-XAUUSD
+        #      users saw a confusing message. Use symbol from config instead.
+        # CHANGED: April 2026 — Phase 33 Fix 8 — symbol-aware error message
+        #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #88 pg.31)
         messagebox.showerror("Price Data Missing",
-                             "Price data file not found!\n\nPlease download XAUUSD data first.")
+                             f"Price data file not found!\n\nPlease download {symbol.upper()} data first.")
         return
 
     # ── Check for stale rules ─────────────────────────────────────────────

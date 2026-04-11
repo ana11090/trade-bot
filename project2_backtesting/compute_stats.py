@@ -13,7 +13,14 @@ from shared.logging_setup import get_logger
 log = get_logger(__name__)
 
 # Paths
-INPUT_FOLDER = './outputs/'
+# WHY: Old code used './outputs/' which resolves to <CWD>/outputs/.
+#      Running compute_stats.py from the repo root (or via run_backtest.py
+#      subprocess from a different CWD) silently wrote CSVs to a wrong
+#      directory. Make the path absolute relative to this script.
+# CHANGED: April 2026 — Phase 32 Fix 8 — absolute INPUT_FOLDER
+#          (audit Part C HIGH #73 sibling)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+INPUT_FOLDER = os.path.join(_HERE, 'outputs')
 INSAMPLE_TRADES = os.path.join(INPUT_FOLDER, 'trade_log_insample.csv')
 OUTSAMPLE_TRADES = os.path.join(INPUT_FOLDER, 'trade_log_outsample.csv')
 
@@ -24,7 +31,22 @@ OUTPUT_HOURLY_STATS = os.path.join(INPUT_FOLDER, 'hourly_stats.csv')
 OUTPUT_DOW_STATS = os.path.join(INPUT_FOLDER, 'dow_stats.csv')
 
 
-def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
+# WHY (Phase 31 Fix 1): Old default was 10000.0 from legacy engine days.
+#      UI default is 100000. Running compute_stats.py standalone vs from
+#      the UI produced 10x different return_pct / max_drawdown_pct /
+#      sharpe values for the same trades. Align with the UI default so
+#      standalone runs match the UI. Explicit callers still override.
+# CHANGED: April 2026 — Phase 31 Fix 1 — align with UI default
+#          (audit Part C HIGH #67)
+# WHY (Phase 31 Fix 4): Sharpe annualization was hardcoded sqrt(252). 252
+#      is US equity market convention; forex is ~252-260 (close enough),
+#      but crypto strategies running 365 days/year need 365. Parameterize
+#      with default 252 so forex/XAUUSD callers see no change and crypto
+#      callers can override.
+# CHANGED: April 2026 — Phase 31 Fix 4 — parameterize Sharpe period
+#          (audit Part C HIGH #69)
+def calculate_summary_stats(trades_df, period_name, starting_capital=100000.0,
+                            trading_days_per_year=252):
     """Calculate headline statistics for a trade log"""
     if len(trades_df) == 0:
         return {
@@ -44,6 +66,7 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
             'max_consecutive_wins': 0,
             'max_consecutive_losses': 0,
             'max_drawdown_pct': 0,
+            'max_drawdown_pct_from_start': 0,
             'sharpe_ratio': 0,
             'total_pips': 0,
             'avg_pips_per_trade': 0,
@@ -86,21 +109,30 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
     largest_loss = losses.min() if len(losses) > 0 else 0
 
     # Consecutive wins/losses
-    trades_df['is_win'] = trades_df['net_profit'] > 0
+    # WHY: Old code used is_win = net_profit > 0, which classified
+    #      breakeven trades (net=0) as losses — they'd increment the
+    #      loss streak AND reset the win streak. Asymmetric: break-evens
+    #      interrupted winning streaks but not losing streaks. Classify
+    #      trades explicitly as WIN / LOSS / BREAKEVEN; breakeven trades
+    #      leave BOTH active streaks unchanged (neither incrementing nor
+    #      resetting).
+    # CHANGED: April 2026 — Phase 31 Fix 2 — breakeven-neutral streaks
+    #          (audit Part C HIGH #70)
     consecutive_wins = 0
     consecutive_losses = 0
     max_consecutive_wins = 0
     max_consecutive_losses = 0
 
-    for is_win in trades_df['is_win']:
-        if is_win:
+    for pnl in trades_df['net_profit']:
+        if pnl > 0:
             consecutive_wins += 1
             consecutive_losses = 0
             max_consecutive_wins = max(max_consecutive_wins, consecutive_wins)
-        else:
+        elif pnl < 0:
             consecutive_losses += 1
             consecutive_wins = 0
             max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        # else: breakeven — leave both streaks unchanged
 
     # Drawdown calculation
     trades_df = trades_df.sort_values('entry_time')
@@ -111,6 +143,22 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
     trades_df['drawdown_pct'] = (trades_df['drawdown'] / trades_df['peak_balance']) * 100
 
     max_drawdown_pct = abs(trades_df['drawdown_pct'].min())
+
+    # WHY: max_drawdown_pct above is peak-based (drawdown / peak_balance).
+    #      Most prop firms measure DD against STARTING balance, not peak —
+    #      their rule is "you cannot lose more than 10% of account initial
+    #      size." Once the account has grown, those two denominators give
+    #      different percentages. A $12k drawdown from a $120k peak is
+    #      10% peak-based but 12% starting-based. Compute both and let
+    #      callers pick the metric their firm uses. Additive — no
+    #      semantic break.
+    # CHANGED: April 2026 — Phase 31 Fix 3 — add firm-rule DD metric
+    #          (audit Part C HIGH #68)
+    if starting_capital > 0:
+        _dd_from_start_pct = (trades_df['drawdown'] / starting_capital) * 100
+        max_drawdown_pct_from_start = abs(float(_dd_from_start_pct.min()))
+    else:
+        max_drawdown_pct_from_start = 0.0
 
     # Sharpe ratio (annualized)
     # WHY: Old code grouped dollar P&L by entry date and called it "daily
@@ -126,7 +174,11 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
         daily_pnl_dollars = trades_df.groupby(trades_df['entry_time'].dt.date)['net_profit'].sum()
         daily_pct_returns = daily_pnl_dollars / starting_capital
         if daily_pct_returns.std() > 0:
-            sharpe_ratio = (daily_pct_returns.mean() / daily_pct_returns.std()) * np.sqrt(252)
+            # WHY: Use parameterized trading_days_per_year instead of
+            #      hardcoded 252. Default 252 matches equity convention
+            #      and is close enough for forex; crypto callers pass 365.
+            # CHANGED: April 2026 — Phase 31 Fix 4b — parameterized factor
+            sharpe_ratio = (daily_pct_returns.mean() / daily_pct_returns.std()) * np.sqrt(trading_days_per_year)
         else:
             sharpe_ratio = 0
     else:
@@ -156,7 +208,8 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=10000.0):
         'largest_loss': largest_loss,
         'max_consecutive_wins': max_consecutive_wins,
         'max_consecutive_losses': max_consecutive_losses,
-        'max_drawdown_pct': max_drawdown_pct,
+        'max_drawdown_pct': max_drawdown_pct,                          # peak-based (standard)
+        'max_drawdown_pct_from_start': max_drawdown_pct_from_start,    # firm-rule based
         'sharpe_ratio': sharpe_ratio,
         'total_pips': total_pips,
         'avg_pips_per_trade': avg_pips_per_trade,

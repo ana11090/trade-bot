@@ -6,6 +6,25 @@ and see pass rates, expected income, and which firm is best for that strategy.
 Also shows the full trade history for the selected strategy with export.
 """
 
+# WHY (Phase 33 Fix 6): Settings defaults were XAUUSD-hardcoded (100k account,
+#      150 SL, 10.0 pip_value, 2.5 spread). Load from saved config at module
+#      import so non-XAUUSD users see correct defaults in the panel.
+# CHANGED: April 2026 — Phase 33 Fix 6 — config-loaded settings defaults
+#          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #85 pg.30)
+_pft_account_size = 100000
+_pft_sl_pips = 150.0
+_pft_pip_value = 10.0
+_pft_spread_pips = 2.5
+try:
+    from project2_backtesting.panels.configuration import load_config as _pft_load_config
+    _pft_cfg = _pft_load_config()
+    _pft_account_size = int(_pft_cfg.get('account_size', 100000))
+    _pft_sl_pips = float(_pft_cfg.get('default_sl_pips', 150.0))
+    _pft_pip_value = float(_pft_cfg.get('pip_value', 10.0))
+    _pft_spread_pips = float(_pft_cfg.get('spread_pips', 2.5))
+except Exception:
+    pass  # fallback to XAUUSD defaults
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
@@ -398,11 +417,19 @@ def _display_results(results, strategy_label):
 # Trade history display
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fmt_hold(candles_held):
-    """Convert candles held (H1) to human-readable duration."""
+def _fmt_hold(candles_held, minutes_per_candle=60):
+    """
+    Convert candles held to human-readable duration.
+
+    WHY (Phase 33 Fix 4): Old code hardcoded 60 minutes (H1 timeframe).
+         For strategies on D1, 15M, etc., hold times were wrong. Now caller
+         passes the correct minutes_per_candle for the strategy's timeframe.
+    CHANGED: April 2026 — Phase 33 Fix 4 — timeframe-aware hold formatting
+             (Ref: trade_bot_audit_round2_partC.pdf HIGH item #84 pg.30)
+    """
     if not candles_held:
         return "—"
-    mins = candles_held * 60
+    mins = candles_held * minutes_per_candle
     if mins >= 60:
         h = mins // 60
         m = mins % 60
@@ -460,7 +487,12 @@ def _display_trade_history(trades):
         entry_time = str(t.get('entry_time', ''))[:16]
         exit_time  = str(t.get('exit_time',  ''))[:16]
         direction  = t.get('direction', '')
-        dir_color  = GREEN if direction == 'BUY' else RED
+        # WHY (Phase 33 Fix 5): Old code colored BUY=green, SELL=red — misleading
+        #      because direction is not the same as profit outcome. Use DARK
+        #      (neutral) so users don't confuse trade direction with P&L.
+        # CHANGED: April 2026 — Phase 33 Fix 5 — neutral direction color
+        #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #86 pg.30)
+        dir_color = DARK
 
         tk.Label(row, text=str(i), font=("Segoe UI", 7), bg=row_bg, fg=GREY, width=3, anchor="w").pack(side=tk.LEFT, padx=1)
         tk.Label(row, text=entry_time, font=("Consolas", 7), bg=row_bg, fg=DARK, width=17, anchor="w").pack(side=tk.LEFT, padx=1)
@@ -589,15 +621,15 @@ def build_panel(parent):
 
     row1 = tk.Frame(settings_frame, bg=WHITE)
     row1.pack(fill="x", pady=(0, 4))
-    _account_size_var = _field(row1, "Account size ($):", "100000", 10)
+    _account_size_var = _field(row1, "Account size ($):", str(_pft_account_size), 10)
     _risk_var         = _field(row1, "Risk/trade (%):", "1.0", 6)
-    _sl_pips_var      = _field(row1, "Default SL (pips):", "150", 6)
+    _sl_pips_var      = _field(row1, "Default SL (pips):", str(int(_pft_sl_pips)), 6)
 
     row2 = tk.Frame(settings_frame, bg=WHITE)
     row2.pack(fill="x", pady=(0, 4))
-    _pip_val_var   = _field(row2, "Pip value/lot ($):", "10.0", 6)
+    _pip_val_var   = _field(row2, "Pip value/lot ($):", str(_pft_pip_value), 6)
     _daily_dd_var  = _field(row2, "Daily DD safety (%):", "80", 5)
-    _spread_var    = _field(row2, "Spread (pips):", "2.5", 5)
+    _spread_var    = _field(row2, "Spread (pips):", str(_pft_spread_pips), 5)
     _commission_var = _field(row2, "Commission (pips):", "0.0", 5)
 
     # ── Firm / Challenge selection ─────────────────────────────────────────────

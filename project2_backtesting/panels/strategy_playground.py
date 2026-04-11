@@ -457,12 +457,18 @@ def build_panel(parent):
             daily_dd = 5.0
             total_dd = 10.0
 
+        # WHY: Phase 32 Fix 2 added sl_pips parameter to simulate_prop_firm.
+        #      Pass the same value the quick_backtest call used above so
+        #      dollar PnL uses the user's actual SL, not a hardcoded 150.
+        # CHANGED: April 2026 — Phase 32 Fix 4 — pass sl_pips through
+        #          (audit Part C HIGH #96 caller half)
         prop = simulate_prop_firm(
             result['trades'],
             account_size=float(acct_var.get()),
             risk_pct=float(risk_var.get()),
             daily_dd_pct=daily_dd,
             total_dd_pct=total_dd,
+            sl_pips=float(sl_var.get()),
         )
 
         if prop['passed']:

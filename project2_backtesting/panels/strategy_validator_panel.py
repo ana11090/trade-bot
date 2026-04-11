@@ -605,19 +605,37 @@ def _get_candles_path(entry_tf_hint=None):
             pass
 
     # 3. Try Configuration
+    symbol = None
     if not entry_tf:
         try:
             from project2_backtesting.panels.configuration import load_config
             cfg = load_config()
             entry_tf = cfg.get('winning_scenario') or None
+            symbol = cfg.get('symbol') or None
+        except Exception:
+            pass
+    # Also load symbol from config even if entry_tf was found
+    if not symbol:
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            cfg = load_config()
+            symbol = cfg.get('symbol') or None
         except Exception:
             pass
 
     # 4. Fallback
     if not entry_tf:
         entry_tf = 'H1'
+        # WHY (Phase 33 Fix 11): Old code hardcoded 'xauusd'. Non-XAUUSD users
+        #      got confusing "candle file not found" errors. Load from config;
+        #      warn if falling back to XAUUSD so user knows to check config.
+        # CHANGED: April 2026 — Phase 33 Fix 11 — symbol from config + fallback warnings
+        #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #91 pg.31)
+        print("[strategy_validator_panel] No entry_tf found — falling back to H1. Check config.")
 
-    symbol = 'xauusd'
+    if not symbol:
+        symbol = 'xauusd'
+        print("[strategy_validator_panel] No symbol found in config — falling back to XAUUSD.")
     for p in [
         os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
         os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
@@ -1438,7 +1456,16 @@ def _show_estimation(trades, parent_frame):
         windows_pass = 0
         window_profits = []
 
-        for start_i in range(0, len(days_sorted) - 5, 7):
+        # WHY: Old loop used step 7 with a 14-day window, giving 50%
+        #      overlap between consecutive windows. Every trading day
+        #      was counted in ~2 windows, so avg/min/max payouts and
+        #      the annual estimate (avg_p * 365/14) were systematically
+        #      ~2x too high. Using step 14 makes windows disjoint so
+        #      each day appears in exactly one window and the 365/14
+        #      periods-per-year math becomes correct.
+        # CHANGED: April 2026 — Phase 29 Fix 3 — non-overlapping 14-day
+        #          windows (audit Part C crit #11)
+        for start_i in range(0, len(days_sorted) - 5, 14):
             start_day = pd.to_datetime(days_sorted[start_i])
             window = {}
             for d in days_sorted[start_i:]:
@@ -1449,15 +1476,25 @@ def _show_estimation(trades, parent_frame):
             if not window:
                 continue
 
-            total_profit = sum(v for v in window.values() if v > 0)
+            # WHY: Old code computed total_profit as sum of positive days
+            #      only (gross), then best_day / total_profit gave the
+            #      consistency ratio. Firms enforce consistency against
+            #      NET total profit — using gross-positive makes the
+            #      denominator larger and the ratio smaller, so the
+            #      check was looser than what the firm actually measures.
+            #      Same bug family as prop_firm_engine consistency check
+            #      fixed in Phase 2. Use `net` (sum of all days) as the
+            #      denominator, guarded for non-positive nets.
+            # CHANGED: April 2026 — Phase 29 Fix 4 — net total in
+            #          consistency denominator (audit Part C HIGH #80)
             net = sum(window.values())
             windows_total += 1
 
-            if total_profit <= 0:
+            if net <= 0:
                 continue
 
-            best_day = max(window.values())
-            best_pct = best_day / total_profit * 100
+            best_day  = max(window.values())
+            best_pct  = best_day / net * 100   # consistency vs NET profit
             prof_days = sum(1 for v in window.values() if v >= min_day_threshold)
 
             if best_pct <= consistency_limit and prof_days >= min_profit_days_req and net > 0:
@@ -1532,6 +1569,17 @@ def _show_estimation(trades, parent_frame):
 
         for start_i in range(0, len(days_sorted) - 5, 7):
             running = 0
+            # WHY: Track HWM so total-DD can be measured from peak equity,
+            #      not from the start-of-attempt zero. Old code only
+            #      triggered total-DD when the cumulative P&L was negative
+            #      by the full limit — a strategy that rose to +$8k then
+            #      dropped to +$3k had running=+3000 and was never caught,
+            #      even though it lost $5k from peak (a real DD breach on
+            #      most firms). Reset peak_running to 0 at each attempt
+            #      start so peak tracking is per-attempt.
+            # CHANGED: April 2026 — Phase 29 Fix 5 — HWM-based total DD
+            #          (audit Part C crit #12)
+            peak_running = 0.0
             day_count = 0
             total_attempts += 1
 
@@ -1539,6 +1587,10 @@ def _show_estimation(trades, parent_frame):
                 day_pnl = daily_pnls[d]
                 running += day_pnl
                 day_count += 1
+
+                # Track peak for HWM-based DD
+                if running > peak_running:
+                    peak_running = running
 
                 if running >= target_dollars:
                     days_to_target.append(day_count)
@@ -1549,8 +1601,11 @@ def _show_estimation(trades, parent_frame):
                     blown_daily += 1
                     break
 
-                # Total DD: cumulative loss from start exceeds limit
-                if running < 0 and abs(running) >= total_dd_dollars:
+                # Total DD: drawdown from peak exceeds limit (HWM-based).
+                # Old check only fired when running was negative, missing
+                # losses that stayed above zero after a winning phase.
+                drawdown_from_peak = peak_running - running
+                if drawdown_from_peak >= total_dd_dollars:
                     blown_total += 1
                     break
 

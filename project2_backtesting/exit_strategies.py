@@ -190,21 +190,72 @@ class ATRBased(ExitStrategy):
     """SL and TP based on ATR (adapts to volatility)."""
     name = "ATR-Based"
 
+    # WHY (Phase 31 Fix 8): Old code had a silent 5.0 fallback when the
+    #      ATR column was missing or NaN. 5.0 is in raw price units —
+    #      for XAUUSD pip_size=0.01 that's 500 pips of SL; for EURUSD
+    #      pip_size=0.0001 that's 50,000 pips. Neither is defensible.
+    #      Replace the silent fallback with a None sentinel + WARNING
+    #      log (once per strategy instance). on_new_candle returns None
+    #      when _entry_atr is None, so the trade naturally runs to the
+    #      next exit condition instead of firing a fake SL/TP.
+    # WHY (Phase 31 Fix 8 cont.): atr_column default 'H1_atr_14' fails
+    #      silently on non-H1 backtests. Keep the default for XAUUSD H1
+    #      backward-compat but the warning now surfaces the problem.
+    # CHANGED: April 2026 — Phase 31 Fix 8 — no silent ATR fallback
+    #          (audit Part C HIGH #13 + #14)
     def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_atr_14"):
         super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult)
         self.sl_atr_mult = sl_atr_mult
         self.tp_atr_mult = tp_atr_mult
         self.atr_column  = atr_column
         self._entry_atr  = None
+        self._missing_atr_warned = False
 
     def on_entry(self, candle):
-        """Called when position is opened — capture ATR at entry."""
-        self._entry_atr = candle.get(self.atr_column, 5.0)
+        """Called when position is opened — capture ATR at entry.
+
+        Sets self._entry_atr to None if the ATR column is missing or NaN.
+        on_new_candle will then refuse to fire SL/TP exits, letting the
+        trade run to the next exit condition (time-based, etc.).
+        """
+        raw = candle.get(self.atr_column, None)
+        # pandas NaN is not None — test explicitly
+        if raw is None:
+            self._entry_atr = None
+        else:
+            try:
+                atr_val = float(raw)
+                # NaN check: NaN != NaN
+                if atr_val != atr_val or atr_val <= 0:
+                    self._entry_atr = None
+                else:
+                    self._entry_atr = atr_val
+            except (TypeError, ValueError):
+                self._entry_atr = None
+
+        if self._entry_atr is None and not self._missing_atr_warned:
+            try:
+                from shared.logging_setup import get_logger
+                _log = get_logger(__name__)
+                _log.warning(
+                    f"[ATRBased] ATR column '{self.atr_column}' missing or invalid "
+                    f"at entry candle. SL/TP exits will NOT fire — trade runs to "
+                    f"other exit conditions. (Warning shown once per strategy instance.)"
+                )
+            except Exception:
+                pass
+            self._missing_atr_warned = True
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
         direction = pos["direction"]
-        atr       = self._entry_atr or 5.0
+        # WHY: Old code had `atr = self._entry_atr or 5.0` — silent
+        #      fallback. Now when ATR is None, return None so the trade
+        #      runs to the next exit condition without firing fake SL/TP.
+        # CHANGED: April 2026 — Phase 31 Fix 8 — None-guard
+        if self._entry_atr is None:
+            return None
+        atr = self._entry_atr
 
         sl_distance = atr * self.sl_atr_mult
         tp_distance = atr * self.tp_atr_mult

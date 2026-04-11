@@ -26,6 +26,11 @@ _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 SYMBOL          = 'XAUUSD'
 WINNING_SCENARIO = 'H1'
 PIP_VALUE_PER_LOT = 10.0
+# WHY: Line 254 (simulate_trade) previously hardcoded / 0.01 for pip
+#      conversion, silently breaking non-XAUUSD backtests. Module-level
+#      constant so config loader below can override it per instrument.
+# CHANGED: April 2026 — Phase 28 Fix 5b — introduce PIP_SIZE constant
+PIP_SIZE          = 0.01
 
 # File paths — built from SYMBOL/WINNING_SCENARIO after config load
 def _build_paths():
@@ -44,7 +49,14 @@ OUTSAMPLE_START = '2024-01-01'
 OUTSAMPLE_END   = '2024-12-31'
 
 # Capital and risk
-STARTING_CAPITAL    = 10000.0
+# WHY (Phase 34 Fix 7): Old default 10000.0 was from legacy engine
+#      days. UI default is 100000. Running backtest_engine.py
+#      standalone vs from UI produced 10x different return_pct,
+#      max_drawdown_pct, and lot sizes. Align with UI default.
+#      Same pattern as Phase 31 Fix 1 for compute_stats.
+# CHANGED: April 2026 — Phase 34 Fix 7 — align with UI default
+#          (audit Part C HIGH #65)
+STARTING_CAPITAL    = 100000.0
 RISK_PER_TRADE_PCT  = 0.01
 LOT_SIZE_CALCULATION = 'DYNAMIC'
 FIXED_LOT_SIZE      = 0.01
@@ -74,6 +86,8 @@ if os.path.exists(_cfg_path):
         SYMBOL              = _cfg.get('symbol',            SYMBOL).upper()
         WINNING_SCENARIO    = _cfg.get('winning_scenario',  WINNING_SCENARIO)
         PIP_VALUE_PER_LOT   = float(_cfg.get('pip_value_per_lot', PIP_VALUE_PER_LOT))
+        # CHANGED: April 2026 — Phase 28 Fix 5c — read pip_size from config
+        PIP_SIZE            = float(_cfg.get('pip_size',          PIP_SIZE))
         INSAMPLE_START      = _cfg.get('insample_start',    INSAMPLE_START)
         INSAMPLE_END        = _cfg.get('insample_end',      INSAMPLE_END)
         OUTSAMPLE_START     = _cfg.get('outsample_start',   OUTSAMPLE_START)
@@ -218,8 +232,20 @@ def calculate_lot_size(balance, risk_pct, sl_distance_usd):
 
     lot_size = risk_amount / sl_distance_usd
 
-    # Clamp to reasonable range (0.01 to 10.0 lots)
-    lot_size = max(0.01, min(10.0, lot_size))
+    # WHY (Phase 34 Fix 6): Old cap of 10.0 silently truncated lot sizes
+    #      for large virtual accounts or tight SLs. A $1M virtual
+    #      account at 1% risk / 15 pip SL wants ~667 lots; got 10.
+    #      P&L was silently off by 66x. Raise cap to 100 and log a
+    #      warning when it triggers, mirroring the main run_backtest
+    #      pattern from Phase 28.
+    # CHANGED: April 2026 — Phase 34 Fix 6 — warn instead of silently
+    #          truncating (audit Part C HIGH #63)
+    if lot_size > 100.0:
+        log.warning(
+            f"[backtest_engine] Computed lot size {lot_size:.1f} exceeds "
+            f"100 — check account_size / risk_pct / sl_pips. Capping to 100."
+        )
+    lot_size = max(0.01, min(100.0, lot_size))
 
     return round(lot_size, 2)
 
@@ -227,10 +253,25 @@ def calculate_lot_size(balance, risk_pct, sl_distance_usd):
 def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start_idx):
     """
     Simulate a single trade from entry to exit
-    Returns: trade dictionary with all details
+    Returns: trade dictionary with all details, or None if start_idx is the
+             last candle (no next candle available for entry).
     """
-    entry_price = entry_candle['close']
-    entry_time = entry_candle['timestamp']
+    # WHY: Old code entered at entry_candle['close'] — the SAME candle the
+    #      rule was evaluated on. Full-bar look-ahead: entry price and
+    #      condition values derived from the same bar. Every other backtester
+    #      in the repo enters at the OPEN of the next candle. Match that
+    #      convention. Return None when we're on the last candle and no
+    #      next candle exists — caller skips it.
+    # CHANGED: April 2026 — Phase 28 Fix 5 — enter at next-candle open,
+    #          parameterize pip_size (audit Part C crit #3)
+    next_pos = start_idx + 1
+    if next_pos >= len(candles_df):
+        return None
+    next_candle = candles_df.iloc[next_pos]
+    entry_price = float(next_candle['open'])
+    entry_time  = next_candle['timestamp']
+    # ATR is read from the SIGNAL candle (entry_candle), which is the bar
+    # whose indicators the rule fired on — that's the correct snapshot.
     atr_value = indicators_df.loc[entry_candle.name, 'atr_14']
 
     # Calculate SL and TP levels
@@ -250,7 +291,12 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
     #      lot 100× too large. Correct formula: dollar risk per 1 lot =
     #      sl_pips × pip_value_per_lot (no FIXED_LOT_SIZE multiplier).
     # CHANGED: April 2026 — fix lot calc 100× scale error (audit HIGH)
-    sl_distance_pips = abs(entry_price - sl_price) / 0.01  # XAUUSD: pip_size = 0.01
+    # WHY (Phase 28 Fix 5): pip_size was hardcoded to 0.01 (XAUUSD only).
+    #      Use the module-level PIP_SIZE constant introduced below so the
+    #      engine works for any instrument. Fallback to 0.01 keeps XAUUSD
+    #      behaviour identical.
+    # CHANGED: April 2026 — Phase 28 Fix 5 — parameterize pip_size
+    sl_distance_pips = abs(entry_price - sl_price) / PIP_SIZE
     sl_distance_usd = sl_distance_pips * PIP_VALUE_PER_LOT  # dollar risk per 1 lot
     lot_size = calculate_lot_size(balance, RISK_PER_TRADE_PCT, sl_distance_usd)
 
@@ -280,10 +326,22 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
                 exit_time = candle['timestamp']
                 exit_reason = 'STOP_LOSS'
 
-                # Same candle SL/TP check
-                if candle['high'] >= tp1_price and SAME_CANDLE_SL_RULE == 'WIN':
-                    exit_price = tp1_price
-                    exit_reason = 'TAKE_PROFIT_1'
+                # Same candle SL/TP check — upgrade to BEST reached TP
+                # WHY (Phase 34 Fix 5): Old code only checked TP1 in the
+                #      upgrade, so TP2 was unreachable on same-candle
+                #      SL conflicts even when the high clearly reached
+                #      TP2. Check TP2 first (it's farther from entry),
+                #      then TP1. Default SAME_CANDLE_SL_RULE is 'LOSS'
+                #      so this only fires when the user opts into 'WIN'.
+                # CHANGED: April 2026 — Phase 34 Fix 5 — TP2-first upgrade
+                #          (audit Part C HIGH #61)
+                if SAME_CANDLE_SL_RULE == 'WIN':
+                    if candle['high'] >= tp2_price:
+                        exit_price = tp2_price
+                        exit_reason = 'TAKE_PROFIT_2'
+                    elif candle['high'] >= tp1_price:
+                        exit_price = tp1_price
+                        exit_reason = 'TAKE_PROFIT_1'
 
                 break
 
@@ -317,10 +375,17 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
                 exit_time = candle['timestamp']
                 exit_reason = 'STOP_LOSS'
 
-                # Same candle SL/TP check
-                if candle['low'] <= tp1_price and SAME_CANDLE_SL_RULE == 'WIN':
-                    exit_price = tp1_price
-                    exit_reason = 'TAKE_PROFIT_1'
+                # Same candle SL/TP check — upgrade to BEST reached TP
+                # (SELL: lower price = better profit, so TP2 < TP1 < entry)
+                # WHY (Phase 34 Fix 5b): Mirror of Fix 5 for SELL.
+                # CHANGED: April 2026 — Phase 34 Fix 5b — TP2-first upgrade
+                if SAME_CANDLE_SL_RULE == 'WIN':
+                    if candle['low'] <= tp2_price:
+                        exit_price = tp2_price
+                        exit_reason = 'TAKE_PROFIT_2'
+                    elif candle['low'] <= tp1_price:
+                        exit_price = tp1_price
+                        exit_reason = 'TAKE_PROFIT_1'
 
                 break
 
@@ -445,7 +510,13 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
             # Check if rule conditions are met
             if rule.check_conditions(indicators_row):
                 # Fire trade!
+                # WHY: simulate_trade now returns None when the signal fires
+                #      on the last candle (no next candle = no entry). Skip
+                #      rather than let the old-code path crash with IndexError.
+                # CHANGED: April 2026 — Phase 28 Fix 5d — handle None return
                 trade = simulate_trade(rule, candle, indicators_df, period_candles, balance, i)
+                if trade is None:
+                    continue
 
                 if trade:
                     trade['trade_id'] = len(trades) + 1

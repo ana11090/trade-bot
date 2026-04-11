@@ -12,7 +12,14 @@ from shared.logging_setup import get_logger
 log = get_logger(__name__)
 
 # Paths
-INPUT_FOLDER = './outputs/'
+# WHY: Old code used './outputs/' which resolves to <CWD>/outputs/ —
+#      running build_report.py from the repo root wrote to
+#      <repo_root>/outputs/ (wrong directory). Make the path absolute
+#      relative to this script's own directory so CWD doesn't matter.
+# CHANGED: April 2026 — Phase 32 Fix 7 — absolute INPUT_FOLDER
+#          (audit Part C HIGH #73)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+INPUT_FOLDER = os.path.join(_HERE, 'outputs')
 STATS_SUMMARY = os.path.join(INPUT_FOLDER, 'stats_summary.csv')
 MONTHLY_STATS = os.path.join(INPUT_FOLDER, 'monthly_stats.csv')
 DAILY_STATS = os.path.join(INPUT_FOLDER, 'daily_stats.csv')

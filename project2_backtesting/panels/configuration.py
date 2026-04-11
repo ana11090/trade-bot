@@ -29,17 +29,34 @@ TF_MQL5_PERIOD = {
 }
 
 # Known instrument specs — pip value per standard lot, pip size, typical spread
+# WHY (Phase 32 Fix 5): XAGUSD pip_value was 50.0 — 10x too high.
+#      Silver standard lot is 5000 oz × 0.001 pip_size = $5 per pip per
+#      1 lot, not $50. Users running XAGUSD got lot sizes ~10x smaller
+#      than intended and dollar PnL was ~10x too small.
+# WHY (Phase 32 Fix 5 cont.): USDJPY / GBPJPY pip_value is rate-dependent:
+#      $10 at rate 100 JPY/USD, $6.67 at rate 150. The hardcoded 6.7 is
+#      approximate (assumes rate ~149). Users with a specific JPY rate
+#      should override pip_value_per_lot in backtest_config.json. The
+#      comment below documents the assumption.
+# CHANGED: April 2026 — Phase 32 Fix 5 — XAGUSD pip fix + JPY note
+#          (audit Part C HIGH #93)
 INSTRUMENT_SPECS = {
     'XAUUSD': {'pip_value': 10.0, 'pip_size': 0.01, 'typical_spread': 2.5, 'name': 'Gold'},
     'EURUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 0.8, 'name': 'EUR/USD'},
     'GBPUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'GBP/USD'},
+    # USDJPY / GBPJPY pip_value drifts with the USD/JPY rate:
+    #   pip_value (USD) = 100000 × pip_size / USDJPY_rate
+    #   = 1000 / rate    (for pip_size=0.01)
+    # Values below assume rate ≈ 149 (→ $6.7). Override in config for
+    # other rates.
     'USDJPY': {'pip_value': 6.7,  'pip_size': 0.01, 'typical_spread': 0.9, 'name': 'USD/JPY'},
     'GBPJPY': {'pip_value': 6.7,  'pip_size': 0.01, 'typical_spread': 1.5, 'name': 'GBP/JPY'},
     'AUDUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 0.8, 'name': 'AUD/USD'},
     'USDCAD': {'pip_value': 7.3,  'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CAD'},
     'USDCHF': {'pip_value': 11.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CHF'},
     'NZDUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.2, 'name': 'NZD/USD'},
-    'XAGUSD': {'pip_value': 50.0, 'pip_size': 0.001, 'typical_spread': 2.0, 'name': 'Silver'},
+    # XAGUSD: 5000 oz × 0.001 pip_size = $5 per pip per 1 lot (not 50)
+    'XAGUSD': {'pip_value': 5.0,  'pip_size': 0.001, 'typical_spread': 2.0, 'name': 'Silver'},
     'US30':   {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 2.0, 'name': 'Dow Jones'},
     'NAS100': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 1.5, 'name': 'Nasdaq'},
     'BTCUSD': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 30.0, 'name': 'Bitcoin'},
@@ -576,9 +593,19 @@ def build_panel(parent):
                 if entries.get('starting_capital'):
                     entries['starting_capital'].set(_config_acct_var.get())
 
-                # Auto-fill spread from firm data
+                # Auto-fill spread from instrument specs (not hardcoded)
+                # WHY: Old code hardcoded "2.5" regardless of symbol —
+                #      EURUSD users got 2.5 pips applied to a 0.8-pip
+                #      market, overstating costs ~3x. Derive from the
+                #      current symbol's entry in INSTRUMENT_SPECS. Falls
+                #      back to 2.5 only if the symbol isn't in the table.
+                # CHANGED: April 2026 — Phase 32 Fix 6 — per-symbol spread
+                #          (audit Part C HIGH #94)
                 if entries.get('spread'):
-                    entries['spread'].set("2.5")  # typical for XAUUSD
+                    _cur_symbol = entries['symbol'].get().strip().upper() if entries.get('symbol') else 'XAUUSD'
+                    _spec       = INSTRUMENT_SPECS.get(_cur_symbol, INSTRUMENT_SPECS.get('XAUUSD', {}))
+                    _spread_val = float(_spec.get('typical_spread', 2.5))
+                    entries['spread'].set(f"{_spread_val}")
 
                 # Auto-fill risk from trading_rules
                 trading_rules = fd.get('trading_rules', [])

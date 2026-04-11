@@ -3,6 +3,22 @@ Project 2 - View Results Panel
 View backtest results and HTML report
 """
 
+# WHY (Phase 33 Fix 1b): Per-row dollar math needs an SL fallback when
+#      a strategy row lacks explicit sl_pips. Old code hardcoded 150
+#      (XAUUSD). Load from saved config on module import so every
+#      _build_card call uses the current instrument's SL default.
+#      Falls back to 150 only if config load fails.
+# CHANGED: April 2026 — Phase 33 Fix 1b — config-loaded SL fallback
+_vr_fallback_sl_pips = 150.0
+try:
+    from project2_backtesting.panels.configuration import load_config as _vr_load_config
+    _vr_cfg = _vr_load_config()
+    # default_sl_pips isn't in DEFAULTS but saved configs may have it;
+    # fall back to 150.0 explicitly
+    _vr_fallback_sl_pips = float(_vr_cfg.get('default_sl_pips', 150.0))
+except Exception:
+    _vr_fallback_sl_pips = 150.0
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import os
@@ -361,9 +377,16 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 pass
 
             if trades > 0:
-                # WHY: compute_stats returns win_rate as percent already.
-                # CHANGED: April 2026 — single clean format (no dual-format guessing)
-                wr_normalized = wr if wr > 1 else wr * 100
+                # WHY: compute_stats and strategy_backtester.compute_stats
+                #      both always return win_rate as percent (0-100).
+                #      The old heuristic `wr > 1 else wr * 100` had a
+                #      discontinuity at exactly 1.0. Treat wr as percent
+                #      when it's >= 1.0 (including the ambiguous 1.0
+                #      case) and as fraction only when strictly less
+                #      than 1.0. Matches Phase 31 Fix 7 convention.
+                # CHANGED: April 2026 — Phase 33 Fix 3 — explicit boundary
+                #          (audit Part C HIGH #86)
+                wr_normalized = wr if wr >= 1.0 else wr * 100
                 wr_str   = f"{wr_normalized:.1f}%"
                 wr_color = "#28a745" if wr_normalized >= 55 else "#dc3545"
                 pf_color = "#28a745" if pf >= 1.5 else "#dc3545" if pf < 1.0 else "#ff8f00"
@@ -371,10 +394,18 @@ def _display_results_inner(output_text, summary_frame, data, results,
 
                 # Use this strategy's actual SL for correct $/pip sizing
                 # CHANGED: April 2026 — per-row dollar calc
+                # WHY (Phase 33 Fix 1): Old fallback was hardcoded 150
+                #      (XAUUSD). Non-XAUUSD users with strategies that
+                #      didn't carry an explicit sl_pips got the XAUUSD
+                #      value applied to their dollar math. Derive the
+                #      fallback from the loaded config's default_sl_pips
+                #      (populated at panel-build time below).
+                # CHANGED: April 2026 — Phase 33 Fix 1 — config-driven SL fallback
+                #          (audit Part C HIGH #84)
                 strat_sl = (
                     r.get('sl_pips') or
                     r.get('exit_strategy_params', {}).get('sl_pips') or
-                    150
+                    _vr_fallback_sl_pips
                 )
                 this_dollar_per_pip = _calc_dollar_per_pip(strat_sl, risk_dollars, pip_value)
                 profit_dollars = net_pips * this_dollar_per_pip
@@ -632,7 +663,8 @@ def _display_results_inner(output_text, summary_frame, data, results,
     for i, r in enumerate(sorted_results):
         trades = r.get('total_trades', 0)
         wr = r.get('win_rate', 0)
-        wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+        # CHANGED: April 2026 — Phase 33 Fix 3b — match Fix 3 boundary
+        wr_str = f"{wr:.1f}%" if wr >= 1.0 else f"{wr*100:.1f}%"
         pf = r.get('net_profit_factor', 0)
         net = r.get('net_total_pips', 0)
         avg = r.get('net_avg_pips', 0)

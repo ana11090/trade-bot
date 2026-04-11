@@ -400,11 +400,37 @@ def walk_forward_validate(
     default_sl_pips=150.0,
 ):
     """
-    Walk-forward validation: train on N years, test on following M years,
-    slide the window forward, repeat.
+    Rule-stability test across sliding time windows.
+
+    ⚠️  DESPITE THE NAME, THIS IS NOT ML-STYLE WALK-FORWARD.  ⚠️
+
+    This function runs the SAME pre-existing `rules` on multiple
+    train/test window pairs and measures how the win rate degrades
+    between in-sample and out-of-sample periods within each window.
+    Real walk-forward validation re-discovers rules on each training
+    window and tests those freshly-discovered rules on the OOS window.
+    This function does NOT re-discover rules per window — the same
+    `rules` argument is used on every slice.
+
+    What it DOES measure: whether a given rule set's edge holds up
+    as the data moves forward in time. Useful for detecting rules
+    that only worked during a specific historical regime.
+
+    What it does NOT measure: whether the rule-discovery process
+    itself generalizes. For that you'd need a full retrain loop,
+    which is the walk-forward refactor deferred from Phase family #31.
 
     Returns dict with 'windows' list and 'summary' dict.
     """
+    # WHY: Old code simply logged "Starting walk-forward" without
+    #      clarifying what it actually does. Users reading the log
+    #      thought they were seeing rediscovery-per-window; they
+    #      weren't. Log the real intent so log readers aren't misled.
+    # CHANGED: April 2026 — Phase 31 Fix 5 — clarify function purpose
+    #          (audit Part C HIGH #38)
+    log.info(f"[RULE_STABILITY] Testing {len(rules)} pre-existing rules across "
+             f"{n_windows} sliding train/test windows. This is NOT rule rediscovery — "
+             f"it's a stability test of the given rule set over time.")
     _stop_flag.clear()
     run_backtest, compute_stats, build_multi_tf_indicators = _load_backtester()
 
@@ -550,15 +576,36 @@ def walk_forward_validate(
         in_wr  = in_stats['win_rate']
         out_wr = out_stats['win_rate']
 
-        # WHY: Helper to normalize win_rate from either percent (0..100) or
-        #      fraction (0..1) format. compute_stats stores percent;
-        #      compute_stats_summary stores fraction. Don't trust the source.
-        # CHANGED: April 2026 — single normalization helper
-        def _wr_to_fraction(wr):
+        # WHY: Old helper used wr > 1 else wr, which treated WR=1.0 as
+        #      fraction (100%) but WR=1.001 as percent (1.001%).
+        #      Discontinuity at the boundary gave weird verdicts on
+        #      windows with tiny numbers of trades. compute_stats and
+        #      strategy_backtester.compute_stats both always return
+        #      percent (0-100 scale), so pass scale='percent' from
+        #      callers. scale='auto' preserves the old heuristic and
+        #      logs a warning once per session when the ambiguous
+        #      [1.0, 2.0] range is encountered.
+        # CHANGED: April 2026 — Phase 31 Fix 7 — explicit scale param
+        #          (audit Part C HIGH #40)
+        _wr_scale_warned = [False]  # list so closure can mutate
+
+        def _wr_to_fraction(wr, scale='percent'):
             try:
                 wr = float(wr)
             except (TypeError, ValueError):
                 return 0.0
+            if scale == 'fraction':
+                return wr
+            if scale == 'percent':
+                return wr / 100.0
+            # auto mode — heuristic with warning on ambiguity
+            if 1.0 <= wr < 2.0 and not _wr_scale_warned[0]:
+                log.warning(
+                    f"[WF] _wr_to_fraction: ambiguous value {wr} in auto mode. "
+                    f"Caller should pass scale='percent' or scale='fraction' explicitly. "
+                    f"Assuming percent. (This warning shown once per run.)"
+                )
+                _wr_scale_warned[0] = True
             return wr / 100.0 if wr > 1 else wr
 
         # Fix: 0-trade windows should not show as "no degradation"
@@ -620,8 +667,20 @@ def walk_forward_validate(
             edge_held_count = sum(held)
             edge_held_ratio = edge_held_count / len(held)
 
+            # WHY: Old verdict was a three-way cliff — a strategy at
+            #      avg_out_wr=0.549 got INCONCLUSIVE; one at 0.551 got
+            #      LIKELY_REAL. The boundary produced noisy verdicts on
+            #      strategies that were genuinely borderline. Add a
+            #      MARGINAL zone between LIKELY_REAL and INCONCLUSIVE so
+            #      close calls are labeled honestly.
+            # CHANGED: April 2026 — Phase 31 Fix 6 — MARGINAL verdict zone
+            #          (audit Part C HIGH #39)
             if avg_out_wr >= 0.55 and avg_degradation > -15 and edge_held_ratio >= 0.60:
                 verdict = 'LIKELY_REAL'
+            elif (0.52 <= avg_out_wr < 0.55
+                  and edge_held_ratio >= 0.50
+                  and avg_degradation > -20):
+                verdict = 'MARGINAL'
             elif avg_out_wr >= 0.50 and edge_held_ratio >= 0.40:
                 verdict = 'INCONCLUSIVE'
             else:
