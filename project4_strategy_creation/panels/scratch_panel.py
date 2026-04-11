@@ -206,7 +206,9 @@ def _build_inner(inner):
     # Entry TF candle file
     if os.path.exists(_candles_path):
         try:
-            import pandas as _pd
+            # WHY: Old code imported pandas as _pd but only used the builtin
+            #      sum(1 for _ in open(...)) which doesn't need pandas.
+            # CHANGED: April 2026 — remove dead local import (Phase 19b)
             _nc = sum(1 for _ in open(_candles_path)) - 1
             candle_status = f"\u2705 Found {_entry_tf} candles: {_nc:,} candles  ({_candles_path})"
             candle_color  = "#1e8449"

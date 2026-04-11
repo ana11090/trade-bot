@@ -5,7 +5,6 @@ Saved Rules Panel — view, manage, export, and activate bookmarked rules.
 import tkinter as tk
 from tkinter import messagebox
 import os
-import sys
 import json
 import shutil
 

@@ -248,7 +248,6 @@ def start_pipeline():
 
 
 def pipeline_worker():
-    import tkinter as _tk
     # We need the root window to schedule pipeline_done — grab it from the tree widget
     root = _tree.winfo_toplevel()
     try:

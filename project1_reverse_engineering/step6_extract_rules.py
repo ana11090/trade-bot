@@ -15,6 +15,10 @@ from sklearn.tree import export_text
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # WHY: share the NaN sentinel with step4
 # CHANGED: April 2026 — replace fillna(0) (audit bug #12)
 from step4_train_model import fill_feature_nans
@@ -41,9 +45,9 @@ def extract_rules_for_scenario(scenario):
     Returns:
         True if successful, False otherwise
     """
-    print(f"\n{'=' * 60}")
-    print(f"[STEP 6/7] Extracting trading rules — scenario: {scenario}")
-    print(f"{'=' * 60}\n")
+    log.info(f"\n{'=' * 60}")
+    log.info(f"[STEP 6/7] Extracting trading rules — scenario: {scenario}")
+    log.info(f"{'=' * 60}\n")
 
     output_dir = os.path.join(OUTPUT_FOLDER, f'scenario_{scenario}')
 
@@ -52,12 +56,12 @@ def extract_rules_for_scenario(scenario):
         model_file = os.path.join(output_dir, 'trained_model.pkl')
 
         if not os.path.exists(model_file):
-            print(f"ERROR: Trained model not found: {model_file}")
-            print(f"FIX: Run step4_train_model.py first for scenario {scenario}")
+            log.error(f"Trained model not found: {model_file}")
+            log.info(f"FIX: Run step4_train_model.py first for scenario {scenario}")
             return False
 
         model = joblib.load(model_file)
-        print(f"  Loaded trained model")
+        log.info(f"  Loaded trained model")
 
         # Load labeled feature matrix
         feature_file = os.path.join(output_dir, 'feature_matrix_labeled.csv')
@@ -68,16 +72,16 @@ def extract_rules_for_scenario(scenario):
         if os.path.exists(shap_file):
             shap_importance = pd.read_csv(shap_file)
             top_features = shap_importance.head(10)['feature'].tolist()
-            print(f"  Loaded top 10 SHAP features")
+            log.info(f"  Loaded top 10 SHAP features")
         else:
             # Fallback to model feature importance
             feature_importance_file = os.path.join(output_dir, 'feature_importance.csv')
             if os.path.exists(feature_importance_file):
                 feat_imp = pd.read_csv(feature_importance_file)
                 top_features = feat_imp.head(10)['feature'].tolist()
-                print(f"  Loaded top 10 features from model importance")
+                log.info(f"  Loaded top 10 features from model importance")
             else:
-                print(f"  WARNING: No feature importance data found, using all features")
+                log.info(f"  WARNING: No feature importance data found, using all features")
                 # WHY: Use shared transform — see step4_train_model.prepare_features.
                 # CHANGED: April 2026 — fix string→float crash
                 from step4_train_model import prepare_features as _prep
@@ -91,8 +95,8 @@ def extract_rules_for_scenario(scenario):
         data, feature_cols = prepare_features(data, scenario=scenario)
 
         # Extract rules from the best-performing tree
-        print(f"\n  Extracting rules from Random Forest trees...")
-        print(f"    Total trees in forest: {len(model.estimators_)}")
+        log.info(f"\n  Extracting rules from Random Forest trees...")
+        log.info(f"    Total trees in forest: {len(model.estimators_)}")
 
         # WHY: Selecting the "best tree" by test-set accuracy makes the test
         #      set useless as held-out evaluation — the extracted rule is
@@ -125,9 +129,9 @@ def extract_rules_for_scenario(scenario):
         best_tree_test_acc = (best_tree.predict(X_test) == y_test).mean()
         best_tree_acc = best_tree_test_acc  # kept as `best_tree_acc` for downstream compat
 
-        print(f"    Best tree index: {best_tree_idx}")
-        print(f"      Training accuracy (selection criterion): {best_tree_train_acc:.3f}")
-        print(f"      Test accuracy (held-out): {best_tree_test_acc:.3f}")
+        log.info(f"    Best tree index: {best_tree_idx}")
+        log.info(f"      Training accuracy (selection criterion): {best_tree_train_acc:.3f}")
+        log.info(f"      Test accuracy (held-out): {best_tree_test_acc:.3f}")
 
         best_tree = model.estimators_[best_tree_idx]
 
@@ -143,7 +147,7 @@ def extract_rules_for_scenario(scenario):
             f.write(f"{'=' * 60}\n\n")
             f.write(tree_rules)
 
-        print(f"  Saved raw tree rules: {raw_rules_file}")
+        log.info(f"  Saved raw tree rules: {raw_rules_file}")
 
         # ── Multi-depth rule extraction ───────────────────────────────────
         # WHY: A single tree at one depth finds limited rule patterns.
@@ -153,7 +157,7 @@ def extract_rules_for_scenario(scenario):
         # CHANGED: April 2026 — multi-depth extraction
         from sklearn.tree import DecisionTreeClassifier
 
-        print(f"\n  Multi-depth rule extraction (depths 2-8)...")
+        log.info(f"\n  Multi-depth rule extraction (depths 2-8)...")
 
         train_data = data[data['dataset'] == 'train'].copy()
         X_train = fill_feature_nans(train_data[feature_cols])
@@ -179,9 +183,9 @@ def extract_rules_for_scenario(scenario):
                     r['tree_depth'] = depth
 
                 all_rules.extend(rules_d)
-                print(f"    Depth {depth}: {len(rules_d)} rules extracted")
+                log.info(f"    Depth {depth}: {len(rules_d)} rules extracted")
             except Exception as e:
-                print(f"    Depth {depth}: error — {e}")
+                log.info(f"    Depth {depth}: error — {e}")
                 continue
 
         # Deduplicate by condition signature (same rule from different depths)
@@ -209,9 +213,9 @@ def extract_rules_for_scenario(scenario):
 
         rules = unique_rules[:20]
 
-        print(f"  Total candidates: {len(all_rules)}")
-        print(f"  Unique rules: {len(unique_rules)}")
-        print(f"  Keeping top 20 for filtering")
+        log.info(f"  Total candidates: {len(all_rules)}")
+        log.info(f"  Unique rules: {len(unique_rules)}")
+        log.info(f"  Keeping top 20 for filtering")
 
         # Filter rules by confidence and coverage
         filtered_rules = []
@@ -219,7 +223,7 @@ def extract_rules_for_scenario(scenario):
             if rule['confidence'] >= RULE_MIN_CONFIDENCE and rule['coverage'] >= RULE_MIN_TRADE_COVERAGE:
                 filtered_rules.append(rule)
 
-        print(f"  Found {len(filtered_rules)} high-confidence rules (min confidence: {RULE_MIN_CONFIDENCE}, min coverage: {RULE_MIN_TRADE_COVERAGE})")
+        log.info(f"  Found {len(filtered_rules)} high-confidence rules (min confidence: {RULE_MIN_CONFIDENCE}, min coverage: {RULE_MIN_TRADE_COVERAGE})")
 
         # Create rules report
         rules_report_file = os.path.join(output_dir, 'rules_report.txt')
@@ -259,7 +263,7 @@ def extract_rules_for_scenario(scenario):
                     f.write(f"  Action: {rule['action']}\n")
                     f.write(f"\n")
 
-        print(f"  Saved rules report: {rules_report_file}")
+        log.info(f"  Saved rules report: {rules_report_file}")
 
         # Save rules as CSV for programmatic use
         if len(filtered_rules) > 0:
@@ -277,7 +281,7 @@ def extract_rules_for_scenario(scenario):
 
             rules_csv_file = os.path.join(output_dir, 'rules_summary.csv')
             rules_df.to_csv(rules_csv_file, index=False)
-            print(f"  Saved rules summary CSV: {rules_csv_file}")
+            log.info(f"  Saved rules summary CSV: {rules_csv_file}")
 
         # ── Write analysis_report.json (so P2 can read it directly) ──────────
         # WHY: Without this, P2 reads analysis_report.json and finds
@@ -350,19 +354,19 @@ def extract_rules_for_scenario(scenario):
         try:
             with open(analysis_report_path, 'w', encoding='utf-8') as f:
                 _json.dump(analysis_report, f, indent=2, default=str)
-            print(f"  Saved analysis report: {analysis_report_path}")
-            print(f"  → direction={direction}, entry_timeframe={scenario}, "
+            log.info(f"  Saved analysis report: {analysis_report_path}")
+            log.info(f"  → direction={direction}, entry_timeframe={scenario}, "
                   f"{len(formatted_rules)} WIN rules")
-            print(f"  → P2 can now read this directly (no P4 needed)")
+            log.info(f"  → P2 can now read this directly (no P4 needed)")
         except Exception as _e:
-            print(f"  WARNING: Could not save analysis_report.json: {_e}")
+            log.info(f"  WARNING: Could not save analysis_report.json: {_e}")
 
-        print(f"\n[STEP 6/7] COMPLETE — scenario: {scenario}\n")
+        log.info(f"\n[STEP 6/7] COMPLETE — scenario: {scenario}\n")
 
         return True
 
     except Exception as e:
-        print(f"\nERROR in step6 — {scenario}: {str(e)}")
+        log.info(f"\nERROR in step6 — {scenario}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

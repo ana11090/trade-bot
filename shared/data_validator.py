@@ -7,6 +7,10 @@ import re
 import pandas as pd
 from datetime import datetime, timedelta
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # WHY: Hardcoded magic numbers scattered through validation logic make it hard
 #      to tune sensitivity without hunting for every occurrence.
 # CHANGED: April 2026 — centralized validation thresholds
@@ -242,64 +246,64 @@ def validate_all_candles(data_dir):
     Prints a report and returns list of validation results.
     """
     if not os.path.exists(data_dir):
-        print(f"ERROR: Data directory not found: {data_dir}")
+        log.error(f"Data directory not found: {data_dir}")
         return []
 
     csv_files = [f for f in os.listdir(data_dir) if f.endswith(".csv") and not f.startswith("_")]
 
     if not csv_files:
-        print(f"No CSV files found in {data_dir}")
+        log.info(f"No CSV files found in {data_dir}")
         return []
 
     results = []
 
     for csv_file in sorted(csv_files):
         csv_path = os.path.join(data_dir, csv_file)
-        print(f"\nValidating: {csv_file}")
-        print("-" * 70)
+        log.info(f"\nValidating: {csv_file}")
+        log.info("-" * 70)
 
         result = validate_candle_file(csv_path)
         results.append(result)
 
-        print(f"  Rows:        {result['rows']:,}")
+        log.info(f"  Rows:        {result['rows']:,}")
         if result['date_range']:
-            print(f"  Date range:  {result['date_range'][0]} to {result['date_range'][1]}")
+            log.info(f"  Date range:  {result['date_range'][0]} to {result['date_range'][1]}")
         if result['price_range']:
-            print(f"  Price range: ${result['price_range'][0]:,.2f} - ${result['price_range'][1]:,.2f}")
+            log.info(f"  Price range: ${result['price_range'][0]:,.2f} - ${result['price_range'][1]:,.2f}")
 
         if result['price_ok']:
-            print(f"  Price check: OK")
+            log.info(f"  Price check: OK")
         else:
-            print(f"  Price check: FAILED")
+            log.info(f"  Price check: FAILED")
 
         if result['issues']:
-            print(f"  Issues:")
+            log.info(f"  Issues:")
             for issue in result['issues']:
-                print(f"    - {issue}")
+                log.info(f"    - {issue}")
         else:
-            print(f"  Issues:      None")
+            log.info(f"  Issues:      None")
 
         if result['gaps']:
-            print(f"  Large gaps (first 3):")
+            log.info(f"  Large gaps (first 3):")
             for gap in result['gaps'][:3]:
-                print(f"    {gap[0]} -> {gap[1]} (gap: {gap[2]})")
+                log.info(f"    {gap[0]} -> {gap[1]} (gap: {gap[2]})")
 
     # Summary
-    print("\n" + "=" * 70)
-    print("VALIDATION SUMMARY")
-    print("=" * 70)
+    log.info("\n" + "=" * 70)
+    log.info("VALIDATION SUMMARY")
+    log.info("=" * 70)
     total_files = len(results)
     files_with_issues = sum(1 for r in results if r['issues'])
     files_price_ok = sum(1 for r in results if r['price_ok'])
 
-    print(f"  Total files validated: {total_files}")
-    print(f"  Files with issues:     {files_with_issues}")
-    print(f"  Files with valid prices: {files_price_ok}")
+    log.info(f"  Total files validated: {total_files}")
+    log.info(f"  Files with issues:     {files_with_issues}")
+    log.info(f"  Files with valid prices: {files_price_ok}")
 
     if files_with_issues == 0:
-        print("\n  All files passed validation!")
+        log.info("\n  All files passed validation!")
     else:
-        print(f"\n  {files_with_issues} files have issues that need attention")
+        log.info(f"\n  {files_with_issues} files have issues that need attention")
 
     return results
 

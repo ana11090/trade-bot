@@ -26,6 +26,15 @@ RESULT_PATH = os.path.join(OUTPUT_DIR, 'discovery_scratch.json')
 
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..')))
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
+# Score formula convention (April 2026):
+#   score = win_rate * sqrt(coverage) * max(1.0 + log1p(avg_pips) / log1p(100), 0.1)
+# The log1p pip factor maps pip_target to bounded ~[1.0, 2.5] regardless
+# of strategy type (scalping vs swing). See audit MED #48 + Phase 19a Fix 6.
+
 
 def run_scratch_discovery(
     candles_path=None,
@@ -123,7 +132,7 @@ def run_scratch_discovery(
                 })
 
             except Exception as e:
-                print(f"[WARNING] Discovery failed for {tf}: {e}")
+                log.warning(f"[WARNING] Discovery failed for {tf}: {e}")
                 comparison_results.append({
                     'timeframe': tf,
                     'error': str(e),
@@ -264,23 +273,23 @@ def run_scratch_discovery(
                         best_result_overall = exit_result
 
             except Exception as e:
-                print(f"[MULTI-EXIT] SL={test_sl}/TP={test_tp} failed: {e}")
+                log.info(f"[MULTI-EXIT] SL={test_sl}/TP={test_tp} failed: {e}")
                 continue
 
         if best_result_overall:
             best_result_overall['multi_exit_comparison'] = all_exit_summaries
             best_result_overall['multi_exit_tested'] = len(exit_combos)
 
-            print(f"\n[MULTI-EXIT] Tested {len(exit_combos)} SL/TP combinations:")
+            log.info(f"\n[MULTI-EXIT] Tested {len(exit_combos)} SL/TP combinations:")
             for s in sorted(all_exit_summaries, key=lambda x: x['score'], reverse=True):
                 marker = " * BEST" if s['score'] == best_score_overall else ""
-                print(f"  SL={s['sl']}/TP={s['tp']} (R:R {s['rr']}) -> "
-                      f"{s['rules_found']} rules, best WR={s['best_wr']:.1%}, "
-                      f"best pips={s['best_pips']:.0f}{marker}")
+                log.info(f"  SL={s['sl']}/TP={s['tp']} (R:R {s['rr']}) -> "
+                         f"{s['rules_found']} rules, best WR={s['best_wr']:.1%}, "
+                         f"best pips={s['best_pips']:.0f}{marker}")
 
             return best_result_overall
         else:
-            print("[MULTI-EXIT] No exit combo produced viable rules. Falling through to normal discovery.")
+            log.info("[MULTI-EXIT] No exit combo produced viable rules. Falling through to normal discovery.")
 
     # ── Step 1: Label candles ─────────────────────────────────────────────────
     _cb(1, "Step 1/6: Labeling candles (WIN/LOSS)...")
@@ -301,9 +310,9 @@ def run_scratch_discovery(
 
         n_candles     = len(labels_df)
         win_rate_base = labels_df['label'].mean()
-        print(f"[DEBUG] Labeling done: {n_candles} rows, base WR: {win_rate_base:.1%}")
+        log.info(f"[DEBUG] Labeling done: {n_candles} rows, base WR: {win_rate_base:.1%}")
     except Exception as e:
-        print(f"[DEBUG] FAILED at labeling: {e}")
+        log.info(f"[DEBUG] FAILED at labeling: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -316,7 +325,7 @@ def run_scratch_discovery(
 
     try:
         candles = pd.read_csv(candles_path, encoding='utf-8-sig')
-        print(f"[DEBUG] CSV columns: {list(candles.columns)}")
+        log.info(f"[DEBUG] CSV columns: {list(candles.columns)}")
 
         # Auto-detect timestamp column — don't assume the name
         ts_col = None
@@ -329,14 +338,14 @@ def run_scratch_discovery(
             # Fallback: use first column
             ts_col = candles.columns[0]
 
-        print(f"[DEBUG] Timestamp column detected: '{ts_col}'")
+        log.info(f"[DEBUG] Timestamp column detected: '{ts_col}'")
 
         candles['timestamp'] = pd.to_datetime(candles[ts_col], errors='coerce')
         candles = candles.dropna(subset=['timestamp'])
         candles['timestamp'] = normalize_timestamp(candles['timestamp'])
-        print(f"[DEBUG] Timestamp normalized, {len(candles)} valid rows")
+        log.info(f"[DEBUG] Timestamp normalized, {len(candles)} valid rows")
     except Exception as e:
-        print(f"[DEBUG] FAILED at CSV loading: {e}")
+        log.info(f"[DEBUG] FAILED at CSV loading: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -359,7 +368,7 @@ def run_scratch_discovery(
                 header = fh.readline().strip()
 
             cols = [c.strip().strip('"').strip("'") for c in header.split(',')]
-            print(f"  [P4] {tf} ({pattern}): columns = {cols[:6]}")
+            log.info(f"  [P4] {tf} ({pattern}): columns = {cols[:6]}")
 
             if 'timestamp' not in cols:
                 # Find which column is the time column
@@ -371,7 +380,7 @@ def run_scratch_discovery(
                 if old_name is None:
                     old_name = cols[0]  # assume first column
 
-                print(f"  [P4] {tf}: renaming '{old_name}' → 'timestamp'")
+                log.info(f"  [P4] {tf}: renaming '{old_name}' → 'timestamp'")
 
                 # WHY: Old code used str.replace(old_name, 'timestamp', 1) on the
                 #      raw header string — a substring match that could corrupt
@@ -409,16 +418,16 @@ def run_scratch_discovery(
                     os.unlink(tmp_path)
                     raise
 
-                print(f"  [P4] {tf}: DONE — header is now: {new_header.strip()[:80]}")
+                log.info(f"  [P4] {tf}: DONE — header is now: {new_header.strip()[:80]}")
 
                 # Also delete any parquet cache so it gets rebuilt with new column name
                 for cache_file in os.listdir(data_dir):
                     if cache_file.startswith(f'.cache_{tf}') and cache_file.endswith('.parquet'):
                         cache_path = os.path.join(data_dir, cache_file)
                         os.remove(cache_path)
-                        print(f"  [P4] Deleted stale cache: {cache_file}")
+                        log.info(f"  [P4] Deleted stale cache: {cache_file}")
             else:
-                print(f"  [P4] {tf}: already has 'timestamp' ✓")
+                log.info(f"  [P4] {tf}: already has 'timestamp' ✓")
 
             break  # found this TF's CSV, next TF
 
@@ -443,9 +452,9 @@ def run_scratch_discovery(
             data_dir, candles['timestamp'],
             required_indicators=_ALL_TF_INDICATORS,
         )
-        print(f"[DEBUG] Indicators built: {indicators_df.shape}")
+        log.info(f"[DEBUG] Indicators built: {indicators_df.shape}")
     except Exception as e:
-        print(f"[DEBUG] FAILED at build_multi_tf_indicators: {e}")
+        log.info(f"[DEBUG] FAILED at build_multi_tf_indicators: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -491,8 +500,33 @@ def run_scratch_discovery(
                  'hold_candles', 'exit_reason', 'hour_of_day', 'open_time'}
     feature_cols = [c for c in merged.columns if c not in meta_cols]
 
-    # Drop columns >90% NaN
-    valid_cols = [c for c in feature_cols if merged[c].notna().mean() > 0.1]
+    # Filter out columns that are >90% NaN (not computable for this dataset)
+    # WHY: Old filter only checked for NaN density. Phase 3's ffill warmup
+    #      handling converted warmup-period NaN to the first valid value,
+    #      so columns that SHOULD be mostly NaN are now mostly constant.
+    #      Constant columns are noise for XGBoost — the tree can't split
+    #      on them usefully. Drop columns with fewer than 5 distinct
+    #      values across the dataset (empirical rule-of-thumb).
+    # CHANGED: April 2026 — drop constant-after-ffill columns (audit MED #44)
+    valid_cols = []
+    for c in feature_cols:
+        col = merged[c]
+        if col.notna().mean() <= 0.1:
+            continue  # too sparse
+        # Count distinct non-NaN values; constants have 1, near-constants
+        # (e.g. binary flags with tiny variance) are still OK if > 1
+        n_unique = col.dropna().nunique()
+        if n_unique < 5:
+            # Only drop if the column has fewer than 5 distinct values
+            # overall. Binary flags (0/1) legitimately have n_unique=2
+            # and are useful, so don't drop those.
+            if n_unique <= 1:
+                continue  # true constant — useless
+            # 2-4 distinct values: keep binary flags, drop near-constants
+            # that look like "ffill of warmup noise"
+            if col.std() < 1e-10:
+                continue
+        valid_cols.append(c)
 
     X    = merged[valid_cols].fillna(0)
     y    = merged['label'].values
@@ -547,7 +581,14 @@ def run_scratch_discovery(
     try:
         from xgboost import XGBClassifier
     except ImportError:
-        raise ImportError("XGBoost not installed. Run: pip install xgboost")
+        # WHY: Point users at requirements.txt for centralized version
+        #      pinning. Keeps dependency versions consistent across the
+        #      project instead of drifting per-error-message.
+        # CHANGED: April 2026 — unified install hint (Phase 19c)
+        raise ImportError(
+            "XGBoost not installed. Run: pip install -r requirements.txt "
+            "(or: pip install xgboost)"
+        )
 
     # ── Steps 5-6: Discovery — mode determines the search strategy ────────────
     # WHY: Quick uses greedy search (fast, may miss combos). Deep tests all combos
@@ -728,7 +769,7 @@ def _discover_quick(X, y, pips, merged, valid_cols,
         enhancements = {}
     active = [k for k, v in enhancements.items() if v]
     if active:
-        print(f"[DISCOVERY quick] Enhancements enabled: {', '.join(active)}")
+        log.info(f"[DISCOVERY quick] Enhancements enabled: {', '.join(active)}")
     # Enhancement implementations added by Level 1-4 prompts
 
     def _cb(step, msg):
@@ -793,6 +834,7 @@ def _discover_quick(X, y, pips, merged, valid_cols,
             max_rules=10,
             min_coverage=max(min_coverage // 4, 5),   # smaller threshold for test set
             train_X=X_top_train, train_y=y_train,     # for overfit gap reporting
+            min_win_rate=min_win_rate,   # CHANGED: April 2026 — respect caller's floor (audit MED #50)
         )
         all_rules.extend(rules)
 
@@ -824,12 +866,18 @@ def _discover_quick(X, y, pips, merged, valid_cols,
             ))
 
         all_rules.extend(grid_rules)
-        print(f"[GRID] Added {len(grid_rules)} rules from grid threshold search")
+        log.info(f"[GRID] Added {len(grid_rules)} rules from grid threshold search")
 
     unique = _deduplicate(all_rules)
     quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    # WHY: Old factor (1 + avg_pips/200) meant scoring depended on
+    #      strategy type — scalping rules were penalized and swing
+    #      rules got 6× multipliers. log1p normalization maps the
+    #      pip effect to ~[1.0, 2.5] bounded regardless of strategy
+    #      type, so rule ranking is comparable across scalping/swing.
+    # CHANGED: April 2026 — bounded pip factor (audit MED #48)
     for r in quality:
-        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1.0 + np.log1p(max(0, r['avg_pips'])) / np.log1p(100), 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
     # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
@@ -850,9 +898,9 @@ def _discover_quick(X, y, pips, merged, valid_cols,
         quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
         wf_scored = [r for r in quality if 'wf_score' in r]
         if wf_scored:
-            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
-                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
-                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+            log.info(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                     f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                     f"across {wf_scored[0].get('wf_windows', 0)} windows")
 
     model_metrics = {
         'train_accuracy': round(train_acc, 4),
@@ -898,7 +946,7 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         enhancements = {}
     active = [k for k, v in enhancements.items() if v]
     if active:
-        print(f"[DISCOVERY deep] Enhancements enabled: {', '.join(active)}")
+        log.info(f"[DISCOVERY deep] Enhancements enabled: {', '.join(active)}")
     # Enhancement implementations added by Level 1-4 prompts
 
     from xgboost import XGBClassifier
@@ -991,7 +1039,8 @@ def _discover_deep(X, y, pips, merged, valid_cols,
             tree.fit(X_combo_train, y_train)
             rules = _extract_rules(tree, feat_names, X_combo_test, y_test,
                                    pips_test, merged_test,
-                                   max_rules=2, min_coverage=min_coverage)
+                                   max_rules=2, min_coverage=min_coverage,
+                                   min_win_rate=min_win_rate)  # CHANGED: April 2026 — audit MED #50
             all_rules.extend(rules)
         except Exception:
             continue
@@ -1018,15 +1067,21 @@ def _discover_deep(X, y, pips, merged, valid_cols,
             ))
 
         all_rules.extend(grid_rules)
-        print(f"[GRID] Added {len(grid_rules)} rules from grid search")
+        log.info(f"[GRID] Added {len(grid_rules)} rules from grid search")
 
     # ── Phase 4: Score and deduplicate ────────────────────────────────────
     _cb(n_runs + 2, total_steps, f"[Deep] Scoring {len(all_rules)} candidate rules...")
 
     unique = _deduplicate(all_rules)
     quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    # WHY: Old factor (1 + avg_pips/200) meant scoring depended on
+    #      strategy type — scalping rules were penalized and swing
+    #      rules got 6× multipliers. log1p normalization maps the
+    #      pip effect to ~[1.0, 2.5] bounded regardless of strategy
+    #      type, so rule ranking is comparable across scalping/swing.
+    # CHANGED: April 2026 — bounded pip factor (audit MED #48)
     for r in quality:
-        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1.0 + np.log1p(max(0, r['avg_pips'])) / np.log1p(100), 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
     # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
@@ -1045,9 +1100,9 @@ def _discover_deep(X, y, pips, merged, valid_cols,
         quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
         wf_scored = [r for r in quality if 'wf_score' in r]
         if wf_scored:
-            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
-                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
-                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+            log.info(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                     f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                     f"across {wf_scored[0].get('wf_windows', 0)} windows")
 
     test_acc = model.score(X_test, y_test) if model else 0
     train_acc = model.score(X_train, y_train) if model else 0
@@ -1100,7 +1155,7 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
         enhancements = {}
     active = [k for k, v in enhancements.items() if v]
     if active:
-        print(f"[DISCOVERY exhaustive] Enhancements enabled: {', '.join(active)}")
+        log.info(f"[DISCOVERY exhaustive] Enhancements enabled: {', '.join(active)}")
     # Enhancement implementations added by Level 1-4 prompts
 
     from sklearn.tree import DecisionTreeClassifier
@@ -1165,10 +1220,12 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
             )
             tree.fit(X_combo_train, y_train)
             rules = _extract_rules(tree, feat_names, X_combo_test, y_test, pips_test, merged_test,
-                                   max_rules=1, min_coverage=min_coverage)
+                                   max_rules=1, min_coverage=min_coverage,
+                                   min_win_rate=min_win_rate)  # CHANGED: April 2026 — audit MED #50
             if rules and rules[0]['prediction'] == 'WIN':
                 r = rules[0]
-                return r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1), r
+                # CHANGED: April 2026 — bounded pip factor (audit MED #48)
+                return r['win_rate'] * np.sqrt(r['coverage']) * max(1.0 + np.log1p(max(0, r['avg_pips'])) / np.log1p(100), 0.1), r
             return 0.0, None
         except Exception:
             return 0.0, None
@@ -1280,7 +1337,7 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
                 ))
 
         all_good_rules.extend(grid_rules)
-        print(f"[GRID] Added {len(grid_rules)} rules from grid search")
+        log.info(f"[GRID] Added {len(grid_rules)} rules from grid search")
 
     # ── Phase 3: Final scoring and deduplication ──────────────────────────
     _cb(n_generations + 2, total_steps,
@@ -1288,8 +1345,14 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
 
     unique = _deduplicate(all_good_rules)
     quality = [r for r in unique if r['win_rate'] >= min_win_rate and r['prediction'] == 'WIN']
+    # WHY: Old factor (1 + avg_pips/200) meant scoring depended on
+    #      strategy type — scalping rules were penalized and swing
+    #      rules got 6× multipliers. log1p normalization maps the
+    #      pip effect to ~[1.0, 2.5] bounded regardless of strategy
+    #      type, so rule ranking is comparable across scalping/swing.
+    # CHANGED: April 2026 — bounded pip factor (audit MED #48)
     for r in quality:
-        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1 + r['avg_pips'] / 200, 0.1)
+        r['score'] = r['win_rate'] * np.sqrt(r['coverage']) * max(1.0 + np.log1p(max(0, r['avg_pips'])) / np.log1p(100), 0.1)
     quality.sort(key=lambda r: r['score'], reverse=True)
 
     # ── Enhancement: Walk-Forward Scoring ─────────────────────────────────
@@ -1308,9 +1371,9 @@ def _discover_exhaustive(X, y, pips, merged, valid_cols,
         quality.sort(key=lambda r: r.get('wf_score', r.get('score', 0)), reverse=True)
         wf_scored = [r for r in quality if 'wf_score' in r]
         if wf_scored:
-            print(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
-                  f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
-                  f"across {wf_scored[0].get('wf_windows', 0)} windows")
+            log.info(f"[WF SCORE] {len(wf_scored)} rules re-scored. "
+                     f"Best avg WR: {wf_scored[0].get('wf_avg_wr', 0):.1%} "
+                     f"across {wf_scored[0].get('wf_windows', 0)} windows")
 
     model_metrics = {
         'train_accuracy': round(train_acc, 4),
@@ -1417,7 +1480,8 @@ def _grid_search_thresholds(X, y, pips, feat_names, min_coverage=100,
                 continue
 
             avg_p = float(pips[mask].mean())
-            score = win_rate * np.sqrt(coverage) * max(1 + avg_p / 200, 0.1)
+            # CHANGED: April 2026 — bounded pip factor (audit MED #48)
+            score = win_rate * np.sqrt(coverage) * max(1.0 + np.log1p(max(0, avg_p)) / np.log1p(100), 0.1)
 
             best_rules.append({
                 'conditions':    conditions,
@@ -1489,11 +1553,23 @@ def _generate_interaction_features(X, top_feature_names, max_interactions=500,
     """
     from itertools import combinations
 
+    # WHY: Old version treated parts[0] as the timeframe regardless of
+    #      whether it was actually a TF. For feature 'rsi_14', old code
+    #      produced tf='rsi', ind='14' — both wrong. The downstream
+    #      check "same TF + same indicator type" then misfired on
+    #      interaction candidates. Fix: recognize known TF prefixes
+    #      explicitly, otherwise the feature has no TF and the full
+    #      name is the indicator.
+    # CHANGED: April 2026 — known-TF detection (audit MED #43)
+    _KNOWN_TFS = {'M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1',
+                  'SMART', 'REGIME', 'INT'}
+
     def _parse_feature(name):
-        parts = name.split('_')
-        tf  = parts[0] if len(parts) >= 2 else ''
-        ind = parts[1] if len(parts) >= 2 else name
-        return tf, ind
+        parts = name.split('_', 1)  # split only on first underscore
+        if len(parts) >= 2 and parts[0] in _KNOWN_TFS:
+            return parts[0], parts[1]
+        # No recognized TF prefix — whole name is the indicator
+        return '', name
 
     available = [f for f in top_feature_names if f in X.columns]
     if len(available) < 4:
@@ -1570,8 +1646,8 @@ def _generate_interaction_features(X, top_feature_names, max_interactions=500,
     for fn in good_features:
         X_new[fn] = X_new[fn].fillna(0)
 
-    print(f"[INTERACTIONS] Generated {len(good_features)} interaction features "
-          f"from {len(candidates)} candidate pairs")
+    log.info(f"[INTERACTIONS] Generated {len(good_features)} interaction features "
+             f"from {len(candidates)} candidate pairs")
 
     return X_new, good_features
 
@@ -1599,12 +1675,21 @@ def _walkforward_score_rules(rules, X, y, pips, timestamps=None,
     if n_rows < 1000:
         return rules
 
-    window_size = n_rows // (n_windows // 2 + 1)
-    step_size = max(1, (n_rows - window_size) // max(n_windows - 1, 1))
+    # WHY: Old code produced windows with ~58% overlap between consecutive
+    #      windows (window_size = n_rows/5, step_size = (n_rows-window)/7).
+    #      The std across correlated samples underestimated variance, so
+    #      a rule with one catastrophic window still looked "consistent".
+    #      Fix: non-overlapping windows. Each window is n_rows/n_windows
+    #      wide with no shared samples. Consistency std is now honest.
+    # CHANGED: April 2026 — non-overlapping walk-forward (audit MED #49)
+    window_size = n_rows // n_windows
+    if window_size < 500:
+        # Fall back to minimum 500-row windows even if that means fewer of them
+        window_size = 500
 
     windows = []
     for wi in range(n_windows):
-        start = wi * step_size
+        start = wi * window_size
         end = min(start + window_size, n_rows)
         if end - start < 500:
             continue
@@ -1692,9 +1777,10 @@ def _walkforward_score_rules(rules, X, y, pips, timestamps=None,
         min_factor         = max(0.5, min_wr / max(avg_wr, 0.01))
         recent_factor      = 1.0 + max(0, (recent_wr - avg_wr)) * 2
 
+        # CHANGED: April 2026 — bounded pip factor (audit MED #48)
         wf_score = (avg_wr * np.sqrt(rule.get('coverage', 100)) *
                     consistency_factor * min_factor * recent_factor *
-                    max(1 + rule.get('avg_pips', 0) / 200, 0.1))
+                    max(1.0 + np.log1p(max(0, rule.get('avg_pips', 0))) / np.log1p(100), 0.1))
 
         rule['wf_score']     = round(wf_score, 2)
         rule['wf_avg_wr']    = round(avg_wr, 3)
@@ -1709,13 +1795,17 @@ def _walkforward_score_rules(rules, X, y, pips, timestamps=None,
 
 
 def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_coverage=100,
-                   train_X=None, train_y=None):
+                   train_X=None, train_y=None, min_win_rate=0.55):
     """Extract rules from a fitted DecisionTreeClassifier.
 
     WHY: When called with separate train_X/train_y, computes both the
          test win_rate (the honest number) and the train win_rate (overfit
          indicator). Without this, win_rate was always in-sample.
-    CHANGED: April 2026 — train vs test gap reporting
+         Default min_win_rate=0.55 preserves the old hardcoded floor for
+         backward compatibility; callers that want stricter filtering
+         can pass a higher value.
+    CHANGED: April 2026 — train vs test gap reporting + configurable
+             confidence floor (audit MED #50)
     """
     from sklearn.tree import _tree
 
@@ -1733,7 +1823,9 @@ def _extract_rules(tree, feature_names, X, y, pips, df, max_rules=10, min_covera
                 return
             win_count  = value[1] if len(value) > 1 else 0
             confidence = max(value) / total
-            if confidence < 0.55:
+            # WHY: Hardcoded 0.55 was ignoring caller's min_win_rate.
+            # CHANGED: April 2026 — use parameter (audit MED #50)
+            if confidence < min_win_rate:
                 return
             prediction = "WIN" if win_count > (total - win_count) else "LOSS"
 

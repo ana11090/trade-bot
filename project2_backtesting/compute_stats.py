@@ -8,6 +8,10 @@ import numpy as np
 import os
 from datetime import datetime
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # Paths
 INPUT_FOLDER = './outputs/'
 INSAMPLE_TRADES = os.path.join(INPUT_FOLDER, 'trade_log_insample.csv')
@@ -259,30 +263,30 @@ def calculate_dow_stats(trades_df, period_name):
 
 def main():
     """Main entry point"""
-    print("=" * 60)
-    print("PROJECT 2 - COMPUTE STATISTICS")
-    print("=" * 60)
+    log.info("=" * 60)
+    log.info("PROJECT 2 - COMPUTE STATISTICS")
+    log.info("=" * 60)
 
     # Load trade logs
-    print(f"[COMPUTE STATS] Loading trade logs...")
+    log.info(f"[COMPUTE STATS] Loading trade logs...")
 
     insample_df = pd.DataFrame()
     outsample_df = pd.DataFrame()
 
     if os.path.exists(INSAMPLE_TRADES):
         insample_df = pd.read_csv(INSAMPLE_TRADES)
-        print(f"[COMPUTE STATS] Loaded in-sample: {len(insample_df)} trades")
+        log.info(f"[COMPUTE STATS] Loaded in-sample: {len(insample_df)} trades")
 
     if os.path.exists(OUTSAMPLE_TRADES):
         outsample_df = pd.read_csv(OUTSAMPLE_TRADES)
-        print(f"[COMPUTE STATS] Loaded out-of-sample: {len(outsample_df)} trades")
+        log.info(f"[COMPUTE STATS] Loaded out-of-sample: {len(outsample_df)} trades")
 
     if len(insample_df) == 0 and len(outsample_df) == 0:
-        print("[COMPUTE STATS] ERROR: No trade logs found. Run backtest_engine.py first.")
+        log.info("[COMPUTE STATS] ERROR: No trade logs found. Run backtest_engine.py first.")
         return
 
     # Calculate summary stats
-    print(f"[COMPUTE STATS] Calculating summary statistics...")
+    log.info(f"[COMPUTE STATS] Calculating summary statistics...")
     summary_stats = []
 
     if len(insample_df) > 0:
@@ -295,10 +299,10 @@ def main():
 
     summary_df = pd.DataFrame(summary_stats)
     summary_df.to_csv(OUTPUT_STATS_SUMMARY, index=False)
-    print(f"[COMPUTE STATS] Saved: {OUTPUT_STATS_SUMMARY}")
+    log.info(f"[COMPUTE STATS] Saved: {OUTPUT_STATS_SUMMARY}")
 
     # Calculate monthly stats
-    print(f"[COMPUTE STATS] Calculating monthly statistics...")
+    log.info(f"[COMPUTE STATS] Calculating monthly statistics...")
     monthly_frames = []
 
     if len(insample_df) > 0:
@@ -310,10 +314,10 @@ def main():
     if monthly_frames:
         monthly_df = pd.concat(monthly_frames, ignore_index=True)
         monthly_df.to_csv(OUTPUT_MONTHLY_STATS, index=False)
-        print(f"[COMPUTE STATS] Saved: {OUTPUT_MONTHLY_STATS} ({len(monthly_df)} months)")
+        log.info(f"[COMPUTE STATS] Saved: {OUTPUT_MONTHLY_STATS} ({len(monthly_df)} months)")
 
     # Calculate daily stats
-    print(f"[COMPUTE STATS] Calculating daily statistics...")
+    log.info(f"[COMPUTE STATS] Calculating daily statistics...")
     daily_frames = []
 
     if len(insample_df) > 0:
@@ -325,10 +329,10 @@ def main():
     if daily_frames:
         daily_df = pd.concat(daily_frames, ignore_index=True)
         daily_df.to_csv(OUTPUT_DAILY_STATS, index=False)
-        print(f"[COMPUTE STATS] Saved: {OUTPUT_DAILY_STATS} ({len(daily_df)} days)")
+        log.info(f"[COMPUTE STATS] Saved: {OUTPUT_DAILY_STATS} ({len(daily_df)} days)")
 
     # Calculate hourly stats
-    print(f"[COMPUTE STATS] Calculating hourly statistics...")
+    log.info(f"[COMPUTE STATS] Calculating hourly statistics...")
     hourly_frames = []
 
     if len(insample_df) > 0:
@@ -340,10 +344,10 @@ def main():
     if hourly_frames:
         hourly_df = pd.concat(hourly_frames, ignore_index=True)
         hourly_df.to_csv(OUTPUT_HOURLY_STATS, index=False)
-        print(f"[COMPUTE STATS] Saved: {OUTPUT_HOURLY_STATS}")
+        log.info(f"[COMPUTE STATS] Saved: {OUTPUT_HOURLY_STATS}")
 
     # Calculate day-of-week stats
-    print(f"[COMPUTE STATS] Calculating day-of-week statistics...")
+    log.info(f"[COMPUTE STATS] Calculating day-of-week statistics...")
     dow_frames = []
 
     if len(insample_df) > 0:
@@ -355,12 +359,12 @@ def main():
     if dow_frames:
         dow_df = pd.concat(dow_frames, ignore_index=True)
         dow_df.to_csv(OUTPUT_DOW_STATS, index=False)
-        print(f"[COMPUTE STATS] Saved: {OUTPUT_DOW_STATS}")
+        log.info(f"[COMPUTE STATS] Saved: {OUTPUT_DOW_STATS}")
 
-    print("=" * 60)
-    print("STATISTICS COMPUTATION COMPLETE")
-    print("=" * 60)
-    print(f"Next step: Run build_report.py to generate HTML report")
+    log.info("=" * 60)
+    log.info("STATISTICS COMPUTATION COMPLETE")
+    log.info("=" * 60)
+    log.info(f"Next step: Run build_report.py to generate HTML report")
 
 
 if __name__ == '__main__':

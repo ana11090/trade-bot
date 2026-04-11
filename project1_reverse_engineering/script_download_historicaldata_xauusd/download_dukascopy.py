@@ -10,7 +10,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import struct
 import lzma
-from io import BytesIO
 
 OUTPUT_FOLDER = '../data/'
 

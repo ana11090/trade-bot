@@ -16,6 +16,10 @@ from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 BACKTEST_MATRIX_PATH = os.path.join(_HERE, 'outputs', 'backtest_matrix.json')
 
 # Session hour ranges (UTC)
@@ -485,7 +489,7 @@ def load_trades_from_matrix(strategy_index):
             return None
         return results[strategy_index].get('trades', None)
     except Exception as e:
-        print(f"[REFINER] Error loading trades from matrix: {e}")
+        log.info(f"[REFINER] Error loading trades from matrix: {e}")
         return None
 
 
@@ -503,7 +507,7 @@ def load_strategy_list():
                 first_line = f.readline()
                 if 'git-lfs' in first_line:
                     # LFS pointer, not real data — skip but don't crash
-                    print("[REFINER] backtest_matrix.json is a Git LFS pointer — run 'git lfs pull'")
+                    log.info("[REFINER] backtest_matrix.json is a Git LFS pointer — run 'git lfs pull'")
                 else:
                     f.seek(0)
                     data = json.load(f)
@@ -541,7 +545,7 @@ def load_strategy_list():
                         })
     except Exception as e:
         # WHY: Don't let matrix errors prevent saved rules from loading.
-        print(f"[REFINER] Error loading backtest matrix: {e}")
+        log.info(f"[REFINER] Error loading backtest matrix: {e}")
         import traceback; traceback.print_exc()
 
     # Load optimizer results if available
@@ -1395,13 +1399,13 @@ def deep_optimize(
     # WHY: User explicitly told us not to touch certain parts of the strategy.
     # CHANGED: April 2026 — surgical optimization mode
     if lock_entry:
-        print("[LOCK] Entry rule locked — skipping condition optimization")
+        log.info("[LOCK] Entry rule locked — skipping condition optimization")
     if lock_exit:
-        print("[LOCK] Exit type locked — keeping current exit strategy")
+        log.info("[LOCK] Exit type locked — keeping current exit strategy")
     if lock_sltp:
-        print("[LOCK] SL/TP locked — keeping current pip distances")
+        log.info("[LOCK] SL/TP locked — keeping current pip distances")
     if lock_filters:
-        print("[LOCK] Filters locked — skipping all filter combinations")
+        log.info("[LOCK] Filters locked — skipping all filter combinations")
 
     # ── Step 1: Preset filters ────────────────────────────────────────────────
     if not lock_filters:
@@ -1536,7 +1540,7 @@ def deep_optimize_generate(
                 timeframe = load_config().get('winning_scenario', 'H1')
             except Exception:
                 timeframe = 'H1'
-    print(f"[REFINER] deep_optimize_generate using entry TF: {timeframe}")
+    log.info(f"[REFINER] deep_optimize_generate using entry TF: {timeframe}")
 
     _stop_flag.clear()
     start_time = time.time()
@@ -1562,7 +1566,7 @@ def deep_optimize_generate(
     # Check for existing full cache
     cache_path = candles_path.replace('.csv', '_indicators.parquet')
     if os.path.exists(cache_path):
-        print(f"  [GENERATE] Loading cached indicators: {cache_path}")
+        log.info(f"  [GENERATE] Loading cached indicators: {cache_path}")
         indicators_df = pd.read_parquet(cache_path)
         if 'timestamp' in indicators_df.columns:
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
@@ -1585,7 +1589,7 @@ def deep_optimize_generate(
             pass
 
     if indicators_df is None:
-        print(f"  [GENERATE] Building indicators (partial — rules + top features)...")
+        log.info(f"  [GENERATE] Building indicators (partial — rules + top features)...")
         from project2_backtesting.strategy_backtester import (
             build_multi_tf_indicators, _extract_required_indicators
         )
@@ -1605,11 +1609,11 @@ def deep_optimize_generate(
                         required[parts[0]].append(parts[1])
 
         total = sum(len(v) for v in required.values())
-        print(f"  [GENERATE] Loading {total} indicators across {len(required)} TFs")
+        log.info(f"  [GENERATE] Loading {total} indicators across {len(required)} TFs")
 
         indicators_df = build_multi_tf_indicators(
             data_dir, candles_df['timestamp'], required_indicators=required)
-        print(f"  [GENERATE] Built {len(indicators_df.columns)} indicator columns")
+        log.info(f"  [GENERATE] Built {len(indicators_df.columns)} indicator columns")
 
     # ── Pre-compute SMART/REGIME features ONCE ────────────────────────────
     # WHY: run_backtest re-computes SMART features on every call (275 times).
@@ -1644,18 +1648,18 @@ def deep_optimize_generate(
             indicators_df = _add_volatility_regimes(indicators_df)
             indicators_df = _add_price_action(indicators_df)
             indicators_df = _add_momentum_quality(indicators_df)
-            print(f"  [GENERATE] Pre-computed SMART features: "
-                  f"{sum(1 for c in indicators_df.columns if c.startswith('SMART_'))} columns")
+            log.info(f"  [GENERATE] Pre-computed SMART features: "
+                     f"{sum(1 for c in indicators_df.columns if c.startswith('SMART_'))} columns")
         except Exception as e:
-            print(f"  [GENERATE] SMART feature error: {e}")
+            log.info(f"  [GENERATE] SMART feature error: {e}")
 
     if regime_needed and not any(c.startswith('REGIME_') for c in indicators_df.columns):
         try:
             from project1_reverse_engineering.smart_features import _add_regime_features
             indicators_df = _add_regime_features(indicators_df)
-            print(f"  [GENERATE] Pre-computed REGIME features")
+            log.info(f"  [GENERATE] Pre-computed REGIME features")
         except Exception as e:
-            print(f"  [GENERATE] REGIME feature error: {e}")
+            log.info(f"  [GENERATE] REGIME feature error: {e}")
 
     # ── Pre-trim DataFrames (skip warmup) — do this ONCE, not 275 times ──
     # WHY: run_backtest trims warmup (first 200 candles) every call.
@@ -1663,7 +1667,7 @@ def deep_optimize_generate(
     # CHANGED: April 2026 — eliminate redundant trimming
     _candles_trimmed    = candles_df.iloc[200:].reset_index(drop=True)
     _indicators_trimmed = indicators_df.iloc[200:].reset_index(drop=True)
-    print(f"  [GENERATE] Pre-trimmed to {len(_candles_trimmed)} candles (skipped 200 warmup)")
+    log.info(f"  [GENERATE] Pre-trimmed to {len(_candles_trimmed)} candles (skipped 200 warmup)")
 
     available_indicators = [c for c in indicators_df.columns if c != 'timestamp']
 
@@ -1820,12 +1824,12 @@ def deep_optimize_generate(
 
     # WHY: Log rule structure so we can diagnose KeyError crashes from terminal output
     # CHANGED: April 2026 — debug logging for conditions structure
-    print(f"[OPTIMIZER] win_rules: {len(win_rules)} rules")
+    log.info(f"[OPTIMIZER] win_rules: {len(win_rules)} rules")
     for ri, wr in enumerate(win_rules):
         conds = wr.get('conditions', 'MISSING')
         n_conds = len(conds) if isinstance(conds, list) else conds
         keys = sorted(wr.keys())
-        print(f"  Rule {ri}: conditions={n_conds}, keys={keys}")
+        log.info(f"  Rule {ri}: conditions={n_conds}, keys={keys}")
 
     # ── STEP 1: Threshold shifts ──────────────────────────────────────────────
     if not _report(1, "Step 1: Testing threshold shifts..."):
@@ -1849,7 +1853,7 @@ def deep_optimize_generate(
                     modified_rules = copy.deepcopy(win_rules)
                     # WHY: Safe access — check 'conditions' exists before bracket access
                     if 'conditions' not in modified_rules[rule_idx]:
-                        print(f"[OPTIMIZER] WARNING: Rule {rule_idx} missing 'conditions' key, skipping")
+                        log.warning(f"[OPTIMIZER] Rule {rule_idx} missing 'conditions' key, skipping")
                         continue
                     modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
                     change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
@@ -1862,7 +1866,7 @@ def deep_optimize_generate(
                         _test_rules(f"Threshold shift: {change} ({_es_name})", modified_rules, _es, change)
                     _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
             except Exception as e:
-                print(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
+                log.info(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
                 import traceback; traceback.print_exc()
                 continue
 
@@ -1905,7 +1909,7 @@ def deep_optimize_generate(
                         _test_rules(f"+ {ind_name} {operator} {threshold:.2f} ({_es_name})", modified_rules, _es, change)
             _report(2, f"Testing indicator: {ind_name}")
         except Exception as e:
-            print(f"[OPTIMIZER] Step 2 error on indicator '{ind_name}': {e}")
+            log.info(f"[OPTIMIZER] Step 2 error on indicator '{ind_name}': {e}")
             import traceback; traceback.print_exc()
             continue
 
@@ -1938,7 +1942,7 @@ def deep_optimize_generate(
                     _test_rules(f"- {feat} from R{rule_idx+1} ({_es_name})", modified_rules, _es, change)
                 _report(3, f"Remove: {feat} from R{rule_idx+1}")
             except Exception as e:
-                print(f"[OPTIMIZER] Step 3 error at rule {rule_idx}, cond {cond_idx}: {e}")
+                log.info(f"[OPTIMIZER] Step 3 error at rule {rule_idx}, cond {cond_idx}: {e}")
                 import traceback; traceback.print_exc()
                 continue
 
@@ -1958,7 +1962,7 @@ def deep_optimize_generate(
                 _test_rules(name, top_cand['rules'], exit_strat, change)
                 _report(4, f"Exit test: {exit_name} on #{rank+1}")
         except Exception as e:
-            print(f"[OPTIMIZER] Step 4 error on candidate {rank}: {e}")
+            log.info(f"[OPTIMIZER] Step 4 error on candidate {rank}: {e}")
             import traceback; traceback.print_exc()
             continue
 

@@ -880,38 +880,3 @@ def get_indicator_values_at_timestamp(indicators_df, timestamp):
         if idx == -1:
             return indicators_df.iloc[0]
         return indicators_df.iloc[idx]
-
-
-def build_feature_matrix(trades_df, indicators_df):
-    """
-    For each trade, extract all indicator values at the aligned candle timestamp.
-
-    Args:
-        trades_df: Trades with 'aligned_candle_timestamp' column
-        indicators_df: Indicators indexed by timestamp
-
-    Returns:
-        DataFrame where each row is a trade and columns are indicator values
-    """
-    print(f"  Building feature matrix for {len(trades_df)} trades...")
-
-    feature_rows = []
-
-    for idx, trade in trades_df.iterrows():
-        aligned_timestamp = trade['aligned_candle_timestamp']
-        features = get_indicator_values_at_timestamp(indicators_df, aligned_timestamp)
-        feature_rows.append(features)
-
-    feature_matrix = pd.DataFrame(feature_rows)
-    feature_matrix.reset_index(drop=True, inplace=True)
-
-    # Add trade metadata columns
-    feature_matrix['trade_id'] = trades_df['trade_id'].values if 'trade_id' in trades_df.columns else range(len(trades_df))
-    feature_matrix['open_time'] = trades_df['open_time'].values
-    feature_matrix['action'] = trades_df['action'].values
-    feature_matrix['profit'] = trades_df['profit'].values
-    feature_matrix['pips'] = trades_df['pips'].values
-
-    print(f"  Feature matrix built: {len(feature_matrix)} rows × {len(feature_matrix.columns)} columns")
-
-    return feature_matrix

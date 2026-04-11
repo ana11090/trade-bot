@@ -7,10 +7,8 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import os
 import sys
-import subprocess
 import threading
 import json
-import tempfile
 
 # Module-level variables
 _output_text   = None

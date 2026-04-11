@@ -10,6 +10,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 _SHARED_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SHARED_DIR)
 _PROP_FIRMS_DIR = os.path.join(_PROJECT_ROOT, "prop_firms")
@@ -95,7 +99,7 @@ def load_all_firms() -> dict:
             firms[profile.firm_id] = profile
         except (KeyError, json.JSONDecodeError, OSError) as _e:
             # Surface the error so the user knows the file is broken
-            print(f"[PROP_FIRMS] WARNING: failed to load {fname}: {type(_e).__name__}: {_e}")
+            log.warning(f"[PROP_FIRMS] failed to load {fname}: {type(_e).__name__}: {_e}")
     return firms
 
 
@@ -151,8 +155,8 @@ def _prepare_trades(trades_df, daily_reset_tz=None):
             df["_close_date"] = close_local.dt.date
         except Exception as e:
             # Fallback to naive UTC date extraction on error
-            print(f"[prop_firm_engine] daily_reset_tz='{daily_reset_tz}' failed: {e}")
-            print(f"[prop_firm_engine] falling back to naive UTC date extraction")
+            log.warning(f"[prop_firm_engine] daily_reset_tz='{daily_reset_tz}' failed: {e}")
+            log.warning(f"[prop_firm_engine] falling back to naive UTC date extraction")
             df["_close_date"] = df["_close_dt"].dt.date
     else:
         df["_close_date"] = df["_close_dt"].dt.date
@@ -208,15 +212,15 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
     #      so it fires once per process lifetime.
     # CHANGED: April 2026 — runtime limitation notice (audit HIGH #60)
     if not getattr(_check_phase, '_limitation_warned', False):
-        print("=" * 70)
-        print("⚠  PROP FIRM ENGINE — CLOSED BALANCE LIMITATION")
-        print("=" * 70)
-        print("  This engine tracks closed trade balance only. Daily DD")
-        print("  numbers are a LOWER bound on real firm behavior for")
-        print("  strategies with open positions at 23:00 GMT+3 or with")
-        print("  significant intraday equity volatility.")
-        print("  See _check_phase docstring for details.")
-        print("=" * 70)
+        log.warning("=" * 70)
+        log.warning("⚠  PROP FIRM ENGINE — CLOSED BALANCE LIMITATION")
+        log.warning("=" * 70)
+        log.warning("  This engine tracks closed trade balance only. Daily DD")
+        log.warning("  numbers are a LOWER bound on real firm behavior for")
+        log.warning("  strategies with open positions at 23:00 GMT+3 or with")
+        log.warning("  significant intraday equity volatility.")
+        log.warning("  See _check_phase docstring for details.")
+        log.warning("=" * 70)
         _check_phase._limitation_warned = True
 
     profit_target_pct     = phase_config.get("profit_target_pct") or 0.0

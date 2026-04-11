@@ -7,6 +7,10 @@ import pandas as pd
 import os
 from datetime import datetime
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # Paths
 INPUT_FOLDER = './outputs/'
 STATS_SUMMARY = os.path.join(INPUT_FOLDER, 'stats_summary.csv')
@@ -24,7 +28,7 @@ def generate_html_report():
     """Generate complete HTML report"""
 
     # Load all data
-    print("[BUILD REPORT] Loading statistics files...")
+    log.info("[BUILD REPORT] Loading statistics files...")
 
     summary_df = pd.read_csv(STATS_SUMMARY) if os.path.exists(STATS_SUMMARY) else pd.DataFrame()
     monthly_df = pd.read_csv(MONTHLY_STATS) if os.path.exists(MONTHLY_STATS) else pd.DataFrame()
@@ -554,24 +558,24 @@ def generate_html_report():
 
 def main():
     """Main entry point"""
-    print("=" * 60)
-    print("PROJECT 2 - BUILD HTML REPORT")
-    print("=" * 60)
+    log.info("=" * 60)
+    log.info("PROJECT 2 - BUILD HTML REPORT")
+    log.info("=" * 60)
 
-    print("[BUILD REPORT] Generating HTML report...")
+    log.info("[BUILD REPORT] Generating HTML report...")
     html = generate_html_report()
 
     # Save report
     with open(OUTPUT_REPORT, 'w', encoding='utf-8') as f:
         f.write(html)
 
-    print(f"[BUILD REPORT] Report saved: {OUTPUT_REPORT}")
-    print(f"[BUILD REPORT] File size: {os.path.getsize(OUTPUT_REPORT) / 1024:.1f} KB")
+    log.info(f"[BUILD REPORT] Report saved: {OUTPUT_REPORT}")
+    log.info(f"[BUILD REPORT] File size: {os.path.getsize(OUTPUT_REPORT) / 1024:.1f} KB")
 
-    print("=" * 60)
-    print("HTML REPORT GENERATION COMPLETE")
-    print("=" * 60)
-    print(f"Open in browser: {os.path.abspath(OUTPUT_REPORT)}")
+    log.info("=" * 60)
+    log.info("HTML REPORT GENERATION COMPLETE")
+    log.info("=" * 60)
+    log.info(f"Open in browser: {os.path.abspath(OUTPUT_REPORT)}")
 
 
 if __name__ == '__main__':

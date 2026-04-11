@@ -17,6 +17,10 @@ reaches `daily_dd_safety_pct` % of the firm's daily DD limit — protecting the 
 from dataclasses import dataclass, field
 from typing import Optional
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 
 # ── Data classes ───────────────────────────────────────────────────────────────
 
@@ -856,7 +860,6 @@ def simulate_challenge(
     dd_reset_tz = firm.config.get("dd_reset_timezone", "UTC")
     if dd_reset_tz != "UTC":
         try:
-            import pytz
             tz_map = {
                 'CET': 'Europe/Berlin',
                 'CT': 'US/Central',
@@ -876,9 +879,9 @@ def simulate_challenge(
     df, calculated_lot_size = _rescale_trades(
         df, account_size, risk_per_trade_pct, default_sl_pips, pip_value_per_lot
     )
-    print(f"[SIMULATOR] Lot size: {calculated_lot_size:.2f} lots "
-          f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips, "
-          f"daily DD safety: {daily_dd_safety_pct}%)")
+    log.info(f"[SIMULATOR] Lot size: {calculated_lot_size:.2f} lots "
+             f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips, "
+             f"daily DD safety: {daily_dd_safety_pct}%)")
 
     # Build daily_trades: date → sorted list of individual trade profits
     daily_trades: dict = {}
@@ -915,12 +918,12 @@ def simulate_challenge(
     total       = len(start_dates)
     all_results = []
 
-    print(f"[SIMULATOR] {firm.firm_name} — {challenge['challenge_name']} "
-          f"({account_size:,}) | {mode} | {total} windows")
+    log.info(f"[SIMULATOR] {firm.firm_name} — {challenge['challenge_name']} "
+             f"({account_size:,}) | {mode} | {total} windows")
 
     for idx, start_date in enumerate(start_dates):
         if (idx + 1) % 50 == 0 or idx == total - 1:
-            print(f"[SIMULATOR] Running simulation {idx+1}/{total}...")
+            log.info(f"[SIMULATOR] Running simulation {idx+1}/{total}...")
 
         r = _single_sim(
             trading_dates, daily_trades, start_date, date_to_idx,
@@ -930,7 +933,7 @@ def simulate_challenge(
         )
         all_results.append(r)
 
-    print(f"[SIMULATOR] Done — {sum(1 for r in all_results if r.eval_outcome == 'PASS')}/{total} passed")
+    log.info(f"[SIMULATOR] Done — {sum(1 for r in all_results if r.eval_outcome == 'PASS')}/{total} passed")
 
     return _aggregate(all_results, firm, challenge, account_size, mode,
                       risk_per_trade_pct, default_sl_pips,

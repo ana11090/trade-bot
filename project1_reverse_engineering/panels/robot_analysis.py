@@ -4,7 +4,6 @@ Shows all 20 rules, profile, clusters, regimes, and improvement suggestions
 """
 
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
 import os
 import sys
 import json
@@ -15,7 +14,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
 
 import state
-from helpers import make_copyable
 
 # Design tokens
 BG = "#f0f2f5"

@@ -19,7 +19,6 @@ import json
 import shutil
 import joblib
 
-import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.tree import DecisionTreeClassifier
@@ -288,7 +287,11 @@ def run_xgboost_discovery(
     try:
         from xgboost import XGBClassifier
     except ImportError:
-        raise ImportError("xgboost not installed. Run: pip install xgboost")
+        # CHANGED: April 2026 — unified install hint (Phase 19c)
+        raise ImportError(
+            "xgboost not installed. Run: pip install -r requirements.txt "
+            "(or: pip install xgboost)"
+        )
 
     cb = progress_callback
     os.makedirs(OUTPUT_DIR, exist_ok=True)

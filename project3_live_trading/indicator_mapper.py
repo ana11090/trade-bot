@@ -234,11 +234,16 @@ INDICATOR_PATTERNS = [
     (r"^ema_(\d+)_distance$", {
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        # WHY: Old code used iClose(tf, 0) = current forming bar. Python
+        #      training reads from candle_idx - 1 (last CLOSED candle,
+        #      see step1_align_price.py Phase 3 fix). MT5 must use
+        #      iClose(tf, 1) to match. Same for iHigh/iLow shifts.
+        # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         "mt5_buffer_read": (
             "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0); "
             "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
             "else { double _ema_val_{tf}_{p} = _tmp_buf; "
-            "double _close_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _close_{tf} = iClose(NULL,{mt5_tf},1); "
             "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -273,10 +278,15 @@ INDICATOR_PATTERNS = [
     (r"^distance_to_swing_low$", {
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
+        # WHY: iLowest starts at shift 0 meaning "from the current
+        #      forming bar back 20 bars". Must start at shift 1 to
+        #      only look at closed bars. iClose must also use shift 1
+        #      to match Python training. See Fix 1A for full reasoning.
+        # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         "mt5_buffer_read": (
-            "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
+            "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,1); "
             "double _sw_low_{tf} = iLow(NULL,{mt5_tf},_sw_low_idx_{tf}); "
-            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},1); "
             "double val_{var} = (_cl_sw_{tf} > 0) ? (_cl_sw_{tf} - _sw_low_{tf}) / _cl_sw_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -287,10 +297,11 @@ INDICATOR_PATTERNS = [
     (r"^distance_to_swing_high$", {
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
+        # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         "mt5_buffer_read": (
-            "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,1); "
             "double _sw_high_{tf} = iHigh(NULL,{mt5_tf},_sw_high_idx_{tf}); "
-            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},1); "
             "double val_{var} = (_cl_swh_{tf} > 0) ? (_sw_high_{tf} - _cl_swh_{tf}) / _cl_swh_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -303,13 +314,14 @@ INDICATOR_PATTERNS = [
     (r"^position_in_swing_range$", {
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
+        # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         "mt5_buffer_read": (
-            "int _psr_lo_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
-            "int _psr_hi_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "int _psr_lo_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,1); "
+            "int _psr_hi_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,1); "
             "double _psr_lo_{tf} = iLow(NULL,{mt5_tf},_psr_lo_idx_{tf}); "
             "double _psr_hi_{tf} = iHigh(NULL,{mt5_tf},_psr_hi_idx_{tf}); "
             "double _psr_range_{tf} = _psr_hi_{tf} - _psr_lo_{tf}; "
-            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},0) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
+            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},1) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
         ),
         "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / max(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1], 0.000001))",
         "custom_indicator_mt5": False,
@@ -559,8 +571,15 @@ def _mql5_sub_expr(feat_name, uid=''):
     # CHANGED: April 2026 — fix pivot_point timeframe (audit bug family #7)
     if ind == 'pivot_point':
         return ([], f'((iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
+    # Pivot-point distance (current close − pivot)
+    # WHY: Old expression mixed shift 0 (current forming bar) for the
+    #      close with shift 1 (last closed) for the pivot components.
+    #      Now uses shift 1 everywhere — current close is the last
+    #      closed bar's close, pivot is computed from the same bar.
+    #      Matches Python's candle_idx-1 training convention.
+    # CHANGED: April 2026 — consistent shift-1 everywhere (audit HIGH #29)
     if ind == 'pivot_point_distance':
-        return ([], f'(iClose(NULL,{mt5_tf},0)-(iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
+        return ([], f'(iClose(NULL,{mt5_tf},1)-(iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
     # ROC (rate of change)
     if re.match(r'^roc_\d+$', ind):
         # WHY: ROC is defined as percent change × 100. Old expr divided but
@@ -1112,7 +1131,9 @@ def _generate_smart_mql(feature_name, formula, platform):
             else:
                 expr = '0.0  # TODO accel'
         elif ftype == 'time_range':
-            import datetime as _dt
+            # WHY: Old code had `import datetime as _dt` but the expr below
+            #      uses __import__('datetime') instead — _dt was dead.
+            # CHANGED: April 2026 — remove dead local import (Phase 19b)
             lo, hi = formula['lo'], formula['hi']
             expr = f"(1.0 if {lo} <= __import__('datetime').datetime.utcnow().hour <= {hi} else 0.0)"
         elif ftype == 'time_since':

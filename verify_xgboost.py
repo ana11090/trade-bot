@@ -107,7 +107,8 @@ try:
     major = int(ver.split(".")[0])
     check("xgboost >= 2.0 (no use_label_encoder)", major >= 2)
 except ImportError:
-    check("xgboost installed", False, "pip install xgboost")
+    # CHANGED: April 2026 — unified install hint (Phase 19c)
+    check("xgboost installed", False, "pip install -r requirements.txt (or: pip install xgboost)")
     check("xgboost >= 2.0", False)
 
 print()

@@ -15,6 +15,10 @@ import re
 OUTPUT_FOLDER = './outputs/'
 SCENARIOS = ['M5', 'M15', 'H1', 'H4', 'H1_M15']
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 
 def extract_metrics_from_scenario(scenario):
     """
@@ -83,14 +87,14 @@ def compare_all_scenarios():
     """
     Compare all scenarios and generate comparison report.
     """
-    print(f"\n{'=' * 70}")
-    print(f"  COMPARING ALL SCENARIOS")
-    print(f"{'=' * 70}\n")
+    log.info(f"\n{'=' * 70}")
+    log.info(f"  COMPARING ALL SCENARIOS")
+    log.info(f"{'=' * 70}\n")
 
     all_metrics = []
 
     for scenario in SCENARIOS:
-        print(f"  Extracting metrics for {scenario}...")
+        log.info(f"  Extracting metrics for {scenario}...")
         metrics = extract_metrics_from_scenario(scenario)
         all_metrics.append(metrics)
 
@@ -115,10 +119,10 @@ def compare_all_scenarios():
     winner = winner_row['scenario'] if winner_row is not None and winner_row['completed'] else None
 
     # Print comparison table
-    print(f"\n  COMPARISON TABLE:")
-    print(f"  {'-' * 68}")
-    print(f"  {'Scenario':12s} {'Accuracy':>10s} {'Match Rate':>12s} {'Rules':>8s} {'Score':>10s} {'Status':>10s}")
-    print(f"  {'-' * 68}")
+    log.info(f"\n  COMPARISON TABLE:")
+    log.info(f"  {'-' * 68}")
+    log.info(f"  {'Scenario':12s} {'Accuracy':>10s} {'Match Rate':>12s} {'Rules':>8s} {'Score':>10s} {'Status':>10s}")
+    log.info(f"  {'-' * 68}")
 
     for _, row in comparison_df.iterrows():
         scenario = row['scenario']
@@ -130,9 +134,9 @@ def compare_all_scenarios():
 
         winner_mark = " ★" if scenario == winner else ""
 
-        print(f"  {scenario:12s} {accuracy:>10s} {match_rate:>12s} {rules:>8d} {score:>10s} {status:>10s}{winner_mark}")
+        log.info(f"  {scenario:12s} {accuracy:>10s} {match_rate:>12s} {rules:>8d} {score:>10s} {status:>10s}{winner_mark}")
 
-    print(f"  {'-' * 68}\n")
+    log.info(f"  {'-' * 68}\n")
 
     # Save comparison report
     comparison_file = os.path.join(OUTPUT_FOLDER, 'scenario_comparison.txt')
@@ -205,31 +209,31 @@ def compare_all_scenarios():
             f.write(f"  - Missing Python dependencies\n")
             f.write(f"  - Check error messages from run_all_scenarios.py\n")
 
-    print(f"  Saved comparison report: {comparison_file}\n")
+    log.info(f"  Saved comparison report: {comparison_file}\n")
 
     # Print recommendation
     if winner:
         winner_metrics = comparison_df[comparison_df['scenario'] == winner].iloc[0]
 
-        print(f"  {'=' * 68}")
-        print(f"  RECOMMENDATION:")
-        print(f"  {'=' * 68}")
-        print(f"  Best scenario: {winner}")
-        print(f"  Match rate: {winner_metrics['match_rate']:.1%}")
+        log.info(f"  {'=' * 68}")
+        log.info(f"  RECOMMENDATION:")
+        log.info(f"  {'=' * 68}")
+        log.info(f"  Best scenario: {winner}")
+        log.info(f"  Match rate: {winner_metrics['match_rate']:.1%}")
 
         if winner_metrics['match_rate'] >= 0.70:
-            print(f"  ✓ Proceed to Project 2 (Backtesting)")
+            log.info(f"  ✓ Proceed to Project 2 (Backtesting)")
         elif winner_metrics['match_rate'] >= 0.60:
-            print(f"  ⚠ Review results before proceeding")
+            log.info(f"  ⚠ Review results before proceeding")
         else:
-            print(f"  ✗ Consider improving data quality or trying different bot")
+            log.info(f"  ✗ Consider improving data quality or trying different bot")
 
-        print(f"  {'=' * 68}\n")
+        log.info(f"  {'=' * 68}\n")
 
     # Save CSV
     csv_file = os.path.join(OUTPUT_FOLDER, 'scenario_comparison.csv')
     comparison_df.to_csv(csv_file, index=False)
-    print(f"  Saved comparison CSV: {csv_file}\n")
+    log.info(f"  Saved comparison CSV: {csv_file}\n")
 
 
 def main():

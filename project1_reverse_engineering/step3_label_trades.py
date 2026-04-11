@@ -14,6 +14,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from shared import data_utils
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 
 # ============================================================
 # CONFIGURATION
@@ -35,9 +39,9 @@ def label_trades_for_scenario(scenario):
     Returns:
         True if successful, False otherwise
     """
-    print(f"\n{'=' * 60}")
-    print(f"[STEP 3/7] Labeling trades — scenario: {scenario}")
-    print(f"{'=' * 60}\n")
+    log.info(f"\n{'=' * 60}")
+    log.info(f"[STEP 3/7] Labeling trades — scenario: {scenario}")
+    log.info(f"{'=' * 60}\n")
 
     output_dir = os.path.join(OUTPUT_FOLDER, f'scenario_{scenario}')
 
@@ -46,14 +50,14 @@ def label_trades_for_scenario(scenario):
         feature_file = os.path.join(output_dir, 'feature_matrix.csv')
 
         if not os.path.exists(feature_file):
-            print(f"ERROR: Feature matrix file not found: {feature_file}")
-            print(f"FIX: Run step2_compute_indicators.py first for scenario {scenario}")
+            log.error(f" Feature matrix file not found: {feature_file}")
+            log.info(f"FIX: Run step2_compute_indicators.py first for scenario {scenario}")
             return False
 
         feature_matrix = pd.read_csv(feature_file)
         feature_matrix['open_time'] = pd.to_datetime(feature_matrix['open_time'])
 
-        print(f"  Loaded feature matrix: {len(feature_matrix)} trades × {len(feature_matrix.columns)} columns")
+        log.info(f"  Loaded feature matrix: {len(feature_matrix)} trades × {len(feature_matrix.columns)} columns")
 
         # PRIMARY LABEL — Win/Loss (outcome)
         # WHY: Old code used profit > 0 which is broker-dependent — some
@@ -81,8 +85,8 @@ def label_trades_for_scenario(scenario):
         loss_count = len(feature_matrix) - win_count
         win_rate = win_count / len(feature_matrix) * 100
 
-        print(f"  Label source: {label_source}")
-        print(f"  Labeled outcomes: {win_count} wins ({win_rate:.1f}%), {loss_count} losses")
+        log.info(f"  Label source: {label_source}")
+        log.info(f"  Labeled outcomes: {win_count} wins ({win_rate:.1f}%), {loss_count} losses")
 
         # SECONDARY LABEL — Direction
         # 1 for Buy, 0 for Sell
@@ -91,7 +95,7 @@ def label_trades_for_scenario(scenario):
         buy_count = feature_matrix['direction'].sum()
         sell_count = len(feature_matrix) - buy_count
 
-        print(f"  Labeled directions: {buy_count} buys, {sell_count} sells")
+        log.info(f"  Labeled directions: {buy_count} buys, {sell_count} sells")
 
         # TRAIN/TEST SPLIT — Chronological
         # Sort by open_time first
@@ -106,26 +110,26 @@ def label_trades_for_scenario(scenario):
         train_count = (feature_matrix['dataset'] == 'train').sum()
         test_count = (feature_matrix['dataset'] == 'test').sum()
 
-        print(f"  Train/test split: {train_count} train ({TRAIN_TEST_SPLIT_RATIO*100:.0f}%), {test_count} test")
+        log.info(f"  Train/test split: {train_count} train ({TRAIN_TEST_SPLIT_RATIO*100:.0f}%), {test_count} test")
 
         # Save labeled feature matrix
         output_file = os.path.join(output_dir, 'feature_matrix_labeled.csv')
         data_utils.save_dataframe(feature_matrix, output_file, "labeled feature matrix")
 
         # Print summary statistics
-        print(f"\n  Summary:")
-        print(f"    Total trades: {len(feature_matrix)}")
-        print(f"    Win rate: {win_rate:.1f}%")
-        print(f"    Train set: {train_count} trades")
-        print(f"    Test set: {test_count} trades")
-        print(f"    Feature count: {len([col for col in feature_matrix.columns if col not in ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']])}")
+        log.info(f"\n  Summary:")
+        log.info(f"    Total trades: {len(feature_matrix)}")
+        log.info(f"    Win rate: {win_rate:.1f}%")
+        log.info(f"    Train set: {train_count} trades")
+        log.info(f"    Test set: {test_count} trades")
+        log.info(f"    Feature count: {len([col for col in feature_matrix.columns if col not in ['trade_id', 'open_time', 'action', 'profit', 'pips', 'outcome', 'direction', 'dataset']])}")
 
-        print(f"\n[STEP 3/7] COMPLETE — scenario: {scenario}\n")
+        log.info(f"\n[STEP 3/7] COMPLETE — scenario: {scenario}\n")
 
         return True
 
     except Exception as e:
-        print(f"\nERROR in step3 — {scenario}: {str(e)}")
+        log.error(f"\n in step3 — {scenario}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

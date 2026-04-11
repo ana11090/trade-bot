@@ -25,7 +25,7 @@ import pandas as pd
 import pytz
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CALENDAR_PATH = os.path.join(_HERE, 'data', 'news_calendar.json')

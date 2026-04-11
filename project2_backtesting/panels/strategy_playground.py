@@ -6,7 +6,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os, sys, json, threading
 import pandas as pd
-import numpy as np
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)

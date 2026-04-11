@@ -8,9 +8,8 @@ Used by the Live Monitor panel to show how well the EA reproduces backtested beh
 import os
 import csv
 import json
-import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def load_ea_log(ea_log_path):

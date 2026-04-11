@@ -6,7 +6,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import os
 import json
-import state
 
 _tree     = None
 _all_rows = []

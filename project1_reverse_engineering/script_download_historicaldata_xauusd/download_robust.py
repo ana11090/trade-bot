@@ -13,7 +13,11 @@ import lzma
 import time
 
 # Output paths
-BASE_FOLDER = r'D:\traiding data\xauusd'
+# CHANGED: April 2026 — portable default (Phase 19c)
+BASE_FOLDER = os.environ.get(
+    'TICK_ROOT',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'xauusd')
+)
 TICK_FOLDER = os.path.join(BASE_FOLDER, 'ticks')
 TIMEFRAME_FOLDER = os.path.join(BASE_FOLDER, 'timeframes')
 

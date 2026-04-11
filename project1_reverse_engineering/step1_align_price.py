@@ -12,9 +12,12 @@ import pandas as pd
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, PROJECT_ROOT)
 
-from shared import data_utils
 from shared.trade_history_manager import get_active_history, get_history_trades_path
 from config_loader import load as _load_cfg
+
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 
 # ── Paths (always relative to this file) ─────────────────────────────────────
 PRICE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data')
@@ -71,14 +74,14 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     detect_candles = candles_dict[detect_tf]
 
     if detect_candles is None or len(detect_candles) == 0:
-        print(f"    No {detect_tf} candles for offset detection — using offset 0")
+        log.info(f"    No {detect_tf} candles for offset detection — using offset 0")
         return 0
 
     # Sample up to 200 trades for speed (more than enough to detect offset)
     sample_size = min(200, len(trades_df))
     sample = trades_df.sample(n=sample_size, random_state=42) if len(trades_df) > sample_size else trades_df
 
-    print(f"    Auto-detecting timezone offset (testing {len(candidate_offsets)} offsets on {len(sample)} trades)...")
+    log.info(f"    Auto-detecting timezone offset (testing {len(candidate_offsets)} offsets on {len(sample)} trades)...")
 
     best_offset = 0
     best_verified = 0
@@ -146,11 +149,11 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
 
     # Print top 5 offsets
     results.sort(key=lambda x: x[1], reverse=True)
-    print(f"    Top offsets (verified count out of {len(sample)}):")
+    log.info(f"    Top offsets (verified count out of {len(sample)}):")
     for off, ver in results[:5]:
         marker = " <- BEST" if off == best_offset else ""
         pct = ver / len(sample) * 100
-        print(f"      Offset {off:+d}h: {ver:3d} ({pct:5.1f}%){marker}")
+        log.info(f"      Offset {off:+d}h: {ver:3d} ({pct:5.1f}%){marker}")
 
     # WHY: If the best verification rate is still low, the detector didn't
     #      find a reliable match. Before the FIX 1C rewrite, every offset
@@ -159,15 +162,15 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     # CHANGED: April 2026 — warn on low verification (audit bug #14)
     best_pct = best_verified / len(sample) * 100 if len(sample) > 0 else 0
     if best_pct < 50:
-        print(f"    ⚠️  WARNING: best offset only verified {best_pct:.1f}% of trades.")
-        print(f"       The candles file and the trades file may use incompatible")
-        print(f"       time formats, have a DST mismatch, or the 'open' price in")
-        print(f"       the candles file may not match the broker execution price.")
-        print(f"       Consider manually setting the timezone offset.")
+        log.warning(f"    best offset only verified {best_pct:.1f}% of trades.")
+        log.warning(f"       The candles file and the trades file may use incompatible")
+        log.warning(f"       time formats, have a DST mismatch, or the 'open' price in")
+        log.warning(f"       the candles file may not match the broker execution price.")
+        log.warning(f"       Consider manually setting the timezone offset.")
     elif best_pct < 80:
-        print(f"    ⚠️  Moderate confidence: best offset verified {best_pct:.1f}%.")
+        log.warning(f"    Moderate confidence: best offset verified {best_pct:.1f}%.")
 
-    print(f"    -> Using offset: {best_offset:+d} hours")
+    log.info(f"    -> Using offset: {best_offset:+d} hours")
     return best_offset
 
 
@@ -191,16 +194,16 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
     Returns:
         DataFrame with aligned trades, or None if failed
     """
-    print(f"\n{'=' * 70}")
-    print(f"[STEP 1/2] ALIGNING TRADES TO CANDLES (Multi-Timeframe)")
-    print(f"{'=' * 70}\n")
+    log.info(f"\n{'=' * 70}")
+    log.info(f"[STEP 1/2] ALIGNING TRADES TO CANDLES (Multi-Timeframe)")
+    log.info(f"{'=' * 70}\n")
 
     try:
         # Get trades path
         if trades_csv_path is None:
             trades_csv_path = _get_trades_path()
 
-        print(f"  Loading trades from: {os.path.basename(trades_csv_path)}")
+        log.info(f"  Loading trades from: {os.path.basename(trades_csv_path)}")
 
         # Load trades
         trades_df = pd.read_csv(trades_csv_path)
@@ -227,7 +230,7 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         if 'trade_id' not in trades_df.columns:
             trades_df['trade_id'] = range(len(trades_df))
 
-        print(f"  Loaded {len(trades_df)} trades\n")
+        log.info(f"  Loaded {len(trades_df)} trades\n")
 
         # ── AUTO-DETECT TIMEZONE OFFSET ───────────────────────────────────
         # WHY: Broker server timezone often differs from candle CSV timezone.
@@ -252,11 +255,11 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         if _candles_for_detection and 'entry_price' in trades_df.columns:
             detected_offset = _detect_best_offset(trades_df, _candles_for_detection)
             if detected_offset != 0:
-                print(f"    Applying timezone offset {detected_offset:+d}h to trade timestamps")
+                log.info(f"    Applying timezone offset {detected_offset:+d}h to trade timestamps")
                 trades_df['open_time'] = trades_df['open_time'] + pd.Timedelta(hours=detected_offset)
                 trades_df['close_time'] = trades_df['close_time'] + pd.Timedelta(hours=detected_offset)
         else:
-            print(f"    Could not load candles for offset detection — proceeding without offset")
+            log.info(f"    Could not load candles for offset detection — proceeding without offset")
 
         # Create output directory
         if output_dir is None:
@@ -268,13 +271,17 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         verified_counts = {}
 
         for tf in ALIGN_TIMEFRAMES:
+            # WHY: Cannot use logging here — end=" " creates inline progress
+            #      (e.g., "Aligning to M5... done") which logging always breaks
+            #      with newlines. Keep print() for UX.
+            # PRESERVED: April 2026 — Phase 19d Fix 3
             print(f"  Aligning to {tf}...", end=" ", flush=True)
 
             # Load candle data
             candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{tf}.csv')
 
             if not os.path.exists(candle_file):
-                print(f"SKIPPED (file not found)")
+                log.info(f"SKIPPED (file not found)")
                 continue
 
             candles_df = pd.read_csv(candle_file)
@@ -315,7 +322,7 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             aligned = aligned[aligned['candle_idx'] >= 0]
             dropped = pre_count - len(aligned)
             if dropped > 0:
-                print(f"    Dropped {dropped} trades with no prior closed candle")
+                log.info(f"    Dropped {dropped} trades with no prior closed candle")
 
             # Add columns to main DataFrame
             # WHY: merge_asof can produce duplicate trade_id rows if two candles
@@ -362,32 +369,32 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
 
             verified_counts[tf] = verified
 
-            print(f"{aligned_count} trades aligned ({verified} verified)")
+            log.info(f"{aligned_count} trades aligned ({verified} verified)")
 
         # Print summary
-        print(f"\n  Alignment Summary:")
+        log.info(f"\n  Alignment Summary:")
         for tf in ALIGN_TIMEFRAMES:
             if tf in aligned_counts:
                 align_pct = (aligned_counts[tf] / len(trades_df) * 100) if len(trades_df) > 0 else 0
                 verify_pct = (verified_counts[tf] / aligned_counts[tf] * 100) if aligned_counts[tf] > 0 else 0
-                print(f"    {tf:4s}: {aligned_counts[tf]:4d}/{len(trades_df)} aligned ({align_pct:5.1f}%), "
+                log.info(f"    {tf:4s}: {aligned_counts[tf]:4d}/{len(trades_df)} aligned ({align_pct:5.1f}%), "
                       f"{verified_counts[tf]:4d} verified ({verify_pct:5.1f}%)")
 
                 # Warn if verification is low
                 if verify_pct < 80:
-                    print(f"         WARNING: Low verification rate - possible timezone mismatch!")
+                    log.warning(f"         Low verification rate - possible timezone mismatch!")
 
         # Save aligned trades
         output_file = os.path.join(output_dir, 'aligned_trades.csv')
         trades_df.to_csv(output_file, index=False)
-        print(f"\n  Saved: {output_file}")
+        log.info(f"\n  Saved: {output_file}")
 
-        print(f"\n[STEP 1/2] COMPLETE\n")
+        log.info(f"\n[STEP 1/2] COMPLETE\n")
 
         return trades_df
 
     except Exception as e:
-        print(f"\nERROR in step1: {str(e)}")
+        log.error(f"\n in step1: {str(e)}")
         import traceback
         traceback.print_exc()
         return None

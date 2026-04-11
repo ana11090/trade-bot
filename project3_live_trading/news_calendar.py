@@ -58,7 +58,11 @@ def download_news_calendar(
 
     # Try fetching from a free economic calendar API
     try:
-        now  = datetime.datetime.utcnow()
+        # WHY: datetime.utcnow() returns a naive datetime and is deprecated
+        #      in Python 3.12+. datetime.now(timezone.utc) returns a
+        #      timezone-aware UTC datetime which is safer.
+        # CHANGED: April 2026 — timezone-aware UTC (Phase 19c)
+        now  = datetime.datetime.now(datetime.timezone.utc)
         end  = now + datetime.timedelta(days=days_ahead)
         url  = (
             f"https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -127,7 +131,12 @@ def get_upcoming_events(hours_ahead=2, news_csv_path=None):
     if not os.path.exists(news_csv_path):
         return []
 
-    now = datetime.datetime.utcnow()
+    # WHY: datetime.utcnow() deprecated in 3.12+. Use timezone-aware UTC
+    #      throughout — both `now` and the parsed `dt` from the CSV must
+    #      be aware-or-both-naive for comparisons to work. We attach UTC
+    #      tzinfo to `dt` after parsing the ISO string.
+    # CHANGED: April 2026 — timezone-aware UTC + consistent comparison (Phase 19c)
+    now = datetime.datetime.now(datetime.timezone.utc)
     cutoff = now + datetime.timedelta(hours=hours_ahead)
     upcoming = []
 
@@ -136,6 +145,9 @@ def get_upcoming_events(hours_ahead=2, news_csv_path=None):
         for row in reader:
             try:
                 dt = datetime.datetime.fromisoformat(row['datetime_utc'].replace('Z', ''))
+                # Attach UTC tz so the comparison against `now` works
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
                 if now <= dt <= cutoff:
                     upcoming.append(row)
             except Exception:

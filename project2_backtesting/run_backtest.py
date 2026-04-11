@@ -8,11 +8,15 @@ import sys
 import subprocess
 from datetime import datetime
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 def run_step(script_name, description):
     """Run a script and handle errors"""
-    print(f"\n{'=' * 60}")
-    print(f"STEP: {description}")
-    print(f"{'=' * 60}\n")
+    log.info(f"\n{'=' * 60}")
+    log.info(f"STEP: {description}")
+    log.info(f"{'=' * 60}\n")
 
     try:
         result = subprocess.run(
@@ -21,16 +25,16 @@ def run_step(script_name, description):
             text=True,
             check=True
         )
-        print(f"\n[SUCCESS] {description} completed")
+        log.info(f"\n[SUCCESS] {description} completed")
         return True
 
     except subprocess.CalledProcessError as e:
-        print(f"\n[ERROR] {description} failed")
-        print(f"Error: {e}")
+        log.info(f"\n[ERROR] {description} failed")
+        log.info(f"Error: {e}")
         return False
 
     except FileNotFoundError:
-        print(f"\n[ERROR] Script not found: {script_name}")
+        log.info(f"\n[ERROR] Script not found: {script_name}")
         return False
 
 
@@ -38,49 +42,49 @@ def main():
     """Main entry point"""
     start_time = datetime.now()
 
-    print("=" * 60)
-    print("PROJECT 2 - RUN COMPLETE BACKTEST")
-    print("=" * 60)
-    print(f"Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    log.info("=" * 60)
+    log.info("PROJECT 2 - RUN COMPLETE BACKTEST")
+    log.info("=" * 60)
+    log.info(f"Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     # Step 1: Run backtest engine
     if not run_step('backtest_engine.py', 'Backtest Engine'):
-        print("\n[ABORT] Backtest failed. Stopping execution.")
+        log.info("\n[ABORT] Backtest failed. Stopping execution.")
         return
 
     # Step 2: Compute statistics
     if not run_step('compute_stats.py', 'Compute Statistics'):
-        print("\n[ABORT] Statistics computation failed. Stopping execution.")
+        log.info("\n[ABORT] Statistics computation failed. Stopping execution.")
         return
 
     # Step 3: Build HTML report
     if not run_step('build_report.py', 'Build HTML Report'):
-        print("\n[ABORT] Report generation failed. Stopping execution.")
+        log.info("\n[ABORT] Report generation failed. Stopping execution.")
         return
 
     # Success!
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
 
-    print("\n" + "=" * 60)
-    print("BACKTEST COMPLETE - ALL STEPS SUCCESSFUL")
-    print("=" * 60)
-    print(f"Started:  {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Finished: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Duration: {duration:.1f} seconds")
-    print("\n" + "=" * 60)
-    print("NEXT STEPS")
-    print("=" * 60)
-    print("1. Open the HTML report:")
-    print(f"   {os.path.abspath('./outputs/backtest_report.html')}")
-    print("\n2. Review the performance metrics:")
-    print("   - IN-SAMPLE vs OUT-OF-SAMPLE comparison")
-    print("   - Win rate, profit factor, drawdown")
-    print("   - Monthly and day-of-week analysis")
-    print("\n3. Decide if the strategy is viable:")
-    print("   - If OUT-OF-SAMPLE performs well: Strategy may be robust")
-    print("   - If OUT-OF-SAMPLE fails: Likely overfitting, return to Project 1")
-    print("=" * 60)
+    log.info("\n" + "=" * 60)
+    log.info("BACKTEST COMPLETE - ALL STEPS SUCCESSFUL")
+    log.info("=" * 60)
+    log.info(f"Started:  {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"Finished: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"Duration: {duration:.1f} seconds")
+    log.info("\n" + "=" * 60)
+    log.info("NEXT STEPS")
+    log.info("=" * 60)
+    log.info("1. Open the HTML report:")
+    log.info(f"   {os.path.abspath('./outputs/backtest_report.html')}")
+    log.info("\n2. Review the performance metrics:")
+    log.info("   - IN-SAMPLE vs OUT-OF-SAMPLE comparison")
+    log.info("   - Win rate, profit factor, drawdown")
+    log.info("   - Monthly and day-of-week analysis")
+    log.info("\n3. Decide if the strategy is viable:")
+    log.info("   - If OUT-OF-SAMPLE performs well: Strategy may be robust")
+    log.info("   - If OUT-OF-SAMPLE fails: Likely overfitting, return to Project 1")
+    log.info("=" * 60)
 
 
 if __name__ == '__main__':

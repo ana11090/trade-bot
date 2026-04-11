@@ -29,6 +29,10 @@ from shared.data_utils import normalize_timestamp
 from project2_backtesting.exit_strategies import get_default_exit_strategies
 from project2_backtesting.strategy_refiner import count_dd_breaches
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # Timeframes to load, in order: smallest first so merge_asof steps up cleanly
 _TIMEFRAMES = ["M5", "M15", "H1", "H4", "D1"]
 
@@ -45,7 +49,7 @@ def load_rules_from_report(report_path=None):
         report = json.load(f)
     rules = report.get('rules', [])
     entry_rules = [r for r in rules if r.get('prediction') == 'WIN']
-    print(f"Loaded {len(entry_rules)} entry rules (WIN prediction) from {len(rules)} total rules")
+    log.info(f"Loaded {len(entry_rules)} entry rules (WIN prediction) from {len(rules)} total rules")
     return entry_rules
 
 
@@ -140,7 +144,7 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
         cache_path = os.path.join(data_dir, f".cache_{tf}_indicators.parquet")
 
     if not os.path.exists(csv_path):
-        print(f"  WARNING: {csv_path} not found — skipping {tf}")
+        log.warning(f"{csv_path} not found — skipping {tf}")
         return None
 
     csv_mtime   = os.path.getmtime(csv_path)
@@ -150,7 +154,7 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     )
 
     if cache_valid:
-        print(f"  {tf}: loading from cache ({cache_path})")
+        log.info(f"  {tf}: loading from cache ({cache_path})")
         df = pd.read_parquet(cache_path)
         # Handle old caches that may have 'index' instead of 'timestamp'
         if 'timestamp' not in df.columns:
@@ -158,7 +162,7 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
                 df = df.rename(columns={'index': 'timestamp'})
             else:
                 # Cache is corrupt — delete and recompute
-                print(f"  {tf}: cache missing timestamp column — deleting and recomputing")
+                log.info(f"  {tf}: cache missing timestamp column — deleting and recomputing")
                 os.remove(cache_path)
                 cache_valid = False
         if cache_valid:
@@ -168,11 +172,11 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
 
     if needed_indicators:
         compute_groups = indicator_utils.map_rule_indicators_to_compute_groups(needed_indicators)
-        print(f"  {tf}: computing {len(needed_indicators)} indicators "
-              f"(groups: {', '.join(compute_groups)}) from {csv_path} ...")
+        log.info(f"  {tf}: computing {len(needed_indicators)} indicators "
+                 f"(groups: {', '.join(compute_groups)}) from {csv_path} ...")
     else:
         compute_groups = None
-        print(f"  {tf}: computing all indicators from {csv_path} ...")
+        log.info(f"  {tf}: computing all indicators from {csv_path} ...")
 
     candles = pd.read_csv(csv_path, encoding='utf-8-sig')
 
@@ -215,7 +219,7 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     ind = ind.dropna(subset=['timestamp']).reset_index(drop=True)
 
     ind.to_parquet(cache_path, index=False)
-    print(f"  {tf}: {len(ind.columns) - 1} indicators cached -> {cache_path}")
+    log.info(f"  {tf}: {len(ind.columns) - 1} indicators cached -> {cache_path}")
     return ind
 
 
@@ -538,7 +542,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     if 'timestamp' in candles_df.columns:
         _dedup_count = len(candles_df) - candles_df['timestamp'].nunique()
         if _dedup_count > 0:
-            print(f"  [strategy_backtester] Dropping {_dedup_count} duplicate candle timestamps")
+            log.info(f"  [strategy_backtester] Dropping {_dedup_count} duplicate candle timestamps")
             candles_df = candles_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
             if 'timestamp' in indicators_df.columns:
                 indicators_df = indicators_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
@@ -550,7 +554,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     # Ensure same length before filtering
     min_len = min(len(df), len(ind))
     if len(df) != len(ind):
-        print(f"  [run_backtest] WARNING: candles ({len(df)}) and indicators ({len(ind)}) length mismatch — trimming to {min_len}")
+        log.warning(f"  [run_backtest] candles ({len(df)}) and indicators ({len(ind)}) length mismatch — trimming to {min_len}")
         df  = df.iloc[:min_len]
         ind = ind.iloc[:min_len]
 
@@ -602,11 +606,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             ind = _add_momentum_quality(ind)
 
             smart_cols = [c for c in ind.columns if c.startswith('SMART_')]
-            print(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
+            log.info(f"  [run_backtest] Computed {len(smart_cols)} SMART features")
         except ImportError:
-            print("  WARNING: smart_features module not found — SMART conditions will not match")
+            log.warning("smart_features module not found — SMART conditions will not match")
         except Exception as e:
-            print(f"  WARNING: Error computing SMART features: {e}")
+            log.warning(f"Error computing SMART features: {e}")
 
     # Compute REGIME features if needed
     if regime_needed and not any(c.startswith('REGIME_') for c in ind.columns):
@@ -614,11 +618,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             from project1_reverse_engineering.smart_features import _add_regime_features
             ind = _add_regime_features(ind)
             regime_cols = [c for c in ind.columns if c.startswith('REGIME_')]
-            print(f"  [run_backtest] Computed {len(regime_cols)} REGIME features")
+            log.info(f"  [run_backtest] Computed {len(regime_cols)} REGIME features")
         except ImportError:
-            print("  WARNING: smart_features module not found — REGIME conditions will not match")
+            log.warning("smart_features module not found — REGIME conditions will not match")
         except Exception as e:
-            print(f"  WARNING: Failed to compute SMART features: {e}")
+            log.warning(f"Failed to compute SMART features: {e}")
 
     # ── VECTORIZED: build entry signal mask ──────────────────────────────────
     signal_mask     = pd.Series(False, index=ind.index)
@@ -810,8 +814,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             #      look better than they would be on a real broker.
             # CHANGED: April 2026 — warn instead of silently capping
             if lot_size > 100.0:
-                print(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
-                      f"check account_size / risk_pct / sl_pips settings")
+                log.warning(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
+                            f"check account_size / risk_pct / sl_pips settings")
             lot_size   = max(0.01, lot_size)
             dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
         else:
@@ -1022,7 +1026,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
             except Exception as e:
                 if ci == 0:  # log once per trade, not per candle
-                    print(f"  [fast_backtest exit error] {type(exit_strategy).__name__}: {e}")
+                    log.info(f"  [fast_backtest exit error] {type(exit_strategy).__name__}: {e}")
                 step_result = None
 
             if step_result is not None:
@@ -1060,9 +1064,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
         if abs(pips) > SANE_PIP_LIMIT:
             _skipped_count += 1
             if _skipped_count <= 5:   # log first few occurrences
-                print(f"  [SKIP] Absurd pips: {pips:.0f} "
-                      f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
-                      f"reason={exit_reason}) — likely silent exit failure")
+                log.warning(f"  [SKIP] Absurd pips: {pips:.0f} "
+                            f"(entry={entry_price:.2f}, exit={exit_price:.2f}, "
+                            f"reason={exit_reason}) — likely silent exit failure")
             continue
 
         net_pips = pips - commission_pips
@@ -1100,8 +1104,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
         occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
 
     if _skipped_count > 0:
-        print(f"  [fast_backtest] Skipped {_skipped_count} trade(s) with absurd pips "
-              f"(SANE_PIP_LIMIT={50_000}). Check exit strategy for silent failures.")
+        log.warning(f"  [fast_backtest] Skipped {_skipped_count} trade(s) with absurd pips "
+                    f"(SANE_PIP_LIMIT={50_000}). Check exit strategy for silent failures.")
 
     return trades
 
@@ -1275,16 +1279,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     progress_callback: optional callable(current, total, combo_name) for UI updates.
     Returns dict with "matrix", "rules_tested", "exits_tested", "elapsed".
     """
-    print("=" * 70)
-    print("STRATEGY BACKTESTER — Vectorized Comparison Matrix")
-    print("=" * 70)
+    log.info("=" * 70)
+    log.info("STRATEGY BACKTESTER — Vectorized Comparison Matrix")
+    log.info("=" * 70)
     start_time = time.time()
 
     # ── Load H1 candles (used for trade simulation) ──────────────────────────
     candles_path = os.path.abspath(candles_path)
     data_dir     = os.path.dirname(candles_path)
 
-    print(f"\nLoading candle data: {candles_path}")
+    log.info(f"\nLoading candle data: {candles_path}")
     candles_df = pd.read_csv(candles_path, encoding='utf-8-sig')
 
     # Auto-detect timestamp column
@@ -1300,16 +1304,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
     candles_df['timestamp'] = normalize_timestamp(candles_df['timestamp'])
     candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
-    print(f"  {len(candles_df)} candles "
-          f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
+    log.info(f"  {len(candles_df)} candles "
+             f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
 
     from shared.data_validator import check_backtest_data_quality
     dq_warnings = check_backtest_data_quality(candles_df, timeframe=timeframe)
     if dq_warnings:
-        print("\nDATA QUALITY WARNINGS:")
+        log.warning("\nDATA QUALITY WARNINGS:")
         for w in dq_warnings:
-            print(f"  [{w['severity'].upper()}] {w['message']}")
-        print()
+            log.info(f"  [{w['severity'].upper()}] {w['message']}")
+        log.info()
 
     # ── Load rules first — needed to extract required indicators ────────────
     all_rules = load_rules_from_report(report_path)
@@ -1319,19 +1323,19 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     # Extract which indicators each TF actually needs — skips the other ~575
     required_indicators = _extract_required_indicators(all_rules)
     total_needed = sum(len(v) for v in required_indicators.values())
-    print(f"\n[BACKTESTER] Required indicators per TF ({total_needed} total vs 595 full):")
+    log.info(f"\n[BACKTESTER] Required indicators per TF ({total_needed} total vs 595 full):")
     for tf, inds in required_indicators.items():
         preview = ', '.join(inds[:5]) + ('...' if len(inds) > 5 else '')
-        print(f"  {tf}: {len(inds)} indicators — {preview}")
+        log.info(f"  {tf}: {len(inds)} indicators — {preview}")
 
     # ── Build multi-timeframe indicator DataFrame ────────────────────────────
     # Each TF CSV is loaded, only the needed indicators are computed (prefixed
     # e.g. H4_adx_14), then merged onto the H1 spine via merge_asof.
     # Results are cached as parquet; separate cache files for partial vs full builds.
-    print(f"\nBuilding multi-timeframe indicators (M5 / M15 / H1 / H4 / D1)...")
+    log.info(f"\nBuilding multi-timeframe indicators (M5 / M15 / H1 / H4 / D1)...")
     indicators_df = build_multi_tf_indicators(
         data_dir, candles_df['timestamp'], required_indicators=required_indicators)
-    print(f"  Total indicator columns: {len(indicators_df.columns)}")
+    log.info(f"  Total indicator columns: {len(indicators_df.columns)}")
 
     # ── Compute SMART & REGIME features if any rules reference them ───────────────
     smart_needed = {c['feature'] for r in rules for c in r.get('conditions', [])
@@ -1340,7 +1344,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                      if c['feature'].startswith('REGIME_')}
 
     if smart_needed:
-        print(f"\n[BACKTESTER] Rules use {len(smart_needed)} SMART features — computing...")
+        log.info(f"\n[BACKTESTER] Rules use {len(smart_needed)} SMART features — computing...")
         try:
             from project1_reverse_engineering.smart_features import (
                 _add_tf_divergences, _add_indicator_dynamics,
@@ -1363,23 +1367,23 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             indicators_df = _add_momentum_quality(indicators_df)
 
             smart_cols = [c for c in indicators_df.columns if c.startswith('SMART_')]
-            print(f"  Added {len(smart_cols)} SMART features")
+            log.info(f"  Added {len(smart_cols)} SMART features")
         except ImportError:
-            print("  WARNING: smart_features module not found — SMART conditions will not match")
+            log.warning("smart_features module not found — SMART conditions will not match")
         except Exception as e:
-            print(f"  WARNING: Failed to compute SMART features: {e}")
+            log.warning(f"Failed to compute SMART features: {e}")
 
     if regime_needed:
-        print(f"\n[BACKTESTER] Rules use {len(regime_needed)} REGIME features — computing...")
+        log.info(f"\n[BACKTESTER] Rules use {len(regime_needed)} REGIME features — computing...")
         try:
             from project1_reverse_engineering.smart_features import _add_regime_features
             indicators_df = _add_regime_features(indicators_df)
             regime_cols = [c for c in indicators_df.columns if c.startswith('REGIME_')]
-            print(f"  Added {len(regime_cols)} REGIME features")
+            log.info(f"  Added {len(regime_cols)} REGIME features")
         except ImportError:
-            print("  WARNING: smart_features module not found — REGIME conditions will not match")
+            log.warning("smart_features module not found — REGIME conditions will not match")
         except Exception as e:
-            print(f"  WARNING: Failed to compute REGIME features: {e}")
+            log.warning(f"Failed to compute REGIME features: {e}")
 
     # ── Verify all rule features are available ──────────────────────────────
     needed    = {c["feature"] for r in rules for c in r.get("conditions", [])}
@@ -1398,25 +1402,25 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     regular_found = regular_features & available
     regular_missing = regular_features - available
 
-    print(f"\n[BACKTESTER] Feature availability check:")
-    print(f"  Regular indicators: {len(regular_found)}/{len(regular_features)} found"
-          + (f" — MISSING: {sorted(regular_missing)[:5]}" + ("..." if len(regular_missing) > 5 else "")
-             if regular_missing else " ✓"))
+    log.info(f"\n[BACKTESTER] Feature availability check:")
+    log.info(f"  Regular indicators: {len(regular_found)}/{len(regular_features)} found"
+             + (f" — MISSING: {sorted(regular_missing)[:5]}" + ("..." if len(regular_missing) > 5 else "")
+                if regular_missing else " ✓"))
     if smart_features:
-        print(f"  SMART features:     {len(smart_found)}/{len(smart_features)} found"
-              + (f" — MISSING: {sorted(smart_missing)[:5]}" + ("..." if len(smart_missing) > 5 else "")
-                 if smart_missing else " ✓"))
+        log.info(f"  SMART features:     {len(smart_found)}/{len(smart_features)} found"
+                 + (f" — MISSING: {sorted(smart_missing)[:5]}" + ("..." if len(smart_missing) > 5 else "")
+                    if smart_missing else " ✓"))
     if regime_features:
-        print(f"  REGIME features:    {len(regime_found)}/{len(regime_features)} found"
-              + (f" — MISSING: {sorted(regime_missing)[:5]}" + ("..." if len(regime_missing) > 5 else "")
-                 if regime_missing else " ✓"))
+        log.info(f"  REGIME features:    {len(regime_found)}/{len(regime_features)} found"
+                 + (f" — MISSING: {sorted(regime_missing)[:5]}" + ("..." if len(regime_missing) > 5 else "")
+                    if regime_missing else " ✓"))
 
     if missing:
-        print(f"  WARNING: {len(missing)} features missing — rules using them will match 0 trades")
+        log.warning(f"{len(missing)} features missing — rules using them will match 0 trades")
         if regular_missing and not smart_missing:
-            print(f"  → Regular indicators missing — check that CSV files contain OHLCV data")
+            log.info(f"  → Regular indicators missing — check that CSV files contain OHLCV data")
         elif smart_missing and not regular_missing:
-            print(f"  → SMART features missing — ensure smart_features module is available")
+            log.info(f"  → SMART features missing — ensure smart_features module is available")
 
     # ── Build rule combos ────────────────────────────────────────────────────
     rule_combos = [{"name": f"Rule {i+1}", "rules": [r], "indices": [i]}
@@ -1435,8 +1439,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         exit_strategies = get_default_exit_strategies(pip_size=pip_size)
 
     total = len(rule_combos) * len(exit_strategies)
-    print(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "
-          f"= {total} combinations  |  spread={spread_pips} pips  commission={commission_pips} pips")
+    log.info(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "
+             f"= {total} combinations  |  spread={spread_pips} pips  commission={commission_pips} pips")
 
     # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
     # WHY: run_backtest copies DataFrames on every call and re-applies date filters.
@@ -1453,7 +1457,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         mask = _c['timestamp'] <= _ed
         _c = _c[mask].reset_index(drop=True)
         _i = _i[mask].reset_index(drop=True)
-    print(f"  Pre-trimmed to {len(_c)} candles for matrix loop")
+    log.info(f"  Pre-trimmed to {len(_c)} candles for matrix loop")
 
     matrix = []
     count  = 0
@@ -1498,16 +1502,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # Fall back to old 3-parameter signature
                     progress_callback(count, total, f"{combo['name']} x {exit_strat.name}")
             elif count % 10 == 0 or count == total:
-                print(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
+                log.info(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
 
     # Sort by net total pips descending (real profitability after costs)
     matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)
 
     elapsed = time.time() - start_time
 
-    print(f"\n{'=' * 70}")
-    print(f"BACKTEST COMPLETE in {elapsed:.1f}s — {total} combinations")
-    print(f"\nTop 5 by net pips (after {spread_pips} pip spread):")
+    log.info(f"\n{'=' * 70}")
+    log.info(f"BACKTEST COMPLETE in {elapsed:.1f}s — {total} combinations")
+    log.info(f"\nTop 5 by net pips (after {spread_pips} pip spread):")
     for m in matrix[:5]:
         s = m["stats"]
         # WHY: compute_stats always stores win_rate as percent (0-100). The old
@@ -1516,11 +1520,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         # CHANGED: April 2026 — remove dead band-aid
         wr = s['win_rate']
         wr_str = f"{wr:.1f}%"
-        print(f"  {m['rule_combo']:20s} x {m['exit_name']:15s}: "
-              f"{s['total_trades']:>4d} trades, WR {wr_str:>6s}, "
-              f"Net PF {s['net_profit_factor']:>5.2f}, "
-              f"Net {s['net_total_pips']:>+8.0f} pips  (gross {s['total_pips']:>+8.0f})")
-    print("=" * 70)
+        log.info(f"  {m['rule_combo']:20s} x {m['exit_name']:15s}: "
+                 f"{s['total_trades']:>4d} trades, WR {wr_str:>6s}, "
+                 f"Net PF {s['net_profit_factor']:>5.2f}, "
+                 f"Net {s['net_total_pips']:>+8.0f} pips  (gross {s['total_pips']:>+8.0f})")
+    log.info("=" * 70)
 
     # ── Save outputs ─────────────────────────────────────────────────────────
     output_dir = os.path.join(_here, 'outputs')
@@ -1590,11 +1594,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             "slippage_pips":     slippage_pips,
             "results":           summary,
         }, f, indent=2, default=str)
-    print(f"Saved: {summary_path}")
+    log.info(f"Saved: {summary_path}")
 
     csv_path = os.path.join(output_dir, 'backtest_matrix.csv')
     pd.DataFrame(summary).to_csv(csv_path, index=False)
-    print(f"Saved: {csv_path}")
+    log.info(f"Saved: {csv_path}")
 
     return {
         "matrix":       matrix,
@@ -1620,7 +1624,7 @@ if __name__ == "__main__":
         candles_path = os.path.join(_here, '..', 'data', f'xauusd_{entry_tf}.csv')
 
     if not os.path.exists(candles_path):
-        print(f"ERROR: Candle data not found: {candles_path}")
+        log.error(f"Candle data not found: {candles_path}")
         sys.exit(1)
 
     run_comparison_matrix(candles_path, timeframe=entry_tf)

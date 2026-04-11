@@ -9,15 +9,17 @@ Full search: ~30-60 min, tests all 620 features
 """
 
 import os
-import sys
 import json
 import time
 import numpy as np
 import pandas as pd
-from collections import defaultdict
 from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 DEFAULT_FEATURE_MATRIX = os.path.join(_HERE, 'outputs', 'feature_matrix.csv')
 DEFAULT_REPORT = os.path.join(_HERE, 'outputs', 'analysis_report.json')
 DEFAULT_OUTPUT = os.path.join(_HERE, 'outputs', 'strategy_search_results.json')
@@ -114,20 +116,20 @@ def search_strategies(
     if report_path is None:
         report_path = DEFAULT_REPORT
 
-    print(f"\n{'='*70}")
-    print(f"STRATEGY SEARCH — {mode.upper()} MODE")
-    print(f"{'='*70}\n")
+    log.info(f"\n{'='*70}")
+    log.info(f"STRATEGY SEARCH — {mode.upper()} MODE")
+    log.info(f"{'='*70}\n")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 1: Load and prepare data
     # ═══════════════════════════════════════════════════════════════════════════
-    print("[1/7] Loading feature matrix...")
+    log.info("[1/7] Loading feature matrix...")
 
     if not os.path.exists(feature_matrix_path):
         raise FileNotFoundError(f"Feature matrix not found: {feature_matrix_path}")
 
     df_full = pd.read_csv(feature_matrix_path)
-    print(f"  Loaded {len(df_full)} trades")
+    log.info(f"  Loaded {len(df_full)} trades")
 
     # WHY: Old code ran the entire search (6K+ single tests, up to 19M pair
     #      tests) on the full dataset with no train/holdout split. At that
@@ -141,18 +143,18 @@ def search_strategies(
     _split_idx = int(len(df_full) * 0.7)
     df = df_full.iloc[:_split_idx].reset_index(drop=True)  # train
     df_holdout = df_full.iloc[_split_idx:].reset_index(drop=True)
-    print(f"  Split: {len(df)} train / {len(df_holdout)} holdout (70/30 chronological)")
+    log.info(f"  Split: {len(df)} train / {len(df_holdout)} holdout (70/30 chronological)")
 
     # Separate metadata from features
     all_cols = set(df.columns)
     feature_cols = [c for c in df.columns if c not in METADATA_COLS]
-    print(f"  {len(feature_cols)} feature columns")
+    log.info(f"  {len(feature_cols)} feature columns")
 
     # Apply timeframe filter
     if timeframe_filter:
         feature_cols = [c for c in feature_cols
                        if any(c.startswith(f"{tf}_") for tf in timeframe_filter)]
-        print(f"  Filtered to {len(feature_cols)} features (timeframes: {timeframe_filter})")
+        log.info(f"  Filtered to {len(feature_cols)} features (timeframes: {timeframe_filter})")
 
     # Quick mode: use only top-20 features from analysis report
     if mode == "quick" and os.path.exists(report_path):
@@ -161,7 +163,7 @@ def search_strategies(
 
         top_features = [feat for feat, _ in report.get('feature_importance', {}).get('top_20', [])]
         feature_cols = [f for f in feature_cols if f in top_features]
-        print(f"  Quick mode: using top-{len(feature_cols)} features from analysis report")
+        log.info(f"  Quick mode: using top-{len(feature_cols)} features from analysis report")
 
     # Drop features with >90% NaN (empty columns)
     valid_features = []
@@ -171,7 +173,7 @@ def search_strategies(
             valid_features.append(feat)
 
     feature_cols = valid_features
-    print(f"  {len(feature_cols)} features after removing empty columns")
+    log.info(f"  {len(feature_cols)} features after removing empty columns")
 
     if len(feature_cols) < 10:
         raise ValueError(f"Too few features remaining ({len(feature_cols)}). Run 'Full Analysis' first to populate feature_matrix.csv")
@@ -192,7 +194,7 @@ def search_strategies(
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 2: Generate thresholds
     # ═══════════════════════════════════════════════════════════════════════════
-    print(f"\n[2/7] Generating thresholds ({num_thresholds} per feature)...")
+    log.info(f"\n[2/7] Generating thresholds ({num_thresholds} per feature)...")
 
     if num_thresholds == 5:
         percentiles = [20, 35, 50, 65, 80]
@@ -210,12 +212,12 @@ def search_strategies(
             thresholds[feat] = []
 
     total_thresholds = sum(len(t) for t in thresholds.values())
-    print(f"  Generated {total_thresholds} threshold values")
+    log.info(f"  Generated {total_thresholds} threshold values")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 3: Pre-build boolean masks (CRITICAL FOR SPEED)
     # ═══════════════════════════════════════════════════════════════════════════
-    print(f"\n[3/7] Pre-building boolean masks...")
+    log.info(f"\n[3/7] Pre-building boolean masks...")
 
     masks = {}
     mask_count = 0
@@ -232,12 +234,12 @@ def search_strategies(
             masks[(feat, ">", threshold)] = gt_mask
             mask_count += 2
 
-    print(f"  Built {mask_count} boolean masks")
+    log.info(f"  Built {mask_count} boolean masks")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 4: Test single conditions
     # ═══════════════════════════════════════════════════════════════════════════
-    print(f"\n[4/7] Testing single conditions...")
+    log.info(f"\n[4/7] Testing single conditions...")
 
     singles = []
     total_singles = len(masks)
@@ -284,7 +286,7 @@ def search_strategies(
     # Sort by score descending
     singles.sort(key=lambda x: x['score'], reverse=True)
 
-    print(f"  Found {len(singles)} qualifying single conditions")
+    log.info(f"  Found {len(singles)} qualifying single conditions")
 
     # WHY: Old limits were too tight — after the avg_pips > 0 filter the
     #      qualifying pool shrinks, so a tighter cap would miss real patterns.
@@ -299,8 +301,8 @@ def search_strategies(
     pairs = []
 
     if max_conditions >= 2:
-        print(f"\n[5/7] Testing condition pairs...")
-        print(f"  Testing {len(top_singles)} × {len(top_singles)} combinations...")
+        log.info(f"\n[5/7] Testing condition pairs...")
+        log.info(f"  Testing {len(top_singles)} × {len(top_singles)} combinations...")
 
         total_pairs = len(top_singles) * (len(top_singles) - 1) // 2
         pair_count = 0
@@ -354,9 +356,9 @@ def search_strategies(
                 })
 
         pairs.sort(key=lambda x: x['score'], reverse=True)
-        print(f"  Found {len(pairs)} qualifying pairs")
+        log.info(f"  Found {len(pairs)} qualifying pairs")
     else:
-        print(f"\n[5/7] Skipping pairs (max_conditions < 2)")
+        log.info(f"\n[5/7] Skipping pairs (max_conditions < 2)")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 6: Test triples (only if max_conditions == 3 AND mode == "full")
@@ -364,7 +366,7 @@ def search_strategies(
     triples = []
 
     if max_conditions == 3 and mode == "full":
-        print(f"\n[6/7] Testing condition triples...")
+        log.info(f"\n[6/7] Testing condition triples...")
 
         top_pairs = pairs[:100]
         # WHY: Same widening rationale as pairs limit — allow more candidates.
@@ -427,14 +429,14 @@ def search_strategies(
                 })
 
         triples.sort(key=lambda x: x['score'], reverse=True)
-        print(f"  Found {len(triples)} qualifying triples")
+        log.info(f"  Found {len(triples)} qualifying triples")
     else:
-        print(f"\n[6/7] Skipping triples (max_conditions < 3 or mode != 'full')")
+        log.info(f"\n[6/7] Skipping triples (max_conditions < 3 or mode != 'full')")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STEP 7: Compile and save
     # ═══════════════════════════════════════════════════════════════════════════
-    print(f"\n[7/7] Compiling results...")
+    log.info(f"\n[7/7] Compiling results...")
 
     # Combine all strategies
     all_strategies = []
@@ -536,7 +538,7 @@ def search_strategies(
         strat['holdout_matches'] = holdout_result['matches']
         validated_strategies.append(strat)
     all_strategies = validated_strategies
-    print(f"  After holdout validation: {len(all_strategies)} strategies pass")
+    log.info(f"  After holdout validation: {len(all_strategies)} strategies pass")
 
     elapsed = time.time() - start_time
 
@@ -560,16 +562,16 @@ def search_strategies(
     with open(DEFAULT_OUTPUT, 'w', encoding='utf-8') as f:
         json.dump(output, f, indent=2)
 
-    print(f"\n  Saved {len(all_strategies)} strategies")
-    print(f"  Output: {DEFAULT_OUTPUT}")
-    print(f"  Search completed in {elapsed:.0f}s ({elapsed/60:.1f} min)")
+    log.info(f"\n  Saved {len(all_strategies)} strategies")
+    log.info(f"  Output: {DEFAULT_OUTPUT}")
+    log.info(f"  Search completed in {elapsed:.0f}s ({elapsed/60:.1f} min)")
 
     if progress_callback:
         progress_callback(100, 100, "Search complete")
 
-    print(f"\n{'='*70}")
-    print(f"SEARCH COMPLETE")
-    print(f"{'='*70}\n")
+    log.info(f"\n{'='*70}")
+    log.info(f"SEARCH COMPLETE")
+    log.info(f"{'='*70}\n")
 
     return output
 
@@ -596,7 +598,7 @@ def main():
 
     def _progress(cur, tot, msg):
         pct = int(cur / max(tot, 1) * 100)
-        print(f"  [{pct:3d}%] {msg}")
+        log.info(f"  [{pct:3d}%] {msg}")
 
     search_strategies(
         mode=args.mode,

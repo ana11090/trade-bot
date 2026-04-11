@@ -8,6 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from project2_backtesting.strategy_refiner import count_dd_breaches
 from datetime import datetime, timedelta
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # Create test trades that will trigger both safety stops and breaches
 test_trades = []
 start_date = datetime(2024, 1, 1)
@@ -61,9 +65,9 @@ test_trades.append({
 })
 
 # Run the test
-print("\n" + "="*60)
-print("Testing DD Safety Stops Tracking")
-print("="*60)
+log.info("\n" + "="*60)
+log.info("Testing DD Safety Stops Tracking")
+log.info("="*60)
 
 result = count_dd_breaches(
     test_trades,
@@ -76,33 +80,33 @@ result = count_dd_breaches(
     total_dd_safety_pct=8.0
 )
 
-print("\n[RESULTS]")
-print(f"  Daily breaches:        {result['daily_breaches']}")
-print(f"  Total breaches:        {result['total_breaches']}")
-print(f"  Total blown:           {result['blown_count']}")
-print(f"  Daily safety stops:    {result['daily_safety_stops']}")
-print(f"  Total safety stops:    {result['total_safety_stops']}")
+log.info("\n[RESULTS]")
+log.info(f"  Daily breaches:        {result['daily_breaches']}")
+log.info(f"  Total breaches:        {result['total_breaches']}")
+log.info(f"  Total blown:           {result['blown_count']}")
+log.info(f"  Daily safety stops:    {result['daily_safety_stops']}")
+log.info(f"  Total safety stops:    {result['total_safety_stops']}")
 
-print("\n[BREACH DATES]")
+log.info("\n[BREACH DATES]")
 for d in result['daily_breach_dates']:
-    print(f"  Daily breach: {d}")
+    log.info(f"  Daily breach: {d}")
 for d in result['total_breach_dates']:
-    print(f"  Total breach: {d}")
+    log.info(f"  Total breach: {d}")
 
-print("\n[SAFETY STOP DATES]")
+log.info("\n[SAFETY STOP DATES]")
 for d in result['daily_safety_dates']:
-    print(f"  Daily safety: {d}")
+    log.info(f"  Daily safety: {d}")
 for d in result['total_safety_dates']:
-    print(f"  Total safety: {d}")
+    log.info(f"  Total safety: {d}")
 
-print("\n[WORST DD]")
-print(f"  Worst daily DD: {result['worst_daily_pct']:.1f}%")
-print(f"  Worst total DD: {result['worst_total_pct']:.1f}%")
+log.info("\n[WORST DD]")
+log.info(f"  Worst daily DD: {result['worst_daily_pct']:.1f}%")
+log.info(f"  Worst total DD: {result['worst_total_pct']:.1f}%")
 
 # Verify expectations
-print("\n" + "="*60)
-print("Verification")
-print("="*60)
+log.info("\n" + "="*60)
+log.info("Verification")
+log.info("="*60)
 
 checks = [
     ("Daily safety stops > 0", result['daily_safety_stops'] > 0),
@@ -114,13 +118,13 @@ checks = [
 all_pass = True
 for desc, passed in checks:
     status = "[OK]" if passed else "[ERROR]"
-    print(f"  {status} {desc}")
+    log.info(f"  {status} {desc}")
     if not passed:
         all_pass = False
 
 if all_pass:
-    print("\n[OK] All checks passed - safety stops tracking works!")
+    log.info("\n[OK] All checks passed - safety stops tracking works!")
 else:
-    print("\n[ERROR] Some checks failed - review implementation")
+    log.info("\n[ERROR] Some checks failed - review implementation")
 
-print("="*60 + "\n")
+log.info("="*60 + "\n")

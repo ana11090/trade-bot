@@ -4,7 +4,6 @@ Takes a set of conditions and pre-loaded indicator data, returns trades in <2 se
 """
 
 import numpy as np
-import pandas as pd
 
 
 def quick_backtest(indicators_df, candles_df, conditions, direction="BUY",

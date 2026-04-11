@@ -6,9 +6,14 @@ candles at multiple timeframes, applies ×100 price scaling, and saves
 clean CSV files to the project's data/ folder.
 
 Usage:
-    python build_candles_from_ticks.py --tick-root "D:\\traiding data\\trade-bot\\xauusd\\ticks"
+    # Via command-line argument:
+    python build_candles_from_ticks.py --tick-root /path/to/your/ticks
 
-    Or edit TICK_ROOT below and just run:
+    # Via environment variable:
+    export TICK_ROOT=/path/to/your/ticks
+    python build_candles_from_ticks.py
+
+    # Default (if neither is set): ./xauusd/ticks/ next to this script
     python build_candles_from_ticks.py
 """
 

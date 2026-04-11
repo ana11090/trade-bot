@@ -16,7 +16,9 @@ import joblib
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from shared import data_utils
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 
 
 # WHY: fillna(0) on indicator features is semantically wrong because 0 is a
@@ -96,7 +98,7 @@ def prepare_features(data, scenario=None):
 
             leak_cols.add(ts_col)
         except Exception as e:
-            print(f"  Could not extract time features from {ts_col}: {e}")
+            log.info(f"  Could not extract time features from {ts_col}: {e}")
             leak_cols.add(ts_col)
 
     # Label-encode any remaining string columns
@@ -135,7 +137,7 @@ def prepare_features(data, scenario=None):
     # CHANGED: April 2026 — scenario-aware feature filtering
     if scenario is None or scenario == 'all':
         feature_cols = candidate_cols
-        print(f"  [SCENARIO=all] Using all {len(feature_cols)} features")
+        log.info(f"  [SCENARIO=all] Using all {len(feature_cols)} features")
     else:
         scenario_tfs = {
             'M5':     ['M5'],
@@ -166,7 +168,7 @@ def prepare_features(data, scenario=None):
             if any(col.startswith(f'{tf}_') for tf in allowed_prefixes):
                 feature_cols.append(col)
 
-        print(f"  [SCENARIO={scenario}] Filtered to {len(feature_cols)} features "
+        log.info(f"  [SCENARIO={scenario}] Filtered to {len(feature_cols)} features "
               f"from prefixes {allowed_prefixes} (out of {len(candidate_cols)} total)")
 
     return data, feature_cols
@@ -195,9 +197,9 @@ def train_model_for_scenario(scenario):
     Returns:
         True if successful, False otherwise
     """
-    print(f"\n{'=' * 60}")
-    print(f"[STEP 4/7] Training ML model — scenario: {scenario}")
-    print(f"{'=' * 60}\n")
+    log.info(f"\n{'=' * 60}")
+    log.info(f"[STEP 4/7] Training ML model — scenario: {scenario}")
+    log.info(f"{'=' * 60}\n")
 
     output_dir = os.path.join(OUTPUT_FOLDER, f'scenario_{scenario}')
 
@@ -206,29 +208,29 @@ def train_model_for_scenario(scenario):
         feature_file = os.path.join(output_dir, 'feature_matrix_labeled.csv')
 
         if not os.path.exists(feature_file):
-            print(f"ERROR: Labeled feature matrix not found: {feature_file}")
-            print(f"FIX: Run step3_label_trades.py first for scenario {scenario}")
+            log.error(f"Labeled feature matrix not found: {feature_file}")
+            log.info(f"FIX: Run step3_label_trades.py first for scenario {scenario}")
             return False
 
         data = pd.read_csv(feature_file)
         data['open_time'] = pd.to_datetime(data['open_time'])
 
-        print(f"  Loaded labeled data: {len(data)} trades")
+        log.info(f"  Loaded labeled data: {len(data)} trades")
 
         # Transform features and split AFTER (shared with step5 SHAP analysis)
         data, feature_cols = prepare_features(data, scenario=scenario)
 
-        print(f"  Feature count: {len(feature_cols)} (numeric, no leakage)")
+        log.info(f"  Feature count: {len(feature_cols)} (numeric, no leakage)")
 
         if not feature_cols:
-            print(f"  ERROR: No usable feature columns found!")
+            log.info(f"  ERROR: No usable feature columns found!")
             return False
 
         # Split AFTER transform so new columns exist in both subsets
         train_data = data[data['dataset'] == 'train'].copy()
         test_data = data[data['dataset'] == 'test'].copy()
-        print(f"  Train set: {len(train_data)} trades")
-        print(f"  Test set: {len(test_data)} trades")
+        log.info(f"  Train set: {len(train_data)} trades")
+        log.info(f"  Test set: {len(test_data)} trades")
 
         # WHY: Sentinel fill preserves indicator semantics (RSI=0 is max
         #      oversold, not missing). See NAN_SENTINEL comment above.
@@ -240,11 +242,11 @@ def train_model_for_scenario(scenario):
         y_test = test_data['outcome']
 
         # Train Random Forest classifier
-        print(f"\n  Training Random Forest classifier...")
-        print(f"    n_estimators: {RF_N_ESTIMATORS}")
-        print(f"    max_depth: {RF_MAX_DEPTH}")
-        print(f"    min_samples_leaf: {RF_MIN_SAMPLES_LEAF}")
-        print(f"    random_state: {RF_RANDOM_STATE}")
+        log.info(f"\n  Training Random Forest classifier...")
+        log.info(f"    n_estimators: {RF_N_ESTIMATORS}")
+        log.info(f"    max_depth: {RF_MAX_DEPTH}")
+        log.info(f"    min_samples_leaf: {RF_MIN_SAMPLES_LEAF}")
+        log.info(f"    random_state: {RF_RANDOM_STATE}")
 
         model = RandomForestClassifier(
             n_estimators=RF_N_ESTIMATORS,
@@ -257,7 +259,7 @@ def train_model_for_scenario(scenario):
 
         model.fit(X_train, y_train)
 
-        print(f"  Model trained successfully")
+        log.info(f"  Model trained successfully")
 
         # Make predictions on test set
         y_pred = model.predict(X_test)
@@ -280,25 +282,25 @@ def train_model_for_scenario(scenario):
         train_accuracy = accuracy_score(y_train, y_train_pred)
 
         # Print evaluation report
-        print(f"\n  {'=' * 50}")
-        print(f"  EVALUATION METRICS — {scenario}")
-        print(f"  {'=' * 50}")
-        print(f"  Test Set Performance:")
-        print(f"    Accuracy:  {accuracy:.3f} ({accuracy*100:.1f}%)")
-        print(f"    Precision: {precision:.3f}")
-        print(f"    Recall:    {recall:.3f}")
-        print(f"    F1 Score:  {f1:.3f}")
-        print(f"    ROC-AUC:   {roc_auc:.3f}")
-        print(f"")
-        print(f"  Train Set Performance:")
-        print(f"    Accuracy:  {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
-        print(f"")
-        print(f"  Baseline (always predict majority class): {y_test.value_counts(normalize=True).max():.3f}")
-        print(f"  {'=' * 50}\n")
+        log.info(f"\n  {'=' * 50}")
+        log.info(f"  EVALUATION METRICS — {scenario}")
+        log.info(f"  {'=' * 50}")
+        log.info(f"  Test Set Performance:")
+        log.info(f"    Accuracy:  {accuracy:.3f} ({accuracy*100:.1f}%)")
+        log.info(f"    Precision: {precision:.3f}")
+        log.info(f"    Recall:    {recall:.3f}")
+        log.info(f"    F1 Score:  {f1:.3f}")
+        log.info(f"    ROC-AUC:   {roc_auc:.3f}")
+        log.info(f"")
+        log.info(f"  Train Set Performance:")
+        log.info(f"    Accuracy:  {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")
+        log.info(f"")
+        log.info(f"  Baseline (always predict majority class): {y_test.value_counts(normalize=True).max():.3f}")
+        log.info(f"  {'=' * 50}\n")
 
         # Detailed classification report
-        print("  Detailed Classification Report:")
-        print(classification_report(y_test, y_pred, target_names=['Loss', 'Win'], zero_division=0))
+        log.info("  Detailed Classification Report:")
+        log.info(classification_report(y_test, y_pred, target_names=['Loss', 'Win'], zero_division=0))
 
         # Feature importance (top 20)
         feature_importance = pd.DataFrame({
@@ -306,19 +308,19 @@ def train_model_for_scenario(scenario):
             'importance': model.feature_importances_
         }).sort_values('importance', ascending=False)
 
-        print("\n  Top 20 Most Important Features:")
+        log.info("\n  Top 20 Most Important Features:")
         for idx, row in feature_importance.head(20).iterrows():
-            print(f"    {row['feature']:40s} {row['importance']:.4f}")
+            log.info(f"    {row['feature']:40s} {row['importance']:.4f}")
 
         # Save model
         model_file = os.path.join(output_dir, 'trained_model.pkl')
         joblib.dump(model, model_file)
-        print(f"\n  Saved trained model: {model_file}")
+        log.info(f"\n  Saved trained model: {model_file}")
 
         # Save feature importance
         importance_file = os.path.join(output_dir, 'feature_importance.csv')
         feature_importance.to_csv(importance_file, index=False)
-        print(f"  Saved feature importance: {importance_file}")
+        log.info(f"  Saved feature importance: {importance_file}")
 
         # Save metrics to file
         metrics_file = os.path.join(output_dir, 'model_metrics.txt')
@@ -337,14 +339,14 @@ def train_model_for_scenario(scenario):
             f.write(f"Classification Report:\n")
             f.write(classification_report(y_test, y_pred, target_names=['Loss', 'Win'], zero_division=0))
 
-        print(f"  Saved metrics report: {metrics_file}")
+        log.info(f"  Saved metrics report: {metrics_file}")
 
-        print(f"\n[STEP 4/7] COMPLETE — scenario: {scenario}\n")
+        log.info(f"\n[STEP 4/7] COMPLETE — scenario: {scenario}\n")
 
         return True
 
     except Exception as e:
-        print(f"\nERROR in step4 — {scenario}: {str(e)}")
+        log.info(f"\nERROR in step4 — {scenario}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

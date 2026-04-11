@@ -11,7 +11,7 @@ CHANGED: April 2026 — new module for accurate firm-specific testing.
 """
 
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def simulate_live_firm(trades, prop_firm_data, account_size=100000,

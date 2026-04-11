@@ -8,7 +8,6 @@ from tkinter import ttk, messagebox, filedialog
 import os
 import sys
 import json
-import threading
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
@@ -1058,7 +1057,8 @@ def build_panel(parent):
         "  6. All OK? -> proceed to Step 2\n\n"
         "For Tradovate:\n"
         "  1. Save the test file\n"
-        "  2. Install requirements: pip install pandas-ta\n"
+        # CHANGED: April 2026 — unified install hint (Phase 19c)
+        "  2. Install requirements: pip install -r requirements.txt\n"
         "  3. Run: python test_indicators.py\n"
         "  4. Check output for OK and FAIL lines"
     )

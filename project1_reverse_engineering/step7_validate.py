@@ -13,6 +13,10 @@ import numpy as np
 # Add parent directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # WHY: share the NaN sentinel with step4
 # CHANGED: April 2026 — replace fillna(0) (audit bug #12)
 from step4_train_model import fill_feature_nans
@@ -70,7 +74,7 @@ def _evaluate_rule(rule, df):
 
         op_fn = ops.get(opname)
         if op_fn is None:
-            print(f"    [rule eval] Unknown operator {opname!r}, treating as no-match")
+            log.info(f"    [rule eval] Unknown operator {opname!r}, treating as no-match")
             return np.zeros(len(df), dtype=bool)
 
         try:
@@ -83,7 +87,7 @@ def _evaluate_rule(rule, df):
             cond_mask = cond_mask & ~sentinel_mask
             mask = mask & cond_mask
         except Exception as e:
-            print(f"    [rule eval] Error evaluating {feat} {opname} {value}: {e}")
+            log.info(f"    [rule eval] Error evaluating {feat} {opname} {value}: {e}")
             return np.zeros(len(df), dtype=bool)
 
     return mask
@@ -156,7 +160,7 @@ def _validate_rules_on_test_set(rules, test_df, feature_cols):
                 'accuracy':      accuracy,
             })
         except Exception as e:
-            print(f"    [rule eval] Rule {i} failed: {e}")
+            log.info(f"    [rule eval] Rule {i} failed: {e}")
             results.append({
                 'rule_id': rule.get('id', i),
                 'error':   str(e),
@@ -179,9 +183,9 @@ def validate_rules_for_scenario(scenario):
     Returns:
         True if successful, False otherwise
     """
-    print(f"\n{'=' * 60}")
-    print(f"[STEP 7/7] Validating rules — scenario: {scenario}")
-    print(f"{'=' * 60}\n")
+    log.info(f"\n{'=' * 60}")
+    log.info(f"[STEP 7/7] Validating rules — scenario: {scenario}")
+    log.info(f"{'=' * 60}\n")
 
     output_dir = os.path.join(OUTPUT_FOLDER, f'scenario_{scenario}')
 
@@ -190,14 +194,14 @@ def validate_rules_for_scenario(scenario):
         feature_file = os.path.join(output_dir, 'feature_matrix_labeled.csv')
 
         if not os.path.exists(feature_file):
-            print(f"ERROR: Feature matrix not found: {feature_file}")
-            print(f"FIX: Run previous steps first for scenario {scenario}")
+            log.error(f"Feature matrix not found: {feature_file}")
+            log.info(f"FIX: Run previous steps first for scenario {scenario}")
             return False
 
         data = pd.read_csv(feature_file)
         data['open_time'] = pd.to_datetime(data['open_time'])
 
-        print(f"  Loaded feature matrix: {len(data)} trades")
+        log.info(f"  Loaded feature matrix: {len(data)} trades")
 
         # Load model metrics to get accuracy
         metrics_file = os.path.join(output_dir, 'model_metrics.txt')
@@ -222,8 +226,8 @@ def validate_rules_for_scenario(scenario):
         rules_file = os.path.join(output_dir, 'rules_summary.csv')
 
         if not os.path.exists(rules_file):
-            print(f"  WARNING: No rules summary found at {rules_file}")
-            print(f"  Using model predictions for validation instead\n")
+            log.info(f"  WARNING: No rules summary found at {rules_file}")
+            log.info(f"  Using model predictions for validation instead\n")
 
             # Fallback: validate using model predictions
             model_file = os.path.join(output_dir, 'trained_model.pkl')
@@ -247,9 +251,9 @@ def validate_rules_for_scenario(scenario):
 
                 match_rate = (y_pred == y_true).mean()
 
-                print(f"  Model prediction match rate: {match_rate:.1%}")
+                log.info(f"  Model prediction match rate: {match_rate:.1%}")
             else:
-                print(f"  ERROR: Neither rules nor model found for validation")
+                log.info(f"  ERROR: Neither rules nor model found for validation")
                 return False
         else:
             # WHY: Old code used model.predict() as a "proxy" for rule
@@ -268,11 +272,11 @@ def validate_rules_for_scenario(scenario):
                     with open(analysis_report_path, 'r', encoding='utf-8') as f:
                         report = json.load(f)
                     rules = [r for r in report.get('rules', []) if r.get('conditions')]
-                    print(f"  Loaded {len(rules)} rules from analysis_report.json")
+                    log.info(f"  Loaded {len(rules)} rules from analysis_report.json")
                 except Exception as e:
-                    print(f"  Could not load analysis_report.json: {e}")
+                    log.info(f"  Could not load analysis_report.json: {e}")
             else:
-                print(f"  analysis_report.json not found at {analysis_report_path}")
+                log.info(f"  analysis_report.json not found at {analysis_report_path}")
 
             # Load and prepare the feature matrix exactly the same way
             # step4 did so indicator column names match what the rules expect
@@ -281,7 +285,7 @@ def validate_rules_for_scenario(scenario):
 
             test_mask = data['dataset'] == 'test'
             test_df = data.loc[test_mask].copy()
-            print(f"  Evaluating rules on {len(test_df)} test trades...")
+            log.info(f"  Evaluating rules on {len(test_df)} test trades...")
 
             rule_results = _validate_rules_on_test_set(rules, test_df, feature_cols)
 
@@ -291,26 +295,26 @@ def validate_rules_for_scenario(scenario):
             match_rate = (total_correct / total_hits) if total_hits > 0 else 0.0
 
             # Per-rule breakdown for the report
-            print(f"\n  Per-rule results on test set:")
+            log.info(f"\n  Per-rule results on test set:")
             for r in rule_results[:10]:  # show up to 10
                 if r.get('hit_count', 0) > 0:
-                    print(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
+                    log.info(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
                           f"{r['hit_count']:4d} hits, WR {r['win_rate']:5.1%}, "
                           f"accuracy {r['accuracy']:5.1%}")
                 else:
-                    print(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
+                    log.info(f"    Rule {r['rule_id']:>3} ({r['prediction']}): "
                           f"0 hits (never fired on test set)")
             if len(rule_results) > 10:
-                print(f"    ... {len(rule_results) - 10} more rules")
+                log.info(f"    ... {len(rule_results) - 10} more rules")
 
             # Save per-rule results alongside the validation report
             rule_results_file = os.path.join(output_dir, 'rule_validation_results.json')
             try:
                 with open(rule_results_file, 'w', encoding='utf-8') as f:
                     json.dump(rule_results, f, indent=2, default=str)
-                print(f"  Saved per-rule results: {rule_results_file}")
+                log.info(f"  Saved per-rule results: {rule_results_file}")
             except Exception as e:
-                print(f"  Could not save rule results: {e}")
+                log.info(f"  Could not save rule results: {e}")
 
         # Analyze performance by dataset split
         train_data = data[data['dataset'] == 'train']
@@ -400,35 +404,35 @@ def validate_rules_for_scenario(scenario):
                 f.write(f"3. Verifying timezone alignment is correct\n")
                 f.write(f"4. Trying the combined H1_M15 scenario if not already tested\n")
 
-        print(f"  Saved validation report: {validation_report_file}")
+        log.info(f"  Saved validation report: {validation_report_file}")
 
         # Print summary to console
-        print(f"\n  {'=' * 50}")
-        print(f"  VALIDATION SUMMARY — {scenario}")
-        print(f"  {'=' * 50}")
-        print(f"  Total Trades: {len(data)}")
-        print(f"  Overall Win Rate: {overall_win_rate:.1%}")
-        print(f"  Match Rate: {match_rate:.1%}")
-        print(f"  Target Threshold: {MATCH_RATE_THRESHOLD:.1%}")
+        log.info(f"\n  {'=' * 50}")
+        log.info(f"  VALIDATION SUMMARY — {scenario}")
+        log.info(f"  {'=' * 50}")
+        log.info(f"  Total Trades: {len(data)}")
+        log.info(f"  Overall Win Rate: {overall_win_rate:.1%}")
+        log.info(f"  Match Rate: {match_rate:.1%}")
+        log.info(f"  Target Threshold: {MATCH_RATE_THRESHOLD:.1%}")
 
         if match_rate >= MATCH_RATE_THRESHOLD:
-            print(f"  STATUS: ✓ PASS")
-            print(f"  RECOMMENDATION: Proceed to Project 2 (Backtesting)")
+            log.info(f"  STATUS: ✓ PASS")
+            log.info(f"  RECOMMENDATION: Proceed to Project 2 (Backtesting)")
         elif match_rate >= 0.60:
-            print(f"  STATUS: ⚠ MARGINAL")
-            print(f"  RECOMMENDATION: Consider other scenarios")
+            log.info(f"  STATUS: ⚠ MARGINAL")
+            log.info(f"  RECOMMENDATION: Consider other scenarios")
         else:
-            print(f"  STATUS: ✗ FAIL")
-            print(f"  RECOMMENDATION: Try different scenario")
+            log.info(f"  STATUS: ✗ FAIL")
+            log.info(f"  RECOMMENDATION: Try different scenario")
 
-        print(f"  {'=' * 50}\n")
+        log.info(f"  {'=' * 50}\n")
 
-        print(f"\n[STEP 7/7] COMPLETE — scenario: {scenario}\n")
+        log.info(f"\n[STEP 7/7] COMPLETE — scenario: {scenario}\n")
 
         return True
 
     except Exception as e:
-        print(f"\nERROR in step7 — {scenario}: {str(e)}")
+        log.info(f"\nERROR in step7 — {scenario}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

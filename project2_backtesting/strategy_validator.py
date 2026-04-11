@@ -13,9 +13,13 @@ import random
 import threading
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 
 VALIDATION_PATH = os.path.join(_HERE, 'outputs', 'validation_results.json')
 
@@ -52,7 +56,7 @@ def _load_data_cached(candles_path):
     if (_cached_candles_path == candles_path
             and _cached_candles_df is not None
             and _cached_indicators_df is not None):
-        print(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
+        log.info(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
         return _cached_candles_df, _cached_indicators_df
 
     # Reset all cache vars before load so a partial failure leaves no stale state
@@ -60,7 +64,7 @@ def _load_data_cached(candles_path):
     _cached_candles_df    = None
     _cached_indicators_df = None
 
-    print(f"[VALIDATOR] Loading data: {os.path.basename(candles_path)}")
+    log.info(f"[VALIDATOR] Loading data: {os.path.basename(candles_path)}")
     candles_df = pd.read_csv(candles_path)
     ts_col = candles_df.columns[0]
     candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
@@ -441,7 +445,7 @@ def walk_forward_validate(
                 if ts >= data_start and os_start <= data_end:
                     windows_schedule.append((ts, te, os_start, os_end, True))
             except Exception as e:
-                print(f"  [WF] Skipping invalid custom window: {cw} — {e}")
+                log.info(f"  [WF] Skipping invalid custom window: {cw} — {e}")
 
     # Sort all windows by test period start date
     windows_schedule.sort(key=lambda w: w[2])
@@ -504,7 +508,7 @@ def walk_forward_validate(
             in_trades = []
             in_error = str(e)
             import traceback
-            print(f"  [WF] Window {i+1} IN-SAMPLE ERROR: {e}")
+            log.info(f"  [WF] Window {i+1} IN-SAMPLE ERROR: {e}")
             traceback.print_exc()
 
         if progress_callback:
@@ -537,7 +541,7 @@ def walk_forward_validate(
             out_trades = []
             out_error = str(e)
             import traceback
-            print(f"  [WF] Window {i+1} OUT-OF-SAMPLE ERROR: {e}")
+            log.info(f"  [WF] Window {i+1} OUT-OF-SAMPLE ERROR: {e}")
             traceback.print_exc()
 
         in_stats  = _compute_rich_window_stats(in_trades, account_size)
@@ -904,7 +908,7 @@ def slippage_stress_test(
                 level_total_pips.append(stats['net_total_pips'])
             except Exception as e:
                 import traceback
-                print(f"  [SLIPPAGE] Level {slip_pips} pips, run {run_i+1} ERROR: {e}")
+                log.info(f"  [SLIPPAGE] Level {slip_pips} pips, run {run_i+1} ERROR: {e}")
                 traceback.print_exc()
 
         if not level_wrs:
@@ -1195,7 +1199,7 @@ def run_full_validation(
             from shared.live_firm_sim import simulate_all_firms
             live_firm_results = simulate_all_firms(trades, account_size=account_size)
         except Exception as e:
-            print(f"[validator] live firm simulation failed: {e}")
+            log.info(f"[validator] live firm simulation failed: {e}")
 
     combined = combined_score(wf_result, mc_result, slippage_result, live_firm_results)
 

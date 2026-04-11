@@ -3,7 +3,6 @@ EXIT STRATEGIES — Pluggable exit strategy implementations.
 Each strategy decides when to close a position based on price action.
 Used by the strategy backtester to test different exit approaches.
 """
-import numpy as np
 
 
 class ExitStrategy:

@@ -3,7 +3,11 @@ import os, sys, requests, pandas as pd
 from datetime import datetime, timedelta
 import struct, lzma, time
 
-BASE = r'D:\traiding data\xauusd'
+# CHANGED: April 2026 — portable default (Phase 19c)
+BASE = os.environ.get(
+    'TICK_ROOT',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'xauusd')
+)
 TICK = os.path.join(BASE, 'ticks')
 os.makedirs(TICK, exist_ok=True)
 

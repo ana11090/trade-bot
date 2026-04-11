@@ -4,7 +4,6 @@ Simulates trades based on rules discovered in Project 1
 """
 
 import pandas as pd
-import numpy as np
 import sys
 import os
 from datetime import datetime
@@ -13,6 +12,10 @@ import re
 # Add parent directory to path for shared utilities
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from shared import indicator_utils
+
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 
 # ============================================================
 # CONFIGURATION - defaults (overridden by backtest_config.json if present)
@@ -88,9 +91,9 @@ if os.path.exists(_cfg_path):
         WARMUP_CANDLES      = int(_cfg.get('warmup_candles',      WARMUP_CANDLES))
         MAX_ONE_TRADE_OPEN  = str(_cfg.get('max_one_trade',       MAX_ONE_TRADE_OPEN)).strip().lower() == 'true'
         SAME_CANDLE_SL_RULE = _cfg.get('same_candle_sl_rule',     SAME_CANDLE_SL_RULE).upper()
-        print(f"[BACKTEST ENGINE] Loaded config from {_cfg_path}")
+        log.info(f"[BACKTEST ENGINE] Loaded config from {_cfg_path}")
     except Exception as _e:
-        print(f"[BACKTEST ENGINE] Warning: could not load config file: {_e}")
+        log.warning(f"[BACKTEST ENGINE] could not load config file: {_e}")
 
 # Build file paths after config is applied
 RULES_FILE, PRICE_DATA_FILE = _build_paths()
@@ -148,7 +151,7 @@ class Rule:
 
 def parse_rules_file(rules_file_path):
     """Parse rules from rules_report.txt"""
-    print(f"[BACKTEST ENGINE] Loading rules from: {rules_file_path}")
+    log.info(f"[BACKTEST ENGINE] Loading rules from: {rules_file_path}")
 
     if not os.path.exists(rules_file_path):
         raise FileNotFoundError(f"Rules file not found: {rules_file_path}")
@@ -197,7 +200,7 @@ def parse_rules_file(rules_file_path):
             if match:
                 current_rule.hard_close_hour = int(match.group(1))
 
-    print(f"[BACKTEST ENGINE] Parsed {len(rules)} rules successfully.")
+    log.info(f"[BACKTEST ENGINE] Parsed {len(rules)} rules successfully.")
     return rules
 
 
@@ -384,7 +387,7 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
 
 def run_backtest(candles_df, indicators_df, rules, period_start, period_end, period_name):
     """Run backtest for a specific period"""
-    print(f"[BACKTEST ENGINE] Starting {period_name} backtest ({period_start} to {period_end})...")
+    log.info(f"[BACKTEST ENGINE] Starting {period_name} backtest ({period_start} to {period_end})...")
 
     # WHY: Drop duplicate candle timestamps before filtering. A raw CSV
     #      with duplicate bars (broker glitch, merge conflict) makes
@@ -393,7 +396,7 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
     # CHANGED: April 2026 — drop duplicate timestamps (audit HIGH)
     _dedup_count = len(candles_df) - candles_df['timestamp'].nunique()
     if _dedup_count > 0:
-        print(f"[BACKTEST ENGINE] Dropping {_dedup_count} duplicate candle timestamps")
+        log.info(f"[BACKTEST ENGINE] Dropping {_dedup_count} duplicate candle timestamps")
         candles_df = candles_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
         if 'timestamp' in indicators_df.columns:
             indicators_df = indicators_df.drop_duplicates(subset=['timestamp'], keep='last').reset_index(drop=True)
@@ -405,7 +408,7 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
     ].reset_index(drop=True)
 
     if len(period_candles) == 0:
-        print(f"[BACKTEST ENGINE] WARNING: No candles found in {period_name} period")
+        log.warning(f"[BACKTEST ENGINE] No candles found in {period_name} period")
         return []
 
     # Initialize
@@ -457,9 +460,9 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
 
                     # Print progress
                     if len(trades) % 10 == 0:
-                        print(f"[BACKTEST ENGINE]   Trade #{len(trades)}: {trade['direction']} "
-                              f"at {trade['entry_price']:.2f}, exit {trade['exit_reason']}, "
-                              f"P&L: ${trade['net_profit']:.2f}")
+                        log.info(f"[BACKTEST ENGINE]   Trade #{len(trades)}: {trade['direction']} "
+                                 f"at {trade['entry_price']:.2f}, exit {trade['exit_reason']}, "
+                                 f"P&L: ${trade['net_profit']:.2f}")
 
                     break  # Only one rule can fire per candle
 
@@ -482,45 +485,45 @@ def run_backtest(candles_df, indicators_df, rules, period_start, period_end, per
         else:
             profit_factor = 0.0
 
-        print(f"[BACKTEST ENGINE] {period_name} complete: {len(trades)} trades. "
-              f"Win rate: {win_rate:.1f}%. Profit factor: {profit_factor:.2f}. "
-              f"Net P&L: ${total_profit:.2f}")
+        log.info(f"[BACKTEST ENGINE] {period_name} complete: {len(trades)} trades. "
+                 f"Win rate: {win_rate:.1f}%. Profit factor: {profit_factor:.2f}. "
+                 f"Net P&L: ${total_profit:.2f}")
     else:
-        print(f"[BACKTEST ENGINE] {period_name} complete: 0 trades (no signals)")
+        log.info(f"[BACKTEST ENGINE] {period_name} complete: 0 trades (no signals)")
 
     return trades
 
 
 def main():
     """Main entry point"""
-    print("=" * 60)
-    print("PROJECT 2 - BACKTESTING ENGINE")
-    print("=" * 60)
+    log.info("=" * 60)
+    log.info("PROJECT 2 - BACKTESTING ENGINE")
+    log.info("=" * 60)
 
     # Create output folder
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     # Load price data
-    print(f"[BACKTEST ENGINE] Loading price data: {PRICE_DATA_FILE}")
+    log.info(f"[BACKTEST ENGINE] Loading price data: {PRICE_DATA_FILE}")
 
     if not os.path.exists(PRICE_DATA_FILE):
-        print(f"ERROR: Price data file not found: {PRICE_DATA_FILE}")
-        print("Please download price data first using download_data_mt5.py")
+        log.error(f"Price data file not found: {PRICE_DATA_FILE}")
+        log.info("Please download price data first using download_data_mt5.py")
         return
 
     candles_df = pd.read_csv(PRICE_DATA_FILE)
     candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'])
 
-    print(f"[BACKTEST ENGINE] Loaded {len(candles_df)} {WINNING_SCENARIO} candles "
-          f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
+    log.info(f"[BACKTEST ENGINE] Loaded {len(candles_df)} {WINNING_SCENARIO} candles "
+             f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
 
     # Parse rules
     rules = parse_rules_file(RULES_FILE)
 
     # Compute indicators on full dataset
-    print(f"[BACKTEST ENGINE] Computing indicators on full dataset...")
+    log.info(f"[BACKTEST ENGINE] Computing indicators on full dataset...")
     indicators_df = indicator_utils.compute_all_indicators(candles_df)
-    print(f"[BACKTEST ENGINE] Indicators computed: {len(indicators_df.columns)} features")
+    log.info(f"[BACKTEST ENGINE] Indicators computed: {len(indicators_df.columns)} features")
 
     # Run in-sample backtest
     insample_trades = run_backtest(
@@ -539,18 +542,18 @@ def main():
         insample_df = pd.DataFrame(insample_trades)
         insample_path = os.path.join(OUTPUT_FOLDER, 'trade_log_insample.csv')
         insample_df.to_csv(insample_path, index=False)
-        print(f"[BACKTEST ENGINE] Saved: {insample_path}")
+        log.info(f"[BACKTEST ENGINE] Saved: {insample_path}")
 
     if len(outsample_trades) > 0:
         outsample_df = pd.DataFrame(outsample_trades)
         outsample_path = os.path.join(OUTPUT_FOLDER, 'trade_log_outsample.csv')
         outsample_df.to_csv(outsample_path, index=False)
-        print(f"[BACKTEST ENGINE] Saved: {outsample_path}")
+        log.info(f"[BACKTEST ENGINE] Saved: {outsample_path}")
 
-    print("=" * 60)
-    print("BACKTEST ENGINE COMPLETE")
-    print("=" * 60)
-    print(f"Next step: Run compute_stats.py to calculate performance metrics")
+    log.info("=" * 60)
+    log.info("BACKTEST ENGINE COMPLETE")
+    log.info("=" * 60)
+    log.info(f"Next step: Run compute_stats.py to calculate performance metrics")
 
 
 if __name__ == '__main__':

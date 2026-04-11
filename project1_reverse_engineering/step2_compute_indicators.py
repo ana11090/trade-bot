@@ -13,8 +13,12 @@ import time
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, PROJECT_ROOT)
 
-from shared import data_utils, indicator_utils
+from shared import indicator_utils
 from config_loader import load as _load_cfg
+
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PRICE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data')
@@ -52,9 +56,9 @@ def compute_features(aligned_trades_path=None, output_dir=None):
     Returns:
         DataFrame with feature matrix, or None if failed
     """
-    print(f"\n{'=' * 70}")
-    print(f"[STEP 2/2] COMPUTING INDICATORS (Multi-Timeframe)")
-    print(f"{'=' * 70}\n")
+    log.info(f"\n{'=' * 70}")
+    log.info(f"[STEP 2/2] COMPUTING INDICATORS (Multi-Timeframe)")
+    log.info(f"{'=' * 70}\n")
 
     try:
         # Get paths
@@ -64,22 +68,22 @@ def compute_features(aligned_trades_path=None, output_dir=None):
             aligned_trades_path = os.path.join(output_dir, 'aligned_trades.csv')
 
         if not os.path.exists(aligned_trades_path):
-            print(f"ERROR: Aligned trades file not found: {aligned_trades_path}")
-            print(f"FIX: Run step1_align_price.py first")
+            log.error(f" Aligned trades file not found: {aligned_trades_path}")
+            log.info(f"FIX: Run step1_align_price.py first")
             return None
 
-        print(f"  Loading aligned trades from: {os.path.basename(aligned_trades_path)}")
+        log.info(f"  Loading aligned trades from: {os.path.basename(aligned_trades_path)}")
         trades_df = pd.read_csv(aligned_trades_path)
         trades_df['open_time'] = pd.to_datetime(trades_df['open_time'])
         trades_df['close_time'] = pd.to_datetime(trades_df['close_time'])
 
-        print(f"  Loaded {len(trades_df)} trades\n")
+        log.info(f"  Loaded {len(trades_df)} trades\n")
 
         # Initialize feature matrix with trade metadata
         feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action', 'pips', 'profit']].copy()
 
         # Add auto-detected features (no candle data needed)
-        print("  Computing auto-detected features...")
+        log.info("  Computing auto-detected features...")
         # WHY: Only safe time-based features go into the feature matrix.
         #      is_winner IS the target → leakage. trade_duration_minutes
         #      leaks because winning trades naturally run longer than losers.
@@ -101,32 +105,36 @@ def compute_features(aligned_trades_path=None, output_dir=None):
             # Try to infer from pips and profit
             feature_matrix['trade_direction'] = 0
 
-        print(f"    Added {5} auto-detected features")
+        log.info(f"    Added {5} auto-detected features")
 
         # Process each timeframe
         timeframes_to_process = [tf for tf in ALIGN_TIMEFRAMES if tf != 'M1' or not SKIP_M1]
 
         for tf in timeframes_to_process:
-            print(f"\n  Processing timeframe: {tf}")
+            log.info(f"\n  Processing timeframe: {tf}")
 
             # Check if this timeframe was aligned
             idx_col = f'{tf}_candle_idx'
             if idx_col not in trades_df.columns:
-                print(f"    Skipped (not aligned)")
+                log.info(f"    Skipped (not aligned)")
                 continue
 
             # Load candle data
             candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{tf}.csv')
 
             if not os.path.exists(candle_file):
-                print(f"    Skipped (candle file not found)")
+                log.info(f"    Skipped (candle file not found)")
                 continue
 
+            # WHY: Cannot use logging here — end=" " creates inline progress
+            #      (e.g., "Loading... (1,234 candles)") which logging always breaks
+            #      with newlines. Keep print() for UX.
+            # PRESERVED: April 2026 — Phase 19d Fix 3
             print(f"    Loading candles from {os.path.basename(candle_file)}...", end=" ", flush=True)
             candles_df = pd.read_csv(candle_file)
             candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'])
             candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
-            print(f"({len(candles_df):,} candles)")
+            log.info(f"({len(candles_df):,} candles)")
 
             # ── COMPUTE INDICATORS ONCE ON FULL DATAFRAME ─────────────────
             # WHY: The old code computed indicators in a loop — for every trade
@@ -138,7 +146,7 @@ def compute_features(aligned_trades_path=None, output_dir=None):
             #      at each trade's aligned candle index. Same exact results,
             #      just done in one shot instead of 10,000 separate slices.
             # CHANGED: April 2026 — 50-200x speedup for step 2
-            print(f"    Computing all indicators ONCE on {len(candles_df)} candles...")
+            log.info(f"    Computing all indicators ONCE on {len(candles_df)} candles...")
             t0 = time.time()
 
             try:
@@ -146,9 +154,9 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                     candles_df, prefix=f'{tf}_'
                 )
                 t1 = time.time()
-                print(f"    Computed {len(full_indicators_df.columns)} indicators in {t1-t0:.1f}s")
+                log.info(f"    Computed {len(full_indicators_df.columns)} indicators in {t1-t0:.1f}s")
             except Exception as e:
-                print(f"    ERROR computing indicators: {e}")
+                log.error(f"     computing indicators: {e}")
                 # Fall back: empty indicators for all trades
                 indicator_values = [{} for _ in range(len(trades_df))]
                 # Convert indicator values to DataFrame and add to feature matrix
@@ -159,7 +167,7 @@ def compute_features(aligned_trades_path=None, output_dir=None):
 
             # Now look up each trade's row from the precomputed dataframe
             # WHY: This is just a row index lookup — milliseconds for thousands of trades.
-            print(f"    Looking up indicator values for {len(trades_df)} trades...")
+            log.info(f"    Looking up indicator values for {len(trades_df)} trades...")
             t0 = time.time()
 
             indicator_values = []
@@ -192,7 +200,7 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                     indicator_values.append({})
 
             t1 = time.time()
-            print(f"    Lookup complete in {t1-t0:.1f}s")
+            log.info(f"    Lookup complete in {t1-t0:.1f}s")
 
             # Convert indicator values to DataFrame and add to feature matrix
             indicators_df = pd.DataFrame(indicator_values)
@@ -201,34 +209,34 @@ def compute_features(aligned_trades_path=None, output_dir=None):
             for col in indicators_df.columns:
                 feature_matrix[col] = indicators_df[col].values
 
-            print(f"    Completed ({len(indicators_df.columns)} features added)")
+            log.info(f"    Completed ({len(indicators_df.columns)} features added)")
 
         # Save feature matrix
         output_file = os.path.join(output_dir, 'feature_matrix.csv')
         feature_matrix.to_csv(output_file, index=False)
 
-        print(f"\n  Saved: {output_file}")
+        log.info(f"\n  Saved: {output_file}")
 
         # Print summary
-        print(f"\n  Feature Matrix Summary:")
-        print(f"    Trades:   {len(feature_matrix):,}")
-        print(f"    Features: {len(feature_matrix.columns):,}")
+        log.info(f"\n  Feature Matrix Summary:")
+        log.info(f"    Trades:   {len(feature_matrix):,}")
+        log.info(f"    Features: {len(feature_matrix.columns):,}")
 
         # Check for NaN columns
         nan_counts = feature_matrix.isna().sum()
         nan_cols = nan_counts[nan_counts > 0].sort_values(ascending=False)
         if len(nan_cols) > 0:
-            print(f"    NaN values: {len(nan_cols)} columns have NaN (top 5):")
+            log.info(f"    NaN values: {len(nan_cols)} columns have NaN (top 5):")
             for col, count in list(nan_cols.items())[:5]:
                 pct = count / len(feature_matrix) * 100
-                print(f"      {col}: {count} ({pct:.1f}%)")
+                log.info(f"      {col}: {count} ({pct:.1f}%)")
 
-        print(f"\n[STEP 2/2] COMPLETE\n")
+        log.info(f"\n[STEP 2/2] COMPLETE\n")
 
         return feature_matrix
 
     except Exception as e:
-        print(f"\nERROR in step2: {str(e)}")
+        log.error(f"\n in step2: {str(e)}")
         import traceback
         traceback.print_exc()
         return None

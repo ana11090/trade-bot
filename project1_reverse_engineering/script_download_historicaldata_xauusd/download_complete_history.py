@@ -2,7 +2,7 @@
 Download COMPLETE XAUUSD historical data from Dukascopy
 - All available tick data (2010 to present)
 - All timeframes: M1, M5, M15, H1, H4, D1, W1, MN (monthly)
-- Saves everything to: D:/traiding data/xauusd/
+- Saves everything to: $TICK_ROOT (or ../../xauusd/ by default)
 """
 
 import os
@@ -14,7 +14,13 @@ import struct
 import lzma
 
 # Main data folder
-BASE_FOLDER = r'D:\traiding data\xauusd'
+# WHY: Was hardcoded developer path. Uses TICK_ROOT env var with
+#      portable fallback relative to the script location.
+# CHANGED: April 2026 — portable default (Phase 19c)
+BASE_FOLDER = os.environ.get(
+    'TICK_ROOT',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'xauusd')
+)
 TICK_FOLDER = os.path.join(BASE_FOLDER, 'ticks')
 TIMEFRAME_FOLDER = os.path.join(BASE_FOLDER, 'timeframes')
 

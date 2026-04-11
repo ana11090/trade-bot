@@ -10,7 +10,6 @@ import sys
 import webbrowser
 import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from helpers import make_copyable
 
 # Module-level variables
 _output_text = None

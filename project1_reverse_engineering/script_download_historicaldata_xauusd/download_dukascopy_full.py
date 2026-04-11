@@ -12,8 +12,13 @@ from datetime import datetime, timedelta
 import struct
 import lzma
 
-OUTPUT_FOLDER = r'D:\traiding data\xauusd\timeframes'
-TICK_FOLDER = r'D:\traiding data\xauusd\ticks'
+# CHANGED: April 2026 — portable default (Phase 19c)
+_BASE = os.environ.get(
+    'TICK_ROOT',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'xauusd')
+)
+OUTPUT_FOLDER = os.path.join(_BASE, 'timeframes')
+TICK_FOLDER = os.path.join(_BASE, 'ticks')
 
 def log(msg):
     """Print with timestamp"""

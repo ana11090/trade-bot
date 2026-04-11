@@ -15,27 +15,31 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 from step1_align_price import align_all_timeframes
 from step2_compute_indicators import compute_features
 
-print("=" * 70)
-print("PROJECT 1 — REVERSE ENGINEERING PIPELINE")
-print("=" * 70)
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
+log.info("=" * 70)
+log.info("PROJECT 1 — REVERSE ENGINEERING PIPELINE")
+log.info("=" * 70)
 
 start = time.time()
 
-print("\n[STEP 1/2] Aligning trades to candles...\n")
+log.info("\n[STEP 1/2] Aligning trades to candles...\n")
 aligned = align_all_timeframes()
 if aligned is None:
-    print("STEP 1 FAILED — cannot continue")
+    log.info("STEP 1 FAILED — cannot continue")
     sys.exit(1)
 
-print(f"\n[STEP 2/2] Computing indicators...\n")
+log.info(f"\n[STEP 2/2] Computing indicators...\n")
 features = compute_features()
 if features is None:
-    print("STEP 2 FAILED")
+    log.info("STEP 2 FAILED")
     sys.exit(1)
 
 elapsed = time.time() - start
-print(f"\n{'=' * 70}")
-print(f"PIPELINE COMPLETE in {elapsed:.0f}s ({elapsed/60:.1f} minutes)")
-print(f"Feature matrix: {len(features)} trades × {len(features.columns)} features")
-print(f"Output: project1_reverse_engineering/outputs/feature_matrix.csv")
-print(f"{'=' * 70}")
+log.info(f"\n{'=' * 70}")
+log.info(f"PIPELINE COMPLETE in {elapsed:.0f}s ({elapsed/60:.1f} minutes)")
+log.info(f"Feature matrix: {len(features)} trades × {len(features.columns)} features")
+log.info(f"Output: project1_reverse_engineering/outputs/feature_matrix.csv")
+log.info(f"{'=' * 70}")

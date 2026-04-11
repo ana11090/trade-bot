@@ -1468,13 +1468,20 @@ double GetPipSize()
 //|      old code called CopyBuffer and read buf[0] unconditionally,  |
 //|      which reads uninitialized memory. This wrapper returns       |
 //|      EMPTY_VALUE on any failure so callers can short-circuit.     |
-//| CHANGED: April 2026 — defensive indicator reads                   |
+//|      Shift 1 = last CLOSED bar to match Python training which     |
+//|      uses candle_idx - 1 (see step1_align_price.py Phase 3 fix).  |
+//| CHANGED: April 2026 — defensive indicator reads + shift 1 for     |
+//|          closed-bar consistency (audit HIGH #29)                  |
 //+------------------------------------------------------------------+
 double SafeCopyBuf(int handle, int bufNum)
 {{
    if(handle == INVALID_HANDLE) return EMPTY_VALUE;
    double tmp[1];
-   int copied = CopyBuffer(handle, bufNum, 0, 1, tmp);
+   // WHY: Shift 1 = last closed bar. Python training reads from
+   //      candle_idx - 1 (the previously closed candle). Indicator
+   //      values must match that reference point.
+   // CHANGED: April 2026 — shift 0 → 1 (audit HIGH #29)
+   int copied = CopyBuffer(handle, bufNum, 1, 1, tmp);
    if(copied <= 0) return EMPTY_VALUE;
    return tmp[0];
 }}

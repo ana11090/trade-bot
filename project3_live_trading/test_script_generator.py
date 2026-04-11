@@ -251,7 +251,9 @@ import numpy as np
 try:
     import pandas_ta as ta
 except ImportError:
-    print("ERROR: pandas-ta not installed. Run: pip install pandas-ta")
+    # CHANGED: April 2026 — unified install hint (Phase 19c)
+    print("ERROR: pandas-ta not installed. Run: pip install -r requirements.txt "
+          "(or: pip install pandas-ta)")
     sys.exit(1)
 
 print("=" * 50)

@@ -156,6 +156,42 @@ def _closest_account_size(available_sizes, requested):
     return min(available_sizes, key=lambda s: abs(s - requested))
 
 
+# WHY: Per-symbol pip value table. Avoids hardcoded defaults that are
+#      correct for XAUUSD but wrong for forex. Caller can override with
+#      explicit pip_value_per_lot or pass symbol to use the lookup.
+# CHANGED: April 2026 — per-symbol lookup (audit MED — Family #1 + Round 1 defer)
+_SYMBOL_PIP_VALUE_TABLE = {
+    'XAUUSD': 1.0,    # 100 oz × $0.01 = $1/pip/lot
+    'XAGUSD': 5.0,    # 5000 oz × $0.001 = $5/pip/lot
+    'EURUSD': 10.0,   # 100000 × 0.0001 = $10/pip/lot
+    'GBPUSD': 10.0,
+    'AUDUSD': 10.0,
+    'NZDUSD': 10.0,
+    'USDCAD': 7.3,    # approximate, depends on CAD rate
+    'USDCHF': 11.0,   # approximate, depends on CHF rate
+    'USDJPY': 6.7,    # approximate, depends on JPY rate
+    'GBPJPY': 6.7,
+    'EURJPY': 6.7,
+    'US30':   1.0,
+    'NAS100': 1.0,
+    'SPX500': 1.0,
+    'BTCUSD': 1.0,
+    'ETHUSD': 0.1,
+}
+
+
+def _resolve_pip_value(symbol, explicit_value):
+    """Resolve pip_value_per_lot from explicit value or symbol lookup.
+
+    If explicit_value is None, look up by symbol. If symbol is not in
+    the table, default to 1.0 (XAUUSD convention — matches the
+    project's primary instrument).
+    """
+    if explicit_value is not None:
+        return explicit_value
+    return _SYMBOL_PIP_VALUE_TABLE.get(symbol.upper() if symbol else '', 1.0)
+
+
 def run_prop_test(
     trades,
     firm_id,
@@ -163,12 +199,11 @@ def run_prop_test(
     account_size,
     risk_per_trade_pct=1.0,
     default_sl_pips=150.0,
-    # WHY: Old default was 10.0 which is correct for forex majors but
-    #      WRONG for XAUUSD ($1/pip/lot). Since the project's primary
-    #      instrument is XAUUSD, default to 1.0. Forex callers must
-    #      explicitly override.
-    # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
-    pip_value_per_lot=1.0,
+    # WHY: Default None so _resolve_pip_value uses the symbol lookup.
+    #      Callers that want to override can pass a number.
+    # CHANGED: April 2026 — per-symbol pip value (audit MED)
+    pip_value_per_lot=None,
+    symbol='XAUUSD',
     daily_dd_safety_pct=80.0,
 ):
     """
@@ -178,6 +213,9 @@ def run_prop_test(
     import sys
     sys.path.insert(0, _ROOT)
     from shared.prop_firm_simulator import simulate_challenge
+
+    # Resolve pip_value_per_lot from symbol if not explicitly passed
+    _resolved_pip_value = _resolve_pip_value(symbol, pip_value_per_lot)
 
     trades_df = convert_trades_for_prop_sim(trades)
 
@@ -193,7 +231,7 @@ def run_prop_test(
         mode="sliding_window",
         risk_per_trade_pct=risk_per_trade_pct,
         default_sl_pips=default_sl_pips,
-        pip_value_per_lot=pip_value_per_lot,
+        pip_value_per_lot=_resolved_pip_value,
         daily_dd_safety_pct=daily_dd_safety_pct,
     )
 
@@ -205,9 +243,10 @@ def run_multi_firm_test(
     firm_challenges,   # list of {firm_id, challenge_id, account_size, firm_name, challenge_name}
     risk_per_trade_pct=1.0,
     default_sl_pips=150.0,
-    # WHY: See run_prop_test — XAUUSD-correct default.
-    # CHANGED: April 2026 — XAUUSD-correct default (audit MED — Family #1)
-    pip_value_per_lot=1.0,
+    # WHY: Default None so _resolve_pip_value uses the symbol lookup.
+    # CHANGED: April 2026 — per-symbol pip value (audit MED)
+    pip_value_per_lot=None,
+    symbol='XAUUSD',
     daily_dd_safety_pct=80.0,
     progress_callback=None,
 ):
@@ -215,6 +254,9 @@ def run_multi_firm_test(
     Run one strategy against multiple firms/challenges.
     Returns list of result dicts sorted by expected ROI descending.
     """
+    # Resolve pip_value_per_lot from symbol if not explicitly passed
+    _resolved_pip_value = _resolve_pip_value(symbol, pip_value_per_lot)
+
     results = []
     total = len(firm_challenges)
 
@@ -230,7 +272,8 @@ def run_multi_firm_test(
             account_size=fc['account_size'],
             risk_per_trade_pct=risk_per_trade_pct,
             default_sl_pips=default_sl_pips,
-            pip_value_per_lot=pip_value_per_lot,
+            pip_value_per_lot=_resolved_pip_value,  # CHANGED: April 2026 — use resolved value
+            symbol=symbol,
             daily_dd_safety_pct=daily_dd_safety_pct,
         )
 

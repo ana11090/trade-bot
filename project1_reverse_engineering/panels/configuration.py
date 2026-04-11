@@ -4,7 +4,7 @@ All Project 1 settings in one place. Saved to p1_config.json and read by all ste
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext
 import os
 import sys
 import json

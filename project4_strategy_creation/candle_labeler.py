@@ -9,7 +9,6 @@ Much more data than the 1,106 trades from any single robot.
 """
 
 import os
-import numpy as np
 import pandas as pd
 from datetime import datetime
 
@@ -49,13 +48,36 @@ def label_candles(
     multiplied by pip_size internally.  spread_pips is also in pip units.
     """
     # Check cache
-    cache_name = f"candle_labels_{direction}_{sl_pips}_{tp_pips}.csv"
+    # WHY: Old cache key only encoded direction/sl/tp. Changing max_hold,
+    #      pip_size, or spread_pips produced the same filename, so the
+    #      second call silently returned stale labels from the first run
+    #      under different parameters. Fix: include every parameter that
+    #      affects the output in the cache key.
+    # CHANGED: April 2026 — full parameter cache key (audit HIGH #45)
+    cache_name = (
+        f"candle_labels_{direction}_sl{sl_pips}_tp{tp_pips}"
+        f"_mh{max_hold_candles}_ps{pip_size}_sp{spread_pips}.csv"
+    )
     cache_path = os.path.join(OUTPUT_DIR, cache_name)
 
     if cache and os.path.exists(cache_path):
         cached = pd.read_csv(cache_path)
-        if len(cached) > 1000:
-            return cached
+        # WHY: Fix 5 — validate cached rowcount matches expected rowcount
+        #      for the current candles file, not just a minimum threshold.
+        #      See audit HIGH #46.
+        # CHANGED: April 2026 — strict row count validation (audit HIGH #46)
+        # Read current candle file row count to validate the cache
+        try:
+            _n_candles = sum(1 for _ in open(candles_path, 'r')) - 1  # minus header
+            _expected_rows = max(0, _n_candles - max_hold_candles - 1)
+            if abs(len(cached) - _expected_rows) < 10:  # tolerate ±10 rows
+                return cached
+            # Row count mismatch — cache is stale, fall through to regenerate
+            print(f"[candle_labeler] Cache has {len(cached)} rows but candles "
+                  f"file has {_n_candles} rows (expected ~{_expected_rows}). "
+                  f"Regenerating.")
+        except Exception as e:
+            print(f"[candle_labeler] Cache validation failed: {e}. Regenerating.")
 
     # Load candles (utf-8-sig automatically strips BOM)
     candles = pd.read_csv(candles_path, encoding='utf-8-sig')

@@ -28,6 +28,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
+# CHANGED: April 2026 — UI-safe logging (Phase 19d)
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 
 # ── Section 1: Robot Profile ──────────────────────────────────────────────────
 
@@ -304,14 +308,14 @@ def compute_feature_importance(df):
     ]
 
     if not feature_cols:
-        print("[ANALYZE] ERROR: no usable features after excluding leak columns")
+        log.info("[ANALYZE] ERROR: no usable features after excluding leak columns")
         return None
 
     if 'is_winner' not in df.columns:
-        print("[ANALYZE] ERROR: is_winner column missing — cannot train")
+        log.info("[ANALYZE] ERROR: is_winner column missing — cannot train")
         return None
 
-    print(f"[ANALYZE] Training on {len(feature_cols)} features "
+    log.info(f"[ANALYZE] Training on {len(feature_cols)} features "
           f"(excluded {len(LEAK_COLS)} leak/meta cols)")
 
     y = df['is_winner'].values
@@ -829,80 +833,80 @@ def run_analysis(feature_matrix_path=None):
     if feature_matrix_path is None:
         feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
 
-    print('=' * 70)
-    print('ROBOT ANALYSIS — Full Reverse Engineering')
-    print('=' * 70)
+    log.info('=' * 70)
+    log.info('ROBOT ANALYSIS — Full Reverse Engineering')
+    log.info('=' * 70)
 
     start = time.time()
 
     # Load
-    print('\nLoading feature matrix...')
+    log.info('\nLoading feature matrix...')
     df = pd.read_csv(feature_matrix_path)
-    print(f'  {len(df)} trades x {len(df.columns)} features')
+    log.info(f'  {len(df)} trades x {len(df.columns)} features')
 
     # 1. Profile
-    print('\n[1/8] Building robot profile...')
+    log.info('\n[1/8] Building robot profile...')
     profile = build_robot_profile(df)
-    print(f"  Type: {profile['direction']} {profile['duration_category']}")
-    print(f"  Win rate: {profile['win_rate']*100:.0f}%, R:R {profile['reward_risk_ratio']:.1f}:1")
+    log.info(f"  Type: {profile['direction']} {profile['duration_category']}")
+    log.info(f"  Win rate: {profile['win_rate']*100:.0f}%, R:R {profile['reward_risk_ratio']:.1f}:1")
     sl = profile['sl_pattern']
-    print(f"  SL: {'Fixed ' + str(sl.get('fixed_value_pips', '?')) + ' pips' if sl.get('fixed') else 'Dynamic'}")
+    log.info(f"  SL: {'Fixed ' + str(sl.get('fixed_value_pips', '?')) + ' pips' if sl.get('fixed') else 'Dynamic'}")
 
     # 2. Feature Importance
-    print('\n[2/8] Computing feature importance...')
+    log.info('\n[2/8] Computing feature importance...')
     model_result = compute_feature_importance(df)
-    print(f"  Model accuracy: train={model_result['train_accuracy']*100:.1f}%, test={model_result['test_accuracy']*100:.1f}%")
-    print('  Top 5 features:')
+    log.info(f"  Model accuracy: train={model_result['train_accuracy']*100:.1f}%, test={model_result['test_accuracy']*100:.1f}%")
+    log.info('  Top 5 features:')
     for feat, imp in model_result['top_20'][:5]:
-        print(f'    {feat}: {imp*100:.1f}%')
+        log.info(f'    {feat}: {imp*100:.1f}%')
 
     # 3. Rules
-    print('\n[3/8] Extracting trading rules...')
+    log.info('\n[3/8] Extracting trading rules...')
     rules = extract_rules(df, model_result)
-    print(f'  Extracted {len(rules)} rules')
+    log.info(f'  Extracted {len(rules)} rules')
     for i, rule in enumerate(rules[:3]):
         conds = ' AND '.join(f"{c['feature']} {c['operator']} {c['value']}" for c in rule['conditions'])
-        print(f"  Rule {i+1}: IF {conds}")
-        print(f"           THEN {rule['prediction']} (conf: {rule['confidence']*100:.0f}%, "
+        log.info(f"  Rule {i+1}: IF {conds}")
+        log.info(f"           THEN {rule['prediction']} (conf: {rule['confidence']*100:.0f}%, "
               f"coverage: {rule['coverage']} trades, WR: {rule['win_rate']*100:.0f}%)")
 
     # 4. Clusters
-    print('\n[4/8] Clustering trades...')
+    log.info('\n[4/8] Clustering trades...')
     clusters = cluster_trades(df, model_result)
     for c in clusters:
-        print(f"  '{c['name']}': {c['count']} trades ({c['pct']}%), "
+        log.info(f"  '{c['name']}': {c['count']} trades ({c['pct']}%), "
               f"WR {c['win_rate']*100:.0f}%, avg {c['avg_pips']:+.0f} pips")
 
     # 5. Regimes
-    print('\n[5/8] Analyzing market regimes...')
+    log.info('\n[5/8] Analyzing market regimes...')
     regimes = analyze_market_regimes(df, model_result)
     for regime_name, regime_data in regimes.items():
         if isinstance(regime_data, dict):
-            print(f'  {regime_name}:')
+            log.info(f'  {regime_name}:')
             for sub_name, sub_data in regime_data.items():
                 if isinstance(sub_data, dict) and 'win_rate' in sub_data:
-                    print(f"    {sub_name}: WR {sub_data['win_rate']*100:.0f}%, "
+                    log.info(f"    {sub_name}: WR {sub_data['win_rate']*100:.0f}%, "
                           f"avg {sub_data['avg_pips']:+.0f} pips ({sub_data['count']} trades)")
 
     # 6. Evolution
-    print('\n[6/8] Analyzing time periods...')
+    log.info('\n[6/8] Analyzing time periods...')
     evolution = analyze_evolution(df)
     for p in evolution:
-        print(f"  {p['period']}: {p['trades']} trades, WR {p['win_rate']*100:.0f}%, "
+        log.info(f"  {p['period']}: {p['trades']} trades, WR {p['win_rate']*100:.0f}%, "
               f"avg {p['avg_pips']:+.0f} pips, {p['trades_per_month']}/month")
 
     # 7. Anomalies
-    print('\n[7/8] Detecting anomalies...')
+    log.info('\n[7/8] Detecting anomalies...')
     anomalies = detect_anomalies(df, model_result)
-    print(f"  {anomalies['count']} anomalous trades ({anomalies['pct']}%)")
-    print(f"  Anomaly WR: {anomalies['anomaly_win_rate']*100:.0f}% "
+    log.info(f"  {anomalies['count']} anomalous trades ({anomalies['pct']}%)")
+    log.info(f"  Anomaly WR: {anomalies['anomaly_win_rate']*100:.0f}% "
           f"vs normal: {anomalies['normal_win_rate']*100:.0f}%")
 
     # 8. Suggestions
-    print('\n[8/8] Generating improvement suggestions...')
+    log.info('\n[8/8] Generating improvement suggestions...')
     suggestions = suggest_improvements(df, model_result, regimes, clusters, profile)
     for s in suggestions:
-        print(f"  -> {s['description']}: {s['impact']}")
+        log.info(f"  -> {s['description']}: {s['impact']}")
 
     elapsed = time.time() - start
 
@@ -937,15 +941,15 @@ def run_analysis(feature_matrix_path=None):
     json_path = os.path.join(OUTPUT_DIR, 'analysis_report.json')
     with open(json_path, 'w') as f:
         json.dump(report, f, indent=2, default=str)
-    print(f'\nSaved: {json_path}')
+    log.info(f'\nSaved: {json_path}')
 
     txt_path = os.path.join(OUTPUT_DIR, 'analysis_report.txt')
     _write_text_report(report, txt_path)
-    print(f'Saved: {txt_path}')
+    log.info(f'Saved: {txt_path}')
 
-    print(f"\n{'=' * 70}")
-    print(f'ANALYSIS COMPLETE in {elapsed:.0f}s')
-    print(f"{'=' * 70}")
+    log.info(f"\n{'=' * 70}")
+    log.info(f'ANALYSIS COMPLETE in {elapsed:.0f}s')
+    log.info(f"{'=' * 70}")
 
     return report
 
