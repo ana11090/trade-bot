@@ -63,11 +63,34 @@ def build_stats_charts():
 
     profits = df["profit_scaled"].dropna()
 
-    winners   = profits[profits > 0]
-    losers    = profits[profits < 0]
-    breakeven = profits[profits == 0]
+    # WHY: Phase 24 Fix 1 — Old code computed avg_win/avg_loss from ALL
+    #      trades but avg_win_pct/avg_loss_pct only from trades where
+    #      running_bal > 0. Two different denominators → user saw numbers
+    #      that didn't agree (avg_win=$50 but avg_win_pct=0.55% on $100k
+    #      → 0.55% × $100k = $550 ≠ $50). Now BOTH use the same masked
+    #      subset: trades where running_bal was positive. Trades made
+    #      after the account was already blown are excluded from BOTH
+    #      dollar and pct stats — they're contaminated data anyway.
+    # CHANGED: April 2026 — Phase 24 Fix 1 — consistent denominators (audit Part B #12)
+    try:
+        deposit = float(state.starting_balance.get())
+    except ValueError:
+        deposit = 0.0
 
-    n_total = len(profits)
+    # Compute running balance and the valid_mask UP FRONT so all
+    # downstream stats use the same subset.
+    running_bal  = deposit + df["profit_scaled"].shift(1).fillna(0).cumsum()
+    valid_mask   = running_bal > 0
+    safe_balance = running_bal.where(valid_mask, float("nan"))
+
+    # Build the masked profits subset for ALL displayed stats
+    profits_valid = df["profit_scaled"][valid_mask].dropna()
+
+    winners   = profits_valid[profits_valid > 0]
+    losers    = profits_valid[profits_valid < 0]
+    breakeven = profits_valid[profits_valid == 0]
+
+    n_total = len(profits_valid)
     n_win   = len(winners)
     n_loss  = len(losers)
     n_be    = len(breakeven)
@@ -79,22 +102,14 @@ def build_stats_charts():
     gross_profit  = winners.sum()   if n_win  > 0 else 0
     gross_loss    = abs(losers.sum()) if n_loss > 0 else 0
     profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float("inf")
+    # Net profit uses the ORIGINAL profits (unmasked) so the displayed
+    # net matches the actual account P&L. The masked stats are for
+    # per-trade averages only.
     net_profit    = profits.sum()
-
-    try:
-        deposit = float(state.starting_balance.get())
-    except ValueError:
-        deposit = 0.0
     net_pct = (net_profit / deposit * 100) if deposit != 0 else 0
 
-    # WHY: Compounding % only makes sense when the balance entering the trade
-    #      was POSITIVE. Dividing by zero or negative balance gives nonsense.
-    # CHANGED: April 2026 — mask non-positive balance entries
-    running_bal  = deposit + df["profit_scaled"].shift(1).fillna(0).cumsum()
-    valid_mask   = running_bal > 0
-    safe_balance = running_bal.where(valid_mask, float("nan"))
+    # Pct stats — same masked subset as the dollar stats
     pct_series   = df["profit_scaled"] / safe_balance * 100
-
     win_mask  = (df["profit_scaled"] > 0) & valid_mask
     loss_mask = (df["profit_scaled"] < 0) & valid_mask
     avg_win_pct  = pct_series[win_mask].mean()  if win_mask.any()  else 0

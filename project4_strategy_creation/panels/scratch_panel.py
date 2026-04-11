@@ -64,6 +64,10 @@ except ImportError:
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..', '..')))
 
+# CHANGED: April 2026 — Phase 26 Fix 5 — UI-safe logging
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # ── module-level state (panel is built only once, lazily) ─────────────────────
 _panel          = None
 _result         = None
@@ -267,6 +271,15 @@ def _build_inner(inner):
     spread_var    = tk.StringVar(value="2.5")
     rr_var        = tk.StringVar(value="R:R = 2.0:1")
 
+    # WHY: Phase 26 Fix 4 — Track the initial defaults so the prop
+    #      firm selector can detect whether the user has manually
+    #      edited the fields. If the current values still match the
+    #      initial defaults at the time the firm is selected, the
+    #      override fires. If they differ, the user has customized
+    #      and we leave them alone.
+    # CHANGED: April 2026 — Phase 26 Fix 4 (audit Part B #23)
+    _sltp_initial_defaults = ("150", "300")
+
     _widgets.update(dict(direction_var=direction_var, sl_var=sl_var,
                          tp_var=tp_var, hold_var=hold_var,
                          spread_var=spread_var, rr_var=rr_var))
@@ -282,10 +295,13 @@ def _build_inner(inner):
     sl_var.trace_add("write", _update_rr)
     tp_var.trace_add("write", _update_rr)
 
+    # WHY: Phase 26 Fix 2 — Added XAUUSD scale hints to SL/TP labels.
+    #      Defaults (150/300) are gold-scale; forex users need to adjust.
+    # CHANGED: April 2026 — Phase 26 Fix 2 — XAUUSD hint (audit Part B #27)
     left_rows = [
         ("Direction:",          direction_var, "combo", ["BUY", "SELL", "BOTH"]),
-        ("SL (pips):",          sl_var,        "entry", None),
-        ("TP (pips):",          tp_var,        "entry", None),
+        ("SL (pips) [XAUUSD: 150]:",  sl_var,  "entry", None),
+        ("TP (pips) [XAUUSD: 300]:",  tp_var,  "entry", None),
         ("Max hold:",           hold_var,      "entry", None),
         ("Spread:",             spread_var,    "entry", None),
     ]
@@ -633,6 +649,12 @@ def _build_inner(inner):
     prop_firms = _load_prop_firms()
     firm_names = ["None (skip prop firm optimization)"] + [f[0] for f in prop_firms]
     firm_data_map = {f[0]: f[1] for f in prop_firms}
+    # WHY: Phase 26 Fix 5 — Stash firm_data_map in _widgets so the
+    #      _worker closure can build a real prop_data dict instead of
+    #      passing None. The map maps display name → full firm JSON
+    #      dict (loaded by _load_prop_firms above).
+    # CHANGED: April 2026 — Phase 26 Fix 5 (audit Part B #25)
+    _widgets['firm_data_map'] = firm_data_map
 
     prop_firm_var = tk.StringVar(value=firm_names[0])
     prop_challenge_var = tk.StringVar(value="")
@@ -778,9 +800,16 @@ def _build_inner(inner):
         account_size = int(account_str.replace('$', '').replace(',', ''))
 
         # Calculate safe SL/TP
-        # Safe approach: use 50% of daily DD limit as risk per trade
+        # WHY: Phase 26 Fix 3 — Old code used 50% of daily DD as risk
+        #      per trade (= 2.5% on a 5% daily DD limit). The label
+        #      said "Conservative" but 2.5% per trade is industry-
+        #      aggressive — two losses in a row hit the daily limit.
+        #      The standard "1% rule" is 1% risk per trade, which on
+        #      a 5% daily DD is 20% of the daily limit. Phase 26
+        #      changes the multiplier 0.5 → 0.2 to match.
+        # CHANGED: April 2026 — Phase 26 Fix 3 — 1% rule (audit Part B #24)
         max_daily_dd_dollars = account_size * (daily_dd_pct / 100)
-        safe_risk_per_trade = max_daily_dd_dollars * 0.5  # Conservative: 50% of daily limit
+        safe_risk_per_trade = max_daily_dd_dollars * 0.2  # 1% rule: 20% of daily limit
 
         # WHY: Old code hardcoded pip_value_per_lot=10 for XAUUSD, which
         #      is WRONG for the actual MT5 broker-side calculation.
@@ -841,18 +870,35 @@ def _build_inner(inner):
         # Display safe parameters (showing which symbol the lot size is for)
         # WHY: Users need to see that the lot size is symbol-specific
         #      so they don't apply it to a different instrument by mistake.
-        # CHANGED: April 2026 — show symbol + lot-size tooltip
+        # WHY: Phase 26 Fix 5 — Old label said "Auto-Calculated Safe
+        #      Parameters" implying the values would flow into
+        #      Discovery. They don't (yet) — scratch_discovery doesn't
+        #      consume prop_firm_data. Renamed to "Suggested" to be
+        #      honest about what currently happens.
+        # CHANGED: April 2026 — Phase 26 Fix 5 (audit Part B #25)
         prop_safe_sl_var.set(
-            f"✅ Auto-Calculated Safe Parameters ({_symbol}):\n"
+            f"💡 Suggested Safe Parameters ({_symbol}) — informational:\n"
             f"   Risk per trade: {safe_risk_pct:.2f}% (${safe_risk_per_trade:,.0f})  |  "
             f"SL: {suggested_sl} pips  |  TP: {suggested_tp} pips  |  "
             f"Lot Size: {safe_lot_size:.2f} lots  "
-            f"(enter this value directly in MT5)"
+            f"(use this value when entering trades manually in MT5)"
         )
 
+        # WHY: Phase 26 Fix 4 — Only override SL/TP if the user has
+        #      not manually edited them. Old code unconditionally
+        #      wiped user choices when picking a firm.
+        # CHANGED: April 2026 — Phase 26 Fix 4 (audit Part B #23)
         # Auto-update SL/TP fields in Settings section
-        sl_var.set(str(suggested_sl))
-        tp_var.set(str(suggested_tp))
+        _current_sl = sl_var.get()
+        _current_tp = tp_var.get()
+        if (_current_sl, _current_tp) == _sltp_initial_defaults:
+            # User hasn't touched these — safe to override
+            sl_var.set(str(suggested_sl))
+            tp_var.set(str(suggested_tp))
+        else:
+            # User customized — show the suggestion in the info text
+            # but don't overwrite their choices
+            pass  # The prop_safe_sl_var label already shows suggested values
 
     # Bind callbacks
     prop_firm_var.trace_add("write", _on_firm_selected)
@@ -1292,11 +1338,29 @@ def _on_run():
                             "Discovery is already running. Please wait.")
         return
 
-    candles_path = _widgets.get('candles_path', '')
-    if not candles_path or not os.path.exists(candles_path):
-        messagebox.showerror("Missing Data",
-                             "H1 candle data not found at data/xauusd_H1.csv\n\n"
-                             "Please run the Data Pipeline first to load your candle history.")
+    # WHY: Phase 26 Fix 6 — Recompute candles_path from the CURRENT
+    #      entry timeframe selection. Old code used the path set at
+    #      panel build time (always H1) so picking M15 in the
+    #      dropdown didn't actually change which file was loaded.
+    #      The error message also hardcoded H1; now it shows the
+    #      actual path that was looked up.
+    # CHANGED: April 2026 — Phase 26 Fix 6 (audit Part B #26)
+    _entry_tf_widget = _widgets.get('entry_tf_var')
+    _entry_tf = _entry_tf_widget.get() if _entry_tf_widget else 'H1'
+    _data_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data'
+    )
+    candles_path = os.path.join(_data_dir, f"xauusd_{_entry_tf}.csv")
+    # Update the stash so other code paths see the current selection
+    _widgets['candles_path'] = candles_path
+
+    if not os.path.exists(candles_path):
+        messagebox.showerror(
+            "Missing Data",
+            f"{_entry_tf} candle data not found at:\n  {candles_path}\n\n"
+            f"Please run the Data Pipeline first to load your candle history "
+            f"for the {_entry_tf} timeframe."
+        )
         return
 
     try:
@@ -1375,16 +1439,70 @@ def _on_run():
     def _worker():
         global _result
         try:
+            # WHY: Phase 26 Fix 5 — Build a real prop_data dict from
+            #      the user-selected firm. Old code set prop_data=None
+            #      with a TODO. Now the dict is built from
+            #      firm_data_map (stashed in _widgets at panel build).
+            #
+            #      IMPORTANT: scratch_discovery.run_scratch_discovery
+            #      currently accepts prop_firm_data as a parameter but
+            #      does NOT consume it (verified in current git). The
+            #      Monte Carlo pass-probability estimation that the
+            #      docstring promises was never implemented. This fix
+            #      builds the dict so when someone wires up
+            #      scratch_discovery later, the data is already
+            #      flowing — no panel changes needed.
+            # CHANGED: April 2026 — Phase 26 Fix 5 (audit Part B #25)
             # Build prop firm data dict if prop firm selected
             prop_data = None
             firm_name_param = None
             if (prop_firm_name and prop_firm_name != "None (skip prop firm optimization)" and
                 prop_challenge and prop_account):
-                # This would ideally load the full firm data, but for now we'll pass None
-                # and implement Monte Carlo simulation in a separate commit
                 firm_name_param = prop_firm_name
-                # TODO: Build prop_data dict from firm_data_map
-                pass
+                _firm_map = _widgets.get('firm_data_map', {})
+                _firm_full = _firm_map.get(prop_firm_name)
+                if _firm_full:
+                    # Find the matching challenge by name
+                    _challenges = _firm_full.get('challenges', [])
+                    _ch = next(
+                        (c for c in _challenges
+                         if c.get('challenge_name') == prop_challenge),
+                        None,
+                    )
+                    if _ch:
+                        try:
+                            _account_size_int = int(
+                                str(prop_account).replace(', ', '').replace(',', '')
+                            )
+                        except (ValueError, TypeError):
+                            _account_size_int = 0
+                        prop_data = {
+                            'firm_id':       _firm_full.get('firm_id'),
+                            'firm_name':     prop_firm_name,
+                            'challenge_id':  _ch.get('challenge_id'),
+                            'challenge_name': prop_challenge,
+                            'account_size':  _account_size_int,
+                            'phases':        _ch.get('phases', []),
+                            'funded':        _ch.get('funded', {}),
+                            'trading_rules': _firm_full.get('trading_rules', []),
+                            'costs':         _firm_full.get('costs', {}),
+                        }
+                        log.info(
+                            f"[scratch_panel] Built prop_data for "
+                            f"{prop_firm_name} / {prop_challenge} / "
+                            f"${_account_size_int:,} — note: "
+                            f"scratch_discovery does not yet consume this data."
+                        )
+                    else:
+                        log.warning(
+                            f"[scratch_panel] Could not find challenge "
+                            f"'{prop_challenge}' in firm '{prop_firm_name}'."
+                        )
+                else:
+                    log.warning(
+                        f"[scratch_panel] Firm '{prop_firm_name}' not found "
+                        f"in firm_data_map (loaded {len(_firm_map)} firms)."
+                    )
 
             from project4_strategy_creation.scratch_discovery import run_scratch_discovery
             _result = run_scratch_discovery(

@@ -10,6 +10,7 @@ Usage:
 import os
 import sys
 import subprocess
+import glob
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,37 +35,71 @@ def install_packages():
 
 
 def check_data_files():
+    """Check that candle CSVs exist for the required timeframes.
+
+    WHY: Phase 27 Fix 4 — Old code hardcoded xauusd_*.csv filenames.
+         Users with EURUSD or any other instrument got false MISSING
+         errors. Now globs for any *_<TF>.csv per required timeframe.
+         Reports the actual filenames found.
+    CHANGED: April 2026 — Phase 27 Fix 4 (audit Part B #31)
+    """
+    import glob
     data_dir = os.path.join(ROOT, 'data')
-    required = ['xauusd_H1.csv', 'xauusd_M5.csv', 'xauusd_M15.csv',
-                'xauusd_H4.csv', 'xauusd_D1.csv']
+    required_tfs = ['H1', 'M5', 'M15', 'H4', 'D1']
 
     print("\nChecking data files...")
+
+    if not os.path.isdir(data_dir):
+        print(f"  ERROR: data directory not found: {data_dir}")
+        print(f"  Create it and copy your candle CSVs there.")
+        return False
+
     problems = []
-    for fname in required:
-        fpath = os.path.join(data_dir, fname)
-        if not os.path.exists(fpath):
-            problems.append(f"  MISSING: {fname}")
+    for tf in required_tfs:
+        # Match any symbol prefix: xauusd_H1.csv, eurusd_H1.csv, etc.
+        candidates = glob.glob(os.path.join(data_dir, f"*_{tf}.csv"))
+        if not candidates:
+            problems.append(f"  MISSING: no *_{tf}.csv file found")
             continue
-        size = os.path.getsize(fpath)
-        if size < 10000:
-            with open(fpath, 'r') as f:
-                first_line = f.readline()
-            if 'git-lfs' in first_line or size < 200:
-                problems.append(f"  LFS POINTER: {fname} ({size} bytes — needs real data)")
+
+        # Pick the largest non-pointer file for this TF
+        valid_files = []
+        for fpath in candidates:
+            fname = os.path.basename(fpath)
+            size = os.path.getsize(fpath)
+            if size < 10000:
+                with open(fpath, 'r') as f:
+                    first_line = f.readline()
+                if 'git-lfs' in first_line or size < 200:
+                    problems.append(
+                        f"  LFS POINTER: {fname} ({size} bytes — needs real data)"
+                    )
+                else:
+                    problems.append(f"  TOO SMALL: {fname} ({size} bytes)")
             else:
-                problems.append(f"  TOO SMALL: {fname} ({size} bytes)")
-        else:
-            size_mb = size / 1024 / 1024
-            print(f"  OK: {fname} ({size_mb:.1f} MB)")
+                valid_files.append((fpath, size))
+
+        if valid_files:
+            # Report the largest valid file for this timeframe
+            valid_files.sort(key=lambda x: -x[1])
+            best_fpath, best_size = valid_files[0]
+            best_fname = os.path.basename(best_fpath)
+            size_mb = best_size / 1024 / 1024
+            extra = ""
+            if len(valid_files) > 1:
+                extra = f"  (+ {len(valid_files) - 1} other {tf} files)"
+            print(f"  OK: {best_fname} ({size_mb:.1f} MB){extra}")
 
     if problems:
         print("\n  DATA FILES NEED ATTENTION:")
         for p in problems:
             print(p)
         print(f"\n  Copy your real CSV files from your original machine to: {data_dir}/")
+        print(f"  Required timeframes: {', '.join(required_tfs)}")
+        print(f"  Any symbol prefix is accepted (xauusd_*, eurusd_*, etc.)")
         return False
     else:
-        print("  All data files present and valid")
+        print("  All required timeframes present and valid")
         return True
 
 

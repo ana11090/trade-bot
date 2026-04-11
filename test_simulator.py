@@ -12,22 +12,56 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
 from shared.prop_firm_simulator import simulate_challenge
 
-TRADES_PATH = os.path.join(os.path.dirname(__file__),
-                           "trade_histories", "original_bot", "trades_clean.csv")
+# WHY: Phase 27 Fix 1 — Old code hardcoded the path to
+#      trade_histories/original_bot/trades_clean.csv. Users with
+#      different active workspaces got the wrong trades or a "file
+#      not found" error. Now resolves the path from the active
+#      workspace via trade_history_manager. Falls back to the legacy
+#      hardcoded path for backward compatibility.
+# CHANGED: April 2026 — Phase 27 Fix 1 (audit Part B #28 path-only)
+def _resolve_trades_path():
+    """Resolve the trades CSV path from the active workspace.
+
+    Tries the active workspace first, then falls back to the legacy
+    hardcoded original_bot path.
+    """
+    try:
+        from shared.trade_history_manager import (
+            get_active_history, get_history_trades_path
+        )
+        active = get_active_history()
+        if active and active.get('history_id'):
+            workspace_path = get_history_trades_path(active['history_id'])
+            if os.path.exists(workspace_path):
+                return workspace_path
+    except (ImportError, AttributeError, KeyError) as _e:
+        print(f"  (workspace lookup failed: {_e}, trying legacy path)")
+
+    # Legacy fallback
+    legacy = os.path.join(
+        os.path.dirname(__file__),
+        "trade_histories", "original_bot", "trades_clean.csv"
+    )
+    if os.path.exists(legacy):
+        return legacy
+    # Try the alternate filename
+    legacy_alt = legacy.replace("trades_clean.csv", "trades_original.csv")
+    if os.path.exists(legacy_alt):
+        return legacy_alt
+    return None
+
+
+TRADES_PATH = _resolve_trades_path()
 
 
 def main():
     global TRADES_PATH
 
-    # Fallback: try trades_original.csv if clean not found
-    if not os.path.exists(TRADES_PATH):
-        alt = TRADES_PATH.replace("trades_clean.csv", "trades_original.csv")
-        if os.path.exists(alt):
-            TRADES_PATH = alt
-        else:
-            print(f"ERROR: trades file not found at {TRADES_PATH}")
-            print("Load a trade history first via the app ('+ Load trades').")
-            sys.exit(1)
+    if TRADES_PATH is None or not os.path.exists(TRADES_PATH):
+        print("ERROR: No trades file found.")
+        print("  - Either load a trade history via the app ('+ Load trades')")
+        print("  - Or place a trades CSV at trade_histories/<history_id>/trades_clean.csv")
+        sys.exit(1)
 
     trades_df = pd.read_csv(TRADES_PATH)
     print(f"Loaded {len(trades_df)} trades from {TRADES_PATH}\n")

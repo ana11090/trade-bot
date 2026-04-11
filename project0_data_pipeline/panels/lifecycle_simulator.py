@@ -11,22 +11,49 @@ import pandas as pd
 import state
 
 # Module-level refs
-_tree          = None
-_status_label  = None
-_mode_var      = None
-_samples_var   = None
-_size_var      = None
-_risk_var      = None
-_sl_var        = None
-_safety_var    = None
-_run_btn       = None
-_summary_frame = None
-_running       = False
+_tree              = None
+_status_label      = None
+_mode_var          = None
+_samples_var       = None
+_size_var          = None
+_risk_var          = None
+_sl_var            = None
+_safety_var        = None
+# WHY: Phase 23 Fix 5 — "good candidate" threshold is now UI-editable
+#      so users can adjust it for fast strategies (70%+) or slow ones
+#      (50%) without needing to edit source code. Default 60% preserves
+#      the previous behavior.
+# CHANGED: April 2026 — Phase 23 Fix 5 (audit Part B #9)
+_good_threshold_var = None
+_run_btn           = None
+_summary_frame     = None
+_running           = False
+
+
+def _good_threshold():
+    """Return the user's "good candidate" pass-rate threshold as an int %.
+
+    Reads the Tk variable set by the panel. Falls back to 60 (the old
+    hardcoded value) if the variable is not yet initialized or contains
+    a non-integer.
+
+    WHY: Phase 23 Fix 5 — the threshold used to be hardcoded 60% in 4
+         different sites. UI users couldn't change it without editing
+         source. Now bound to a Tk OptionMenu with values 30..80.
+    CHANGED: April 2026 — Phase 23 Fix 5 (audit Part B #9)
+    """
+    if _good_threshold_var is None:
+        return 60
+    try:
+        return int(_good_threshold_var.get())
+    except (ValueError, AttributeError):
+        return 60
 
 
 def build_panel(content):
     global _tree, _status_label, _mode_var, _samples_var
     global _size_var, _risk_var, _sl_var, _safety_var, _run_btn, _summary_frame
+    global _good_threshold_var  # CHANGED: April 2026 — Phase 23 Fix 5
 
     panel = tk.Frame(content, bg="#f0f2f5")
 
@@ -74,10 +101,16 @@ def build_panel(content):
     risk_menu.pack(side="left", padx=(4, 16))
 
     tk.Label(row2, text="SL pips:", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    # WHY: Phase 23 Fix 6 — default 150 is XAUUSD-scale. Forex users
+    #      typically use 20-50 pip stops. Tooltip-style hint avoids
+    #      accidentally accepting the gold default for forex backtest.
+    # CHANGED: April 2026 — Phase 23 Fix 6 (audit Part B #10)
     _sl_var = tk.StringVar(value="150")
     sl_entry = tk.Entry(row2, textvariable=_sl_var, width=6,
                         font=("Segoe UI", 10), bd=1, relief="solid")
-    sl_entry.pack(side="left", padx=(4, 16))
+    sl_entry.pack(side="left", padx=(4, 4))
+    tk.Label(row2, text="(150 = XAUUSD)", bg="white",
+             font=("Segoe UI", 8), fg="#888888").pack(side="left", padx=(0, 12))
 
     tk.Label(row2, text="DD Safety:", bg="white", font=("Segoe UI", 10)).pack(side="left")
     _safety_var = tk.StringVar(value="80")
@@ -85,6 +118,21 @@ def build_panel(content):
     safety_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
     safety_menu.pack(side="left", padx=(4, 4))
     tk.Label(row2, text="% of daily limit", bg="white",
+             font=("Segoe UI", 9), fg="#888888").pack(side="left", padx=(0, 16))
+
+    # WHY: Phase 23 Fix 5 — UI-editable "good candidate" threshold.
+    #      Default 60% matches old hardcoded behavior. Users with fast
+    #      strategies can raise it; users with slow strategies can
+    #      lower it. The threshold drives the "Good candidates" card,
+    #      the legend coloring, and the table row tags.
+    # CHANGED: April 2026 — Phase 23 Fix 5 (audit Part B #9)
+    tk.Label(row2, text="Good ≥", bg="white", font=("Segoe UI", 10)).pack(side="left")
+    _good_threshold_var = tk.StringVar(value="60")
+    good_menu = tk.OptionMenu(row2, _good_threshold_var,
+                               "30", "40", "50", "55", "60", "65", "70", "75", "80")
+    good_menu.configure(font=("Segoe UI", 10), bd=1, relief="solid")
+    good_menu.pack(side="left", padx=(4, 4))
+    tk.Label(row2, text="% pass rate", bg="white",
              font=("Segoe UI", 9), fg="#888888").pack(side="left", padx=(0, 16))
 
     _run_btn = tk.Button(row2, text="Run Simulation",
@@ -141,8 +189,9 @@ def build_panel(content):
     color_row = tk.Frame(panel, bg="#f0f2f5")
     color_row.pack(fill="x", padx=20, pady=(0, 8))
     for bg_color, fg_color, text in [
-        ("#EAF3DE", "#27500A", "60%+ pass rate — good candidate"),
-        ("#FFF8E8", "#633806", "30–60% pass rate — risky, may need tweaking"),
+        # CHANGED: April 2026 — Phase 23 Fix 5 — dynamic threshold (audit Part B #9)
+        ("#EAF3DE", "#27500A", f"{_good_threshold()}%+ pass rate — good candidate"),
+        ("#FFF8E8", "#633806", f"30–{_good_threshold()}% pass rate — risky, may need tweaking"),
         ("#FCEBEB", "#791F1F", "Below 30% — likely unprofitable after fees"),
     ]:
         dot = tk.Frame(color_row, bg=bg_color, width=14, height=14,
@@ -189,10 +238,17 @@ def build_panel(content):
          "the dollar value based on proper position sizing for the simulated account.\n\n"
          "Formula: lot_size = (account_size × risk%) ÷ (SL_pips × pip_value_per_lot)\n"
          "Then: trade_profit = pips × pip_value_per_lot × lot_size\n\n"
-         "Example ($100K account, 1% risk, 150-pip SL, XAUUSD):\n"
+         "EXAMPLE A — XAUUSD ($1/pip/lot):\n"
          "  lot_size = ($100,000 × 0.01) ÷ (150 × $1.00) = 6.67 lots\n"
          "  A +908 pip trade = 908 × $1.00 × 6.67 = $6,056 profit\n"
-         "  A -150 pip trade = -150 × $1.00 × 6.67 = -$1,000 loss (exactly 1% risk)"),
+         "  A -150 pip trade = -150 × $1.00 × 6.67 = -$1,000 loss (exactly 1% risk)\n\n"
+         "EXAMPLE B — EURUSD or other forex majors ($10/pip/lot):\n"
+         "  lot_size = ($100,000 × 0.01) ÷ (150 × $10.00) = 0.67 lots\n"
+         "  A +200 pip trade = 200 × $10.00 × 0.67 = $1,333 profit\n"
+         "  A -150 pip trade = -150 × $10.00 × 0.67 = -$1,000 loss (exactly 1% risk)\n\n"
+         "⚠ The lot size differs by 10× between XAUUSD and forex pairs — copying "
+         "the wrong example into your broker will multiply your real risk by 10×. "
+         "Use the example that matches YOUR instrument."),
         ("Daily DD safety margin",
          "Each prop firm has a daily loss limit (e.g. FTMO = 5% = $5,000 on $100K). "
          "In real life, a smart trader stops trading BEFORE hitting this limit — not AT it. "
@@ -419,7 +475,9 @@ def _on_sim_done(results, total, account_size):
 
     best_profit = max(results, key=lambda x: x[2].expected_net_profit or -999)
     best_pass   = max(results, key=lambda x: x[2].eval_pass_rate)
-    good_count  = sum(1 for _, _, s in results if s.eval_pass_rate >= 0.6)
+    # CHANGED: April 2026 — Phase 23 Fix 5 — UI-editable threshold (audit Part B #9)
+    _threshold_frac = _good_threshold() / 100.0
+    good_count  = sum(1 for _, _, s in results if s.eval_pass_rate >= _threshold_frac)
 
     def _card(parent, title, value, sub="", fg="#1a1a2a"):
         c = tk.Frame(parent, bg="white", bd=1, relief="solid")
@@ -439,13 +497,13 @@ def _on_sim_done(results, total, account_size):
     _card(cards, "Highest pass rate",
           f"{best_pass[2].eval_pass_rate * 100:.0f}%",
           f"{best_pass[0]} — {best_pass[1]}")
-    _card(cards, "Good candidates", f"{good_count} / {len(results)}", "60%+ pass rate")
+    _card(cards, "Good candidates", f"{good_count} / {len(results)}", f"{_good_threshold()}%+ pass rate")
 
     # ── Results table ────────────────────────────────────────────────────────
     for firm_name, challenge_name, s in results:
         pass_rate_pct = s.eval_pass_rate * 100
 
-        if pass_rate_pct >= 60:
+        if pass_rate_pct >= _good_threshold():
             tag = "good"
         elif pass_rate_pct >= 30:
             tag = "medium"

@@ -8,15 +8,36 @@ sys.path.insert(0, '.')
 import os
 import pandas as pd
 
+
 print("="*70)
 print("PROJECT 4 DIAGNOSTIC TEST")
 print("="*70)
 
 # Test 1: Check CSV structure
+# WHY: Phase 27 Fix 3 — Old code hardcoded xauusd_H1.csv. Now finds
+#      the first available candle file by globbing data/. Falls back
+#      across timeframes (H1 → M15 → M5 → H4 → D1) and across
+#      symbols (any *_<TF>.csv).
+# CHANGED: April 2026 — Phase 27 Fix 3 (audit Part B #30)
 print("\n[TEST 1] CSV Structure")
 print("-"*70)
-candles_path = os.path.join('data', 'xauusd_H1.csv')
-if os.path.exists(candles_path):
+
+import glob
+_data_dir = 'data'
+_preferred_tfs = ['H1', 'M15', 'M5', 'H4', 'D1']
+candles_path = None
+for _tf in _preferred_tfs:
+    _matches = glob.glob(os.path.join(_data_dir, f"*_{_tf}.csv"))
+    if _matches:
+        candles_path = _matches[0]
+        print(f"Auto-detected candle file: {candles_path}")
+        break
+
+if candles_path is None:
+    print(f"ERROR: No candle files found in {_data_dir}/")
+    print(f"  Looked for: " + ", ".join(f"*_{tf}.csv" for tf in _preferred_tfs))
+
+if candles_path and os.path.exists(candles_path):
     df = pd.read_csv(candles_path, nrows=5)
     print(f"File exists: {candles_path}")
     print(f"Columns: {list(df.columns)}")
@@ -53,30 +74,50 @@ except Exception as e:
     traceback.print_exc()
 
 # Test 3: Test candle_labeler import and basic function
+# WHY: Phase 27 Fix 3 — Old code only tested BUY direction with hardcoded
+#      150/300 pips. Now tests BOTH BUY and SELL directions across two
+#      pip-size scales (150/300 for XAUUSD, 30/60 for forex) so the
+#      diagnostic actually exercises the parameters users would use.
+# CHANGED: April 2026 — Phase 27 Fix 3 (audit Part B #30)
 print("\n[TEST 3] Candle Labeler Function")
 print("-"*70)
 try:
     from project4_strategy_creation.candle_labeler import label_candles
     print("Import successful")
 
-    # Try labeling a small subset
-    temp_csv = 'temp_test.csv'
-    pd.read_csv(candles_path, nrows=50).to_csv(temp_csv, index=False)
+    if candles_path is None:
+        print("SKIPPED: no candle file available")
+    else:
+        # Try labeling a small subset
+        temp_csv = 'temp_test.csv'
+        pd.read_csv(candles_path, nrows=200).to_csv(temp_csv, index=False)
 
-    result = label_candles(
-        candles_path=temp_csv,
-        sl_pips=150,
-        tp_pips=300,
-        direction='BUY',
-        max_hold_candles=5,
-        cache=False
-    )
+        # Test BOTH directions and BOTH scales
+        # XAUUSD scale: 150/300 pips
+        # Forex scale:  30/60 pips
+        _test_cases = [
+            ('BUY',  150, 300, 'XAUUSD-scale'),
+            ('SELL', 150, 300, 'XAUUSD-scale'),
+            ('BUY',   30,  60, 'forex-scale'),
+            ('SELL',  30,  60, 'forex-scale'),
+        ]
+        for _dir, _sl, _tp, _scale in _test_cases:
+            try:
+                result = label_candles(
+                    candles_path=temp_csv,
+                    sl_pips=_sl,
+                    tp_pips=_tp,
+                    direction=_dir,
+                    max_hold_candles=5,
+                    cache=False
+                )
+                wr = result['label'].mean()
+                print(f"  {_dir:4s} {_sl:>4d}/{_tp:<4d} ({_scale}): "
+                      f"{len(result)} labeled, win rate {wr:.1%}")
+            except Exception as _e:
+                print(f"  {_dir:4s} {_sl:>4d}/{_tp:<4d} ({_scale}): ERROR — {_e}")
 
-    print(f"Labeled {len(result)} candles successfully")
-    print(f"Result columns: {list(result.columns)}")
-    print(f"Win rate: {result['label'].mean():.1%}")
-
-    os.remove(temp_csv)
+        os.remove(temp_csv)
 except Exception as e:
     print(f"ERROR: {e}")
     import traceback

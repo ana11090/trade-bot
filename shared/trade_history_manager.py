@@ -289,6 +289,24 @@ def get_history_trades_path(history_id: str) -> str:
     return os.path.join(_HISTORIES_DIR, history_id, "trades_clean.csv")
 
 
+def get_history_outputs_path(history_id: str) -> str:
+    """Return the per-workspace outputs directory for analysis artifacts.
+
+    Each trade history gets its own outputs subfolder so step1/step2/analyze
+    runs on different workspaces don't overwrite each other's results.
+    The directory is created lazily on first access.
+
+    WHY: Phase 25 Fix 1 — Old code wrote analysis outputs to a shared
+         location (project1_reverse_engineering/outputs/) which caused
+         collisions when the user switched between trade history
+         workspaces. Each workspace now has its own outputs folder.
+    CHANGED: April 2026 — Phase 25 Fix 1 — per-history outputs (audit Part B #20)
+    """
+    outputs_dir = os.path.join(_HISTORIES_DIR, history_id, "outputs")
+    os.makedirs(outputs_dir, exist_ok=True)
+    return outputs_dir
+
+
 def get_history_config(history_id: str) -> dict:
     config_path = os.path.join(_HISTORIES_DIR, history_id, "history_config.json")
     if not os.path.exists(config_path):

@@ -17,7 +17,21 @@ if not active:
 trades_path = get_history_trades_path(active['history_id'])
 trades_df = pd.read_csv(trades_path)
 print(f"Loaded {len(trades_df)} trades from '{active['robot_name']}'")
-print(f"Date range: {trades_df['Open Date'].iloc[-1]} to {trades_df['Open Date'].iloc[0]}")
+
+# WHY: Phase 27 Fix 2 — Old code printed iloc[-1] and iloc[0] as
+#      "first/last" but the dataframe isn't sorted by date — those
+#      are ROW order, not chronological. For CSVs sorted oldest-first,
+#      the values were even backwards. Now parses dates and uses
+#      min()/max() for true chronological range.
+# CHANGED: April 2026 — Phase 27 Fix 2 (audit Part B #29)
+try:
+    _dates = pd.to_datetime(trades_df['Open Date'], errors='coerce', dayfirst=True).dropna()
+    if len(_dates) > 0:
+        print(f"Date range: {_dates.min()} to {_dates.max()}")
+    else:
+        print("Date range: (could not parse 'Open Date' column)")
+except (KeyError, ValueError) as _e:
+    print(f"Date range: (error parsing dates: {_e})")
 print()
 
 # Load all firms

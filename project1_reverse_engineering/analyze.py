@@ -936,14 +936,23 @@ def run_analysis(feature_matrix_path=None):
         'suggestions': suggestions,
     }
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # WHY: Phase 25 Fix 4 — Allow caller to redirect outputs to a
+    #      per-workspace folder. Falls back to OUTPUT_DIR for callers
+    #      that don't pass feature_matrix_path. New convention: the
+    #      report goes next to the feature_matrix that was loaded.
+    # CHANGED: April 2026 — Phase 25 Fix 4 — input-relative output (audit Part B #20)
+    if feature_matrix_path is not None:
+        _output_dir = os.path.dirname(os.path.abspath(feature_matrix_path))
+    else:
+        _output_dir = OUTPUT_DIR
+    os.makedirs(_output_dir, exist_ok=True)
 
-    json_path = os.path.join(OUTPUT_DIR, 'analysis_report.json')
+    json_path = os.path.join(_output_dir, 'analysis_report.json')
     with open(json_path, 'w') as f:
         json.dump(report, f, indent=2, default=str)
     log.info(f'\nSaved: {json_path}')
 
-    txt_path = os.path.join(OUTPUT_DIR, 'analysis_report.txt')
+    txt_path = os.path.join(_output_dir, 'analysis_report.txt')
     _write_text_report(report, txt_path)
     log.info(f'Saved: {txt_path}')
 

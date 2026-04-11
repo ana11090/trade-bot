@@ -537,10 +537,31 @@ def build_panel(content):
                                  padx=10, pady=8)
     rules_frame.pack(fill="x", padx=20, pady=(0, 10))
 
-    _rules_info_label = tk.Label(rules_frame, text="Click a row to see detailed trading rules",
-                                  font=("Segoe UI", 9), bg="#f0f2f5", fg="#666",
-                                  justify=tk.LEFT, anchor="nw", wraplength=800)
-    _rules_info_label.pack(fill="x")
+    # WHY: Phase 22 Fix 4 — Add a refresh button so users can re-read
+    #      the firm JSON without clicking the row again. Useful when
+    #      another tab has edited the file.
+    # CHANGED: April 2026 — refresh affordance (audit Part B #4)
+    _rules_header_row = tk.Frame(rules_frame, bg="#f0f2f5")
+    _rules_header_row.pack(fill="x")
+    _rules_info_label = tk.Label(_rules_header_row,
+                                  text="Click a row to see detailed trading rules",
+                                  bg="#f0f2f5",
+                                  font=("Segoe UI", 9), fg="#666",
+                                  anchor="w", justify="left", wraplength=800)
+    _rules_info_label.pack(side="left", fill="x", expand=True)
+
+    def _refresh_rules_view():
+        """Re-trigger the current row's rules display by re-reading the JSON."""
+        sel = _tree.selection()
+        if sel:
+            # Synthesize a TreeviewSelect event
+            class _Evt:
+                pass
+            _on_row_select(_Evt())
+
+    tk.Button(_rules_header_row, text="🔄 Refresh",
+              font=("Segoe UI", 8),
+              command=_refresh_rules_view).pack(side="right", padx=4)
     panel._rules_info_label = _rules_info_label
 
     # Bind row selection to show trading rules

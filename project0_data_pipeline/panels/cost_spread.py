@@ -96,15 +96,34 @@ def build_cost_charts():
     try:
         pip_val = float(pip_value_var.get())
     except ValueError:
-        pip_val = 10.0
-    avg_lots     = pd.to_numeric(df["Lots"], errors="coerce").mean() if "Lots" in df.columns else 1.0
-    n_trades     = len(df)
-    cost_per_pip = pip_val * avg_lots
+        pip_val = 1.0  # CHANGED: April 2026 — Phase 23 Fix 3 — XAUUSD default
 
-    be = (-net / (cost_per_pip * n_trades)) if cost_per_pip * n_trades != 0 else 0
+    # WHY: Old code computed break-even as -net / (pip_val * avg_lots * n_trades)
+    #      which uses an averaged lot size. For strategies with varying lot
+    #      sizes (e.g., 0.07 lots in 2020 → 100 lots in 2026), the average is
+    #      a fictional value that matches no real trade. The correct formula
+    #      sums per-trade extra-spread cost: sum(pip_val × lots_i) where
+    #      lots_i is the actual lot size of trade i. Break-even is -net
+    #      divided by that sum.
+    # CHANGED: April 2026 — Phase 23 Fix 2 — per-trade cost summation
+    #          (audit Part B #6 — HIGH severity)
+    if "Lots" in df.columns:
+        lots_series = pd.to_numeric(df["Lots"], errors="coerce").dropna()
+        # Total cost across all trades for 1 extra pip of spread
+        total_extra_cost_per_pip = float((pip_val * lots_series).sum())
+        avg_lots = float(lots_series.mean()) if len(lots_series) > 0 else 0.0
+        n_trades = len(lots_series)
+    else:
+        # No Lots column — assume 1.0 lot for everything
+        total_extra_cost_per_pip = pip_val * len(df)
+        avg_lots = 1.0
+        n_trades = len(df)
+
+    be = (-net / total_extra_cost_per_pip) if total_extra_cost_per_pip > 0 else 0
     be_color = "#27ae60" if be > 1.0 else "#e94560"
     p8_breakeven_lbl.configure(
-        text=f"Break-even extra spread: {be:.2f} pips   (avg {avg_lots:.2f} lots across {n_trades} trades)",
+        text=f"Break-even extra spread: {be:.2f} pips   "
+             f"(per-trade cost summation across {n_trades} trades, avg lot {avg_lots:.2f})",
         fg=be_color)
 
     for row in p8_tree.get_children():
@@ -224,7 +243,12 @@ def build_panel(content):
     p8_pip_row.pack(anchor="w", padx=16, pady=(0, 10))
     tk.Label(p8_pip_row, text="Pip value (USD per pip per 1.0 lot):",
              bg="white", font=("Segoe UI", 10)).pack(side="left")
-    pip_value_var = tk.StringVar(value="10")
+    # WHY: Old default "10" was wrong even for XAUUSD. Per Phase 13's
+    #      pip value table, XAUUSD = $1/pip/lot (100oz × $0.01).
+    #      Forex majors use $10/pip/lot. The default matches the
+    #      project's primary instrument.
+    # CHANGED: April 2026 — Phase 23 Fix 3 — XAUUSD default (audit Part B #7)
+    pip_value_var = tk.StringVar(value="1.0")
     tk.Entry(p8_pip_row, textvariable=pip_value_var, width=7, font=("Segoe UI", 10),
              bd=1, relief="solid").pack(side="left", padx=(6, 2))
     tk.Button(p8_pip_row, text="Recalculate", font=("Segoe UI", 10, "bold"),

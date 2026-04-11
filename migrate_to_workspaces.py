@@ -24,11 +24,15 @@ if __name__ == "__main__":
 
     print("Migrating original trade history to workspace system...")
 
+    # WHY: Old code hardcoded "2020-2026" which breaks when users migrate
+    #      newer datasets or re-run the migration in future years. Generic
+    #      description "(full history)" is always correct.
+    # CHANGED: April 2026 — remove hardcoded year (audit Part B #25, Phase 27 Fix 5)
     history = load_trades(
         robot_name="Original Bot",
         trades_csv_path=TRADES_PATH,
         symbol="XAUUSD",
-        description="First loaded trade history — original bot trades from 2020-2026",
+        description="First loaded trade history (full history)",
     )
 
     print(f"Loaded  : {history['robot_name']} (id: {history['history_id']})")

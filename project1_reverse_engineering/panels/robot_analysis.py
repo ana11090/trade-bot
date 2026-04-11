@@ -15,6 +15,10 @@ sys.path.insert(0, project_root)
 
 import state
 
+# CHANGED: April 2026 — Phase 25 — UI-safe logging
+from shared.logging_setup import get_logger
+log = get_logger(__name__)
+
 # Design tokens
 BG = "#f0f2f5"
 WHITE = "white"
@@ -33,17 +37,45 @@ _output_text = None
 
 
 def _load_report():
-    """Load analysis_report.json"""
-    report_path = os.path.join(
+    """Load analysis_report.json from the active workspace.
+
+    WHY: Phase 25 Fix 2 — Old code hardcoded the path to
+         project1_reverse_engineering/outputs/analysis_report.json
+         which ignored the active workspace. After switching
+         workspaces, the panel showed stale/wrong data. Now reads
+         from the active history's per-workspace outputs folder.
+         Falls back to the legacy path for backward compatibility.
+    CHANGED: April 2026 — Phase 25 Fix 2 — workspace-aware (audit Part B #18)
+    """
+    # Try the active workspace's outputs folder first
+    try:
+        from shared.trade_history_manager import (
+            get_active_history, get_history_outputs_path
+        )
+        active = get_active_history()
+        if active and active.get('history_id'):
+            workspace_report = os.path.join(
+                get_history_outputs_path(active['history_id']),
+                'analysis_report.json'
+            )
+            if os.path.exists(workspace_report):
+                with open(workspace_report, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+    except (ImportError, AttributeError, KeyError, OSError) as e:
+        # Fall through to legacy path
+        log.debug(f"Workspace report load failed, trying legacy path: {e}")
+
+    # Legacy fallback: old shared outputs folder
+    legacy_path = os.path.join(
         os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json'
     )
-    if not os.path.exists(report_path):
+    if not os.path.exists(legacy_path):
         return None
     try:
-        with open(report_path, 'r', encoding='utf-8') as f:
+        with open(legacy_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"Error loading report: {e}")
+        log.error(f"Error loading legacy report: {e}")
         return None
 
 
@@ -146,11 +178,29 @@ def _display_profile(profile, trade_count):
     grid = tk.Frame(frame, bg=WHITE)
     grid.pack(fill="x")
 
+    # WHY: Phase 25 Fix 3 — Old code did `win_rate * 100` unconditionally.
+    #      If the caller stored win_rate as a percentage already (95.0
+    #      instead of 0.95), the display showed "9500%". Now detects
+    #      whether the stored value is in the [0,1] fraction range or
+    #      the [0,100] percentage range.
+    # CHANGED: April 2026 — Phase 25 Fix 3 — range check (audit Part B #19)
+    _wr_raw = profile.get('win_rate', 0) or 0
+    if _wr_raw <= 1.0:
+        _wr_display = _wr_raw * 100  # stored as fraction
+    else:
+        _wr_display = _wr_raw         # already a percentage
+    # Clamp display to a sensible range so corrupt data doesn't render
+    # nonsense like "9500%". Anything outside [0, 100] is shown as N/A.
+    if _wr_display < 0 or _wr_display > 100:
+        _wr_text = "N/A (corrupt)"
+    else:
+        _wr_text = f"{_wr_display:.1f}%"
+
     metrics = [
         ("Direction", profile.get('direction', '?').replace('_', ' ').title()),
         ("Type", profile.get('duration_category', '?').title()),
         ("Trades", str(trade_count)),
-        ("Win Rate", f"{profile.get('win_rate', 0)*100:.1f}%"),
+        ("Win Rate", _wr_text),
         ("Reward:Risk", f"{profile.get('reward_risk_ratio', 0):.2f}:1"),
         ("Avg Win", f"+{profile.get('avg_win_pips', 0):.0f} pips"),
         ("Avg Loss", f"{profile.get('avg_loss_pips', 0):.0f} pips"),
@@ -475,23 +525,56 @@ def _run_full_analysis():
             if p1_dir not in sys.path:
                 sys.path.insert(0, p1_dir)
 
+            # WHY: Phase 25 Fix 4 — Old code called step1/step2/analyze
+            #      with no parameters, so they fell back to a shared
+            #      OUTPUT_FOLDER global. Multiple workspaces wrote to
+            #      the same location and overwrote each other. Now we
+            #      discover the active workspace's outputs folder and
+            #      thread it through all three steps.
+            # CHANGED: April 2026 — Phase 25 Fix 4 — workspace plumbing (audit Part B #20)
+            try:
+                from shared.trade_history_manager import (
+                    get_active_history, get_history_outputs_path,
+                    get_history_trades_path
+                )
+                _active = get_active_history()
+                if _active and _active.get('history_id'):
+                    _workspace_outputs = get_history_outputs_path(_active['history_id'])
+                    _workspace_trades = get_history_trades_path(_active['history_id'])
+                else:
+                    _workspace_outputs = None
+                    _workspace_trades = None
+            except (ImportError, AttributeError) as _e:
+                log.warning(f"[robot_analysis] workspace lookup failed: {_e}")
+                _workspace_outputs = None
+                _workspace_trades = None
+
             # Step 1: alignment
             state.window.after(0, lambda: _status_label.configure(
                 text="[1/3] Aligning trades to candles...", fg=GREY))
             from step1_align_price import align_all_timeframes
-            align_all_timeframes()
+            align_all_timeframes(
+                trades_csv_path=_workspace_trades,
+                output_dir=_workspace_outputs,
+            )
 
             # Step 2: feature matrix
             state.window.after(0, lambda: _status_label.configure(
                 text="[2/3] Computing indicators (may take ~5 min)...", fg=GREY))
             from step2_compute_indicators import compute_features
-            compute_features()
+            compute_features(
+                output_dir=_workspace_outputs,
+            )
 
             # Step 3: analysis
             state.window.after(0, lambda: _status_label.configure(
                 text="[3/3] Running analysis...", fg=GREY))
             from analyze import run_analysis
-            run_analysis()
+            if _workspace_outputs:
+                _feature_matrix_path = os.path.join(_workspace_outputs, 'feature_matrix.csv')
+                run_analysis(feature_matrix_path=_feature_matrix_path)
+            else:
+                run_analysis()
 
             state.window.after(0, _load_and_display)
             state.window.after(0, lambda: _status_label.configure(
@@ -579,9 +662,24 @@ def build_panel(parent):
     def _on_mousewheel(event):
         canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
-    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+    # WHY: Phase 25 Fix 5 — Old code used canvas.bind_all which binds
+    #      mousewheel at the application level, persisting after the
+    #      panel is destroyed and breaking scroll in OTHER panels.
+    #      scratch_panel.py uses per-canvas + inner-frame binds (the
+    #      reference pattern). main_app.py has a workaround that
+    #      re-asserts smart scrolling after every panel switch — this
+    #      fix removes the need for that workaround.
+    # CHANGED: April 2026 — Phase 25 Fix 5 — per-canvas bind (audit Part B #21)
+    canvas.bind("<MouseWheel>", _on_mousewheel)
+    canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
+
+    # Bind on the content frame too — the wheel needs to work wherever
+    # the cursor is, including over child widgets that don't have their
+    # own scroll handlers.
+    _content_frame.bind("<MouseWheel>", _on_mousewheel)
+    _content_frame.bind("<Button-4>", lambda e: canvas.yview_scroll(-3, "units"))
+    _content_frame.bind("<Button-5>", lambda e: canvas.yview_scroll(3, "units"))
 
     def _on_canvas_resize(event):
         canvas.itemconfig(content_window_id, width=event.width)

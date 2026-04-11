@@ -97,10 +97,22 @@ def _run_check():
             text="No trade history selected. Use '+ Load trades' first.", fg="#e94560")
         return
 
+    # WHY: Old code silently fell back to $100,000 on parse error.
+    #      User typed bad input, got results for the wrong account
+    #      size, and made decisions on numbers that didn't match
+    #      their input. Now we show an error and abort.
+    # CHANGED: April 2026 — Phase 23 Fix 1 — visible parse error (audit Part B #5)
     try:
-        account_size = int(_account_size_var.get())
-    except ValueError:
-        account_size = 100000
+        _raw = _account_size_var.get().strip().replace(',', '').replace('$', '')
+        account_size = int(_raw)
+        if account_size <= 0:
+            raise ValueError("must be positive")
+    except (ValueError, AttributeError):
+        _status_label.configure(
+            text=f"Invalid account size '{_account_size_var.get()}': enter a positive integer (e.g. 100000)",
+            fg="#e94560"
+        )
+        return
 
     _status_label.configure(
         text=f"Running compliance check for {active['robot_name']}...", fg="#666666")

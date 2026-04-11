@@ -183,12 +183,18 @@ def _build_settings(parent):
     ).pack(side="left")
 
     # Numeric params
+    # WHY: Phase 26 Fix 1 — Min win rate default raised from 0.55 to
+    #      0.60. The 0.55 default was slightly too permissive — rules
+    #      with 55-60% WR often pass the in-sample filter but fail
+    #      walk-forward validation. 0.60 is the audit-suggested floor.
+    #      Still user-editable.
+    # CHANGED: April 2026 — Phase 26 Fix 1 — stricter default (audit Part B #22)
     params = [
         ("Max rules",        "_var_max_rules",   "25"),
         ("Max tree depth",   "_var_max_depth",   "4"),
         ("N estimators",     "_var_estimators",  "300"),
         ("Min coverage",     "_var_min_cov",     "10"),
-        ("Min win rate",     "_var_min_wr",      "0.55"),
+        ("Min win rate",     "_var_min_wr",      "0.60"),
         ("Train split",      "_var_train_split", "0.70"),
     ]
 

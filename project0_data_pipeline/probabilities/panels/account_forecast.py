@@ -547,10 +547,18 @@ def _on_calc_health():
     consec = {n: _p_streak_in_horizon(loss_rate, n, n_trades_horizon)
               for n in [3, 5, 7, 10]}
 
-    # Longest actual consecutive loss streak in the data
+    # WHY: Phase 24 Fix 2 — Old code reset the streak on break-even
+    #      trades (v == 0 hit the `else` branch). The risk_flags panel
+    #      and streaks panel both skip break-evens — same trade history
+    #      gave different numbers on different panels. Now matches the
+    #      reference convention from risk_flags.py and streaks.py
+    #      (Phase 21 Fix 8).
+    # CHANGED: April 2026 — Phase 24 Fix 2 — skip break-evens (audit Part B #15)
     max_streak = 0
     streak = 0
     for v in pnl:
+        if v == 0:
+            continue  # break-even — does not interrupt or extend streaks
         if v < 0:
             streak += 1
             max_streak = max(max_streak, streak)

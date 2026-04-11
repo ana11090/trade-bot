@@ -132,7 +132,52 @@ def _on_calculate():
         _row("Longest recovery", f"{max_recovery} trades  (~{max_days:.0f} days)",
              "The longest it took to recover from a drawdown.")
     else:
-        _row("Recovery", "No completed recoveries found", "", vc="#e94560")
+        # WHY: Old code said "No completed recoveries found" which gives no
+        #      info about ongoing recovery progress. When drawdowns haven't
+        #      recovered yet, the user needs to know how close they are —
+        #      e.g., "75% recovered from trough" is way better than "still at
+        #      trough" for the same unrecovered status. The best partial
+        #      recovery shows how much the strategy has clawed back.
+        # CHANGED: April 2026 — Phase 24 Fix 4 — show progress for unrecovered
+        #          episodes (audit Part B #15 — HIGH severity)
+        if len(unrecovered) == 0:
+            # No episodes at all → pristine equity curve, never in drawdown
+            _row("Recovery", "No drawdown episodes",
+                 "The strategy never dropped below its previous equity peak.",
+                 vc="#27ae60")
+        else:
+            # At least one unrecovered episode → compute how far we've climbed
+            # back from the trough. progress = (latest_val - trough_val) / drop_size * 100
+            # where drop_size = peak_val - trough_val. latest_val = cumulative[last_index].
+            best_progress = -float("inf")
+            for ep in unrecovered:
+                trough_idx = ep["trough"]
+                trough_val = cumulative[trough_idx]
+                # The peak is running_peak at the trough index
+                peak_val   = running_peak[trough_idx]
+                drop_size  = peak_val - trough_val  # always > 0 for a real drawdown
+                # Latest value is the final cumulative P&L
+                latest_val = cumulative[-1]
+                if drop_size > 0:
+                    progress = (latest_val - trough_val) / drop_size * 100
+                    best_progress = max(best_progress, progress)
+
+            if best_progress == -float("inf") or best_progress <= 0:
+                # Still at trough or worse
+                _row("Recovery", "No completed recoveries — still at trough",
+                     "The account is currently in a drawdown and has not climbed back.",
+                     vc="#e94560")
+            elif best_progress < 100:
+                # Partial recovery
+                _row("Recovery", f"No completed recoveries — {best_progress:.1f}% recovered from trough",
+                     "The account is climbing back from the drawdown but hasn't reached the previous peak yet.",
+                     vc="#f39c12")  # amber for partial progress
+            else:
+                # This shouldn't happen because if progress >= 100, the episode should be completed
+                # but handle it gracefully
+                _row("Recovery", "No completed recoveries (edge case — fully recovered but not detected)",
+                     "The account appears to have recovered but episode is marked unrecovered.",
+                     vc="#f39c12")
 
     # ── Charts ────────────────────────────────────────────────────────────────
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7))

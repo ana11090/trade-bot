@@ -252,9 +252,17 @@ def _on_run_sim():
     #      The ruin line belongs on the drawdown chart (ax2), not here.
     # CHANGED: April 2026 — removed mismatched ruin line from equity fan chart
     ax1.axhline(0, color="#aaa", linewidth=0.7, linestyle=":")
+    # WHY: Phase 24 Fix 3 — Old title text said "Red line = account
+    #      blown" but the red ruin line was removed in Phase 6 because
+    #      a fixed axhline at ruin_threshold on the cumulative-P&L
+    #      chart was wrong (only correct when peak == 0). The line
+    #      moved to the drawdown chart (ax2) but the title text on
+    #      ax1 was never updated. Now describes only what's actually
+    #      shown on this chart.
+    # CHANGED: April 2026 — Phase 24 Fix 3 — sync title to chart (audit Part B #16)
     ax1.set_title(f"Equity Fan Chart  ({horizon_days}d / {n_trades} trades)\n"
                   "Each band = a range of possible futures. Dark blue line = median outcome. "
-                  "Red line = account blown.",
+                  "(Ruin threshold shown on the drawdown chart →)",
                   fontsize=8, color="#333")
     ax1.set_xlabel("Trade #", fontsize=8)
     ax1.set_ylabel("Cumulative P&L", fontsize=8)
