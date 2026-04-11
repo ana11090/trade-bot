@@ -18,6 +18,9 @@ import shutil
 import re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _SHARED_DIR   = os.path.dirname(os.path.abspath(__file__))  # shared/
@@ -132,11 +135,27 @@ def _parse_trades_csv(csv_path: str) -> Tuple[int, dict, Optional[str]]:
                     "start": dates.min().strftime("%Y-%m-%d"),
                     "end":   dates.max().strftime("%Y-%m-%d"),
                 }
+        # WHY: If the CSV contains trades from multiple symbols, len(symbols) > 1
+        #      and detected_symbol stays None silently. That means symbol-aware
+        #      tools (candle builder, validation) won't know what data to load.
+        #      Phase 21 picks the most-common symbol and logs a warning.
+        # CHANGED: April 2026 — multi-symbol warning (audit LOW #81, Phase 21)
         detected_symbol = None
         if "Symbol" in df.columns:
             symbols = df["Symbol"].dropna().unique()
             if len(symbols) == 1:
                 detected_symbol = str(symbols[0])
+            elif len(symbols) > 1:
+                # Multi-symbol CSV: pick most-common, log warning
+                from collections import Counter
+                sym_counts = Counter(df["Symbol"].dropna())
+                most_common_sym, count = sym_counts.most_common(1)[0]
+                detected_symbol = str(most_common_sym)
+                logger.warning(
+                    f"CSV contains multiple symbols {list(symbols)}. "
+                    f"Using most-common: {detected_symbol} ({count}/{len(df)} trades). "
+                    f"Other symbols will be ignored by single-symbol tools."
+                )
         return trade_count, date_range, detected_symbol
     except ImportError:
         # Fallback: pure stdlib CSV parsing

@@ -345,7 +345,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         if news_blackout_minutes > 0:
             from project2_backtesting.news_calendar import is_news_blackout
             entry_time_check = pd.Timestamp(all_times[entry_pos + 1])
-            if is_news_blackout(entry_time_check, news_blackout_minutes):
+            # CHANGED: April 2026 — keyword arg with renamed param (Phase 21 Fix 6)
+            if is_news_blackout(entry_time_check, blackout_half_window_minutes=news_blackout_minutes):
                 continue
 
         entry_price = all_opens[entry_pos + 1]
@@ -699,7 +700,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if news_blackout_minutes > 0:
             from project2_backtesting.news_calendar import is_news_blackout
             entry_time = next_candle['timestamp']
-            if is_news_blackout(entry_time, news_blackout_minutes):
+            # CHANGED: April 2026 — keyword arg with renamed param (Phase 21 Fix 6)
+            if is_news_blackout(entry_time, blackout_half_window_minutes=news_blackout_minutes):
                 continue  # skip this entry
 
         # Determine direction first (needed for slippage sign)

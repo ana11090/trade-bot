@@ -58,6 +58,13 @@ def _on_calculate():
     lr     = 1 - wr
 
     # ── Streak extraction ─────────────────────────────────────────────────────
+    # WHY: Old code treated break-even trades (v == 0) as a third category
+    #      that broke both win and loss streaks. This was inconsistent with
+    #      the risk_flags panel which excludes break-evens from segmentation.
+    #      Phase 21 makes break-evens pass through — they don't extend or
+    #      break the current streak. A WWWBWWW sequence (where B = breakeven)
+    #      is now a 6-trade win streak instead of two 3-trade streaks.
+    # CHANGED: April 2026 — break-even pass-through (audit LOW, Phase 21)
     loss_streaks = []
     win_streaks  = []
     streak = 0
@@ -65,6 +72,9 @@ def _on_calculate():
 
     for v in pnl:
         outcome = "W" if v > 0 else "L" if v < 0 else None
+        if outcome is None:
+            # Break-even trade: skip, don't break the current streak
+            continue
         if outcome == kind:
             streak += 1
         else:

@@ -1468,19 +1468,24 @@ double GetPipSize()
 //|      old code called CopyBuffer and read buf[0] unconditionally,  |
 //|      which reads uninitialized memory. This wrapper returns       |
 //|      EMPTY_VALUE on any failure so callers can short-circuit.     |
-//|      Shift 1 = last CLOSED bar to match Python training which     |
-//|      uses candle_idx - 1 (see step1_align_price.py Phase 3 fix).  |
-//| CHANGED: April 2026 — defensive indicator reads + shift 1 for     |
-//|          closed-bar consistency (audit HIGH #29)                  |
+//|                                                                   |
+//|      CRITICAL: start_pos is 1 (last closed bar), NOT 0 (current   |
+//|      forming bar). Python training reads features at the last     |
+//|      closed candle — see step1_align_price.py candle_idx - 1.     |
+//|      Reading shift 0 in MT5 produces feature values from a bar    |
+//|      that hadn't closed yet at the time the rule was trained,    |
+//|      so MT5 live values diverge from Python training values.     |
+//|      All 22 buffered indicators (EMA, RSI, MACD, Bollinger, ATR,  |
+//|      etc.) inherit this convention via SafeCopyBuf.               |
+//| CHANGED: April 2026 — defensive indicator reads + shift-1 fix     |
+//|          (audit HIGH — Phase 20 missed by Phase 19a Fix 1)        |
 //+------------------------------------------------------------------+
 double SafeCopyBuf(int handle, int bufNum)
 {{
    if(handle == INVALID_HANDLE) return EMPTY_VALUE;
    double tmp[1];
-   // WHY: Shift 1 = last closed bar. Python training reads from
-   //      candle_idx - 1 (the previously closed candle). Indicator
-   //      values must match that reference point.
-   // CHANGED: April 2026 — shift 0 → 1 (audit HIGH #29)
+   // start_pos = 1 reads the LAST CLOSED bar's value, matching
+   // Python training's candle_idx - 1 convention.
    int copied = CopyBuffer(handle, bufNum, 1, 1, tmp);
    if(copied <= 0) return EMPTY_VALUE;
    return tmp[0];

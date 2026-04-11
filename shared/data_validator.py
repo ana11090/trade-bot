@@ -17,7 +17,14 @@ log = get_logger(__name__)
 WEEKEND_GAP_MULTIPLIER = 3     # Expected delta × 3 for weekend/holiday gaps
 LARGE_GAP_MULTIPLIER = 5       # Expected delta × 5 for backtest large gaps
 MAX_GAPS_TO_DISPLAY = 10       # Keep first N gaps in reports
-ZERO_VOLUME_THRESHOLD_VALIDATE = 0.10  # Warn if >10% zero-volume candles (validation)
+# WHY: Old 10% threshold flagged gold (XAUUSD) Asian-session candles
+#      as a data quality issue. Asian session for gold has many
+#      zero-volume H1 bars naturally. 25% is a conservative ceiling
+#      that catches real corruption (e.g., 90% zero volumes from a
+#      broken export) without false-positiving normal illiquidity.
+# CHANGED: April 2026 — raised threshold for gold-style instruments
+#          (audit LOW, Phase 21)
+ZERO_VOLUME_THRESHOLD_VALIDATE = 0.25  # Warn if >25% zero-volume candles (validation)
 ZERO_VOLUME_THRESHOLD_BACKTEST = 0.20  # Warn if >20% zero-volume candles (backtest)
 
 # WHY: Hardcoded XAUUSD price range ($200-$5000) fails for other instruments.
@@ -207,9 +214,24 @@ def validate_candle_file(csv_path, symbol="XAUUSD", drop_duplicates=False):
             prev_idx = df.index[df.index.get_loc(idx) - 1]
             prev_row = df.loc[prev_idx]
 
-            # Check if gap is over a weekend (Friday to Monday)
-            if prev_row["timestamp"].weekday() == 4 and row["timestamp"].weekday() == 0:
-                continue  # Weekend gap is expected
+            # WHY: Old check only caught Friday→Monday gaps (forex/equity
+            #      convention). Gold (XAUUSD) trades from Sunday 22:00 UTC
+            #      to Friday 22:00 UTC, so Friday→Sunday is also a normal
+            #      weekend gap. Saturday is the only universally-closed
+            #      day. Detect ANY gap that spans a Saturday.
+            # CHANGED: April 2026 — gold-aware weekend detection (audit LOW, Phase 21)
+            prev_ts = prev_row["timestamp"]
+            curr_ts = row["timestamp"]
+            # Check if any Saturday falls between prev_ts and curr_ts
+            spans_saturday = False
+            check_day = prev_ts.normalize()
+            while check_day <= curr_ts.normalize():
+                if check_day.weekday() == 5:  # Saturday
+                    spans_saturday = True
+                    break
+                check_day += pd.Timedelta(days=1)
+            if spans_saturday:
+                continue  # Weekend gap (any market) — expected
 
             # Check if gap overlaps a known holiday
             gap_start = prev_row["timestamp"]

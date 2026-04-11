@@ -159,17 +159,38 @@ def _on_run_sim():
             pos += take
         return out
 
+    # WHY: Different prop firms use different ruin definitions:
+    #      - Trailing DD firms (FTMO, MyForexFunds, Leveraged): ruin
+    #        is peak-to-trough drawdown breaching the limit. A
+    #        profitable path that retraces -10% gets ruined.
+    #      - Static DD firms: ruin is cumulative loss from initial
+    #        balance breaching the limit. A profitable path that
+    #        retraces -10% from a higher peak does NOT get ruined as
+    #        long as cumulative is still positive.
+    #      The panel defaults to 'trailing' (current behavior) but
+    #      lets the user select 'static' via the firm config.
+    # CHANGED: April 2026 — dd_type parameter for static vs trailing
+    #          (audit LOW — account_survival.py ruin uses peak DD, Phase 21)
+    try:
+        dd_type = state.dd_type.get() if hasattr(state, 'dd_type') else 'trailing'
+    except (AttributeError, ValueError):
+        dd_type = 'trailing'
+
     for _ in range(n_sims):
         sampled      = _sample_block_path(n_trades)
         cumulative   = np.cumsum(sampled)
         running_peak = np.maximum.accumulate(cumulative)
         drawdown     = cumulative - running_peak
-        # WHY: Old code checked `cumulative < ruin_threshold` — absolute loss
-        #      from start. Real account ruin = DD from peak exceeds limit.
-        #      A profitable path that retraces -10% is NOT ruined by a $0
-        #      reference; it IS ruined if the -10% DD hits the DD limit.
-        # CHANGED: April 2026 — use drawdown for ruin check
-        ruined = bool(np.any(drawdown < ruin_threshold))
+
+        if dd_type == 'static':
+            # Static DD: ruin = cumulative loss from initial balance
+            # exceeds the limit. ruin_threshold is already negative.
+            ruined = bool(np.any(cumulative < ruin_threshold))
+        else:
+            # Trailing DD (default): ruin = peak-to-trough drawdown
+            # exceeds the limit.
+            ruined = bool(np.any(drawdown < ruin_threshold))
+
         all_paths.append(cumulative)
         all_drawdowns.append(drawdown)
         if not ruined:

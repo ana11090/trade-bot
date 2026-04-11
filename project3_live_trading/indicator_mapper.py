@@ -25,6 +25,32 @@ TIMEFRAME_MAP = {
     "D1":  {"mt5": "PERIOD_D1",  "tradovate": "1440"},
 }
 
+# ─────────────────────────────────────────────────────────────────────────
+# .EX5 INDICATOR DEPENDENCIES (Phase 21 documentation)
+# ─────────────────────────────────────────────────────────────────────────
+# The following indicators require .ex5 custom indicator files installed
+# in the user's MT5 MQL5/Indicators/ folder. Without these files, the EA
+# init fails with "INIT_FAILED" and the user must locate the .ex5 file
+# from a third-party source (codebase.mql5.com or commercial vendors).
+#
+#   Aroon         — Aroon.ex5            (CodeBase)
+#   DPO           — DPO.ex5              (Detrended Price Oscillator)
+#   KST           — KST.ex5              (Know Sure Thing — Pring)
+#   VPT           — VPT.ex5              (Volume Price Trend)
+#   UO            — UO.ex5               (Ultimate Oscillator)
+#
+# These templates use iCustom(NULL,{mt5_tf},"<NAME>",...) and will return
+# INVALID_HANDLE if the .ex5 is missing. The EA's existing handle init
+# check catches this and aborts startup with INIT_FAILED, so the failure
+# is visible — but users hitting this error need to know which file to
+# install. Phase 21 added this documentation block; the underlying
+# templates were not changed.
+#
+# All other indicators use built-in MT5 functions (iMA, iRSI, iMACD, etc.)
+# and require no external dependencies.
+# CHANGED: April 2026 — .ex5 dependency docs (audit LOW #31)
+# ─────────────────────────────────────────────────────────────────────────
+
 # ── Indicator pattern templates ───────────────────────────────────────────────
 # Keys are regex patterns matching the indicator part (after timeframe prefix).
 # {tf}, {mt5_tf}, {tv_tf} are substituted with actual timeframe values.
@@ -843,9 +869,16 @@ def _generate_smart_mql(feature_name, formula, platform):
                 ]
             elif ftype == 'time_since':
                 oh = formula['open_hour']
+                # WHY: Old expression clamped to 0 when current_hour < open_hour,
+                #      losing overnight continuity. At 3am UTC, hours_since_london
+                #      (open_hour=7) returned 0 instead of 20. Rules requiring
+                #      "hours_since X >= 18" could never trigger. Fix: modulo 24
+                #      wraparound so the value increases monotonically across
+                #      the 24-hour cycle.
+                # CHANGED: April 2026 — overnight wrap (audit MED #28)
                 lines = [
                     f'MqlDateTime {mdt}; TimeToStruct(TimeGMT(),{mdt}); int _hr_{var_name}={mdt}.hour;',
-                    f'double val_{var_name} = (_hr_{var_name}>={oh})?(double)(_hr_{var_name}-{oh}):0.0;',
+                    f'double val_{var_name} = (double)((_hr_{var_name} - {oh} + 24) % 24);',
                 ]
             else:  # count_sessions
                 lines = [
@@ -1138,7 +1171,8 @@ def _generate_smart_mql(feature_name, formula, platform):
             expr = f"(1.0 if {lo} <= __import__('datetime').datetime.utcnow().hour <= {hi} else 0.0)"
         elif ftype == 'time_since':
             oh = formula['open_hour']
-            expr = f"max(0, __import__('datetime').datetime.utcnow().hour - {oh})"
+            # CHANGED: April 2026 — overnight wrap to match MT5 (audit MED #28)
+            expr = f"((__import__('datetime').datetime.utcnow().hour - {oh} + 24) % 24)"
         elif ftype == 'count_sessions':
             expr = ("(lambda h: int(0<=h<8) + int(7<=h<16) + int(13<=h<22))"
                     "(__import__('datetime').datetime.utcnow().hour)")
@@ -1331,12 +1365,20 @@ def get_mql_code(feature_name, platform='mt5'):
             return result
 
     if template is None:
-        # Unknown indicator — generate placeholder
+        # Unknown indicator — generate FAIL-LOUD placeholder
+        # WHY: Old version emitted `double val = 0.0` and a TODO comment.
+        #      The EA compiled and ran but the feature was always 0,
+        #      causing rules to silently misfire. Phase 4 fixed this for
+        #      TSI specifically. Phase 20 generalizes the pattern: any
+        #      unknown indicator now sets indicatorFailed = true and
+        #      emits a loud Print() so the user notices in the Experts
+        #      log immediately.
+        # CHANGED: April 2026 — fail loud on unknown indicators (audit MED #27)
         return {
             'var_name':        var_name,
             'handle_var':      f"// UNKNOWN: {feature_name}",
-            'handle_init':     f"// TODO: add handle for {feature_name}",
-            'read_code':       f"double val_{var_name} = 0.0; // TODO: compute {feature_name}",
+            'handle_init':     f'Print("ERROR: indicator_mapper has no MT5 template for {feature_name}. The EA will not enter trades."); indicatorFailed = true;',
+            'read_code':       f'indicatorFailed = true; double val_{var_name} = 0.0; // ERROR: unknown indicator {feature_name} — see init log',
             'custom_indicator': True,
             'description':     f"Unknown indicator: {feature_name}",
         }

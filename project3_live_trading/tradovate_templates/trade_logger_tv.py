@@ -4,7 +4,7 @@ The same CSV format is read by ea_verifier.py for comparison.
 """
 
 import csv
-import datetime
+from datetime import datetime, timezone
 import os
 
 
@@ -25,7 +25,7 @@ class TradeLogger:
             self._fh.flush()
 
     def log_open(self, symbol, direction, lots, entry_price, sl, tp):
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self._writer.writerow({
             "timestamp":    now,
             "symbol":       symbol,
@@ -42,7 +42,7 @@ class TradeLogger:
         self._fh.flush()
 
     def log_close(self, symbol, direction, lots, entry_price, exit_price, net_pips, exit_reason):
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self._writer.writerow({
             "timestamp":    now,
             "symbol":       symbol,
@@ -59,7 +59,7 @@ class TradeLogger:
         self._fh.flush()
 
     def log_skip(self, symbol, skip_reason):
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self._writer.writerow({
             "timestamp":   now,
             "symbol":      symbol,

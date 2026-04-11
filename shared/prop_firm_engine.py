@@ -427,6 +427,14 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
             elif consistency_rule_type == "best_day_vs_target":
                 target_abs = account_size * profit_target_pct / 100.0
                 ratio = best_day / target_abs * 100.0 if target_abs > 0 else 0.0
+            elif consistency_rule_type == "best_day_vs_net_total":
+                # WHY: Some prop firms auto-reject if your best winning day is an
+                #      "unusually high" percentage of your total profit. E.g. if
+                #      best_day = +$5k and final balance = $106k (net = +$6k),
+                #      that's 83% of your entire edge from one lucky day.
+                # CHANGED: April 2026 — third consistency rule type (Phase 21)
+                net = balance - account_size
+                ratio = best_day / net * 100.0 if net > 0 else 0.0
             else:
                 ratio = 0.0
             consistency_passed = ratio < consistency_rule_pct

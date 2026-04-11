@@ -157,7 +157,7 @@ def get_nfp_dates(start_year=2020, end_year=2026):
     return dates
 
 
-def is_news_blackout(timestamp, blackout_minutes=5):
+def is_news_blackout(timestamp, blackout_half_window_minutes=5, blackout_minutes=None):
     """
     Check if a timestamp falls within a news blackout period.
 
@@ -170,12 +170,17 @@ def is_news_blackout(timestamp, blackout_minutes=5):
     ----------
     timestamp : anything pandas can parse into a Timestamp
         The time to check (assumed UTC/naive).
-    blackout_minutes : int, default 5
-        Half-window in minutes. **NOTE: this is a HALF-window**, so the
-        total blocked period is 2× this value. A trade at ts will be
-        blocked if any event occurs within ``[ts - blackout_minutes,
-        ts + blackout_minutes]``. This matches the old behavior for
-        backward compatibility with existing backtests.
+    blackout_half_window_minutes : int, default 5
+        Half-window in minutes. The total blocked period is 2× this
+        value (5 before + 5 after the event). The parameter name now
+        reflects this — old name `blackout_minutes` suggested a
+        one-sided window. A trade at ts is blocked if any event occurs
+        within ``[ts - blackout_half_window_minutes,
+        ts + blackout_half_window_minutes]``.
+    blackout_minutes : int, optional
+        DEPRECATED — alias for `blackout_half_window_minutes`. Kept for
+        backward compatibility with code that passed it positionally.
+        If both are provided, `blackout_half_window_minutes` wins.
 
     Returns
     -------
@@ -187,8 +192,21 @@ def is_news_blackout(timestamp, blackout_minutes=5):
     heuristic for CPI that triple-counted, and a "3rd Wednesday" rule
     for FOMC that was wrong ~30% of the time. Now uses real published
     dates + DST-aware time conversion.
+
+    The parameter name was renamed from `blackout_minutes` to
+    `blackout_half_window_minutes` in Phase 21 to make the half-window
+    semantics explicit. The old name remains as a backward-compat alias.
+
     CHANGED: April 2026 — real dates, DST-aware (audit bugs #8 + family #8)
+                          + parameter rename for clarity (audit LOW)
     """
+    # WHY: Backward-compat alias resolution. If caller passed the old
+    #      `blackout_minutes` name (positional or keyword), use that.
+    #      Otherwise use the new `blackout_half_window_minutes`.
+    # CHANGED: April 2026 — backward-compat alias (Phase 21)
+    if blackout_minutes is not None:
+        blackout_half_window_minutes = blackout_minutes
+
     ts = pd.to_datetime(timestamp)
     if ts is pd.NaT:
         return False
@@ -196,7 +214,7 @@ def is_news_blackout(timestamp, blackout_minutes=5):
     if ts.tz is not None:
         ts = ts.tz_convert('UTC').tz_localize(None)
 
-    blackout = pd.Timedelta(minutes=blackout_minutes)
+    blackout = pd.Timedelta(minutes=blackout_half_window_minutes)
 
     year = ts.year
     month = ts.month

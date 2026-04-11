@@ -75,15 +75,23 @@ def build_cost_charts():
                                         fg="#27ae60" if net >= 0 else "#e94560")
     # WHY: Some broker export formats (e.g. MT4 with ECN commission) already
     #      subtract commission from the Profit column before export. Adding the
-    #      Commission column on top would double-count. Warn the user.
-    # CHANGED: April 2026 — double-count warning for ECN exports
+    #      Commission column on top would double-count. Standard exports also
+    #      vary — some include slippage in Profit, others report it as a
+    #      separate column. The user must verify their broker's convention
+    #      before trusting the cost breakdown.
+    # CHANGED: April 2026 — unconditional cost-convention warning + ECN
+    #          double-count warning made more prominent (audit LOW, Phase 21)
     if ecn_mode:
-        note_text = "ECN — full breakdown available  ⚠ Check export format: if broker already deducted commission from Profit, adding it again here double-counts it"
+        note_text = ("ECN — full breakdown available.  ⚠ VERIFY: If your broker "
+                     "already deducted commission from the Profit column on "
+                     "export, this panel double-counts. Check broker docs.")
     else:
-        note_text = "Standard spread — costs hidden in price"
+        note_text = ("Standard spread — costs hidden in price.  ⚠ VERIFY: "
+                     "Some 'Standard' exports include commission in Profit, "
+                     "others list it separately. Check broker docs.")
     _p8_labels["account_note"].configure(
         text=note_text,
-        fg="#27ae60" if ecn_mode else "#f39c12")
+        fg="#f39c12")  # always amber/warning color, never green
 
     try:
         pip_val = float(pip_value_var.get())

@@ -13,6 +13,25 @@ _filter_var = None
 _PROP_DIR = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')), 'prop_firms')
 
 
+# WHY: Boolean parsing in firm editor used `.get().lower() == 'true'`
+#      which rejected 'yes', '1', 'y', 'on', and any value with stray
+#      whitespace. Users typing common synonyms got silently False.
+# CHANGED: April 2026 — Phase 22 Fix 2 — robust bool parser (audit Part B #2)
+_BOOL_TRUE_VALUES = frozenset({'true', 'yes', 'y', '1', 'on', 't'})
+
+
+def _parse_bool(value):
+    """Parse a user-entered string as a boolean.
+
+    Accepts (case-insensitive): true, yes, y, 1, on, t.
+    Strips leading/trailing whitespace before comparison.
+    Returns False for everything else.
+    """
+    if value is None:
+        return False
+    return str(value).strip().lower() in _BOOL_TRUE_VALUES
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CRUD Operations
 # ─────────────────────────────────────────────────────────────────────────────
@@ -264,26 +283,53 @@ def _open_edit_dialog(parent, filename, data, on_save_callback):
             except KeyError: pass
 
             restr = challenge.get('restrictions', {})
-            try: restr['news_trading_allowed'] = entries[f'c{ci}_r_news'].get().lower() == 'true'
+            try: restr['news_trading_allowed'] = _parse_bool(entries[f'c{ci}_r_news'].get())
             except KeyError: pass
             try: restr['news_blackout_minutes'] = int(entries[f'c{ci}_r_blackout'].get())
             except (KeyError, ValueError): pass
-            try: restr['weekend_holding_allowed'] = entries[f'c{ci}_r_weekend'].get().lower() == 'true'
+            try: restr['weekend_holding_allowed'] = _parse_bool(entries[f'c{ci}_r_weekend'].get())
             except KeyError: pass
-            try: restr['ea_allowed'] = entries[f'c{ci}_r_ea'].get().lower() == 'true'
+            try: restr['ea_allowed'] = _parse_bool(entries[f'c{ci}_r_ea'].get())
             except KeyError: pass
 
             costs = challenge.get('costs', {})
+            # WHY: Old code wrapped the entire pair-parsing loop in one
+            #      try/except. A typo on ANY pair (missing colon, bad
+            #      int, etc.) raised before line 284 ran, silently losing
+            #      EVERY fee in the dict. Per-pair try/except now
+            #      preserves all parseable pairs and logs the bad ones.
+            # CHANGED: April 2026 — Phase 22 Fix 3 — per-pair parse
+            #          (audit Part B #3 — HIGH severity)
             try:
                 fees_str = entries[f'c{ci}_cost_fees'].get()
-                fee_dict = {}
-                for pair in fees_str.split(','):
-                    if ':' in pair:
-                        k, v = pair.strip().split(':')
-                        fee_dict[k.strip()] = int(v.strip())
-                costs['challenge_fee_by_size'] = fee_dict
-            except (KeyError, ValueError): pass
-            try: costs['fee_refundable'] = entries[f'c{ci}_cost_refund'].get().lower() == 'true'
+            except KeyError:
+                fees_str = ''
+            fee_dict = {}
+            bad_pairs = []
+            for pair in fees_str.split(','):
+                pair_stripped = pair.strip()
+                if not pair_stripped:
+                    continue
+                if ':' not in pair_stripped:
+                    bad_pairs.append(pair_stripped)
+                    continue
+                try:
+                    k, v = pair_stripped.split(':', 1)
+                    fee_dict[k.strip()] = int(v.strip())
+                except (ValueError, TypeError):
+                    bad_pairs.append(pair_stripped)
+            costs['challenge_fee_by_size'] = fee_dict
+            if bad_pairs:
+                # Surface parse errors in a popup so the user notices
+                from tkinter import messagebox
+                messagebox.showwarning(
+                    "Fee parse errors",
+                    f"The following fee entries could not be parsed and were "
+                    f"skipped:\n\n  " + "\n  ".join(bad_pairs) + "\n\n"
+                    f"Expected format: 'size:fee, size:fee, ...' "
+                    f"(e.g. '10000:75, 25000:165')"
+                )
+            try: costs['fee_refundable'] = _parse_bool(entries[f'c{ci}_cost_refund'].get())
             except KeyError: pass
 
         _save_firm(filename, data)
@@ -537,7 +583,15 @@ def _pick_leverage(leverage_map, account_size=None):
     WHY: leverage_map keys are numeric strings like "10000", "25000", etc.
          Picking list()[0] depends on dict insertion order and may return
          the wrong tier (e.g., the $10K leverage for a $100K row).
-    CHANGED: April 2026 — leverage lookup by account size
+
+         For account_size lookup, the convention is "largest tier ≤
+         account_size". A $50K trader between $25K and $100K tiers
+         qualifies for the $50K-tier rules (i.e. the $25K-tier is the
+         largest tier they exceed). Old absolute-distance logic picked
+         $25K for $50K (|50-25|=25 < |50-100|=50), giving permissive
+         leverage that doesn't match the firm's real tier assignment.
+    CHANGED: April 2026 — Phase 22 Fix 1 — largest tier ≤ account size
+             (audit Part B #1)
     """
     if not leverage_map:
         return '—'
@@ -551,8 +605,15 @@ def _pick_leverage(leverage_map, account_size=None):
         return list(leverage_map.values())[0]
     parsed.sort(key=lambda x: x[0])
     if account_size is not None:
-        best = min(parsed, key=lambda x: abs(x[0] - account_size))
-        return best[1]
+        # WHY: Pick the LARGEST tier whose threshold is <= account_size.
+        #      If account_size is below the smallest tier, fall back to
+        #      the smallest tier (the user's account doesn't qualify
+        #      anywhere, so the smallest is the closest match).
+        # CHANGED: April 2026 — tier-based selection (audit Part B #1)
+        eligible = [(k, v) for k, v in parsed if k <= account_size]
+        if eligible:
+            return eligible[-1][1]  # largest eligible (parsed is sorted)
+        return parsed[0][1]  # below smallest tier — use smallest
     # No specific size — return median entry
     return parsed[len(parsed) // 2][1]
 
