@@ -23,96 +23,96 @@ _REPORT_PATH = os.path.join(
 
 def check_analysis_report():
     """
-    Check analysis_report.json for stale/missing fields.
+    Check analysis_report.json for BREAKING issues only.
 
     Returns dict:
-      'is_stale': bool — True if any critical field is missing
+      'is_stale': bool — True only if the report cannot be used at all
       'issues': list of human-readable issue strings
       'fix_instructions': str — what the user should do
+
+    WHY (Phase A.9): Prior versions of this function flagged reports as
+         "stale" for missing optional metadata fields (entry_timeframe,
+         activated_at, discovery_method) and for various inverted/edge
+         cases that had been chased through Phases 77 Fix 42, 74 Fix 68,
+         77 Fix 43, A.3, and A.8 without ever converging — every fix
+         spawned a new false positive. The root cause was the policy,
+         not the implementation: missing metadata is not the same as a
+         broken report, and blocking the user with a popup over missing
+         optional fields had negative value (downstream code has
+         reasonable defaults for all of them).
+
+         New policy: a report is stale ONLY if it cannot be used at all.
+         That means one of:
+           - file missing on disk
+           - file exists but is not valid JSON
+           - file has no rules at all
+           - file has rules but none of them have any conditions
+                 (a rule with zero conditions matches every candle)
+         Everything else — missing entry_timeframe, missing activated_at,
+         missing discovery_method, LOSS-only rules, per-row vs top-level
+         TF mismatches — is silent and tolerated. Downstream callers
+         handle the missing fields with defaults as they already do.
+    CHANGED: April 2026 — Phase A.9 — minimum-correctness policy
     """
     issues = []
 
+    # Check 1: file exists
     if not os.path.exists(_REPORT_PATH):
         return {
             'is_stale': True,
             'issues': ['analysis_report.json does not exist'],
             'fix_instructions': (
-                'Run P4 Strategy Discovery first.\n'
-                'Go to Project 4 → Scratch Discovery → click Quick Discovery.'
+                'Run rule discovery first:\n'
+                '  Project 1 → Run Scenarios (decision-tree path), OR\n'
+                '  Project 4 → Scratch Discovery (XGBoost path).'
             ),
         }
 
+    # Check 2: valid JSON
     try:
         with open(_REPORT_PATH, 'r', encoding='utf-8') as f:
             report = json.load(f)
-    except Exception:
+    except Exception as _e:
         return {
             'is_stale': True,
-            'issues': ['analysis_report.json is corrupt'],
-            'fix_instructions': 'Re-run P4 Strategy Discovery to regenerate the file.',
+            'issues': [f'analysis_report.json is corrupt: {_e}'],
+            'fix_instructions': (
+                'Re-run rule discovery to regenerate the file:\n'
+                '  Project 1 → Run Scenarios, OR\n'
+                '  Project 4 → Scratch Discovery.'
+            ),
         }
 
-    # Check rules exist (rules are the most important thing)
-    rules = report.get('rules', [])
-    win_rules = [r for r in rules if r.get('prediction') == 'WIN']
-    if not win_rules:
-        issues.append('No WIN rules found — discovery may not have been run')
+    # Check 3: rules present
+    rules = report.get('rules', []) or []
+    if not rules:
+        issues.append('No rules in analysis_report.json')
 
-    # If we have rules with valid predictions, treat the rest as warnings (not stale)
-    # WHY: rules can be valid even if top-level direction is missing — the rules
-    #      themselves carry direction info via their `prediction` field.
-    # CHANGED: April 2026 — check rule contents, not just top-level fields
-
-    # Check entry_timeframe — but don't warn if multi-TF backtest gave per-row TF
-    # WHY: When using multi-TF backtest, entry_tf is per strategy row, not global.
-    #      Reporting a missing global entry_timeframe would be a false alarm.
-    #
-    #      Old condition was:
-    #          (not entry_tf or entry_tf == 'None') and not win_rules and not has_per_row_entry_tf
-    #      The `and not win_rules` clause meant the warning ONLY fired when
-    #      there were ZERO rules — backwards. The warning should fire when
-    #      there ARE rules AND the entry_tf is missing globally AND no per-row
-    #      entry_tf is set. Fix: `and win_rules` (not inverted).
-    # CHANGED: April 2026 — fix inverted warning condition (audit MED #68)
-    entry_tf = report.get('entry_timeframe')
-    has_per_row_entry_tf = any(
-        r.get('entry_tf') or r.get('entry_timeframe')
-        for r in win_rules
-    )
-    if (not entry_tf or entry_tf == 'None') and win_rules and not has_per_row_entry_tf:
-        issues.append('Missing entry_timeframe — EA and backtester may use wrong timeframe')
-
-    # Check rules have conditions (real problem regardless of other fields)
-    for i, r in enumerate(win_rules):
-        conds = r.get('conditions', [])
-        if not conds:
-            issues.append(f'Rule {i+1} has 0 conditions — will match every candle')
-
-    # Check rules are recent (was activate run lately?)
-    # WHY (Phase 77 Fix 42): Old condition required BOTH activated_at AND
-    #      discovery_method to be missing. A report with discovery_method=
-    #      'legacy' but no activated_at silently passed. The intent is to
-    #      warn when there is no evidence of when/how the rules were made.
-    #      Warn on either field missing independently.
-    # CHANGED: April 2026 — Phase 77 Fix 42 — independent field warnings
-    #          (audit Part F LOW #42)
-    activated_at = report.get('activated_at')
-    discovery_method = report.get('discovery_method')
-    if win_rules and not activated_at:
-        issues.append(
-            'Rules have no activated_at timestamp — unclear when they were activated'
-        )
-    if win_rules and not discovery_method:
-        issues.append(
-            'Rules have no discovery_method — may be from an old or manual run'
-        )
+    # Check 4: at least one rule has at least one condition
+    # WHY: a rule with zero conditions matches every candle and produces
+    #      garbage results. This is the only rule-shape error worth blocking on.
+    # CHANGED: April 2026 — Phase A.9
+    if rules:
+        total_conditions = 0
+        for r in rules:
+            # direct conditions
+            conds = r.get('conditions', []) or []
+            total_conditions += len(conds)
+            # nested rules (some writers use {'rules': [{'conditions': [...]}]})
+            for nested in r.get('rules', []) or []:
+                total_conditions += len(nested.get('conditions', []) or [])
+        if total_conditions == 0:
+            issues.append(
+                'All rules have zero conditions — each would match every '
+                'candle. Re-run discovery.'
+            )
 
     fix = ''
     if issues:
         fix = (
-            'To fix: Go to Project 4 → Scratch Discovery → run Quick Discovery\n'
-            '→ click "Use These Rules" to re-activate.\n'
-            'This re-saves analysis_report.json with all fields populated.'
+            'Re-run rule discovery to regenerate the file:\n'
+            '  Project 1 → Run Scenarios, OR\n'
+            '  Project 4 → Scratch Discovery.'
         )
 
     return {
