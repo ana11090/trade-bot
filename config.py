@@ -51,3 +51,33 @@ START_DATE = '2005-01-01'
 END_DATE = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 print(f"Config loaded: Tick data at {TICK_DATA_PATH}")
+
+# -------- Phase A: dataset registry -----------------------------------
+# WHY: Introduces first-class Dataset abstraction. Active dataset ID
+#      replaces the single global SYMBOL as the source of truth for
+#      which data the pipeline is operating on. Phase C will plumb
+#      this through step1/step2/refiner/validator.
+# CHANGED: April 2026 — Phase A
+DATASETS_ROOT = os.path.join(PROJECT_ROOT, 'datasets')
+
+from shared import dataset_registry as _dataset_registry  # noqa: E402
+from shared import dataset_migration as _dataset_migration  # noqa: E402
+
+_dataset_registry.set_datasets_root(DATASETS_ROOT)
+
+try:
+    _dataset_migration.run_migration(
+        project_root=PROJECT_ROOT,
+        legacy_data_dir=LOCAL_DATA_PATH,
+        legacy_tick_root=TICK_DATA_PATH,
+    )
+except Exception as _mig_err:
+    # WHY: Never let migration break app startup. Log and continue.
+    # CHANGED: April 2026 — Phase A
+    import logging as _logging
+    _logging.getLogger(__name__).exception(
+        "Phase A migration failed: %s", _mig_err,
+    )
+
+ACTIVE_DATASET_ID = _dataset_registry.get_active_dataset_id()
+print(f"Active dataset: {ACTIVE_DATASET_ID}")

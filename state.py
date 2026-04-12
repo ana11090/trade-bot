@@ -41,3 +41,21 @@ submenu_open = [False]
 # Trade history management
 active_history_id     = None    # ID of currently selected trade history
 active_history_config = None    # Dict with trade history metadata
+
+# -------- Phase A: active dataset mirror ------------------------------
+# WHY: UI panels (Phase B) need a writable global to track the active
+#      dataset without round-tripping through disk on every read. This
+#      mirrors config.ACTIVE_DATASET_ID at startup; Phase B's Dataset
+#      Manager panel will write to it and persist via dataset_registry.
+# CHANGED: April 2026 — Phase A
+active_dataset_id = None
+
+def _init_active_dataset():
+    global active_dataset_id
+    try:
+        from shared import dataset_registry
+        active_dataset_id = dataset_registry.get_active_dataset_id()
+    except Exception:
+        active_dataset_id = None
+
+_init_active_dataset()
