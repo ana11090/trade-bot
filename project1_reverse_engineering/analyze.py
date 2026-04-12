@@ -353,6 +353,18 @@ def compute_feature_importance(df):
         'feature_cols':   feature_cols,
         'X':              X,
         'y':              y,
+        # WHY (Phase 41 Fix 1): Expose the train slice so extract_rules
+        #      can fit on it instead of the full X/y. Old code fit the
+        #      decision tree on the full dataset, training rules on
+        #      data that also served as their own test set. Inflated
+        #      confidence and win-rate metrics. Same bug family as
+        #      scratch_discovery Deep/Exhaustive (Round 2A #11/#12).
+        # CHANGED: April 2026 — Phase 41 Fix 1 — expose train slice
+        #          (audit Part D CRITICAL #1)
+        'X_train':        X_train,
+        'y_train':        y_train,
+        'X_test':         X_test,
+        'y_test':         y_test,
     }
 
 
@@ -364,8 +376,15 @@ def extract_rules(df, model_result):
     """
     from sklearn.tree import DecisionTreeClassifier
 
-    X            = model_result['X']
-    y            = model_result['y']
+    # WHY (Phase 41 Fix 1b): Old code used model_result['X'] and ['y']
+    #      — the FULL dataset including the test slice. Every rule was
+    #      trained on its own test data. Fit on the train slice only.
+    #      Fall back to full X/y for backward compat if train slice
+    #      not present (older callers).
+    # CHANGED: April 2026 — Phase 41 Fix 1b — train-only fit
+    #          (audit Part D CRITICAL #1)
+    X            = model_result.get('X_train', model_result['X'])
+    y            = model_result.get('y_train', model_result['y'])
     feature_cols = model_result['feature_cols']
 
     tree = DecisionTreeClassifier(

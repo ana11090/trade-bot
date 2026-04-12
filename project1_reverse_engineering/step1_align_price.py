@@ -77,9 +77,38 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
         log.info(f"    No {detect_tf} candles for offset detection — using offset 0")
         return 0
 
-    # Sample up to 200 trades for speed (more than enough to detect offset)
+    # WHY (Phase 44 Fix 1): Old code did a random sample of 200 trades
+    #      across the entire history. A London-only strategy got a
+    #      London-biased sample → auto-detect picked the offset that
+    #      maximized London alignment, which may be wrong for trades
+    #      executed at other hours (e.g., overnight position
+    #      management). Stratify by hour-of-day bin so every hour
+    #      contributes proportionally.
+    # CHANGED: April 2026 — Phase 44 Fix 1 — stratified sampling
+    #          (audit Part D HIGH #25)
     sample_size = min(200, len(trades_df))
-    sample = trades_df.sample(n=sample_size, random_state=42) if len(trades_df) > sample_size else trades_df
+    if len(trades_df) > sample_size:
+        try:
+            _hours = pd.to_datetime(trades_df['open_time']).dt.hour
+            _per_bin = max(1, sample_size // 24)
+            _samples = []
+            for h in range(24):
+                _bin = trades_df[_hours == h]
+                if len(_bin) == 0:
+                    continue
+                _take = min(_per_bin, len(_bin))
+                _samples.append(_bin.sample(n=_take, random_state=42))
+            sample = pd.concat(_samples) if _samples else trades_df.sample(n=sample_size, random_state=42)
+            # If stratification under-fills, top up with random
+            if len(sample) < sample_size:
+                _extra = trades_df.drop(sample.index, errors='ignore')
+                if len(_extra) > 0:
+                    _need = sample_size - len(sample)
+                    sample = pd.concat([sample, _extra.sample(n=min(_need, len(_extra)), random_state=42)])
+        except Exception:
+            sample = trades_df.sample(n=sample_size, random_state=42)
+    else:
+        sample = trades_df
 
     log.info(f"    Auto-detecting timezone offset (testing {len(candidate_offsets)} offsets on {len(sample)} trades)...")
 
@@ -132,7 +161,24 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
                 # looser check (entry_price in low..high of NEXT candle). Still
                 # meaningful because we use direction='forward', so the candle
                 # is the one AFTER the trade, not the containing one.
+                # WHY (Phase 44 Fix 3): Old tolerance was
+                #      ALIGNMENT_TOLERANCE * PIP_SIZE. With config
+                #      defaults (ALIGNMENT_TOLERANCE=150,
+                #      PIP_SIZE=0.01) this is 1.5 raw price units —
+                #      correct for XAUUSD but absurd for EURUSD where
+                #      it becomes 15000 real pips. Cap the tolerance
+                #      at a sensible maximum derived from the actual
+                #      candle range so it can't trivially succeed.
+                # CHANGED: April 2026 — Phase 44 Fix 3 — bounded tolerance
+                #          (audit Part D HIGH #27)
                 tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
+                # Cap at half the median candle range so it can't pass everything
+                try:
+                    _median_range = float((merged['high'] - merged['low']).median())
+                    if _median_range > 0:
+                        tolerance = min(tolerance, _median_range * 0.5)
+                except Exception:
+                    pass
                 in_range = (
                     (merged['entry_price'] >= merged['low'] - tolerance) &
                     (merged['entry_price'] <= merged['high'] + tolerance)
@@ -140,7 +186,17 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
             verified = int(in_range.sum())
             results.append((offset_hours, verified))
 
-            if verified > best_verified:
+            # WHY (Phase 44 Fix 2): Old strict > comparison meant ties
+            #      were broken by first-tested offset. range(-12, 13)
+            #      starts at -12, so -12 silently won every tie.
+            #      Prefer the offset closest to 0 (broker tz typically
+            #      within a few hours of UTC) when verification counts
+            #      are equal.
+            # CHANGED: April 2026 — Phase 44 Fix 2 — tie-break by |offset|
+            #          (audit Part D HIGH #26)
+            if verified > best_verified or (
+                verified == best_verified and abs(offset_hours) < abs(best_offset)
+            ):
                 best_verified = verified
                 best_offset = offset_hours
         except Exception:
@@ -241,13 +297,31 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             _candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{_tf}.csv')
             if os.path.exists(_candle_file):
                 try:
-                    _cdf = pd.read_csv(_candle_file)
+                    # WHY (Phase 44 Fix 5): Old code used pd.read_csv
+                    #      with no dtype hints. Stray non-numeric tokens
+                    #      promoted the timestamp column to object dtype
+                    #      and pd.to_datetime then produced NaT silently
+                    #      → merge_asof failed in confusing ways.
+                    #      low_memory=False forces a single-pass parse
+                    #      so dtypes are stable. Post-load NaT check
+                    #      surfaces parse failures.
+                    # CHANGED: April 2026 — Phase 44 Fix 5 — robust read
+                    #          (audit Part D HIGH #29)
+                    _cdf = pd.read_csv(_candle_file, low_memory=False)
                     if 'timestamp' not in _cdf.columns:
                         for _col in _cdf.columns:
                             if _col.lower() in ('time', 'date', 'datetime', 'open_time'):
                                 _cdf = _cdf.rename(columns={_col: 'timestamp'})
                                 break
-                    _cdf['timestamp'] = pd.to_datetime(_cdf['timestamp'])
+                    _cdf['timestamp'] = pd.to_datetime(_cdf['timestamp'], errors='coerce')
+                    # WHY: Phase 44 Fix 5 — surface NaT rows so users see parse failures
+                    _nat_count = int(_cdf['timestamp'].isna().sum())
+                    if _nat_count > 0:
+                        log.warning(
+                            f"    [STEP1] {_tf} candle file has {_nat_count} unparseable "
+                            f"timestamp rows (now NaT). Check {_candle_file} for stray data."
+                        )
+                        _cdf = _cdf.dropna(subset=['timestamp'])
                     _candles_for_detection[_tf] = _cdf
                 except Exception:
                     pass
@@ -284,8 +358,17 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                 log.info(f"SKIPPED (file not found)")
                 continue
 
-            candles_df = pd.read_csv(candle_file)
-            candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'])
+            # Phase 44 Fix 5: low_memory=False for stable dtype inference
+            candles_df = pd.read_csv(candle_file, low_memory=False)
+            candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'], errors='coerce')
+            # Phase 44 Fix 5 cont.: validate timestamps
+            _nat_count = int(candles_df['timestamp'].isna().sum())
+            if _nat_count > 0:
+                log.warning(
+                    f"    [STEP1] {tf} candle file has {_nat_count} unparseable "
+                    f"timestamp rows (now NaT). Check {candle_file} for stray data."
+                )
+                candles_df = candles_df.dropna(subset=['timestamp'])
 
             # Sort candles by timestamp and reset index
             candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
@@ -304,7 +387,17 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                 left_on='open_time',
                 right_on='timestamp',
                 direction='backward',
-                tolerance=pd.Timedelta(days=7)  # Max gap allowed
+                # WHY (Phase 44 Fix 4): Old tolerance was 7 days. A trade
+                #      6 days past the last candle aligned to a 6-day-old
+                #      candle silently — verification then ran on that
+                #      ancient candle's H/L producing nonsense, but the
+                #      trade was marked aligned. Tighten to 24h. Trades
+                #      beyond that range are dropped (the next dropna
+                #      step removes them) — they were producing garbage
+                #      anyway.
+                # CHANGED: April 2026 — Phase 44 Fix 4 — tighten to 24h
+                #          (audit Part D HIGH #28)
+                tolerance=pd.Timedelta(hours=24)
             )
 
             # Shift candle_idx to point at the PREVIOUS (closed) candle.

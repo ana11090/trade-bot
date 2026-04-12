@@ -167,9 +167,68 @@ def load_comparison(comparison_text, winner_label, rules_text):
         winner_label.config(text="Error", fg="#e74c3c")
 
 
+def _load_analysis_json_rules(rules_text):
+    """Render rules from the newer analysis_report.json format.
+
+    WHY (Phase 41 Fix 3): Old load_rules only read the legacy
+         scenario_{name}/rules_report.txt format. The newer analyze.py
+         pipeline writes outputs/analysis_report.json in a different
+         location with a different structure. Users running the newer
+         Robot Analysis path saw "No rules found" perpetually because
+         the panel only knew about the legacy format. Try the JSON
+         first; fall back to legacy txt if not present.
+    CHANGED: April 2026 — Phase 41 Fix 3 — read analysis_report.json
+             (audit Part D CRITICAL #3)
+    """
+    import json as _json
+    json_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json')
+    json_path = os.path.normpath(json_path)
+    if not os.path.exists(json_path):
+        return False
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            report = _json.load(f)
+    except Exception as e:
+        rules_text.insert('1.0', f"Error reading {json_path}: {e}\n")
+        return True
+
+    rules_text.insert('end', f"=== ANALYSIS REPORT (analysis_report.json) ===\n\n")
+    rules = report.get('rules', [])
+    if not rules:
+        rules_text.insert('end', "No rules in analysis_report.json yet.\n")
+        rules_text.insert('end', "Run Robot Analysis from the Robot Analysis panel.\n")
+        return True
+
+    for i, rule in enumerate(rules, 1):
+        prediction = rule.get('prediction', '?')
+        confidence = rule.get('confidence', 0)
+        samples    = rule.get('samples', 0)
+        win_rate   = rule.get('win_rate', 0)
+        conditions = rule.get('conditions', [])
+        rules_text.insert('end', f"Rule {i}: {prediction}\n")
+        rules_text.insert('end', f"  Samples: {samples}, Confidence: {confidence:.2f}, "
+                                 f"Win Rate: {win_rate:.2%}\n")
+        for cond in conditions:
+            feat = cond.get('feature', '?')
+            op   = cond.get('operator', '?')
+            val  = cond.get('value', '?')
+            rules_text.insert('end', f"  IF {feat} {op} {val}\n")
+        rules_text.insert('end', "\n")
+    return True
+
+
 def load_rules(scenario, rules_text):
     """Load and display rules for a specific scenario"""
     rules_text.delete('1.0', tk.END)
+
+    # WHY (Phase 41 Fix 3b): Try the newer analysis_report.json first.
+    #      If it exists, render from there. Falls through to legacy
+    #      rules_report.txt if not found, preserving backward compat
+    #      with the old per-scenario pipeline.
+    # CHANGED: April 2026 — Phase 41 Fix 3b — JSON-first load
+    #          (audit Part D CRITICAL #3)
+    if _load_analysis_json_rules(rules_text):
+        return
 
     rules_file = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/rules_report.txt')
 

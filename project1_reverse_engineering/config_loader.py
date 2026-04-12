@@ -9,11 +9,22 @@ import json
 
 _CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p1_config.json')
 
+# WHY (Phase 46 Fix 6): Old field 'pip_value_usd' = '0.01' was
+#      semantically wrong — 0.01 is XAUUSD's pip SIZE, not its pip
+#      VALUE in USD (which is ~$1 per mini lot). The field name
+#      misled users. Add the correctly-named 'pip_size' alongside
+#      and a new 'pip_value_per_lot_usd' carrying the actual dollar
+#      value. Old field stays for backward compat — load() reads
+#      both into pip_size if pip_size is absent.
+# CHANGED: April 2026 — Phase 46 Fix 6 — correct field semantics
+#          (audit Part D HIGH #57)
 DEFAULTS = {
     # ── Instrument ────────────────────────────────────────────────────────────
     'symbol':                    'XAUUSD',
     'broker_timezone':           'EET',
-    'pip_value_usd':             '0.01',
+    'pip_size':                  '0.01',     # XAUUSD: 0.01 raw price = 1 pip
+    'pip_value_per_lot_usd':     '1.0',      # XAUUSD: $1 per pip per 1.0 lot
+    'pip_value_usd':             '0.01',     # DEPRECATED — use pip_size; kept for backward compat
     'alignment_tolerance_pips':  '150',
 
     # ── Pipeline ──────────────────────────────────────────────────────────────
@@ -40,13 +51,48 @@ DEFAULTS = {
 
 
 def load():
-    """Return config dict — saved values where available, defaults otherwise."""
+    """Return config dict — saved values where available, defaults otherwise.
+
+    WHY (Phase 46 Fix 6b): Old code read 'pip_value_usd' as the pip
+         size, which was misnamed. New schema uses 'pip_size' for the
+         pip-size and 'pip_value_per_lot_usd' for the dollar value.
+         If a saved config still has the legacy 'pip_value_usd' field
+         and no 'pip_size', migrate the value across so existing
+         configs keep working.
+    WHY (Phase 46 Fix 7): Old fallback was print() which the GUI
+         panel doesn't capture. Use the shared logger if available
+         so warnings reach the standard log handlers and any panels
+         that subscribe to them. Also: warn when keys in the saved
+         file are dropped because they're not in DEFAULTS.
+    CHANGED: April 2026 — Phase 46 Fix 6b/7 — migrate + visible failures
+             (audit Part D HIGH #57/58/59)
+    """
     cfg = dict(DEFAULTS)
     if os.path.exists(_CONFIG_FILE):
         try:
             with open(_CONFIG_FILE, 'r') as f:
                 saved = json.load(f)
-            cfg.update({k: str(v) for k, v in saved.items() if k in DEFAULTS})
+            # Migrate legacy field if present
+            if 'pip_value_usd' in saved and 'pip_size' not in saved:
+                saved['pip_size'] = saved['pip_value_usd']
+            # Track dropped keys
+            _accepted = {k: str(v) for k, v in saved.items() if k in DEFAULTS}
+            _dropped = [k for k in saved.keys() if k not in DEFAULTS]
+            cfg.update(_accepted)
+            if _dropped:
+                _msg = (f"[config_loader] Dropped {len(_dropped)} unknown "
+                        f"keys from p1_config.json: {_dropped}. Add them to "
+                        f"DEFAULTS in config_loader.py to make them stick.")
+                try:
+                    from shared.logging_setup import get_logger
+                    get_logger(__name__).warning(_msg)
+                except Exception:
+                    print(_msg)
         except Exception as e:
-            print(f"[config_loader] Warning: could not read p1_config.json: {e}")
+            _err = f"[config_loader] Could not read p1_config.json: {e}. Using defaults."
+            try:
+                from shared.logging_setup import get_logger
+                get_logger(__name__).error(_err)
+            except Exception:
+                print(_err)
     return cfg
