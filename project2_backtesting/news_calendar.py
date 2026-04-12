@@ -133,7 +133,7 @@ def _et_to_utc(year, month, day, hour, minute):
         return pd.Timestamp(datetime(year, month, day, hour + 5, minute))
 
 
-def get_nfp_dates(start_year=2020, end_year=2026):
+def get_nfp_dates(start_year=2020, end_year=None):
     """
     Generate NFP release datetimes as UTC pandas Timestamps.
 
@@ -145,6 +145,15 @@ def get_nfp_dates(start_year=2020, end_year=2026):
 
     CHANGED: April 2026 — DST-aware via _et_to_utc (audit bug #8)
     """
+    # WHY (Phase 63 Fix 3): Hardcoded end_year=2026 meant all generated date
+    #      lists stopped at Dec 2026. In 2027 the news filter would silently
+    #      produce no blackout dates — every event passes through unfiltered.
+    #      Default to current year + 2 so the filter works without manual updates.
+    # CHANGED: April 2026 — Phase 63 Fix 3 — dynamic end_year default
+    #          (audit Part A LOW)
+    if end_year is None:
+        from datetime import datetime as _dt
+        end_year = _dt.now().year + 2
     dates = []
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
@@ -256,13 +265,16 @@ def is_news_blackout(timestamp, blackout_half_window_minutes=5, blackout_minutes
     return False
 
 
-def get_event_count_by_year(start_year=2020, end_year=2026):
+def get_event_count_by_year(start_year=2020, end_year=None):
     """
     Diagnostic helper: return counts of NFP/CPI/FOMC events per year.
     Used by the verification script to confirm the tables are populated.
 
     CHANGED: April 2026 — diagnostic helper for phase 6 verification
     """
+    if end_year is None:
+        from datetime import datetime as _dt
+        end_year = _dt.now().year + 2
     counts = {}
     for y in range(start_year, end_year + 1):
         nfp_count = 12  # first Friday rule — always 12 per year

@@ -33,6 +33,12 @@ ALIGNMENT_TOLERANCE  = float(_cfg['alignment_tolerance_pips'])
 #      Reading from config lets forex (0.0001) and JPY pairs (0.01) work correctly.
 # CHANGED: April 2026 — pip size from config
 PIP_SIZE             = float(_cfg.get('pip_size', '0.01'))
+# WHY (Phase 63 Fix 2): Old code computed ALIGNMENT_TOLERANCE * PIP_SIZE at
+#      two different call sites. If config changed between them the two could
+#      diverge. Pre-compute once at module level.
+# CHANGED: April 2026 — Phase 63 Fix 2 — DRY tolerance constant
+#          (audit Part D LOW #32)
+ALIGNMENT_TOLERANCE_RAW = ALIGNMENT_TOLERANCE * PIP_SIZE   # in price units
 
 
 def _get_trades_path():
@@ -171,7 +177,7 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
                 #      candle range so it can't trivially succeed.
                 # CHANGED: April 2026 — Phase 44 Fix 3 — bounded tolerance
                 #          (audit Part D HIGH #27)
-                tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
+                tolerance = ALIGNMENT_TOLERANCE_RAW
                 # Cap at half the median candle range so it can't pass everything
                 try:
                     _median_range = float((merged['high'] - merged['low']).median())
@@ -458,20 +464,23 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             #      the verification now uses containing_candle_idx — the bar
             #      where the trade actually happened.
             # CHANGED: April 2026 — verify against containing bar (audit bug #10)
-            tolerance = ALIGNMENT_TOLERANCE * PIP_SIZE
+            # Phase 63 Fix 2: use pre-computed constant
+            tolerance = ALIGNMENT_TOLERANCE_RAW
 
-            verified = 0
+            # WHY (Phase 63 Fix 1): Old code used iterrows() — one row per trade.
+            #      For 10 000 trades this was the slowest remaining loop in step1.
+            #      Vectorise with boolean masking: same logic, ~100× faster.
+            # CHANGED: April 2026 — Phase 63 Fix 1 — vectorised verification
+            #          (audit Part D LOW #31)
             if aligned_count > 0:
-                for idx, row in aligned.iterrows():
-                    if pd.notna(row['candle_idx']):
-                        entry_price = row['entry_price']
-                        candle_high = row['high']   # containing candle high
-                        candle_low = row['low']     # containing candle low
-
-                        # Check if entry price is within containing candle range
-                        if (entry_price >= candle_low - tolerance and
-                            entry_price <= candle_high + tolerance):
-                            verified += 1
+                _has_candle  = aligned['candle_idx'].notna()
+                _in_range    = (
+                    (aligned['entry_price'] >= aligned['low']  - tolerance) &
+                    (aligned['entry_price'] <= aligned['high'] + tolerance)
+                )
+                verified = int((_has_candle & _in_range).sum())
+            else:
+                verified = 0
 
             verified_counts[tf] = verified
 

@@ -2101,12 +2101,18 @@ def generate_tradovate_config(output_dir):
         "api_secret":       "YOUR_TRADOVATE_API_SECRET",
         "username":         "your_username",
         "password":         "your_password",
-        "symbol":           "XAUUSD",
+        # WHY (Phase 63 Fix 4): Old template hardcoded XAUUSD/150/300.
+        #      A user generating for EURUSD would see wrong defaults and
+        #      potentially ship a bot with the wrong symbol and SL/TP.
+        #      Pull symbol from rules_config if provided; use generic defaults.
+        # CHANGED: April 2026 — Phase 63 Fix 4 — instrument-agnostic template defaults
+        #          (audit Part B LOW)
+        "symbol":           rules_config.get('symbol', 'YOUR_SYMBOL'),
         "risk_pct":         1.0,
         "max_trades_per_day": 5,
         "cooldown_minutes": 60,
-        "sl_pips":          150,
-        "tp_pips":          300,
+        "sl_pips":          rules_config.get('sl_pips', 100),
+        "tp_pips":          rules_config.get('tp_pips', 200),
         "dd_daily_pct":     5.0,
         "dd_total_pct":     10.0,
         "dd_safety_pct":    80.0,
