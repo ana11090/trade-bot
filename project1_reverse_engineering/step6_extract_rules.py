@@ -111,6 +111,17 @@ def extract_rules_for_scenario(scenario):
         test_data = data[data['dataset'] == 'test'].copy()
         X_test = fill_feature_nans(test_data[feature_cols])
         y_test = test_data['outcome']
+        # WHY (Phase A.11): pips_test must be positionally aligned with
+        #      X_test/y_test so the leaf-evaluation mask in
+        #      extract_win_rules_from_tree (a numpy bool array of length
+        #      len(X_test)) can index it correctly. reset_index(drop=True)
+        #      guarantees positional alignment regardless of test_data's
+        #      source row indices.
+        # CHANGED: April 2026 — Phase A.11
+        if 'pips' in test_data.columns:
+            pips_test = test_data['pips'].reset_index(drop=True)
+        else:
+            pips_test = None
 
         # Find the best individual tree by TRAINING accuracy (no peeking)
         best_tree_idx = 0
@@ -183,7 +194,13 @@ def extract_rules_for_scenario(scenario):
                 )
                 tree_d.fit(X_train, y_train)
 
-                rules_d = extract_win_rules_from_tree(tree_d, feature_cols, X_test, y_test)
+                # WHY (Phase A.11): pass pips_test so avg_pips is
+                #      computed per rule from real test-period outcomes.
+                # CHANGED: April 2026 — Phase A.11
+                rules_d = extract_win_rules_from_tree(
+                    tree_d, feature_cols, X_test, y_test,
+                    pips_test=pips_test,
+                )
 
                 for r in rules_d:
                     r['tree_depth'] = depth
@@ -344,6 +361,10 @@ def extract_rules_for_scenario(scenario):
         # rule['conditions'] (list of condition strings) + rule['prediction'] = 'WIN'
         formatted_rules = []
         for rule in filtered_rules:
+            # WHY (Phase A.11): forward avg_pips from the tree extractor
+            #      so the Results panel and downstream consumers stop
+            #      showing "+0 pips" for every rule.
+            # CHANGED: April 2026 — Phase A.11
             formatted_rules.append({
                 'conditions':  rule.get('conditions', []),
                 'prediction':  'WIN',
@@ -351,6 +372,7 @@ def extract_rules_for_scenario(scenario):
                 'coverage':    rule.get('coverage', 0),
                 'wins':        rule.get('wins', 0),
                 'win_rate':    rule.get('confidence', 0),
+                'avg_pips':    rule.get('avg_pips', 0.0),
                 'action':      direction,
             })
 
@@ -398,18 +420,28 @@ def extract_rules_for_scenario(scenario):
         return False
 
 
-def extract_win_rules_from_tree(tree, feature_names, X_test, y_test):
+def extract_win_rules_from_tree(tree, feature_names, X_test, y_test, pips_test=None):
     """
     Extract rules from a decision tree that lead to WIN predictions.
 
     Args:
         tree: Trained decision tree
         feature_names: List of feature names
-        X_test: Test features
-        y_test: Test labels
+        X_test: Test features (pd.DataFrame)
+        y_test: Test labels (1=win, 0=loss)
+        pips_test: Optional pd.Series of per-trade pip outcomes aligned
+                   row-by-row with X_test/y_test. When provided, each
+                   extracted rule gets an 'avg_pips' field computed
+                   from mean pips of matching test trades. When None
+                   (legacy callers), 'avg_pips' is omitted.
 
     Returns:
         List of rule dictionaries
+
+    WHY (Phase A.11): Old function had no access to per-trade pip data,
+         so every rule lacked an avg_pips field. Results panel read
+         rule.get('avg_pips', 0) → showed "+0 pips" everywhere.
+    CHANGED: April 2026 — Phase A.11 — pips_test parameter
     """
     from sklearn.tree import _tree
 
@@ -482,15 +514,33 @@ def extract_win_rules_from_tree(tree, feature_names, X_test, y_test):
                     test_confidence = float(actual_wins) / float(matching_trades)
                     overfit_gap = train_confidence - test_confidence
 
-                    rules.append({
+                    # WHY (Phase A.11): compute avg_pips from the same
+                    #      mask the leaf uses for confidence. pips_test
+                    #      is positionally aligned with X_test/y_test.
+                    #      If pips_test is None (legacy caller), omit
+                    #      the field so downstream falls back gracefully.
+                    # CHANGED: April 2026 — Phase A.11
+                    _rule_record = {
                         'conditions':       conditions,
-                        'confidence':       test_confidence,    # test-based (primary)
-                        'train_confidence': train_confidence,   # for overfit detection
+                        'confidence':       test_confidence,
+                        'train_confidence': train_confidence,
                         'overfit_gap':      overfit_gap,
                         'coverage':         int(matching_trades),
                         'wins':             int(actual_wins),
                         'action':           'BUY or SELL'
-                    })
+                    }
+                    if pips_test is not None:
+                        try:
+                            _matching_pips = pips_test[mask]
+                            if len(_matching_pips) > 0:
+                                _rule_record['avg_pips'] = round(
+                                    float(_matching_pips.mean()), 1
+                                )
+                            else:
+                                _rule_record['avg_pips'] = 0.0
+                        except Exception:
+                            _rule_record['avg_pips'] = 0.0
+                    rules.append(_rule_record)
 
     recurse(0, [])
 
