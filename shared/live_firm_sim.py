@@ -16,7 +16,7 @@ from datetime import datetime
 
 def simulate_live_firm(trades, prop_firm_data, account_size=100000,
                        payout_period_days=14, withdrawal_pct=80.0,
-                       pip_value_per_lot=10.0, risk_pct=1.0,
+                       pip_value_per_lot=None, risk_pct=1.0,
                        default_sl_pips=150.0):
     """
     Replay trades through the exact firm rules.
@@ -75,6 +75,15 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
             daily_dd_pct = 5.0
             total_dd_pct = 10.0
 
+    # WHY (Phase 72 Fix 19): Old code hardcoded pip_value_per_lot=10.0 which
+    #      is only correct for XAUUSD at 1 lot. Other instruments (EURUSD,
+    #      GBPUSD, index CFDs) have completely different pip values. If the
+    #      firm JSON contains pip_value_per_lot, use it; else default to 10.0.
+    # CHANGED: April 2026 — Phase 72 Fix 19 — resolve pip_value from config
+    #          (audit Part F HIGH #19)
+    if pip_value_per_lot is None:
+        pip_value_per_lot = float(prop_firm_data.get('pip_value_per_lot', 10.0))
+
     # ── Initialize state ──────────────────────────────────────────────────
     starting_balance = account_size
     balance          = account_size
@@ -91,6 +100,14 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
     lock_day           = None
     payout_cycles_completed = 0
     total_withdrawn    = 0.0
+    # WHY (Phase 72 Fix 17): Old code reset dd_locked to False on blow without
+    #      tracking whether locks were cleared. A user who reached the lock-after-gain
+    #      threshold (e.g., +8% profit) then blew the account would start a new
+    #      account with no indication that locks had been active. This makes it
+    #      hard to diagnose whether the blow happened pre-lock or post-lock.
+    # CHANGED: April 2026 — Phase 72 Fix 17 — track locks cleared on blow
+    #          (audit Part F HIGH #17)
+    _locks_cleared_on_blow = False
 
     period_start_day      = 0
     period_start_balance  = balance   # WHY: was named period_high — see Fix
@@ -140,7 +157,22 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         # CHANGED: April 2026 — use config values, not hardcoded $10/pip
         risk_dollars   = account_size * (risk_pct / 100.0)
         sl_denom       = default_sl_pips * pip_value_per_lot
-        lot_size       = max(0.01, risk_dollars / sl_denom) if sl_denom > 0 else 0.01
+        lot_size_calculated = risk_dollars / sl_denom if sl_denom > 0 else 0.01
+        lot_size       = max(0.01, lot_size_calculated)
+
+        # WHY (Phase 72 Fix 18): When lot_size_calculated < 0.01 (micro risk or
+        #      huge SL), flooring to 0.01 inflates the actual risk taken. A
+        #      strategy expecting $50 risk per trade but forced to 0.01 lots
+        #      might actually risk $150. Warn once per simulation if this occurs.
+        # CHANGED: April 2026 — Phase 72 Fix 18 — warn on lot floor inflation
+        #          (audit Part F HIGH #18)
+        if lot_size_calculated < 0.01 and day_idx == 0:
+            import logging
+            logging.warning(
+                f"lot_size floored to 0.01 (calculated {lot_size_calculated:.4f}) — "
+                f"actual risk inflated by {0.01/lot_size_calculated:.1f}×"
+            )
+
         dollar_per_pip = pip_value_per_lot * lot_size
 
         for t in day_trades:
@@ -218,6 +250,16 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
             blow_count += 1
             if first_blow_day is None:
                 first_blow_day = day_idx
+
+            # WHY (Phase 72 Fix 17): Old code reset dd_locked to False on blow
+            #      without tracking whether locks were cleared. If a user reached
+            #      lock-after-gain (+8% profit) then blew, the new account started
+            #      fresh with no indication locks had been active. Track this so
+            #      post-mortem analysis knows if blow happened pre-lock or post-lock.
+            # CHANGED: April 2026 — Phase 72 Fix 17 — track locks cleared on blow
+            #          (audit Part F HIGH #17)
+            if dd_locked or post_payout_lock:
+                _locks_cleared_on_blow = True
 
             # Simulate buying a new account for this period
             balance              = starting_balance
@@ -366,6 +408,7 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         'total_dd_pct':            total_dd_pct,
         'lock_pct':                lock_pct,
         'has_post_payout_lock':    post_payout.get('dd_locks_at') == 'initial_balance',
+        'locks_cleared_on_blow':   _locks_cleared_on_blow,  # Phase 72 Fix 17
     }
 
 
