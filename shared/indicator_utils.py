@@ -851,6 +851,26 @@ def compute_indicators(df, only=None, prefix=""):
     # Use timestamp as index so reset_index() yields a named 'timestamp' column
     indicators.index = df['timestamp']
     indicators.index.name = 'timestamp'
+
+    # WHY (Phase 74 Fix 26): The selective compute_indicators stopped after
+    #      the ~119 base indicators. It did NOT call smart_features.py to
+    #      add the 50 SMART_ and 14 REGIME_ columns. Callers expecting the
+    #      same coverage as compute_all_indicators + smart_features got a
+    #      silently smaller feature set, causing KeyErrors downstream when
+    #      SMART_ rules were applied during backtesting.
+    # CHANGED: April 2026 — Phase 74 Fix 26 — call smart_features in selective path
+    #          (audit Part F HIGH #26)
+    try:
+        from project1_reverse_engineering import smart_features as _sf
+        from shared import feature_toggles as _ft
+        if _ft.get_smart() or _ft.get_regime():
+            indicators = _sf.compute_smart_features(indicators)
+    except Exception as _e:
+        # Smart features are optional — log but don't fail
+        import logging as _log
+        _log.getLogger(__name__).warning(
+            f"[indicator_utils] smart_features unavailable in selective path: {_e}"
+        )
     return indicators
 
 

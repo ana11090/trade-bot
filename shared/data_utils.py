@@ -327,17 +327,29 @@ def verify_alignment(trades_df, candles_df, tolerance_pips=5.0, pip_size=0.01):
     min_tolerance_pips = max(tolerance_pips, 5.0)
     tolerance_price_units = min_tolerance_pips * pip_size
 
-    for idx, trade in trades_df.iterrows():
-        candle_idx = int(trade['aligned_candle_idx'])
-        candle = candles_df.iloc[candle_idx]
+    # WHY (Phase 74 Fix 33): iterrows() processed one trade at a time.
+    #      10k trades × pandas overhead ≈ 30s+. Vectorise the bounds check.
+    # CHANGED: April 2026 — Phase 74 Fix 33 — vectorised verification
+    #          (audit Part F HIGH #33)
+    # Merge candle high/low into trades_df for vectorized comparison
+    _candles_subset = candles_df[['high', 'low']].reset_index(drop=False).rename(
+        columns={'index': '_candle_pos'}
+    )
+    _merged = trades_df.merge(
+        _candles_subset,
+        left_on='aligned_candle_idx',
+        right_on='_candle_pos',
+        how='left',
+        suffixes=('', '_candle')
+    )
 
-        trade_price = trade['open_price']
-        candle_high = candle['high']
-        candle_low = candle['low']
-
-        # Check if trade price is within candle range (with tolerance)
-        if trade_price < (candle_low - tolerance_price_units) or trade_price > (candle_high + tolerance_price_units):
-            misaligned_count += 1
+    # Vectorized bounds check
+    _has_candle = _merged['_candle_pos'].notna()
+    _in_range = (
+        (_merged['open_price'] >= _merged['low'] - tolerance_price_units) &
+        (_merged['open_price'] <= _merged['high'] + tolerance_price_units)
+    )
+    misaligned_count = int((~_in_range & _has_candle).sum())
 
     if misaligned_count > 0:
         log.warning(f"  {misaligned_count} trades have open prices outside candle range (tolerance: {tolerance_pips} pips)")
