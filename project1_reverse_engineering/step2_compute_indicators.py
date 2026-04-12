@@ -153,16 +153,33 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                 full_indicators_df = indicator_utils.compute_all_indicators(
                     candles_df, prefix=f'{tf}_'
                 )
+                # WHY (Phase 45 Fix 3): The lookup below uses .iloc[candle_idx]
+                #      which is positional. If compute_all_indicators
+                #      returned a non-RangeIndex (e.g., DatetimeIndex from
+                #      internal reindex), the positional lookup is wrong.
+                #      Reset to RangeIndex defensively.
+                # CHANGED: April 2026 — Phase 45 Fix 3 — RangeIndex guard
+                #          (audit Part D HIGH #35)
+                if not isinstance(full_indicators_df.index, pd.RangeIndex):
+                    full_indicators_df = full_indicators_df.reset_index(drop=True)
                 t1 = time.time()
                 log.info(f"    Computed {len(full_indicators_df.columns)} indicators in {t1-t0:.1f}s")
             except Exception as e:
-                log.error(f"     computing indicators: {e}")
-                # Fall back: empty indicators for all trades
-                indicator_values = [{} for _ in range(len(trades_df))]
-                # Convert indicator values to DataFrame and add to feature matrix
-                indicators_df = pd.DataFrame(indicator_values)
-                for col in indicators_df.columns:
-                    feature_matrix[col] = indicators_df[col].values
+                # WHY (Phase 45 Fix 2): Old fallback assigned empty dicts
+                #      → empty columns → downstream analyze.py iterated
+                #      EXISTING columns and silently skipped this TF
+                #      entirely. No indication to the user that the TF
+                #      failed. Log a loud warning and write a sentinel
+                #      column so analyze.py can detect the failure.
+                # CHANGED: April 2026 — Phase 45 Fix 2 — visible TF failure
+                #          (audit Part D HIGH #34)
+                log.error(f"     computing indicators for {tf}: {e}")
+                log.warning(
+                    f"    [STEP2] {tf}: ENTIRE TIMEFRAME FAILED — no "
+                    f"{tf}_* features in the feature matrix. Downstream "
+                    f"models will silently skip this TF."
+                )
+                feature_matrix[f'{tf}_compute_failed'] = 1
                 continue
 
             # Now look up each trade's row from the precomputed dataframe
@@ -173,22 +190,35 @@ def compute_features(aligned_trades_path=None, output_dir=None):
             indicator_values = []
             indicator_cols = [c for c in full_indicators_df.columns if c != 'timestamp']
 
+            # WHY (Phase 45 Fix 1): Old code silently appended {} for trades
+            #      whose candle_idx was below LOOKBACK_CANDLES. User lost the
+            #      first N trades per TF with no log explaining why. Track
+            #      the count and log a summary so the user knows how many
+            #      trades were warmup-dropped per timeframe.
+            # CHANGED: April 2026 — Phase 45 Fix 1 — visible warmup drops
+            #          (audit Part D HIGH #33)
+            _warmup_drops = 0
+            _nan_drops    = 0
+            _oob_drops    = 0
+
             for idx, trade in trades_df.iterrows():
                 candle_idx = trade[idx_col]
 
                 if pd.isna(candle_idx):
                     indicator_values.append({})
+                    _nan_drops += 1
                     continue
 
                 candle_idx = int(candle_idx)
 
                 # Need at least LOOKBACK_CANDLES of history for indicators to be valid
-                # WHY: Hardcoded 50 was less than LOOKBACK_CANDLES (often 200).
-                #      Rows with fewer than LOOKBACK_CANDLES preceding candles
-                #      produce NaN-heavy indicators that pollute the feature matrix.
-                # CHANGED: April 2026 — use config LOOKBACK_CANDLES
-                if candle_idx < LOOKBACK_CANDLES or candle_idx >= len(full_indicators_df):
+                if candle_idx < LOOKBACK_CANDLES:
                     indicator_values.append({})
+                    _warmup_drops += 1
+                    continue
+                if candle_idx >= len(full_indicators_df):
+                    indicator_values.append({})
+                    _oob_drops += 1
                     continue
 
                 try:
@@ -201,6 +231,14 @@ def compute_features(aligned_trades_path=None, output_dir=None):
 
             t1 = time.time()
             log.info(f"    Lookup complete in {t1-t0:.1f}s")
+            # Phase 45 Fix 1b: warmup-drop visibility
+            if _warmup_drops + _nan_drops + _oob_drops > 0:
+                log.warning(
+                    f"    [STEP2] {tf}: dropped {_warmup_drops} trades to warmup "
+                    f"(< {LOOKBACK_CANDLES} preceding candles), "
+                    f"{_nan_drops} to missing candle_idx, "
+                    f"{_oob_drops} to out-of-range candle_idx"
+                )
 
             # Convert indicator values to DataFrame and add to feature matrix
             indicators_df = pd.DataFrame(indicator_values)

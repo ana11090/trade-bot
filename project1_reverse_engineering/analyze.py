@@ -132,6 +132,14 @@ def build_robot_profile(df):
         )
 
         # SL detection
+        # WHY (Phase 45 Fix 4): Old code only detected single-mode SL systems.
+        #      Two-level SL systems (e.g., 30-pip hard SL + 10-pip trailing
+        #      SL that fires more often) showed as "dynamic" with low confidence
+        #      because neither mode alone hit 60%. The fix detects bimodal
+        #      patterns: compute primary mode, then secondary mode from the
+        #      remaining losses, and check if both together cover >70%.
+        # CHANGED: April 2026 — Phase 45 Fix 4 — bimodal SL detection
+        #          (audit Part D HIGH #36)
         if len(losers) > 0:
             mode_loss = losers.mode().iloc[0] if len(losers.mode()) > 0 else None
             if mode_loss is not None:
@@ -143,12 +151,43 @@ def build_robot_profile(df):
                         'confidence': round(float(near_mode), 2),
                     }
                 else:
-                    profile['sl_pattern'] = {
-                        'fixed': False,
-                        'range_pips': (round(abs(float(losers.max())), 1),
-                                       round(abs(float(losers.min())), 1)),
-                        'median_pips': round(abs(float(losers.median())), 1),
-                    }
+                    # Phase 45 Fix 4: Check for bimodal SL (two-level system)
+                    # Remove primary mode and look for secondary mode
+                    _mask_primary = ((losers - mode_loss).abs() / abs(mode_loss) >= 0.05)
+                    _remaining = losers[_mask_primary]
+                    if len(_remaining) > max(5, len(losers) * 0.15):
+                        _mode2 = _remaining.mode().iloc[0] if len(_remaining.mode()) > 0 else None
+                        if _mode2 is not None:
+                            _near_mode2 = ((losers - _mode2).abs() / abs(_mode2) < 0.05).mean()
+                            _combined_coverage = near_mode + _near_mode2
+                            if _combined_coverage > 0.70:
+                                profile['sl_pattern'] = {
+                                    'fixed': 'bimodal',
+                                    'primary_value_pips': round(abs(float(mode_loss)), 1),
+                                    'secondary_value_pips': round(abs(float(_mode2)), 1),
+                                    'combined_confidence': round(float(_combined_coverage), 2),
+                                }
+                            else:
+                                profile['sl_pattern'] = {
+                                    'fixed': False,
+                                    'range_pips': (round(abs(float(losers.max())), 1),
+                                                   round(abs(float(losers.min())), 1)),
+                                    'median_pips': round(abs(float(losers.median())), 1),
+                                }
+                        else:
+                            profile['sl_pattern'] = {
+                                'fixed': False,
+                                'range_pips': (round(abs(float(losers.max())), 1),
+                                               round(abs(float(losers.min())), 1)),
+                                'median_pips': round(abs(float(losers.median())), 1),
+                            }
+                    else:
+                        profile['sl_pattern'] = {
+                            'fixed': False,
+                            'range_pips': (round(abs(float(losers.max())), 1),
+                                           round(abs(float(losers.min())), 1)),
+                            'median_pips': round(abs(float(losers.median())), 1),
+                        }
             else:
                 profile['sl_pattern'] = {'fixed': False}
         else:
@@ -193,12 +232,31 @@ def build_robot_profile(df):
     if 'hour_of_day' in df.columns:
         hours = df['hour_of_day'].value_counts()
         total_t = len(df)
-        active_hours = sorted(hours[hours / total_t > 0.02].index.tolist())
+        # WHY (Phase 51 Fix 2): Old 2% threshold didn't scale with
+        #      trade count. For 100 trades, 2% = 2 trades (sensible);
+        #      for 10 trades, 2% = 0.2 trades (any hour with a trade
+        #      qualifies). Floor at 2 actual trades minimum so small
+        #      strategies aren't credited with "active" in every
+        #      hour they happened to fire once.
+        # CHANGED: April 2026 — Phase 51 Fix 2 — count-floored threshold
+        #          (audit Part D MED #45)
+        _min_count_floor = max(2, total_t * 0.02)
+        active_hours = sorted(hours[hours >= _min_count_floor].index.tolist())
         peak_hours   = hours.head(3).index.tolist()
         profile['active_hours'] = active_hours
         profile['peak_hours']   = peak_hours
 
         sessions = []
+        # WHY (Phase 51 Fix 3): Session ranges below assume hour_of_day
+        #      is in UTC. step1 may produce broker-time hours (EET etc.)
+        #      depending on the trade source CSV. If broker-time, the
+        #      session labels here are off by the broker-UTC offset.
+        #      Real fix needs upstream timezone tagging in step1 →
+        #      step2 → analyze.py. Until then, the labels are an
+        #      approximation. Marker added so future readers don't
+        #      "simplify" the assumption away.
+        # CHANGED: April 2026 — Phase 51 Fix 3 — timezone assumption doc
+        #          (audit Part D MED #46)
         if any(h in active_hours for h in range(0, 8)):
             sessions.append('Asian')
         if any(h in active_hours for h in range(7, 16)):
@@ -410,7 +468,16 @@ def extract_rules(df, model_result):
             confidence = max(win_count, loss_count) / total if total > 0 else 0
             win_rate   = win_count / total if total > 0 else 0
 
-            if samples >= 15 and confidence >= 0.55:
+            # WHY (Phase 51 Fix 5): Old code hardcoded 0.55 as the
+            #      confidence floor. Panel users could pass
+            #      min_win_rate via model_result['min_confidence']
+            #      but the function ignored it. Read it now so the
+            #      panel can require stricter rules without editing
+            #      this file.
+            # CHANGED: April 2026 — Phase 51 Fix 5 — configurable floor
+            #          (audit Part D MED #48)
+            _min_conf = float(model_result.get('min_confidence', 0.55))
+            if samples >= 15 and confidence >= _min_conf:
                 mask = pd.Series(True, index=X.index)
                 for cond in conditions:
                     col_vals = X[cond['feature']]
@@ -476,9 +543,28 @@ def cluster_trades(df, model_result, n_clusters=4):
         cluster_X  = X[mask]
 
         count    = int(mask.sum())
+        # WHY (Phase 45 Fix 5): Old code assumed trade_duration_minutes
+        #      exists. But step2 doesn't write it (it's a leakage source).
+        #      Result: cluster_trades crashed with KeyError. Fix: check
+        #      if the column exists, and if not, mark avg_dur = 0.0 and
+        #      set a 'duration_category': 'unknown' marker so downstream
+        #      code knows this cluster's duration is unavailable.
+        # CHANGED: April 2026 — Phase 45 Fix 5 — duration-unknown marker
+        #          (audit Part D HIGH #37)
         avg_dur  = float(cluster_df['trade_duration_minutes'].mean()) if 'trade_duration_minutes' in cluster_df else 0.0
         avg_pips = float(cluster_df['pips'].mean())     if 'pips'      in cluster_df else 0.0
-        win_rate = float(cluster_df['is_winner'].mean()) if 'is_winner' in cluster_df else 0.0
+        # WHY (Phase 45 Fix 6): Old code assumed is_winner column exists.
+        #      But step2 doesn't write it. Result: cluster_trades crashed
+        #      or reported 0.0 win_rate for all clusters. Fix: derive
+        #      from pips > 0, which step2 does provide.
+        # CHANGED: April 2026 — Phase 45 Fix 6 — derive is_winner from pips
+        #          (audit Part D HIGH #38)
+        if 'is_winner' in cluster_df.columns:
+            win_rate = float(cluster_df['is_winner'].mean())
+        elif 'pips' in cluster_df.columns:
+            win_rate = float((cluster_df['pips'] > 0).mean())
+        else:
+            win_rate = 0.0
 
         # Top differentiating features
         cluster_mean = cluster_X.mean()
@@ -487,10 +573,20 @@ def cluster_trades(df, model_result, n_clusters=4):
         top_features = diff.head(5).index.tolist()
 
         # Auto-name
+        # Phase 45 Fix 5b: If avg_dur is 0.0 (unknown), don't use duration
+        #                  for naming — rely on pips-based patterns instead.
         if avg_pips > 300:
             name = 'Big winners'
         elif avg_pips < -50:
             name = 'Noise trades'
+        elif avg_dur == 0.0:
+            # Duration unknown — name by pip magnitude
+            if avg_pips > 50:
+                name = 'Profit cluster'
+            elif avg_pips < 0:
+                name = 'Loss cluster'
+            else:
+                name = 'Mixed cluster'
         elif avg_dur < 5:
             name = 'Quick scalps'
         elif avg_dur < 30:
@@ -527,9 +623,16 @@ def analyze_market_regimes(df, model_result):
         sub = df[mask]
         if len(sub) < 10:
             return None
+        # Phase 45 Fix 6b: derive is_winner from pips (same as cluster_trades)
+        if 'is_winner' in sub.columns:
+            _wr = round(float(sub['is_winner'].mean()), 3)
+        elif 'pips' in sub.columns:
+            _wr = round(float((sub['pips'] > 0).mean()), 3)
+        else:
+            _wr = 0.0
         return {
             'count':      len(sub),
-            'win_rate':   round(float(sub['is_winner'].mean()), 3),
+            'win_rate':   _wr,
             'avg_pips':   round(float(sub['pips'].mean()), 1),
             'total_pips': round(float(sub['pips'].sum()), 0),
         }
@@ -538,7 +641,22 @@ def analyze_market_regimes(df, model_result):
     adx_col = next((c for c in ['H4_adx_14', 'H1_adx_14', 'D1_adx_14']
                     if c in df.columns and df[c].notna().sum() > 100), None)
     if adx_col:
-        trending = df[adx_col] > 25
+        # WHY (Phase 51 Fix 4): Old code hardcoded ADX > 25 as the
+        #      "trending" boundary. 25 is the textbook DMI/ADX cutoff
+        #      for forex majors but is wrong for low-volatility pairs
+        #      (EURGBP rarely > 25 → all rows always "ranging") and
+        #      for crypto/indices (often > 25 → all rows always
+        #      "trending"). Use the column's own median as the
+        #      instrument-specific boundary — gives a balanced
+        #      trending/ranging split for any instrument.
+        # CHANGED: April 2026 — Phase 51 Fix 4 — instrument-agnostic boundary
+        #          (audit Part D MED #47)
+        try:
+            _adx_median = float(df[adx_col].dropna().median())
+            _adx_threshold = max(20.0, _adx_median)  # never below 20
+        except Exception:
+            _adx_threshold = 25.0
+        trending = df[adx_col] > _adx_threshold
         regimes['trend'] = {
             'trending':       _perf(trending),
             'ranging':        _perf(~trending),
@@ -607,19 +725,39 @@ def analyze_evolution(df):
     for year, grp in df_tmp.groupby('_year'):
         n_months  = grp['_mon'].nunique()
         per_month = len(grp) / max(n_months, 1)
-        avg_dur   = float(grp['trade_duration_minutes'].mean()) if 'trade_duration_minutes' in grp else 0.0
+        # Phase 45 Fix 5c: derive duration from open_time/close_time if available
+        if 'trade_duration_minutes' in grp.columns:
+            avg_dur = float(grp['trade_duration_minutes'].mean())
+        elif 'open_time' in grp.columns and 'close_time' in grp.columns:
+            try:
+                _ot = pd.to_datetime(grp['open_time'])
+                _ct = pd.to_datetime(grp['close_time'])
+                _dur = (_ct - _ot).dt.total_seconds() / 60.0
+                avg_dur = float(_dur.mean())
+            except Exception:
+                avg_dur = 0.0
+        else:
+            avg_dur = 0.0
         peak_hour = None
         if 'hour_of_day' in grp.columns and len(grp) > 0:
             mode_val = grp['hour_of_day'].mode()
             if len(mode_val) > 0:
                 peak_hour = int(mode_val.iloc[0])
 
+        # Phase 45 Fix 6c: derive is_winner from pips
+        if 'is_winner' in grp.columns:
+            _wr = round(float(grp['is_winner'].mean()), 3)
+        elif 'pips' in grp.columns:
+            _wr = round(float((grp['pips'] > 0).mean()), 3)
+        else:
+            _wr = 0.0
+
         periods.append({
             'period':            str(year),
             'trades':            len(grp),
             'months':            n_months,
             'trades_per_month':  round(per_month, 1),
-            'win_rate':          round(float(grp['is_winner'].mean()), 3) if 'is_winner' in grp else 0,
+            'win_rate':          _wr,
             'avg_pips':          round(float(grp['pips'].mean()), 1) if 'pips' in grp else 0,
             'avg_duration_min':  round(avg_dur, 1),
             'peak_hour':         peak_hour,
@@ -645,25 +783,56 @@ def detect_anomalies(df, model_result):
     anomaly_mask = labels == -1
     anomalies    = []
 
+    # Phase 45 Fix 5d+6d: derive is_winner from pips, duration from timestamps
     for i, idx in enumerate(df.index[anomaly_mask]):
         trade = df.loc[idx]
+        if 'is_winner' in df.columns:
+            _is_winner = bool(trade.get('is_winner', False))
+        elif 'pips' in df.columns:
+            _is_winner = bool(trade.get('pips', 0) > 0)
+        else:
+            _is_winner = False
+
+        if 'trade_duration_minutes' in df.columns:
+            _duration = round(float(trade.get('trade_duration_minutes', 0)), 1)
+        elif 'open_time' in df.columns and 'close_time' in df.columns:
+            try:
+                _ot = pd.to_datetime(trade['open_time'])
+                _ct = pd.to_datetime(trade['close_time'])
+                _duration = round(float((_ct - _ot).total_seconds() / 60.0), 1)
+            except Exception:
+                _duration = 0.0
+        else:
+            _duration = 0.0
+
         anomalies.append({
             'trade_id':  int(trade.get('trade_id', idx)),
             'open_time': str(trade.get('open_time', '')),
             'pips':      float(trade.get('pips', 0)),
-            'is_winner': bool(trade.get('is_winner', False)),
+            'is_winner': _is_winner,
             'score':     round(float(scores[df.index.get_loc(idx)]), 3),
             'hour':      int(trade.get('hour_of_day', 0)),
-            'duration':  round(float(trade.get('trade_duration_minutes', 0)), 1),
+            'duration':  _duration,
         })
 
     anomalies.sort(key=lambda a: a['score'])
 
+    # Phase 45 Fix 6e: derive anomaly win rates from pips
+    if 'is_winner' in df.columns:
+        _anom_wr = round(float(df[anomaly_mask]['is_winner'].mean()), 3) if anomaly_mask.sum() > 0 else 0
+        _norm_wr = round(float(df[~anomaly_mask]['is_winner'].mean()), 3)
+    elif 'pips' in df.columns:
+        _anom_wr = round(float((df[anomaly_mask]['pips'] > 0).mean()), 3) if anomaly_mask.sum() > 0 else 0
+        _norm_wr = round(float((df[~anomaly_mask]['pips'] > 0).mean()), 3)
+    else:
+        _anom_wr = 0.0
+        _norm_wr = 0.0
+
     return {
         'count':             int(anomaly_mask.sum()),
         'pct':               round(anomaly_mask.sum() / len(df) * 100, 1),
-        'anomaly_win_rate':  round(float(df[anomaly_mask]['is_winner'].mean()), 3) if anomaly_mask.sum() > 0 else 0,
-        'normal_win_rate':   round(float(df[~anomaly_mask]['is_winner'].mean()), 3),
+        'anomaly_win_rate':  _anom_wr,
+        'normal_win_rate':   _norm_wr,
         'top_anomalies':     anomalies[:20],
     }
 
@@ -675,7 +844,13 @@ def suggest_improvements(df, model_result, regimes, clusters, profile):
     Based on all analysis, suggest concrete improvements.
     """
     suggestions  = []
-    overall_wr   = float(df['is_winner'].mean())
+    # Phase 45 Fix 6f: derive overall_wr from pips if is_winner not present
+    if 'is_winner' in df.columns:
+        overall_wr = float(df['is_winner'].mean())
+    elif 'pips' in df.columns:
+        overall_wr = float((df['pips'] > 0).mean())
+    else:
+        overall_wr = 0.0
 
     # Trend filter
     if ('trend' in regimes

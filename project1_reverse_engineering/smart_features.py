@@ -479,9 +479,23 @@ def _add_price_action(df):
     else:
         price_for_round = h1_pivot
 
+    # WHY (Phase 51 Fix 1): Old code used np.any(price > 0) as a guard
+    #      to compute the feature, but if SOME rows had pivot=0
+    #      (computation failure on warmup), those rows produced inf/nan
+    #      from the modulo division. Mask zero-pivot rows explicitly
+    #      and assign a neutral 0.5 sentinel (mid-distance) so models
+    #      see a clean value instead of NaN-then-fillna(0) which
+    #      collides with the legitimate "AT a round level" value.
+    # CHANGED: April 2026 — Phase 51 Fix 1 — explicit zero-row sentinel
+    #          (audit Part D MED #20)
     if np.any(price_for_round > 0):
-        df['SMART_dist_to_round_50']  = np.abs(price_for_round % 50  - 25) / 25
-        df['SMART_dist_to_round_100'] = np.abs(price_for_round % 100 - 50) / 50
+        _valid_mask = price_for_round > 0
+        _dist50  = np.full(len(df), 0.5, dtype=float)
+        _dist100 = np.full(len(df), 0.5, dtype=float)
+        _dist50[_valid_mask]  = np.abs(price_for_round[_valid_mask] % 50  - 25) / 25
+        _dist100[_valid_mask] = np.abs(price_for_round[_valid_mask] % 100 - 50) / 50
+        df['SMART_dist_to_round_50']  = _dist50
+        df['SMART_dist_to_round_100'] = _dist100
 
     d1_atr   = _safe_col(df, 'D1_atr_14')
     h1_range = _safe_col(df, 'H1_candle_range')

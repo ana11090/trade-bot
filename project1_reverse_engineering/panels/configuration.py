@@ -22,12 +22,30 @@ _output_text        = None
 
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'p1_config.json')
 
+# WHY (Phase 47 Fix 1): Old panel DEFAULTS was missing keys that
+#      config_loader.DEFAULTS has — align_timeframes, lookback_candles,
+#      skip_m1_features. Saving from the panel silently dropped these
+#      because save_config whitelist filters by panel DEFAULTS. step1
+#      and step2 then fell back to their own hardcoded defaults
+#      instead of the user's intent. Sync with config_loader so all
+#      keys round-trip through the panel.
+# WHY (Phase 47 Fix 2): Renamed pip_value_usd → pip_size to match
+#      Phase 46 Fix 6's correct semantics. Added pip_value_per_lot_usd
+#      for the actual dollar value. Old key kept as a deprecated alias
+#      so users with existing saved configs aren't broken.
+# CHANGED: April 2026 — Phase 47 Fix 1+2 — sync with config_loader
+#          (audit Part D HIGH #60/61)
 DEFAULTS = {
     'symbol':                   'XAUUSD',
     'broker_timezone':          'EET',
-    'pip_value_usd':            '0.01',
+    'pip_size':                 '0.01',     # raw price units per pip
+    'pip_value_per_lot_usd':    '1.0',      # dollar value per pip per 1 lot
+    'pip_value_usd':            '0.01',     # DEPRECATED — kept for backward compat with old configs
     'alignment_tolerance_pips': '150',
     'min_lookback_candles':     '200',
+    'align_timeframes':         'M5,M15,H1,H4,D1',
+    'lookback_candles':         '200',
+    'skip_m1_features':         'true',
     'train_test_split':         '0.80',
     'rf_trees':                 '500',
     'max_tree_depth':           '6',
@@ -52,11 +70,27 @@ FIELDS = {
          'Common values: EET, GMT, Europe/London, Europe/Bucharest, US/Eastern\n'
          'Wrong timezone = trades matched to wrong candles → bad results.'),
 
-        ('pip_value_usd',
-         'Pip Value (USD)',
-         'Value of 1 pip in USD, used for spread/commission cost calculations.\n'
-         'XAUUSD = 0.01  |  EURUSD = 0.0001  |  GBPJPY ≈ 0.00007\n'
-         'Check your broker\'s contract spec if unsure.'),
+        # WHY (Phase 47 Fix 2): Old description called this "Pip Value
+        #      (USD)" but the values listed (0.01, 0.0001, 0.00007) are
+        #      pip SIZES in raw price units, NOT pip values in USD.
+        #      A user reading "Pip Value (USD)" for EURUSD might
+        #      correctly enter $10 (the actual dollar pip value for 1
+        #      lot) but downstream code uses the field as a pip-size
+        #      multiplier and would compute wildly wrong dollar costs.
+        #      Replace with two correctly-named fields.
+        # CHANGED: April 2026 — Phase 47 Fix 2 — semantic field names
+        #          (audit Part D HIGH #61)
+        ('pip_size',
+         'Pip Size (raw price units)',
+         'How much a 1-pip move is in raw price units.\n'
+         'XAUUSD = 0.01  |  EURUSD = 0.0001  |  GBPJPY = 0.01\n'
+         'Used for converting candle high/low to pips and back.'),
+
+        ('pip_value_per_lot_usd',
+         'Pip Value per 1 Lot (USD)',
+         'Dollar value of a 1-pip move per 1.0 standard lot.\n'
+         'XAUUSD = $1.00  |  EURUSD = $10.00  |  GBPJPY ≈ $6.70 (rate-dep)\n'
+         'Used for computing dollar P&L. Check broker contract spec if unsure.'),
 
         ('alignment_tolerance_pips',
          'Alignment Tolerance (pips)',
@@ -142,7 +176,9 @@ def save_config(entries, output_text):
     values = {k: var.get().strip() for k, var in entries.items()}
 
     # Validate numerics
-    float_keys = ['pip_value_usd', 'alignment_tolerance_pips', 'train_test_split',
+    # Phase 47 Fix 2: added pip_size and pip_value_per_lot_usd to validation
+    float_keys = ['pip_size', 'pip_value_per_lot_usd', 'pip_value_usd',
+                  'alignment_tolerance_pips', 'train_test_split',
                   'rule_min_confidence', 'match_rate_threshold']
     int_keys   = ['min_lookback_candles', 'rf_trees', 'max_tree_depth',
                   'min_samples_leaf', 'rule_min_coverage']
@@ -287,10 +323,33 @@ def build_panel(parent):
                   "covers 2005–present with auto-retry. Run it once to populate /data/.",
              bg="#fff3cd", fg="#856404", font=("Segoe UI", 9), justify=tk.LEFT).pack(anchor="w", pady=(4, 0))
 
-    tk.Button(right_frame, text="🔽  Download from MT5 (Recommended)",
+    # WHY (Phase 47 Fix 4): "Download from MT5 (Recommended)" button
+    #      didn't check OS. Linux/Mac users clicked it and got a
+    #      cryptic subprocess error buried in the output text widget.
+    #      MT5 only runs on Windows. Wrap the click handler with an
+    #      OS check that shows a clear messagebox on non-Windows.
+    # CHANGED: April 2026 — Phase 47 Fix 4 — OS-aware download button
+    #          (audit Part D HIGH #63)
+    def _mt5_download_with_os_check():
+        import platform
+        if platform.system() != 'Windows':
+            messagebox.showerror(
+                "MT5 Download Unavailable",
+                f"MetaTrader 5 only runs on Windows. Detected OS: "
+                f"{platform.system()}.\n\n"
+                f"On Linux/Mac, use one of these alternatives:\n"
+                f"  • Run the autonomous Dukascopy downloader\n"
+                f"    (project1/script_download_historicaldata_xauusd/)\n"
+                f"  • Use 'Download from yfinance' (limited history)\n"
+                f"  • Copy candle CSVs from a Windows MT5 install"
+            )
+            return
+        download_data_mt5(_output_text)
+
+    tk.Button(right_frame, text="🔽  Download from MT5 (Windows only)",
               bg="#27ae60", fg="white", font=("Segoe UI", 10, "bold"),
               bd=0, pady=10, cursor="hand2",
-              command=lambda: download_data_mt5(_output_text)).pack(fill="x", pady=(0, 5))
+              command=_mt5_download_with_os_check).pack(fill="x", pady=(0, 5))
 
     tk.Button(right_frame, text="🔽  Download from yfinance (Limited)",
               bg="#95a5a6", fg="white", font=("Segoe UI", 10, "bold"),
@@ -333,7 +392,20 @@ def check_all_data(output_text, trade_status_label, price_status_label, silent=F
     cfg         = load_config()
     symbol      = cfg.get('symbol', 'XAUUSD').lower()
     data_folder = os.path.normpath(os.path.join(os.path.dirname(__file__), '../../data'))
-    timeframes  = ['M5', 'M15', 'H1', 'H4']
+    # WHY (Phase 47 Fix 3): Old code hardcoded a 4-TF list. A user
+    #      running only H1 saw "1/4 timeframes found 🟡" — yellow
+    #      status light for a healthy setup. Read align_timeframes
+    #      from config_loader so the check matches the user's actual
+    #      pipeline configuration.
+    # CHANGED: April 2026 — Phase 47 Fix 3 — config-driven TF check
+    #          (audit Part D HIGH #62)
+    try:
+        from project1_reverse_engineering import config_loader as _cl
+        _cfg = _cl.load()
+        _tf_str = _cfg.get('align_timeframes', 'M5,M15,H1,H4,D1')
+        timeframes = [t.strip().upper() for t in _tf_str.split(',') if t.strip()]
+    except Exception:
+        timeframes = ['M5', 'M15', 'H1', 'H4']
 
     if not silent:
         output_text.insert(tk.END, f"Checking price data files (symbol: {symbol.upper()})...\n")

@@ -549,22 +549,42 @@ def _run_full_analysis():
                 _workspace_outputs = None
                 _workspace_trades = None
 
+            # WHY (Phase 49 Fix 1): Old code didn't check return values
+            #      between steps. step1 returning None still cascaded
+            #      to step2 → step3 → analyze, where the failure
+            #      surfaced with an error unrelated to the root cause
+            #      (step1). Now: each step's return value is checked
+            #      and a clean abort happens with the root failure
+            #      reported in the status label.
+            # CHANGED: April 2026 — Phase 49 Fix 1 — cascade abort
+            #          (audit Part D HIGH #81)
+
             # Step 1: alignment
             state.window.after(0, lambda: _status_label.configure(
                 text="[1/3] Aligning trades to candles...", fg=GREY))
             from step1_align_price import align_all_timeframes
-            align_all_timeframes(
+            _step1_result = align_all_timeframes(
                 trades_csv_path=_workspace_trades,
                 output_dir=_workspace_outputs,
             )
+            if _step1_result is None:
+                state.window.after(0, lambda: _status_label.configure(
+                    text="❌ Step 1 (alignment) failed — see log for details. Pipeline aborted.",
+                    fg=RED))
+                return
 
             # Step 2: feature matrix
             state.window.after(0, lambda: _status_label.configure(
                 text="[2/3] Computing indicators (may take ~5 min)...", fg=GREY))
             from step2_compute_indicators import compute_features
-            compute_features(
+            _step2_result = compute_features(
                 output_dir=_workspace_outputs,
             )
+            if _step2_result is None:
+                state.window.after(0, lambda: _status_label.configure(
+                    text="❌ Step 2 (indicators) failed — see log for details. Pipeline aborted.",
+                    fg=RED))
+                return
 
             # Step 3: analysis
             state.window.after(0, lambda: _status_label.configure(
@@ -572,13 +592,33 @@ def _run_full_analysis():
             from analyze import run_analysis
             if _workspace_outputs:
                 _feature_matrix_path = os.path.join(_workspace_outputs, 'feature_matrix.csv')
-                run_analysis(feature_matrix_path=_feature_matrix_path)
+                _step3_result = run_analysis(feature_matrix_path=_feature_matrix_path)
             else:
-                run_analysis()
+                _step3_result = run_analysis()
+            if _step3_result is None:
+                state.window.after(0, lambda: _status_label.configure(
+                    text="❌ Step 3 (analysis) failed — see log for details.",
+                    fg=RED))
+                return
 
             state.window.after(0, _load_and_display)
             state.window.after(0, lambda: _status_label.configure(
                 text="Analysis complete!", fg=GREEN))
+
+            # WHY (Phase 49 Fix 3): Phase 48 Fix 3 added a public
+            #      invalidate_feature_matrix_cache() helper. Wire it
+            #      in here so the Strategy Builder panel re-checks
+            #      the feature matrix when the user next visits it.
+            #      Previously the stale cache persisted across runs.
+            # CHANGED: April 2026 — Phase 49 Fix 3 — invalidate SB cache
+            #          (audit Part D HIGH #84/69)
+            try:
+                from project1_reverse_engineering.panels.strategy_builder import (
+                    invalidate_feature_matrix_cache,
+                )
+                invalidate_feature_matrix_cache()
+            except Exception as _e:
+                log.info(f"[robot_analysis] could not invalidate SB cache: {_e}")
 
         except Exception as e:
             import traceback
@@ -590,8 +630,34 @@ def _run_full_analysis():
             state.window.after(0, lambda: _run_btn.configure(
                 state="normal", text="Run Full Analysis"))
 
+    # WHY (Phase 49 Fix 2): Old code showed only [1/3], [2/3], [3/3]
+    #      across steps that take minutes. Step 2 (indicators) is ~5
+    #      minutes with no intermediate updates — users thought the
+    #      app hung. Add a heartbeat timer that updates the status
+    #      with elapsed time every 10 seconds while a step is
+    #      running, so users see the pipeline is alive.
+    # CHANGED: April 2026 — Phase 49 Fix 2 — heartbeat progress
+    #          (audit Part D HIGH #83)
+    import time as _time
+    _pipeline_start = [_time.time()]
+    _pipeline_alive = [True]
+
+    def _heartbeat():
+        if not _pipeline_alive[0]:
+            return
+        _elapsed = int(_time.time() - _pipeline_start[0])
+        _mins, _secs = divmod(_elapsed, 60)
+        _current = _status_label.cget('text')
+        # Don't overwrite error or completion messages
+        if '❌' not in _current and 'complete' not in _current.lower():
+            _heart = "♥" if (_elapsed // 2) % 2 == 0 else "♡"
+            _new_text = f"{_current.split(' [')[0]} [{_mins:d}m {_secs:02d}s {_heart}]"
+            _status_label.configure(text=_new_text, fg=GREY)
+        state.window.after(10000, _heartbeat)
+
     _run_btn.configure(state="disabled", text="Running...")
     _status_label.configure(text="Running full pipeline...", fg=GREY)
+    state.window.after(10000, _heartbeat)
     threading.Thread(target=_worker, daemon=True).start()
 
 

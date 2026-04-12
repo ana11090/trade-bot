@@ -52,7 +52,14 @@ _var_min_cov     = None
 _var_min_wr      = None
 _var_train_split = None
 
+# WHY (Phase 48 Fix 7): Old _running was a bare bool. Two fast clicks
+#      raced through `if _running: return` and both started training
+#      threads, corrupting xgboost_result.json. Use threading.Lock.
+# CHANGED: April 2026 — Phase 48 Fix 7 — thread-safe running flag
+#          (audit Part D HIGH #78)
+import threading as _threading
 _running = False
+_running_lock = _threading.Lock()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,12 +77,32 @@ def _result_path():
 
 
 def _feature_matrix_exists():
-    for scenario in ['H1_M15', 'M5', 'M15', 'H1', 'H4']:
-        p = os.path.join(_outputs_dir(), f'scenario_{scenario}', 'feature_matrix_labeled.csv')
+    """Check whether a labeled feature matrix exists for XGBoost training.
+
+    WHY (Phase 48 Fix 5): Old code checked a hardcoded scenario list
+         then fell back to smart_feature_matrix.csv — but the smart
+         matrix has features without LABELS, so run_xgboost_discovery
+         crashed on missing 'label' column. Now: glob for any
+         feature_matrix_labeled.csv under outputs/scenario_*/, and
+         only fall back to smart_feature_matrix.csv if it has a label
+         column.
+    CHANGED: April 2026 — Phase 48 Fix 5 — label-aware existence check
+             (audit Part D HIGH #75)
+    """
+    import glob
+    pattern = os.path.join(_outputs_dir(), 'scenario_*', 'feature_matrix_labeled.csv')
+    for p in glob.glob(pattern):
         if os.path.exists(p):
             return True
     smart = os.path.join(_p1_dir(), 'outputs', 'smart_feature_matrix.csv')
-    return os.path.exists(smart)
+    if os.path.exists(smart):
+        try:
+            import pandas as pd
+            _head = pd.read_csv(smart, nrows=1)
+            return 'label' in _head.columns or 'is_winner' in _head.columns
+        except Exception:
+            return False
+    return False
 
 
 def _load_result():
@@ -86,8 +113,13 @@ def _load_result():
 
 
 def _set_running(running):
+    """Atomically set the running flag. Returns True if state changed."""
     global _running
-    _running = running
+    with _running_lock:
+        if running and _running:
+            return False  # Already running, refuse to start
+        _running = running
+        changed = True
     state = "disabled" if running else "normal"
     if _run_btn:
         _run_btn.config(state=state)
@@ -96,6 +128,7 @@ def _set_running(running):
             btn.config(state=state)
         except Exception:
             pass
+    return changed
 
 
 def _append_text(widget, text, tag=None):
@@ -456,7 +489,19 @@ def _display_compare(result):
         row.pack(fill="x", padx=15, pady=2)
         tk.Label(row, text=f"{label}:", bg=BG, fg=GREY,
                  font=("Segoe UI", 9), width=12, anchor="w").pack(side="left")
-        xgb_col = GREEN if xv >= dv else RED
+        # WHY (Phase 48 Fix 6): Old code colored each metric GREEN/RED
+        #      independently. Higher precision at the cost of recall
+        #      isn't strictly better. Use a tolerance band so small
+        #      improvements aren't trumpeted as wins, and yellow for
+        #      ambiguous cases.
+        # CHANGED: April 2026 — Phase 48 Fix 6 — softer metric coloring
+        #          (audit Part D HIGH #77)
+        if xv >= dv * 1.05:    # >=5% improvement
+            xgb_col = GREEN
+        elif xv <= dv * 0.95:  # >=5% regression
+            xgb_col = RED
+        else:                  # within ±5%
+            xgb_col = "#f39c12"  # amber
         tk.Label(row, text=f"XGBoost {xv:.4f}", bg=BG, fg=xgb_col,
                  font=("Segoe UI", 9, "bold"), width=20).pack(side="left")
         dt_col = GREEN if dv >= xv else GREY
@@ -475,11 +520,11 @@ def _display_compare(result):
 # ── Button handlers ───────────────────────────────────────────────────────────
 
 def _on_run():
-    if _running:
-        return
+    # Phase 48 Fix 7c: atomic check-and-set
+    if not _set_running(True):
+        return  # Already running
 
     def _work():
-        _set_running(True)
         _progress_bar.start(12)
         _status_lbl.config(text="Running...")
 

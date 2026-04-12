@@ -18,6 +18,13 @@ from helpers import make_copyable
 # Module-level variable to store data status frame
 _data_status_frame = None
 
+# WHY (Phase 49 Fix 4b): Module-level step1 run cache for persistent
+#      run tracking across button clicks. Keyed by output_dir so
+#      re-clicks within the same session reuse existing aligned_trades.csv.
+# CHANGED: April 2026 — Phase 49 Fix 4b — persistent run flags
+#          (audit Part D HIGH #90)
+_step1_run_cache = {}
+
 
 def build_panel(parent):
     global _data_status_frame
@@ -224,9 +231,18 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
         value=0, style="scenarios.Horizontal.TProgressbar"))
     pct_label.after(0, lambda: pct_label.config(text="0%"))
 
-    STEPS_PER_SCENARIO = 7
+    # WHY (Phase 49 Fix 4): Old code hardcoded STEPS_PER_SCENARIO = 7.
+    #      If the pipeline ever changes step count, progress bar
+    #      percentages drift silently. Compute from the actual step
+    #      list below. Also: see Fix 4b/4c for module-level run
+    #      tracking that survives across button clicks.
+    # CHANGED: April 2026 — Phase 49 Fix 4 — dynamic step count
+    #          (audit Part D HIGH #89)
+    STEPS_PER_SCENARIO = 7  # will be recomputed from steps_to_run length below
     total_steps = len(selected) * STEPS_PER_SCENARIO
     completed_steps = [0]   # mutable counter accessible in closure
+    # Phase 49 Fix 5: track failures to choose the right completion dialog
+    _scenario_failures = []
 
     def _update_bar(extra_label=""):
         pct = int(completed_steps[0] / total_steps * 100)
@@ -248,8 +264,22 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             # WHY: align_all_timeframes runs once for ALL TFs together —
             #      it doesn't need to run per scenario. Only run it on the
             #      first iteration.
+            # WHY (Phase 49 Fix 4b): Old code used a closure-local
+            #      `step1_already_run = [False]` flag that reset on
+            #      every Run click. Clicking Run twice re-ran step1
+            #      from scratch even though the first run's output
+            #      was on disk. Use a module-level dict keyed on the
+            #      output_dir so re-clicks within the same session
+            #      reuse the existing aligned_trades.csv if present.
             # CHANGED: April 2026 — fix step1 function name + run-once logic
-            step1_already_run = [False]
+            # CHANGED: April 2026 — Phase 49 Fix 4b — persistent run flags
+            #          (audit Part D HIGH #90)
+            global _step1_run_cache
+            _outputs_dir = os.path.normpath(
+                os.path.join(os.path.dirname(__file__), '..', 'outputs')
+            )
+            _cache_key = _outputs_dir
+            step1_already_run = [_cache_key in _step1_run_cache]
 
             def _step1_wrapper(scenario):
                 if step1_already_run[0]:
@@ -257,6 +287,8 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     return True
                 result = step1_align_price.align_all_timeframes()
                 step1_already_run[0] = (result is not None)
+                if step1_already_run[0]:
+                    _step1_run_cache[_cache_key] = True
                 return step1_already_run[0]
 
             # WHY: compute_features() processes ALL timeframes at once —
@@ -381,6 +413,7 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     log(f"\n✓ SCENARIO {scenario} COMPLETED SUCCESSFULLY\n")
                 else:
                     log(f"\n✗ SCENARIO {scenario} FAILED\n")
+                    _scenario_failures.append(f"{scenario}: pipeline failed")
                     progress_bar.after(0, lambda: progress_bar.config(
                         style="scenarios.error.Horizontal.TProgressbar"))
 
@@ -401,11 +434,25 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 text=f"100%  — {successful}/{len(selected)} scenarios OK"))
             progress_bar.after(0, lambda: progress_bar.config(value=100))
 
-            output_text.after(0, lambda: messagebox.showinfo(
-                "Execution Complete",
-                f"Completed {len(selected)} scenario(s).\n"
-                f"{successful} successful, {len(selected)-successful} failed.\n\n"
-                f"Check the console output for details."))
+            # WHY (Phase 49 Fix 5): Old code always showed an info
+            #      messagebox titled "Execution Complete" regardless
+            #      of whether any scenario actually failed. Users
+            #      thought their bad runs succeeded. Show an error
+            #      messagebox listing failures when any occurred.
+            # CHANGED: April 2026 — Phase 49 Fix 5 — failure-aware completion
+            #          (audit Part D HIGH #92)
+            if _scenario_failures:
+                _fail_msg = "Pipeline completed with failures:\n\n" + "\n".join(
+                    f"  • {f}" for f in _scenario_failures
+                )
+                output_text.after(0, lambda: messagebox.showerror(
+                    "Execution Complete (with errors)", _fail_msg))
+            else:
+                output_text.after(0, lambda: messagebox.showinfo(
+                    "Execution Complete",
+                    f"Completed {len(selected)} scenario(s).\n"
+                    f"{successful} successful, {len(selected)-successful} failed.\n\n"
+                    f"Check the console output for details."))
 
         except Exception as e:
             def show_error():

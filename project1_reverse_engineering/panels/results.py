@@ -92,9 +92,27 @@ def build_panel(parent):
              bg="white", fg="#333",
              font=("Segoe UI", 10)).pack(side="left", padx=(0, 10))
 
-    scenario_var = tk.StringVar(value="H1")
+    # WHY (Phase 50 Fix 1): Old code hardcoded 5 scenario values and
+    #      defaulted to "H1" regardless of what the user actually
+    #      ran. Users opening the panel after running only M15
+    #      saw "No rules found for scenario H1". Glob the actual
+    #      outputs/scenario_*/ directories to populate the combo
+    #      with what exists, and pick the first existing one as
+    #      the default. Fall back to the hardcoded list only if
+    #      nothing exists yet.
+    # CHANGED: April 2026 — Phase 50 Fix 1 — disk-driven scenario combo
+    #          (audit Part D HIGH #95/97)
+    import glob as _glob
+    _outputs_dir = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+    _scenario_dirs = sorted(_glob.glob(os.path.join(_outputs_dir, 'scenario_*')))
+    _scenario_names = [os.path.basename(d).replace('scenario_', '') for d in _scenario_dirs]
+    if not _scenario_names:
+        _scenario_names = ['M5', 'M15', 'H1', 'H4', 'H1_M15']
+    _default_scenario = _scenario_names[0] if _scenario_names else 'H1'
+
+    scenario_var = tk.StringVar(value=_default_scenario)
     scenario_combo = ttk.Combobox(scenario_frame, textvariable=scenario_var,
-                                 values=['M5', 'M15', 'H1', 'H4', 'H1_M15'],
+                                 values=_scenario_names,
                                  state="readonly", width=10)
     scenario_combo.pack(side="left")
 
@@ -122,8 +140,37 @@ def build_panel(parent):
 
 
 def load_comparison(comparison_text, winner_label, rules_text):
-    """Load and display scenario comparison"""
+    """Load and display scenario comparison.
+
+    WHY (Phase 50 Fix 2): Old code only read scenario_comparison.txt
+         and detected the winner via fragile regex on unstructured
+         text ('WINNER:' in line / '★ WINNER' in line). Any change
+         to the comparison file format silently broke winner
+         detection. Try a JSON variant first (scenario_comparison.json)
+         which carries the winner explicitly in a 'winner' key.
+         Fall back to txt + regex if JSON doesn't exist.
+    CHANGED: April 2026 — Phase 50 Fix 2 — JSON-first comparison
+             (audit Part D HIGH #96)
+    """
     comparison_text.delete('1.0', tk.END)
+
+    # Try JSON format first
+    _json_path = os.path.join(os.path.dirname(__file__), '../outputs/scenario_comparison.json')
+    if os.path.exists(_json_path):
+        try:
+            import json as _json
+            with open(_json_path, 'r', encoding='utf-8') as f:
+                _comp = _json.load(f)
+            comparison_text.insert(tk.END, "=== SCENARIO COMPARISON (JSON) ===\n\n")
+            for _scenario, _stats in _comp.get('scenarios', {}).items():
+                comparison_text.insert(tk.END, f"  {_scenario}: {_stats}\n")
+            _winner = _comp.get('winner')
+            if _winner:
+                winner_label.config(text=f"{_winner}", fg="#155724")
+                load_rules(_winner, rules_text)
+                return
+        except Exception:
+            pass  # Fall through to txt loader
 
     comparison_file = os.path.join(os.path.dirname(__file__), '../outputs/scenario_comparison.txt')
 
@@ -221,13 +268,28 @@ def load_rules(scenario, rules_text):
     """Load and display rules for a specific scenario"""
     rules_text.delete('1.0', tk.END)
 
-    # WHY (Phase 41 Fix 3b): Try the newer analysis_report.json first.
-    #      If it exists, render from there. Falls through to legacy
-    #      rules_report.txt if not found, preserving backward compat
-    #      with the old per-scenario pipeline.
-    # CHANGED: April 2026 — Phase 41 Fix 3b — JSON-first load
-    #          (audit Part D CRITICAL #3)
-    if _load_analysis_json_rules(rules_text):
+    # WHY (Phase 41 Fix 3b + Phase 50 Fix 4): Try the newer
+    #      analysis_report.json first. Phase 50 refinement: if the
+    #      JSON exists but is empty/stale AND the legacy txt is
+    #      newer, prefer the legacy txt — covers users who ran the
+    #      legacy run_scenarios pipeline AFTER trying Robot Analysis.
+    # CHANGED: April 2026 — Phase 41 Fix 3b / Phase 50 Fix 4
+    #          (audit Part D CRITICAL #3, HIGH #93)
+    _json_path = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json')
+    )
+    _legacy_path = os.path.join(
+        os.path.dirname(__file__), f'../outputs/scenario_{scenario}/rules_report.txt'
+    )
+    _use_json = True
+    try:
+        if os.path.exists(_json_path) and os.path.exists(_legacy_path):
+            if os.path.getmtime(_legacy_path) > os.path.getmtime(_json_path):
+                _use_json = False
+    except Exception:
+        pass
+
+    if _use_json and _load_analysis_json_rules(rules_text):
         return
 
     rules_file = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/rules_report.txt')
@@ -244,9 +306,34 @@ def load_rules(scenario, rules_text):
         rules_text.insert(tk.END, content)
 
         # Also try to load validation report
+        # WHY (Phase 50 Fix 3): Old code only read validation_report.txt
+        #      (legacy format). The newer strategy_validator.py writes
+        #      validation_report.json with structured fields. Try
+        #      JSON first; fall back to txt for backward compat.
+        # CHANGED: April 2026 — Phase 50 Fix 3 — JSON validation reader
+        #          (audit Part D HIGH #94)
+        _val_json_path = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.json')
         validation_file = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.txt')
 
-        if os.path.exists(validation_file):
+        if os.path.exists(_val_json_path):
+            rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
+            rules_text.insert(tk.END, "VALIDATION REPORT (JSON)\n")
+            rules_text.insert(tk.END, "=" * 60 + "\n\n")
+            try:
+                import json as _json
+                with open(_val_json_path, 'r', encoding='utf-8') as f:
+                    _vdata = _json.load(f)
+                _verdict = _vdata.get('verdict', '?')
+                _wfa     = _vdata.get('walk_forward', {})
+                _mc      = _vdata.get('monte_carlo',  {})
+                rules_text.insert(tk.END, f"Verdict: {_verdict}\n\n")
+                if _wfa:
+                    rules_text.insert(tk.END, f"Walk-forward: {_wfa}\n\n")
+                if _mc:
+                    rules_text.insert(tk.END, f"Monte Carlo: {_mc}\n\n")
+            except Exception as _e:
+                rules_text.insert(tk.END, f"Error reading validation JSON: {_e}\n")
+        elif os.path.exists(validation_file):
             rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
             rules_text.insert(tk.END, "VALIDATION REPORT\n")
             rules_text.insert(tk.END, "=" * 60 + "\n\n")

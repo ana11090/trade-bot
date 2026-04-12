@@ -70,13 +70,30 @@ def _check_feature_matrix():
         feature_cols = [c for c in df_sample.columns
                        if any(c.startswith(p) for p in ['M5_', 'M15_', 'H1_', 'H4_', 'D1_'])]
 
-        if len(feature_cols) < 100:
+        # WHY (Phase 48 Fix 1): Old code rejected < 100 features as
+        #      "expected 620". 620 is XAUUSD-with-all-TFs specific.
+        #      A user running only H1+M15 may have ~250 features;
+        #      only H1 may be ~125; only M15 may be ~100. Lower the
+        #      threshold to 50 (truly broken) and update the message.
+        # CHANGED: April 2026 — Phase 48 Fix 1 — instrument-agnostic threshold
+        #          (audit Part D HIGH #67)
+        if len(feature_cols) < 50:
             _fm_cache.update(valid=False,
-                             message=f"Only {len(feature_cols)} features found (expected 620)",
+                             message=f"Only {len(feature_cols)} features found (need at least 50)",
                              checked=True)
             return False, _fm_cache["message"]
 
-        has_data = sum(1 for c in feature_cols[:5] if df_sample[c].notna().sum() > 0)
+        # WHY (Phase 48 Fix 2): Old code only sampled the first 5
+        #      columns. If those happened to be M5_* but the user only
+        #      loaded H1+H4 data, the check reported "empty columns"
+        #      for a healthy setup. Sample 10 columns spread across
+        #      the full feature list so any populated TF triggers
+        #      a positive result.
+        # CHANGED: April 2026 — Phase 48 Fix 2 — spread sampling
+        #          (audit Part D HIGH #68)
+        _step = max(1, len(feature_cols) // 10)
+        _sampled = feature_cols[::_step][:10]
+        has_data = sum(1 for c in _sampled if df_sample[c].notna().sum() > 0)
         if has_data == 0:
             _fm_cache.update(valid=False,
                              message="Feature matrix has empty columns — run Robot Analysis first",
@@ -100,9 +117,23 @@ def _check_feature_matrix():
 
 
 def _invalidate_cache():
-    """Call this after running analysis to force a re-check."""
+    """Call this after running analysis to force a re-check.
+
+    WHY (Phase 48 Fix 3): This was defined but not consistently
+         called from external runners. Phase 49 adds the call from
+         robot_analysis.py's _run_full_analysis cascade. Renamed to
+         a public-style alias `invalidate_feature_matrix_cache` so
+         external callers don't import a leading-underscore name.
+    CHANGED: April 2026 — Phase 48 Fix 3 — public alias for external callers
+             (audit Part D HIGH #69)
+    """
     global _fm_cache
     _fm_cache = {"valid": None, "message": None, "checked": False}
+
+
+def invalidate_feature_matrix_cache():
+    """Public alias for _invalidate_cache. Call from external runners."""
+    _invalidate_cache()
 
 
 def _update_data_status():
@@ -445,7 +476,8 @@ def build_panel(parent):
     max_conds_dropdown = ttk.Combobox(
         params_frame,
         textvariable=_max_conds_var,
-        values=["1", "2", "3"],
+        # Phase 48 Fix 4: extend conditions cap (audit Part D HIGH #71)
+        values=["1", "2", "3", "4", "5"],
         state="readonly",
         width=5
     )
