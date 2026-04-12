@@ -1646,9 +1646,32 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
             # Call progress callback with result dict (backward compatible)
             if progress_callback:
+                # WHY (Phase A.5 hotfix): old code passed bare `stats` as the
+                #      4th arg. stats contains the performance metrics the
+                #      panel reads for per-combo lines (total_trades,
+                #      win_rate, net_total_pips, net_profit_factor) but it
+                #      does NOT contain rule_combo, exit_name, exit_class —
+                #      those live on the outer `result` dict. The panel's
+                #      _update_best() reads b['rule_combo'] and b['exit_name']
+                #      to render the "🏆 best so far" label, and crashed with
+                #      KeyError: 'rule_combo' on every tick that produced
+                #      trades. Pass a merged dict: flatten stats at top level
+                #      (so the panel's existing reads still work) and add the
+                #      three identity fields needed by _update_best().
+                # CHANGED: April 2026 — Phase A.5 — merge identity + stats
+                _progress_payload = {
+                    **stats,
+                    'rule_combo': combo['name'],
+                    'exit_name':  exit_strat.name,
+                    'exit_class': type(exit_strat).__name__,
+                }
                 try:
                     # Try new signature with result_dict parameter
-                    progress_callback(count, total, f"{combo['name']} x {exit_strat.name}", stats)
+                    progress_callback(
+                        count, total,
+                        f"{combo['name']} x {exit_strat.name}",
+                        _progress_payload,
+                    )
                 except TypeError:
                     # Fall back to old 3-parameter signature
                     progress_callback(count, total, f"{combo['name']} x {exit_strat.name}")
