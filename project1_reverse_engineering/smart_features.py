@@ -765,9 +765,36 @@ SMART_FEATURE_CATEGORIES = {
 }
 
 
-def get_smart_feature_names():
-    """Return flat list of all SMART_ feature names."""
-    return [name for group in SMART_FEATURE_CATEGORIES.values() for name, _ in group]
+def get_smart_feature_names(df=None):
+    """Return flat list of SMART_ feature names that are actually present.
+
+    WHY (Phase 61 Fix 1): Old code returned all ~50 names regardless of
+         whether smart_enabled / regime_enabled toggles were on. Callers
+         used this list to locate features in the feature matrix — if smart
+         features were disabled, the names weren't there, causing KeyErrors
+         or silent NaN columns. Now: if a DataFrame is supplied, return
+         only names whose column exists in it. Without a DataFrame, return
+         all names (for display purposes) but filter by toggle state.
+    CHANGED: April 2026 — Phase 61 Fix 1 — toggle-aware feature name list
+             (audit Part D MEDIUM #23)
+    """
+    all_smart = [name for group in SMART_FEATURE_CATEGORIES.values()
+                 for name, _ in group]
+    regime_names = [name for group in REGIME_FEATURE_CATEGORIES.values()
+                    for name, _ in group]
+    if df is not None:
+        # Return only names that are actually in the dataframe
+        return [n for n in all_smart + regime_names if n in df.columns]
+    # Without a df, filter by toggle state
+    try:
+        from shared import feature_toggles
+        smart_on  = feature_toggles.get_smart()
+        regime_on = feature_toggles.get_regime()
+    except Exception:
+        smart_on = regime_on = True
+    result = all_smart if smart_on else []
+    result = result + (regime_names if regime_on else [])
+    return result
 
 
 REGIME_FEATURE_CATEGORIES = {

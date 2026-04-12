@@ -256,10 +256,15 @@ def build_robot_profile(df):
         #      qualifies). Floor at 2 actual trades minimum so small
         #      strategies aren't credited with "active" in every
         #      hour they happened to fire once.
-        # CHANGED: April 2026 — Phase 51 Fix 2 — count-floored threshold
-        #          (audit Part D MED #45)
-        _min_count_floor = max(2, total_t * 0.02)
-        active_hours = sorted(hours[hours >= _min_count_floor].index.tolist())
+        # WHY (Phase 61 Fix 4): Old threshold was a fixed 2% of total trades.
+        #      For 20 trades, 2% = 0.4, so any hour with ≥1 trade qualified.
+        #      For 10000 trades, 2% = 200 trades — extremely restrictive.
+        #      Use a combination: at least 1% of trades OR at least 3 trades,
+        #      whichever is larger, so the threshold scales sensibly.
+        # CHANGED: April 2026 — Phase 61 Fix 4 — scaling active_hours threshold
+        #          (audit Part D MEDIUM #45)
+        _min_pct   = max(0.01, 3 / max(total_t, 1))   # 1% or 3 trades, whichever larger
+        active_hours = sorted(hours[hours / total_t >= _min_pct].index.tolist())
         peak_hours   = hours.head(3).index.tolist()
         profile['active_hours'] = active_hours
         profile['peak_hours']   = peak_hours

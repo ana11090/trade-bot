@@ -154,40 +154,54 @@ def create_timeframe_file(timeframe_name, resample_rule):
     years = sorted([d for d in os.listdir(TICK_DATA_PATH)
                    if os.path.isdir(os.path.join(TICK_DATA_PATH, d)) and d.isdigit()])
 
-    all_candles = []
-
+    # WHY (Phase 61 Fix 6): Old code processed each year separately then
+    #      concatenated OHLCV. Candles that span Dec 31 / Jan 1 (H4, D1,
+    #      W1, MN) were split into two partial bars — one at year-end and
+    #      one at year-start — with wrong OHLC values on both halves.
+    #      Fix: load all years' ticks together, deduplicate, then resample
+    #      once across the full range so boundary candles are computed
+    #      correctly.
+    # CHANGED: April 2026 — Phase 61 Fix 6 — single-pass cross-year resample
+    #          (audit Part D MEDIUM #56)
+    all_ticks = []
     for year in years:
-        candles = process_year_to_timeframe(year, timeframe_name, resample_rule)
-        if candles is not None and len(candles) > 0:
-            all_candles.append(candles)
+        year_path = os.path.join(TICK_DATA_PATH, str(year))
+        dfs = []
+        for fn in sorted(os.listdir(year_path)):
+            if fn.endswith('.csv'):
+                try:
+                    _df = pd.read_csv(os.path.join(year_path, fn))
+                    dfs.append(_df)
+                except Exception:
+                    pass
+        if dfs:
+            all_ticks.append(pd.concat(dfs, ignore_index=True))
 
-    # Combine all years
-    print(f"  Combining {len(all_candles)} years...", flush=True)
-    combined = pd.concat(all_candles, ignore_index=True)
-    combined = combined.sort_values('timestamp').reset_index(drop=True)
+    if not all_ticks:
+        return
 
-    # WHY (Phase 53 Fix 3): Each year was resampled independently, so
-    #      candles spanning the year boundary (a Dec-31 H4 bar that
-    #      naturally extends into Jan 1) got split into two partial
-    #      bars at the boundary. For H4 / D1 / W1 / MN this matters.
-    #      Re-resample the combined frame for non-intraday rules to
-    #      merge boundary candles back into one bar.
-    # CHANGED: April 2026 — Phase 53 Fix 3 — fix year-boundary candles
-    #          (audit Part D MED #56)
-    if resample_rule in ('4H', '1D', '1W', '1M'):
-        try:
-            combined = combined.set_index('timestamp')
-            _g = combined.resample(resample_rule)
-            combined = _g.agg({
-                'open':   'first',
-                'high':   'max',
-                'low':    'min',
-                'close':  'last',
-                'volume': 'sum',
-            }).dropna().reset_index()
-            print(f"  Re-resampled to merge year-boundary {resample_rule} candles")
-        except Exception as _e:
-            print(f"  WARNING: year-boundary re-resample failed: {_e}")
+    all_tick_df = pd.concat(all_ticks, ignore_index=True)
+    all_tick_df['timestamp'] = pd.to_datetime(all_tick_df['timestamp'], errors='coerce')
+    all_tick_df = all_tick_df.dropna(subset=['timestamp'])
+    all_tick_df = all_tick_df.drop_duplicates(subset=['timestamp'], keep='first')
+    all_tick_df = all_tick_df.sort_values('timestamp').set_index('timestamp')
+
+    # Resolve price column (same logic as process_year_to_timeframe)
+    if 'mid' in all_tick_df.columns:
+        all_tick_df['price'] = all_tick_df['mid']
+    elif 'bid' in all_tick_df.columns and 'ask' in all_tick_df.columns:
+        all_tick_df['price'] = (all_tick_df['bid'] + all_tick_df['ask']) / 2
+    if 'volume' not in all_tick_df.columns:
+        all_tick_df['volume'] = 1
+
+    _resampled = all_tick_df.resample(resample_rule).agg({
+        'price':  ['first', 'max', 'min', 'last'],
+        'volume': 'sum',
+    })
+    # Flatten MultiIndex columns
+    _resampled.columns = ['open', 'high', 'low', 'close', 'volume']
+    combined = _resampled.dropna(subset=['open']).reset_index()
+    print(f"  Cross-year resample: {len(combined):,} candles from {len(years)} years", flush=True)
 
     # Save
     output_file = os.path.join(OUTPUT_PATH, f'{SYMBOL.lower()}_{timeframe_name}.csv')

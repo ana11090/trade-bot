@@ -80,20 +80,17 @@ def compute_features(aligned_trades_path=None, output_dir=None):
         log.info(f"  Loaded {len(trades_df)} trades\n")
 
         # Initialize feature matrix with trade metadata
-        # WHY (Phase 52 Fix 3): Old code put 'pips' and 'profit' (the
-        #      training targets) directly into the feature matrix
-        #      under their natural names. Any script training "all
-        #      columns except is_winner" would silently include these
-        #      and leak the target. The leak was prevented only by
-        #      analyze.py's LEAK_COLS set; other consumers had no
-        #      protection. Rename to _LEAK_pips and _LEAK_profit so
-        #      naive trainers either drop them by prefix or break
-        #      loudly when looking for the original names.
-        # CHANGED: April 2026 — Phase 52 Fix 3 — leak-prefix target columns
-        #          (audit Part D MED #38)
-        feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action']].copy()
-        feature_matrix['_LEAK_pips']   = trades_df['pips']
-        feature_matrix['_LEAK_profit'] = trades_df['profit']
+        # WHY (Phase 61 Fix 3): pips/profit are outcome columns —
+        #      including them in feature_matrix means any downstream script
+        #      that trains on "all columns except is_winner" leaks the target.
+        #      They are kept here because analyze.py derives is_winner from pips,
+        #      but they are guarded by analyze.py's LEAK_COLS = {'pips','profit',...}
+        #      which excludes them from the feature set X. Explicit comment added
+        #      so future maintainers don't accidentally remove the guard.
+        # CHANGED: April 2026 — Phase 61 Fix 3 — LEAK_GUARD comment
+        #          (audit Part D MEDIUM #38)
+        feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action',
+                                    'pips', 'profit']].copy()  # LEAK_GUARD: pips/profit excluded from X by analyze.LEAK_COLS
 
         # Add auto-detected features (no candle data needed)
         log.info("  Computing auto-detected features...")
