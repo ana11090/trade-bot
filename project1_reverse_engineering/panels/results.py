@@ -189,17 +189,36 @@ def load_comparison(comparison_text, winner_label, rules_text):
 
         comparison_text.insert(tk.END, content)
 
-        # Extract winner from content
+        # WHY (Phase 55 Fix 5): Old winner detection was two fragile
+        #      regex patterns on unstructured text. A formatting change
+        #      (e.g. extra spaces, different emoji) silently broke it.
+        #      Try JSON-based lookup in analysis_report.json first;
+        #      fall back to the text patterns as a last resort.
+        # CHANGED: April 2026 — Phase 55 Fix 5 — hardened winner detection
+        #          (audit Part D HIGH #96)
         winner = None
-        for line in content.split('\n'):
-            if 'WINNER:' in line:
-                winner = line.split('WINNER:')[1].strip()
-                break
-            elif '★ WINNER' in line:
-                parts = line.split()
-                if len(parts) > 0:
-                    winner = parts[0]
-                    break
+        try:
+            import json as _json
+            _rpt = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json')
+            if os.path.exists(_rpt):
+                with open(_rpt, 'r', encoding='utf-8') as _f:
+                    _data = _json.load(_f)
+                winner = _data.get('best_scenario') or _data.get('winner_scenario')
+        except Exception:
+            pass
+        if not winner:
+            for line in content.split('\n'):
+                _line = line.strip()
+                if 'WINNER:' in _line:
+                    _parts = _line.split('WINNER:', 1)
+                    if len(_parts) > 1:
+                        winner = _parts[1].strip().split()[0] if _parts[1].strip() else None
+                        break
+                elif '★ WINNER' in _line or '* WINNER' in _line:
+                    _parts = _line.split()
+                    if _parts:
+                        winner = _parts[0].lstrip('★* ')
+                        break
 
         if winner:
             winner_label.config(text=f"{winner}", fg="#155724")
@@ -305,43 +324,64 @@ def load_rules(scenario, rules_text):
 
         rules_text.insert(tk.END, content)
 
-        # Also try to load validation report
-        # WHY (Phase 50 Fix 3): Old code only read validation_report.txt
-        #      (legacy format). The newer strategy_validator.py writes
-        #      validation_report.json with structured fields. Try
-        #      JSON first; fall back to txt for backward compat.
-        # CHANGED: April 2026 — Phase 50 Fix 3 — JSON validation reader
+        # WHY (Phase 55 Fix 6): Old code only read the legacy
+        #      scenario_{name}/validation_report.txt which the current
+        #      analyze.py pipeline never writes. Users always saw an
+        #      empty validation section. Try analysis_report.json first
+        #      (which contains match_rate and validation metrics from
+        #      the current pipeline); fall back to the legacy txt for
+        #      users still running the older per-scenario pipeline.
+        # CHANGED: April 2026 — Phase 55 Fix 6 — try analysis_report first
         #          (audit Part D HIGH #94)
-        _val_json_path = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.json')
-        validation_file = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.txt')
-
-        if os.path.exists(_val_json_path):
-            rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
-            rules_text.insert(tk.END, "VALIDATION REPORT (JSON)\n")
-            rules_text.insert(tk.END, "=" * 60 + "\n\n")
+        import json as _json
+        _showed_validation = False
+        _rpt_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'analysis_report.json')
+        if os.path.exists(_rpt_path):
             try:
-                import json as _json
-                with open(_val_json_path, 'r', encoding='utf-8') as f:
-                    _vdata = _json.load(f)
-                _verdict = _vdata.get('verdict', '?')
-                _wfa     = _vdata.get('walk_forward', {})
-                _mc      = _vdata.get('monte_carlo',  {})
-                rules_text.insert(tk.END, f"Verdict: {_verdict}\n\n")
-                if _wfa:
-                    rules_text.insert(tk.END, f"Walk-forward: {_wfa}\n\n")
-                if _mc:
-                    rules_text.insert(tk.END, f"Monte Carlo: {_mc}\n\n")
-            except Exception as _e:
-                rules_text.insert(tk.END, f"Error reading validation JSON: {_e}\n")
-        elif os.path.exists(validation_file):
-            rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
-            rules_text.insert(tk.END, "VALIDATION REPORT\n")
-            rules_text.insert(tk.END, "=" * 60 + "\n\n")
+                with open(_rpt_path, 'r', encoding='utf-8') as _f:
+                    _rpt = _json.load(_f)
+                _val = _rpt.get('validation', {}) or _rpt.get('match_results', {})
+                if _val:
+                    rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
+                    rules_text.insert(tk.END, "VALIDATION (analysis_report.json)\n")
+                    rules_text.insert(tk.END, "=" * 60 + "\n\n")
+                    for _k, _v in _val.items():
+                        rules_text.insert(tk.END, f"  {_k}: {_v}\n")
+                    _showed_validation = True
+            except Exception:
+                pass
 
-            with open(validation_file, 'r', encoding='utf-8') as f:
-                validation_content = f.read()
+        if not _showed_validation:
+            # Also try to load validation report (Phase 50 legacy path)
+            _val_json_path = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.json')
+            validation_file = os.path.join(os.path.dirname(__file__), f'../outputs/scenario_{scenario}/validation_report.txt')
 
-            rules_text.insert(tk.END, validation_content)
+            if os.path.exists(_val_json_path):
+                rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
+                rules_text.insert(tk.END, "VALIDATION REPORT (JSON)\n")
+                rules_text.insert(tk.END, "=" * 60 + "\n\n")
+                try:
+                    with open(_val_json_path, 'r', encoding='utf-8') as f:
+                        _vdata = _json.load(f)
+                    _verdict = _vdata.get('verdict', '?')
+                    _wfa     = _vdata.get('walk_forward', {})
+                    _mc      = _vdata.get('monte_carlo',  {})
+                    rules_text.insert(tk.END, f"Verdict: {_verdict}\n\n")
+                    if _wfa:
+                        rules_text.insert(tk.END, f"Walk-forward: {_wfa}\n\n")
+                    if _mc:
+                        rules_text.insert(tk.END, f"Monte Carlo: {_mc}\n\n")
+                except Exception as _e:
+                    rules_text.insert(tk.END, f"Error reading validation JSON: {_e}\n")
+            elif os.path.exists(validation_file):
+                rules_text.insert(tk.END, "\n\n" + "=" * 60 + "\n")
+                rules_text.insert(tk.END, "VALIDATION REPORT\n")
+                rules_text.insert(tk.END, "=" * 60 + "\n\n")
+
+                with open(validation_file, 'r', encoding='utf-8') as f:
+                    validation_content = f.read()
+
+                rules_text.insert(tk.END, validation_content)
 
     except Exception as e:
         rules_text.insert(tk.END, f"Error loading rules:\n{str(e)}")

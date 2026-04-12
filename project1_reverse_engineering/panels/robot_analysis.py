@@ -572,6 +572,30 @@ def _run_full_analysis():
                     text="❌ Step 1 (alignment) failed — see log for details. Pipeline aborted.",
                     fg=RED))
                 return
+            # WHY (Phase 55 Fix 3): If step1 runs without raising but
+            #      produces no output (e.g. wrong trades path, zero
+            #      rows aligned), step2 crashes on the missing file and
+            #      the user sees a confusing step2 error instead of the
+            #      real root cause. Check the expected output file exists
+            #      before proceeding to each subsequent step.
+            # CHANGED: April 2026 — Phase 55 Fix 3 — output-file guards
+            #          (audit Part D HIGH #81)
+            _aligned_path = os.path.join(
+                _workspace_outputs if _workspace_outputs else
+                os.path.join(os.path.dirname(__file__), '..', 'outputs'),
+                'aligned_trades.csv'
+            )
+            if not os.path.exists(_aligned_path):
+                state.window.after(0, lambda: _status_label.configure(
+                    text=f"❌ Step 1 produced no aligned_trades.csv — check trades path. Pipeline aborted.",
+                    fg=RED))
+                log.error(
+                    f"Step 1 produced no aligned_trades.csv at:\n"
+                    f"  {_aligned_path}\n"
+                    f"Check that your trades CSV path is correct and "
+                    f"that at least one trade aligns to the candle data."
+                )
+                return
 
             # Step 2: feature matrix
             state.window.after(0, lambda: _status_label.configure(
@@ -584,6 +608,21 @@ def _run_full_analysis():
                 state.window.after(0, lambda: _status_label.configure(
                     text="❌ Step 2 (indicators) failed — see log for details. Pipeline aborted.",
                     fg=RED))
+                return
+            _fm_path = os.path.join(
+                _workspace_outputs if _workspace_outputs else
+                os.path.join(os.path.dirname(__file__), '..', 'outputs'),
+                'feature_matrix.csv'
+            )
+            if not os.path.exists(_fm_path):
+                state.window.after(0, lambda: _status_label.configure(
+                    text=f"❌ Step 2 produced no feature_matrix.csv — see log. Pipeline aborted.",
+                    fg=RED))
+                log.error(
+                    f"Step 2 produced no feature_matrix.csv at:\n"
+                    f"  {_fm_path}\n"
+                    f"Check the step2 log for indicator computation errors."
+                )
                 return
 
             # Step 3: analysis

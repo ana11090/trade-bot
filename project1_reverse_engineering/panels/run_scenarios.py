@@ -18,6 +18,17 @@ from helpers import make_copyable
 # Module-level variable to store data status frame
 _data_status_frame = None
 
+# WHY (Phase 56 Fix 3): run_btn.configure(state="disabled") handles most
+#      double-clicks, but if run_btn=None (caller didn't pass it) two
+#      concurrent background threads could start, interleaving output.
+#      Add a module-level flag so the guard works regardless of whether
+#      the button reference was passed in.
+# CHANGED: April 2026 — Phase 56 Fix 3 — module-level running flag
+#          (audit Part D HIGH #90)
+import threading as _threading
+_running = False
+_running_lock = _threading.Lock()
+
 # WHY (Phase 49 Fix 4b): Module-level step1 run cache for persistent
 #      run tracking across button clicks. Keyed by output_dir so
 #      re-clicks within the same session reuse existing aligned_trades.csv.
@@ -55,14 +66,54 @@ def build_panel(parent):
              bg="white", fg="#16213e",
              font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 15))
 
-    # Scenario checkboxes
-    scenarios = {
-        'M5': ('M5 - 5 Minute', 'Fastest timeframe, best for scalping bots'),
-        'M15': ('M15 - 15 Minute', 'Medium-fast timeframe'),
-        'H1': ('H1 - 1 Hour', 'Most common timeframe for day trading'),
-        'H4': ('H4 - 4 Hour', 'Swing trading timeframe'),
-        'H1_M15': ('H1+M15 Combined', 'Multi-timeframe analysis')
+    # WHY (Phase 56 Fix 1): Old scenarios dict was hardcoded. A user
+    #      whose config sets align_timeframes=M5,H1,D1 saw the wrong
+    #      five options. Now: read align_timeframes from config_loader,
+    #      union with any existing outputs/scenario_*/ dirs, and fall
+    #      back to the hardcoded list only when config cannot be read.
+    # CHANGED: April 2026 — Phase 56 Fix 1 — dynamic scenarios from config
+    #          (audit Part D HIGH #86)
+    _FALLBACK_SCENARIOS = {
+        'M5':    ('M5 - 5 Minute',    'Fastest timeframe, best for scalping bots'),
+        'M15':   ('M15 - 15 Minute',  'Medium-fast timeframe'),
+        'H1':    ('H1 - 1 Hour',      'Most common timeframe for day trading'),
+        'H4':    ('H4 - 4 Hour',      'Swing trading timeframe'),
+        'H1_M15':('H1+M15 Combined',  'Multi-timeframe analysis'),
     }
+    _TF_LABELS = {
+        'M1': 'M1 - 1 Minute', 'M5': 'M5 - 5 Minute', 'M15': 'M15 - 15 Minute',
+        'M30': 'M30 - 30 Minute', 'H1': 'H1 - 1 Hour', 'H4': 'H4 - 4 Hour',
+        'H8': 'H8 - 8 Hour', 'D1': 'D1 - Daily', 'W1': 'W1 - Weekly',
+    }
+    def _build_scenarios():
+        keys = []
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+            import config_loader as _cl
+            _cfg = _cl.load()
+            _tfs = [t.strip() for t in _cfg.get('align_timeframes', '').split(',') if t.strip()]
+            keys.extend(_tfs)
+        except Exception:
+            pass
+        # Also include any already-run scenario dirs
+        try:
+            import glob as _g
+            _out = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+            for _d in sorted(_g.glob(os.path.join(_out, 'scenario_*'))):
+                _k = os.path.basename(_d).replace('scenario_', '')
+                if _k and _k not in keys:
+                    keys.append(_k)
+        except Exception:
+            pass
+        if not keys:
+            return dict(_FALLBACK_SCENARIOS)
+        result = {}
+        for k in keys:
+            label = _TF_LABELS.get(k, f'{k} - {k}')
+            result[k] = (label, f'{k} timeframe scenario')
+        return result
+
+    scenarios = _build_scenarios()
 
     scenario_vars = {}
 
@@ -218,6 +269,16 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
         messagebox.showwarning("No Selection", "Please select at least one scenario to run.")
         return
 
+    # Phase 56 Fix 3: atomic guard — refuse second concurrent run
+    global _running
+    with _running_lock:
+        if _running:
+            messagebox.showwarning("Already Running",
+                                   "A scenario run is already in progress.\n"
+                                   "Please wait for it to complete.")
+            return
+        _running = True
+
     if run_btn:
         run_btn.configure(state="disabled", text="⏳ Running...", bg="#95a5a6")
 
@@ -231,15 +292,13 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
         value=0, style="scenarios.Horizontal.TProgressbar"))
     pct_label.after(0, lambda: pct_label.config(text="0%"))
 
-    # WHY (Phase 49 Fix 4): Old code hardcoded STEPS_PER_SCENARIO = 7.
-    #      If the pipeline ever changes step count, progress bar
-    #      percentages drift silently. Compute from the actual step
-    #      list below. Also: see Fix 4b/4c for module-level run
-    #      tracking that survives across button clicks.
-    # CHANGED: April 2026 — Phase 49 Fix 4 — dynamic step count
+    # WHY (Phase 55 Fix 7a): STEPS_PER_SCENARIO was hardcoded to 7
+    #      above the steps list definition. If a step is ever added or
+    #      removed, the progress bar percentages are wrong. Compute
+    #      total_steps after building the steps list instead.
+    # CHANGED: April 2026 — Phase 55 Fix 7a — dynamic step count
     #          (audit Part D HIGH #89)
-    STEPS_PER_SCENARIO = 7  # will be recomputed from steps_to_run length below
-    total_steps = len(selected) * STEPS_PER_SCENARIO
+    # total_steps computed after steps list is built — see below
     completed_steps = [0]   # mutable counter accessible in closure
     # Phase 49 Fix 5: track failures to choose the right completion dialog
     _scenario_failures = []
@@ -250,16 +309,23 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
         pct_label.config(text=f"{pct}%  {extra_label}".strip())
 
     def run_in_background():
+        # WHY (Phase 56 Fix 3): module-level guard checked again inside
+        #      the thread to handle the None-run_btn edge case.
+        global _running
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+            # WHY (Phase 56 Fix 2): Old code imported and ran legacy steps
+            #      3-7 (label_trades, train_model, shap, extract_rules,
+            #      validate). These write rules_report.txt — a format the
+            #      rest of the app has moved past. The results panel now
+            #      reads analysis_report.json produced by analyze.run_analysis.
+            #      Replace the 7-step pipeline with the modern 3-step path
+            #      so Run Scenarios → View Results actually works.
+            # CHANGED: April 2026 — Phase 56 Fix 2 — modern 3-step pipeline
+            #          (audit Part D HIGH #88)
             import step1_align_price
             import step2_compute_indicators
-            import step3_label_trades
-            import step4_train_model
-            import step5_shap_analysis
-            import step6_extract_rules
-            import step7_validate
 
             # WHY: align_all_timeframes runs once for ALL TFs together —
             #      it doesn't need to run per scenario. Only run it on the
@@ -340,15 +406,45 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                 return True
 
+            # _analyze_wrapper: run analyze.run_analysis once (all scenarios
+            # share the same feature matrix), then copy analysis_report.json
+            # into each scenario's outputs/ subdirectory so the results panel
+            # can retrieve it by scenario name.
+            analyze_already_run = [False]
+
+            def _analyze_wrapper(scenario):
+                import shutil
+                import analyze as _analyze_mod
+                _out = os.path.normpath(
+                    os.path.join(os.path.dirname(__file__), '..', 'outputs')
+                )
+                if not analyze_already_run[0]:
+                    _fm = os.path.join(_out, 'feature_matrix.csv')
+                    if os.path.exists(_fm):
+                        _analyze_mod.run_analysis(feature_matrix_path=_fm)
+                    else:
+                        _analyze_mod.run_analysis()
+                    analyze_already_run[0] = True
+
+                # Copy analysis_report.json into the scenario subfolder
+                _src = os.path.join(_out, 'analysis_report.json')
+                _scenario_dir = os.path.join(_out, f'scenario_{scenario}')
+                os.makedirs(_scenario_dir, exist_ok=True)
+                if os.path.exists(_src):
+                    try:
+                        shutil.copy2(_src, os.path.join(_scenario_dir, 'analysis_report.json'))
+                    except Exception as _ce:
+                        print(f"  WARNING: could not copy analysis_report.json to "
+                              f"scenario_{scenario}: {_ce}")
+                return True
+
             steps = [
-                ("Step 1: Align Price",        _step1_wrapper),
-                ("Step 2: Compute Indicators", _step2_wrapper),
-                ("Step 3: Label Trades",       step3_label_trades.label_trades_for_scenario),
-                ("Step 4: Train Model",        step4_train_model.train_model_for_scenario),
-                ("Step 5: SHAP Analysis",      step5_shap_analysis.shap_analysis_for_scenario),
-                ("Step 6: Extract Rules",      step6_extract_rules.extract_rules_for_scenario),
-                ("Step 7: Validate",           step7_validate.validate_rules_for_scenario),
+                ("Step 1: Align Price",              _step1_wrapper),
+                ("Step 2: Compute Indicators",       _step2_wrapper),
+                ("Step 3: Analyze & Extract Rules",  _analyze_wrapper),
             ]
+            # total_steps derived from actual list (Phase 55 Fix 7a)
+            total_steps = len(selected) * len(steps)
 
             results = {}
 
@@ -460,22 +556,27 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 text=f"100%  — {successful}/{len(selected)} scenarios OK"))
             progress_bar.after(0, lambda: progress_bar.config(value=100))
 
-            # WHY (Phase 49 Fix 5): Old code always showed an info
-            #      messagebox titled "Execution Complete" regardless
-            #      of whether any scenario actually failed. Users
-            #      thought their bad runs succeeded. Show an error
-            #      messagebox listing failures when any occurred.
-            # CHANGED: April 2026 — Phase 49 Fix 5 — failure-aware completion
+            # WHY (Phase 55 Fix 7b): Title said "Execution Complete"
+            #      regardless of outcome. A user who saw 0/3 successful
+            #      still got a green-sounding "Complete". Now the title
+            #      and icon reflect the true outcome.
+            # CHANGED: April 2026 — Phase 55 Fix 7b — outcome-aware title
             #          (audit Part D HIGH #92)
+            _all_ok  = (successful == len(selected))
+            _none_ok = (successful == 0)
+            _title   = ("All Scenarios Complete" if _all_ok
+                        else "Scenarios Failed" if _none_ok
+                        else "Partial Success")
+            _show    = messagebox.showinfo if not _none_ok else messagebox.showwarning
             if _scenario_failures:
-                _fail_msg = "Pipeline completed with failures:\n\n" + "\n".join(
-                    f"  • {f}" for f in _scenario_failures
-                )
-                output_text.after(0, lambda: messagebox.showerror(
-                    "Execution Complete (with errors)", _fail_msg))
+                _fail_msg = f"Completed {len(selected)} scenario(s).\n" \
+                            f"{successful} successful, {len(selected)-successful} failed.\n\n" \
+                            f"Failures:\n" + "\n".join(f"  • {f}" for f in _scenario_failures)
+                output_text.after(0, lambda: _show(
+                    _title, _fail_msg))
             else:
-                output_text.after(0, lambda: messagebox.showinfo(
-                    "Execution Complete",
+                output_text.after(0, lambda: _show(
+                    _title,
                     f"Completed {len(selected)} scenario(s).\n"
                     f"{successful} successful, {len(selected)-successful} failed.\n\n"
                     f"Check the console output for details."))
@@ -489,6 +590,8 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             output_text.after(0, show_error)
 
         finally:
+            global _running
+            _running = False
             if run_btn:
                 run_btn.after(0, lambda: run_btn.configure(
                     state="normal", text="🚀 Run Selected Scenarios", bg="#27ae60"))
