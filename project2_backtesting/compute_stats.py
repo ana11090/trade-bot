@@ -45,8 +45,17 @@ OUTPUT_DOW_STATS = os.path.join(INPUT_FOLDER, 'dow_stats.csv')
 #      callers can override.
 # CHANGED: April 2026 — Phase 31 Fix 4 — parameterize Sharpe period
 #          (audit Part C HIGH #69)
+# WHY (Phase 39 Fix 1): Daily P&L groupby used .dt.date which gives
+#      local-midnight day boundaries. Prop firms typically reset the
+#      trading day at 22:00 UTC (MetaTrader server time). Trades
+#      closing after 22:00 UTC were credited to the wrong trading
+#      day. Add daily_reset_hour parameter — default 0 preserves
+#      midnight-UTC behavior (backward compat); firm-rule callers
+#      pass 22 to get MT5 server time grouping.
+# CHANGED: April 2026 — Phase 39 Fix 1 — daily_reset_hour
+#          (audit Part C MED #72)
 def calculate_summary_stats(trades_df, period_name, starting_capital=100000.0,
-                            trading_days_per_year=252):
+                            trading_days_per_year=252, daily_reset_hour=0):
     """Calculate headline statistics for a trade log"""
     if len(trades_df) == 0:
         return {
@@ -171,7 +180,18 @@ def calculate_summary_stats(trades_df, period_name, starting_capital=100000.0,
     #      starting_capital, then compute mean/std of the percentages.
     # CHANGED: April 2026 — Sharpe on % returns, not dollars (audit MEDIUM)
     if len(trades_df) > 1 and starting_capital > 0:
-        daily_pnl_dollars = trades_df.groupby(trades_df['entry_time'].dt.date)['net_profit'].sum()
+        # WHY (Phase 39 Fix 1b): Shift timestamps by -daily_reset_hour
+        #      before .dt.date so the day boundary matches the broker's
+        #      trading day reset. For reset_hour=22, a trade at 23:30
+        #      UTC Tuesday shifts to 01:30 Wednesday → dates to Wednesday.
+        #      For reset_hour=0 (default), no shift — matches old
+        #      behavior exactly.
+        # CHANGED: April 2026 — Phase 39 Fix 1b — trading-day shift
+        if daily_reset_hour and daily_reset_hour != 0:
+            _shifted_ts = trades_df['entry_time'] - pd.Timedelta(hours=int(daily_reset_hour))
+            daily_pnl_dollars = trades_df.groupby(_shifted_ts.dt.date)['net_profit'].sum()
+        else:
+            daily_pnl_dollars = trades_df.groupby(trades_df['entry_time'].dt.date)['net_profit'].sum()
         daily_pct_returns = daily_pnl_dollars / starting_capital
         if daily_pct_returns.std() > 0:
             # WHY: Use parameterized trading_days_per_year instead of

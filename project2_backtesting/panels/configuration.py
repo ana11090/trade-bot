@@ -635,9 +635,17 @@ def build_panel(parent):
                             entries['risk_pct'].set("0.5")
 
                 # Leverage info
+                # WHY (Phase 39 Fix 3): Old fallback was
+                #      list(leverage.values())[0] — first dict value in
+                #      insertion order. Users whose account size wasn't
+                #      in the firm's leverage map saw a leverage number
+                #      for a DIFFERENT size with no warning. Fall back
+                #      to '—' so unknown-size users see "not listed"
+                #      instead of a misleading value.
+                # CHANGED: April 2026 — Phase 39 Fix 3 — explicit fallback
+                #          (audit Part C MED #95)
                 leverage = fd.get('leverage_by_size', {})
-                lev = leverage.get(_config_acct_var.get(),
-                      list(leverage.values())[0] if leverage else '—')
+                lev = leverage.get(_config_acct_var.get(), '—')
 
                 # DD info
                 if stage == "evaluation":

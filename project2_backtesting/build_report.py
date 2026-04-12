@@ -385,8 +385,22 @@ def generate_html_report():
         ('Return', 'return_pct', '%'),
     ]
 
-    insample_row = summary_df[summary_df['period'] == 'IN-SAMPLE'].iloc[0] if len(summary_df[summary_df['period'] == 'IN-SAMPLE']) > 0 else None
-    outsample_row = summary_df[summary_df['period'] == 'OUT-OF-SAMPLE'].iloc[0] if len(summary_df[summary_df['period'] == 'OUT-OF-SAMPLE']) > 0 else None
+    # WHY (Phase 39 Fix 2): Old code did exact-string comparison with
+    #      literal 'IN-SAMPLE' / 'OUT-OF-SAMPLE'. If compute_stats.py
+    #      ever changed the spelling (case, underscores vs hyphens),
+    #      the report silently showed zeros for every metric. Loosen
+    #      to normalized comparison so cosmetic drift doesn't break
+    #      the report.
+    # CHANGED: April 2026 — Phase 39 Fix 2 — flexible period matching
+    #          (audit Part C LOW #74)
+    def _norm_period(s):
+        return str(s).upper().replace('_', '-').replace(' ', '-').strip()
+
+    _norm_periods = summary_df['period'].astype(str).apply(_norm_period) if 'period' in summary_df.columns else pd.Series(dtype=str)
+    _in_mask  = _norm_periods.isin(['IN-SAMPLE', 'INSAMPLE'])
+    _out_mask = _norm_periods.isin(['OUT-OF-SAMPLE', 'OUTSAMPLE', 'OUT-SAMPLE', 'OUTOFSAMPLE'])
+    insample_row  = summary_df[_in_mask].iloc[0]  if _in_mask.any()  else None
+    outsample_row = summary_df[_out_mask].iloc[0] if _out_mask.any() else None
 
     for metric_name, metric_key, symbol in metrics:
         insample_val = insample_row[metric_key] if insample_row is not None else 0

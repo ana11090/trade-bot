@@ -150,10 +150,31 @@ def load_available_firms():
 
 
 def _closest_account_size(available_sizes, requested):
-    """Return the closest available account size to the requested value."""
+    """Return the closest available account size to the requested value.
+
+    WHY (Phase 40 Fix 2): Old code silently picked the closest size.
+         A user asking for 25k against a firm offering 10k/50k got
+         10k or 50k with no log. Now: warn when the picked size
+         differs from the requested value so the user knows they're
+         being run against a different challenge tier.
+    CHANGED: April 2026 — Phase 40 Fix 2 — warn on substitution
+             (audit Part C MED #105)
+    """
     if not available_sizes:
         return requested
-    return min(available_sizes, key=lambda s: abs(s - requested))
+    closest = min(available_sizes, key=lambda s: abs(s - requested))
+    if closest != requested:
+        try:
+            from shared.logging_setup import get_logger
+            _log = get_logger(__name__)
+            _log.warning(
+                f"[PROP_FIRM_TESTER] Requested account_size={requested} "
+                f"not in firm's offered sizes {sorted(available_sizes)}. "
+                f"Substituting closest: {closest}."
+            )
+        except Exception:
+            pass
+    return closest
 
 
 # WHY: Per-symbol pip value table. Avoids hardcoded defaults that are
@@ -183,13 +204,25 @@ _SYMBOL_PIP_VALUE_TABLE = {
 def _resolve_pip_value(symbol, explicit_value):
     """Resolve pip_value_per_lot from explicit value or symbol lookup.
 
-    If explicit_value is None, look up by symbol. If symbol is not in
-    the table, default to 1.0 (XAUUSD convention — matches the
-    project's primary instrument).
+    WHY (Phase 40 Fix 1): Old code only consulted the local
+         _SYMBOL_PIP_VALUE_TABLE — a duplicate of INSTRUMENT_SPECS in
+         configuration.py. Two tables = drift risk. Now: try
+         INSTRUMENT_SPECS first (canonical source), fall back to local
+         table only if the lookup fails. Local table stays as a safety
+         net but is no longer the primary.
+    CHANGED: April 2026 — Phase 40 Fix 1 — consult INSTRUMENT_SPECS
+             (audit Part C MED #104)
     """
     if explicit_value is not None:
         return explicit_value
-    return _SYMBOL_PIP_VALUE_TABLE.get(symbol.upper() if symbol else '', 1.0)
+    sym = symbol.upper() if symbol else ''
+    try:
+        from project2_backtesting.panels.configuration import INSTRUMENT_SPECS
+        if sym in INSTRUMENT_SPECS:
+            return float(INSTRUMENT_SPECS[sym].get('pip_value', 1.0))
+    except Exception:
+        pass
+    return _SYMBOL_PIP_VALUE_TABLE.get(sym, 1.0)
 
 
 def run_prop_test(
