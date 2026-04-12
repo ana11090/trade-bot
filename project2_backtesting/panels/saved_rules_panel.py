@@ -7,6 +7,10 @@ from tkinter import messagebox
 import os
 import json
 import shutil
+import threading as _threading
+# WHY (Phase 68 Fix 42): Two concurrent activate clicks race the JSON write.
+# CHANGED: April 2026 — Phase 68 Fix 42 — activate write lock
+_activate_lock = _threading.Lock()
 
 BG = "#ffffff"
 FG = "#333333"
@@ -90,9 +94,16 @@ def build_panel(parent):
 def _refresh_list(inner, canvas, window_id):
     global _content_frame
 
-    # Clear existing content
-    for widget in _content_frame.winfo_children():
-        widget.destroy()
+    # WHY (Phase 68 Fix 44): Destroying all children while a tooltip or
+    #      hover callback is active causes stale-callback errors on the
+    #      destroyed widget. Check widget validity before destroying.
+    # CHANGED: April 2026 — Phase 68 Fix 44 — guard destroy on hover
+    #          (audit Part E HIGH #44)
+    for widget in list(_content_frame.winfo_children()):
+        try:
+            widget.destroy()
+        except Exception:
+            pass
 
     from shared.saved_rules import load_all
     rules = load_all()
@@ -137,12 +148,36 @@ def _refresh_list(inner, canvas, window_id):
         pips = rule.get('avg_pips', 0)
         cov = rule.get('coverage', 0)
 
-        stats = f"WR: {wr:.0%}  |  Avg pips: {pips:+.0f}  |  Coverage: {cov}"
+        # WHY (Phase 68 Fix 41): `:.0%` multiplies by 100. A rule with
+        #      win_rate=65 (already percent) displayed as '6500%'. Guard
+        #      for the fraction range first.
+        # CHANGED: April 2026 — Phase 68 Fix 41 — fraction-safe WR format
+        #          (audit Part E HIGH #41)
+        _wr_display = wr * 100 if wr <= 1.0 else wr
+        stats = f"WR: {_wr_display:.0f}%  |  Avg pips: {pips:+.0f}  |  Coverage: {cov}"
         tk.Label(card, text=stats, font=("Arial", 9, "bold"), bg="#f8f9fa",
                  fg="#28a745" if wr > 0.6 else "#e67e22").pack(anchor="w")
 
         for cond in rule.get('conditions', []):
-            txt = f"  {cond['feature']} {cond['operator']} {cond['value']}"
+            # WHY (Phase 68 Fix 43): Direct dict access crashes if conditions
+            #      are in string format. normalize_condition was added for this
+            #      exact case but saved_rules_panel never used it.
+            # CHANGED: April 2026 — Phase 68 Fix 43 — normalize before access
+            #          (audit Part E HIGH #43)
+            try:
+                from helpers import normalize_condition as _nc
+                _cond = _nc(cond) if not isinstance(cond, dict) else cond
+                if isinstance(_cond, dict) and _cond:
+                    txt = f"  {_cond.get('feature','?')} {_cond.get('operator','>')} {_cond.get('value',0)}"
+                elif isinstance(_cond, list):
+                    txt = '  ' + ' AND '.join(
+                        f"{c.get('feature','?')} {c.get('operator','>')} {c.get('value',0)}"
+                        for c in _cond if isinstance(c, dict)
+                    )
+                else:
+                    txt = f"  {str(cond)}"
+            except Exception:
+                txt = f"  {str(cond)}"
             tk.Label(card, text=txt, font=("Courier", 9), bg="#f8f9fa", fg=FG).pack(anchor="w")
 
         if entry.get('notes'):
@@ -175,34 +210,43 @@ def _activate_selected(inner, canvas, window_id):
     report_path = os.path.join(os.path.dirname(__file__), '..', '..',
                                 'project1_reverse_engineering', 'outputs', 'analysis_report.json')
     report_path = os.path.abspath(report_path)
-    backup_path = report_path.replace('.json', '_backup_before_saved.json')
-
-    if os.path.exists(report_path) and not os.path.exists(backup_path):
+    # WHY (Phase 68 Fix 40): Old code only created a backup if none existed.
+    #      User who activated set A, then set B, lost set A because the backup
+    #      was set A's predecessor (the original DT rules), not set A itself.
+    #      Use a timestamped backup so every activation is recoverable.
+    # CHANGED: April 2026 — Phase 68 Fix 40 — timestamped backup on every activate
+    #          (audit Part E HIGH #40)
+    from datetime import datetime as _dt
+    _ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+    backup_path = report_path.replace('.json', f'_backup_{_ts}.json')
+    if os.path.exists(report_path):
         shutil.copy2(report_path, backup_path)
 
-    if os.path.exists(report_path):
-        with open(report_path, encoding='utf-8') as f:
-            current = json.load(f)
-    else:
-        current = {}
+    # Phase 68 Fix 42: acquire lock so concurrent activations serialize
+    with _activate_lock:
+      if os.path.exists(report_path):
+          with open(report_path, encoding='utf-8') as f:
+              current = json.load(f)
+      else:
+          current = {}
 
-    current['rules'] = rules
-    current['discovery_method'] = 'saved_rules'
+      current['rules'] = rules
+      current['discovery_method'] = 'saved_rules'
 
-    # FIX 3: carry entry_tf from saved rules into the top-level report field.
-    # WHY: Downstream tools (Refiner, Validator, EA Generator) read entry_timeframe
-    #      from analysis_report.json. If all saved rules share the same TF, set it.
-    #      If mixed, set 'multi' so downstream tools know to check per-row entry_tf.
-    # CHANGED: April 2026 — multi-TF support
-    rule_tfs = sorted(set(r.get('entry_tf', '') for r in rules if r.get('entry_tf', '')))
-    if len(rule_tfs) == 1:
-        current['entry_timeframe'] = rule_tfs[0]
-    elif len(rule_tfs) > 1:
-        current['entry_timeframe'] = 'multi'
-        current['tested_timeframes'] = rule_tfs
+      # FIX 3: carry entry_tf from saved rules into the top-level report field.
+      # WHY: Downstream tools (Refiner, Validator, EA Generator) read entry_timeframe
+      #      from analysis_report.json. If all saved rules share the same TF, set it.
+      #      If mixed, set 'multi' so downstream tools know to check per-row entry_tf.
+      # CHANGED: April 2026 — multi-TF support
+      rule_tfs = sorted(set(r.get('entry_tf', '') for r in rules if r.get('entry_tf', '')))
+      if len(rule_tfs) == 1:
+          current['entry_timeframe'] = rule_tfs[0]
+      elif len(rule_tfs) > 1:
+          current['entry_timeframe'] = 'multi'
+          current['tested_timeframes'] = rule_tfs
 
-    with open(report_path, 'w', encoding='utf-8') as f:
-        json.dump(current, f, indent=2, default=str)
+      with open(report_path, 'w', encoding='utf-8') as f:
+          json.dump(current, f, indent=2, default=str)
 
     messagebox.showinfo("Activated",
         f"{len(rules)} saved rules activated in pipeline.\n"

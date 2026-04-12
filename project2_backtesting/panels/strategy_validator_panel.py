@@ -1725,14 +1725,28 @@ def _display_verdict(combined, trades=None):
     # CHANGED: April 2026 — combined summary
     if trades and len(trades) >= 20:
         # Compute in-sample stats from trades
-        pips_vals  = [float(t.get('pips', t.get('net_pips', 0))) for t in trades]
+        # WHY (Phase 68 Fix 22): Old code preferred gross 'pips', falling back to
+        #      'net_pips'. This meant PF was computed on gross pips but all other
+        #      metrics were net — inconsistent cost basis. Prefer 'net_pips' so
+        #      PF and DD share the same denominator. Fall back to gross 'pips'
+        #      only when net is absent.
+        # CHANGED: April 2026 — Phase 68 Fix 22 — net_pips preferred
+        #          (audit Part E HIGH #22)
+        pips_vals  = [float(t.get('net_pips', t.get('pips', 0))) for t in trades]
         wins       = [p for p in pips_vals if p > 0]
         losses     = [p for p in pips_vals if p <= 0]
         in_pips    = int(sum(pips_vals))
         in_wr      = round(len(wins) / max(len(pips_vals), 1) * 100, 1)
         gross_win  = sum(wins)
-        gross_loss = abs(sum(losses)) or 1
-        in_pf      = round(gross_win / gross_loss, 2)
+        # WHY (Phase 68 Fix 23): `abs(sum(losses)) or 1` meant a strategy
+        #      with zero losses got gross_loss=1, so in_pf = gross_win pips
+        #      (e.g. 85.0). Users saw PF=85.00 and thought it meant a very
+        #      good but finite edge; it actually means no losses at all.
+        #      Use 99.99 sentinel (consistent with compute_stats convention).
+        # CHANGED: April 2026 — Phase 68 Fix 23 — PF=99.99 for no-loss
+        #          (audit Part E HIGH #23)
+        gross_loss = abs(sum(losses))
+        in_pf      = round(gross_win / gross_loss, 2) if gross_loss > 0 else 99.99
         # Max drawdown: largest cumulative dip from peak
         equity_curve = []
         running = 0
@@ -2280,9 +2294,19 @@ def _run(mode, override_idx=None, done_event=None):
         train_years   = int(_train_var.get())
         test_years    = int(_test_var.get())
         n_sims        = int(_sims_var.get())
-        # Use firm_id mapping instead of string transformation
-        mc_firm       = _firm_name_to_id.get(_mc_firm_var.get(),
-                        _mc_firm_var.get().lower().replace(' ', '').replace('-', '').replace('_', ''))
+        # WHY (Phase 68 Fix 25): Old fallback stripped spaces, hyphens, and
+        #      underscores but not parentheses or other chars. A firm name
+        #      like 'FTMO (90 day)' became 'ftmo(90day)' — no match in the
+        #      firm registry → MC test ran against wrong/default firm silently.
+        #      Use re.sub to strip ALL non-alphanumeric characters.
+        # CHANGED: April 2026 — Phase 68 Fix 25 — strip all special chars
+        #          (audit Part E HIGH #25)
+        import re as _re25
+        _raw_firm = _mc_firm_var.get()
+        mc_firm   = _firm_name_to_id.get(
+            _raw_firm,
+            _re25.sub(r'[^a-z0-9]', '', _raw_firm.lower())
+        )
     except ValueError:
         messagebox.showerror("Invalid Settings", "Check that all settings are valid numbers.")
         return
@@ -2389,7 +2413,16 @@ def _run(mode, override_idx=None, done_event=None):
                     live_firm_results = simulate_all_firms(trades, account_size=account_size)
                     state.window.after(0, lambda r=live_firm_results: _display_live_firm_results(r))
                 except Exception as e:
+                    # WHY (Phase 68 Fix 24): Old code silently swallowed
+                    #      live_firm_sim errors. The verdict panel still
+                    #      rendered 4 check-rows but only 3 actually ran.
+                    #      Set a sentinel so _display_verdict can show
+                    #      "Live Firms: ERROR" instead of a misleading N/A.
+                    # CHANGED: April 2026 — Phase 68 Fix 24 — live firm error visible
+                    #          (audit Part E HIGH #24)
                     print(f"[validator] live firm sim failed: {e}")
+                    import traceback; traceback.print_exc()
+                    live_firm_results = {'_error': str(e), 'verdict': 'ERROR'}
 
             if wf_result or mc_result or slip_result or live_firm_results:
                 combined = combined_score(wf_result, mc_result, slip_result, live_firm_results)
