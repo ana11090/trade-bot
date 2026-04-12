@@ -846,8 +846,31 @@ def _generate_smart_mql(feature_name, formula, platform):
                 init = f'iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE)'
             elif re.match(r'^cci_\d+$', ind):
                 init = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
+            elif re.match(r'^bb_\d+_[\d.]+_width$', ind):
+                # WHY (Phase 64 Fix 1): bb_width accel was silently 0.0.
+                #      Width = upper - lower band. Accel = width_change rate.
+                #      Use 7 bars: (w[0]-w[3]) - (w[3]-w[6]).
+                # CHANGED: April 2026 — Phase 64 Fix 1 — bb_width accel
+                p1a = p_info['params'][0] if p_info['params'] else '20'
+                p2a = p_info['params'][1] if len(p_info['params']) > 1 else '2'
+                bufU = f'{buf}u'; bufL = f'{buf}l'
+                lines = [
+                    f'double {bufU}[7],{bufL}[7];'
+                    f' CopyBuffer(iBands(NULL,{mt5_tf},{p1a},0,{p2a},PRICE_CLOSE),1,0,7,{bufU});'
+                    f' CopyBuffer(iBands(NULL,{mt5_tf},{p1a},0,{p2a},PRICE_CLOSE),2,0,7,{bufL});',
+                    f'double _w0={bufU}[0]-{bufL}[0], _w3={bufU}[3]-{bufL}[3], _w6={bufU}[6]-{bufL}[6];',
+                    f'double val_{var_name} = (_w0-_w3) - (_w3-_w6);',
+                ]
+                return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
+                        'read_code': _rc(lines), 'custom_indicator': False,
+                        'description': f'Acceleration of {col}'}
             else:
-                lines = [f'double val_{var_name} = 0.0; // TODO accel of {col}']
+                # WHY (Phase 64 Fix 1): Remaining unknowns still return 0.0 but
+                #      now emit a Print() so the user sees it in the MT5 journal.
+                lines = [
+                    f'Print("WARNING: accel not implemented for {col} — val=0");',
+                    f'double val_{var_name} = 0.0;',
+                ]
                 return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
                         'read_code': _rc(lines), 'custom_indicator': False,
                         'description': f'Acceleration of {col}'}
@@ -1111,7 +1134,14 @@ def _generate_smart_mql(feature_name, formula, platform):
             ]
 
         else:
-            lines = [f'double val_{var_name} = 0.0; // TODO: formula type {ftype}']
+            # WHY (Phase 64 Fix 4a): Unknown formula type silently emitted 0.0.
+            #      The EA ran without error but features never fired. Print a
+            #      warning in the MT5 journal so users see what's missing.
+            # CHANGED: April 2026 — Phase 64 Fix 4a — loud unknown ftype
+            lines = [
+                f'Print("WARNING: formula type \\"{ftype}\\" not implemented for {feature_name} — val=0");',
+                f'double val_{var_name} = 0.0;',
+            ]
 
         return {
             'var_name':        var_name,
@@ -1163,8 +1193,22 @@ def _generate_smart_mql(feature_name, formula, platform):
                 expr = f"(ta.adx({df}['high'],{df}['low'],{df}['close'],length={pr})['ADX_{pr}'].iloc[-1] - ta.adx({df}['high'],{df}['low'],{df}['close'],length={pr})['ADX_{pr}'].iloc[-4])"
             elif re.match(r'^atr_\d+$', ind):
                 expr = f"(ta.atr({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-1] - ta.atr({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-4])"
+            elif re.match(r'^cci_\d+$', ind):
+                # WHY (Phase 64 Fix 2): CCI direction was missing for Tradovate.
+                # CHANGED: April 2026 — Phase 64 Fix 2
+                expr = f"(ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-1] - ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-4])"
+            elif ind == 'macd_fast_diff':
+                expr = f"(ta.macd({df}['close'],fast=12,slow=26,signal=9)['MACDh_12_26_9'].iloc[-1] - ta.macd({df}['close'],fast=12,slow=26,signal=9)['MACDh_12_26_9'].iloc[-4])"
+            elif re.match(r'^bb_\d+_[\d.]+_width$', ind):
+                p1b = p_info['params'][0] if p_info['params'] else '20'
+                p2b = p_info['params'][1] if len(p_info['params']) > 1 else '2'
+                expr = (f"((ta.bbands({df}['close'],length={p1b},std={p2b})['BBU_{p1b}_{p2b}'].iloc[-1]"
+                        f" - ta.bbands({df}['close'],length={p1b},std={p2b})['BBL_{p1b}_{p2b}'].iloc[-1])"
+                        f" - (ta.bbands({df}['close'],length={p1b},std={p2b})['BBU_{p1b}_{p2b}'].iloc[-4]"
+                        f" - ta.bbands({df}['close'],length={p1b},std={p2b})['BBL_{p1b}_{p2b}'].iloc[-4]))")
             else:
-                expr = '0.0  # TODO direction'
+                # Phase 64 Fix 2: log instead of silent 0.0
+                expr = f"(print('WARNING: direction not implemented for {col}') or 0.0)"
         elif ftype == 'accel':
             col = formula['col']
             p_info = parse_feature_name(col)
@@ -1176,8 +1220,23 @@ def _generate_smart_mql(feature_name, formula, platform):
             if re.match(r'^rsi_\d+$', ind):
                 expr = (f"((ta.rsi({df}['close'],length={pr}).iloc[-1]-ta.rsi({df}['close'],length={pr}).iloc[-4])"
                         f" - (ta.rsi({df}['close'],length={pr}).iloc[-4]-ta.rsi({df}['close'],length={pr}).iloc[-7]))")
+            elif re.match(r'^adx_\d+$', ind):
+                # WHY (Phase 64 Fix 3): ADX accel was missing for Tradovate.
+                # CHANGED: April 2026 — Phase 64 Fix 3
+                _adx = f"ta.adx({df}['high'],{df}['low'],{df}['close'],length={pr})['ADX_{pr}']"
+                expr = (f"(({_adx}.iloc[-1]-{_adx}.iloc[-4])"
+                        f" - ({_adx}.iloc[-4]-{_adx}.iloc[-7]))")
+            elif re.match(r'^atr_\d+$', ind):
+                _atr = f"ta.atr({df}['high'],{df}['low'],{df}['close'],length={pr})"
+                expr = (f"(({_atr}.iloc[-1]-{_atr}.iloc[-4])"
+                        f" - ({_atr}.iloc[-4]-{_atr}.iloc[-7]))")
+            elif re.match(r'^cci_\d+$', ind):
+                _cci = f"ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr})"
+                expr = (f"(({_cci}.iloc[-1]-{_cci}.iloc[-4])"
+                        f" - ({_cci}.iloc[-4]-{_cci}.iloc[-7]))")
             else:
-                expr = '0.0  # TODO accel'
+                # Phase 64 Fix 3: log instead of silent 0.0
+                expr = f"(print('WARNING: accel not implemented for {col}') or 0.0)"
         elif ftype == 'time_range':
             # WHY: Old code had `import datetime as _dt` but the expr below
             #      uses __import__('datetime') instead — _dt was dead.
@@ -1256,7 +1315,9 @@ def _generate_smart_mql(feature_name, formula, platform):
             price = "df_m60['close'].iloc[-1]"
             expr = f"(1.0 if ({price}) > {formula['value']} else 0.0)"
         else:
-            expr = f"0.0  # TODO: formula type {ftype}"
+            # WHY (Phase 64 Fix 4b): Mirror Fix 4a for Tradovate side.
+            # CHANGED: April 2026 — Phase 64 Fix 4b — loud unknown ftype
+            expr = f"(print('WARNING: formula type \"{ftype}\" not implemented for {feature_name}') or 0.0)"
 
         return {
             'var_name':        var_name,
