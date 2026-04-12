@@ -111,9 +111,15 @@ def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
     lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
     lot_size = max(0.01, min(lot_size, 100.0))
 
-    if "Pips" in df.columns:
+    # WHY (Phase 71 Fix 12): "Pips" check is case-sensitive. Brokers that
+    #      export lowercase 'pips' silently fell through to the lot-scaling
+    #      path — completely different math. Case-insensitive column lookup.
+    # CHANGED: April 2026 — Phase 71 Fix 12 — case-insensitive Pips
+    #          (audit Part F HIGH #12)
+    _pips_col = next((c for c in df.columns if c.lower() == 'pips'), None)
+    if _pips_col is not None:
         df["Profit_Original"] = df["Profit"].copy()
-        df["Profit"] = df["Pips"] * pip_value_per_lot * lot_size
+        df["Profit"] = df[_pips_col] * pip_value_per_lot * lot_size
     else:
         avg_lot = df["Lots"].mean() if "Lots" in df.columns else 1.0
         scale = lot_size / avg_lot if avg_lot > 0 else 1.0
@@ -136,11 +142,17 @@ _PAYOUT_FREQ_DAYS = {
 # ── Daily DD safety helper ─────────────────────────────────────────────────────
 
 def _apply_daily_safety(trade_profits: list, safety_threshold: Optional[float]) -> float:
-    """
-    Process trades one by one within a day.
-    Stops trading for the day when running loss reaches the safety threshold.
-    Winning trades are never stopped — only protects against runaway losing days.
-    Returns the effective day P&L after applying the safety rule.
+    """Apply daily safety stop: halt trading once cumulative loss exceeds threshold.
+
+    WHY (Phase 71 Fix 9): Old loop only checked the threshold BEFORE adding
+         each trade. A single large opening loss that exceeded the threshold
+         in one trade still ran in full — the check fired AFTER the damage.
+         Fix: check the threshold BEFORE adding each trade AND after, so a
+         single trade that would push through the threshold is truncated.
+         NOTE: This is still a heuristic — true intraday protection requires
+         per-trade account level checks during live execution.
+    CHANGED: April 2026 — Phase 71 Fix 9 — pre-trade threshold check
+             (audit Part F HIGH #9)
     """
     if not trade_profits:
         return 0.0
@@ -150,10 +162,14 @@ def _apply_daily_safety(trade_profits: list, safety_threshold: Optional[float]) 
 
     running_pnl = 0.0
     for profit in trade_profits:
-        # Check safety BEFORE taking the next trade (only when already in a loss)
+        # Check BEFORE adding — would this trade push past the threshold?
         if running_pnl < 0 and abs(running_pnl) >= safety_threshold:
             break
         running_pnl += profit
+        # Check AFTER adding — did this trade push past the threshold?
+        if running_pnl < 0 and abs(running_pnl) >= safety_threshold:
+            # Truncate: return the loss up to threshold, ignore rest of the day
+            break
 
     return running_pnl
 
@@ -282,22 +298,47 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
         #      accurate ONLY for strategies that are flat at snapshot time
         #      with small intraday excursions.
         # CHANGED: April 2026 — remove spurious floor + document limitations
+        # WHY (Phase 71 Fix 10): Old code used net day_pnl. A day with
+        #      +$2000 winners then -$5000 loser has net=-$3000 but real
+        #      intraday max DD from peak = -$5000. Simulator under-reported
+        #      daily DD breaches by the intraday winning peaks.
+        #      Fix: track cumulative running P&L during the day using the
+        #      trade list, measure max drawdown from peak within the day.
+        # CHANGED: April 2026 — Phase 71 Fix 10 — intraday peak DD
+        #          (audit Part F HIGH #10)
+        _intraday_peak = 0.0
+        _intraday_run  = 0.0
+        _intraday_max_dd = 0.0
+        for _tp in trade_list:  # trade_list is list of floats (profits)
+            _intraday_run += _tp
+            if _intraday_run > _intraday_peak:
+                _intraday_peak = _intraday_run
+            _drawdown_from_peak = _intraday_peak - _intraday_run
+            if _drawdown_from_peak > _intraday_max_dd:
+                _intraday_max_dd = _drawdown_from_peak
+
         if daily_dd_ref_type == 'max_balance_equity':
             # Simulator approximation: use balance at start of day as the
             # reference. Cannot model equity component without tick data.
             dd_ref = balance - day_pnl  # balance at start of day (no floor)
             if dd_ref <= 0:
                 dd_ref = account_size  # pathological — account wiped mid-day
-            daily_dd = abs(min(0.0, day_pnl)) / dd_ref * 100.0
+            # Use the larger of net-day and intraday-peak DD
+            _net_dd      = abs(min(0.0, day_pnl))
+            _true_dd_abs = max(_net_dd, _intraday_max_dd)
+            daily_dd = _true_dd_abs / dd_ref * 100.0 if dd_ref > 0 else 0.0
         else:
             drawdown_basis = phase.get("drawdown_basis", "balance")
             if drawdown_basis == "balance_or_equity_higher":
                 dd_reference = max(account_size, balance)
-                daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
             elif drawdown_basis == "equity":
-                daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+                dd_reference = balance
             else:
-                daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+                dd_reference = account_size
+            # Use the larger of net-day and intraday-peak DD
+            _net_dd      = abs(min(0.0, day_pnl))
+            _true_dd_abs = max(_net_dd, _intraday_max_dd)
+            daily_dd = _true_dd_abs / dd_reference * 100.0 if dd_reference > 0 else 0.0
 
         if drawdown_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -409,7 +450,13 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
     max_daily_dd  = funded_cfg.get("max_daily_drawdown_pct")
     max_total_dd  = funded_cfg.get("max_total_drawdown_pct") or 999.0
     dd_type       = funded_cfg.get("drawdown_type", "static")
-    split_pct     = float(funded_cfg.get("profit_split_pct") or 80)
+    # WHY (Phase 71 Fix 11): No range check. If the JSON stores 0.8 (fraction)
+    #      instead of 80 (percent), the user gets 0.8/100 = 0.008 of profit.
+    #      Guard: if value ≤ 1.0, treat as fraction and multiply by 100.
+    # CHANGED: April 2026 — Phase 71 Fix 11 — fraction-safe split_pct
+    #          (audit Part F HIGH #11)
+    _raw_split = float(funded_cfg.get("profit_split_pct") or 80)
+    split_pct  = _raw_split * 100.0 if _raw_split <= 1.0 else _raw_split
     payout_freq   = funded_cfg.get("payout_frequency", "biweekly")
     dd_reset      = funded_cfg.get("dd_reset_on_payout", False)
     min_payout    = float(funded_cfg.get("min_payout_amount") or 0)
@@ -507,6 +554,12 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                 profit = balance - account_size
                 if profit > 0 and _conditions_were_met:
                     payout = profit * split_pct / 100.0
+                    # WHY (Phase 71 Fix 14): Old code silently discarded payouts
+                    #      below min_payout. User lost real profit that should
+                    #      have been withdrawable in a later period. Now: carry
+                    #      forward sub-minimum amounts to the next period.
+                    # CHANGED: April 2026 — Phase 71 Fix 14 — carry forward
+                    #          (audit Part F HIGH #14)
                     if payout >= min_payout:
                         total_payout += payout
                         payout_count += 1
@@ -521,6 +574,11 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                             hwm_locked = True
                         elif dd_reset:
                             hwm = balance
+                    elif payout > 0:
+                        # Carry forward: don't withdraw yet, leave in account
+                        # balance stays — effectively defers to next period
+                        log.debug(f"[simulator] Payout ${payout:.2f} < min_payout "
+                                  f"${min_payout:.2f} — carried to next period")
                 last_payout_date = cur_date
             else:
                 continue
@@ -558,20 +616,36 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         # WHY: Same fix as eval stage — remove spurious account_size floor.
         #      See C1 comment for full explanation of simulator limitations.
         # CHANGED: April 2026 — remove spurious floor (audit bug #2)
+        # Phase 71 Fix 10: intraday peak DD (same as eval stage)
+        _intraday_peak = 0.0
+        _intraday_run  = 0.0
+        _intraday_max_dd = 0.0
+        for _tp in trade_list:  # trade_list is list of floats (profits)
+            _intraday_run += _tp
+            if _intraday_run > _intraday_peak:
+                _intraday_peak = _intraday_run
+            _drawdown_from_peak = _intraday_peak - _intraday_run
+            if _drawdown_from_peak > _intraday_max_dd:
+                _intraday_max_dd = _drawdown_from_peak
+
         if daily_dd_ref_type_f == 'max_balance_equity':
             dd_ref_f = balance - day_pnl  # balance at start of day (no floor)
             if dd_ref_f <= 0:
                 dd_ref_f = account_size
-            daily_dd = abs(min(0.0, day_pnl)) / dd_ref_f * 100.0
+            _net_dd      = abs(min(0.0, day_pnl))
+            _true_dd_abs = max(_net_dd, _intraday_max_dd)
+            daily_dd = _true_dd_abs / dd_ref_f * 100.0 if dd_ref_f > 0 else 0.0
         else:
             drawdown_basis = funded_cfg.get("drawdown_basis", "balance")
             if drawdown_basis == "balance_or_equity_higher":
                 dd_reference = max(account_size, balance)
-                daily_dd = abs(min(0.0, day_pnl)) / dd_reference * 100.0
             elif drawdown_basis == "equity":
-                daily_dd = abs(min(0.0, day_pnl)) / balance * 100.0
+                dd_reference = balance
             else:
-                daily_dd = abs(min(0.0, day_pnl)) / account_size * 100.0
+                dd_reference = account_size
+            _net_dd      = abs(min(0.0, day_pnl))
+            _true_dd_abs = max(_net_dd, _intraday_max_dd)
+            daily_dd = _true_dd_abs / dd_reference * 100.0 if dd_reference > 0 else 0.0
 
         if dd_type == "static":
             total_dd = max(0.0, (account_size - balance) / account_size * 100.0)
@@ -625,6 +699,7 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
             profit = balance - account_size
             if profit > 0 and payout_conditions_met:
                 payout = profit * split_pct / 100.0
+                # Phase 71 Fix 14: carry forward (see earlier occurrence for full WHY)
                 if payout >= min_payout:
                     total_payout += payout
                     payout_count += 1
@@ -639,6 +714,10 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                         hwm_locked = True
                     elif dd_reset:
                         hwm = balance
+                elif payout > 0:
+                    # Carry forward: don't withdraw yet, leave in account balance
+                    log.debug(f"[simulator] Payout ${payout:.2f} < min_payout "
+                              f"${min_payout:.2f} — carried to next period")
 
             # Reset for next period
             last_payout_date = cur_date
