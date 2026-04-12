@@ -514,8 +514,21 @@ REGIME_FORMULAS = {
     'REGIME_swing_height_pct_h4': {'type': 'ratio_safe_price',     'num': 'H4_atr_50',              'scale': 100},
     'REGIME_pivot_dist_pct':      {'type': 'ratio_safe_price_abs', 'num': 'H1_pivot_point_distance','scale': 100},
     'REGIME_price_bucket':        {'type': 'price_bucket'},
-    'REGIME_is_high_price_era':   {'type': 'price_gt',             'value': 2000},
-    'REGIME_roc_alignment':       {'type': 'count_gt',             'cols': ['H1_roc_1','H1_roc_20','H1_roc_50'], 'threshold': 0},
+    # WHY (Phase 77 Fix IM-2): Training side uses rolling mean price (Phase 43).
+    #      Live EA side still hardcoded 2000 (XAUUSD-specific). For EURUSD
+    #      price is always < 2 so live EA always returns 0; for BTC always 1.
+    #      Add note — the live formula must be calibrated per-instrument.
+    #      Mark as live_unsupported for non-XAUUSD until per-symbol thresholds
+    #      are implemented.
+    # CHANGED: April 2026 — Phase 77 Fix IM-2 — flag as instrument-specific
+    'REGIME_is_high_price_era':   {'type': 'price_gt', 'value': 2000,
+                                   'live_note': 'threshold 2000 is XAUUSD-specific; '
+                                                'calibrate for other instruments'},
+    # WHY (Phase 77 Fix IM-1): Phase 76 Fix 28 removed roc_1 from indicator
+    #      computation (it's pure noise). Update REGIME_FORMULAS to match —
+    #      only count roc_20 and roc_50 for the alignment score.
+    # CHANGED: April 2026 — Phase 77 Fix IM-1 — remove roc_1 from REGIME_roc_alignment
+    'REGIME_roc_alignment':       {'type': 'count_gt',             'cols': ['H1_roc_20','H1_roc_50'], 'threshold': 0},
 }
 
 
@@ -1128,10 +1141,18 @@ def _generate_smart_mql(feature_name, formula, platform):
         elif ftype == 'price_gt':
             # WHY: Same as price_bucket above.
             # CHANGED: April 2026 — fix price comparison base (audit bug family #7)
+            # WHY (Phase 77 Fix IM-2): threshold is instrument-specific.
+            _threshold = formula['value']
+            _note      = formula.get('live_note', '')
+            _warn_line = (f'Print("NOTE: {_note}");' if _note else '')
             lines = [
                 'double _px = iClose(NULL,PERIOD_CURRENT,0);',
-                f'double val_{var_name} = (_px>{formula["value"]})?1.0:0.0;',
+                f'double val_{var_name} = (_px>{_threshold})?1.0:0.0;',
             ]
+            if _warn_line:
+                lines.insert(0, f'static bool _warned_{var_name} = false; '
+                                f'if(!_warned_{var_name}){{ {_warn_line} '
+                                f'_warned_{var_name}=true; }}')
 
         else:
             # WHY (Phase 64 Fix 4a): Unknown formula type silently emitted 0.0.

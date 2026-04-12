@@ -212,7 +212,12 @@ _cfg                 = _load_cfg()
 RF_N_ESTIMATORS      = int(_cfg['rf_trees'])
 RF_MAX_DEPTH         = int(_cfg['max_tree_depth'])
 RF_MIN_SAMPLES_LEAF  = int(_cfg['min_samples_leaf'])
-RF_RANDOM_STATE      = 42
+# WHY (Phase 77 Fix 58): RF_RANDOM_STATE=42 was hardcoded. A user who wants
+#      to check model stability across seeds had no way to change it without
+#      editing the source. Read from config; default 42 preserves old behaviour.
+# CHANGED: April 2026 — Phase 77 Fix 58 — configurable random_state + n_jobs
+#          (audit Part F LOW #58)
+RF_RANDOM_STATE      = int(_cfg.get('rf_random_state', '42'))
 
 
 def train_model_for_scenario(scenario):
@@ -281,7 +286,9 @@ def train_model_for_scenario(scenario):
             max_depth=RF_MAX_DEPTH,
             min_samples_leaf=RF_MIN_SAMPLES_LEAF,
             random_state=RF_RANDOM_STATE,
-            n_jobs=-1,  # Use all CPU cores
+            # WHY (Phase 77 Fix 58): n_jobs=-1 uses all cores even on shared
+            #      machines. Read from config; default -1 preserves old behaviour.
+            n_jobs=int(_cfg.get('rf_n_jobs', '-1')),
             verbose=0
         )
 

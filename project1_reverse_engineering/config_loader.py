@@ -42,6 +42,9 @@ DEFAULTS = {
     'rf_trees':                  '500',
     'max_tree_depth':            '6',
     'min_samples_leaf':          '10',
+    # WHY (Phase 77 Fix 58): allow config control of RF randomness + parallelism
+    'rf_random_state':           '42',   # seed for reproducibility; change to test stability
+    'rf_n_jobs':                 '-1',   # CPU cores: -1 = all, 1 = single-threaded
 
     # ── Rule Extraction ───────────────────────────────────────────────────────
     'rule_min_confidence':       '0.65',

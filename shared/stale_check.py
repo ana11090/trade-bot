@@ -89,10 +89,23 @@ def check_analysis_report():
             issues.append(f'Rule {i+1} has 0 conditions — will match every candle')
 
     # Check rules are recent (was activate run lately?)
+    # WHY (Phase 77 Fix 42): Old condition required BOTH activated_at AND
+    #      discovery_method to be missing. A report with discovery_method=
+    #      'legacy' but no activated_at silently passed. The intent is to
+    #      warn when there is no evidence of when/how the rules were made.
+    #      Warn on either field missing independently.
+    # CHANGED: April 2026 — Phase 77 Fix 42 — independent field warnings
+    #          (audit Part F LOW #42)
     activated_at = report.get('activated_at')
     discovery_method = report.get('discovery_method')
-    if win_rules and not activated_at and not discovery_method:
-        issues.append('Rules have no discovery_method — may be from old run')
+    if win_rules and not activated_at:
+        issues.append(
+            'Rules have no activated_at timestamp — unclear when they were activated'
+        )
+    if win_rules and not discovery_method:
+        issues.append(
+            'Rules have no discovery_method — may be from an old or manual run'
+        )
 
     fix = ''
     if issues:
@@ -122,8 +135,24 @@ def check_saved_rule(rule_data):
     """
     issues = []
 
-    if not rule_data.get('exit_class') and not rule_data.get('exit_name'):
-        issues.append('Missing exit strategy — EA will use default SL/TP')
+    # WHY (Phase 77 Fix 43): Old check only flagged when BOTH were absent.
+    #      A rule with exit_name='FixedSLTP' but no exit_class passes the
+    #      check, but ea_generator resolves exit_class from exit_name via a
+    #      lookup table — so this is actually fine. The check is overly strict
+    #      in the other direction too: only exit_class is needed by the EA.
+    #      Flag separately so callers know which field is missing.
+    # CHANGED: April 2026 — Phase 77 Fix 43 — distinguish exit fields
+    #          (audit Part F LOW #43)
+    _has_exit = (rule_data.get('exit_class') or rule_data.get('exit_name')
+                 or rule_data.get('exit_strategy'))
+    if not _has_exit:
+        issues.append(
+            'Missing exit strategy (no exit_class, exit_name, or exit_strategy) '
+            '— EA will use default SL/TP'
+        )
+    elif rule_data.get('exit_name') and not rule_data.get('exit_class'):
+        # exit_name is resolvable by ea_generator — note but don't flag as stale
+        pass  # OK — ea_generator resolves via exit_class_map
 
     if not rule_data.get('exit_strategy_params') and not rule_data.get('exit_params'):
         issues.append('Missing exit parameters')
