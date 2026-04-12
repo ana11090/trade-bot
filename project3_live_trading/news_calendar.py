@@ -93,8 +93,28 @@ def download_news_calendar(
                 currency = item.get('country', '').upper()
                 title    = item.get('title', item.get('event', ''))
                 impact_s = (item.get('impact', '') or '').upper()
+
+                # WHY (Phase 38 Fix 1): Old code stored dt_str as-is.
+                #      ForexFactory sometimes returns ISO strings without
+                #      a timezone marker ('2024-12-31T23:00:00') and
+                #      downstream parsers had to guess. Normalize at
+                #      fetch time: if the last 6 chars contain no '+',
+                #      '-', or 'Z', append 'Z' to mark explicit UTC.
+                # CHANGED: April 2026 — Phase 38 Fix 1 — normalize tz marker
+                #          (audit Part C MED #47)
+                if dt_str and len(dt_str) >= 10:
+                    _tail = dt_str[-6:]
+                    if 'Z' not in _tail and '+' not in _tail and '-' not in _tail[1:]:
+                        dt_str = dt_str + 'Z'
+
+                # WHY (Phase 38 Fix 3): Unknown impact values defaulted to
+                #      'MEDIUM'. News-blackout logic should fail-safe to
+                #      HIGH so we over-block rather than under-block when
+                #      the source doesn't tag impact clearly.
+                # CHANGED: April 2026 — Phase 38 Fix 3 — fail-safe to HIGH
+                #          (audit Part C MED #49)
                 if impact_s not in impact_rank:
-                    impact_s = 'MEDIUM'
+                    impact_s = 'HIGH'
                 if impact_rank.get(impact_s, 0) < min_rank:
                     continue
                 events.append({
@@ -178,7 +198,24 @@ def get_upcoming_events(hours_ahead=2, news_csv_path=None):
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                dt = datetime.datetime.fromisoformat(row['datetime_utc'].replace('Z', ''))
+                _raw_dt = row['datetime_utc']
+                # WHY (Phase 38 Fix 2): Old code did a blind
+                #      .replace('Z', '') before fromisoformat. That
+                #      works for common cases but is brittle: Python
+                #      3.11+ accepts 'Z' in fromisoformat directly,
+                #      and the blind replace could theoretically eat
+                #      a 'Z' in unusual contexts. Try fromisoformat
+                #      as-is first (correct on modern Python); fall
+                #      back to the Z-strip workaround for 3.10 and
+                #      below. Net: forward-compatible, no regression.
+                # CHANGED: April 2026 — Phase 38 Fix 2 — robust parsing
+                #          (audit Part C MED #48)
+                try:
+                    dt = datetime.datetime.fromisoformat(_raw_dt)
+                except ValueError:
+                    # Python <3.11 or other format quirk — fall back to
+                    # Z-strip + manual tz attach.
+                    dt = datetime.datetime.fromisoformat(_raw_dt.replace('Z', ''))
                 # Attach UTC tz so the comparison against `now` works
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=datetime.timezone.utc)

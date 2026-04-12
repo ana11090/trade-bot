@@ -474,9 +474,10 @@ def walk_forward_validate(
                 log.info(f"  [WF] Skipping invalid custom window: {cw} — {e}")
 
     # Sort all windows by test period start date
-    windows_schedule.sort(key=lambda w: w[2])
-
-    # Sort by test period start
+    # WHY (Phase 37 Fix 4): Old code had this sort twice — the second
+    #      call was a no-op on an already-sorted list. Dead code.
+    # CHANGED: April 2026 — Phase 37 Fix 4 — remove duplicate sort
+    #          (audit Part C MED #44)
     windows_schedule.sort(key=lambda w: w[2])
 
     if not windows_schedule:
@@ -720,6 +721,14 @@ def monte_carlo_test(
     default_sl_pips=150.0,
     pip_value_per_lot=10.0,
     progress_callback=None,
+    # WHY (Phase 37 Fix 2): Old code used np.random.default_rng() with
+    #      no seed — every MC run produced different shuffles and
+    #      different verdicts. Users couldn't reproduce a saved
+    #      verdict. Accept an optional seed; default None = unseeded
+    #      (backward compat).
+    # CHANGED: April 2026 — Phase 37 Fix 2 — seed parameter
+    #          (audit Part C MED #42)
+    shuffle_seed=None,
 ):
     """
     Shuffle trade PnL values and re-run prop firm simulation to test
@@ -740,12 +749,38 @@ def monte_carlo_test(
         return {'verdict': 'INSUFFICIENT_DATA', 'error': 'No trades provided'}
 
     # Discover challenge_id if not given
+    # WHY (Phase 37 Fix 3): Old code picked the FIRST matching firm
+    #      entry — insertion-order dependent. A firm with 10k/25k/50k/100k
+    #      challenges silently used whichever came first in the JSON,
+    #      regardless of the user's account_size parameter. Now: collect
+    #      all matching challenges, prefer the one matching account_size,
+    #      and warn if no exact match exists so the user knows they're
+    #      running against a potentially wrong rule set.
+    # CHANGED: April 2026 — Phase 37 Fix 3 — account_size matching
+    #          (audit Part C MED #43)
     if challenge_id is None:
         firms_data = load_available_firms()
-        for fc in firms_data:
-            if fc['firm_id'] == firm_id:
-                challenge_id = fc['challenge_id']
-                break
+        matching = [fc for fc in firms_data if fc.get('firm_id') == firm_id]
+        if matching:
+            # Prefer one whose declared account_size matches
+            exact_match = None
+            for fc in matching:
+                fc_sizes = fc.get('account_sizes') or [fc.get('account_size')]
+                if account_size in [int(s) for s in fc_sizes if s is not None]:
+                    exact_match = fc
+                    break
+            if exact_match is not None:
+                challenge_id = exact_match['challenge_id']
+            else:
+                # Fall back to first, but warn
+                challenge_id = matching[0]['challenge_id']
+                if len(matching) > 1:
+                    log.warning(
+                        f"[MC] Firm {firm_id!r} has {len(matching)} challenges "
+                        f"but none match account_size={account_size}. "
+                        f"Using first: challenge_id={challenge_id}. "
+                        f"Pass challenge_id= explicitly to pick a specific one."
+                    )
     if challenge_id is None:
         return {'verdict': 'INSUFFICIENT_DATA', 'error': f'No challenges found for {firm_id}'}
 
@@ -757,6 +792,15 @@ def monte_carlo_test(
     if progress_callback:
         progress_callback(0, n_simulations, "Running baseline (original order)...")
 
+    # WHY (Phase 37 Fix 1): Baseline was 200 samples, shuffles below
+    #      were 50 samples each. Variance of the shuffle pass-rate
+    #      estimator was ~2× the baseline's, so the "is baseline in
+    #      the shuffle tail" comparison had artificially wide CIs.
+    #      Align both to 100 — compromise between accuracy and
+    #      runtime (shuffle total doubles from 25k to 50k samples).
+    # CHANGED: April 2026 — Phase 37 Fix 1 — aligned sample counts
+    #          (audit Part C MED #41)
+    _MC_SAMPLES = 100
     try:
         baseline_summary = simulate_challenge(
             trades_df=trades_df,
@@ -764,7 +808,7 @@ def monte_carlo_test(
             challenge_id=challenge_id,
             account_size=account_size,
             mode='sliding_window',
-            num_samples=200,
+            num_samples=_MC_SAMPLES,
             risk_per_trade_pct=risk_per_trade_pct,
             default_sl_pips=default_sl_pips,
             pip_value_per_lot=pip_value_per_lot,
@@ -787,7 +831,8 @@ def monte_carlo_test(
     #      concatenate until the same length is filled. Preserves short-
     #      range autocorrelation (same heuristic as Phase 12 Fix 1).
     # CHANGED: April 2026 — block shuffle (audit HIGH)
-    _rng_mc   = np.random.default_rng()
+    # CHANGED: April 2026 — Phase 37 Fix 2b — accept shuffle_seed
+    _rng_mc   = np.random.default_rng(shuffle_seed)
     _n_pips   = len(pips_values)
     _block_len = max(5, int(np.sqrt(_n_pips)))
     _pips_arr  = np.asarray(pips_values)
@@ -817,13 +862,15 @@ def monte_carlo_test(
         shuffled_df = shuffled_df.sort_values('Close Date').reset_index(drop=True)
 
         try:
+            # CHANGED: April 2026 — Phase 37 Fix 1b — use _MC_SAMPLES
+            #          (aligned with baseline per audit Part C MED #41)
             sim_summary = simulate_challenge(
                 trades_df=shuffled_df,
                 firm_id=firm_id,
                 challenge_id=challenge_id,
                 account_size=account_size,
                 mode='sliding_window',
-                num_samples=50,
+                num_samples=_MC_SAMPLES,
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
@@ -1196,6 +1243,8 @@ def run_full_validation(
     account_size=100000,
     mc_firm_id='ftmo',
     mc_challenge_id=None,
+    # CHANGED: April 2026 — Phase 37 Fix 2c — seed for reproducible MC
+    mc_shuffle_seed=None,
     n_simulations=500,
     risk_per_trade_pct=1.0,
     default_sl_pips=150.0,
@@ -1245,6 +1294,7 @@ def run_full_validation(
             default_sl_pips=default_sl_pips,
             pip_value_per_lot=pip_value_per_lot,
             progress_callback=mc_progress_callback,
+            shuffle_seed=mc_shuffle_seed,   # Phase 37 Fix 2d
         )
 
     # ── Live Firm Simulation ─────────────────────────────────────────────

@@ -1222,9 +1222,22 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
         score += avg * 0.05
 
         # Consistency: best day vs total
+        # WHY (Phase 36 Fix 3): Old code used max(total_pips, 1) as a
+        #      floor, which combined with a tiny-positive total_pips
+        #      and a large best_day gave absurdly negative consistency
+        #      values (e.g. total=5, best=50 → 1 - 10 = -9). score
+        #      was then -9 * 15 = -135, a huge penalty for a profitable
+        #      strategy. The outer guard already ensures total_pips > 0,
+        #      so the max(…, 1) floor is redundant — use total_pips
+        #      directly. Clamp the result to [0, 1] so degenerate
+        #      one-winning-day strategies get 0 (least consistent),
+        #      not a large negative penalty.
+        # CHANGED: April 2026 — Phase 36 Fix 3 — clamp consistency
+        #          (audit Part C MED #36)
         if daily_pnls and total_pips > 0:
             best_day = max(daily_pnls.values())
-            consistency = 1 - (best_day / max(total_pips, 1))
+            consistency_raw = 1.0 - (best_day / total_pips)
+            consistency     = max(0.0, min(1.0, consistency_raw))
             score += consistency * 15
 
         # Trades per day: sweet spot 1-3
@@ -1267,9 +1280,22 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
                 funded = firm_data['challenges'][0].get('funded', {})
                 dd_type = funded.get('drawdown_type', 'static')
                 if dd_type in ('trailing', 'trailing_eod'):
-                    biggest_win = max(net) if net else 0
-                    if biggest_win > abs(min(net)) * 3:
-                        score -= 5
+                    # WHY (Phase 36 Fix 2): Old code computed
+                    #      abs(min(net)) — for an all-winning strategy
+                    #      that's the smallest WIN, and biggest_win > 3x
+                    #      small_positive fires a -5 penalty on strategies
+                    #      that should be rewarded for having zero losses.
+                    #      Only penalize when there are actual losing
+                    #      trades to compare against.
+                    # CHANGED: April 2026 — Phase 36 Fix 2 — actual losers
+                    #          (audit Part C MED #35)
+                    biggest_win  = max(net) if net else 0
+                    losing_nets  = [x for x in net if x < 0]
+                    if losing_nets:
+                        biggest_loss = abs(min(losing_nets))
+                        if biggest_win > biggest_loss * 3:
+                            score -= 5
+                    # else: no losing trades, no trailing-DD penalty
 
     return round(score, 2)
 
@@ -1800,7 +1826,25 @@ def deep_optimize_generate(
                 commission_pips=commission_pips,
                 account_size=account_size,
             )
-        except Exception:
+        except Exception as e:
+            # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,
+            #      silently skipping every failed candidate. If the failure
+            #      was systematic (missing indicator, bad rule structure,
+            #      exit crash), EVERY candidate failed and the user saw
+            #      "no improvements found" with zero diagnostics. Log the
+            #      exception with dedup (first 5 unique messages) so
+            #      systematic errors surface without spamming.
+            # CHANGED: April 2026 — Phase 36 Fix 4 — log exception
+            #          (audit Part C MED #37)
+            _err_key = f"{type(e).__name__}:{str(e)[:120]}"
+            if not hasattr(_test_rules, '_seen_errors'):
+                _test_rules._seen_errors = set()
+            if _err_key not in _test_rules._seen_errors and len(_test_rules._seen_errors) < 5:
+                _test_rules._seen_errors.add(_err_key)
+                log.warning(
+                    f"[OPTIMIZER] _test_rules failed for candidate "
+                    f"{name!r}: {type(e).__name__}: {e}"
+                )
             return None
 
         if not new_trades or len(new_trades) < 5:
@@ -1875,18 +1919,70 @@ def deep_optimize_generate(
     # WHY: Each step is wrapped in try/except so one bad rule/indicator doesn't
     #      crash the entire optimization. Errors are logged and skipped.
     # CHANGED: April 2026 — per-iteration error handling
-    shifts = [0.7, 0.8, 0.9, 1.1, 1.2, 1.3]
+    # WHY (Phase 36 Fix 1): Old grid was multiplicative [0.7..1.3] ONLY.
+    #      For RSI=30 that tested {21..39} (range 18); for RSI=70 it
+    #      tested {49..91} (range 42) — same indicator, asymmetric
+    #      coverage. And original_val==0 was skipped entirely, so
+    #      common "above-zero" rules (macd>0, ema_distance>0, etc.)
+    #      never got threshold-optimized. Add an additive grid based
+    #      on the indicator's in-sample IQR, and drop the zero-skip.
+    #      The additive grid handles zero naturally.
+    # CHANGED: April 2026 — Phase 36 Fix 1 — additive IQR grid +
+    #          allow zero original_val (audit Part C MED #33 + #34)
+    multiplicative_factors = [0.7, 0.8, 0.9, 1.1, 1.2, 1.3]
+    add_factors = [-0.3, -0.15, 0.15, 0.3]   # fractions of IQR
+
     for rule_idx, rule in enumerate(win_rules):
         for cond_idx, cond in enumerate(rule.get('conditions', [])):
             try:
                 original_val = cond.get('value', 0)
                 feat = cond.get('feature', '?')
-                if original_val == 0:
+
+                # Compute IQR on in-sample slice of the indicator column.
+                # Uses _is_col convention from Phase 30 Fix 6.
+                iqr = 0.0
+                try:
+                    if feat in _indicators_trimmed.columns:
+                        _col = _indicators_trimmed[feat].dropna()
+                        if len(_col) >= 100:
+                            _is_cutoff = int(len(_col) * 0.7)
+                            _is_col = _col.iloc[:_is_cutoff] if _is_cutoff >= 100 else _col
+                            iqr = float(_is_col.quantile(0.75) - _is_col.quantile(0.25))
+                except Exception:
+                    iqr = 0.0
+
+                # Build the combined shift list. Multiplicative shifts
+                # are skipped when original_val is zero (zero × anything
+                # = zero, dead grid). Additive shifts always run when
+                # iqr > 0.
+                new_vals = []
+                if original_val != 0:
+                    for s in multiplicative_factors:
+                        new_vals.append(original_val * s)
+                if iqr > 0:
+                    for f in add_factors:
+                        new_vals.append(original_val + f * iqr)
+                # Deduplicate (a mult-shifted 30 can coincide with an
+                # additive-shifted 30 on certain indicators) and drop
+                # any values equal to the original.
+                seen = set()
+                deduped = []
+                for v in new_vals:
+                    key = round(v, 6)
+                    if key in seen or round(v, 6) == round(original_val, 6):
+                        continue
+                    seen.add(key)
+                    deduped.append(v)
+
+                if not deduped:
+                    # Nothing to test for this condition — either IQR
+                    # is zero (degenerate indicator) and original_val
+                    # is zero, or the dedup collapsed everything.
                     continue
-                for shift in shifts:
+
+                for new_val in deduped:
                     if _stop_flag.is_set():
                         break
-                    new_val = original_val * shift
                     modified_rules = copy.deepcopy(win_rules)
                     # WHY: Safe access — check 'conditions' exists before bracket access
                     if 'conditions' not in modified_rules[rule_idx]:
@@ -1901,7 +1997,7 @@ def deep_optimize_generate(
                     for _es_idx, _es in enumerate(exit_strategies):
                         _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
                         _test_rules(f"Threshold shift: {change} ({_es_name})", modified_rules, _es, change)
-                    _report(1, f"Threshold shifts: R{rule_idx+1} {feat} ×{shift}")
+                    _report(1, f"Threshold shifts: R{rule_idx+1} {feat} = {new_val:.4f}")
             except Exception as e:
                 log.info(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
                 import traceback; traceback.print_exc()
