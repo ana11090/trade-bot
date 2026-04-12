@@ -1305,9 +1305,50 @@ def run_analysis(feature_matrix_path=None):
         json.dump(report, f, indent=2, default=str)
     log.info(f'\nSaved: {json_path}')
 
+    # WHY (Phase A.8 hotfix): shared/stale_check.py hardcodes its read
+    #      path to OUTPUT_DIR/analysis_report.json (the root), but
+    #      run_scenarios.py calls run_analysis with feature_matrix_path
+    #      pointing into scenario_<TF>/, so the fresh A.3-compliant
+    #      report landed only in the subfolder and the root file stayed
+    #      stale. Result: Stale Rules Warning popup kept firing in the
+    #      EA generator panel even though the fresh report had correct
+    #      entry_timeframe/activated_at/discovery_method fields.
+    #
+    #      Fix: also refresh OUTPUT_DIR/analysis_report.json. Last
+    #      scenario to run becomes the canonical "current" report,
+    #      which matches the EA generator's one-active-report
+    #      assumption. Per-scenario audit trail in subfolders is
+    #      preserved because we still write the subfolder copy above.
+    # CHANGED: April 2026 — Phase A.8 — also refresh root report
+    _root_json_path = os.path.join(OUTPUT_DIR, 'analysis_report.json')
+    if os.path.abspath(_root_json_path) != os.path.abspath(json_path):
+        try:
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            with open(_root_json_path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2, default=str)
+            log.info(f"  Also refreshed root: {_root_json_path}")
+        except OSError as _e:
+            log.warning(
+                f"[ANALYZE] Could not refresh root analysis_report.json: {_e} "
+                f"(stale check may still flag the old root file)"
+            )
+
     txt_path = os.path.join(_output_dir, 'analysis_report.txt')
     _write_text_report(report, txt_path)
     log.info(f'Saved: {txt_path}')
+
+    # WHY (Phase A.8 hotfix): mirror the JSON twin-write for the human-
+    #      readable text report so both stay in sync.
+    # CHANGED: April 2026 — Phase A.8
+    _root_txt_path = os.path.join(OUTPUT_DIR, 'analysis_report.txt')
+    if os.path.abspath(_root_txt_path) != os.path.abspath(txt_path):
+        try:
+            import shutil as _shutil_a8
+            _shutil_a8.copy2(txt_path, _root_txt_path)
+        except OSError as _e:
+            log.warning(
+                f"[ANALYZE] Could not refresh root analysis_report.txt: {_e}"
+            )
 
     log.info(f"\n{'=' * 70}")
     log.info(f'ANALYSIS COMPLETE in {elapsed:.0f}s')
