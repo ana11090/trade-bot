@@ -487,8 +487,17 @@ SMART_FORMULAS = {
     'SMART_stoch_oversold':      {'type': 'compare_const',  'a': 'H1_stoch_14_k',    'op': '<', 'value': 20},
     'SMART_willr_extreme_high':  {'type': 'compare_const',  'a': 'H1_williams_r_14', 'op': '>', 'value': -20},
     'SMART_willr_extreme_low':   {'type': 'compare_const',  'a': 'H1_williams_r_14', 'op': '<', 'value': -80},
-    'SMART_tsi_bullish':         {'type': 'compare_const',  'a': 'H1_tsi',           'op': '>', 'value': 0},
-    'SMART_tsi_strong':          {'type': 'compare_const_abs', 'a': 'H1_tsi',        'op': '>', 'value': 20},
+    # WHY (Phase 60 Fix 4): SMART_tsi_bullish and SMART_tsi_strong reference
+    #      H1_tsi which is NOT implementable as a built-in MT5 indicator
+    #      (TSI requires double-EMA of momentum — no iCustom-free solution).
+    #      The indicator_mapper generates a loud Print() error and returns 0.
+    #      Tag these entries so callers can detect TSI usage before generating EAs.
+    # CHANGED: April 2026 — Phase 60 Fix 4 — TSI explicitly flagged unsupported
+    #          (audit Part D HIGH #11)
+    'SMART_tsi_bullish':         {'type': 'compare_const',  'a': 'H1_tsi', 'op': '>', 'value': 0,
+                                  'live_unsupported': True, 'live_note': 'TSI not in MT5 built-ins'},
+    'SMART_tsi_strong':          {'type': 'compare_const_abs', 'a': 'H1_tsi', 'op': '>', 'value': 20,
+                                  'live_unsupported': True, 'live_note': 'TSI not in MT5 built-ins'},
 }
 
 # ── REGIME feature formulas ───────────────────────────────────────────────────
@@ -966,9 +975,15 @@ def _generate_smart_mql(feature_name, formula, platform):
             lines = ls_bb + ls_kel + [f'double val_{var_name} = ({ebb}<{ekkel})?1.0:0.0;']
 
         elif ftype == 'price_mod':
+            # WHY (Phase 60 Fix 2a): Old formula was MathAbs(MathMod(x,mod)-half)/half
+            #      which returned 1.0 when AT a round level (should be 0.0).
+            #      Phase 57 corrected the Python training side to
+            #      1.0 - abs(x%mod-half)/half. Mirror the correction here
+            #      so live EA and training agree on direction.
+            # CHANGED: April 2026 — Phase 60 Fix 2a — corrected dist_to_round live formula
             ls_c, ec = _mql5_sub_expr(formula['col'], '_c')
             mod, half = formula['modulo'], formula['half']
-            lines = ls_c + [f'double val_{var_name} = MathAbs(MathMod({ec},{mod}.0)-{half}.0)/{half}.0;']
+            lines = ls_c + [f'double val_{var_name} = 1.0-MathAbs(MathMod({ec},{mod}.0)-{half}.0)/{half}.0;']
 
         elif ftype == 'rsi_zone':
             ls, er = _mql5_sub_expr(formula['col'], '_rz')
@@ -1206,8 +1221,10 @@ def _generate_smart_mql(feature_name, formula, platform):
             kel = _py('H1_keltner_width')
             expr = f"(1.0 if ({bb}) < ({kel}) else 0.0)"
         elif ftype == 'price_mod':
+            # WHY (Phase 60 Fix 2b): Mirror Phase 57 correction for Tradovate.
+            # CHANGED: April 2026 — Phase 60 Fix 2b — corrected Tradovate dist_to_round
             ec = _py(formula['col']); mod = formula['modulo']; half = formula['half']
-            expr = f"abs(({ec}) % {mod} - {half}) / {half}"
+            expr = f"1.0 - abs(({ec}) % {mod} - {half}) / {half}"
         elif ftype == 'rsi_zone':
             er = _py(formula['col'])
             expr = (f"(lambda r: 3.0 if r>70 else 2.0 if r>60 else 1.0 if r>50 else"

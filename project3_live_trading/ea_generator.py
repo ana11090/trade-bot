@@ -330,6 +330,32 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     }
     mql_period = _mql_periods.get(entry_timeframe, 'PERIOD_H1')
 
+    # WHY (Phase 60 Fix 3): Collect TSI-using features before generating
+    #      condition code. TSI is not implemented for MT5 — the indicator
+    #      always returns 0, so rules using SMART_tsi_* can never fire.
+    #      Warn via a prominent comment block in the generated EA and
+    #      via Python logging so the user sees it before deployment.
+    # CHANGED: April 2026 — Phase 60 Fix 3 — TSI incompatibility warning
+    #          (audit Part D HIGH #11)
+    _TSI_FEATURES = {'SMART_tsi_bullish', 'SMART_tsi_strong'}
+    _tsi_rules = []
+    for _ri, _r in enumerate(win_rules, 1):
+        _tsi_conds = [c['feature'] for c in _r.get('conditions', [])
+                      if c.get('feature', '') in _TSI_FEATURES]
+        if _tsi_conds:
+            _tsi_rules.append(f"Rule {_ri}: {', '.join(_tsi_conds)}")
+    if _tsi_rules:
+        import logging as _log_mod
+        _logger = _log_mod.getLogger(__name__)
+        _logger.warning(
+            "[EA GENERATOR] %d rule(s) use TSI features which are NOT "
+            "implemented for MT5 live trading. These rules will NEVER "
+            "fire in live because SMART_tsi_bullish / SMART_tsi_strong "
+            "always evaluate to 0. Rules affected: %s. "
+            "Consider removing TSI conditions or replacing with RSI/MACD.",
+            len(_tsi_rules), '; '.join(_tsi_rules)
+        )
+
     # Build condition input params
     condition_inputs = []
     condition_checks = []

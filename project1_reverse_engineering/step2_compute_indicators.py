@@ -103,7 +103,19 @@ def compute_features(aligned_trades_path=None, output_dir=None):
         #      Both are stored nowhere here; step3_label_trades.py adds the
         #      proper `outcome` target column separately.
         # CHANGED: April 2026 — defense-in-depth against leakage
-        feature_matrix['hour_of_day'] = trades_df['open_time'].dt.hour
+        # WHY (Phase 60 Fix 1b): Old code stored broker-time hours.
+        #      The live EA session features use TimeGMT() (UTC). A rule
+        #      trained on "hour_of_day >= 13" (London/NY overlap) fired
+        #      at UTC 13 in training but at broker-time 13 (≈ UTC 11 for
+        #      EET) in live — two hours apart. Normalise hour_of_day to
+        #      UTC by subtracting the configured utc_offset_hours so
+        #      training and live evaluate session features on the same scale.
+        # CHANGED: April 2026 — Phase 60 Fix 1b — UTC-normalised hour_of_day
+        #          (audit Part D HIGH #7)
+        _utc_offset = int(_cfg.get('utc_offset_hours', '2'))
+        feature_matrix['hour_of_day'] = (
+            (trades_df['open_time'].dt.hour - _utc_offset) % 24
+        )
         feature_matrix['day_of_week'] = trades_df['open_time'].dt.dayofweek
         # NOTE: trade_duration_minutes and is_winner are NOT added here.
         # If you need them for analysis, compute them from trades_df at point of use.

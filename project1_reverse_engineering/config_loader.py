@@ -49,12 +49,19 @@ DEFAULTS = {
     'match_rate_threshold':      '0.70',
 
     # ── Regime Analysis ───────────────────────────────────────────────────────
-    # WHY (Phase 57 Fix 4): ADX 25 was hardcoded in analyze.py. That works
-    #      for XAUUSD but not for EURGBP (always ranging) or BTCUSD (always
-    #      trending). Expose as a config value. Default 25 preserves old behaviour.
+    # WHY (Phase 57 Fix 4): ADX 25 was hardcoded in analyze.py.
     # CHANGED: April 2026 — Phase 57 Fix 4a — ADX threshold to config
-    #          (audit Part D MEDIUM #47)
     'adx_trend_threshold':       '25',
+
+    # ── Timezone ──────────────────────────────────────────────────────────────
+    # WHY (Phase 60 Fix 1): Training hour_of_day was broker-server time;
+    #      live EA uses TimeGMT() (UTC). Session features fired at different
+    #      hours. Add UTC offset so step2 can normalize hour_of_day to UTC.
+    #      Common values: EET=2, GMT=0, EST=-5, CST=-6, PST=-8.
+    #      DST: EET alternates between UTC+2 and UTC+3; use 2 (conservative).
+    # CHANGED: April 2026 — Phase 60 Fix 1a — UTC offset config
+    #          (audit Part D HIGH #7)
+    'utc_offset_hours':          '2',   # EET default (broker server UTC+2 in winter)
 }
 
 
