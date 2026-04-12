@@ -59,9 +59,8 @@ def normalize_condition(c):
             if parsed is not None:
                 sub_conditions.append(parsed)
             else:
-                sub_conditions.append(
-                    {'feature': part.strip(), 'operator': '>', 'value': 0}
-                )
+                # Phase 66 Fix 1: skip unparseable sub-parts instead of inserting garbage
+                pass
         return sub_conditions
 
     # Single-condition path
@@ -69,15 +68,29 @@ def normalize_condition(c):
     if parsed is not None:
         return parsed
 
-    # Fallback: treat whole string as feature name
-    return {'feature': s, 'operator': '>', 'value': 0}
+    # WHY (Phase 66 Fix 1): Old code returned a garbage condition dict when
+    #      a string couldn't be parsed as FEATURE OP VALUE. The garbage
+    #      condition was silently passed to the backtester where `col_vals > 0`
+    #      on a non-existent feature name caused KeyErrors or all-False masks.
+    #      Return None so callers can detect unparseable conditions explicitly.
+    # CHANGED: April 2026 — Phase 66 Fix 1 — return None on parse failure
+    #          (audit Part E HIGH #1)
+    return None
 
 
 def normalize_conditions(rule):
     """Return rule with conditions normalized to list-of-dicts. Does not mutate original."""
     conds = rule.get('conditions', [])
-    if not conds or isinstance(conds[0], dict):
-        return rule  # already correct format
+    if not conds:
+        return rule
+    # WHY (Phase 66 Fix 3): Old code checked only conds[0]. A list like
+    #      [dict, string, dict] — possible during partial migration —
+    #      was returned without normalising the string element.
+    #      Check whether ALL conditions are dicts; if so, skip.
+    # CHANGED: April 2026 — Phase 66 Fix 3 — iterate type check
+    #          (audit Part E HIGH #3)
+    if all(isinstance(c, dict) for c in conds):
+        return rule  # already fully normalised
 
     # WHY: normalize_condition may return a dict OR a list (for compound
     #      conditions like "rsi > 50 and adx > 20"). Flatten lists into
@@ -86,8 +99,12 @@ def normalize_conditions(rule):
     flat = []
     for c in conds:
         normalized = normalize_condition(c)
+        if normalized is None:
+            # Phase 66 Fix 1: skip conditions that can't be parsed
+            continue
         if isinstance(normalized, list):
-            flat.extend(normalized)
+            # Filter out any None sub-conditions from compound parsing
+            flat.extend(nc for nc in normalized if nc is not None)
         else:
             flat.append(normalized)
     return {**rule, 'conditions': flat}

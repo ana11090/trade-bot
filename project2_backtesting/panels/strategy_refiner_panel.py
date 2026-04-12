@@ -1377,7 +1377,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     # ── Buttons ──
     btn = tk.Frame(card, bg=card_bg)
     btn.pack(fill="x", pady=(5, 0))
-    print(f"[OPTIMIZER] Card #{rank}: Button row frame created and packed")
 
     trades_snap = list(cand.get('trades', []))
     rules_snap = list(cand.get('rules', []))
@@ -1389,7 +1388,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               command=lambda t=trades_snap: _show_candidate_trades(t),
               bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
-    print(f"[OPTIMIZER] Card #{rank}: Trades button created")
 
     def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap):
         try:
@@ -1469,7 +1467,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     tk.Button(btn, text="💾 Save", command=_save,
               bg="#28a745", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
-    print(f"[OPTIMIZER] Card #{rank}: Save button created")
 
     def _playground(r=rules_snap):
         try:
@@ -1484,7 +1481,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     tk.Button(btn, text="🎮 Play", command=_playground,
               bg="#17a2b8", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
-    print(f"[OPTIMIZER] Card #{rank}: Play button created")
 
     def _validate(t=trades_snap, r=rules_snap, n=strategy_name, f=filters_snap):
         try:
@@ -1528,7 +1524,6 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     tk.Button(btn, text="✅ Validate", command=_validate,
               bg="#e67e22", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
-    print(f"[OPTIMIZER] Card #{rank}: Validate button created")
 
     def _csv(t=trades_snap, n=strategy_name):
         p = filedialog.asksaveasfilename(defaultextension=".csv",
@@ -1541,9 +1536,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     tk.Button(btn, text="📁 CSV", command=_csv,
               bg="#6c757d", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT)
-    print(f"[OPTIMIZER] Card #{rank}: CSV button created")
 
-    print(f"[OPTIMIZER] Card #{rank}: ✓ ALL 5 BUTTONS CREATED (Trades, Save, Play, Validate, CSV)")
 
 
 def _show_opt_results(candidates):

@@ -514,7 +514,12 @@ def load_trades_from_matrix(strategy_index):
         with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
         results = data.get('results', [])
-        if strategy_index >= len(results):
+        # WHY (Phase 66 Fix 6): Old code only guarded the upper bound.
+        #      A negative integer index silently sliced from the end of
+        #      the list and returned the wrong strategy's trades.
+        # CHANGED: April 2026 — Phase 66 Fix 6 — guard negative index
+        #          (audit Part E HIGH #6)
+        if not isinstance(strategy_index, int) or strategy_index < 0 or strategy_index >= len(results):
             return None
         return results[strategy_index].get('trades', None)
     except Exception as e:
@@ -534,8 +539,13 @@ def load_strategy_list():
         if os.path.exists(BACKTEST_MATRIX_PATH):
             with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
                 first_line = f.readline()
-                if 'git-lfs' in first_line:
-                    # LFS pointer, not real data — skip but don't crash
+                # WHY (Phase 66 Fix 5): Old substring check `'git-lfs' in first_line`
+                #      would skip any JSON file whose first line contained the text
+                #      "git-lfs" legitimately (e.g., in a comment field). Real LFS
+                #      pointer files always begin with the exact magic string below.
+                # CHANGED: April 2026 — Phase 66 Fix 5 — startswith LFS magic
+                #          (audit Part E HIGH #5)
+                if first_line.startswith('version https://git-lfs.github.com/spec/v1'):
                     log.info("[REFINER] backtest_matrix.json is a Git LFS pointer — run 'git lfs pull'")
                 else:
                     f.seek(0)
@@ -607,7 +617,15 @@ def load_strategy_list():
                 net = sum(t.get('net_pips', 0) for t in opt_trades)
                 gross_profit = sum(t.get('net_pips', 0) for t in opt_trades if t.get('net_pips', 0) > 0)
                 gross_loss = abs(sum(t.get('net_pips', 0) for t in opt_trades if t.get('net_pips', 0) < 0))
-                pf = gross_profit / max(gross_loss, 0.01) if gross_loss > 0 else 0
+                # WHY (Phase 66 Fix 8): Old code returned PF=0 when there were
+                #      no losing trades — the condition `gross_loss > 0` guards
+                #      the division but the else branch emits 0. A perfect strategy
+                #      showed PF=0.00 in the optimizer cards and users dismissed it
+                #      as a losing strategy. Use 99.99 as the sentinel (matching
+                #      compute_stats convention from Phase 31).
+                # CHANGED: April 2026 — Phase 66 Fix 8 — PF=99.99 for no-loss
+                #          (audit Part E HIGH #8)
+                pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 99.99
 
             # WHY: compute_stats in strategy_backtester.py always
             #      stores win_rate as percent (0-100). The old
@@ -731,7 +749,14 @@ def load_strategy_list():
                 continue
             rc = s.get('rule_combo', '')
             es = s.get('exit_strategy', s.get('exit_name', ''))
-            if is_starred(rc, es):
+            # WHY (Phase 66 Fix 9): Old lookup used (rc, es) but two rows for
+            #      the same strategy on different entry_tf (H1 vs H4) share the
+            #      same rc+es. Starring the H1 row also starred the H4 row.
+            #      Include entry_tf in the star key to disambiguate.
+            # CHANGED: April 2026 — Phase 66 Fix 9 — entry_tf in star lookup
+            #          (audit Part E HIGH #9)
+            tf = s.get('entry_tf', s.get('timeframe', ''))
+            if is_starred(rc, es, tf):
                 s['is_starred'] = True
                 if not s['label'].startswith('⭐'):
                     s['label'] = f"⭐ {s['label']}"
