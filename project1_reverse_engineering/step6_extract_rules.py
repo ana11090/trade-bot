@@ -211,25 +211,32 @@ def extract_rules_for_scenario(scenario):
             seen_signatures.add(sig)
             unique_rules.append(rule)
 
-        # Sort by confidence × coverage (existing scoring approach)
-        unique_rules.sort(
+        # WHY (Phase 76 Fix 67): Old code truncated to top-20 BEFORE filtering by
+        #      MIN_CONFIDENCE/MIN_COVERAGE. If there are 100 good rules but only 15
+        #      of the top-20 meet the threshold, user loses 85 valid rules. Filter
+        #      by thresholds FIRST, then keep top-20 of those passing rules.
+        # CHANGED: April 2026 — Phase 76 Fix 67 — filter before truncating
+
+        log.info(f"  Total candidates: {len(all_rules)}")
+        log.info(f"  Unique rules: {len(unique_rules)}")
+
+        # Filter FIRST by confidence and coverage thresholds
+        filtered_rules = []
+        for rule in unique_rules:
+            if rule['confidence'] >= RULE_MIN_CONFIDENCE and rule['coverage'] >= RULE_MIN_TRADE_COVERAGE:
+                filtered_rules.append(rule)
+
+        log.info(f"  Found {len(filtered_rules)} rules meeting thresholds (min confidence: {RULE_MIN_CONFIDENCE}, min coverage: {RULE_MIN_TRADE_COVERAGE})")
+
+        # Sort filtered rules by confidence × coverage (existing scoring approach)
+        filtered_rules.sort(
             key=lambda r: r.get('confidence', 0) * r.get('coverage', 0),
             reverse=True
         )
 
-        rules = unique_rules[:20]
-
-        log.info(f"  Total candidates: {len(all_rules)}")
-        log.info(f"  Unique rules: {len(unique_rules)}")
-        log.info(f"  Keeping top 20 for filtering")
-
-        # Filter rules by confidence and coverage
-        filtered_rules = []
-        for rule in rules:
-            if rule['confidence'] >= RULE_MIN_CONFIDENCE and rule['coverage'] >= RULE_MIN_TRADE_COVERAGE:
-                filtered_rules.append(rule)
-
-        log.info(f"  Found {len(filtered_rules)} high-confidence rules (min confidence: {RULE_MIN_CONFIDENCE}, min coverage: {RULE_MIN_TRADE_COVERAGE})")
+        # THEN truncate to top-20 of the passing rules
+        rules = filtered_rules[:20]
+        log.info(f"  Keeping top {len(rules)} for report (capped at 20)")
 
         # Create rules report
         rules_report_file = os.path.join(output_dir, 'rules_report.txt')

@@ -44,7 +44,18 @@ def save(**kw):
     # Phase 73 Fix 47: Lock around global _current modification + write
     global _current
     with _settings_lock:
-        _current.update({k: v for k, v in kw.items() if k in _DEFAULTS})
+        # WHY (Phase 76 Fix 49): Filtering against _DEFAULTS silently dropped
+        #      new toggle keys added by callers. Adding a new toggle requires
+        #      updating _DEFAULTS first. Now accept any key and warn if unknown.
+        # CHANGED: April 2026 — Phase 76 Fix 49 — accept new keys with warning
+        for k, v in kw.items():
+            if k not in _DEFAULTS:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    f"[feature_toggles] Unknown toggle key '{k}' — adding to _DEFAULTS"
+                )
+                _DEFAULTS[k] = v
+            _current[k] = v
         dir_name = os.path.dirname(_PATH) or '.'
         fd, tmp_path = tempfile.mkstemp(
             suffix='.json', prefix='.tmp_features_', dir=dir_name

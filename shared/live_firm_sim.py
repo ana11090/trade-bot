@@ -355,15 +355,26 @@ def simulate_live_firm(trades, prop_firm_data, account_size=100000,
         estimated_annual = max(0.0, gross_annual - annual_blow_cost)
 
     # ── Determine verdict ────────────────────────────────────────────────
+    # WHY (Phase 76 Fix 20): Absolute blow_count ignores simulation length.
+    #      1 blow in 3 months = ACCEPTABLE. 1 blow in 3 years = also ACCEPTABLE.
+    #      Normalise to blows per year so longer simulations are held to the
+    #      same standard.
+    # CHANGED: April 2026 — Phase 76 Fix 20 — blows-per-year verdict
+    #          (audit Part F MEDIUM #20)
+    _years = max(calendar_days_span / 365.0, 0.25) if calendar_days_span > 0 else 1.0
+    _blows_per_year = blow_count / _years
+
     if blow_count == 0 and payout_cycles_completed >= 3:
         verdict = "EXCELLENT"
     elif blow_count == 0 and payout_cycles_completed >= 1:
         verdict = "GOOD"
-    elif blow_count <= 1 and payout_cycles_completed >= 1:
+    elif _blows_per_year < 0.5 and payout_cycles_completed >= 1:
         verdict = "ACCEPTABLE"
+    elif _blows_per_year < 1.5 and payout_cycles_completed >= 1:
+        verdict = "MARGINAL"
     elif blow_count > 0 and payout_cycles_completed == 0:
         verdict = "RISKY"
-    elif blow_count >= 3:
+    elif _blows_per_year >= 3.0:
         verdict = "DANGEROUS"
     else:
         verdict = "MARGINAL"
@@ -449,13 +460,28 @@ def simulate_all_firms(trades, account_size=100000, **kwargs):
                                         account_size=account_size, **kwargs)
             results.append(result)
         except Exception as e:
+            # WHY (Phase 76 Fix 21): ERROR verdict looks like a real test result.
+            #      Users can't tell if ERROR = strategy failed or file corrupt.
+            #      Add 'error_detail' so callers can distinguish.
+            # CHANGED: April 2026 — Phase 76 Fix 21 — error_detail field
+            firm_name = os.path.basename(fp).replace('.json', '')
+            try:
+                _firm_data = firm_data if 'firm_data' in locals() else {}
+                firm_name = _firm_data.get('firm_name', firm_name)
+            except Exception:
+                pass
             results.append({
-                'firm_name': os.path.basename(fp).replace('.json', ''),
-                'verdict':   'ERROR',
-                'warnings':  [f'Failed to simulate: {e}'],
-                'blow_count': 0, 'payout_cycles_completed': 0,
-                'avg_per_cycle': 0, 'estimated_annual': 0,
-                'lock_day': None, 'payout_period_days': 14,
+                'firm_name':              firm_name,
+                'verdict':                'ERROR',
+                'error_detail':           str(e),
+                'error_type':             type(e).__name__,
+                'warnings':               [f'Failed to simulate: {e}'],
+                'blow_count':             0,
+                'payout_cycles_completed': 0,
+                'avg_per_cycle':          0,
+                'estimated_annual':       0,
+                'lock_day':               None,
+                'payout_period_days':     14,
             })
 
     return results

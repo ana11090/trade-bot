@@ -374,6 +374,16 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
             cal_days_final = (cur_date - phase_start).days + 1
 
             # Consistency check
+            # WHY (Phase 76 Fix 15): `and` meant a firm with consistency_pct
+            #      set but no consistency_type (or vice versa) silently skipped
+            #      the check. Both fields should exist together; if one is
+            #      missing, warn and skip.
+            # CHANGED: April 2026 — Phase 76 Fix 15 — warn on incomplete config
+            if bool(consistency_pct) != bool(consistency_type):
+                log.warning(
+                    "[simulator] consistency_pct and consistency_type must both "
+                    "be set — only one is present; skipping consistency check"
+                )
             if consistency_pct and consistency_type:
                 pos_profits = [p for p in day_profits if p > 0]
                 if pos_profits:
@@ -546,7 +556,15 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
                 _conditions_were_met = payout_conditions_met
 
                 # New period — reset
-                stopped_for_period = False
+                # WHY (Phase 76 Fix 13): Old code always reset stopped_for_period
+                #      when a new payout period started. But if stop_after_conditions_met
+                #      was True (user's intent = stop until manual withdrawal), the
+                #      simulator automatically resumed trading — wrong. Only resume
+                #      if the user didn't explicitly request a permanent stop.
+                # CHANGED: April 2026 — Phase 76 Fix 13 — respect stop intent
+                #          (audit Part F MEDIUM #13)
+                if not stop_after_conditions_met:
+                    stopped_for_period = False
                 payout_conditions_met = False
                 period_daily_pnls = {}
 

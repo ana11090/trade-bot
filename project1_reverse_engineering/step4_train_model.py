@@ -300,10 +300,13 @@ def train_model_for_scenario(scenario):
         f1 = f1_score(y_test, y_pred, zero_division=0)
 
         # ROC-AUC (handle case where only one class is present)
+        # WHY (Phase 76 Fix 59): ROC-AUC undefined for single-class. Old code
+        #      used 0.5 sentinel, but that looks like a poor model. Use None.
+        # CHANGED: April 2026 — Phase 76 Fix 59 — roc_auc=None for single-class
         try:
             roc_auc = roc_auc_score(y_test, y_pred_proba)
         except ValueError:
-            roc_auc = 0.5  # Default for single-class case
+            roc_auc = None  # single-class — metric not applicable
 
         # Training set metrics (for comparison)
         y_train_pred = model.predict(X_train)
@@ -318,7 +321,7 @@ def train_model_for_scenario(scenario):
         log.info(f"    Precision: {precision:.3f}")
         log.info(f"    Recall:    {recall:.3f}")
         log.info(f"    F1 Score:  {f1:.3f}")
-        log.info(f"    ROC-AUC:   {roc_auc:.3f}")
+        log.info(f"    ROC-AUC:   {roc_auc:.3f}" if roc_auc is not None else "    ROC-AUC:   (single-class — not applicable)")
         log.info(f"")
         log.info(f"  Train Set Performance:")
         log.info(f"    Accuracy:  {train_accuracy:.3f} ({train_accuracy*100:.1f}%)")

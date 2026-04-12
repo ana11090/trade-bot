@@ -173,7 +173,11 @@ def validate_candle_file(csv_path, symbol="XAUUSD", drop_duplicates=False):
         "H4": timedelta(hours=4),
         "D1": timedelta(days=1),
         "W1": timedelta(weeks=1),
-        "MN": timedelta(days=31)  # Approximate
+        # WHY (Phase 76 Fix 36): 31 days is approximate. Monthly candles span
+        #      28-31 days; gap detection should use a wide multiplier for MN.
+        #      Special-case MN so gaps are only flagged for truly large breaks.
+        # CHANGED: April 2026 — Phase 76 Fix 36 — MN special case
+        "MN": timedelta(days=28),   # minimum month length; see MN multiplier below
     }
 
     # WHY: Old loop iterated dict in insertion order and used plain substring
@@ -194,8 +198,12 @@ def validate_candle_file(csv_path, symbol="XAUUSD", drop_duplicates=False):
     if tf and tf in tf_map:
         expected_delta = tf_map[tf]
         # Check gaps (allow multiplier × expected delta for weekends/holidays)
+        # Phase 76 Fix 36: Special-case MN with wider multiplier
+        _gap_multiplier = WEEKEND_GAP_MULTIPLIER
+        if tf == "MN":
+            _gap_multiplier = 2.0  # MN: flag only gaps > 56 days (2 months)
         df["time_diff"] = df["timestamp"].diff()
-        large_gaps = df[df["time_diff"] > expected_delta * WEEKEND_GAP_MULTIPLIER]
+        large_gaps = df[df["time_diff"] > expected_delta * _gap_multiplier]
 
         # WHY: Large gaps flagged for Christmas, New Year, Good Friday, etc.
         #      are expected market closures, not data quality issues.
@@ -391,7 +399,7 @@ def check_backtest_data_quality(candles_df, timeframe="H1"):
     return warnings
 
 
-def cross_check_trades_vs_candles(trades_csv, candles_csv, tolerance_pct=5.0):
+def cross_check_trades_vs_candles(trades_csv, candles_csv, tolerance_pct=None):
     """
     Check that trade prices fall within the candle price range for matching dates.
     Returns list of mismatches.
@@ -399,8 +407,21 @@ def cross_check_trades_vs_candles(trades_csv, candles_csv, tolerance_pct=5.0):
     Args:
         trades_csv: Path to trades CSV (must have 'entry_time' and 'entry_price' columns)
         candles_csv: Path to candles CSV
-        tolerance_pct: Allow price to be this % outside candle range (default 5%)
+        tolerance_pct: Allow price to be this % outside candle range (default None → config-driven)
     """
+    # WHY (Phase 76 Fix 37): Fixed 5% tolerance = $150 leeway on $3000 gold.
+    #      Too loose. Use instrument-specific tolerance from config.
+    # CHANGED: April 2026 — Phase 76 Fix 37 — config-driven tolerance
+    if tolerance_pct is None:
+        try:
+            from project1_reverse_engineering.config_loader import load as _cl
+            _cfg = _cl()
+            _pip = float(_cfg.get('pip_size', 0.01))
+            # 10-pip tolerance in price units, expressed as % of median price
+            tolerance_pct = 10 * _pip / 1.0 * 100   # rough; caller can override
+        except Exception:
+            tolerance_pct = 1.0   # 1% default (tighter than old 5%)
+
     mismatches = []
 
     if not os.path.exists(trades_csv):

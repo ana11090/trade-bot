@@ -122,6 +122,15 @@ def shap_analysis_for_scenario(scenario):
             shap_values_win = shap_values[1]
         elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
             # New SHAP: 3D array (samples, features, classes) — slice class 1
+            # WHY (Phase 76 Fix 61): 3D shape is handled, but if SHAP library
+            #      changes indexing semantics, [:,:,1] may break silently. Log
+            #      a warning so users know to verify SHAP outputs after upgrades.
+            # CHANGED: April 2026 — Phase 76 Fix 61 — log unexpected 3D SHAP shape
+            log.warning(
+                f"[step5] SHAP returned 3D array shape {shap_values.shape}. "
+                f"Extracting class 1 (WIN) as [:, :, 1]. If SHAP version changes, "
+                f"this indexing may break. Verify SHAP outputs match expectations."
+            )
             shap_values_win = shap_values[:, :, 1]
         else:
             # 2D array (samples, features) — already what we want

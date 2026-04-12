@@ -120,6 +120,19 @@ def label_trades_for_scenario(scenario):
         feature_matrix = feature_matrix.sort_values('open_time').reset_index(drop=True)
 
         # Split at the specified ratio
+        # WHY (Phase 76 Fix 53): Chronological split is intentional for
+        #      time-series data (prevents look-ahead). BUT if the trader
+        #      changed strategies mid-history, train and test eras don't
+        #      overlap — test accuracy becomes meaningless. Document this
+        #      limitation clearly so users understand the caveat.
+        # CHANGED: April 2026 — Phase 76 Fix 53 — document era-mismatch risk
+        log.info(
+            f"  [step3] Chronological split at {TRAIN_TEST_SPLIT_RATIO*100:.0f}%: "
+            f"first {TRAIN_TEST_SPLIT_RATIO*100:.0f}% = train, last "
+            f"{(1-TRAIN_TEST_SPLIT_RATIO)*100:.0f}% = test. "
+            f"NOTE: if trading style changed across history, test accuracy "
+            f"reflects the new era, not the same strategy as training."
+        )
         split_index = int(len(feature_matrix) * TRAIN_TEST_SPLIT_RATIO)
 
         feature_matrix['dataset'] = 'train'

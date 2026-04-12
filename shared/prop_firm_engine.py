@@ -462,7 +462,14 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
                     f">= {consistency_rule_pct}% limit ({consistency_rule_type})"
                 )
         else:
-            consistency_passed = True  # no positive days — rule trivially passes
+            # WHY (Phase 76 Fix 8): A week with only losses trivially passed
+            #      the consistency rule because there were no positive days to
+            #      check. Semantically: you can't have a "consistent" payout
+            #      week if you never made money. Set to N/A (None) so callers
+            #      can distinguish "no positive days" from "rule passed".
+            # CHANGED: April 2026 — Phase 76 Fix 8 — N/A for losing-only weeks
+            #          (audit Part F MEDIUM #8)
+            consistency_passed = None  # no positive profit to check consistency against
 
     return _build_phase_result(
         phase_name, passed, failure_reason,

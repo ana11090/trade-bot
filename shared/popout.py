@@ -38,7 +38,12 @@ def add_popout_button(panel_frame, panel_title, build_fn):
 
 def _open_popout(title, build_fn):
     """Open a new top-level window with the panel content."""
-    win = tk.Toplevel()
+    # WHY (Phase 76 Fix 50): Toplevel without a master is orphaned from
+    #      the main app. Closing main app leaves the popout alive.
+    # CHANGED: April 2026 — Phase 76 Fix 50 — parent reference
+    import state as _state
+    _parent = getattr(_state, 'window', None)
+    win = tk.Toplevel(_parent)
     win.title(f"Trade Bot — {title}")
     win.geometry("1200x800")
     win.minsize(800, 600)

@@ -186,7 +186,10 @@ def compute_all_indicators(candles_df, prefix=""):
     indicators[f'{prefix}position_in_swing_range'] = (candles_df['close'] - indicators[f'{prefix}swing_low_{swing_period}']) / swing_range.replace(0, np.nan)
 
     # GROUP O — Momentum & Rate of Change (5 features)
-    for period in [1, 5, 10, 20, 50]:
+    # WHY (Phase 76 Fix 28): roc_1 is identical to close.pct_change() —
+    #      pure noise that adds in-sample overfitting. Start at period=5.
+    # CHANGED: April 2026 — Phase 76 Fix 28 — skip roc_1
+    for period in [5, 10, 20, 50]:
         indicators[f'{prefix}roc_{period}'] = ((candles_df['close'] - candles_df['close'].shift(period)) / candles_df['close'].shift(period) * 100)
 
     # GROUP P — Session & Time Features (8 features)
@@ -523,13 +526,21 @@ def map_rule_indicators_to_compute_groups(indicator_names):
         if name in INDICATOR_GROUP_MAP:
             groups.add(INDICATOR_GROUP_MAP[name])
             continue
-        matched = False
-        for key, group in INDICATOR_GROUP_MAP.items():
-            if name.startswith(key):
-                groups.add(group)
-                matched = True
-                break
-        if not matched:
+        # WHY (Phase 76 Fix 29): First-match-wins on dict insertion order is
+        #      fragile. If two keys match (e.g. 'rsi' and 'rsi_zone'), the
+        #      result depends on dict order. Log when the fallback fires.
+        # CHANGED: April 2026 — Phase 76 Fix 29 — warn on ambiguous match
+        _matched = [(key, group) for key, group in INDICATOR_GROUP_MAP.items()
+                    if name.startswith(key)]
+        if len(_matched) > 1:
+            import logging as _log
+            _log.getLogger(__name__).debug(
+                f"[indicator_utils] '{name}' matches multiple groups: "
+                f"{_matched} — using first"
+            )
+        if _matched:
+            groups.add(_matched[0][1])
+        else:
             groups.add(name.split('_')[0])
     if 'fib' in groups:
         groups.add('swing')
@@ -683,7 +694,8 @@ def compute_indicators(df, only=None, prefix=""):
 
     # GROUP O — Rate of Change
     if only is None or 'roc' in only:
-        for period in [1, 5, 10, 20, 50]:
+        # Phase 76 Fix 28: skip roc_1 (same as above)
+        for period in [5, 10, 20, 50]:
             indicators[f'{prefix}roc_{period}'] = (
                 (df['close'] - df['close'].shift(period)) / df['close'].shift(period) * 100)
 
