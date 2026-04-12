@@ -566,8 +566,25 @@ def extract_rules(df, model_result):
                     else:
                         mask &= col_vals > cond['value']
 
-                matching_pips = (df.loc[mask.values, 'pips']
-                                 if 'pips' in df.columns else pd.Series([0]))
+                # WHY (Phase A.2 hotfix): Phase 41 Fix 1b changed X to
+                #      X_train (884 rows = train slice of 1106). mask is
+                #      built from X.index so it is also 884 rows long.
+                #      The old code passed mask.values (a bare 884-length
+                #      bool array) into df.loc where df is the FULL 1106-
+                #      row feature matrix, raising
+                #          IndexError: Boolean index has wrong length:
+                #                      884 instead of 1106
+                #      Fix: use label-based indexing — mask[mask].index
+                #      gives the actual row labels where mask is True, and
+                #      df.loc[labels, 'pips'] selects them correctly from
+                #      df regardless of how X_train relates to df (works
+                #      even if the split were non-chronological in future).
+                # CHANGED: April 2026 — Phase A.2 — label-based indexing
+                if 'pips' in df.columns:
+                    _matching_labels = mask[mask].index
+                    matching_pips = df.loc[_matching_labels, 'pips']
+                else:
+                    matching_pips = pd.Series([0])
 
                 rules.append({
                     'conditions':   conditions.copy(),
