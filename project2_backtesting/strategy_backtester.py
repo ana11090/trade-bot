@@ -1456,7 +1456,15 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         log.warning("\nDATA QUALITY WARNINGS:")
         for w in dq_warnings:
             log.info(f"  [{w['severity'].upper()}] {w['message']}")
-        log.info()
+        # WHY (Phase A.4 hotfix): old code was `log.info()` with no args —
+        #      a leftover from the print()→log.info() conversion pass
+        #      documented in shared/logging_setup.py. logger.info()
+        #      requires msg as a positional argument and raised
+        #      TypeError: info() missing 1 required positional argument: 'msg'
+        #      the moment dq_warnings was non-empty. Log an empty string
+        #      as a blank-line separator to preserve the original intent.
+        # CHANGED: April 2026 — Phase A.4
+        log.info("")
 
     # ── Load rules first — needed to extract required indicators ────────────
     all_rules = load_rules_from_report(report_path)
