@@ -28,6 +28,11 @@ _data_status_frame = None
 import threading as _threading
 _running = False
 _running_lock = _threading.Lock()
+# WHY (Phase 57 Fix 5): sys.stdout redirect is global — daemon threads that
+#      print during a step's redirect window lose their output. Serialise
+#      the redirect with a second lock.
+# CHANGED: April 2026 — Phase 57 Fix 5 — stdout redirect lock (#91)
+_stdout_lock = _threading.Lock()
 
 # WHY (Phase 49 Fix 4b): Module-level step1 run cache for persistent
 #      run tracking across button clicks. Keyed by output_dir so
@@ -471,7 +476,6 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                     try:
                         import io
-                        old_stdout = sys.stdout
                         # WHY (Phase 54 Fix 6): Old code used StringIO
                         #      which (a) grows unbounded and (b) doesn't
                         #      restore stdout if the step raises mid-run,
@@ -497,13 +501,15 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                                 pass
                             def getvalue(self):
                                 return '\n'.join(self._lines)
-                        _saved_stdout = sys.stdout
-                        sys.stdout = buffer = _BoundedBuf(max_lines=2000)
-                        try:
-                            success = step_func(scenario)
-                        finally:
-                            sys.stdout = old_stdout
-                            captured = buffer.getvalue()
+                        # Phase 57 Fix 5: serialise stdout redirect
+                        with _stdout_lock:
+                            old_stdout = sys.stdout
+                            sys.stdout = buffer = _BoundedBuf(max_lines=2000)
+                            try:
+                                success = step_func(scenario)
+                            finally:
+                                sys.stdout = old_stdout
+                                captured = buffer.getvalue()
 
                         if captured:
                             for line in captured.split('\n'):

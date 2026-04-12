@@ -460,13 +460,16 @@ def check_all_data(output_text, trade_status_label, price_status_label, silent=F
             if not silent:
                 output_text.insert(tk.END, f"  ✗ {tf}: not found ({fp})\n")
 
+    _total = len(timeframes)
     if not silent:
-        output_text.insert(tk.END, f"\n{found}/4 timeframe files found.\n")
+        output_text.insert(tk.END, f"\n{found}/{_total} timeframe files found.\n")
 
-    if found == 4:
-        price_status_label.config(text=f"✓ Price Data: all 4 timeframes found", fg="#27ae60")
+    if found == _total:
+        price_status_label.config(
+            text=f"✓ Price Data: all {_total} timeframes found", fg="#27ae60")
     elif found > 0:
-        price_status_label.config(text=f"⚠️  Price Data: {found}/4 timeframes found", fg="#f39c12")
+        price_status_label.config(
+            text=f"⚠️  Price Data: {found}/{_total} timeframes found", fg="#f39c12")
     else:
         price_status_label.config(text="⚠️  Price Data: no files found", fg="#e74c3c")
 

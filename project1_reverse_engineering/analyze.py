@@ -454,6 +454,14 @@ def extract_rules(df, model_result):
     y            = model_result.get('y_train', model_result['y'])
     feature_cols = model_result['feature_cols']
 
+    # WHY (Phase 57 Fix 3): read rule_min_confidence from config so the
+    #      user's panel setting actually takes effect.
+    try:
+        import config_loader as _cl
+        _min_confidence = float(_cl.load().get('rule_min_confidence', '0.55'))
+    except Exception:
+        _min_confidence = 0.55
+
     tree = DecisionTreeClassifier(
         max_depth=5,
         min_samples_leaf=20,
@@ -477,16 +485,16 @@ def extract_rules(df, model_result):
             confidence = max(win_count, loss_count) / total if total > 0 else 0
             win_rate   = win_count / total if total > 0 else 0
 
-            # WHY (Phase 51 Fix 5): Old code hardcoded 0.55 as the
-            #      confidence floor. Panel users could pass
-            #      min_win_rate via model_result['min_confidence']
-            #      but the function ignored it. Read it now so the
-            #      panel can require stricter rules without editing
-            #      this file.
-            # CHANGED: April 2026 — Phase 51 Fix 5 — configurable floor
-            #          (audit Part D MED #48)
-            _min_conf = float(model_result.get('min_confidence', 0.55))
-            if samples >= 15 and confidence >= _min_conf:
+            # WHY (Phase 57 Fix 3): Old code hardcoded 0.55, which is LOWER
+            #      than the configured default (rule_min_confidence=0.65).
+            #      Users who raised their threshold in the panel still got
+            #      low-confidence rules. Read from config_loader; fall back
+            #      to 0.55 only if config cannot be loaded (safe default).
+            #      WARNING: raises the floor for most users (0.55→0.65),
+            #      which will produce fewer rules — quality over quantity.
+            # CHANGED: April 2026 — Phase 57 Fix 3 — config-driven confidence floor
+            #          (audit Part D MEDIUM #48)
+            if samples >= 15 and confidence >= _min_confidence:
                 mask = pd.Series(True, index=X.index)
                 for cond in conditions:
                     col_vals = X[cond['feature']]
@@ -650,26 +658,22 @@ def analyze_market_regimes(df, model_result):
     adx_col = next((c for c in ['H4_adx_14', 'H1_adx_14', 'D1_adx_14']
                     if c in df.columns and df[c].notna().sum() > 100), None)
     if adx_col:
-        # WHY (Phase 51 Fix 4): Old code hardcoded ADX > 25 as the
-        #      "trending" boundary. 25 is the textbook DMI/ADX cutoff
-        #      for forex majors but is wrong for low-volatility pairs
-        #      (EURGBP rarely > 25 → all rows always "ranging") and
-        #      for crypto/indices (often > 25 → all rows always
-        #      "trending"). Use the column's own median as the
-        #      instrument-specific boundary — gives a balanced
-        #      trending/ranging split for any instrument.
-        # CHANGED: April 2026 — Phase 51 Fix 4 — instrument-agnostic boundary
-        #          (audit Part D MED #47)
+        # WHY (Phase 57 Fix 4b): Old code hardcoded ADX > 25 — correct for
+        #      XAUUSD but wrong for instruments that rarely/always trend at
+        #      that level. Read adx_trend_threshold from config; default 25.
+        # CHANGED: April 2026 — Phase 57 Fix 4b — configurable ADX threshold
+        #          (audit Part D MEDIUM #47)
         try:
-            _adx_median = float(df[adx_col].dropna().median())
-            _adx_threshold = max(20.0, _adx_median)  # never below 20
+            import config_loader as _cl4
+            _adx_thr = float(_cl4.load().get('adx_trend_threshold', '25'))
         except Exception:
-            _adx_threshold = 25.0
-        trending = df[adx_col] > _adx_threshold
+            _adx_thr = 25.0
+        trending = df[adx_col] > _adx_thr
         regimes['trend'] = {
             'trending':       _perf(trending),
             'ranging':        _perf(~trending),
             'indicator_used': adx_col,
+            'adx_threshold':  _adx_thr,
         }
 
     # Volatility regime (ATR)

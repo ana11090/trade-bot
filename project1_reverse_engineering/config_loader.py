@@ -47,6 +47,14 @@ DEFAULTS = {
     'rule_min_confidence':       '0.65',
     'rule_min_coverage':         '5',
     'match_rate_threshold':      '0.70',
+
+    # ── Regime Analysis ───────────────────────────────────────────────────────
+    # WHY (Phase 57 Fix 4): ADX 25 was hardcoded in analyze.py. That works
+    #      for XAUUSD but not for EURGBP (always ranging) or BTCUSD (always
+    #      trending). Expose as a config value. Default 25 preserves old behaviour.
+    # CHANGED: April 2026 — Phase 57 Fix 4a — ADX threshold to config
+    #          (audit Part D MEDIUM #47)
+    'adx_trend_threshold':       '25',
 }
 
 

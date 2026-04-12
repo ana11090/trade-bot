@@ -182,7 +182,14 @@ def _run_search(mode):
 
             # Read UI settings
             tf_filter = [tf for tf, var in _tf_vars.items() if var.get()]
-            if len(tf_filter) == 5:
+            # WHY (Phase 58 Fix 5): Old code hardcoded the check to 5,
+            #      to detect "all selected = no filter". If the TF list
+            #      ever has 4 or 6 entries (e.g. user added D1 or removed
+            #      M5), the shortcut never triggers and the full list is
+            #      passed unnecessarily to strategy_search.
+            # CHANGED: April 2026 — Phase 58 Fix 5 — compare against actual TF count
+            #          (audit Part D HIGH #70)
+            if len(tf_filter) == len(_tf_vars):
                 tf_filter = None  # All selected = no filter
 
             max_conds = int(_max_conds_var.get())

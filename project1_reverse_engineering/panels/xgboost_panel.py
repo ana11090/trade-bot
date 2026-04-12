@@ -584,6 +584,24 @@ def _on_run():
 
 
 def _on_activate():
+    # WHY (Phase 58 Fix 6): Old code overwrote analysis_report.json
+    #      (and the DT rules inside it) with one accidental click.
+    #      "Restore Original Rules" only works if the backup exists —
+    #      and there was no warning before the overwrite happened.
+    #      Add a confirmation dialog so the user understands what is
+    #      about to change before it does.
+    # CHANGED: April 2026 — Phase 58 Fix 6 — confirm before overwriting rules
+    #          (audit Part D HIGH #76)
+    confirmed = messagebox.askyesno(
+        "Confirm: Use XGBoost Rules",
+        "This will REPLACE the current Decision Tree rules in\n"
+        "analysis_report.json with the XGBoost rules.\n\n"
+        "The original rules will be backed up and can be restored\n"
+        "with 'Restore Original Rules'.\n\n"
+        "Continue?",
+    )
+    if not confirmed:
+        return
     p1_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     sys.path.insert(0, p1_path)
     from xgboost_discovery import activate_xgboost_rules

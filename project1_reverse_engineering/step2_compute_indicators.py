@@ -108,54 +108,42 @@ def compute_features(aligned_trades_path=None, output_dir=None):
         # NOTE: trade_duration_minutes and is_winner are NOT added here.
         # If you need them for analysis, compute them from trades_df at point of use.
 
-        # Handle different possible column names for direction
-        # WHY (Phase 52 Fix 2): Old code mapped only {'Buy', 'Sell',
-        #      'buy', 'sell'}. Trades with action='Long', 'BUY_LIMIT',
-        #      'Buy Limit', 'BUY ' (trailing space), 'short', 'SELL',
-        #      etc. became NaN → downstream ML fillna(median)=0 →
-        #      models silently learned that 0 means "some kind of
-        #      trade." Build a richer normalizer that handles
-        #      whitespace, case, and common variants, then warn on
-        #      anything it can't classify so the user knows there's
-        #      a data-quality issue.
-        # CHANGED: April 2026 — Phase 52 Fix 2 — robust direction map
-        #          (audit Part D MED #37)
-        def _normalize_direction(raw):
-            if raw is None:
-                return 0
-            try:
-                s = str(raw).strip().upper()
-            except Exception:
-                return 0
-            if 'BUY' in s or 'LONG' in s:
-                return 1
-            if 'SELL' in s or 'SHORT' in s:
-                return -1
-            return 0  # unmapped — will be flagged below
-
-        _direction_col = None
+        # WHY (Phase 57 Fix 2): Old map only handled 'Buy'/'Sell'/'buy'/'sell'.
+        #      Brokers export trade type in many spellings: Long/Short,
+        #      BUY_LIMIT/SELL_LIMIT, 'Buy Limit'/'Sell Stop', etc.
+        #      Unmapped values became NaN, which fillna(median)=0 converted to
+        #      "neutral" — silent direction leakage into the feature matrix.
+        #      Expand the map to cover all known MT5/broker variants.
+        #      Remaining unknowns are inferred from pips sign, then 0.
+        # CHANGED: April 2026 — Phase 57 Fix 2 — expanded direction map
+        #          (audit Part D MEDIUM #37)
+        _DIR_MAP = {
+            # Standard MT5 spellings
+            'Buy': 1, 'Sell': -1, 'buy': 1, 'sell': -1,
+            'BUY': 1, 'SELL': -1,
+            # Positional / prop-firm exports
+            'Long': 1, 'Short': -1, 'long': 1, 'short': -1,
+            'LONG': 1, 'SHORT': -1,
+            # Pending order labels (direction still applies to the fill)
+            'Buy Limit': 1,  'Sell Limit': -1,
+            'Buy Stop':  1,  'Sell Stop':  -1,
+            'BUY_LIMIT': 1,  'SELL_LIMIT': -1,
+            'BUY_STOP':  1,  'SELL_STOP':  -1,
+        }
+        _src_col = None
         if 'action' in trades_df.columns:
-            _direction_col = 'action'
+            _src_col = trades_df['action']
         elif 'type' in trades_df.columns:
-            _direction_col = 'type'
+            _src_col = trades_df['type']
 
-        if _direction_col is not None:
-            feature_matrix['trade_direction'] = trades_df[_direction_col].apply(_normalize_direction)
-            # Surface unmapped values as a warning so users see data quality issues
-            _unmapped = trades_df[_direction_col][feature_matrix['trade_direction'] == 0]
-            _unmapped_unique = _unmapped.dropna().unique()
-            if len(_unmapped_unique) > 0:
-                log.warning(
-                    f"  [STEP2] {len(_unmapped)} trades have unrecognized "
-                    f"{_direction_col!r} values: {sorted(set(str(v) for v in _unmapped_unique))[:10]}. "
-                    f"They were mapped to 0 (no direction). Add the variant to "
-                    f"_normalize_direction in step2_compute_indicators.py."
-                )
+        if _src_col is not None:
+            _mapped = _src_col.map(_DIR_MAP)
+            # Infer remaining NaN from pips sign if available
+            if _mapped.isna().any() and 'pips' in trades_df.columns:
+                _pip_sign = np.sign(trades_df['pips'].fillna(0)).replace(0, np.nan)
+                _mapped = _mapped.fillna(_pip_sign)
+            feature_matrix['trade_direction'] = _mapped.fillna(0).astype(int)
         else:
-            log.warning(
-                "  [STEP2] Neither 'action' nor 'type' column present in trades — "
-                "trade_direction set to 0 for all rows."
-            )
             feature_matrix['trade_direction'] = 0
 
         log.info(f"    Added {5} auto-detected features")
@@ -219,33 +207,41 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                 full_indicators_df = indicator_utils.compute_all_indicators(
                     candles_df, prefix=f'{tf}_'
                 )
-                # WHY (Phase 45 Fix 3): The lookup below uses .iloc[candle_idx]
-                #      which is positional. If compute_all_indicators
-                #      returned a non-RangeIndex (e.g., DatetimeIndex from
-                #      internal reindex), the positional lookup is wrong.
-                #      Reset to RangeIndex defensively.
-                # CHANGED: April 2026 — Phase 45 Fix 3 — RangeIndex guard
+                # WHY (Phase 58 Fix 3): compute_all_indicators may reset or
+                #      reindex the DataFrame internally. iloc[candle_idx]
+                #      below is positional — if the index is not a clean
+                #      0..N-1 range the wrong row is fetched silently.
+                #      Force-reset the index here so the positional lookup
+                #      is always correct.
+                # CHANGED: April 2026 — Phase 58 Fix 3 — explicit index reset
                 #          (audit Part D HIGH #35)
-                if not isinstance(full_indicators_df.index, pd.RangeIndex):
-                    full_indicators_df = full_indicators_df.reset_index(drop=True)
+                full_indicators_df = full_indicators_df.reset_index(drop=True)
                 t1 = time.time()
                 log.info(f"    Computed {len(full_indicators_df.columns)} indicators in {t1-t0:.1f}s")
             except Exception as e:
-                # WHY (Phase 45 Fix 2): Old fallback assigned empty dicts
-                #      → empty columns → downstream analyze.py iterated
-                #      EXISTING columns and silently skipped this TF
-                #      entirely. No indication to the user that the TF
-                #      failed. Log a loud warning and write a sentinel
-                #      column so analyze.py can detect the failure.
-                # CHANGED: April 2026 — Phase 45 Fix 2 — visible TF failure
+                # WHY (Phase 58 Fix 2): Old error was only logged at ERROR
+                #      level — the GUI never shows it, so users had no idea
+                #      why an entire TF's features were missing from their
+                #      analysis. Promote to a prominent WARNING with the TF
+                #      name and exception, and track which TFs failed so
+                #      run_analysis can surface them in the report.
+                # CHANGED: April 2026 — Phase 58 Fix 2 — visible TF failure
                 #          (audit Part D HIGH #34)
-                log.error(f"     computing indicators for {tf}: {e}")
-                log.warning(
-                    f"    [STEP2] {tf}: ENTIRE TIMEFRAME FAILED — no "
-                    f"{tf}_* features in the feature matrix. Downstream "
-                    f"models will silently skip this TF."
+                import traceback as _tb
+                log.error(
+                    f"\n{'='*60}\n"
+                    f"  STEP 2 ERROR — {tf} indicators FAILED\n"
+                    f"  All {tf}_* features will be MISSING from the\n"
+                    f"  feature matrix. This TF cannot be analysed.\n"
+                    f"  Exception: {e}\n"
+                    f"  {_tb.format_exc().strip()}\n"
+                    f"{'='*60}\n"
                 )
-                feature_matrix[f'{tf}_compute_failed'] = 1
+                # Track failed TFs at module level so callers can warn users
+                if not hasattr(compute_features, '_failed_tfs'):
+                    compute_features._failed_tfs = []
+                compute_features._failed_tfs.append(tf)
+                # No features added — just skip this TF
                 continue
 
             # Now look up each trade's row from the precomputed dataframe

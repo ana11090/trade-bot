@@ -261,8 +261,21 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
 
         log.info(f"  Loading trades from: {os.path.basename(trades_csv_path)}")
 
-        # Load trades
-        trades_df = pd.read_csv(trades_csv_path)
+        # WHY (Phase 58 Fix 1): pd.read_csv with no dtype= lets pandas
+        #      infer types. A single stray string or #N/A in the timestamp
+        #      column promotes the whole column from datetime to object,
+        #      which pd.to_datetime then converts to NaT silently.
+        #      merge_asof on NaT timestamps fails in confusing ways — trades
+        #      are silently dropped. Force timestamp columns to str so
+        #      pd.to_datetime gets the raw text and can produce useful errors.
+        # CHANGED: April 2026 — Phase 58 Fix 1 — explicit dtype for timestamp cols
+        #          (audit Part D HIGH #29)
+        trades_df = pd.read_csv(
+            trades_csv_path,
+            dtype={'Open Date': str, 'Close Date': str,
+                   'open_time': str, 'close_time': str},
+            low_memory=False,
+        )
 
         # Normalize column names (handle different CSV formats)
         column_mapping = {

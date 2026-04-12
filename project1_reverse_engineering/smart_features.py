@@ -492,8 +492,17 @@ def _add_price_action(df):
         _valid_mask = price_for_round > 0
         _dist50  = np.full(len(df), 0.5, dtype=float)
         _dist100 = np.full(len(df), 0.5, dtype=float)
-        _dist50[_valid_mask]  = np.abs(price_for_round[_valid_mask] % 50  - 25) / 25
-        _dist100[_valid_mask] = np.abs(price_for_round[_valid_mask] % 100 - 50) / 50
+        # WHY (Phase 57 Fix 1): Old formula abs(price % 50 - 25) / 25 was
+        #      mathematically inverted — it returned 1.0 when price was AT
+        #      a round-50 level (e.g. 2000) and 0.0 when halfway between
+        #      round levels (e.g. 2025). The feature name says "distance to
+        #      round level" so near = low, far = high. Fix: subtract from 1.
+        #      WARNING: flips the meaning of existing rules using these
+        #      features — retrain after applying.
+        # CHANGED: April 2026 — Phase 57 Fix 1 — correct distance formula
+        #          (audit Part D MEDIUM #19)
+        _dist50[_valid_mask]  = 1.0 - np.abs(price_for_round[_valid_mask] % 50  - 25) / 25
+        _dist100[_valid_mask] = 1.0 - np.abs(price_for_round[_valid_mask] % 100 - 50) / 50
         df['SMART_dist_to_round_50']  = _dist50
         df['SMART_dist_to_round_100'] = _dist100
 
