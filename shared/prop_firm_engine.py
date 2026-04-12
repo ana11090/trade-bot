@@ -142,7 +142,18 @@ def _prepare_trades(trades_df, daily_reset_tz=None):
     """
     import pandas as pd
     df = trades_df.copy()
-    df["_close_dt"] = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
+    # WHY (Phase 70 Fix 5): dayfirst=True only parses DD/MM/YYYY correctly.
+    #      US-format CSVs (MM/DD/YYYY) get silently misparsed — 01/02/2024
+    #      becomes Feb 1 instead of Jan 2. Use format='mixed' (pandas 2.0+)
+    #      which auto-detects per-value; fall back to dayfirst=True parsing.
+    # CHANGED: April 2026 — Phase 70 Fix 5 — format='mixed' for robustness
+    #          (audit Part F HIGH #5)
+    try:
+        df["_close_dt"] = pd.to_datetime(df["Close Date"], format='mixed',
+                                         dayfirst=True, errors="coerce")
+    except TypeError:
+        # pandas < 2.0 doesn't support format='mixed'
+        df["_close_dt"] = pd.to_datetime(df["Close Date"], dayfirst=True, errors="coerce")
 
     if daily_reset_tz and daily_reset_tz.upper() != 'UTC':
         # WHY: Shift close times into the firm's reset timezone, then
@@ -225,7 +236,12 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
 
     profit_target_pct     = phase_config.get("profit_target_pct") or 0.0
     max_daily_dd_pct      = phase_config.get("max_daily_drawdown_pct")   # may be None
-    max_total_dd_pct      = phase_config.get("max_total_drawdown_pct") or 999.0
+    # WHY (Phase 70 Fix 4): Old code used 999.0 as a sentinel for "no DD limit".
+    #      Any firm with a literal limit ≥ 999% (or 998.5%) would be silently
+    #      treated as no-limit. Use None as the canonical "no limit" sentinel.
+    # CHANGED: April 2026 — Phase 70 Fix 4 — None sentinel for no-limit DD
+    #          (audit Part F HIGH #4)
+    max_total_dd_pct      = phase_config.get("max_total_drawdown_pct") or None
     drawdown_type         = phase_config.get("drawdown_type", "static")
     min_trading_days      = phase_config.get("min_trading_days") or 0
     consistency_rule_pct  = phase_config.get("consistency_rule_pct")
@@ -250,7 +266,8 @@ def _check_phase(df, phase_config: dict, account_size: float, start_idx: int,
     profit_target_abs = account_size * profit_target_pct / 100.0
     # WHY: Track DD floor explicitly so lock-after-gain breach math is correct.
     # CHANGED: April 2026 — explicit floor variable
-    dd_floor  = account_size * (1.0 - max_total_dd_pct / 100.0) if max_total_dd_pct < 999.0 else 0.0
+    # Phase 70 Fix 4: None means no total DD limit → floor = 0 (unreachable)
+    dd_floor  = account_size * (1.0 - max_total_dd_pct / 100.0) if max_total_dd_pct is not None else 0.0
 
     daily_breakdown   = []
     max_daily_dd_hit  = 0.0
@@ -588,7 +605,15 @@ def check_compliance_all_firms(trades_df, account_size: Optional[int] = None) ->
             sizes = firm.list_account_sizes(challenge_id)
             if not sizes:
                 continue
-            size = account_size if (account_size and account_size in sizes) else sizes[len(sizes) // 2]
+            # WHY (Phase 70 Fix 7): Old code picked the middle account size
+            #      (sizes[len//2]) when the requested size wasn't in the list.
+            #      For [10k,25k,50k,100k,200k] that's $50k — a user expecting
+            #      $100k results gets $50k silently. Use the LARGEST available
+            #      size as the default (most common real-world scenario: max
+            #      funded account). User can always pass account_size explicitly.
+            # CHANGED: April 2026 — Phase 70 Fix 7 — largest size as default
+            #          (audit Part F HIGH #7)
+            size = account_size if (account_size and account_size in sizes) else sizes[-1]
             result = check_compliance(trades_df, firm_id, challenge_id, size)
             if result is not None:
                 results.append(result)
@@ -614,7 +639,8 @@ def get_compliance_matrix(trades_df, firm_ids=None, account_size: Optional[int] 
             sizes = firm.list_account_sizes(challenge_id)
             if not sizes:
                 continue
-            size = account_size if (account_size and account_size in sizes) else sizes[len(sizes) // 2]
+            # Phase 70 Fix 7: largest size as default (see earlier occurrence for full WHY)
+            size = account_size if (account_size and account_size in sizes) else sizes[-1]
             result = check_compliance(trades_df, firm_id, challenge_id, size)
             if result is None:
                 continue
