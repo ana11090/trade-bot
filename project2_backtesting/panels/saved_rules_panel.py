@@ -192,7 +192,21 @@ def _delete_one(rule_id, inner, canvas, window_id):
 
 
 def _delete_all(inner, canvas, window_id):
-    if messagebox.askyesno("Delete All", "Delete all saved rules?"):
+    # WHY (Phase 69 Fix 45): Old dialog said "Delete all saved rules?" without
+    #      telling the user how many. A user with 50 carefully bookmarked rules
+    #      might click OK thinking there were only a few. Show the count.
+    # CHANGED: April 2026 — Phase 69 Fix 45 — show count in delete dialog
+    #          (audit Part E LOW #45)
+    try:
+        from shared.saved_rules import load_all
+        _count = len(load_all())
+    except Exception:
+        _count = 0
+    _noun = "rule" if _count == 1 else "rules"
+    if messagebox.askyesno(
+        "Delete All",
+        f"Delete all {_count} saved {_noun}?\n\nThis cannot be undone."
+    ):
         from shared.saved_rules import delete_all
         delete_all()
         _refresh_list(inner, canvas, window_id)
@@ -238,12 +252,22 @@ def _activate_selected(inner, canvas, window_id):
       #      from analysis_report.json. If all saved rules share the same TF, set it.
       #      If mixed, set 'multi' so downstream tools know to check per-row entry_tf.
       # CHANGED: April 2026 — multi-TF support
+      # WHY (Phase 69 Fix 46): Old code only handled 1 or 2+ TFs. When all saved
+      #      rules lack entry_tf (e.g. from an older analysis_report.json), rule_tfs
+      #      is empty and current['entry_timeframe'] kept its previous stale value.
+      #      Downstream tools then ran the backtest on the wrong timeframe.
+      # CHANGED: April 2026 — Phase 69 Fix 46 — handle zero-TF case explicitly
+      #          (audit Part E LOW #46)
       rule_tfs = sorted(set(r.get('entry_tf', '') for r in rules if r.get('entry_tf', '')))
       if len(rule_tfs) == 1:
           current['entry_timeframe'] = rule_tfs[0]
       elif len(rule_tfs) > 1:
           current['entry_timeframe'] = 'multi'
           current['tested_timeframes'] = rule_tfs
+      else:
+          # No entry_tf on any rule — remove stale TF so downstream uses its own default
+          current.pop('entry_timeframe', None)
+          current.pop('tested_timeframes', None)
 
       with open(report_path, 'w', encoding='utf-8') as f:
           json.dump(current, f, indent=2, default=str)

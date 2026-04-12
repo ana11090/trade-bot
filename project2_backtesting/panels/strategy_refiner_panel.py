@@ -1173,6 +1173,20 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     windows_pass = 0
                     window_profits = []
 
+                    # WHY (Phase 69 Fix 17): Old code re-read consistency_limit
+                    #      and min_profit_days from firm_data on every window
+                    #      iteration — O(N×rules) per simulation. Hoist once.
+                    # CHANGED: April 2026 — Phase 69 Fix 17 — hoist firm rule lookup
+                    #          (audit Part E MEDIUM #17)
+                    consistency_limit = 20  # default
+                    min_profit_days   = 3   # default
+                    if firm_data:
+                        for _fr in firm_data.get('trading_rules', []):
+                            if _fr.get('type') == 'consistency':
+                                consistency_limit = _fr.get('parameters', {}).get('max_day_pct', 20)
+                            elif _fr.get('type') == 'min_profitable_days':
+                                min_profit_days = _fr.get('parameters', {}).get('min_days', 3)
+
                     for start_i in range(0, len(days_sorted) - 5, 7):  # step by 7 days
                         # Get 14-day window
                         start_day = pd.to_datetime(days_sorted[start_i])
@@ -1199,16 +1213,8 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                         min_threshold = (acct or 100000) * 0.005
                         profitable_days = sum(1 for v in window_pnls.values() if v >= min_threshold)
 
-                        # Read consistency rule from firm
-                        consistency_limit = 20  # default
-                        min_profit_days = 3     # default
-                        if firm_data:
-                            trading_rules = firm_data.get('trading_rules', [])
-                            for rule in trading_rules:
-                                if rule.get('type') == 'consistency':
-                                    consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
-                                elif rule.get('type') == 'min_profitable_days':
-                                    min_profit_days = rule.get('parameters', {}).get('min_days', 3)
+                        # Phase 69 Fix 17: consistency_limit and min_profit_days
+                        # now hoisted outside the loop (before 'for start_i')
 
                         windows_total += 1
                         net_window = sum(window_pnls.values())

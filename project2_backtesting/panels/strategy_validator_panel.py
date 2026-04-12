@@ -166,8 +166,26 @@ _windows_var        = None
 _recent_first_var   = None
 _custom_windows_var = None
 _sims_var           = None
+_slip_levels_var    = None  # Phase 69 Fix 27: configurable slippage levels
 _mc_firm_var        = None
 _stage_var          = None
+
+
+def _get_slippage_levels():
+    """Return slippage levels list from UI entry, or defaults."""
+    # WHY: Old code hardcoded [0,1,2,3,5]. Now reads from _slip_levels_var if set.
+    # CHANGED: April 2026 — Phase 69 Fix 27
+    default = [0, 1, 2, 3, 5]
+    if _slip_levels_var is None:
+        return default
+    try:
+        raw = _slip_levels_var.get().strip()
+        if not raw:
+            return default
+        parsed = [int(x.strip()) for x in raw.split(',') if x.strip().isdigit()]
+        return sorted(set(parsed)) if parsed else default
+    except Exception:
+        return default
 _account_var        = None
 _spread_var         = None
 _comm_var           = None
@@ -2343,10 +2361,28 @@ def _run(mode, override_idx=None, done_event=None):
                         test_part = test_part.strip()
                         if '-' in train_part:
                             t_start, t_end = train_part.split('-', 1)
+                            t_start = t_start.strip()
+                            t_end   = t_end.strip()
+                            # WHY (Phase 69 Fix 26): Old code silently accepted
+                            #      inverted windows (train_start > train_end).
+                            #      walk_forward_validate then either crashed or
+                            #      produced zero windows with no explanation.
+                            # CHANGED: April 2026 — Phase 69 Fix 26 — validate bounds
+                            #          (audit Part E MEDIUM #26)
+                            try:
+                                if t_start >= t_end:
+                                    messagebox.showwarning(
+                                        "Invalid Window",
+                                        f"Custom window '{part}': train_start ({t_start}) "
+                                        f"must be before train_end ({t_end}). Skipping."
+                                    )
+                                    continue
+                            except Exception:
+                                pass
                             custom_windows.append({
-                                'train_start': t_start.strip(),
-                                'train_end': t_end.strip(),
-                                'test_year': test_part.strip(),
+                                'train_start': t_start,
+                                'train_end':   t_end,
+                                'test_year':   test_part.strip(),
                             })
                 if custom_windows:
                     print(f"[VALIDATOR] {len(custom_windows)} custom window(s) will be ADDED to auto windows")
@@ -2389,7 +2425,13 @@ def _run(mode, override_idx=None, done_event=None):
                     candles_path=candles_path,
                     exit_strategy_class=exit_class,
                     exit_strategy_params=exit_params,
-                    slippage_levels=[0, 1, 2, 3, 5],
+                    # WHY (Phase 69 Fix 27): Old hardcoded [0,1,2,3,5] pip slippage
+                    #      levels missed high-slippage instruments (GBPJPY, BTC) where
+                    #      10-20 pip slippage is realistic. Read from a configurable
+                    #      UI variable; fall back to defaults when not set.
+                    # CHANGED: April 2026 — Phase 69 Fix 27 — configurable slippage levels
+                    #          (audit Part E MEDIUM #27)
+                    slippage_levels=_get_slippage_levels(),
                     pip_size=pip_size,
                     spread_pips=spread_pips,
                     commission_pips=comm_pips,
@@ -2814,6 +2856,19 @@ def build_panel(parent):
     tk.Label(mc_row, text="Monte Carlo:", font=("Segoe UI", 9, "bold"),
              bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
     _sims_var = _field(mc_row, "Simulations:", "500", 6)
+
+    # Phase 69 Fix 27: slippage levels entry
+    global _slip_levels_var
+    _slip_levels_var = tk.StringVar(value="0,1,2,3,5")
+    slip_row = tk.Frame(settings_frame, bg=WHITE)
+    slip_row.pack(fill="x", pady=2)
+    tk.Label(slip_row, text="Slip levels (pips):",
+             font=("Segoe UI", 9), bg=WHITE, fg=DARK,
+             width=18, anchor="w").pack(side="left")
+    tk.Entry(slip_row, textvariable=_slip_levels_var,
+             width=20, font=("Segoe UI", 9)).pack(side="left")
+    tk.Label(slip_row, text="comma-sep, e.g. 0,1,2,5,10",
+             font=("Segoe UI", 8), bg=WHITE, fg=GREY).pack(side="left", padx=5)
 
     # Load firm names from JSON files
     import glob

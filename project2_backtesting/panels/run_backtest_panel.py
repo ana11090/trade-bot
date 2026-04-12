@@ -35,7 +35,9 @@ _step_label    = None
 _run_button    = None
 _best_label    = None
 _running       = False
-_best_result   = [None]  # Track best result
+_best_result      = [None]  # Track best result
+import threading as _rb_threading
+_best_result_lock = _rb_threading.Lock()  # Phase 69 Fix 38: guard concurrent writes
 _rule_vars     = []  # list of (BooleanVar, rule_dict) tuples
 _current_rules = []  # loaded rules
 _current_source_path = [None]
@@ -60,7 +62,20 @@ def _set_progress(bar, label, pct, text):
 
 
 def _animate_to(bar, current, target, step_ms=60):
-    """Smoothly animate the progress bar from current to target %."""
+    """Smoothly animate the progress bar from current to target %.
+
+    WHY (Phase 69 Fix 39): Old code called bar.after() unconditionally.
+         If the panel is closed mid-animation (e.g. user switches tabs),
+         'bar' widget is destroyed and subsequent callbacks raise TclError
+         in an infinite loop. Guard with winfo_exists().
+    CHANGED: April 2026 — Phase 69 Fix 39 — guard destroyed widget
+             (audit Part E MEDIUM #39)
+    """
+    try:
+        if not bar.winfo_exists():
+            return
+    except Exception:
+        return
     if current >= target:
         bar['value'] = target
         return
@@ -169,12 +184,17 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         output_text.tag_config(f"line_{cur}", foreground=color)
                         output_text.see(tk.END)
 
-                        # Update best result
+                        # WHY (Phase 69 Fix 38): _best_result[0] is written from
+                        #      the background worker and read by _update_best() in
+                        #      the UI thread — no synchronisation. Add a lock.
+                        # CHANGED: April 2026 — Phase 69 Fix 38 — lock _best_result
+                        #          (audit Part E MEDIUM #38)
                         global _best_result
                         if trades > 0:
-                            if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
-                                _best_result[0] = result_dict
-                                _update_best()
+                            with _best_result_lock:
+                                if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
+                                    _best_result[0] = result_dict
+                            _update_best()
 
                 try:
                     progress_bar.after(0, _update)
