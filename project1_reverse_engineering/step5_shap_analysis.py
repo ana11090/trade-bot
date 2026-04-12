@@ -84,7 +84,24 @@ def shap_analysis_for_scenario(scenario):
         # Limit to SHAP_MAX_SAMPLES for faster computation
         if len(X_test) > SHAP_MAX_SAMPLES:
             log.info(f"  Limiting SHAP analysis to {SHAP_MAX_SAMPLES} samples (out of {len(X_test)}) for performance")
-            X_test_shap = X_test.sample(n=SHAP_MAX_SAMPLES, random_state=42)
+            # WHY (Phase 75 Fix 60): Random sample on imbalanced datasets
+            #      (e.g. 80% wins) is dominated by the majority class.
+            #      SHAP underestimates importance for minority-class features.
+            #      Stratify by outcome if available.
+            # CHANGED: April 2026 — Phase 75 Fix 60 — stratified SHAP sample
+            if 'outcome' in test_data.columns:
+                try:
+                    from sklearn.model_selection import train_test_split as _tts
+                    _, X_test_shap = _tts(
+                        X_test, test_size=min(SHAP_MAX_SAMPLES, len(X_test)),
+                        stratify=test_data['outcome'].iloc[:len(X_test)], random_state=42
+                    )
+                except Exception:
+                    X_test_shap = X_test.sample(
+                        n=min(SHAP_MAX_SAMPLES, len(X_test)), random_state=42)
+            else:
+                X_test_shap = X_test.sample(
+                    n=min(SHAP_MAX_SAMPLES, len(X_test)), random_state=42)
         else:
             X_test_shap = X_test
 

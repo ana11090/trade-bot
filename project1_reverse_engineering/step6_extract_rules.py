@@ -136,7 +136,13 @@ def extract_rules_for_scenario(scenario):
         best_tree = model.estimators_[best_tree_idx]
 
         # Export tree as text
-        tree_rules = export_text(best_tree, feature_names=feature_cols, max_depth=4)
+        # WHY (Phase 75 Fix 63): max_depth=4 truncated trees deeper than 4.
+        #      High-confidence leaves at depth 5-6 were silently lost.
+        #      Use the tree's actual max_depth (capped at a reasonable limit).
+        # CHANGED: April 2026 — Phase 75 Fix 63 — use actual tree depth
+        _tree_depth = best_tree.get_depth()
+        tree_rules = export_text(best_tree, feature_names=feature_cols,
+                                  max_depth=min(_tree_depth, 8))
 
         # Save raw tree rules
         raw_rules_file = os.path.join(output_dir, 'raw_tree_rules.txt')
@@ -311,7 +317,16 @@ def extract_rules_for_scenario(scenario):
                     elif buy_count / total_dir >= DIR_THRESHOLD:
                         direction = 'BUY'
                     else:
+                        # WHY (Phase 75 Fix 66): 'BOTH' direction is not handled
+                        #      by all EA generators — some silently default to
+                        #      buy-only (Round 2A finding). Log a clear warning.
+                        # CHANGED: April 2026 — Phase 75 Fix 66 — warn on BOTH
                         direction = 'BOTH'
+                        log.warning(
+                            f"  [step6] Strategy has ~equal buy/sell trades — "
+                            f"direction='BOTH'. Some EA generators may default to "
+                            f"BUY-only. Verify the generated EA handles SELL rules."
+                        )
             elif 'trade_direction' in data.columns:
                 avg_dir = data['trade_direction'].mean()
                 direction = 'BUY' if avg_dir > 0 else ('SELL' if avg_dir < 0 else 'BOTH')
@@ -336,9 +351,13 @@ def extract_rules_for_scenario(scenario):
         analysis_report = {
             'generated_at':       _time.strftime('%Y-%m-%d %H:%M:%S'),
             'discovery_method':   'p1_seven_step_pipeline',
+            # WHY (Phase 75 Fix 64): Composite scenario 'H1_M15' stored as
+            #      entry_timeframe. EA generator expects a single TF string.
+            #      Parse: take the first TF from underscore-joined names.
+            # CHANGED: April 2026 — Phase 75 Fix 64 — parse composite TF
             'scenario':           scenario,
             'direction':          direction,
-            'entry_timeframe':    scenario,
+            'entry_timeframe':    scenario.split('_')[0] if '_' in scenario else scenario,
             'winning_scenario':   scenario,
             'activated_at':       _time.strftime('%Y-%m-%d %H:%M:%S'),
             'rules':              formatted_rules,
@@ -431,9 +450,15 @@ def extract_win_rules_from_tree(tree, feature_names, X_test, y_test):
                 mask = np.ones(len(X_test), dtype=bool)
                 for condition in conditions:
                     # Parse condition
-                    parts = condition.split()
+                    # WHY (Phase 75 Fix 65): split() then ' '.join reassembly
+                    #      collapses consecutive spaces. A feature name with
+                    #      two spaces becomes one after rejoin — lookup fails.
+                    #      Use regex split to preserve normalized single spaces.
+                    # CHANGED: April 2026 — Phase 75 Fix 65 — robust condition parse
+                    import re as _re65
+                    parts = _re65.split(r'\s+', condition.strip())
                     if len(parts) >= 3:
-                        feat = ' '.join(parts[:-2])
+                        feat = ' '.join(parts[:-2])  # now safe (single spaces)
                         op = parts[-2]
                         val = float(parts[-1])
 

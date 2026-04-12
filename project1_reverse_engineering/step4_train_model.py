@@ -110,6 +110,14 @@ def prepare_features(data, scenario=None):
         try:
             converted = pd.to_numeric(data[col], errors='coerce')
             if converted.notna().sum() > len(converted) * 0.8:
+                # WHY (Phase 75 Fix 55): No log of coercion. 20% non-numeric
+                #      values became 0 silently — garbage features in model.
+                # CHANGED: April 2026 — Phase 75 Fix 55 — log coerced columns
+                _n_bad = converted.isna().sum()
+                if _n_bad > 0:
+                    log.warning(f"  [step4] '{col}': coerced {_n_bad} "
+                                f"non-numeric values to 0 "
+                                f"({_n_bad/len(converted)*100:.0f}% of rows)")
                 data[col] = converted.fillna(0)
                 continue
         except Exception:
@@ -117,8 +125,14 @@ def prepare_features(data, scenario=None):
         try:
             unique_vals = data[col].astype(str).unique()
             if len(unique_vals) <= 50:
-                mapping = {v: i for i, v in enumerate(sorted(unique_vals))}
-                data[col] = data[col].astype(str).map(mapping).fillna(-1)
+                # WHY (Phase 75 Fix 56): Lexicographic integer encoding makes
+                #      RF learn spurious ordinal relationships ('Buy'=0 < 'Sell'=1
+                #      implies Sell > Buy). Use one-hot for nominal categoricals.
+                # CHANGED: April 2026 — Phase 75 Fix 56 — one-hot encoding
+                _dummies = pd.get_dummies(data[col].astype(str), prefix=col, drop_first=False)
+                data = pd.concat([data.drop(columns=[col]), _dummies], axis=1)
+                log.info(f"  [step4] One-hot encoded '{col}': "
+                         f"{list(_dummies.columns)}")
             else:
                 leak_cols.add(col)
         except Exception:
@@ -149,7 +163,14 @@ def prepare_features(data, scenario=None):
             'H4_H1':  ['H4', 'H1'],
             'H1_M5':  ['H1', 'M5'],
         }
+        # WHY (Phase 75 Fix 57): Fallback [scenario] uses the scenario string
+        #      itself as a prefix. A typo ('h1' instead of 'H1') produces no
+        #      matching columns and the model trains on zero features silently.
+        # CHANGED: April 2026 — Phase 75 Fix 57 — warn on empty feature_cols
         allowed_prefixes = scenario_tfs.get(scenario, [scenario])
+        if scenario not in scenario_tfs:
+            log.warning(f"  [step4] Scenario '{scenario}' not in known TF map "
+                        f"— using prefix '{scenario}'; may produce empty feature set")
 
         # Time/cyclic features have no TF prefix — always include them
         non_tf_keepers = {
@@ -170,6 +191,13 @@ def prepare_features(data, scenario=None):
 
         log.info(f"  [SCENARIO={scenario}] Filtered to {len(feature_cols)} features "
               f"from prefixes {allowed_prefixes} (out of {len(candidate_cols)} total)")
+
+        # Phase 75 Fix 57: Guard empty feature_cols early
+        if not feature_cols:
+            log.error(f"  [step4] NO features selected for scenario '{scenario}'! "
+                      f"Allowed prefixes: {allowed_prefixes}. "
+                      f"Check scenario name and available TF columns.")
+            return None, []
 
     return data, feature_cols
 

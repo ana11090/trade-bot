@@ -90,7 +90,25 @@ def label_trades_for_scenario(scenario):
 
         # SECONDARY LABEL — Direction
         # 1 for Buy, 0 for Sell
-        feature_matrix['direction'] = feature_matrix['action'].str.lower().map({'buy': 1, 'sell': 0})
+        # WHY (Phase 75 Fix 52): Only 'buy'/'sell' were mapped. MT5 exports
+        #      'BUY_LIMIT', 'Buy Stop', 'Long', etc. — all became NaN → ML
+        #      fillna(0) treated them as Sell. Same fix as step2 Phase 57.
+        # CHANGED: April 2026 — Phase 75 Fix 52 — expanded direction map
+        _DIR52 = {
+            'buy': 1, 'sell': 0, 'long': 1, 'short': 0,
+            'buy limit': 1, 'sell limit': 0,
+            'buy stop': 1,  'sell stop': 0,
+            'buy_limit': 1, 'sell_limit': 0,
+            'buy_stop': 1,  'sell_stop': 0,
+        }
+        feature_matrix['direction'] = (
+            feature_matrix['action'].str.lower().str.strip().map(_DIR52)
+        )
+        # Fallback from pips sign
+        if feature_matrix['direction'].isna().any() and 'pips' in feature_matrix.columns:
+            _pip_sign = feature_matrix['pips'].apply(lambda p: 1 if p > 0 else (0 if p < 0 else float('nan')))
+            feature_matrix['direction'] = feature_matrix['direction'].fillna(_pip_sign)
+        feature_matrix['direction'] = feature_matrix['direction'].fillna(0.5)
 
         buy_count = feature_matrix['direction'].sum()
         sell_count = len(feature_matrix) - buy_count
