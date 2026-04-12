@@ -49,9 +49,18 @@ def build_robot_profile(df):
         split = {k: round(v / total, 3) for k, v in counts.items()}
         buy_pct = split.get('Buy', 0)
         sell_pct = split.get('Sell', 0)
-        if buy_pct >= 0.90:
+        # WHY (Phase 59 Fix 2): Old threshold was 90% — a strategy at
+        #      89% buy / 11% sell was labelled 'both' and the EA
+        #      generator emitted bidirectional code. 75% is a much
+        #      more sensible boundary: clearly directional above it,
+        #      genuinely mixed below it. The 11% minority is treated
+        #      as noise, not a deliberate second direction.
+        # CHANGED: April 2026 — Phase 59 Fix 2 — direction threshold 90%→75%
+        #          (audit Part D HIGH #40)
+        _DIR_THRESHOLD = 0.75
+        if buy_pct >= _DIR_THRESHOLD:
             direction = 'buy_only'
-        elif sell_pct >= 0.90:
+        elif sell_pct >= _DIR_THRESHOLD:
             direction = 'sell_only'
         else:
             direction = 'both'
@@ -131,56 +140,40 @@ def build_robot_profile(df):
             round(avg_win / abs(avg_loss), 2) if avg_loss != 0 else 0.0
         )
 
-        # SL detection
-        # WHY (Phase 45 Fix 4): Old code only detected single-mode SL systems.
-        #      Two-level SL systems (e.g., 30-pip hard SL + 10-pip trailing
-        #      SL that fires more often) showed as "dynamic" with low confidence
-        #      because neither mode alone hit 60%. The fix detects bimodal
-        #      patterns: compute primary mode, then secondary mode from the
-        #      remaining losses, and check if both together cover >70%.
-        # CHANGED: April 2026 — Phase 45 Fix 4 — bimodal SL detection
-        #          (audit Part D HIGH #36)
+        # WHY (Phase 59 Fix 3): Old code checked only the top mode.
+        #      A two-level SL system (40% at 100 pips, 40% at 150 pips)
+        #      has mode=100 and near_mode=0.4 → "not fixed". Both levels
+        #      are clearly fixed — the bot uses two SL values. Check the
+        #      top-2 modes: if they collectively cover >70% of losses
+        #      and each individually covers >20%, call it "two-level fixed".
+        # CHANGED: April 2026 — Phase 59 Fix 3 — two-level SL detection
+        #          (audit Part D HIGH #41)
         if len(losers) > 0:
-            mode_loss = losers.mode().iloc[0] if len(losers.mode()) > 0 else None
+            _modes = losers.mode()
+            mode_loss = _modes.iloc[0] if len(_modes) > 0 else None
             if mode_loss is not None:
                 near_mode = ((losers - mode_loss).abs() / abs(mode_loss) < 0.05).mean()
                 if near_mode > 0.60:
+                    # Single-level fixed SL
                     profile['sl_pattern'] = {
                         'fixed': True,
+                        'levels': 1,
                         'fixed_value_pips': round(abs(float(mode_loss)), 1),
                         'confidence': round(float(near_mode), 2),
                     }
-                else:
-                    # Phase 45 Fix 4: Check for bimodal SL (two-level system)
-                    # Remove primary mode and look for secondary mode
-                    _mask_primary = ((losers - mode_loss).abs() / abs(mode_loss) >= 0.05)
-                    _remaining = losers[_mask_primary]
-                    if len(_remaining) > max(5, len(losers) * 0.15):
-                        _mode2 = _remaining.mode().iloc[0] if len(_remaining.mode()) > 0 else None
-                        if _mode2 is not None:
-                            _near_mode2 = ((losers - _mode2).abs() / abs(_mode2) < 0.05).mean()
-                            _combined_coverage = near_mode + _near_mode2
-                            if _combined_coverage > 0.70:
-                                profile['sl_pattern'] = {
-                                    'fixed': 'bimodal',
-                                    'primary_value_pips': round(abs(float(mode_loss)), 1),
-                                    'secondary_value_pips': round(abs(float(_mode2)), 1),
-                                    'combined_confidence': round(float(_combined_coverage), 2),
-                                }
-                            else:
-                                profile['sl_pattern'] = {
-                                    'fixed': False,
-                                    'range_pips': (round(abs(float(losers.max())), 1),
-                                                   round(abs(float(losers.min())), 1)),
-                                    'median_pips': round(abs(float(losers.median())), 1),
-                                }
-                        else:
-                            profile['sl_pattern'] = {
-                                'fixed': False,
-                                'range_pips': (round(abs(float(losers.max())), 1),
-                                               round(abs(float(losers.min())), 1)),
-                                'median_pips': round(abs(float(losers.median())), 1),
-                            }
+                elif len(_modes) >= 2:
+                    # Check two-level fixed SL
+                    mode2 = _modes.iloc[1]
+                    near_mode2 = ((losers - mode2).abs() / abs(mode2) < 0.05).mean()
+                    combined   = near_mode + near_mode2
+                    if combined > 0.70 and near_mode > 0.20 and near_mode2 > 0.20:
+                        profile['sl_pattern'] = {
+                            'fixed': True,
+                            'levels': 2,
+                            'fixed_value_pips':  round(abs(float(mode_loss)), 1),
+                            'fixed_value2_pips': round(abs(float(mode2)), 1),
+                            'confidence': round(float(combined), 2),
+                        }
                     else:
                         profile['sl_pattern'] = {
                             'fixed': False,
@@ -188,10 +181,35 @@ def build_robot_profile(df):
                                            round(abs(float(losers.min())), 1)),
                             'median_pips': round(abs(float(losers.median())), 1),
                         }
+                else:
+                    profile['sl_pattern'] = {
+                        'fixed': False,
+                        'range_pips': (round(abs(float(losers.max())), 1),
+                                       round(abs(float(losers.min())), 1)),
+                        'median_pips': round(abs(float(losers.median())), 1),
+                    }
             else:
                 profile['sl_pattern'] = {'fixed': False}
         else:
             profile['sl_pattern'] = {'fixed': False}
+
+        # WHY (Phase 59 Fix 4): If the user's CSV stores pips as deci-pips
+        #      (1 pip = 10 units), a 100-pip SL appears as 1000. The
+        #      detected fixed_value_pips would then be 1000, and any
+        #      generated EA would use a 10× too large SL silently.
+        #      Warn when the detected SL or median exceeds 500 pips
+        #      (implausible for most instruments; XAUUSD SL rarely > 300).
+        # CHANGED: April 2026 — Phase 59 Fix 4 — deci-pip warning
+        #          (audit Part D HIGH #42)
+        _sl = profile.get('sl_pattern', {})
+        _sl_val = _sl.get('fixed_value_pips') or _sl.get('median_pips') or 0
+        if _sl_val > 500:
+            log.warning(
+                f"[ANALYZE] SL detected as {_sl_val:.0f} pips — unusually large. "
+                f"If your CSV stores pips as deci-pips (1 pip = 10 units), divide "
+                f"by 10 before running, or set pip_size correctly in config."
+            )
+            profile['sl_pattern']['deci_pip_warning'] = True
 
         # TP detection
         if len(winners) > 0:
@@ -390,14 +408,36 @@ def compute_feature_importance(df):
     X = X.fillna(X.median())
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
 
-    split_idx = int(len(X) * 0.75)
+    # WHY (Phase 59 Fix 1): Old code hardcoded 0.75 train split and
+    #      RF params (300 trees, depth 8, leaf 15) — ignoring every
+    #      value the user set in the configuration panel. The config
+    #      default for train_test_split is 0.80 (not 0.75), so the
+    #      split was also wrong by default. Read all four values from
+    #      config_loader; fall back to safe defaults if config fails.
+    #      Note: the split remains CHRONOLOGICAL (not shuffled) — this
+    #      is intentional for time-series data to avoid look-ahead.
+    # CHANGED: April 2026 — Phase 59 Fix 1 — config-driven split + RF params
+    #          (audit Part D HIGH #39)
+    try:
+        import config_loader as _cl39
+        _cfg39        = _cl39.load()
+        _split_frac   = float(_cfg39.get('train_test_split',  '0.80'))
+        _n_estimators = int(  _cfg39.get('rf_trees',          '500'))
+        _max_depth    = int(  _cfg39.get('max_tree_depth',    '6'))
+        _min_leaf     = int(  _cfg39.get('min_samples_leaf',  '10'))
+    except Exception:
+        _split_frac, _n_estimators, _max_depth, _min_leaf = 0.80, 500, 6, 10
+
+    split_idx = int(len(X) * _split_frac)
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_test = y[:split_idx],       y[split_idx:]
+    log.info(f"[ANALYZE] Train/test split: {split_idx}/{len(X)-split_idx} "
+             f"({_split_frac*100:.0f}%/{(1-_split_frac)*100:.0f}% chronological)")
 
     rf = RandomForestClassifier(
-        n_estimators=300,
-        max_depth=8,
-        min_samples_leaf=15,
+        n_estimators=_n_estimators,
+        max_depth=_max_depth,
+        min_samples_leaf=_min_leaf,
         random_state=42,
         n_jobs=-1,
     )
