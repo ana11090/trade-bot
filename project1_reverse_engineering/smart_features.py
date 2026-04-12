@@ -27,40 +27,85 @@ OUTPUT_DIR = os.path.join(_HERE, 'outputs')
 CACHE_PATH = os.path.join(OUTPUT_DIR, 'smart_feature_matrix.csv')
 
 
-def compute_smart_features(feature_matrix_path=None, force_recompute=False,
-                            progress_callback=None):
+def compute_smart_features(feature_matrix=None, force_recompute=False,
+                            progress_callback=None, feature_matrix_path=None):
     """
     Compute smart features and return extended DataFrame.
-    Caches to smart_feature_matrix.csv.
+
+    Accepts EITHER an in-memory DataFrame OR a CSV path as the first arg.
+
+    Args:
+        feature_matrix: one of
+            - pd.DataFrame: already-loaded feature matrix; cache is bypassed,
+              the frame is used in place and returned extended.
+            - str / PathLike: path to a CSV feature matrix; cache applies
+              exactly as before.
+            - None: defaults to OUTPUT_DIR/feature_matrix.csv (legacy behavior).
+        feature_matrix_path: legacy alias for `feature_matrix` kept for
+            backward compatibility with older callers. Only used if
+            `feature_matrix` is None.
 
     Returns: DataFrame with original columns + ~50 SMART_ + 14 REGIME_ columns.
+
+    WHY (Phase A.6 hotfix): Phase 74 Fix 26 added a call site in
+         shared/indicator_utils.py (selective compute path) that passed a
+         DataFrame as the first positional arg. The old signature only
+         accepted a CSV path, so pandas.read_csv(DataFrame) was invoked
+         downstream and raised TypeError: argument of type 'method' is not
+         iterable. indicator_utils caught it and logged the warning, but
+         that silently stripped ~64 SMART_/REGIME_ columns from the
+         selective path, breaking any rule that referenced them at
+         backtest time with KeyError.
+    CHANGED: April 2026 — Phase A.6 — polymorphic first arg
     """
-    # Phase 43 Fix 5: invalidate cache if input feature_matrix is newer
-    if not force_recompute and os.path.exists(CACHE_PATH):
-        cached_df = pd.read_csv(CACHE_PATH)
-        smart_cols = [c for c in cached_df.columns if c.startswith('SMART_')]
-        _cache_valid = False
-        if len(smart_cols) > 30:
-            try:
-                _cache_mtime = os.path.getmtime(CACHE_PATH)
-                _input_path = feature_matrix_path if feature_matrix_path else os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
-                _input_mtime = os.path.getmtime(_input_path) if os.path.exists(_input_path) else 0
-                _cache_valid = _cache_mtime >= _input_mtime
-                if not _cache_valid:
-                    from shared.logging_setup import get_logger
-                    get_logger(__name__).warning(
-                        f"[SMART_FEATURES] Cache at {CACHE_PATH} is older than "
-                        f"input feature matrix — invalidating."
-                    )
-            except Exception:
-                _cache_valid = False
-        if _cache_valid:
-            return cached_df
+    # WHY: Support both the new in-memory call site and every existing
+    #      path-based caller with zero behavior change for the latter.
+    # CHANGED: April 2026 — Phase A.6
+    if feature_matrix is None and feature_matrix_path is not None:
+        feature_matrix = feature_matrix_path
 
-    if feature_matrix_path is None:
-        feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
+    _input_is_frame = isinstance(feature_matrix, pd.DataFrame)
 
-    df = pd.read_csv(feature_matrix_path)
+    if _input_is_frame:
+        # In-memory path: skip cache entirely. The caller already computed
+        # the raw indicators; we just augment and return. No disk I/O.
+        df = feature_matrix.copy()
+        # Normalize to match the shape the rest of the function expects.
+        # The path-based branch produces `df` from pd.read_csv which yields
+        # a RangeIndex; keep the same convention so downstream _add_* helpers
+        # behave identically.
+        if df.index.name is not None:
+            df = df.reset_index(drop=False)
+    else:
+        # Path-based path: preserve exact legacy behavior.
+        _input_path = feature_matrix  # may be None, path string, or PathLike
+
+        # Phase 43 Fix 5: invalidate cache if input feature_matrix is newer
+        if not force_recompute and os.path.exists(CACHE_PATH):
+            cached_df = pd.read_csv(CACHE_PATH)
+            smart_cols = [c for c in cached_df.columns if c.startswith('SMART_')]
+            _cache_valid = False
+            if len(smart_cols) > 30:
+                try:
+                    _cache_mtime = os.path.getmtime(CACHE_PATH)
+                    _resolved = _input_path if _input_path else os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
+                    _input_mtime = os.path.getmtime(_resolved) if os.path.exists(_resolved) else 0
+                    _cache_valid = _cache_mtime >= _input_mtime
+                    if not _cache_valid:
+                        from shared.logging_setup import get_logger
+                        get_logger(__name__).warning(
+                            f"[SMART_FEATURES] Cache at {CACHE_PATH} is older than "
+                            f"input feature matrix — invalidating."
+                        )
+                except Exception:
+                    _cache_valid = False
+            if _cache_valid:
+                return cached_df
+
+        if _input_path is None:
+            _input_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
+
+        df = pd.read_csv(_input_path)
 
     # Check feature toggles
     try:
