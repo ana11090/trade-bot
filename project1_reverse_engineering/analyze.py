@@ -349,17 +349,26 @@ def compute_feature_importance(df):
     # Hard exclude list — these are targets or target-correlated.
     # is_winner IS the target → must not appear in X.
     # trade_duration_minutes leaks because winners run longer than losers.
+    # WHY (Phase 52 Fix 3b): Phase 52 Fix 3 renames pips/profit to
+    #      _LEAK_pips/_LEAK_profit in step2 output. Add both names
+    #      to LEAK_COLS for backward compat with existing feature
+    #      matrices. The list comprehension also adds a prefix-based
+    #      filter so any future _LEAK_* column is auto-excluded.
+    # CHANGED: April 2026 — Phase 52 Fix 3b — accept _LEAK_ prefix
+    #          (audit Part D MED #38)
     LEAK_COLS = {
         'trade_id', 'open_time', 'close_time', 'action', 'pips',
         'profit', 'lots', 'sl', 'tp', 'open_price', 'close_price',
         'is_winner', 'trade_direction', 'trade_duration_minutes',
         'outcome',
+        '_LEAK_pips', '_LEAK_profit',
         'symbol', 'duration', 'change_pct', 'hour_of_day',
         'day_of_week', 'day_of_month',
     }
     feature_cols = [
         c for c in df.columns
         if c not in LEAK_COLS
+        and not c.startswith('_LEAK_')   # Phase 52 Fix 3c — auto-exclude any future leak col
         and 'candle_idx'  not in c
         and 'candle_time' not in c
         and df[c].dtype in ['float64', 'int64', 'float32', 'int32']

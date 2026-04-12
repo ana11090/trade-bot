@@ -92,6 +92,30 @@ FIELDS = {
          'XAUUSD = $1.00  |  EURUSD = $10.00  |  GBPJPY ≈ $6.70 (rate-dep)\n'
          'Used for computing dollar P&L. Check broker contract spec if unsure.'),
 
+        # WHY (Phase 53 Fix 6): These three keys were added to DEFAULTS
+        #      in Phase 47 Fix 1 but had no FIELDS entry, so the panel
+        #      didn't render input widgets for them. User couldn't set
+        #      them from the GUI. Add entries so they're editable.
+        # CHANGED: April 2026 — Phase 53 Fix 6 — UI for pipeline params
+        #          (audit Part D MED #66)
+        ('align_timeframes',
+         'Align Timeframes',
+         'Comma-separated list of timeframes to align trades to.\n'
+         'Default: M5,M15,H1,H4,D1\n'
+         'Add M1 for ultra-short or W1 for swing strategies. Order does not matter.'),
+
+        ('lookback_candles',
+         'Lookback Candles (warmup)',
+         'Number of preceding candles required before a trade can have valid indicators.\n'
+         'Default 200. Lower = include more warmup-zone trades but with NaN-heavy features.\n'
+         'Higher = stricter, fewer trades.'),
+
+        ('skip_m1_features',
+         'Skip M1 features',
+         'true/false. Skip M1 in step2 even if it appears in align_timeframes.\n'
+         'M1 has so many candles it can crash on small machines. Default: true.\n'
+         'Set false ONLY if you have RAM and your strategy needs M1 indicators.'),
+
         ('alignment_tolerance_pips',
          'Alignment Tolerance (pips)',
          'How far (in pips) a trade\'s open price can be outside the matched candle\'s\n'
@@ -318,9 +342,24 @@ def build_panel(parent):
     info.pack(fill="x", pady=(0, 12))
     tk.Label(info, text="⚠️  Best source: download_autonomous.py",
              bg="#fff3cd", fg="#856404", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+    # WHY (Phase 53 Fix 4): Old code hardcoded
+    #      "script_download_historicaldata_xauusd/" in the warning
+    #      text. Other instruments don't have this directory. Make
+    #      the path symbol-aware by reading from config and
+    #      noting that the directory may not exist for non-XAUUSD.
+    # CHANGED: April 2026 — Phase 53 Fix 4 — symbol-aware downloader text
+    #          (audit Part D MED #64)
+    try:
+        from project1_reverse_engineering import config_loader as _cl
+        _sym_lower = _cl.load().get('symbol', 'XAUUSD').lower()
+    except Exception:
+        _sym_lower = 'xauusd'
+    _downloader_path = f"project1/script_download_historicaldata_{_sym_lower}/"
+
     tk.Label(info,
-             text="The autonomous Dukascopy downloader (project1/script_download_historicaldata_xauusd/)\n"
-                  "covers 2005–present with auto-retry. Run it once to populate /data/.",
+             text=f"The autonomous Dukascopy downloader ({_downloader_path})\n"
+                  f"covers 2005–present with auto-retry, IF a downloader exists for your symbol.\n"
+                  f"For non-XAUUSD, you may need to create the downloader directory manually.",
              bg="#fff3cd", fg="#856404", font=("Segoe UI", 9), justify=tk.LEFT).pack(anchor="w", pady=(4, 0))
 
     # WHY (Phase 47 Fix 4): "Download from MT5 (Recommended)" button
@@ -463,7 +502,29 @@ def download_data(output_text, _):
             import io
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
             old = sys.stdout
-            sys.stdout = buf = io.StringIO()
+            # WHY (Phase 53 Fix 5): Old code used StringIO which grows
+            #      unbounded in RAM during long downloads. Use a
+            #      lightweight bounded wrapper that keeps only the
+            #      last N lines so the panel can still display
+            #      tail output without OOM risk.
+            # CHANGED: April 2026 — Phase 53 Fix 5 — bounded stdout buffer
+            #          (audit Part D MED #65)
+            class _BoundedBuffer:
+                def __init__(self, max_lines=2000):
+                    self._lines = []
+                    self._max = max_lines
+                def write(self, s):
+                    if not s:
+                        return
+                    for line in str(s).splitlines():
+                        self._lines.append(line)
+                        if len(self._lines) > self._max:
+                            self._lines.pop(0)
+                def flush(self):
+                    pass
+                def getvalue(self):
+                    return '\n'.join(self._lines)
+            sys.stdout = buf = _BoundedBuffer(max_lines=2000)
             try:
                 import download_price_data
                 download_price_data.download_data_yfinance()

@@ -204,7 +204,16 @@ def _build_settings(parent):
              font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 8))
 
     # Smart features checkbox
-    _use_smart_var = tk.BooleanVar(value=True)
+    # WHY (Phase 54 Fix 4): Old code defaulted Smart features ON
+    #      without checking if the smart cache existed. If it didn't,
+    #      run_xgboost_discovery either crashed or silently dropped
+    #      the smart features. Default to True ONLY if a smart matrix
+    #      file exists; else default False.
+    # CHANGED: April 2026 — Phase 54 Fix 4 — smart-cache aware default
+    #          (audit Part D MED #79)
+    _smart_cache_path = os.path.join(_p1_dir(), 'outputs', 'smart_feature_matrix.csv')
+    _smart_default = os.path.exists(_smart_cache_path)
+    _use_smart_var = tk.BooleanVar(value=_smart_default)
     smart_row = tk.Frame(frame, bg=CARD)
     smart_row.pack(fill="x", pady=(0, 8))
     tk.Checkbutton(
@@ -543,7 +552,19 @@ def _on_run():
                 min_coverage    = int(_var_min_cov.get()),
                 min_win_rate    = float(_var_min_wr.get()),
                 use_smart_features = _use_smart_var.get(),
-                train_test_split   = float(_var_train_split.get()),
+                # WHY (Phase 54 Fix 5): Old code passed the user's raw
+                #      input directly. Values like 1.1 or -0.5 produced
+                #      cryptic sklearn errors. Clamp to [0.5, 0.95]
+                #      with a log warning if the user's value was out
+                #      of range.
+                # CHANGED: April 2026 — Phase 54 Fix 5 — bounds clamp
+                #          (audit Part D MED #80)
+                train_test_split   = (lambda v: (
+                    print(f"[XGB_PANEL] WARNING: train_test_split={v} out of [0.5, 0.95], "
+                          f"clamping to {max(0.5, min(0.95, v))}")
+                    if (v < 0.5 or v > 0.95) else None,
+                    max(0.5, min(0.95, v))
+                )[1])(float(_var_train_split.get())),
                 progress_callback  = _cb,
             )
 

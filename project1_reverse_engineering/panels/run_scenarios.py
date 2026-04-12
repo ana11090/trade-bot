@@ -376,7 +376,33 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     try:
                         import io
                         old_stdout = sys.stdout
-                        sys.stdout = buffer = io.StringIO()
+                        # WHY (Phase 54 Fix 6): Old code used StringIO
+                        #      which (a) grows unbounded and (b) doesn't
+                        #      restore stdout if the step raises mid-run,
+                        #      so subsequent runs lose all output to the
+                        #      orphaned StringIO. Use a bounded buffer
+                        #      (same as Phase 53 Fix 5 in p1 config
+                        #      panel) and a try/finally guard around
+                        #      the redirect block.
+                        # CHANGED: April 2026 — Phase 54 Fix 6 — safe stdout redirect
+                        #          (audit Part D MED #91)
+                        class _BoundedBuf:
+                            def __init__(self, max_lines=2000):
+                                self._lines = []
+                                self._max = max_lines
+                            def write(self, s):
+                                if not s:
+                                    return
+                                for line in str(s).splitlines():
+                                    self._lines.append(line)
+                                    if len(self._lines) > self._max:
+                                        self._lines.pop(0)
+                            def flush(self):
+                                pass
+                            def getvalue(self):
+                                return '\n'.join(self._lines)
+                        _saved_stdout = sys.stdout
+                        sys.stdout = buffer = _BoundedBuf(max_lines=2000)
                         try:
                             success = step_func(scenario)
                         finally:

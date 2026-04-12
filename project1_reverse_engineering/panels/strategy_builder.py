@@ -100,10 +100,15 @@ def _check_feature_matrix():
                              checked=True)
             return False, _fm_cache["message"]
 
-        # Count rows without parsing the full CSV
+        # WHY (Phase 54 Fix 1): Old code counted file lines, but CSV
+        #      cells can contain embedded newlines (trade comments,
+        #      text fields with line breaks). pandas handles quoted
+        #      newlines correctly. Read just one column to avoid the
+        #      full parse cost.
+        # CHANGED: April 2026 — Phase 54 Fix 1 — robust row count
+        #          (audit Part D MED #72)
         try:
-            with open(fm_path, 'r', encoding='utf-8') as f:
-                row_count = sum(1 for _ in f) - 1  # minus header
+            row_count = len(pd.read_csv(fm_path, usecols=[0]))
         except Exception:
             row_count = "1000+"
 
@@ -259,6 +264,14 @@ def _create_strategy_row(parent, index, strat):
 
     row_bg = "#fafafa" if index % 2 == 0 else WHITE
 
+    # WHY (Phase 54 Fix 2): Old code assumed wr was always a fraction
+    #      (0.65), but strategy_search returns percent in some code
+    #      paths. Normalize defensively: if wr > 1.0 it's a percent
+    #      (e.g., 65.0), divide by 100. Prevents 6500% display bugs.
+    # CHANGED: April 2026 — Phase 54 Fix 2 — wr normalization
+    #          (audit Part D MED #73)
+    if wr > 1.0:
+        wr = wr / 100.0
     if wr >= 0.65:
         wr_color = GREEN
     elif wr >= 0.55:
@@ -491,7 +504,21 @@ def build_panel(parent):
         bg=WHITE, fg=DARK
     ).pack(side=tk.LEFT, padx=(0, 5))
 
-    _min_coverage_var = tk.StringVar(value="15")
+    # WHY (Phase 54 Fix 3): Old code hardcoded "15" and "55" as the
+    #      defaults, ignoring rule_min_coverage and rule_min_confidence
+    #      from p1_config.json. Read from config so user-configured
+    #      thresholds actually take effect.
+    # CHANGED: April 2026 — Phase 54 Fix 3 — defaults from config
+    #          (audit Part D MED #74)
+    try:
+        from project1_reverse_engineering import config_loader as _cl
+        _cfg = _cl.load()
+        _default_cov = str(int(_cfg.get('rule_min_coverage', '15')))
+        _default_wr  = str(int(float(_cfg.get('rule_min_confidence', '0.55')) * 100))
+    except Exception:
+        _default_cov = "15"
+        _default_wr  = "55"
+    _min_coverage_var = tk.StringVar(value=_default_cov)
     min_cov_entry = tk.Entry(
         params_frame,
         textvariable=_min_coverage_var,
@@ -507,7 +534,7 @@ def build_panel(parent):
         bg=WHITE, fg=DARK
     ).pack(side=tk.LEFT, padx=(0, 5))
 
-    _min_wr_var = tk.StringVar(value="55")
+    _min_wr_var = tk.StringVar(value=_default_wr)   # Phase 54 Fix 3
     min_wr_entry = tk.Entry(
         params_frame,
         textvariable=_min_wr_var,

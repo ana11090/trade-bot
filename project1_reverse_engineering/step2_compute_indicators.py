@@ -80,7 +80,20 @@ def compute_features(aligned_trades_path=None, output_dir=None):
         log.info(f"  Loaded {len(trades_df)} trades\n")
 
         # Initialize feature matrix with trade metadata
-        feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action', 'pips', 'profit']].copy()
+        # WHY (Phase 52 Fix 3): Old code put 'pips' and 'profit' (the
+        #      training targets) directly into the feature matrix
+        #      under their natural names. Any script training "all
+        #      columns except is_winner" would silently include these
+        #      and leak the target. The leak was prevented only by
+        #      analyze.py's LEAK_COLS set; other consumers had no
+        #      protection. Rename to _LEAK_pips and _LEAK_profit so
+        #      naive trainers either drop them by prefix or break
+        #      loudly when looking for the original names.
+        # CHANGED: April 2026 — Phase 52 Fix 3 — leak-prefix target columns
+        #          (audit Part D MED #38)
+        feature_matrix = trades_df[['trade_id', 'open_time', 'close_time', 'action']].copy()
+        feature_matrix['_LEAK_pips']   = trades_df['pips']
+        feature_matrix['_LEAK_profit'] = trades_df['profit']
 
         # Add auto-detected features (no candle data needed)
         log.info("  Computing auto-detected features...")
@@ -96,18 +109,71 @@ def compute_features(aligned_trades_path=None, output_dir=None):
         # If you need them for analysis, compute them from trades_df at point of use.
 
         # Handle different possible column names for direction
+        # WHY (Phase 52 Fix 2): Old code mapped only {'Buy', 'Sell',
+        #      'buy', 'sell'}. Trades with action='Long', 'BUY_LIMIT',
+        #      'Buy Limit', 'BUY ' (trailing space), 'short', 'SELL',
+        #      etc. became NaN → downstream ML fillna(median)=0 →
+        #      models silently learned that 0 means "some kind of
+        #      trade." Build a richer normalizer that handles
+        #      whitespace, case, and common variants, then warn on
+        #      anything it can't classify so the user knows there's
+        #      a data-quality issue.
+        # CHANGED: April 2026 — Phase 52 Fix 2 — robust direction map
+        #          (audit Part D MED #37)
+        def _normalize_direction(raw):
+            if raw is None:
+                return 0
+            try:
+                s = str(raw).strip().upper()
+            except Exception:
+                return 0
+            if 'BUY' in s or 'LONG' in s:
+                return 1
+            if 'SELL' in s or 'SHORT' in s:
+                return -1
+            return 0  # unmapped — will be flagged below
+
+        _direction_col = None
         if 'action' in trades_df.columns:
-            # Map Buy/Sell to 1/-1
-            feature_matrix['trade_direction'] = trades_df['action'].map({'Buy': 1, 'Sell': -1, 'buy': 1, 'sell': -1})
+            _direction_col = 'action'
         elif 'type' in trades_df.columns:
-            feature_matrix['trade_direction'] = trades_df['type'].map({'Buy': 1, 'Sell': -1, 'buy': 1, 'sell': -1})
+            _direction_col = 'type'
+
+        if _direction_col is not None:
+            feature_matrix['trade_direction'] = trades_df[_direction_col].apply(_normalize_direction)
+            # Surface unmapped values as a warning so users see data quality issues
+            _unmapped = trades_df[_direction_col][feature_matrix['trade_direction'] == 0]
+            _unmapped_unique = _unmapped.dropna().unique()
+            if len(_unmapped_unique) > 0:
+                log.warning(
+                    f"  [STEP2] {len(_unmapped)} trades have unrecognized "
+                    f"{_direction_col!r} values: {sorted(set(str(v) for v in _unmapped_unique))[:10]}. "
+                    f"They were mapped to 0 (no direction). Add the variant to "
+                    f"_normalize_direction in step2_compute_indicators.py."
+                )
         else:
-            # Try to infer from pips and profit
+            log.warning(
+                "  [STEP2] Neither 'action' nor 'type' column present in trades — "
+                "trade_direction set to 0 for all rows."
+            )
             feature_matrix['trade_direction'] = 0
 
         log.info(f"    Added {5} auto-detected features")
 
         # Process each timeframe
+        # WHY (Phase 52 Fix 1): Old code silently dropped M1 from the
+        #      processing list when SKIP_M1 was True (default). A user
+        #      who deliberately added M1 to align_timeframes got no
+        #      M1 features and no log explaining why. Warn loudly so
+        #      the user knows their M1 config was overridden.
+        # CHANGED: April 2026 — Phase 52 Fix 1 — visible M1 skip
+        #          (audit Part D MED #36)
+        if 'M1' in ALIGN_TIMEFRAMES and SKIP_M1:
+            log.warning(
+                "  [STEP2] M1 is in align_timeframes but skip_m1_features=true. "
+                "M1 will be EXCLUDED from the feature matrix. Set "
+                "skip_m1_features=false in p1_config.json to include M1."
+            )
         timeframes_to_process = [tf for tf in ALIGN_TIMEFRAMES if tf != 'M1' or not SKIP_M1]
 
         for tf in timeframes_to_process:
