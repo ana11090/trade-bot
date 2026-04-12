@@ -127,16 +127,37 @@ class FixedSLTP(ExitStrategy):
 
 
 class TrailingStop(ExitStrategy):
-    """Fixed SL with trailing stop that activates after price moves in profit."""
+    """Fixed SL with trailing stop that activates after price moves in profit.
+
+    WHY (Phase A.13): the original implementation had no take-profit and
+         no max-hold limit. In a steady uptrend where every candle makes
+         a new high, the trailing stop follows the price perfectly and
+         never triggers — the trade runs to end-of-data (potentially
+         millions of M5 candles), causing Run Backtest to hang at this
+         combo. Real trailing-stop strategies always have a ceiling.
+         Added optional tp_pips and max_candles parameters; both default
+         to None for fully backward-compatible construction. The two
+         entries in get_default_exit_strategies are updated below to
+         pass sensible defaults so the hang stops out of the box.
+    CHANGED: April 2026 — Phase A.13
+    """
     name = "Trailing Stop"
 
-    def __init__(self, sl_pips=150, activation_pips=50, trail_distance_pips=100, pip_size=0.01):
+    def __init__(self, sl_pips=150, activation_pips=50, trail_distance_pips=100,
+                 tp_pips=None, max_candles=None, pip_size=0.01):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
                          activation_pips=activation_pips,
-                         trail_distance_pips=trail_distance_pips)
+                         trail_distance_pips=trail_distance_pips,
+                         tp_pips=tp_pips, max_candles=max_candles)
         self.sl_pips             = sl_pips
         self.activation_pips     = activation_pips
         self.trail_distance_pips = trail_distance_pips
+        # WHY (Phase A.13): tp_pips caps grinding profits; max_candles
+        #      caps duration. Either alone is sufficient to prevent the
+        #      hang. Both default to None to preserve old construction.
+        # CHANGED: April 2026 — Phase A.13
+        self.tp_pips     = tp_pips
+        self.max_candles = max_candles
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
@@ -144,9 +165,32 @@ class TrailingStop(ExitStrategy):
         highest   = pos["highest_since_entry"]
         lowest    = pos["lowest_since_entry"]
 
+        # WHY (Phase A.13): max_candles takes effect first — a
+        #      time-based ceiling is the strongest guarantee against
+        #      grinding-trend hangs.
+        # CHANGED: April 2026 — Phase A.13
+        if self.max_candles is not None:
+            held = pos.get("candles_held", 0)
+            if held >= self.max_candles:
+                return {
+                    "exit_price": float(candle["close"]),
+                    "reason":     "TRAILING_MAX_CANDLES",
+                }
+
         if direction == "BUY":
             fixed_sl    = entry - self.sl_pips * self.pip_size
             profit_pips = (highest - entry) / self.pip_size
+
+            # WHY (Phase A.13): tp_pips check. If price has reached the
+            #      take-profit ceiling intrabar (high crosses tp), exit
+            #      at the tp price.
+            # CHANGED: April 2026 — Phase A.13
+            if self.tp_pips is not None:
+                tp_price = entry + self.tp_pips * self.pip_size
+                if candle["high"] >= tp_price:
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+
             if profit_pips >= self.activation_pips:
                 trail_sl     = highest - self.trail_distance_pips * self.pip_size
                 effective_sl = max(fixed_sl, trail_sl)
@@ -164,6 +208,15 @@ class TrailingStop(ExitStrategy):
         else:  # SELL
             fixed_sl    = entry + self.sl_pips * self.pip_size
             profit_pips = (entry - lowest) / self.pip_size
+
+            # WHY (Phase A.13): tp_pips for SELL.
+            # CHANGED: April 2026 — Phase A.13
+            if self.tp_pips is not None:
+                tp_price = entry - self.tp_pips * self.pip_size
+                if candle["low"] <= tp_price:
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+
             if profit_pips >= self.activation_pips:
                 trail_sl     = lowest + self.trail_distance_pips * self.pip_size
                 effective_sl = min(fixed_sl, trail_sl)
@@ -182,8 +235,16 @@ class TrailingStop(ExitStrategy):
         return None
 
     def describe(self):
-        return (f"SL {self.sl_pips} pips, trail after +{self.activation_pips} pips, "
-                f"trail distance {self.trail_distance_pips} pips")
+        parts = [
+            f"SL {self.sl_pips} pips",
+            f"trail after +{self.activation_pips} pips",
+            f"trail distance {self.trail_distance_pips} pips",
+        ]
+        if self.tp_pips is not None:
+            parts.append(f"TP {self.tp_pips} pips")
+        if self.max_candles is not None:
+            parts.append(f"max {self.max_candles} candles")
+        return ", ".join(parts)
 
 
 class ATRBased(ExitStrategy):
@@ -440,8 +501,10 @@ def get_default_exit_strategies(pip_size=0.01):
         FixedSLTP(sl_pips=150, tp_pips=200,  pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=300,  pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=500,  pip_size=pip_size),
-        TrailingStop(sl_pips=150, activation_pips=50,  trail_distance_pips=100, pip_size=pip_size),
-        TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150, pip_size=pip_size),
+        TrailingStop(sl_pips=150, activation_pips=50,  trail_distance_pips=100,
+                     tp_pips=750, max_candles=1000, pip_size=pip_size),
+        TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150,
+                     tp_pips=750, max_candles=1000, pip_size=pip_size),
         ATRBased(sl_atr_mult=1.5, tp_atr_mult=3.0),
         ATRBased(sl_atr_mult=2.0, tp_atr_mult=4.0),
         TimeBased(sl_pips=150, max_candles=6,  pip_size=pip_size),
