@@ -2671,8 +2671,15 @@ def build_panel(parent):
                 if rule.get('stage') == 'evaluation' and rule.get('type') == 'eval_settings':
                     params = rule.get('parameters', {})
                     risk_range = params.get('risk_pct_range', [0.8, 1.5])
+                    # WHY (Phase 67 Fix 15): For evaluation stage, the lower bound
+                    #      is the most conservative (slow). Use the midpoint of
+                    #      the allowed range as a balanced starting default — safer
+                    #      than max but faster than min. User can adjust.
+                    # CHANGED: April 2026 — Phase 67 Fix 15 — midpoint for evaluation
+                    #          (audit Part E HIGH #15)
+                    _mid_eval = round((risk_range[0] + risk_range[-1]) / 2, 2)
                     if _risk_var:
-                        _risk_var.set(str(risk_range[0]))  # use lower bound
+                        _risk_var.set(str(_mid_eval))
                     break
             else:
                 # No firm-specific eval rules — default aggressive
@@ -2687,8 +2694,12 @@ def build_panel(parent):
                 if rule.get('stage') == 'funded' and rule.get('type') == 'funded_accumulate':
                     params = rule.get('parameters', {})
                     risk_range = params.get('risk_pct_range', [0.3, 0.5])
+                    # WHY (Phase 67 Fix 15): For funded stage, lower bound IS the
+                    #      safest default — funded accounts have payout consistency
+                    #      rules that favour steady, conservative risk.
+                    # CHANGED: April 2026 — Phase 67 Fix 15 — explicit comment
                     if _risk_var:
-                        _risk_var.set(str(risk_range[0]))  # use lower bound (safest)
+                        _risk_var.set(str(risk_range[0]))  # safest for funded stage
                     break
             else:
                 # No firm-specific funded rules — default conservative

@@ -446,7 +446,15 @@ def build_panel(parent):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
         p1_report = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'analysis_report.json')
         p4_scratch = os.path.join(project_root, 'project4_strategy_creation', 'outputs', 'discovery_scratch.json')
-        p1_xgboost = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'discovery_xgboost.json')
+        # WHY (Phase 67 Fix 36): Old scanner looked for discovery_xgboost.json
+        #      but the XGBoost panel writes to xgboost_result.json.
+        #      The XGBoost source never appeared in the dropdown.
+        #      Check both filenames for backward compat.
+        # CHANGED: April 2026 — Phase 67 Fix 36 — correct XGBoost filename
+        #          (audit Part E MEDIUM #36)
+        _xgb_new = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'xgboost_result.json')
+        _xgb_old = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'discovery_xgboost.json')
+        p1_xgboost = _xgb_new if os.path.exists(_xgb_new) else _xgb_old
         saved_path = os.path.join(project_root, 'saved_rules.json')
 
         if os.path.exists(p1_report):
@@ -576,8 +584,15 @@ def build_panel(parent):
         from helpers import normalize_conditions
         rules = [normalize_conditions(r) for r in rules]
 
-        # Filter WIN only
-        win_rules = [r for r in rules if r.get('prediction', 'WIN') == 'WIN']
+        # WHY (Phase 67 Fix 37): Old code filtered to prediction=='WIN' only.
+        #      A sell-only strategy extracted by analyze.py uses prediction='LOSS'
+        #      (because it wins by being on the loss-of-going-long side).
+        #      These rules were completely invisible in the backtest panel.
+        #      Include both WIN and LOSS rules so sell strategies can be tested.
+        # CHANGED: April 2026 — Phase 67 Fix 37 — include SELL/LOSS rules
+        #          (audit Part E MEDIUM #37)
+        win_rules = [r for r in rules
+                     if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
         _current_rules = win_rules
 
         if not win_rules:
@@ -661,29 +676,50 @@ def build_panel(parent):
 
     def _delete_rule_from_source(rule_index, source_paths):
         """Delete a specific rule from the current source file."""
+        # WHY (Phase 67 Fix 29+30): Old code used a stale win_indices built
+        #      at load time. If another panel modified the file between load
+        #      and delete, the wrong rule could be deleted silently. Re-read
+        #      the file fresh at delete time and rebuild win_indices from
+        #      current file contents.
+        #      Also: old code wrote directly to the file — a crash mid-write
+        #      corrupts analysis_report.json. Use atomic temp-file rename so
+        #      the file is never in a partial state.
+        # CHANGED: April 2026 — Phase 67 Fix 29+30 — fresh read + atomic write
+        #          (audit Part E HIGH #29, #30)
         global _current_source_path, _source_var
         path = _current_source_path[0]
         if not path:
             return
         try:
+            # Fresh read — not the stale data from load time
             with open(path, encoding='utf-8') as f:
                 data = json.load(f)
 
             if isinstance(data, list):
-                # saved_rules.json format
                 if rule_index < len(data):
                     data.pop(rule_index)
             else:
                 rules = data.get('rules', [])
-                # Find WIN rules and map index
-                win_indices = [i for i, r in enumerate(rules) if r.get('prediction', 'WIN') == 'WIN']
+                # Rebuild win_indices fresh from current file contents
+                win_indices = [i for i, r in enumerate(rules)
+                               if r.get('prediction', 'WIN') == 'WIN']
                 if rule_index < len(win_indices):
                     actual_idx = win_indices[rule_index]
                     rules.pop(actual_idx)
                     data['rules'] = rules
 
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, default=str)
+            # Atomic write: write to temp file then rename so the
+            # target file is never in a partial/corrupted state
+            import tempfile, os as _os
+            _dir = _os.path.dirname(_os.path.abspath(path))
+            with tempfile.NamedTemporaryFile(
+                mode='w', encoding='utf-8', dir=_dir,
+                suffix='.tmp', delete=False
+            ) as tf:
+                json.dump(data, tf, indent=2, default=str)
+                _tmp_path = tf.name
+            _os.replace(_tmp_path, path)
+
         except Exception as e:
             messagebox.showerror("Error", f"Could not delete rule:\n{e}")
 
@@ -710,7 +746,24 @@ def build_panel(parent):
         toggle_widget = feature_toggles.build_toggle_widget(panel, bg="#ffffff")
         toggle_widget.pack(fill="x", padx=20, pady=(15, 5))
     except ImportError:
-        pass  # Shared module not available, skip toggles
+        # WHY (Phase 67 Fix 34): Silent pass meant the backtest ran with
+        #      unknown toggle defaults if the module was missing. Log a
+        #      visible warning so users know toggles are not active.
+        # CHANGED: April 2026 — Phase 67 Fix 34 — log toggle import failure
+        #          (audit Part E HIGH #34)
+        try:
+            from shared.logging_setup import get_logger as _gl
+            _gl(__name__).warning(
+                "[run_backtest] shared.feature_toggles not importable — "
+                "backtest will run with default feature toggle settings. "
+                "SMART/REGIME feature filtering is inactive."
+            )
+        except Exception:
+            pass
+        tk.Label(panel,
+                 text="⚠️  Feature toggles unavailable (shared.feature_toggles missing)",
+                 font=("Segoe UI", 8, "italic"), bg="#ffffff", fg="#e67e22"
+                 ).pack(fill="x", padx=20, pady=(5, 0))
 
     # ── Safety stops toggle ───────────────────────────────────────────────────
     # WHY: Lets user compare with/without safety stops enabled. Default ON
