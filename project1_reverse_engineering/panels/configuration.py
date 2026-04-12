@@ -46,6 +46,7 @@ DEFAULTS = {
     'align_timeframes':         'M5,M15,H1,H4,D1',
     'lookback_candles':         '200',
     'skip_m1_features':         'true',
+    'utc_offset_hours':         '2',        # Phase 60 Fix 1a + Phase 62 Fix 4 sync
     'train_test_split':         '0.80',
     'rf_trees':                 '500',
     'max_tree_depth':           '6',
@@ -123,11 +124,38 @@ FIELDS = {
          'XAUUSD needs ~150 (bid/ask vs mid-price diff). EURUSD needs ~5.'),
     ],
     'pipeline': [
+        # WHY (Phase 62 Fix 4): align_timeframes, skip_m1_features,
+        #      lookback_candles, and utc_offset_hours were in config_loader
+        #      DEFAULTS but had no UI fields. Users could not set them from
+        #      the panel; manual JSON edits were silently dropped on next save.
+        # CHANGED: April 2026 — Phase 62 Fix 4 — expose pipeline fields in UI
+        #          (audit Part D MEDIUM #66)
+        ('align_timeframes',
+         'Timeframes to Align',
+         'Comma-separated list of timeframes to compute indicators for.\n'
+         'Example: M5,M15,H1,H4,D1\n'
+         'Must match the price data files you have downloaded.'),
+
+        ('lookback_candles',
+         'Lookback Candles',
+         'Number of candles of history needed before a trade to compute indicators.\n'
+         'Minimum 50. Recommended 200.'),
+
         ('min_lookback_candles',
-         'Min Lookback Candles',
-         'Number of candles before each trade needed to compute all indicators.\n'
-         'Trades without enough history are skipped.\n'
-         'Minimum 50. Recommended 200. Higher = fewer trades used but safer indicators.'),
+         'Min Lookback Candles (legacy alias)',
+         'Alias for Lookback Candles — kept for backwards compatibility with older configs.'),
+
+        ('skip_m1_features',
+         'Skip M1 Features',
+         'Set to true to skip M1 (1-minute) indicator computation.\n'
+         'M1 has many candles and slows step2 significantly.\n'
+         'Set to false only if you have M1 price data and want M1_ features.'),
+
+        ('utc_offset_hours',
+         'Broker UTC Offset (hours)',
+         'Hours to subtract from broker timestamp to get UTC.\n'
+         'EET (winter) = 2, EET (summer/DST) = 3, GMT = 0, EST = 5.\n'
+         'Used to align hour_of_day features with the live EA (which uses TimeGMT()).'),
     ],
     'ml': [
         ('train_test_split',
@@ -204,7 +232,8 @@ def save_config(entries, output_text):
     float_keys = ['pip_size', 'pip_value_per_lot_usd', 'pip_value_usd',
                   'alignment_tolerance_pips', 'train_test_split',
                   'rule_min_confidence', 'match_rate_threshold']
-    int_keys   = ['min_lookback_candles', 'rf_trees', 'max_tree_depth',
+    int_keys   = ['min_lookback_candles', 'lookback_candles', 'utc_offset_hours',
+                  'rf_trees', 'max_tree_depth',
                   'min_samples_leaf', 'rule_min_coverage']
 
     for k in float_keys:
@@ -342,13 +371,14 @@ def build_panel(parent):
     info.pack(fill="x", pady=(0, 12))
     tk.Label(info, text="⚠️  Best source: download_autonomous.py",
              bg="#fff3cd", fg="#856404", font=("Segoe UI", 9, "bold")).pack(anchor="w")
-    # WHY (Phase 53 Fix 4): Old code hardcoded
-    #      "script_download_historicaldata_xauusd/" in the warning
-    #      text. Other instruments don't have this directory. Make
-    #      the path symbol-aware by reading from config and
+    # WHY (Phase 62 Fix 2, originally Phase 53 Fix 4): Old code
+    #      hardcoded "script_download_historicaldata_xauusd/" in the
+    #      warning text. Other instruments don't have this directory.
+    #      Make the path symbol-aware by reading from config and
     #      noting that the directory may not exist for non-XAUUSD.
-    # CHANGED: April 2026 — Phase 53 Fix 4 — symbol-aware downloader text
-    #          (audit Part D MED #64)
+    # CHANGED: April 2026 — Phase 62 Fix 2 (confirmed Phase 53 Fix 4)
+    #          — instrument-agnostic Dukascopy description
+    #          (audit Part D MED #64, #73)
     try:
         from project1_reverse_engineering import config_loader as _cl
         _sym_lower = _cl.load().get('symbol', 'XAUUSD').lower()
@@ -378,15 +408,25 @@ def build_panel(parent):
                 f"{platform.system()}.\n\n"
                 f"On Linux/Mac, use one of these alternatives:\n"
                 f"  • Run the autonomous Dukascopy downloader\n"
-                f"    (project1/script_download_historicaldata_xauusd/)\n"
                 f"  • Use 'Download from yfinance' (limited history)\n"
                 f"  • Copy candle CSVs from a Windows MT5 install"
             )
             return
         download_data_mt5(_output_text)
 
-    tk.Button(right_frame, text="🔽  Download from MT5 (Windows only)",
-              bg="#27ae60", fg="white", font=("Segoe UI", 10, "bold"),
+    # WHY (Phase 62 Fix 1): "Recommended" label was shown to all users
+    #      regardless of platform. MT5 only runs on Windows; Linux/Mac
+    #      users who clicked the button got a cryptic subprocess failure.
+    #      Check platform and update label + tooltip accordingly.
+    # CHANGED: April 2026 — Phase 62 Fix 1 — platform-aware MT5 button
+    #          (audit Part D MEDIUM #63)
+    import platform as _platform
+    _is_windows = _platform.system() == 'Windows'
+    _mt5_label  = "🔽  Download from MT5 (Recommended)" if _is_windows \
+                  else "🔽  Download from MT5 (Windows only)"
+    _mt5_color  = "#27ae60" if _is_windows else "#95a5a6"
+    tk.Button(right_frame, text=_mt5_label,
+              bg=_mt5_color, fg="white", font=("Segoe UI", 10, "bold"),
               bd=0, pady=10, cursor="hand2",
               command=_mt5_download_with_os_check).pack(fill="x", pady=(0, 5))
 
@@ -501,46 +541,69 @@ def download_data(output_text, _):
     output_text.insert(tk.END, "Starting yfinance download...\nThis may take several minutes.\n\n")
 
     def run():
-        try:
-            import io
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-            old = sys.stdout
-            # WHY (Phase 53 Fix 5): Old code used StringIO which grows
-            #      unbounded in RAM during long downloads. Use a
-            #      lightweight bounded wrapper that keeps only the
-            #      last N lines so the panel can still display
-            #      tail output without OOM risk.
-            # CHANGED: April 2026 — Phase 53 Fix 5 — bounded stdout buffer
-            #          (audit Part D MED #65)
-            class _BoundedBuffer:
-                def __init__(self, max_lines=2000):
-                    self._lines = []
-                    self._max = max_lines
-                def write(self, s):
-                    if not s:
-                        return
-                    for line in str(s).splitlines():
-                        self._lines.append(line)
-                        if len(self._lines) > self._max:
-                            self._lines.pop(0)
-                def flush(self):
-                    pass
-                def getvalue(self):
-                    return '\n'.join(self._lines)
-            sys.stdout = buf = _BoundedBuffer(max_lines=2000)
+        # WHY (Phase 62 Fix 3): Old code redirected stdout to a bounded buffer
+        #      and displayed it all at once at the end. Long downloads
+        #      (minutes) left the user staring at a blank output box.
+        #      Replace with a queue-based streaming approach: write lines
+        #      to a queue, a Tkinter after-loop drains it into the text
+        #      widget every 200ms.
+        # CHANGED: April 2026 — Phase 62 Fix 3 — streaming stdout output
+        #          (audit Part D MEDIUM #65)
+        import io, queue as _queue
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        _q = _queue.Queue()
+
+        class _StreamWriter(io.TextIOBase):
+            def write(self, s):
+                if s:
+                    _q.put(s)
+                return len(s)
+            def flush(self):
+                pass
+
+        def _drain():
+            _lines = []
             try:
-                import download_price_data
-                download_price_data.download_data_yfinance()
-                download_price_data.verify_data_coverage()
-            except Exception as e:
-                buf.write(f"\nERROR: {e}\n")
-            finally:
-                sys.stdout = old
-                result = buf.getvalue()
-            output_text.after(0, lambda: (output_text.insert(tk.END, result), output_text.see(tk.END)))
-            output_text.after(0, lambda: messagebox.showinfo("Done", "Download finished.\nClick 'Check Data Status' to verify."))
+                while True:
+                    _lines.append(_q.get_nowait())
+            except _queue.Empty:
+                pass
+            if _lines:
+                output_text.after(0, lambda _l=''.join(_lines): (
+                    output_text.insert(tk.END, _l),
+                    output_text.see(tk.END)
+                ))
+            if _running[0]:
+                output_text.after(200, _drain)
+
+        _running = [True]
+        output_text.after(200, _drain)
+        old = sys.stdout
+        sys.stdout = _StreamWriter()
+        try:
+            import download_price_data
+            download_price_data.download_data_yfinance()
+            download_price_data.verify_data_coverage()
         except Exception as e:
-            output_text.after(0, lambda: output_text.insert(tk.END, f"\nERROR: {e}\n"))
+            _q.put(f"\nERROR: {e}\n")
+        finally:
+            sys.stdout = old
+            _running[0] = False
+            # Drain any remaining output
+            import time; time.sleep(0.25)
+            _leftover = []
+            try:
+                while True:
+                    _leftover.append(_q.get_nowait())
+            except _queue.Empty:
+                pass
+            if _leftover:
+                output_text.after(0, lambda _l=''.join(_leftover): (
+                    output_text.insert(tk.END, _l),
+                    output_text.see(tk.END)
+                ))
+        output_text.after(0, lambda: messagebox.showinfo(
+            "Done", "Download finished.\nClick 'Check Data Status' to verify."))
 
     threading.Thread(target=run, daemon=True).start()
 

@@ -100,15 +100,16 @@ def _check_feature_matrix():
                              checked=True)
             return False, _fm_cache["message"]
 
-        # WHY (Phase 54 Fix 1): Old code counted file lines, but CSV
-        #      cells can contain embedded newlines (trade comments,
-        #      text fields with line breaks). pandas handles quoted
-        #      newlines correctly. Read just one column to avoid the
-        #      full parse cost.
-        # CHANGED: April 2026 — Phase 54 Fix 1 — robust row count
-        #          (audit Part D MED #72)
+        # WHY (Phase 62 Fix 5): sum(1 for _ in f) counts physical lines.
+        #      A CSV field containing a quoted newline (e.g. a trade comment
+        #      with line breaks) inflates the count by 1 per embedded newline.
+        #      Use csv.reader which correctly handles quoted fields.
+        # CHANGED: April 2026 — Phase 62 Fix 5 — csv.reader row count
+        #          (audit Part D MEDIUM #72)
         try:
-            row_count = len(pd.read_csv(fm_path, usecols=[0]))
+            import csv as _csv
+            with open(fm_path, 'r', encoding='utf-8', newline='') as f:
+                row_count = sum(1 for _ in _csv.reader(f)) - 1  # minus header
         except Exception:
             row_count = "1000+"
 

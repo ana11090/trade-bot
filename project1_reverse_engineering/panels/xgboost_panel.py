@@ -552,19 +552,12 @@ def _on_run():
                 min_coverage    = int(_var_min_cov.get()),
                 min_win_rate    = float(_var_min_wr.get()),
                 use_smart_features = _use_smart_var.get(),
-                # WHY (Phase 54 Fix 5): Old code passed the user's raw
+                # WHY (Phase 62 Fix 8): Old code passed the user's raw
                 #      input directly. Values like 1.1 or -0.5 produced
-                #      cryptic sklearn errors. Clamp to [0.5, 0.95]
-                #      with a log warning if the user's value was out
-                #      of range.
-                # CHANGED: April 2026 — Phase 54 Fix 5 — bounds clamp
+                #      cryptic sklearn errors. Clamp to [0.50, 0.95].
+                # CHANGED: April 2026 — Phase 62 Fix 8 — bounds validation
                 #          (audit Part D MED #80)
-                train_test_split   = (lambda v: (
-                    print(f"[XGB_PANEL] WARNING: train_test_split={v} out of [0.5, 0.95], "
-                          f"clamping to {max(0.5, min(0.95, v))}")
-                    if (v < 0.5 or v > 0.95) else None,
-                    max(0.5, min(0.95, v))
-                )[1])(float(_var_train_split.get())),
+                train_test_split = max(0.50, min(0.95, float(_var_train_split.get()))),
                 progress_callback  = _cb,
             )
 

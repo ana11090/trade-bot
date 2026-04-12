@@ -147,6 +147,35 @@ def _load_and_display():
         bg="#e8f4f8", fg="#005580"
     ).pack(anchor="w", pady=(3, 0))
 
+    # WHY (Phase 62 Fix 9): Old code showed no warning if analyze.py
+    #      crashed mid-run and wrote a partial analysis_report.json.
+    #      Missing sections like clusters/regimes/suggestions render
+    #      empty, but the user assumes the analysis is complete.
+    #      Detect missing or empty sections and show a warning banner.
+    # CHANGED: April 2026 — Phase 62 Fix 9 — partial report notice
+    #          (audit Part D MED #82)
+    _expected = ['clusters', 'regimes', 'evolution', 'anomalies', 'suggestions']
+    _missing = [s for s in _expected if not report.get(s)]
+    if _missing:
+        warn_frame = tk.Frame(_content_frame, bg="#fff3cd", padx=15, pady=10,
+                              highlightbackground="#ffc107", highlightthickness=2)
+        warn_frame.pack(fill="x", padx=5, pady=(0, 5))
+        tk.Label(
+            warn_frame,
+            text="⚠️  PARTIAL REPORT DETECTED",
+            font=("Segoe UI", 10, "bold"),
+            bg="#fff3cd", fg="#856404"
+        ).pack(anchor="w")
+        tk.Label(
+            warn_frame,
+            text=f"This report is missing: {', '.join(_missing)}. "
+                 f"The analysis may have stopped early. "
+                 f"Re-run 'Full Analysis' to generate complete results.",
+            font=("Segoe UI", 9),
+            bg="#fff3cd", fg="#856404",
+            wraplength=800, justify=tk.LEFT
+        ).pack(anchor="w", pady=(2, 0))
+
     # Display all sections
     _display_profile(report.get('profile', {}), report.get('trade_count', 0))
     _display_feature_importance(report.get('feature_importance', {}))
