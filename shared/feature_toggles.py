@@ -4,6 +4,8 @@ Saved to feature_settings.json so settings persist between restarts.
 """
 import os
 import json
+import tempfile
+import threading
 import tkinter as tk
 
 _PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -11,26 +13,51 @@ _PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULTS = {'smart_features': True, 'regime_features': True}
 _current = dict(_DEFAULTS)
 
+# WHY (Phase 73 Fix 47): Global _current dict is modified by save() without
+#      locks. Two concurrent save() calls (e.g., from two panels) can corrupt
+#      _current or write inconsistent JSON. Add a lock for load/save ops.
+# CHANGED: April 2026 — Phase 73 Fix 47 — feature toggle lock
+#          (audit Part F HIGH #47)
+_settings_lock = threading.Lock()
+
 
 def load():
+    # Phase 73 Fix 47: Lock around global _current modification
     global _current
-    if os.path.exists(_PATH):
-        try:
-            with open(_PATH) as f:
-                _current.update({k: v for k, v in json.load(f).items() if k in _DEFAULTS})
-        except Exception:
-            pass
-    return dict(_current)
+    with _settings_lock:
+        if os.path.exists(_PATH):
+            try:
+                with open(_PATH) as f:
+                    _current.update({k: v for k, v in json.load(f).items() if k in _DEFAULTS})
+            except Exception:
+                pass
+        return dict(_current)
 
 
 def save(**kw):
+    # WHY (Phase 73 Fix 48): Old code used open('w') which truncates the file
+    #      immediately. A crash between truncate and json.dump completing left
+    #      feature_settings.json empty — all toggles reset to defaults. Write
+    #      to tempfile in same directory, then os.replace (atomic).
+    # CHANGED: April 2026 — Phase 73 Fix 48 — atomic write via tempfile
+    #          (audit Part F HIGH #48)
+    # Phase 73 Fix 47: Lock around global _current modification + write
     global _current
-    _current.update({k: v for k, v in kw.items() if k in _DEFAULTS})
-    try:
-        with open(_PATH, 'w') as f:
-            json.dump(_current, f, indent=2)
-    except Exception:
-        pass
+    with _settings_lock:
+        _current.update({k: v for k, v in kw.items() if k in _DEFAULTS})
+        dir_name = os.path.dirname(_PATH) or '.'
+        fd, tmp_path = tempfile.mkstemp(
+            suffix='.json', prefix='.tmp_features_', dir=dir_name
+        )
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+                json.dump(_current, fh, indent=2)
+            os.replace(tmp_path, _PATH)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def get_smart():

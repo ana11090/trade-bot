@@ -1,6 +1,4 @@
 [
-  "Rule 1|SL 150 pips, trail after +50 pips, trail distance 100 pips",
-  "Rule 1|Fixed SL 150 pips / TP 200 pips",
-  "All rules combined|SL 150 pips, close after 12 candles",
-  "Rule 1|Fixed SL 150 pips / TP 300 pips"
+  "test1|EXIT1",
+  "test2|EXIT2"
 ]

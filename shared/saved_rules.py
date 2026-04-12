@@ -6,10 +6,19 @@ Rules are saved to saved_rules.json and can be loaded, deleted, or sent to backt
 import os
 import json
 import tempfile
+import threading
 from datetime import datetime
 
 _SAVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            'saved_rules.json')
+
+# WHY (Phase 73 Fix 40): Two concurrent save_rule or delete_rule operations
+#      race the JSON write. User bookmarks rule A from backtest panel and
+#      rule B from analysis panel simultaneously — only one write completes
+#      (the other is clobbered). Use a write lock.
+# CHANGED: April 2026 — Phase 73 Fix 40 — save/delete write lock
+#          (audit Part F HIGH #40)
+_save_lock = threading.Lock()
 
 
 # WHY: All write paths previously used open(w) which truncates the file
@@ -57,49 +66,55 @@ def save_rule(rule, source="unknown", notes=""):
         source: where it came from ("Robot Analysis", "XGBoost", "Scratch", "Backtest Result", etc.)
         notes: optional user note
     """
-    all_rules = load_all()
+    # Phase 73 Fix 40: Wrap load-modify-save in lock to prevent concurrent write races
+    with _save_lock:
+        all_rules = load_all()
 
-    # WHY: Old code used id = len(all_rules) + 1 which produces DUPLICATE
-    #      IDs after a middle-delete:
-    #        1. save A→id=1, B→id=2, C→id=3  (list: [A,B,C])
-    #        2. delete_rule(2) → [A,C] (len=2)
-    #        3. save D → id = len+1 = 3  ← COLLISION with C.id=3
-    #        4. delete_rule(3) → removes BOTH C and D (silent data loss)
-    #      Fix: use max(existing_ids)+1. Monotonic growth means IDs are
-    #      never reused even after deletes.
-    # CHANGED: April 2026 — unique IDs via max+1 (audit MED)
-    existing_ids = [r.get("id", 0) for r in all_rules if isinstance(r.get("id"), int)]
-    new_id       = max(existing_ids, default=0) + 1
+        # WHY: Old code used id = len(all_rules) + 1 which produces DUPLICATE
+        #      IDs after a middle-delete:
+        #        1. save A→id=1, B→id=2, C→id=3  (list: [A,B,C])
+        #        2. delete_rule(2) → [A,C] (len=2)
+        #        3. save D → id = len+1 = 3  ← COLLISION with C.id=3
+        #        4. delete_rule(3) → removes BOTH C and D (silent data loss)
+        #      Fix: use max(existing_ids)+1. Monotonic growth means IDs are
+        #      never reused even after deletes.
+        # CHANGED: April 2026 — unique IDs via max+1 (audit MED)
+        existing_ids = [r.get("id", 0) for r in all_rules if isinstance(r.get("id"), int)]
+        new_id       = max(existing_ids, default=0) + 1
 
-    entry = {
-        "id": new_id,
-        "saved_at": datetime.now().isoformat(),
-        "source": source,
-        "notes": notes,
-        "rule": rule,
-    }
+        entry = {
+            "id": new_id,
+            "saved_at": datetime.now().isoformat(),
+            "source": source,
+            "notes": notes,
+            "rule": rule,
+        }
 
-    all_rules.append(entry)
+        all_rules.append(entry)
 
-    # CHANGED: April 2026 — atomic write (audit MED #67)
-    _atomic_write_json(all_rules, _SAVE_PATH)
+        # CHANGED: April 2026 — atomic write (audit MED #67)
+        _atomic_write_json(all_rules, _SAVE_PATH)
 
-    return entry["id"]
+        return entry["id"]
 
 
 def delete_rule(rule_id):
     """Delete a saved rule by ID."""
-    all_rules = load_all()
-    all_rules = [r for r in all_rules if r.get("id") != rule_id]
+    # Phase 73 Fix 40: Wrap load-modify-save in lock
+    with _save_lock:
+        all_rules = load_all()
+        all_rules = [r for r in all_rules if r.get("id") != rule_id]
 
-    # CHANGED: April 2026 — atomic write (audit MED #67)
-    _atomic_write_json(all_rules, _SAVE_PATH)
+        # CHANGED: April 2026 — atomic write (audit MED #67)
+        _atomic_write_json(all_rules, _SAVE_PATH)
 
 
 def delete_all():
     """Delete all saved rules."""
-    # CHANGED: April 2026 — atomic write (audit MED #67)
-    _atomic_write_json([], _SAVE_PATH)
+    # Phase 73 Fix 40: Wrap write in lock
+    with _save_lock:
+        # CHANGED: April 2026 — atomic write (audit MED #67)
+        _atomic_write_json([], _SAVE_PATH)
 
 
 def export_to_report(rule_ids=None):

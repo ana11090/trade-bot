@@ -1,180 +1,512 @@
 [
   {
     "id": 1,
-    "saved_at": "2026-04-06T13:53:09.590748",
-    "source": "Backtest Result",
-    "notes": "1",
+    "saved_at": "2026-04-12T19:03:10.295749",
+    "source": "Thread0",
+    "notes": "Rule0",
     "rule": {
-      "rule_combo": "Rule 1",
-      "exit_strategy": "SL 150 pips, exit when H1_rsi_14 above 70",
-      "exit_name": "Indicator Exit",
-      "prediction": "WIN",
-      "win_rate": 33.3,
-      "net_total_pips": 416784.0,
-      "net_profit_factor": 1260.16,
-      "total_trades": 3,
-      "max_dd_pips": 178.0
+      "conditions": [
+        {
+          "feature": "thread0_rule0",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 2,
-    "saved_at": "2026-04-06T13:53:14.646488",
-    "source": "Backtest Result",
-    "notes": "2",
+    "saved_at": "2026-04-12T19:03:10.302266",
+    "source": "Thread1",
+    "notes": "Rule0",
     "rule": {
-      "rule_combo": "All rules combined",
-      "exit_strategy": "SL 150 pips, exit when H1_rsi_14 above 70",
-      "exit_name": "Indicator Exit",
-      "prediction": "WIN",
-      "win_rate": 33.3,
-      "net_total_pips": 416784.0,
-      "net_profit_factor": 1260.16,
-      "total_trades": 3,
-      "max_dd_pips": 178.0
+      "conditions": [
+        {
+          "feature": "thread1_rule0",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 3,
-    "saved_at": "2026-04-06T13:54:21.643893",
-    "source": "Backtest Result",
-    "notes": "3",
+    "saved_at": "2026-04-12T19:03:10.309759",
+    "source": "Thread2",
+    "notes": "Rule0",
     "rule": {
-      "rule_combo": "Rule 1",
-      "exit_strategy": "SL 150 pips, close after 6 candles",
-      "exit_name": "Time-Based",
-      "prediction": "WIN",
-      "win_rate": 72.4,
-      "net_total_pips": 1088846.0,
-      "net_profit_factor": 9.94,
-      "total_trades": 2514,
-      "max_dd_pips": 2050.0
+      "conditions": [
+        {
+          "feature": "thread2_rule0",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 4,
-    "saved_at": "2026-04-06T15:19:36.052437",
-    "source": "Backtest Result",
-    "notes": "",
+    "saved_at": "2026-04-12T19:03:10.316266",
+    "source": "Thread0",
+    "notes": "Rule1",
     "rule": {
-      "rule_combo": "All rules combined",
-      "exit_strategy": "SL 150 pips, exit when H1_rsi_14 above 70",
-      "exit_name": "Indicator Exit",
-      "prediction": "WIN",
-      "win_rate": 33.3,
-      "net_total_pips": 416784.0,
-      "net_profit_factor": 1260.16,
-      "total_trades": 3,
-      "max_dd_pips": 178.0
+      "conditions": [
+        {
+          "feature": "thread0_rule1",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 5,
-    "saved_at": "2026-04-07T11:57:09.508422",
-    "source": "Backtest Result",
-    "notes": "look like the one before",
+    "saved_at": "2026-04-12T19:03:10.323782",
+    "source": "Thread1",
+    "notes": "Rule1",
     "rule": {
-      "rule_combo": "Rule 3",
-      "exit_strategy": "Fixed SL 150 pips / TP 500 pips",
-      "exit_name": "Fixed SL/TP",
-      "prediction": "WIN",
-      "win_rate": 55.3,
-      "net_total_pips": 332273.0,
-      "net_profit_factor": 4.07,
-      "total_trades": 1413,
-      "max_dd_pips": 1732.0
+      "conditions": [
+        {
+          "feature": "thread1_rule1",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 6,
-    "saved_at": "2026-04-07T11:57:40.455579",
-    "source": "Backtest Result",
-    "notes": "h",
+    "saved_at": "2026-04-12T19:03:10.330796",
+    "source": "Thread0",
+    "notes": "Rule2",
     "rule": {
-      "rule_combo": "Rule 3",
-      "exit_strategy": "Fixed SL 150 pips / TP 300 pips",
-      "exit_name": "Fixed SL/TP",
-      "prediction": "WIN",
-      "win_rate": 69.6,
-      "net_total_pips": 318524.0,
-      "net_profit_factor": 5.03,
-      "total_trades": 1440,
-      "max_dd_pips": 1539.0
+      "conditions": [
+        {
+          "feature": "thread0_rule2",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
     "id": 7,
-    "saved_at": "2026-04-07T11:58:02.158364",
-    "source": "Backtest Result",
-    "notes": "3 blows ",
+    "saved_at": "2026-04-12T19:03:10.338458",
+    "source": "Thread2",
+    "notes": "Rule1",
     "rule": {
-      "rule_combo": "Rule 3",
-      "exit_strategy": "Fixed SL 150 pips / TP 200 pips",
-      "exit_name": "Fixed SL/TP",
-      "prediction": "WIN",
-      "win_rate": 77.1,
-      "net_total_pips": 299014.0,
-      "net_profit_factor": 5.74,
-      "total_trades": 1448,
-      "max_dd_pips": 1539.0
+      "conditions": [
+        {
+          "feature": "thread2_rule1",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
-    "id": 4,
-    "saved_at": "2026-04-07T22:12:36.603902",
-    "source": "Optimizer: Get Leveraged filters",
-    "notes": "{'max_trades_per_day': 3, 'cooldown_minutes': 60, 'min_pips': 5, 'min_hold_minutes': 2}",
+    "id": 8,
+    "saved_at": "2026-04-12T19:03:10.345967",
+    "source": "Thread0",
+    "notes": "Rule3",
     "rule": {
-      "conditions": [],
-      "prediction": "WIN",
-      "win_rate": 1.0,
-      "avg_pips": 290.14,
-      "total_pips": 707647.5,
-      "net_total_pips": 707647.5,
-      "total_trades": 2439,
-      "max_dd_pips": 0.0,
-      "net_profit_factor": 99.99,
-      "optimized_rules": [],
-      "filters_applied": {
-        "max_trades_per_day": 3,
-        "cooldown_minutes": 60,
-        "min_pips": 5,
-        "min_hold_minutes": 2
-      },
-      "exit_class": "FixedSLTP",
-      "exit_params": {
-        "sl_pips": 150,
-        "tp_pips": 200
-      },
-      "exit_name": "Fixed SL/TP",
-      "entry_timeframe": "H1"
+      "conditions": [
+        {
+          "feature": "thread0_rule3",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   },
   {
-    "id": 5,
-    "saved_at": "2026-04-07T22:27:19.672577",
-    "source": "Optimizer: Max 1 trades/day",
-    "notes": "{'max_trades_per_day': 1}",
+    "id": 9,
+    "saved_at": "2026-04-12T19:03:10.352970",
+    "source": "Thread1",
+    "notes": "Rule2",
     "rule": {
-      "conditions": [],
-      "prediction": "WIN",
-      "win_rate": 0.8653,
-      "avg_pips": 220.82,
-      "total_pips": 399896.5,
-      "net_total_pips": 399896.5,
-      "total_trades": 1811,
-      "max_dd_pips": 834.0,
-      "net_profit_factor": 9.41,
-      "optimized_rules": [],
-      "filters_applied": {
-        "max_trades_per_day": 1
-      },
-      "exit_class": "FixedSLTP",
-      "exit_params": {
-        "sl_pips": 150,
-        "tp_pips": 200
-      },
-      "exit_name": "Fixed SL/TP",
-      "entry_timeframe": "H1"
+      "conditions": [
+        {
+          "feature": "thread1_rule2",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 10,
+    "saved_at": "2026-04-12T19:03:10.360999",
+    "source": "Thread0",
+    "notes": "Rule4",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule4",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 11,
+    "saved_at": "2026-04-12T19:03:10.369507",
+    "source": "Thread2",
+    "notes": "Rule2",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule2",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 12,
+    "saved_at": "2026-04-12T19:03:10.377019",
+    "source": "Thread1",
+    "notes": "Rule3",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule3",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 13,
+    "saved_at": "2026-04-12T19:03:10.383015",
+    "source": "Thread0",
+    "notes": "Rule5",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule5",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 14,
+    "saved_at": "2026-04-12T19:03:10.392763",
+    "source": "Thread1",
+    "notes": "Rule4",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule4",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 15,
+    "saved_at": "2026-04-12T19:03:10.400946",
+    "source": "Thread2",
+    "notes": "Rule3",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule3",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 16,
+    "saved_at": "2026-04-12T19:03:10.409455",
+    "source": "Thread0",
+    "notes": "Rule6",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule6",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 17,
+    "saved_at": "2026-04-12T19:03:10.418625",
+    "source": "Thread1",
+    "notes": "Rule5",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule5",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 18,
+    "saved_at": "2026-04-12T19:03:10.427138",
+    "source": "Thread2",
+    "notes": "Rule4",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule4",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 19,
+    "saved_at": "2026-04-12T19:03:10.434664",
+    "source": "Thread0",
+    "notes": "Rule7",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule7",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 20,
+    "saved_at": "2026-04-12T19:03:10.441669",
+    "source": "Thread2",
+    "notes": "Rule5",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule5",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 21,
+    "saved_at": "2026-04-12T19:03:10.450177",
+    "source": "Thread1",
+    "notes": "Rule6",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule6",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 22,
+    "saved_at": "2026-04-12T19:03:10.459979",
+    "source": "Thread2",
+    "notes": "Rule6",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule6",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 23,
+    "saved_at": "2026-04-12T19:03:10.469550",
+    "source": "Thread0",
+    "notes": "Rule8",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule8",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 24,
+    "saved_at": "2026-04-12T19:03:10.477053",
+    "source": "Thread1",
+    "notes": "Rule7",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule7",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 25,
+    "saved_at": "2026-04-12T19:03:10.486058",
+    "source": "Thread2",
+    "notes": "Rule7",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule7",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 26,
+    "saved_at": "2026-04-12T19:03:10.493569",
+    "source": "Thread0",
+    "notes": "Rule9",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread0_rule9",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 27,
+    "saved_at": "2026-04-12T19:03:10.500587",
+    "source": "Thread1",
+    "notes": "Rule8",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule8",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 28,
+    "saved_at": "2026-04-12T19:03:10.510364",
+    "source": "Thread2",
+    "notes": "Rule8",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule8",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 29,
+    "saved_at": "2026-04-12T19:03:10.518364",
+    "source": "Thread1",
+    "notes": "Rule9",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread1_rule9",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
+    }
+  },
+  {
+    "id": 30,
+    "saved_at": "2026-04-12T19:03:10.530609",
+    "source": "Thread2",
+    "notes": "Rule9",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "thread2_rule9",
+          "operator": ">",
+          "value": 0
+        }
+      ],
+      "win_rate": 0.65,
+      "avg_pips": 10
     }
   }
 ]
