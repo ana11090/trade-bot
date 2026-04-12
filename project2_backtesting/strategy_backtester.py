@@ -1102,30 +1102,52 @@ def fast_backtest(df, ind, rules, exit_strategy,
             except Exception:
                 pass
 
+        # WHY (Phase A.10): Old code did `candle = future_candles.iloc[ci]`
+        #      then `float(candle['close'])` etc. on every iteration. Each
+        #      `.iloc[ci]` row read is ~10-50µs in pandas, and each
+        #      `float(candle['key'])` does a Series lookup + conversion.
+        #      With ~1000 trades × ~100-500 candles each = 100K-500K
+        #      iterations, this dominated backtest runtime.
+        #      Optimization: pre-extract close/high/low as numpy arrays
+        #      ONCE before the loop, then read them by integer position.
+        #      The exit_strategy.on_new_candle() callback still receives
+        #      a pd.Series via .iloc[ci] because exit strategies access
+        #      fields by name — that single retained .iloc is the only
+        #      pandas access remaining in the hot path.
+        # CHANGED: April 2026 — Phase A.10 — numpy array hot loop
+        _closes_np = future_candles['close'].to_numpy(dtype=float, copy=False)
+        _highs_np  = future_candles['high'].to_numpy(dtype=float, copy=False)
+        _lows_np   = future_candles['low'].to_numpy(dtype=float, copy=False)
+        _n_future  = len(_closes_np)
+
         result = None
         exit_idx = -1
-        for ci in range(len(future_candles)):
-            candle = future_candles.iloc[ci]
-
-            # Update position state before calling exit strategy
-            # WHY (Phase 35 Fix 4): Old code set candles_held = ci,
-            #      where ci=0 is the first candle AFTER entry. A
-            #      TimeBased(max_candles=6) strategy exited when
-            #      candles_held reached 6, i.e. on the 7th iteration
-            #      — user asked for max 6 bars and got 7. Use ci+1
-            #      so candles_held=1 on the first post-entry bar
-            #      (matching "this position has been open for 1 bar").
+        for ci in range(_n_future):
+            # WHY (Phase 35 Fix 4): Old code set candles_held = ci, where
+            #      ci=0 is the first candle AFTER entry. Use ci+1 so a
+            #      TimeBased(max_candles=6) strategy exits on bar 6 not 7.
             # CHANGED: April 2026 — Phase 35 Fix 4 — off-by-one fix
             #          (audit Part C MED #22)
             pos_info['candles_held'] = ci + 1
             pos_info['minutes_held'] = (ci + 1) * candle_minutes
-            close = float(candle['close'])
+            close = _closes_np[ci]
+            high  = _highs_np[ci]
+            low   = _lows_np[ci]
             pos_info['current_pnl_pips'] = (
                 (close - entry_price) / pip_size if direction == "BUY"
                 else (entry_price - close) / pip_size
             )
-            pos_info['highest_since_entry'] = max(pos_info['highest_since_entry'], float(candle['high']))
-            pos_info['lowest_since_entry']  = min(pos_info['lowest_since_entry'],  float(candle['low']))
+            if high > pos_info['highest_since_entry']:
+                pos_info['highest_since_entry'] = high
+            if low < pos_info['lowest_since_entry']:
+                pos_info['lowest_since_entry'] = low
+
+            # WHY (Phase A.10): exit strategies access candle fields by
+            #      name (candle['close'], candle['high'], etc.) so we
+            #      still need a Series-shaped object for the callback.
+            #      This is the only retained .iloc in the hot loop.
+            # CHANGED: April 2026 — Phase A.10
+            candle = future_candles.iloc[ci]
 
             try:
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
