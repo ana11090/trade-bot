@@ -1210,9 +1210,62 @@ def run_analysis(feature_matrix_path=None):
 
     elapsed = time.time() - start
 
+    # WHY (Phase A.3 hotfix): analysis_report.json was missing three
+    #      top-level fields — entry_timeframe, activated_at, and
+    #      discovery_method — that shared/stale_check.py requires when
+    #      win rules are present. Result: every freshly-discovered rule
+    #      set triggered a "Stale Rules Warning" popup in the EA
+    #      generator panel the moment the user tried to export an EA.
+    #      step6_extract_rules.py (legacy) and scratch_discovery.py (P4)
+    #      already emit these fields; this writer was never updated.
+    #
+    #      entry_timeframe is derived from the feature_matrix_path
+    #      parent dir name (run_scenarios.py writes to scenario_<TF>/).
+    #      For multi-TF scenario names like "H1_M15" the entry TF is
+    #      the first segment, matching step6_extract_rules.py line 367.
+    # CHANGED: April 2026 — Phase A.3 — populate stale-check fields
+    if feature_matrix_path is not None:
+        _scenario_dir = os.path.basename(
+            os.path.dirname(os.path.abspath(feature_matrix_path))
+        )
+        # Expected form: "scenario_M5", "scenario_H1_M15", "scenario_H4"
+        if _scenario_dir.startswith('scenario_'):
+            _scenario_name = _scenario_dir[len('scenario_'):]
+        else:
+            _scenario_name = None
+        if _scenario_name:
+            _entry_timeframe = (
+                _scenario_name.split('_')[0]
+                if '_' in _scenario_name
+                else _scenario_name
+            )
+        else:
+            _entry_timeframe = None
+    else:
+        _scenario_name = None
+        _entry_timeframe = None
+
+    if _entry_timeframe is None:
+        log.warning(
+            "[ANALYZE] Could not derive entry_timeframe from feature_matrix_path "
+            "(expected .../scenario_<TF>/feature_matrix.csv). The stale check "
+            "will flag this report as missing entry_timeframe."
+        )
+
     # Assemble report
     report = {
         'generated_at':    datetime.now().isoformat(),
+        # WHY (Phase A.3 hotfix): shared/stale_check.py requires these
+        #      three top-level fields when win rules are present, or it
+        #      flags the report as stale and blocks EA generation with a
+        #      warning popup. See the comment block above for full
+        #      rationale and why other writers (step6, scratch_discovery)
+        #      already emit these.
+        # CHANGED: April 2026 — Phase A.3
+        'entry_timeframe': _entry_timeframe,
+        'activated_at':    time.strftime('%Y-%m-%d %H:%M:%S'),
+        'discovery_method': 'p1_run_scenarios',
+        'scenario':        _scenario_name,
         'analysis_time_s': round(elapsed, 1),
         'trade_count':     len(df),
         'feature_count':   len(df.columns),
