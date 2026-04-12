@@ -1749,105 +1749,104 @@ def _display_verdict(combined, trades=None):
                 max_dd_pips = dd
         in_dd = int(max_dd_pips)
 
-        # Pull validation factors from combined
-        wf_degrad    = combined.get('avg_degradation', 0) / 100  # e.g. -0.15
-        edge_held    = combined.get('edge_held_ratio', 0.5)       # 0.0–1.0
-        mc_v         = verdicts.get('monte_carlo', 'N/A')
-        mc_pass_rate = {'ROBUST': 0.80, 'MODERATE': 0.60, 'FRAGILE': 0.35,
-                        'N/A': 0.50}.get(mc_v, 0.50)
+        # WHY (Phase 65 Fix 1+2): OLD code computed realism_factor =
+        #      max(0.30, weighted_sum) and projected in-sample stats
+        #      through it as if it were a calibrated forecast. It was not:
+        #      the 0.40/0.30/0.30 weights were invented; the mc_pass_rate
+        #      input ignored the real MC pass rate and used hardcoded
+        #      label-to-number constants (ROBUST=0.80, etc.); and the
+        #      max(0.30,...) floor meant a strategy with 100% edge collapse
+        #      still displayed "Real PF: 0.55" — catastrophically misleading
+        #      for funding decisions.
+        #
+        #      NEW approach: show the ACTUAL, RAW validation numbers the
+        #      tests computed. No synthetic "realistic forecast". Explicitly
+        #      refuse to show any projected numbers when edge has collapsed.
+        # CHANGED: April 2026 — Phase 65 Fix 1+2 — honest degradation display
+        #          (audit Part E CRITICAL #18, #19)
+        wf_degrad = combined.get('avg_degradation', 0) / 100  # e.g. -0.15
+        edge_held = combined.get('edge_held_ratio', 0.5)       # 0.0–1.0
+        mc_v      = verdicts.get('monte_carlo', 'N/A')
 
-        # Realism factor = weighted combination of the 3 test results
-        realism_factor = max(0.30, min(1.0,
-            (1 + wf_degrad) * 0.40 +
-            edge_held       * 0.30 +
-            mc_pass_rate    * 0.30
-        ))
-
-        real_pf   = round(in_pf   * realism_factor, 2)
-        real_wr   = round(in_wr   * realism_factor, 1)
-        real_pips = int(in_pips   * realism_factor)
-        real_dd   = int(in_dd     * (2 - realism_factor))  # DD gets WORSE in reality
-
-        if realism_factor >= 0.85:
-            real_color = GREEN   # barely degraded
-        elif realism_factor >= 0.65:
-            real_color = AMBER   # moderate degradation
+        # Classify degradation honestly — no floor
+        if wf_degrad <= -0.50:
+            degrad_label = "EDGE COLLAPSED"
+            degrad_color = RED
+        elif wf_degrad <= -0.20:
+            degrad_label = f"HEAVY DEGRADATION ({wf_degrad*100:+.0f}%)"
+            degrad_color = RED
+        elif wf_degrad <= -0.05:
+            degrad_label = f"MODERATE DEGRADATION ({wf_degrad*100:+.0f}%)"
+            degrad_color = AMBER
+        elif wf_degrad >= 0:
+            degrad_label = f"STABLE / IMPROVING ({wf_degrad*100:+.0f}%)"
+            degrad_color = GREEN
         else:
-            real_color = RED     # heavy degradation
+            degrad_label = f"MINOR DEGRADATION ({wf_degrad*100:+.0f}%)"
+            degrad_color = AMBER
 
         summary_card = tk.Frame(_verdict_frame, bg="#e8f4fd", padx=15, pady=12,
                                 highlightbackground="#1565C0", highlightthickness=2)
         summary_card.pack(fill="x", padx=5, pady=(8, 4))
 
         header_lbl = tk.Label(summary_card,
-                              text="💡 Real-World Expectations",
+                              text="📊 Walk-Forward Degradation Summary",
                               font=("Segoe UI", 12, "bold"),
                               bg="#e8f4fd", fg=DARK, cursor="question_arrow")
         header_lbl.pack(anchor="w")
         _Tooltip(header_lbl,
-            "HOW THE REAL-WORLD ESTIMATE IS CALCULATED\n\n"
-            "This combines the 3 validation tests into a single realistic\n"
-            "performance estimate.\n\n"
-            "FORMULA:\n"
-            "  realism_factor = (1 + walk_forward_degradation) x 40%\n"
-            "                 + edge_held_ratio x 30%\n"
-            "                 + monte_carlo_pass_rate x 30%\n\n"
-            "Then:\n"
-            "  realistic_PF   = in_sample_PF   x realism_factor\n"
-            "  realistic_WR   = in_sample_WR   x realism_factor\n"
-            "  realistic_pips = in_sample_pips x realism_factor\n"
-            "  realistic_DD   = in_sample_DD   x (2 - realism_factor)\n"
-            "                   (DD always gets WORSE in real trading)\n\n"
-            "WHY: Backtests show what HAPPENED on historical data.\n"
-            "Walk-forward shows if the edge holds on UNSEEN data.\n"
-            "Monte Carlo shows if profit was real or sequence luck.\n\n"
-            "INTERPRETATION:\n"
-            "  85%+ realism = robust — expect close to in-sample numbers\n"
-            "  65-85%       = noticeable drop but still profitable\n"
-            "  <65%         = fragile — real performance will disappoint\n\n"
-            "DRAWDOWN: Real-world DD is typically 1.5-2x in-sample\n"
-            "because losing streaks hit at the worst possible times."
+            "WHAT THIS SECTION SHOWS\n\n"
+            "These are your ACTUAL walk-forward test results — not projections.\n"
+            "No synthetic 'realism factor' is applied here.\n\n"
+            "Walk-Forward Degradation: how much your win rate / profit factor\n"
+            "  dropped between the training window and the unseen test window.\n"
+            "  Negative = edge decayed on new data.\n\n"
+            "Edge Held Ratio: fraction of walk-forward windows where the\n"
+            "  strategy remained profitable on unseen data.\n\n"
+            "Monte Carlo Verdict: whether the strategy's profit sequence\n"
+            "  is consistent or dependent on lucky trade ordering.\n\n"
+            "WHY NO 'REALISTIC FORECAST':\n"
+            "Projecting in-sample stats through a formula requires calibrated\n"
+            "weights derived from many strategies across many instruments.\n"
+            "We do not have that calibration, so we do not pretend to.\n"
+            "The raw test results are your most honest signal."
         )
 
+        # Degradation status row
         tk.Label(summary_card,
-                 text="What to actually expect when trading live, after accounting "
-                      "for walk-forward decay, sequence luck, and slippage:",
-                 font=("Segoe UI", 8), bg="#e8f4fd", fg="#666",
-                 wraplength=600, justify="left").pack(anchor="w", pady=(2, 8))
+                 text=f"Walk-Forward Status:  {degrad_label}",
+                 font=("Segoe UI", 11, "bold"), bg="#e8f4fd", fg=degrad_color,
+                 ).pack(anchor="w", pady=(6, 2))
 
-        comparison_frame = tk.Frame(summary_card, bg="#e8f4fd")
-        comparison_frame.pack(fill="x")
+        tk.Label(summary_card,
+                 text=f"Edge Held:  {edge_held*100:.0f}% of walk-forward windows profitable  "
+                      f"|  Monte Carlo: {mc_v}",
+                 font=("Segoe UI", 9), bg="#e8f4fd", fg="#444").pack(anchor="w", pady=(0, 6))
 
-        # In-sample column
-        in_col = tk.Frame(comparison_frame, bg="#e8f4fd")
-        in_col.pack(side="left", expand=True, fill="x", padx=10)
-        tk.Label(in_col, text="IN-SAMPLE (backtest shows)",
+        # In-sample stats (raw, not projected)
+        in_col_frame = tk.Frame(summary_card, bg="#e8f4fd")
+        in_col_frame.pack(fill="x")
+        tk.Label(in_col_frame, text="IN-SAMPLE STATS (backtest period):",
                  font=("Segoe UI", 9, "bold"), bg="#e8f4fd", fg="#666").pack(anchor="w")
-        tk.Label(in_col, text=f"Profit Factor: {in_pf}",
-                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(in_col, text=f"Win Rate: {in_wr}%",
-                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(in_col, text=f"Net Pips: {in_pips:+,}",
-                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(in_col, text=f"Max DD: {in_dd:,} pips",
-                 font=("Segoe UI", 10), bg="#e8f4fd").pack(anchor="w")
+        tk.Label(in_col_frame,
+                 text=f"PF {in_pf}  |  WR {in_wr}%  |  Net {in_pips:+,} pips  |  Max DD {in_dd:,} pips",
+                 font=("Segoe UI", 9), bg="#e8f4fd", fg="#444").pack(anchor="w", pady=(2, 4))
 
-        tk.Label(comparison_frame, text="→",
-                 font=("Segoe UI", 20), bg="#e8f4fd", fg="#1565C0").pack(side="left", padx=10)
-
-        # Real-world column
-        real_col = tk.Frame(comparison_frame, bg="#e8f4fd")
-        real_col.pack(side="left", expand=True, fill="x", padx=10)
-        tk.Label(real_col, text=f"REAL-WORLD ESTIMATE ({realism_factor*100:.0f}% realism)",
-                 font=("Segoe UI", 9, "bold"), bg="#e8f4fd", fg=real_color).pack(anchor="w")
-        tk.Label(real_col, text=f"Profit Factor: {real_pf}",
-                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(real_col, text=f"Win Rate: {real_wr}%",
-                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(real_col, text=f"Net Pips: {real_pips:+,}",
-                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
-        tk.Label(real_col, text=f"Max DD: ~{real_dd:,} pips (typically worse)",
-                 font=("Segoe UI", 10, "bold"), bg="#e8f4fd").pack(anchor="w")
+        # If edge collapsed, show explicit warning instead of any projection
+        if wf_degrad <= -0.50:
+            tk.Label(summary_card,
+                     text="⛔  Edge has collapsed in walk-forward testing.\n"
+                          "    Live performance cannot be meaningfully estimated from in-sample stats.\n"
+                          "    Do NOT fund a challenge based on these in-sample numbers.",
+                     font=("Segoe UI", 9, "bold"), bg="#e8f4fd", fg=RED,
+                     wraplength=600, justify="left").pack(anchor="w", pady=(4, 0))
+        else:
+            tk.Label(summary_card,
+                     text=f"ℹ️  In-sample stats shown above are NOT a live trading forecast.\n"
+                          f"    Real performance will differ — use the walk-forward degradation\n"
+                          f"    ({wf_degrad*100:+.0f}%) as your best signal of expected decay.",
+                     font=("Segoe UI", 8, "italic"), bg="#e8f4fd", fg="#555",
+                     wraplength=600, justify="left").pack(anchor="w", pady=(4, 0))
 
     card = tk.Frame(_verdict_frame, bg=WHITE,
                     highlightbackground=grade_color, highlightthickness=2,
