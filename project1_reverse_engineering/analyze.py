@@ -401,9 +401,27 @@ def compute_feature_importance(df):
         log.info("[ANALYZE] ERROR: no usable features after excluding leak columns")
         return None
 
+    # WHY (Phase A.1 hotfix): step2 deliberately does NOT write is_winner
+    #      to the feature matrix (see step2_compute_indicators.py lines
+    #      85-86). build_robot_profile derives it from pips > 0 at point
+    #      of use, but compute_feature_importance was missed in that fix
+    #      and bailed with return None → run_analysis line ~1110 crashed
+    #      with TypeError: 'NoneType' object is not subscriptable.
+    #      pips is in LEAK_COLS so deriving the label from it is safe —
+    #      it is already excluded from feature_cols and cannot leak into X.
+    # CHANGED: April 2026 — Phase A.1 — derive is_winner from pips
     if 'is_winner' not in df.columns:
-        log.info("[ANALYZE] ERROR: is_winner column missing — cannot train")
-        return None
+        if 'pips' in df.columns:
+            log.info("[ANALYZE] is_winner missing — deriving from pips > 0")
+            df = df.copy()
+            df['is_winner'] = (df['pips'] > 0).astype(int)
+        else:
+            log.info(
+                "[ANALYZE] ERROR: neither is_winner nor pips present — "
+                "cannot train. Columns available: %s",
+                list(df.columns)[:30],
+            )
+            return None
 
     log.info(f"[ANALYZE] Training on {len(feature_cols)} features "
           f"(excluded {len(LEAK_COLS)} leak/meta cols)")
@@ -1107,6 +1125,19 @@ def run_analysis(feature_matrix_path=None):
     # 2. Feature Importance
     log.info('\n[2/8] Computing feature importance...')
     model_result = compute_feature_importance(df)
+    # WHY (Phase A.1 hotfix): compute_feature_importance can legitimately
+    #      return None (no usable features, missing label column). Old
+    #      code subscripted it directly and crashed the entire scenario
+    #      with an opaque TypeError. Fail fast with a clear, actionable
+    #      error message instead so the user knows what went wrong.
+    # CHANGED: April 2026 — Phase A.1 — None-check before subscripting
+    if model_result is None:
+        raise RuntimeError(
+            "compute_feature_importance returned None — feature matrix "
+            "lacks either usable numeric features or a label column "
+            "(is_winner or pips). Check the feature matrix CSV and the "
+            "preceding [ANALYZE] ERROR log line for the specific cause."
+        )
     log.info(f"  Model accuracy: train={model_result['train_accuracy']*100:.1f}%, test={model_result['test_accuracy']*100:.1f}%")
     log.info('  Top 5 features:')
     for feat, imp in model_result['top_20'][:5]:
