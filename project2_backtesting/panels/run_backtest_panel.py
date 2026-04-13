@@ -47,6 +47,41 @@ _rule_inner    = None
 _use_safety_var  = None  # BooleanVar for safety stops toggle
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 
+# WHY (Phase A.21): exceptions during Run Backtest were being formatted
+#      into output_text via format_exc(), but the user reported they
+#      could not see the traceback — either due to scroll position,
+#      panel clearing, or the exception firing in a UI-thread callback
+#      that doesn't reach the worker's outer catch. Write a copy to
+#      disk so it survives everything.
+# CHANGED: April 2026 — Phase A.21 — disk-resident error log
+import datetime as _a21_datetime
+import traceback as _a21_traceback
+import os as _a21_os
+
+_A21_ERROR_LOG_PATH = _a21_os.path.join(
+    _a21_os.path.dirname(_a21_os.path.abspath(__file__)),
+    '..', 'outputs', 'last_backtest_error.txt'
+)
+_A21_ERROR_LOG_PATH = _a21_os.path.normpath(_A21_ERROR_LOG_PATH)
+
+
+def _a21_write_error(label, exc):
+    """Write a full traceback to disk, overwriting any prior error log."""
+    try:
+        _a21_os.makedirs(_a21_os.path.dirname(_A21_ERROR_LOG_PATH), exist_ok=True)
+        with open(_A21_ERROR_LOG_PATH, 'w', encoding='utf-8') as f:
+            f.write(f"=== {label} ===\n")
+            f.write(f"Time:  {_a21_datetime.datetime.now().isoformat()}\n")
+            f.write(f"Type:  {type(exc).__name__}\n")
+            f.write(f"Error: {exc}\n")
+            f.write("\n--- Full traceback ---\n")
+            f.write(_a21_traceback.format_exc())
+            f.write("\n")
+    except Exception:
+        # Last-resort: never let the error logger itself break the app
+        pass
+
+
 # Step weights: loading data, running matrix, completion
 _STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
 _STEP_NAMES = [
@@ -148,53 +183,66 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 pct = 10 + int(cur / max(tot, 1) * 75)
 
                 def _update():
-                    progress_bar['value'] = pct
-                    step_label.config(text=f"{cur}/{tot}: {name}")
+                    # WHY (Phase A.21): UI-thread callbacks can raise
+                    #      exceptions that never reach the worker's
+                    #      outer catch. Capture to disk for diagnosis.
+                    # CHANGED: April 2026 — Phase A.21
+                    try:
+                        progress_bar['value'] = pct
+                        step_label.config(text=f"{cur}/{tot}: {name}")
 
-                    if result_dict:
-                        trades = result_dict.get('total_trades', 0)
-                        wr = result_dict.get('win_rate', 0)
-                        net = result_dict.get('net_total_pips', 0)
-                        pf = result_dict.get('net_profit_factor', 0)
+                        if result_dict:
+                            trades = result_dict.get('total_trades', 0)
+                            wr = result_dict.get('win_rate', 0)
+                            net = result_dict.get('net_total_pips', 0)
+                            pf = result_dict.get('net_profit_factor', 0)
 
-                        # Fix: handle win_rate that might be decimal (0.82) or already percent (82.3)
-                        if wr > 1:
-                            wr_display = f"{wr:.1f}%"  # already in percent
-                        else:
-                            wr_display = f"{wr*100:.1f}%"  # convert decimal to percent
+                            # Fix: handle win_rate that might be decimal (0.82) or already percent (82.3)
+                            if wr > 1:
+                                wr_display = f"{wr:.1f}%"  # already in percent
+                            else:
+                                wr_display = f"{wr*100:.1f}%"  # convert decimal to percent
 
-                        # Calculate approximate P&L in % using config-loaded dollar-per-pip
-                        approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
+                            # Calculate approximate P&L in % using config-loaded dollar-per-pip
+                            approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
 
-                        # Color code: green if profitable, red if not, gray if 0 trades
-                        if trades == 0:
-                            color = "#888888"
-                            line = f"  [{cur}/{tot}] {name}: 0 trades\n"
-                        elif net > 0:
-                            color = "#28a745"
-                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
-                        else:
-                            color = "#dc3545"
-                            line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
+                            # Color code: green if profitable, red if not, gray if 0 trades
+                            if trades == 0:
+                                color = "#888888"
+                                line = f"  [{cur}/{tot}] {name}: 0 trades\n"
+                            elif net > 0:
+                                color = "#28a745"
+                                line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
+                            else:
+                                color = "#dc3545"
+                                line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
 
-                        output_text.insert(tk.END, line)
-                        # Apply color to the last line
-                        line_count = int(output_text.index('end-1c').split('.')[0])
-                        output_text.tag_add(f"line_{cur}", f"{line_count}.0", f"{line_count}.end")
-                        output_text.tag_config(f"line_{cur}", foreground=color)
-                        output_text.see(tk.END)
+                            output_text.insert(tk.END, line)
+                            # Apply color to the last line
+                            line_count = int(output_text.index('end-1c').split('.')[0])
+                            output_text.tag_add(f"line_{cur}", f"{line_count}.0", f"{line_count}.end")
+                            output_text.tag_config(f"line_{cur}", foreground=color)
+                            output_text.see(tk.END)
 
-                        # WHY (Phase 69 Fix 38): _best_result[0] is written from
-                        #      the background worker and read by _update_best() in
-                        #      the UI thread — no synchronisation. Add a lock.
-                        # CHANGED: April 2026 — Phase 69 Fix 38 — lock _best_result
-                        #          (audit Part E MEDIUM #38)
-                        global _best_result
-                        if trades > 0:
-                            with _best_result_lock:
-                                if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
-                                    _best_result[0] = result_dict
-                            _update_best()
+                            # WHY (Phase 69 Fix 38): _best_result[0] is written from
+                            #      the background worker and read by _update_best() in
+                            #      the UI thread — no synchronisation. Add a lock.
+                            # CHANGED: April 2026 — Phase 69 Fix 38 — lock _best_result
+                            #          (audit Part E MEDIUM #38)
+                            global _best_result
+                            if trades > 0:
+                                with _best_result_lock:
+                                    if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
+                                        _best_result[0] = result_dict
+                                _update_best()
+                    except Exception as _e:
+                        _a21_write_error("_update CALLBACK EXCEPTION", _e)
+                        try:
+                            progress_label.config(
+                                text=f"Error: {str(_e)[:60]}", fg="#dc3545"
+                            )
+                        except Exception:
+                            pass
 
                 try:
                     progress_bar.after(0, _update)
@@ -204,23 +252,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             def _update_best():
                 """Update the best result display."""
                 global _best_result, _best_label
-                if _best_result[0] and _best_label:
-                    b = _best_result[0]
-                    # Fix win rate display
-                    wr = b['win_rate']
-                    if wr > 1:
-                        wr_display = f"{wr:.1f}%"
-                    else:
-                        wr_display = f"{wr*100:.1f}%"
-                    # Add P&L %
-                    net = b['net_total_pips']
-                    approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
-                    _best_label.config(
-                        text=f"🏆 {b['rule_combo']} × {b['exit_name']}\n"
-                             f"   {b['total_trades']} trades | WR {wr_display} | "
-                             f"PF {b['net_profit_factor']:.2f} | {b['net_total_pips']:+,.0f} pips (~{approx_pnl_pct:+.1f}%)",
-                        fg="#28a745"
-                    )
+                # WHY (Phase A.21): UI callback exception capture.
+                # CHANGED: April 2026 — Phase A.21
+                try:
+                    if _best_result[0] and _best_label:
+                        b = _best_result[0]
+                        # Fix win rate display
+                        wr = b['win_rate']
+                        if wr > 1:
+                            wr_display = f"{wr:.1f}%"
+                        else:
+                            wr_display = f"{wr*100:.1f}%"
+                        # Add P&L %
+                        net = b['net_total_pips']
+                        approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
+                        _best_label.config(
+                            text=f"🏆 {b['rule_combo']} × {b['exit_name']}\n"
+                                 f"   {b['total_trades']} trades | WR {wr_display} | "
+                                 f"PF {b['net_profit_factor']:.2f} | {b['net_total_pips']:+,.0f} pips (~{approx_pnl_pct:+.1f}%)",
+                            fg="#28a745"
+                        )
+                except Exception as _e:
+                    _a21_write_error("_update_best CALLBACK EXCEPTION", _e)
 
             # Get only the checked rules
             global _rule_vars
@@ -355,7 +408,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         except Exception as e:
             import traceback
             err = traceback.format_exc()
+            # WHY (Phase A.21): also persist to disk for diagnosis.
+            # CHANGED: April 2026 — Phase A.21
+            _a21_write_error("WORKER THREAD EXCEPTION", e)
             output_text.insert(tk.END, f"\n[ERROR] {e}\n{err}\n")
+            output_text.insert(
+                tk.END,
+                f"\n[Traceback also written to: {_A21_ERROR_LOG_PATH}]\n",
+            )
             output_text.see(tk.END)
             progress_label.config(text=f"Error: {str(e)[:60]}", fg="#dc3545")
 
