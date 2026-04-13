@@ -58,27 +58,84 @@ import datetime as _a21_datetime
 import traceback as _a21_traceback
 import os as _a21_os
 
-_A21_ERROR_LOG_PATH = _a21_os.path.join(
+# WHY (Phase A.23): A.21's single path with bare except:pass was
+#      silently swallowing write failures. Try multiple locations
+#      and record every attempt result so we can see what's wrong
+#      even if every write fails.
+# CHANGED: April 2026 — Phase A.23
+import tempfile as _a23_tempfile
+import sys as _a23_sys
+
+# Primary: under panels/../outputs (where A.21 originally pointed)
+_A21_ERROR_LOG_PATH = _a21_os.path.normpath(_a21_os.path.join(
     _a21_os.path.dirname(_a21_os.path.abspath(__file__)),
     '..', 'outputs', 'last_backtest_error.txt'
+))
+
+# Backup 1: cwd at process start
+_A23_ERROR_LOG_CWD = _a21_os.path.abspath('last_backtest_error.txt')
+
+# Backup 2: system temp dir (always writable)
+_A23_ERROR_LOG_TEMP = _a21_os.path.join(
+    _a23_tempfile.gettempdir(), 'trade_bot_last_backtest_error.txt'
 )
-_A21_ERROR_LOG_PATH = _a21_os.path.normpath(_A21_ERROR_LOG_PATH)
+
+# Track every write attempt so the panel can show what happened
+_a23_last_write_attempts = []
 
 
 def _a21_write_error(label, exc):
-    """Write a full traceback to disk, overwriting any prior error log."""
+    """Write a full traceback to disk in multiple locations.
+
+    Phase A.23: writes to three locations (panel outputs, cwd, temp dir)
+    and records the result of each attempt to _a23_last_write_attempts.
+    Prints a banner to stderr that lists where the file landed so the
+    user can find it without guessing.
+    """
+    global _a23_last_write_attempts
+    _a23_last_write_attempts = []
+
+    # Build the content once
     try:
-        _a21_os.makedirs(_a21_os.path.dirname(_A21_ERROR_LOG_PATH), exist_ok=True)
-        with open(_A21_ERROR_LOG_PATH, 'w', encoding='utf-8') as f:
-            f.write(f"=== {label} ===\n")
-            f.write(f"Time:  {_a21_datetime.datetime.now().isoformat()}\n")
-            f.write(f"Type:  {type(exc).__name__}\n")
-            f.write(f"Error: {exc}\n")
-            f.write("\n--- Full traceback ---\n")
-            f.write(_a21_traceback.format_exc())
-            f.write("\n")
+        body_lines = [
+            f"=== {label} ===",
+            f"Time:  {_a21_datetime.datetime.now().isoformat()}",
+            f"Type:  {type(exc).__name__}",
+            f"Error: {exc!r}",
+            "",
+            "--- Full traceback ---",
+            _a21_traceback.format_exc(),
+            "",
+        ]
+        body = "\n".join(body_lines)
+    except Exception as _build_err:
+        body = f"=== {label} ===\nFailed to build error body: {_build_err!r}\n"
+
+    targets = [
+        ("primary",  _A21_ERROR_LOG_PATH),
+        ("cwd",      _A23_ERROR_LOG_CWD),
+        ("temp",     _A23_ERROR_LOG_TEMP),
+    ]
+
+    for name, path in targets:
+        try:
+            _a21_os.makedirs(_a21_os.path.dirname(path) or '.', exist_ok=True)
+            # Use errors='replace' so surrogates in the traceback don't crash
+            with open(path, 'w', encoding='utf-8', errors='replace') as f:
+                f.write(body)
+            _a23_last_write_attempts.append((name, path, "OK"))
+        except Exception as _write_err:
+            _a23_last_write_attempts.append((name, path, f"FAIL: {_write_err!r}"))
+
+    # Print banner to stderr regardless
+    try:
+        _a23_sys.stderr.write("\n" + "=" * 70 + "\n")
+        _a23_sys.stderr.write(f"[A.23] _a21_write_error called for: {label}\n")
+        for name, path, result in _a23_last_write_attempts:
+            _a23_sys.stderr.write(f"  [{name:8}] {path}\n             {result}\n")
+        _a23_sys.stderr.write("=" * 70 + "\n")
+        _a23_sys.stderr.flush()
     except Exception:
-        # Last-resort: never let the error logger itself break the app
         pass
 
 
@@ -462,14 +519,18 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         except Exception as e:
             import traceback
             err = traceback.format_exc()
-            # WHY (Phase A.21): also persist to disk for diagnosis.
-            # CHANGED: April 2026 — Phase A.21
+            # WHY (Phase A.21+A.23): persist to disk in multiple locations
+            #      and surface the write results in the panel so the user
+            #      can see where the file actually landed without guessing.
+            # CHANGED: April 2026 — Phase A.23
             _a21_write_error("WORKER THREAD EXCEPTION", e)
             output_text.insert(tk.END, f"\n[ERROR] {e}\n{err}\n")
-            output_text.insert(
-                tk.END,
-                f"\n[Traceback also written to: {_A21_ERROR_LOG_PATH}]\n",
-            )
+            output_text.insert(tk.END, "\n[A.23] Disk error log write attempts:\n")
+            try:
+                for _n, _p, _r in _a23_last_write_attempts:
+                    output_text.insert(tk.END, f"  [{_n}] {_p}\n         {_r}\n")
+            except Exception:
+                pass
             output_text.see(tk.END)
             progress_label.config(text=f"Error: {str(e)[:60]}", fg="#dc3545")
 
