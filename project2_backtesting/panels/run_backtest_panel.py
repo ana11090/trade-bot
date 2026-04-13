@@ -82,6 +82,54 @@ def _a21_write_error(label, exc):
         pass
 
 
+# WHY (Phase A.22): UI-thread exceptions raised inside Tk after(0, fn)
+#      callbacks bypass every Python try/except in the worker thread
+#      because they run on the main loop. Tk routes them through
+#      tk.Tk.report_callback_exception which defaults to printing to
+#      stderr. A.21's catches never see them, so the disk error log
+#      stays empty and the user sees only a one-line label.
+#
+#      Install a Tk-level handler that writes the same disk log A.21
+#      uses. This works regardless of which thread raised the error.
+# CHANGED: April 2026 — Phase A.22
+_a22_installed = False
+
+
+def _a22_install_tk_handler(any_widget):
+    """Install a custom report_callback_exception on the toplevel.
+
+    Idempotent — safe to call from multiple panel constructions.
+    """
+    global _a22_installed
+    try:
+        win = any_widget.winfo_toplevel()
+    except Exception:
+        return
+    if _a22_installed:
+        return
+
+    def _handler(exc_type, exc_value, exc_tb):
+        try:
+            # Reuse A.21's helper so all errors land in one place
+            _a21_write_error("TK CALLBACK EXCEPTION", exc_value)
+        except Exception:
+            pass
+        # Also print to stderr so the terminal still shows it
+        try:
+            import sys as _sys
+            _a21_traceback.print_exception(
+                exc_type, exc_value, exc_tb, file=_sys.stderr
+            )
+        except Exception:
+            pass
+
+    try:
+        win.report_callback_exception = _handler
+        _a22_installed = True
+    except Exception:
+        pass
+
+
 # Step weights: loading data, running matrix, completion
 _STEP_MILESTONES = [0, 10, 85, 100]   # % at start of each step boundary
 _STEP_NAMES = [
@@ -121,6 +169,12 @@ def _animate_to(bar, current, target, step_ms=60):
 
 def run_backtest_threaded(output_text, progress_label, progress_bar, step_label, run_button):
     """Run backtest in a separate thread"""
+    # WHY (Phase A.22): defense-in-depth — also install from the worker
+    #      entry point so the handler is in place even if build_panel
+    #      was bypassed by a different code path.
+    # CHANGED: April 2026 — Phase A.22
+    _a22_install_tk_handler(output_text)
+
     global _running
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -498,6 +552,11 @@ def build_panel(parent):
     global _output_text, _progress_label, _progress_bar, _step_label, _run_button, _best_label
 
     panel = tk.Frame(parent, bg="#ffffff")
+
+    # WHY (Phase A.22): install Tk-level exception handler so callback
+    #      exceptions land in outputs/last_backtest_error.txt via A.21.
+    # CHANGED: April 2026 — Phase A.22
+    _a22_install_tk_handler(panel)
 
     tk.Label(panel, text="Run Backtest", font=("Arial", 16, "bold"),
              bg="#ffffff", fg="#333333").pack(pady=(20, 5))
