@@ -34,6 +34,7 @@ _panel           = None
 _run_btn         = None
 _progress_bar    = None
 _status_lbl      = None
+_bot_entry_btn   = None  # Phase A.25
 _notebook        = None          # ttk.Notebook for results tabs
 _xgb_tab_text    = None          # ScrolledText in XGBoost tab
 _dt_tab_text     = None          # ScrolledText in DT tab
@@ -268,7 +269,7 @@ def _on_smart_toggle():
 # ── Run controls ──────────────────────────────────────────────────────────────
 
 def _build_run_controls(parent):
-    global _run_btn, _progress_bar, _status_lbl
+    global _run_btn, _progress_bar, _status_lbl, _bot_entry_btn
 
     frame = tk.Frame(parent, bg=CARD, padx=15, pady=12)
     frame.pack(fill="x", padx=20, pady=(0, 10))
@@ -281,6 +282,53 @@ def _build_run_controls(parent):
         command=_on_run,
     )
     _run_btn.pack(fill="x")
+
+    # WHY (Phase A.25): second button to run bot entry discovery — same
+    #      panel, same display, different discovery target.
+    # CHANGED: April 2026 — Phase A.25
+    def _run_bot_entry():
+        import threading
+        def _worker():
+            try:
+                from project1_reverse_engineering.bot_entry_discovery import (
+                    discover_bot_entry_rules, BOT_RULES_PATH,
+                )
+
+                def _cb(msg):
+                    _status_lbl.config(text=msg[:80])
+
+                result = discover_bot_entry_rules(
+                    max_rules    = int(_var_max_rules.get()),
+                    max_depth    = int(_var_max_depth.get()),
+                    n_estimators = int(_var_estimators.get()),
+                    min_coverage = int(_var_min_cov.get()),
+                    min_win_rate = float(_var_min_wr.get()),
+                    progress_callback = _cb,
+                )
+                _display_xgb_results(result)
+                _status_lbl.config(
+                    text=f"Bot entry: {len(result.get('rules', []))} rules → {BOT_RULES_PATH}"
+                )
+            except Exception as e:
+                _status_lbl.config(text=f"Bot entry error: {e}")
+                from tkinter import messagebox
+                messagebox.showerror("Bot Entry Discovery Error", str(e))
+            finally:
+                _bot_entry_btn.config(state="normal")
+                _progress_bar.stop()
+
+        _bot_entry_btn.config(state="disabled")
+        _progress_bar.start(10)
+        threading.Thread(target=_worker, daemon=True).start()
+
+    global _bot_entry_btn
+    _bot_entry_btn = tk.Button(
+        frame, text="Discover Bot Entry Rules (all TFs)",
+        command=_run_bot_entry,
+        bg="#6c5ce7", fg="white", font=("Segoe UI", 11, "bold"),
+        bd=0, pady=8, cursor="hand2",
+    )
+    _bot_entry_btn.pack(pady=(5, 0), fill="x")
 
     _progress_bar = ttk.Progressbar(frame, mode="indeterminate")
     _progress_bar.pack(fill="x", pady=(8, 0))

@@ -685,6 +685,22 @@ def build_panel(parent):
             except Exception:
                 pass
 
+        # WHY (Phase A.25): bot_entry_rules.json is a discovered set of
+        #      bot entry conditions. Listed here so users can backtest
+        #      what the bot ACTUALLY does (vs what they assumed).
+        # CHANGED: April 2026 — Phase A.25
+        p1_bot_entry = os.path.join(
+            project_root, 'project1_reverse_engineering', 'outputs', 'bot_entry_rules.json'
+        )
+        if os.path.exists(p1_bot_entry):
+            try:
+                with open(p1_bot_entry, encoding='utf-8') as f:
+                    d = json.load(f)
+                rules = d.get('rules', [])
+                sources.append((f"Bot Entry Rules ({len(rules)} rules, all TFs)", p1_bot_entry))
+            except Exception:
+                pass
+
         if os.path.exists(saved_path):
             try:
                 with open(saved_path, encoding='utf-8') as f:
