@@ -2676,21 +2676,32 @@ def build_panel(parent):
             for rule in trading_rules:
                 if rule.get('stage') == 'evaluation' and rule.get('type') == 'eval_settings':
                     params = rule.get('parameters', {})
-                    risk_range = params.get('risk_pct_range', [0.8, 1.5])
-                    # WHY (Phase 67 Fix 15): For evaluation stage, the lower bound
-                    #      is the most conservative (slow). Use the midpoint of
-                    #      the allowed range as a balanced starting default — safer
-                    #      than max but faster than min. User can adjust.
-                    # CHANGED: April 2026 — Phase 67 Fix 15 — midpoint for evaluation
-                    #          (audit Part E HIGH #15)
-                    _mid_eval = round((risk_range[0] + risk_range[-1]) / 2, 2)
+                    # WHY (Phase A.17): Phase 67 Fix 15 synthesised the
+                    #      midpoint of risk_pct_range as the displayed
+                    #      default ((0.8+1.5)/2 = 1.15 for the leveraged
+                    #      firm) without user consent. The user wants to
+                    #      see the conservative lower bound by default
+                    #      and explicitly raise it if they want more
+                    #      risk — never have a value silently picked.
+                    #      Also accept a single 'risk_pct' field for
+                    #      firms that don't use a range.
+                    # CHANGED: April 2026 — Phase A.17 — lower bound, not midpoint
+                    if 'risk_pct' in params:
+                        _eval_risk = float(params['risk_pct'])
+                    else:
+                        risk_range = params.get('risk_pct_range', [0.8, 1.5])
+                        _eval_risk = float(risk_range[0])
                     if _risk_var:
-                        _risk_var.set(str(_mid_eval))
+                        _risk_var.set(str(_eval_risk))
                     break
             else:
-                # No firm-specific eval rules — default aggressive
+                # No firm-specific eval rules — conservative default
+                # WHY (Phase A.17): was 1.0 unconditionally; align with
+                #      the lower-bound policy above so unconfigured
+                #      firms also default conservatively.
+                # CHANGED: April 2026 — Phase A.17
                 if _risk_var:
-                    _risk_var.set("1.0")
+                    _risk_var.set("0.5")
         else:
             stage_info.config(
                 text="🛡️ Goal: survive + payouts consistently. Meet DD and consistency rules.",
@@ -2699,16 +2710,28 @@ def build_panel(parent):
             for rule in trading_rules:
                 if rule.get('stage') == 'funded' and rule.get('type') == 'funded_accumulate':
                     params = rule.get('parameters', {})
-                    risk_range = params.get('risk_pct_range', [0.3, 0.5])
-                    # WHY (Phase 67 Fix 15): For funded stage, lower bound IS the
-                    #      safest default — funded accounts have payout consistency
-                    #      rules that favour steady, conservative risk.
-                    # CHANGED: April 2026 — Phase 67 Fix 15 — explicit comment
+                    # WHY (Phase A.17): old code did
+                    #      params.get('risk_pct_range', [0.3, 0.5]) and
+                    #      took [0]. leveraged.json uses 'risk_pct': 0.5
+                    #      (single value), not a range, so the lookup
+                    #      missed and the hardcoded 0.3 fallback fired
+                    #      — displaying a value the user never approved
+                    #      and that doesn't appear in any config file.
+                    #      Read 'risk_pct' first; fall back to
+                    #      risk_pct_range[0] only if a range is defined;
+                    #      hardcoded fallback only if neither exists.
+                    # CHANGED: April 2026 — Phase A.17 — read risk_pct first
+                    if 'risk_pct' in params:
+                        _funded_risk = float(params['risk_pct'])
+                    elif 'risk_pct_range' in params:
+                        _funded_risk = float(params['risk_pct_range'][0])
+                    else:
+                        _funded_risk = 0.5
                     if _risk_var:
-                        _risk_var.set(str(risk_range[0]))  # safest for funded stage
+                        _risk_var.set(str(_funded_risk))
                     break
             else:
-                # No firm-specific funded rules — default conservative
+                # No firm-specific funded rules — conservative default
                 if _risk_var:
                     _risk_var.set("0.5")
 
