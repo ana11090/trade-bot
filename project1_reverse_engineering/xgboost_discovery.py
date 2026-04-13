@@ -44,36 +44,79 @@ def _log(msg, cb):
 
 
 def _load_feature_matrix(use_smart_features):
-    """Load the appropriate feature matrix CSV."""
+    """Load the appropriate feature matrix CSV.
+
+    WHY (Phase A.18): Old code searched only for 'feature_matrix_labeled.csv',
+         a filename that no writer in the codebase produces. Run Scenarios
+         and step2_compute_indicators write 'feature_matrix.csv' (no suffix).
+         Result: this loader either raised FileNotFoundError or loaded a
+         stale smart_feature_matrix.csv cache that lacked the pips column,
+         then crashed in xgboost_discovery line 304 with "missing both
+         'outcome' and 'pips' columns".
+
+         Fix: search the actual filenames the pipeline produces, in this
+         order:
+           1. outputs/scenario_<TF>/feature_matrix.csv     (per-scenario)
+           2. outputs/feature_matrix.csv                    (root, refreshed by A.8)
+           3. outputs/scenario_<TF>/feature_matrix_labeled.csv  (legacy)
+           4. outputs/feature_matrix_labeled.csv                (legacy root)
+         Smart cache is also validated against the seed's mtime — if
+         the seed is newer, the cache is rebuilt via compute_smart_features.
+    CHANGED: April 2026 — Phase A.18 — fix dead-filename search
+    """
     from smart_features import CACHE_PATH as smart_path, compute_smart_features
 
-    smart_exists = os.path.exists(smart_path)
+    # WHY: list candidates in order of preference. Newest/most-specific first.
+    # CHANGED: April 2026 — Phase A.18
+    def _find_base_matrix():
+        candidates = []
+        for scenario in ['H1_M15', 'M5', 'M15', 'H1', 'H4']:
+            for fname in ('feature_matrix.csv', 'feature_matrix_labeled.csv'):
+                p = os.path.join(OUTPUT_DIR, f'scenario_{scenario}', fname)
+                if os.path.exists(p):
+                    candidates.append((p, scenario))
+        # Root fallbacks
+        for fname in ('feature_matrix.csv', 'feature_matrix_labeled.csv'):
+            p = os.path.join(OUTPUT_DIR, fname)
+            if os.path.exists(p):
+                candidates.append((p, 'root'))
+        return candidates
+
+    base_candidates = _find_base_matrix()
 
     if use_smart_features:
-        if smart_exists:
-            df = pd.read_csv(smart_path)
-        else:
-            # Compute on demand — find base matrix
-            base_candidates = []
-            for scenario in ['H1_M15', 'M5', 'M15', 'H1', 'H4']:
-                p = os.path.join(OUTPUT_DIR, f'scenario_{scenario}', 'feature_matrix_labeled.csv')
-                if os.path.exists(p):
-                    base_candidates.append(p)
-            if not base_candidates:
-                raise FileNotFoundError(
-                    "No feature_matrix_labeled.csv found. Run Step 3 first."
-                )
-            df = compute_smart_features(base_candidates[0])
-    else:
-        # Plain feature matrix — pick best available scenario
-        for scenario in ['H1_M15', 'M5', 'M15', 'H1', 'H4']:
-            p = os.path.join(OUTPUT_DIR, f'scenario_{scenario}', 'feature_matrix_labeled.csv')
-            if os.path.exists(p):
-                return pd.read_csv(p), scenario
-        raise FileNotFoundError("No feature_matrix_labeled.csv found. Run Step 3 first.")
+        smart_exists = os.path.exists(smart_path)
+        smart_valid = False
+        if smart_exists and base_candidates:
+            try:
+                _smart_mtime = os.path.getmtime(smart_path)
+                _seed_mtime  = os.path.getmtime(base_candidates[0][0])
+                smart_valid = _smart_mtime >= _seed_mtime
+            except OSError:
+                smart_valid = False
 
-    # Detect scenario tag from columns or default
-    return df, 'smart'
+        if smart_exists and smart_valid:
+            df = pd.read_csv(smart_path)
+            return df, 'smart'
+
+        # Either no cache or cache is stale — rebuild from the freshest seed
+        if not base_candidates:
+            raise FileNotFoundError(
+                "No feature_matrix.csv found in outputs/ or any scenario_*/. "
+                "Run Project 1 → Run Scenarios first to produce the feature matrix."
+            )
+        seed_path, seed_scenario = base_candidates[0]
+        df = compute_smart_features(seed_path)
+        return df, f'smart({seed_scenario})'
+
+    # Plain (non-smart) load
+    if not base_candidates:
+        raise FileNotFoundError(
+            "No feature_matrix.csv found in outputs/ or any scenario_*/. "
+            "Run Project 1 → Run Scenarios first to produce the feature matrix."
+        )
+    seed_path, seed_scenario = base_candidates[0]
+    return pd.read_csv(seed_path), seed_scenario
 
 
 def _prep_Xy(df, train_split):
