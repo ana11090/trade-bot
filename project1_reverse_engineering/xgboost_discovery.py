@@ -86,20 +86,37 @@ def _load_feature_matrix(use_smart_features):
 
     if use_smart_features:
         smart_exists = os.path.exists(smart_path)
-        smart_valid = False
+        smart_mtime_ok = False
         if smart_exists and base_candidates:
             try:
                 _smart_mtime = os.path.getmtime(smart_path)
                 _seed_mtime  = os.path.getmtime(base_candidates[0][0])
-                smart_valid = _smart_mtime >= _seed_mtime
+                smart_mtime_ok = _smart_mtime >= _seed_mtime
             except OSError:
-                smart_valid = False
+                smart_mtime_ok = False
 
-        if smart_exists and smart_valid:
+        if smart_exists and smart_mtime_ok:
+            # WHY (Phase A.20): mtime check alone isn't enough. A
+            #      smart_feature_matrix.csv left over from a pre-A.6
+            #      compute_smart_features run can lack the pips column
+            #      (the old function stripped it before merging SMART_
+            #      columns). The mtime is fine — newer than the seed —
+            #      so A.18 returned it as-is, and A.16's derivation
+            #      couldn't trigger because pips wasn't there. Validate
+            #      content: the cache MUST contain pips (or outcome).
+            #      If not, treat as poisoned and rebuild from the seed.
+            # CHANGED: April 2026 — Phase A.20 — content validation
             df = pd.read_csv(smart_path)
-            return df, 'smart'
+            if 'pips' in df.columns or 'outcome' in df.columns:
+                return df, 'smart'
+            _log(
+                f"  [smart cache] {smart_path} is missing pips/outcome — "
+                f"treating as poisoned, rebuilding from seed.",
+                None,
+            )
 
-        # Either no cache or cache is stale — rebuild from the freshest seed
+        # Either no cache, stale cache, or poisoned cache — rebuild from
+        # the freshest seed.
         if not base_candidates:
             raise FileNotFoundError(
                 "No feature_matrix.csv found in outputs/ or any scenario_*/. "
@@ -107,6 +124,20 @@ def _load_feature_matrix(use_smart_features):
             )
         seed_path, seed_scenario = base_candidates[0]
         df = compute_smart_features(seed_path)
+
+        # WHY (Phase A.20): also validate the freshly-rebuilt frame.
+        #      If compute_smart_features dropped pips for any reason,
+        #      we'd silently feed a broken df to A.16 and crash later
+        #      with the same misleading error. Fail fast with an
+        #      actionable message instead.
+        # CHANGED: April 2026 — Phase A.20
+        if 'pips' not in df.columns and 'outcome' not in df.columns:
+            raise ValueError(
+                f"compute_smart_features({seed_path}) returned a frame "
+                f"with neither 'pips' nor 'outcome'. Seed file may be "
+                f"corrupt or compute_smart_features may have a bug. "
+                f"Available columns: {list(df.columns)[:20]}"
+            )
         return df, f'smart({seed_scenario})'
 
     # Plain (non-smart) load
