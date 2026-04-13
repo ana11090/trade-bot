@@ -665,50 +665,106 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
+    # WHY (Phase A.24): the previous pandas-Series-based mask building
+    #      pattern (rule_mask &= col_data <op> val) crashed with
+    #      "'NotImplementedType' object has no attribute '_indexed_same'"
+    #      when ind[col] returned a DataFrame (duplicate column names in
+    #      the multi-TF indicator merge), or when the column's dtype
+    #      caused the comparison to return NotImplemented. The numpy
+    #      path below cannot trigger _indexed_same because numpy arrays
+    #      have no index. Diagnostic logging surfaces every coercion
+    #      and anomaly so the underlying root cause is visible.
+    # CHANGED: April 2026 — Phase A.24
+    _ind_n = len(ind)
+
+    # Pre-flight: detect duplicate column names in the indicators frame
+    _dup_cols = ind.columns[ind.columns.duplicated()].tolist()
+    if _dup_cols:
+        log.warning(
+            f"  [run_backtest] indicators frame has {len(_dup_cols)} duplicate "
+            f"column names: {_dup_cols[:10]}{'...' if len(_dup_cols) > 10 else ''}. "
+            f"This is the most likely cause of past _indexed_same crashes. "
+            f"Each duplicate column will be collapsed to its first occurrence."
+        )
+        # De-duplicate by taking the first occurrence of each name
+        ind = ind.loc[:, ~ind.columns.duplicated()]
+
     for rule_idx, rule in enumerate(rules):
-        rule_mask  = pd.Series(True, index=ind.index)
-        valid_rule = True
+        rule_mask_np = np.ones(_ind_n, dtype=bool)
+        valid_rule   = True
 
         for cond in rule.get("conditions", []):
             col = cond["feature"]
             if col not in ind.columns:
                 valid_rule = False
                 break
-            col_data = ind[col]
-            op       = cond["operator"]
-            val      = cond["value"]
-            # WHY (Phase 35 Fix 2): Old code only supported <=, >, <, >=.
-            #      Rules with == or != silently fell through, leaving
-            #      rule_mask unchanged — the condition was effectively
-            #      ignored. day_of_week == 2, hour_of_day != 0, etc.
-            #      all silently matched everywhere. Legacy backtest_engine
-            #      supports ==; bring this engine in line.
-            # CHANGED: April 2026 — Phase 35 Fix 2 — add == and != ops
-            #          (audit Part C MED #19)
-            if op == "<=":
-                rule_mask &= (col_data <= val)
-            elif op == ">":
-                rule_mask &= (col_data > val)
-            elif op == "<":
-                rule_mask &= (col_data < val)
-            elif op == ">=":
-                rule_mask &= (col_data >= val)
-            elif op == "==":
-                rule_mask &= (col_data == val)
-            elif op == "!=":
-                rule_mask &= (col_data != val)
-            else:
+
+            # Extract the column as a numpy float array.
+            # If ind[col] returned a DataFrame for any reason (which
+            # shouldn't happen after de-dup above but is defensive),
+            # take the first sub-column.
+            _raw = ind[col]
+            if isinstance(_raw, pd.DataFrame):
                 log.warning(
-                    f"  [run_backtest] Unknown operator {op!r} on feature "
-                    f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                    f"  [run_backtest] ind[{col!r}] returned a DataFrame "
+                    f"with shape {_raw.shape}; taking first column."
+                )
+                _raw = _raw.iloc[:, 0]
+
+            try:
+                col_arr = pd.to_numeric(_raw, errors='coerce').to_numpy(dtype=float, copy=False)
+            except Exception as _coerce_err:
+                log.warning(
+                    f"  [run_backtest] could not coerce column {col!r} to numeric "
+                    f"({type(_raw).__name__}, dtype={getattr(_raw, 'dtype', '?')}): "
+                    f"{_coerce_err!r} — rule skipped."
                 )
                 valid_rule = False
                 break
 
+            try:
+                _val_f = float(cond["value"])
+            except Exception:
+                log.warning(
+                    f"  [run_backtest] rule {rule_idx} has non-numeric value "
+                    f"{cond.get('value')!r} on feature {col!r} — rule skipped."
+                )
+                valid_rule = False
+                break
+
+            op = cond["operator"]
+            # numpy comparisons of float arrays vs scalar ALWAYS return
+            # bool arrays — they cannot return NotImplemented.
+            with np.errstate(invalid='ignore'):
+                if op == "<=":
+                    cond_arr = col_arr <= _val_f
+                elif op == ">":
+                    cond_arr = col_arr >  _val_f
+                elif op == "<":
+                    cond_arr = col_arr <  _val_f
+                elif op == ">=":
+                    cond_arr = col_arr >= _val_f
+                elif op == "==":
+                    cond_arr = col_arr == _val_f
+                elif op == "!=":
+                    cond_arr = col_arr != _val_f
+                else:
+                    log.warning(
+                        f"  [run_backtest] Unknown operator {op!r} on feature "
+                        f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                    )
+                    valid_rule = False
+                    break
+
+            # NaN values from to_numeric coercion become False (NaN <op> x → False)
+            cond_arr = np.where(np.isnan(col_arr), False, cond_arr)
+            rule_mask_np &= cond_arr
+
         if not valid_rule:
             continue
 
-        rule_mask = rule_mask.fillna(False)
+        # Convert numpy mask back to Series for downstream code
+        rule_mask = pd.Series(rule_mask_np, index=ind.index)
 
         # First rule wins per candle
         new_signals = rule_mask & ~signal_mask
@@ -980,46 +1036,103 @@ def fast_backtest(df, ind, rules, exit_strategy,
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
+    # WHY (Phase A.24): same numpy-based mask building as run_backtest
+    #      to avoid _indexed_same crashes. See run_backtest WHY block
+    #      for full rationale — applies identically here.
+    # CHANGED: April 2026 — Phase A.24
+    _ind_n = len(ind)
+
+    # Pre-flight: detect duplicate column names in the indicators frame
+    _dup_cols = ind.columns[ind.columns.duplicated()].tolist()
+    if _dup_cols:
+        log.warning(
+            f"  [fast_backtest] indicators frame has {len(_dup_cols)} duplicate "
+            f"column names: {_dup_cols[:10]}{'...' if len(_dup_cols) > 10 else ''}. "
+            f"This is the most likely cause of past _indexed_same crashes. "
+            f"Each duplicate column will be collapsed to its first occurrence."
+        )
+        # De-duplicate by taking the first occurrence of each name
+        ind = ind.loc[:, ~ind.columns.duplicated()]
+
     for rule_idx, rule in enumerate(rules):
         if rule.get('prediction') != 'WIN':
             continue
-        rule_mask  = pd.Series(True, index=ind.index)
-        valid_rule = True
+        rule_mask_np = np.ones(_ind_n, dtype=bool)
+        valid_rule   = True
 
         for cond in rule.get("conditions", []):
             col = cond.get("feature", "")
             if col not in ind.columns:
                 valid_rule = False
                 break
-            col_data = ind[col]
-            op       = cond.get("operator", ">")
-            val      = cond.get("value", 0)
-            # CHANGED: April 2026 — Phase 35 Fix 2b — add == and != ops
-            #          (audit Part C MED #19, mirrors Fix 2 in run_backtest)
-            if op == "<=":
-                rule_mask &= (col_data <= val)
-            elif op == ">":
-                rule_mask &= (col_data > val)
-            elif op == "<":
-                rule_mask &= (col_data < val)
-            elif op == ">=":
-                rule_mask &= (col_data >= val)
-            elif op == "==":
-                rule_mask &= (col_data == val)
-            elif op == "!=":
-                rule_mask &= (col_data != val)
-            else:
+
+            # Extract the column as a numpy float array.
+            # If ind[col] returned a DataFrame for any reason (which
+            # shouldn't happen after de-dup above but is defensive),
+            # take the first sub-column.
+            _raw = ind[col]
+            if isinstance(_raw, pd.DataFrame):
                 log.warning(
-                    f"  [fast_backtest] Unknown operator {op!r} on feature "
-                    f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                    f"  [fast_backtest] ind[{col!r}] returned a DataFrame "
+                    f"with shape {_raw.shape}; taking first column."
+                )
+                _raw = _raw.iloc[:, 0]
+
+            try:
+                col_arr = pd.to_numeric(_raw, errors='coerce').to_numpy(dtype=float, copy=False)
+            except Exception as _coerce_err:
+                log.warning(
+                    f"  [fast_backtest] could not coerce column {col!r} to numeric "
+                    f"({type(_raw).__name__}, dtype={getattr(_raw, 'dtype', '?')}): "
+                    f"{_coerce_err!r} — rule skipped."
                 )
                 valid_rule = False
                 break
 
+            try:
+                _val_f = float(cond.get("value", 0))
+            except Exception:
+                log.warning(
+                    f"  [fast_backtest] rule {rule_idx} has non-numeric value "
+                    f"{cond.get('value')!r} on feature {col!r} — rule skipped."
+                )
+                valid_rule = False
+                break
+
+            op = cond.get("operator", ">")
+            # numpy comparisons of float arrays vs scalar ALWAYS return
+            # bool arrays — they cannot return NotImplemented.
+            with np.errstate(invalid='ignore'):
+                if op == "<=":
+                    cond_arr = col_arr <= _val_f
+                elif op == ">":
+                    cond_arr = col_arr >  _val_f
+                elif op == "<":
+                    cond_arr = col_arr <  _val_f
+                elif op == ">=":
+                    cond_arr = col_arr >= _val_f
+                elif op == "==":
+                    cond_arr = col_arr == _val_f
+                elif op == "!=":
+                    cond_arr = col_arr != _val_f
+                else:
+                    log.warning(
+                        f"  [fast_backtest] Unknown operator {op!r} on feature "
+                        f"{col!r} — rule skipped. Supported: <=, >, <, >=, ==, !="
+                    )
+                    valid_rule = False
+                    break
+
+            # NaN values from to_numeric coercion become False (NaN <op> x → False)
+            cond_arr = np.where(np.isnan(col_arr), False, cond_arr)
+            rule_mask_np &= cond_arr
+
         if not valid_rule:
             continue
 
-        rule_mask = rule_mask.fillna(False)
+        # Convert numpy mask back to Series for downstream code
+        rule_mask = pd.Series(rule_mask_np, index=ind.index)
+
         new_signals = rule_mask & ~signal_mask
         signal_mask |= rule_mask
         signal_rule_ids[new_signals] = rule_idx
