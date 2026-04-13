@@ -264,11 +264,20 @@ class ATRBased(ExitStrategy):
     #      backward-compat but the warning now surfaces the problem.
     # CHANGED: April 2026 — Phase 31 Fix 8 — no silent ATR fallback
     #          (audit Part C HIGH #13 + #14)
-    def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_atr_14"):
-        super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult)
+    def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_atr_14",
+                 max_candles=1000):
+        super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
+                         max_candles=max_candles)
         self.sl_atr_mult = sl_atr_mult
         self.tp_atr_mult = tp_atr_mult
         self.atr_column  = atr_column
+        # WHY (Phase A.14): defensive max-hold cap. Without it, trades
+        #      where the ATR column is missing at entry (_entry_atr=None)
+        #      run to end-of-data and hang Run Backtest. Also catches
+        #      degenerate trades that drift indefinitely without hitting
+        #      either SL or TP.
+        # CHANGED: April 2026 — Phase A.14
+        self.max_candles = max_candles
         self._entry_atr  = None
         self._missing_atr_warned = False
 
@@ -310,6 +319,16 @@ class ATRBased(ExitStrategy):
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
         direction = pos["direction"]
+
+        # WHY (Phase A.14): max-hold cap fires before any other logic so
+        #      both the missing-ATR path and the slow-drift path are
+        #      bounded. ATR_NO_DATA reason makes the missing-ATR cause
+        #      visible in stats vs ATR_TIME_EXIT for normal grind.
+        # CHANGED: April 2026 — Phase A.14
+        if pos.get("candles_held", 0) >= self.max_candles:
+            reason = "ATR_NO_DATA" if self._entry_atr is None else "ATR_TIME_EXIT"
+            return {"exit_price": float(candle["close"]), "reason": reason}
+
         # WHY: Old code had `atr = self._entry_atr or 5.0` — silent
         #      fallback. Now when ATR is None, return None so the trade
         #      runs to the next exit condition without firing fake SL/TP.
@@ -340,7 +359,8 @@ class ATRBased(ExitStrategy):
         return None
 
     def describe(self):
-        return f"SL {self.sl_atr_mult}xATR, TP {self.tp_atr_mult}xATR"
+        return (f"SL {self.sl_atr_mult}xATR, TP {self.tp_atr_mult}xATR, "
+                f"max {self.max_candles} candles")
 
 
 class TimeBased(ExitStrategy):
@@ -383,13 +403,20 @@ class IndicatorExit(ExitStrategy):
     name = "Indicator Exit"
 
     def __init__(self, sl_pips=150, exit_indicator="M5_rsi_14",
-                 exit_threshold=70, exit_direction="above", pip_size=0.01):
+                 exit_threshold=70, exit_direction="above",
+                 max_candles=500, pip_size=0.01):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
-                         exit_indicator=exit_indicator, exit_threshold=exit_threshold)
+                         exit_indicator=exit_indicator, exit_threshold=exit_threshold,
+                         max_candles=max_candles)
         self.sl_pips        = sl_pips
         self.exit_indicator  = exit_indicator
         self.exit_threshold  = exit_threshold
         self.exit_direction  = exit_direction
+        # WHY (Phase A.14): defensive max-hold cap. Without it, trades
+        #      that drift in profit while the exit indicator never
+        #      crosses its threshold run to end-of-data.
+        # CHANGED: April 2026 — Phase A.14
+        self.max_candles    = max_candles
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
@@ -418,11 +445,20 @@ class IndicatorExit(ExitStrategy):
                     return {"exit_price": candle["close"],
                             "reason": f"INDICATOR_{self.exit_indicator}"}
 
+        # WHY (Phase A.14): max-hold cap. If price drifts in profit and
+        #      the indicator never crosses its threshold, the trade
+        #      otherwise ran to end-of-data and hung Run Backtest.
+        # CHANGED: April 2026 — Phase A.14
+        if pos.get("candles_held", 0) >= self.max_candles:
+            return {"exit_price": float(candle["close"]),
+                    "reason": "INDICATOR_TIME_EXIT"}
+
         return None
 
     def describe(self):
         return (f"SL {self.sl_pips} pips, exit when {self.exit_indicator} "
-                f"{self.exit_direction} {self.exit_threshold}")
+                f"{self.exit_direction} {self.exit_threshold}, "
+                f"max {self.max_candles} candles")
 
 
 class HybridExit(ExitStrategy):

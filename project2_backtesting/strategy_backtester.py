@@ -263,7 +263,33 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
             direction='backward',
         )
         ind_cols = [c for c in merged.columns if c != 'timestamp']
-        combined = pd.concat([combined, merged[ind_cols]], axis=1)
+
+        # WHY (Phase A.15): merged is up to 1.5M rows × ~15 indicator
+        #      columns per TF. Default float64 = 8 bytes/cell → a single
+        #      TF's slice can be ~180 MB, and the cumulative concat
+        #      across 5 TFs blew past 3.5 GiB on M5 backtests, causing
+        #      MemoryError before any backtest ran.
+        #
+        #      Indicator values (RSI, MA, ATR, ADX, MACD, BB widths,
+        #      candle stats) are all bounded and fit comfortably within
+        #      float32's ~7 decimal digits. ML feature matrices use
+        #      float32 by default for exactly this reason. Rule
+        #      comparisons (>, <=) against float64 thresholds in the
+        #      rule dicts up-promote the operand to float64
+        #      automatically, so the comparison itself runs at full
+        #      precision — no exit decisions change.
+        #
+        #      Halves memory for the indicator matrix. Timestamps stay
+        #      datetime64[ns].
+        # CHANGED: April 2026 — Phase A.15
+        _ind_block = merged[ind_cols]
+        _numeric_cols = _ind_block.select_dtypes(include=['float64', 'float32', 'int64', 'int32']).columns
+        if len(_numeric_cols) > 0:
+            _ind_block = _ind_block.astype(
+                {c: 'float32' for c in _numeric_cols},
+                copy=False,
+            )
+        combined = pd.concat([combined, _ind_block], axis=1)
 
     combined = combined.drop(columns=['timestamp']).reset_index(drop=True)
     return combined
