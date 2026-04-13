@@ -301,8 +301,23 @@ def run_xgboost_discovery(
     df, scenario = _load_feature_matrix(use_smart_features)
     _log(f"  Loaded {len(df)} trades (scenario: {scenario})", cb)
 
+    # WHY (Phase A.16 hotfix): step2_compute_indicators writes pips and
+    #      profit but does NOT write an outcome column — same gap as the
+    #      is_winner case Phase A.1 fixed in analyze.py. Derive outcome
+    #      from pips > 0. pips is in EXCLUDE (line 89) so it is
+    #      already excluded from feature_cols in _prep_Xy and cannot
+    #      leak into X.
+    # CHANGED: April 2026 — Phase A.16
     if 'outcome' not in df.columns:
-        raise ValueError("Feature matrix missing 'outcome' column. Run Step 3 first.")
+        if 'pips' in df.columns:
+            _log("  outcome column missing — deriving from pips > 0", cb)
+            df = df.copy()
+            df['outcome'] = (df['pips'] > 0).astype(int)
+        else:
+            raise ValueError(
+                "Feature matrix missing both 'outcome' and 'pips' columns. "
+                "Run Step 2 first to produce the feature matrix."
+            )
 
     X_train, y_train, X_test, y_test, feature_cols = _prep_Xy(df, train_test_split)
     _log(f"  Train: {len(X_train)}, Test: {len(X_test)}, Features: {len(feature_cols)}", cb)
