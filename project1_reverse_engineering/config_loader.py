@@ -66,6 +66,16 @@ DEFAULTS = {
     'rule_min_leaf_samples':     '15',
     'rule_min_avg_pips':         '0',
 
+    # ── Bot Entry Discovery (Phase A.31) ──────────────────────────────────────
+    # WHY: Separate hyperparameters for the candle-level entry discoverer.
+    #      Independent from the rule_* keys above which control the
+    #      legacy decision-tree on the trade-level dataset.
+    # CHANGED: April 2026 — Phase A.31
+    'bot_entry_max_rules':       '25',
+    'bot_entry_max_depth':       '4',
+    'bot_entry_min_coverage':    '20',
+    'bot_entry_min_win_rate':    '0.55',
+
     # ── Regime Analysis ───────────────────────────────────────────────────────
     # WHY (Phase 57 Fix 4): ADX 25 was hardcoded in analyze.py.
     # CHANGED: April 2026 — Phase 57 Fix 4a — ADX threshold to config

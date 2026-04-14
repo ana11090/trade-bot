@@ -181,9 +181,47 @@ def discover_bot_entry_rules(
         raise FileNotFoundError(
             f"{fm_path} not found. Run Project 1 → Run Scenarios first."
         )
-    trades_df = pd.read_csv(fm_path, usecols=['open_time'])
+    # WHY (Phase A.31): Old code only loaded `open_time`. Per-rule action
+    #      tagging needs the action column too so we can compute the
+    #      BUY/SELL split among trades that fall inside each rule's
+    #      matching candles. Also load `pips` so we can compute a real
+    #      avg_pips per rule (the bot_entry rule extractor leaves it
+    #      at 0.0 because the candle dataset has no pip outcomes —
+    #      we patch it below from the trade dataset).
+    # CHANGED: April 2026 — Phase A.31
+    _a31_cols = ['open_time']
+    try:
+        _a31_header = pd.read_csv(fm_path, nrows=0).columns.tolist()
+    except Exception:
+        _a31_header = []
+    if 'action' in _a31_header:
+        _a31_cols.append('action')
+    if 'pips' in _a31_header:
+        _a31_cols.append('pips')
+    trades_df = pd.read_csv(fm_path, usecols=_a31_cols)
+    if 'action' not in trades_df.columns:
+        trades_df['action'] = 'BUY'  # safest default — flag it below
+        _log(
+            "  WARNING: feature_matrix.csv has no 'action' column. "
+            "All rules will be tagged action='BUY'. To get directional rules, "
+            "ensure your trade history exports the trade direction.",
+            cb,
+        )
     n_trades = len(trades_df)
     _log(f"  Loaded {n_trades} trades", cb)
+
+    # Pre-compute per-TF trade timestamp buckets keyed by direction. We
+    # need this inside the per-TF loop below to tag rules with action.
+    # WHY (Phase A.31): Avoids re-bucketing trades inside the rule loop.
+    # CHANGED: April 2026 — Phase A.31
+    _a31_action_norm = trades_df['action'].astype(str).str.upper().str.strip()
+    _a31_buy_mask  = _a31_action_norm.str.contains('BUY')  | (_a31_action_norm == 'LONG')
+    _a31_sell_mask = _a31_action_norm.str.contains('SELL') | (_a31_action_norm == 'SHORT')
+    _a31_pips_per_trade = (
+        trades_df['pips'].astype(float)
+        if 'pips' in trades_df.columns
+        else pd.Series([0.0] * len(trades_df))
+    )
 
     # Resolve candle data dir
     project_root = os.path.abspath(os.path.join(_HERE, '..'))
@@ -238,10 +276,153 @@ def discover_bot_entry_rules(
             feature_cols, max_rules, max_depth, min_coverage, min_win_rate,
         )
 
-        # Tag each rule with its TF and source
+        # WHY (Phase A.31): Tag each rule with its TF + source AND with
+        #      a per-rule `action` field derived from the bot's actual
+        #      trade history. For each rule, find the candle timestamps
+        #      where the rule fires, look up the trades whose open_time
+        #      buckets into those candles, and compute the BUY/SELL
+        #      split. 60% majority → directional; otherwise BOTH. This
+        #      matches the threshold step6_extract_rules.py uses for
+        #      bot-level direction. Also computes avg_pips from the
+        #      same matching trades so the rule has a real expectancy
+        #      number instead of the 0.0 placeholder.
+        #      With per-rule action set, A.30's direction expansion in
+        #      run_comparison_matrix will route directional rules to
+        #      the correct side and split BOTH rules into two combos
+        #      so the user can see which direction wins.
+        # CHANGED: April 2026 — Phase A.31
+        _A31_DIR_THRESHOLD = 0.60
+
+        # Per-TF bucketing of trade timestamps to this TF's grain
+        _tf_to_freq = {'M5': '5min', 'M15': '15min', 'H1': '1h', 'H4': '4h', 'D1': '1D'}
+        _a31_trade_ts = pd.to_datetime(
+            trades_df['open_time'], errors='coerce'
+        )
+        _a31_trade_bucket = _a31_trade_ts.dt.floor(_tf_to_freq[tf])
+
+        # Build a frame indexed by trade row to look up direction + pips
+        _a31_trade_lookup = pd.DataFrame({
+            'bucket': _a31_trade_bucket,
+            'is_buy':  _a31_buy_mask.values,
+            'is_sell': _a31_sell_mask.values,
+            'pips':    _a31_pips_per_trade.values,
+        }).dropna(subset=['bucket'])
+
         for r in tf_rules:
             r['entry_timeframe'] = tf
             r['source']          = 'bot_entry'
+
+            # Re-evaluate this rule's mask against the same X frame the
+            # tree was extracted from (which already has the post-sample
+            # candle universe — so this is fast).
+            try:
+                _r_mask = pd.Series(True, index=X.index)
+                _r_valid = True
+                for _cond in r.get('conditions', []):
+                    _col = _cond.get('feature')
+                    if _col not in X.columns:
+                        _r_valid = False
+                        break
+                    _vals = X[_col]
+                    _op   = _cond.get('operator')
+                    _val  = _cond.get('value')
+                    if _op == '<=':
+                        _r_mask &= (_vals <= _val)
+                    elif _op == '>':
+                        _r_mask &= (_vals > _val)
+                    elif _op == '<':
+                        _r_mask &= (_vals < _val)
+                    elif _op == '>=':
+                        _r_mask &= (_vals >= _val)
+                    else:
+                        _r_valid = False
+                        break
+                if not _r_valid:
+                    r['action']   = 'BOTH'  # conservative default
+                    r['avg_pips'] = 0.0
+                    continue
+
+                # Get the candle timestamps where this rule fires.
+                # The matrix dataframe used inside _build_candle_matrix_for_tf
+                # was discarded — we only kept X here. To recover timestamps
+                # we look up the matching X.index values in tf_ind which
+                # IS still in scope from the build step. tf_ind has a
+                # 'timestamp' column.
+                _matching_x_idx = X.index[_r_mask].tolist()
+                if not _matching_x_idx:
+                    r['action']   = 'BOTH'
+                    r['avg_pips'] = 0.0
+                    continue
+
+                # Map X row indices back to timestamps. The X frame was
+                # built from a sampled subset of full_ind inside
+                # _build_candle_matrix_for_tf; its index values are the
+                # original full_ind row positions. To get timestamps we
+                # need the timestamp column from full_ind — which is
+                # gone by this point. Workaround: rebuild a tiny
+                # timestamp lookup from tf_ind sorted positionally.
+                # We accept a small approximation: use tf_ind ordered
+                # by timestamp and index by integer position.
+                # NOTE: this is an O(n_pos) lookup, not O(n_candles),
+                # so it stays fast.
+                from project2_backtesting.strategy_backtester import (
+                    _load_tf_indicators as _a31_loader,
+                )
+                _a31_tf_ind = _a31_loader(tf, data_dir, needed_indicators=None)
+                if _a31_tf_ind is None or 'timestamp' not in _a31_tf_ind.columns:
+                    r['action']   = 'BOTH'
+                    r['avg_pips'] = 0.0
+                    continue
+
+                # Index X.index values into tf_ind positionally
+                _a31_ts_series = pd.to_datetime(_a31_tf_ind['timestamp'])
+                _safe_idx = [i for i in _matching_x_idx if 0 <= i < len(_a31_ts_series)]
+                if not _safe_idx:
+                    r['action']   = 'BOTH'
+                    r['avg_pips'] = 0.0
+                    continue
+                _matching_candle_ts = set(_a31_ts_series.iloc[_safe_idx].tolist())
+
+                # Find trades that fall into those candles
+                _trade_in_rule = _a31_trade_lookup['bucket'].isin(_matching_candle_ts)
+                _matched_trades = _a31_trade_lookup[_trade_in_rule]
+                _n_matched = len(_matched_trades)
+
+                if _n_matched == 0:
+                    # Rule fires on candles where the bot never actually
+                    # opened a trade — purely synthetic, no direction
+                    # info available. Mark BOTH so A.30 expands it and
+                    # the user can see which direction works.
+                    r['action']   = 'BOTH'
+                    r['avg_pips'] = 0.0
+                    continue
+
+                _n_buy  = int(_matched_trades['is_buy'].sum())
+                _n_sell = int(_matched_trades['is_sell'].sum())
+                _n_dir  = _n_buy + _n_sell
+                if _n_dir == 0:
+                    r['action'] = 'BOTH'
+                elif _n_buy / _n_dir >= _A31_DIR_THRESHOLD:
+                    r['action'] = 'BUY'
+                elif _n_sell / _n_dir >= _A31_DIR_THRESHOLD:
+                    r['action'] = 'SELL'
+                else:
+                    r['action'] = 'BOTH'
+
+                # Real expectancy from matched trades' pips
+                try:
+                    _avg_pips_val = float(_matched_trades['pips'].mean())
+                except Exception:
+                    _avg_pips_val = 0.0
+                r['avg_pips'] = round(_avg_pips_val, 1)
+                r['n_real_trades_in_rule'] = int(_n_matched)
+
+            except Exception as _e:
+                # If anything in the lookup fails, default to BOTH and
+                # log it. A.30 will still backtest both directions.
+                _log(f"  [{tf}] rule action tagging failed: {type(_e).__name__}: {_e}", cb)
+                r['action']   = 'BOTH'
+                r['avg_pips'] = 0.0
 
         _log(f"  [{tf}] kept {len(tf_rules)} rules", cb)
         per_tf_summary.append({

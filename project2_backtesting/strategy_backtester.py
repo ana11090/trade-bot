@@ -949,9 +949,30 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 continue  # skip this entry
 
         # Determine direction first (needed for slippage sign)
+        # WHY (Phase A.30): Old code read rule_obj.get("direction", "BUY")
+        #      but the field is written as "action" by every rule
+        #      producer in the codebase — step6_extract_rules at line
+        #      ~376, analyze.py extract_rules after Phase A.27, and
+        #      bot_entry_discovery. The "direction" key has never
+        #      existed on a rule. So when direction=="BOTH" was
+        #      passed, this branch always silently fell back to BUY.
+        #
+        #      Fix: read the correct key. With A.30's per-combo
+        #      direction expansion in run_comparison_matrix, this
+        #      branch is now a defensive fallback for legacy callers
+        #      that still pass direction="BOTH" explicitly — but the
+        #      bug was real and worth killing regardless.
+        # CHANGED: April 2026 — Phase A.30
         if direction == "BOTH":
             rule_obj  = rules[rule_id] if rule_id < len(rules) else {}
-            trade_dir = rule_obj.get("direction", "BUY")
+            _action   = str(rule_obj.get("action", "BUY")).upper().strip()
+            if _action in ('BUY', 'LONG'):
+                trade_dir = "BUY"
+            elif _action in ('SELL', 'SHORT'):
+                trade_dir = "SELL"
+            else:
+                # action="BOTH" or unknown → conservative default
+                trade_dir = "BUY"
         else:
             trade_dir = direction
 
@@ -1886,17 +1907,119 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             log.info(f"  → SMART features missing — ensure smart_features module is available")
 
     # ── Build rule combos ────────────────────────────────────────────────────
-    rule_combos = [{"name": f"Rule {i+1}", "rules": [r], "indices": [i]}
-                   for i, r in enumerate(rules)]
+    # WHY (Phase A.30): Old code built one combo per rule and passed
+    #      the matrix-level `direction` (which defaulted to "BUY")
+    #      into every fast_backtest call. For a bidirectional bot
+    #      whose rules carry action="BOTH", every signal was forced
+    #      into a BUY trade — so roughly half the signals traded the
+    #      wrong direction by definition and win rates collapsed to
+    #      ~15%.
+    #
+    #      Fix: read each rule's `action` field and expand the combo
+    #      list per direction. A BUY-only rule becomes one combo. A
+    #      SELL-only rule becomes one combo. A BOTH rule becomes TWO
+    #      combos — one tested as BUY and one tested as SELL, with
+    #      direction-tagged names so the matrix display makes the
+    #      split obvious. Each combo carries its own `direction`
+    #      field which the matrix loop passes to fast_backtest
+    #      below, instead of relying on the function default.
+    #
+    #      This roughly doubles the matrix for bidirectional bots
+    #      (10 rules × 12 exits = 120 → ~240) but the runtime cost
+    #      is linear and the user gets honest per-direction win
+    #      rates instead of a meaningless 50/50 mush.
+    # CHANGED: April 2026 — Phase A.30
+    def _a30_rule_directions(rule_obj):
+        """Return list of directions to test for one rule.
+
+        Reads the rule's `action` field (the key step6 and the
+        Phase A.27 analyze.py both write). Defaults to ['BUY']
+        for legacy rules that have neither — preserves old
+        behavior on rule sets predating A.27.
+        """
+        a = str(rule_obj.get('action', 'BUY')).upper().strip()
+        if a in ('BUY', 'LONG'):
+            return ['BUY']
+        if a in ('SELL', 'SHORT'):
+            return ['SELL']
+        if a in ('BOTH', 'BIDIRECTIONAL', 'EITHER'):
+            return ['BUY', 'SELL']
+        # Unknown / missing → default to BUY only (matches old behavior)
+        return ['BUY']
+
+    rule_combos = []
+    for i, r in enumerate(rules):
+        for _dir in _a30_rule_directions(r):
+            rule_combos.append({
+                "name":      f"Rule {i+1} ({_dir})",
+                "rules":     [r],
+                "indices":   [i],
+                "direction": _dir,
+            })
+
     if len(rules) > 1:
-        rule_combos.append({"name": "All rules combined", "rules": rules,
-                             "indices": list(range(len(rules)))})
+        # WHY (Phase A.30): For multi-rule combos, build BUY and SELL
+        #      versions separately. A BUY combo includes every rule
+        #      whose action is BUY or BOTH. A SELL combo includes
+        #      every rule whose action is SELL or BOTH. If every
+        #      rule in the set has the same single direction, only
+        #      that one combo is built.
+        # CHANGED: April 2026 — Phase A.30
+        def _a30_rules_for_dir(rule_list, dir_name):
+            picked     = []
+            picked_idx = []
+            for j, rr in enumerate(rule_list):
+                allowed = _a30_rule_directions(rr)
+                if dir_name in allowed:
+                    picked.append(rr)
+                    picked_idx.append(j)
+            return picked, picked_idx
+
+        for _dir in ('BUY', 'SELL'):
+            _all_rules, _all_idx = _a30_rules_for_dir(rules, _dir)
+            if _all_rules:
+                rule_combos.append({
+                    "name":      f"All rules combined ({_dir})",
+                    "rules":     _all_rules,
+                    "indices":   _all_idx,
+                    "direction": _dir,
+                })
+
         if len(rules) >= 3:
-            rule_combos.append({"name": "Top 3 rules", "rules": rules[:3],
-                                 "indices": [0, 1, 2]})
+            for _dir in ('BUY', 'SELL'):
+                _top, _top_idx = _a30_rules_for_dir(rules[:3], _dir)
+                if _top:
+                    rule_combos.append({
+                        "name":      f"Top 3 rules ({_dir})",
+                        "rules":     _top,
+                        "indices":   _top_idx,
+                        "direction": _dir,
+                    })
+
         if len(rules) >= 5:
-            rule_combos.append({"name": "Top 5 rules", "rules": rules[:5],
-                                 "indices": [0, 1, 2, 3, 4]})
+            for _dir in ('BUY', 'SELL'):
+                _top, _top_idx = _a30_rules_for_dir(rules[:5], _dir)
+                if _top:
+                    rule_combos.append({
+                        "name":      f"Top 5 rules ({_dir})",
+                        "rules":     _top,
+                        "indices":   _top_idx,
+                        "direction": _dir,
+                    })
+
+    # WHY (Phase A.30): Diagnostic log so the user can see the
+    #      per-direction expansion in the console and confirm it
+    #      matches their expectations. Counts of BUY-only vs
+    #      SELL-only vs BOTH rules at the top of the run.
+    # CHANGED: April 2026 — Phase A.30
+    _a30_buy_count  = sum(1 for r in rules if 'BUY'  in _a30_rule_directions(r))
+    _a30_sell_count = sum(1 for r in rules if 'SELL' in _a30_rule_directions(r))
+    log.info(
+        f"  [A.30] Per-rule direction: "
+        f"{_a30_buy_count} rules trade BUY, "
+        f"{_a30_sell_count} rules trade SELL, "
+        f"{len(rule_combos)} total combos after expansion"
+    )
 
     if exit_strategies is None:
         exit_strategies = get_default_exit_strategies(pip_size=pip_size)
@@ -1929,10 +2052,23 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         for exit_strat in exit_strategies:
             count += 1
 
+            # WHY (Phase A.30): Use the combo's per-direction value
+            #      instead of the matrix-level `direction` default.
+            #      Old code passed `direction=direction` for every
+            #      combo, which forced every rule to BUY because the
+            #      matrix-level default is "BUY" and the panel never
+            #      overrides it. Each combo now carries its own
+            #      direction set by the per-direction expansion
+            #      above, so a "Rule 3 (SELL)" combo actually opens
+            #      SELL trades and "Rule 3 (BUY)" actually opens BUY
+            #      trades.
+            # CHANGED: April 2026 — Phase A.30
+            _a30_combo_direction = combo.get("direction", direction)
+
             trades = fast_backtest(
                 df=_c, ind=_i,
                 rules=combo["rules"], exit_strategy=exit_strat,
-                direction=direction,
+                direction=_a30_combo_direction,
                 pip_size=pip_size,
                 spread_pips=spread_pips, commission_pips=commission_pips,
                 slippage_pips=slippage_pips,

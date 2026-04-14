@@ -204,86 +204,183 @@ def build_panel(parent):
     import config_loader as _cl
     _cfg = _cl.load()
 
-    # Helper to create a spinbox row with label and tooltip
+    # WHY (Phase A.29.1): The A.29 helper had four real bugs.
+    #      (1) Save was bound to <FocusOut> and <Return>. Spinbox up/
+    #          down arrow clicks fire the spinbox's `command=`
+    #          callback — NOT FocusOut, NOT Return. Result: every arrow
+    #          click changed the display but saved nothing. The user
+    #          tuned values, ran scenarios, got the same defaults, and
+    #          got the same restrictive 10-rule output as before A.29.
+    #      (2) Closure bug — the inner _on_change captured `spinbox`
+    #          and `config_key` by name from the enclosing function.
+    #          Python closes over variable names not values, so all
+    #          six handlers shared the LAST iteration's bindings.
+    #          A FocusOut on Tree Max Depth could end up saving the
+    #          Min Avg Pips value under the rule_min_avg_pips key.
+    #      (3) No visible save confirmation — the user had no way to
+    #          tell whether a value persisted without opening JSON.
+    #      (4) Tooltip only on the label, not the spinbox. Plus the
+    #          inline tooltip code reinvented shared/tooltip.py with
+    #          no delay, no screen-edge handling, no parent ownership.
+    #      Fix: use a tk.StringVar with a trace_add('write', ...) per
+    #      spinbox. Trace fires on every value change regardless of
+    #      source (typing, paste, arrow click, programmatic .set()).
+    #      Each trace closure captures its OWN var and key via default
+    #      argument binding, killing the closure bug. Add a "Saved ✓"
+    #      indicator label that flashes green on every successful
+    #      save. Use shared.tooltip.add_tooltip on both label AND
+    #      spinbox so hovering either works.
+    # CHANGED: April 2026 — Phase A.29.1
+    try:
+        from shared.tooltip import add_tooltip as _a291_add_tooltip
+    except Exception:
+        def _a291_add_tooltip(*_args, **_kwargs):
+            pass
+
+    # WHY: Module-level reference to the indicator label so any spinbox
+    #      callback can flash it. Created here, populated below.
+    # CHANGED: April 2026 — Phase A.29.1
+    _a291_save_indicator = {'label': None, 'after_id': None}
+
+    def _a291_flash_saved(key):
+        lbl = _a291_save_indicator['label']
+        if lbl is None:
+            return
+        # Cancel any pending revert
+        prev_id = _a291_save_indicator['after_id']
+        if prev_id is not None:
+            try:
+                lbl.after_cancel(prev_id)
+            except Exception:
+                pass
+        try:
+            lbl.config(text=f"✓ Saved: {key}", fg="#27ae60")
+            _a291_save_indicator['after_id'] = lbl.after(
+                2500,
+                lambda: lbl.config(text="💡 Changes save automatically", fg="#666"),
+            )
+        except Exception:
+            pass
+
     def _make_spinbox(parent, label_text, config_key, from_, to, increment, tooltip_text):
         row = tk.Frame(parent, bg="#fff9e6")
         row.pack(fill="x", pady=3)
 
-        label = tk.Label(row, text=label_text, bg="#fff9e6", fg="#333",
-                        font=("Segoe UI", 9), width=22, anchor="w")
+        label = tk.Label(
+            row, text=label_text, bg="#fff9e6", fg="#333",
+            font=("Segoe UI", 9), width=22, anchor="w",
+        )
         label.pack(side="left")
 
-        # Add hover tooltip
-        def _show_tooltip(event):
-            tooltip = tk.Toplevel()
-            tooltip.wm_overrideredirect(True)
-            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
-            tk.Label(tooltip, text=tooltip_text, bg="#ffffcc", fg="#333",
-                    font=("Segoe UI", 8), padx=8, pady=5, relief="solid",
-                    borderwidth=1, wraplength=300, justify="left").pack()
-            label._tooltip = tooltip
+        # WHY (Phase A.29.1): Use the shared tooltip helper instead of
+        #      the inline custom version. shared.tooltip.add_tooltip
+        #      attaches with a delay, handles screen edges, and uses
+        #      a proper Toplevel parent. Attach to BOTH the label and
+        #      the spinbox so hovering either shows the explanation.
+        # CHANGED: April 2026 — Phase A.29.1
+        _a291_add_tooltip(label, tooltip_text, wraplength=380)
 
-        def _hide_tooltip(event):
-            if hasattr(label, '_tooltip'):
-                label._tooltip.destroy()
-                delattr(label, '_tooltip')
+        # WHY (Phase A.29.1): tk.StringVar with trace_add('write', ...)
+        #      catches EVERY change to the spinbox value: typing,
+        #      paste, up/down arrow clicks, and programmatic .set().
+        #      The old <FocusOut>/<Return> binding missed arrow
+        #      clicks entirely.
+        # CHANGED: April 2026 — Phase A.29.1
+        var = tk.StringVar(value=str(_cfg.get(config_key, str(from_))))
 
-        label.bind("<Enter>", _show_tooltip)
-        label.bind("<Leave>", _hide_tooltip)
-
-        spinbox = tk.Spinbox(row, from_=from_, to=to, increment=increment,
-                            font=("Segoe UI", 9), width=10,
-                            bg="white", relief="solid", borderwidth=1)
-        spinbox.delete(0, "end")
-        spinbox.insert(0, _cfg.get(config_key, str(from_)))
+        spinbox = tk.Spinbox(
+            row, from_=from_, to=to, increment=increment,
+            textvariable=var,
+            font=("Segoe UI", 9), width=10,
+            bg="white", relief="solid", borderwidth=1,
+        )
         spinbox.pack(side="right")
 
-        # Auto-save on focus-out
-        def _on_change(event):
-            try:
-                _cl.save({config_key: spinbox.get()})
-            except Exception as e:
-                print(f"[run_scenarios] Could not save {config_key}: {e}")
+        _a291_add_tooltip(spinbox, tooltip_text, wraplength=380)
 
-        spinbox.bind("<FocusOut>", _on_change)
-        spinbox.bind("<Return>", _on_change)
+        # WHY (Phase A.29.1): Closure-safe via default-arg binding —
+        #      `_var=var` and `_key=config_key` are evaluated at
+        #      function-definition time, not at call time, so each
+        #      handler keeps its own pair instead of sharing the loop
+        #      variable. Without this the Python late-binding closure
+        #      bug would make every handler save under the LAST
+        #      key created in the loop.
+        # CHANGED: April 2026 — Phase A.29.1
+        def _on_var_change(*_a, _var=var, _key=config_key):
+            try:
+                _cl.save({_key: _var.get()})
+                _a291_flash_saved(_key)
+            except Exception as e:
+                print(f"[run_scenarios] Could not save {_key}: {e}")
+
+        var.trace_add('write', _on_var_change)
 
         return spinbox
 
     # Six tunables with tooltips
     _make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
                  1, 20, 1,
-                 "Maximum depth of the decision tree. Lower = simpler rules, "
-                 "higher = more complex conditions. Default: 5")
+                 "Maximum depth of the decision tree. Each leaf becomes one "
+                 "rule, and depth = number of conditions stacked in that rule. "
+                 "Higher = more specific rules with more conditions per rule "
+                 "(each catching fewer trades). Lower = simpler rules covering "
+                 "more candles. Safe range 3-10. Default: 5. Try 7 for more variety.")
 
     _make_spinbox(discovery_frame, "Tree Min Samples Leaf:", "rule_tree_min_samples_leaf",
                  1, 100, 1,
-                 "Minimum samples required in a leaf node. Higher = fewer, "
-                 "more general rules. Lower = more specific rules. Default: 20")
+                 "Minimum number of training trades required at each leaf. "
+                 "The tree won't create a leaf with fewer trades than this. "
+                 "Lower = more leaves = more rules, each matching fewer trades. "
+                 "Higher = fewer, broader rules. Safe range 5-50. Default: 20. "
+                 "Drop to 5 if you want many rules.")
 
     _make_spinbox(discovery_frame, "Tree Min Samples Split:", "rule_tree_min_samples_split",
                  2, 200, 1,
-                 "Minimum samples required to split a node. Higher = simpler "
-                 "tree, fewer splits. Default: 40")
+                 "Minimum number of trades a node needs before the tree is "
+                 "allowed to split it further. Should be ~2x Min Samples Leaf. "
+                 "Higher = shallower trees with fewer rules. Lower = deeper "
+                 "trees with more rules. Safe range 10-100. Default: 40.")
 
     _make_spinbox(discovery_frame, "Min Leaf Samples Filter:", "rule_min_leaf_samples",
                  1, 100, 1,
-                 "Post-tree filter: discard leaves with fewer than this many "
-                 "samples. Higher = only keep high-coverage rules. Default: 15")
+                 "Final post-tree filter — after the tree is built, only "
+                 "leaves with at least this many training trades become rules. "
+                 "Different from Min Samples Leaf above (which controls tree "
+                 "construction). This is a second sanity check. Lower = more "
+                 "rules survive. Safe range 5-50. Default: 15.")
 
     _make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
                  0.0, 1.0, 0.05,
-                 "Minimum confidence (win rate) to accept a rule. "
-                 "0.65 = 65% wins required. Set to 0 to accept all. Default: 0.65")
+                 "Minimum win rate (0.0-1.0) a rule must have on training "
+                 "trades to be kept. 0.65 = at least 65% wins. 0.55 = at "
+                 "least 55%. Set to 0 to disable this filter entirely (then "
+                 "use Min Avg Pips below to keep only profitable rules "
+                 "regardless of win rate). Default: 0.65. Drop to 0.55 for "
+                 "many more rules.")
 
     _make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
-                 -50, 100, 1,
-                 "Minimum average profit in pips. Rejects unprofitable rules. "
-                 "Set to -1000 to disable. Default: 0")
+                 -1000, 1000, 1,
+                 "Minimum average pips per trade a rule must earn on training "
+                 "trades to be kept. Lets you accept rules with mixed wins/"
+                 "losses as long as they're profitable on average. Set to 0 "
+                 "to require any positive expectancy. Set to a positive number "
+                 "to demand minimum profit per trade. Set to -1000 to disable. "
+                 "Default: 0.")
 
-    tk.Label(discovery_frame, text="💡 Changes save automatically",
-             bg="#fff9e6", fg="#666",
-             font=("Segoe UI", 8, "italic")).pack(anchor="w", pady=(8, 0))
+    # WHY (Phase A.29.1): Replaces the static "Changes save automatically"
+    #      label with a live indicator that flashes green for ~2.5s
+    #      every time a save lands, then reverts to the help text.
+    #      Visible confirmation that the save happened — the user
+    #      should never need to look at p1_config.json.
+    # CHANGED: April 2026 — Phase A.29.1
+    _a291_indicator = tk.Label(
+        discovery_frame,
+        text="💡 Changes save automatically",
+        bg="#fff9e6", fg="#666",
+        font=("Segoe UI", 8, "italic"),
+    )
+    _a291_indicator.pack(anchor="w", pady=(8, 0))
+    _a291_save_indicator['label'] = _a291_indicator
 
     # Right column - Execution controls
     right_frame = tk.Frame(content_frame, bg="white", padx=20, pady=20)
@@ -307,6 +404,84 @@ def build_panel(parent):
                        command=lambda: run_scenarios(scenario_vars, output_text,
                                                      progress_label, progress_bar, pct_label, run_btn))
     run_btn.pack(fill="x", pady=(0, 10))
+
+    # ── Bot Entry Discovery card ──────────────────────────────────────────────
+    # WHY (Phase A.31): bot_entry_discovery.py trains on candle-level
+    #      "did the bot enter here" labels — fundamentally different
+    #      from the legacy 7-step pipeline which trains on trade-level
+    #      "did the bot win". This is the right model for reproducing
+    #      the bot's actual trade frequency. Add a button + tunables
+    #      so the user can run it from the panel without touching code.
+    #      Output goes to outputs/bot_entry_rules.json which Run
+    #      Backtest already lists as a source (added in Phase A.25).
+    # CHANGED: April 2026 — Phase A.31
+    bot_entry_frame = tk.LabelFrame(
+        right_frame,
+        text=" 🤖 Bot Entry Discovery (alternative to 7-step pipeline) ",
+        bg="white", fg="#16213e",
+        font=("Segoe UI", 9, "bold"),
+        padx=10, pady=8,
+    )
+    bot_entry_frame.pack(fill="x", pady=(0, 10))
+
+    tk.Label(
+        bot_entry_frame,
+        text=(
+            "Trains on candle-level 'did the bot enter' labels.\n"
+            "Discovers actual entry rules across all timeframes.\n"
+            "Output: outputs/bot_entry_rules.json (loadable in Run Backtest)."
+        ),
+        bg="white", fg="#666",
+        font=("Segoe UI", 8),
+        justify="left",
+    ).pack(anchor="w", pady=(0, 6))
+
+    # Four bot-entry-specific spinboxes — independent of the legacy
+    # Discovery Settings card (which controls the analyze.py decision tree).
+    # We piggyback on the existing _make_spinbox helper since it is already
+    # imported at module level via the build_panel closure. The config keys
+    # are NEW — added below in Edit 3.
+    _make_spinbox(
+        bot_entry_frame, "Max rules:", "bot_entry_max_rules",
+        5, 100, 1,
+        ("Maximum number of rules to keep across all timeframes after "
+         "deduplication. Higher = more rule variety, longer runtime. "
+         "Lower = only top rules. Safe range 10-50. Default: 25."),
+    )
+    _make_spinbox(
+        bot_entry_frame, "Tree max depth:", "bot_entry_max_depth",
+        2, 8, 1,
+        ("Maximum depth of the decision tree extracted per timeframe. "
+         "Higher = more conditions per rule (more specific). Lower = "
+         "simpler rules covering more candles. Safe range 3-6. Default: 4."),
+    )
+    _make_spinbox(
+        bot_entry_frame, "Min coverage:", "bot_entry_min_coverage",
+        5, 200, 1,
+        ("Minimum number of candles a rule must match in the training "
+         "set to be kept. Higher = fewer, broader rules. Lower = more "
+         "specific rules. Safe range 10-50. Default: 20."),
+    )
+    _make_spinbox(
+        bot_entry_frame, "Min recall:", "bot_entry_min_win_rate",
+        0.0, 1.0, 0.05,
+        ("Minimum 'recall' — fraction of candles in a leaf where the "
+         "bot actually entered. NOTE: this is NOT a profit win rate. "
+         "It measures how reliably this leaf identifies bot entries. "
+         "0.55 = at least 55% of candles in the leaf are real bot "
+         "entries. Default: 0.55."),
+    )
+
+    bot_entry_btn = tk.Button(
+        bot_entry_frame, text="🤖 Discover Bot Entry Rules",
+        bg="#8e44ad", fg="white",
+        font=("Segoe UI", 10, "bold"),
+        bd=0, pady=10, cursor="hand2",
+        command=lambda: run_bot_entry_discovery(
+            output_text, progress_label, progress_bar, pct_label, bot_entry_btn
+        ),
+    )
+    bot_entry_btn.pack(fill="x", pady=(8, 0))
 
     # Progress indicator
     progress_label = tk.Label(right_frame, text="Ready to run",
@@ -348,6 +523,149 @@ def build_panel(parent):
     output_text.insert(tk.END, "Select scenarios from the left and click Run.\n\n")
 
     return panel
+
+
+# WHY (Phase A.31): Worker that runs bot_entry_discovery in a background
+#      thread so the UI stays responsive. Mirrors the threading pattern
+#      already used by run_scenarios. Output is appended to the same
+#      console widget. After completion, the user clicks the refresh
+#      button on the Run Backtest panel's source dropdown to pick up
+#      the new bot_entry_rules.json.
+# CHANGED: April 2026 — Phase A.31
+def run_bot_entry_discovery(output_text, progress_label, progress_bar,
+                            pct_label, btn):
+    """Run bot_entry_discovery in a background thread.
+
+    Reads the four bot_entry_* hyperparameters from p1_config.json,
+    invokes discover_bot_entry_rules(), and writes progress to the
+    shared output_text console. UI updates are bounced through
+    state.window.after(0, ...) per project rule.
+    """
+    global _running
+    with _running_lock:
+        if _running:
+            try:
+                from tkinter import messagebox
+                messagebox.showwarning(
+                    "Already Running",
+                    "A discovery run is already in progress.\n"
+                    "Please wait for it to complete."
+                )
+            except Exception:
+                pass
+            return
+        _running = True
+
+    # Disable the button so double-click doesn't queue two runs
+    try:
+        btn.configure(state="disabled", text="⏳ Running...", bg="#95a5a6")
+    except Exception:
+        pass
+
+    # Read tunables
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        import config_loader as _cl
+        _cfg = _cl.load()
+        _max_rules    = int(  _cfg.get('bot_entry_max_rules',    '25'))
+        _max_depth    = int(  _cfg.get('bot_entry_max_depth',    '4'))
+        _min_coverage = int(  _cfg.get('bot_entry_min_coverage', '20'))
+        _min_wr       = float(_cfg.get('bot_entry_min_win_rate', '0.55'))
+    except Exception:
+        _max_rules, _max_depth, _min_coverage, _min_wr = 25, 4, 20, 0.55
+
+    # Per-row try/except guard inside the worker — never let a single
+    # progress-callback failure kill the run.
+    def _ui_log(msg):
+        try:
+            state.window.after(
+                0,
+                lambda m=msg: (
+                    output_text.insert(tk.END, m + "\n"),
+                    output_text.see(tk.END),
+                ),
+            )
+        except Exception:
+            pass
+
+    def _ui_progress(text):
+        try:
+            state.window.after(
+                0,
+                lambda t=text: progress_label.config(text=t),
+            )
+        except Exception:
+            pass
+
+    def _worker():
+        global _running
+        try:
+            _ui_log("\n" + ("=" * 60))
+            _ui_log("# BOT ENTRY DISCOVERY")
+            _ui_log("=" * 60)
+            _ui_log(
+                f"Params: max_rules={_max_rules} max_depth={_max_depth} "
+                f"min_coverage={_min_coverage} min_win_rate={_min_wr}"
+            )
+            _ui_progress("Bot entry discovery running...")
+
+            # Lazy import — avoid loading xgboost at panel build time
+            from project1_reverse_engineering.bot_entry_discovery import (
+                discover_bot_entry_rules,
+            )
+
+            result = discover_bot_entry_rules(
+                max_rules=_max_rules,
+                max_depth=_max_depth,
+                min_coverage=_min_coverage,
+                min_win_rate=_min_wr,
+                progress_callback=_ui_log,
+            )
+
+            n_rules = len(result.get('rules', []))
+            _ui_log(f"\n✓ DONE — {n_rules} rules written to bot_entry_rules.json")
+
+            # Per-rule action distribution
+            actions = {}
+            for r in result.get('rules', []):
+                a = r.get('action', 'MISSING')
+                actions[a] = actions.get(a, 0) + 1
+            _ui_log(f"  Action distribution: {actions}")
+
+            _ui_log(
+                "\nNext step: open Project 2 → Run Backtest, click 🔄 to "
+                "refresh the source dropdown, select 'Bot Entry Rules', "
+                "and run a backtest."
+            )
+            _ui_progress("Bot entry discovery complete.")
+        except FileNotFoundError as fe:
+            _ui_log(f"\nERROR: {fe}")
+            _ui_progress("Error — see console")
+        except ImportError as ie:
+            _ui_log(f"\nERROR: {ie}")
+            _ui_progress("Error — see console")
+        except Exception as e:
+            import traceback as _tb
+            _ui_log(f"\nERROR: {type(e).__name__}: {e}")
+            _ui_log(_tb.format_exc())
+            _ui_progress("Error — see console")
+        finally:
+            with _running_lock:
+                _running = False
+            try:
+                state.window.after(
+                    0,
+                    lambda: btn.configure(
+                        state="normal",
+                        text="🤖 Discover Bot Entry Rules",
+                        bg="#8e44ad",
+                    ),
+                )
+            except Exception:
+                pass
+
+    t = _threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label, run_btn=None):
