@@ -187,6 +187,104 @@ def build_panel(parent):
                 bg="#e8f4f8", fg="#333",
                 font=("Segoe UI", 9)).pack(anchor="w", pady=1)
 
+    # WHY (Phase A.29): Old code hardcoded six tunables in analyze.py.
+    #      User cannot adjust them without editing code. Add a Discovery
+    #      Settings card with spinboxes for all six, hover tooltips, and
+    #      auto-save on focus-out so changes persist immediately.
+    # CHANGED: April 2026 — Phase A.29 — Discovery Settings panel
+    discovery_frame = tk.Frame(left_frame, bg="#fff9e6", padx=15, pady=15)
+    discovery_frame.pack(fill="x", pady=(15, 0))
+
+    tk.Label(discovery_frame, text="🔍 Discovery Settings:",
+             bg="#fff9e6", fg="#16213e",
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 10))
+
+    # Load current config
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    import config_loader as _cl
+    _cfg = _cl.load()
+
+    # Helper to create a spinbox row with label and tooltip
+    def _make_spinbox(parent, label_text, config_key, from_, to, increment, tooltip_text):
+        row = tk.Frame(parent, bg="#fff9e6")
+        row.pack(fill="x", pady=3)
+
+        label = tk.Label(row, text=label_text, bg="#fff9e6", fg="#333",
+                        font=("Segoe UI", 9), width=22, anchor="w")
+        label.pack(side="left")
+
+        # Add hover tooltip
+        def _show_tooltip(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            tk.Label(tooltip, text=tooltip_text, bg="#ffffcc", fg="#333",
+                    font=("Segoe UI", 8), padx=8, pady=5, relief="solid",
+                    borderwidth=1, wraplength=300, justify="left").pack()
+            label._tooltip = tooltip
+
+        def _hide_tooltip(event):
+            if hasattr(label, '_tooltip'):
+                label._tooltip.destroy()
+                delattr(label, '_tooltip')
+
+        label.bind("<Enter>", _show_tooltip)
+        label.bind("<Leave>", _hide_tooltip)
+
+        spinbox = tk.Spinbox(row, from_=from_, to=to, increment=increment,
+                            font=("Segoe UI", 9), width=10,
+                            bg="white", relief="solid", borderwidth=1)
+        spinbox.delete(0, "end")
+        spinbox.insert(0, _cfg.get(config_key, str(from_)))
+        spinbox.pack(side="right")
+
+        # Auto-save on focus-out
+        def _on_change(event):
+            try:
+                _cl.save({config_key: spinbox.get()})
+            except Exception as e:
+                print(f"[run_scenarios] Could not save {config_key}: {e}")
+
+        spinbox.bind("<FocusOut>", _on_change)
+        spinbox.bind("<Return>", _on_change)
+
+        return spinbox
+
+    # Six tunables with tooltips
+    _make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
+                 1, 20, 1,
+                 "Maximum depth of the decision tree. Lower = simpler rules, "
+                 "higher = more complex conditions. Default: 5")
+
+    _make_spinbox(discovery_frame, "Tree Min Samples Leaf:", "rule_tree_min_samples_leaf",
+                 1, 100, 1,
+                 "Minimum samples required in a leaf node. Higher = fewer, "
+                 "more general rules. Lower = more specific rules. Default: 20")
+
+    _make_spinbox(discovery_frame, "Tree Min Samples Split:", "rule_tree_min_samples_split",
+                 2, 200, 1,
+                 "Minimum samples required to split a node. Higher = simpler "
+                 "tree, fewer splits. Default: 40")
+
+    _make_spinbox(discovery_frame, "Min Leaf Samples Filter:", "rule_min_leaf_samples",
+                 1, 100, 1,
+                 "Post-tree filter: discard leaves with fewer than this many "
+                 "samples. Higher = only keep high-coverage rules. Default: 15")
+
+    _make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
+                 0.0, 1.0, 0.05,
+                 "Minimum confidence (win rate) to accept a rule. "
+                 "0.65 = 65% wins required. Set to 0 to accept all. Default: 0.65")
+
+    _make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
+                 -50, 100, 1,
+                 "Minimum average profit in pips. Rejects unprofitable rules. "
+                 "Set to -1000 to disable. Default: 0")
+
+    tk.Label(discovery_frame, text="💡 Changes save automatically",
+             bg="#fff9e6", fg="#666",
+             font=("Segoe UI", 8, "italic")).pack(anchor="w", pady=(8, 0))
+
     # Right column - Execution controls
     right_frame = tk.Frame(content_frame, bg="white", padx=20, pady=20)
     right_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))

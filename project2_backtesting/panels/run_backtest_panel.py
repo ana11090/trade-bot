@@ -609,6 +609,556 @@ def start_backtest(output_text, progress_label, progress_bar, step_label, run_bu
         run_backtest_threaded(output_text, progress_label, progress_bar, step_label, run_button)
 
 
+# WHY (Phase A.26): Run Backtest finds ~5 trades when applying rules that
+#      independently match 35% of trades in feature_matrix.csv. The
+#      4-orders-of-magnitude gap could be (a) indicator value mismatch
+#      between feature_matrix.csv and build_multi_tf_indicators output,
+#      (b) entry-TF spine vs rule TF mismatch causing merge_asof to
+#      update rule features only every N candles, or (c) something else
+#      entirely. This diagnostic loads the SAME indicators_df the
+#      backtester would build, applies each selected rule's mask
+#      against it, and writes a per-rule, per-condition hit-count
+#      report to disk. Read-only — does not call run_backtest or
+#      modify any state.
+# CHANGED: April 2026 — Phase A.26 — diagnose rules button
+def _a26_diagnose_rules(output_text):
+    """Run a read-only diagnostic on currently-selected rules.
+
+    Loads the selected rules, builds the same indicators_df the backtester
+    would build for the configured entry TF, applies each rule's condition
+    mask, and writes a per-rule report to outputs/diagnose_rules.txt.
+    """
+    import io as _a26_io
+    import os as _a26_os
+    import sys as _a26_sys
+    import time as _a26_time
+    import json as _a26_json
+    import datetime as _a26_dt
+
+    output_text.insert(tk.END, "\n" + ("=" * 70) + "\n")
+    output_text.insert(tk.END, "PHASE A.26 — RULE DIAGNOSTIC\n")
+    output_text.insert(tk.END, ("=" * 70) + "\n")
+    output_text.see(tk.END)
+
+    project_root = _a26_os.path.normpath(_a26_os.path.join(
+        _a26_os.path.dirname(_a26_os.path.abspath(__file__)), '..', '..'
+    ))
+    if project_root not in _a26_sys.path:
+        _a26_sys.path.insert(0, project_root)
+
+    # ── Step 1: gather selected rules from the panel ─────────────────────
+    global _rule_vars
+    selected_rules = [rule for var, rule in _rule_vars if var.get()]
+    if not selected_rules:
+        output_text.insert(tk.END,
+            "ERROR: No rules selected. Check at least one rule in the list above.\n")
+        output_text.see(tk.END)
+        return
+
+    output_text.insert(tk.END, f"Selected rules: {len(selected_rules)}\n")
+    output_text.see(tk.END)
+
+    # ── Step 2: read entry TF and resolve candle path the same way the
+    #            backtest does, so the diagnostic uses the same data ─────
+    try:
+        from project2_backtesting.panels.configuration import load_config
+        cfg = load_config()
+    except Exception as _e:
+        output_text.insert(tk.END, f"ERROR reading config: {_e}\n")
+        output_text.see(tk.END)
+        return
+
+    entry_tf = cfg.get('winning_scenario', 'H1')
+    symbol = str(cfg.get('symbol', 'XAUUSD')).lower()
+    output_text.insert(tk.END, f"Entry TF (from config): {entry_tf}\n")
+    output_text.insert(tk.END, f"Symbol:                 {symbol}\n")
+    output_text.see(tk.END)
+
+    candle_path = None
+    for cand in [
+        _a26_os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
+        _a26_os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
+    ]:
+        if _a26_os.path.exists(cand):
+            candle_path = cand
+            break
+    if candle_path is None:
+        output_text.insert(tk.END,
+            f"ERROR: no candle file for {symbol} {entry_tf}.\n")
+        output_text.see(tk.END)
+        return
+    output_text.insert(tk.END, f"Candle file:            {candle_path}\n")
+    output_text.see(tk.END)
+
+    # ── Step 3: load candles + build the same indicators_df ─────────────
+    try:
+        import pandas as _a26_pd
+        import numpy as _a26_np
+        from project2_backtesting.strategy_backtester import (
+            build_multi_tf_indicators,
+            _extract_required_indicators,
+        )
+        from shared.data_utils import normalize_timestamp
+    except Exception as _e:
+        output_text.insert(tk.END, f"ERROR importing backtester: {_e}\n")
+        output_text.see(tk.END)
+        return
+
+    output_text.insert(tk.END, "\nLoading candles...\n")
+    output_text.see(tk.END)
+    try:
+        candles_df = _a26_pd.read_csv(candle_path, encoding='utf-8-sig')
+    except Exception as _e:
+        output_text.insert(tk.END, f"ERROR reading candle CSV: {_e}\n")
+        output_text.see(tk.END)
+        return
+
+    # Auto-detect timestamp column (mirror backtester logic)
+    if 'timestamp' not in candles_df.columns:
+        ts_col = None
+        for col in candles_df.columns:
+            if col.lower().strip() in ('time', 'date', 'datetime', 'open_time', 'opentime'):
+                ts_col = col
+                break
+        if ts_col is None:
+            ts_col = candles_df.columns[0]
+        candles_df = candles_df.rename(columns={ts_col: 'timestamp'})
+    candles_df['timestamp'] = normalize_timestamp(candles_df['timestamp'])
+    candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
+    output_text.insert(tk.END,
+        f"Loaded {len(candles_df):,} candles "
+        f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})\n")
+    output_text.see(tk.END)
+
+    # Required indicators come from the same helper the backtester uses,
+    # over the same selected rules.
+    try:
+        required = _extract_required_indicators(selected_rules)
+    except Exception as _e:
+        output_text.insert(tk.END,
+            f"ERROR in _extract_required_indicators: {_e}\n")
+        output_text.see(tk.END)
+        return
+
+    output_text.insert(tk.END, "\nRequired indicators per TF (used by selected rules):\n")
+    for tf, inds in (required or {}).items():
+        preview = ', '.join(list(inds)[:5]) + ('...' if len(inds) > 5 else '')
+        output_text.insert(tk.END, f"  {tf}: {len(inds)} — {preview}\n")
+    output_text.see(tk.END)
+
+    output_text.insert(tk.END, "\nBuilding indicators_df (this can take a minute)...\n")
+    output_text.see(tk.END)
+    data_dir = _a26_os.path.dirname(candle_path)
+    try:
+        indicators_df = build_multi_tf_indicators(
+            data_dir, candles_df['timestamp'], required_indicators=required)
+    except Exception as _e:
+        import traceback as _tb
+        output_text.insert(tk.END,
+            f"ERROR in build_multi_tf_indicators: {_e}\n{_tb.format_exc()}\n")
+        output_text.see(tk.END)
+        return
+    output_text.insert(tk.END,
+        f"indicators_df: {len(indicators_df):,} rows × "
+        f"{len(indicators_df.columns):,} cols\n")
+    output_text.see(tk.END)
+
+    # WHY (Phase A.26.2): The real backtest path does NOT stop at
+    #      build_multi_tf_indicators. After it, run_comparison_matrix
+    #      computes SMART_/REGIME_ features on the merged multi-TF
+    #      frame — that is the ONLY place those features can be
+    #      computed correctly because they need cross-TF lookups
+    #      like H1_candle_range / D1_atr_14. The diagnostic must
+    #      mirror this step or it tests a frame the real backtester
+    #      never sees. Mirror exactly the block in
+    #      strategy_backtester.run_comparison_matrix lines ~1539-1583.
+    # CHANGED: April 2026 — Phase A.26.2
+    _a262_smart_needed = {
+        c.get('feature', '') for r in selected_rules
+        for c in r.get('conditions', [])
+        if isinstance(c, dict) and c.get('feature', '').startswith('SMART_')
+    }
+    _a262_regime_needed = {
+        c.get('feature', '') for r in selected_rules
+        for c in r.get('conditions', [])
+        if isinstance(c, dict) and c.get('feature', '').startswith('REGIME_')
+    }
+    if _a262_smart_needed:
+        output_text.insert(tk.END,
+            f"\nRules need {len(_a262_smart_needed)} SMART feature(s) — "
+            f"computing on merged frame...\n")
+        output_text.see(tk.END)
+        try:
+            from project1_reverse_engineering.smart_features import (
+                _add_tf_divergences, _add_indicator_dynamics,
+                _add_alignment_scores, _add_session_intelligence,
+                _add_volatility_regimes, _add_price_action,
+                _add_momentum_quality,
+            )
+            if 'hour_of_day' not in indicators_df.columns:
+                indicators_df['hour_of_day'] = candles_df['timestamp'].dt.hour
+            if 'open_time' not in indicators_df.columns:
+                indicators_df['open_time'] = candles_df['timestamp'].astype(str)
+            indicators_df = _add_tf_divergences(indicators_df)
+            indicators_df = _add_indicator_dynamics(indicators_df)
+            indicators_df = _add_alignment_scores(indicators_df)
+            indicators_df = _add_session_intelligence(indicators_df)
+            indicators_df = _add_volatility_regimes(indicators_df)
+            indicators_df = _add_price_action(indicators_df)
+            indicators_df = _add_momentum_quality(indicators_df)
+            _smart_cols = [c for c in indicators_df.columns if c.startswith('SMART_')]
+            output_text.insert(tk.END,
+                f"  Added {len(_smart_cols)} SMART columns to indicators_df\n")
+            # Surface any column smart_features faked with zeros so the
+            # report makes the upstream gap visible. _missing_columns is
+            # cumulative across calls — snapshot it now.
+            try:
+                from project1_reverse_engineering.smart_features import (
+                    get_missing_columns as _a262_get_missing,
+                )
+                _a262_missing_upstream = sorted(_a262_get_missing())
+                if _a262_missing_upstream:
+                    output_text.insert(tk.END,
+                        f"  WARNING: smart_features._safe_col faked these upstream "
+                        f"columns with zeros: {_a262_missing_upstream[:10]}"
+                        + ("..." if len(_a262_missing_upstream) > 10 else "") + "\n")
+            except Exception:
+                _a262_missing_upstream = []
+        except Exception as _e:
+            import traceback as _tb
+            output_text.insert(tk.END,
+                f"  ERROR computing SMART features: {_e}\n{_tb.format_exc()}\n")
+            _a262_missing_upstream = []
+    else:
+        _a262_missing_upstream = []
+
+    if _a262_regime_needed:
+        output_text.insert(tk.END,
+            f"\nRules need {len(_a262_regime_needed)} REGIME feature(s) — "
+            f"computing on merged frame...\n")
+        output_text.see(tk.END)
+        try:
+            from project1_reverse_engineering.smart_features import _add_regime_features
+            indicators_df = _add_regime_features(indicators_df)
+            _regime_cols = [c for c in indicators_df.columns if c.startswith('REGIME_')]
+            output_text.insert(tk.END,
+                f"  Added {len(_regime_cols)} REGIME columns to indicators_df\n")
+        except Exception as _e:
+            output_text.insert(tk.END,
+                f"  ERROR computing REGIME features: {_e}\n")
+
+    output_text.insert(tk.END,
+        f"\nFinal indicators_df: {len(indicators_df):,} rows × "
+        f"{len(indicators_df.columns):,} cols\n")
+    output_text.see(tk.END)
+
+    # WHY (Phase A.26.1): build_multi_tf_indicators can emit duplicate
+    #      column names when two timeframes derive an indicator with
+    #      the same prefixed name, or when a SMART feature collides
+    #      with a base indicator. fast_backtest does `ind[col]` which
+    #      returns a DataFrame (not a Series) on duplicates, and every
+    #      comparison against that DataFrame produces a broken mask
+    #      that silently fires zero times. Surface the duplicates so
+    #      the report identifies this directly.
+    # CHANGED: April 2026 — Phase A.26.1
+    _a26_dupes = indicators_df.columns[indicators_df.columns.duplicated(keep=False)]
+    _a26_dupe_set = sorted(set(_a26_dupes.tolist()))
+    if _a26_dupe_set:
+        output_text.insert(tk.END,
+            f"WARNING: {len(_a26_dupe_set)} duplicate column name(s) in indicators_df:\n")
+        for _dn in _a26_dupe_set[:20]:
+            _count = int((indicators_df.columns == _dn).sum())
+            output_text.insert(tk.END, f"  {_dn} (x{_count})\n")
+        if len(_a26_dupe_set) > 20:
+            output_text.insert(tk.END, f"  ... and {len(_a26_dupe_set) - 20} more\n")
+    else:
+        output_text.insert(tk.END, "No duplicate columns in indicators_df.\n")
+    output_text.see(tk.END)
+
+    # Apply the same warmup trim the backtester does (.iloc[200:])
+    n_total = len(indicators_df)
+    if n_total > 200:
+        ind_trimmed = indicators_df.iloc[200:].reset_index(drop=True)
+    else:
+        ind_trimmed = indicators_df.reset_index(drop=True)
+    output_text.insert(tk.END,
+        f"After warmup trim (.iloc[200:]): {len(ind_trimmed):,} rows\n")
+    output_text.see(tk.END)
+
+    # ── Step 4: compare to feature_matrix.csv as the cross-reference ────
+    fm_path = _a26_os.path.join(
+        project_root, 'project1_reverse_engineering', 'outputs', 'feature_matrix.csv'
+    )
+    fm_df = None
+    if _a26_os.path.exists(fm_path):
+        try:
+            fm_df = _a26_pd.read_csv(fm_path)
+            output_text.insert(tk.END,
+                f"\nCross-ref feature_matrix.csv: {len(fm_df):,} rows\n")
+        except Exception as _e:
+            output_text.insert(tk.END,
+                f"WARNING could not read feature_matrix.csv: {_e}\n")
+    else:
+        output_text.insert(tk.END,
+            f"\nNOTE: feature_matrix.csv not found — cross-ref skipped\n")
+    output_text.see(tk.END)
+
+    # ── Step 5: per-rule diagnostic ─────────────────────────────────────
+    report_lines = []
+    report_lines.append("=" * 78)
+    report_lines.append("PHASE A.26 RULE DIAGNOSTIC")
+    report_lines.append(f"Generated: {_a26_dt.datetime.now().isoformat()}")
+    report_lines.append(f"Entry TF: {entry_tf}    Symbol: {symbol}")
+    report_lines.append(f"Candle file: {candle_path}")
+    report_lines.append(
+        f"indicators_df: {n_total:,} rows × {len(indicators_df.columns):,} cols")
+    report_lines.append(
+        f"After warmup trim: {len(ind_trimmed):,} rows")
+    if fm_df is not None:
+        report_lines.append(f"Cross-ref feature_matrix.csv: {len(fm_df):,} rows")
+    report_lines.append(f"Selected rules: {len(selected_rules)}")
+    # WHY (Phase A.26.2): Surface upstream columns that smart_features
+    #      had to fake with zeros, right at the top of the report so
+    #      the user sees the upstream gap before drilling into rules.
+    # CHANGED: April 2026 — Phase A.26.2
+    if _a262_missing_upstream:
+        report_lines.append(
+            f"WARNING — smart_features._safe_col faked "
+            f"{len(_a262_missing_upstream)} upstream column(s) with zeros: "
+            f"{_a262_missing_upstream}")
+    report_lines.append("=" * 78)
+    report_lines.append("")
+
+    union_mask_bt = _a26_pd.Series(False, index=ind_trimmed.index)
+    union_mask_fm = (
+        _a26_pd.Series(False, index=fm_df.index) if fm_df is not None else None
+    )
+
+    for r_idx, rule in enumerate(selected_rules):
+        report_lines.append(f"--- Rule {r_idx} ---")
+        report_lines.append(
+            f"  prediction={rule.get('prediction')!r}  "
+            f"action={rule.get('action')!r}  "
+            f"reported_coverage={rule.get('coverage')}  "
+            f"confidence={rule.get('confidence')}")
+
+        rule_mask_bt = _a26_pd.Series(True, index=ind_trimmed.index)
+        rule_mask_fm = (
+            _a26_pd.Series(True, index=fm_df.index) if fm_df is not None else None
+        )
+        valid = True
+
+        for c_idx, cond in enumerate(rule.get('conditions', [])):
+            # WHY (Phase A.26.1): Pre-initialize so the per-condition
+            #      report line can reference _fm_dup_count even when
+            #      fm_df is None (no cross-ref available).
+            # CHANGED: April 2026 — Phase A.26.1
+            _fm_dup_count = 0
+            # The selected_rules list is already normalized by the panel
+            # (normalize_conditions runs at load time) so cond should be
+            # a dict here. Defend anyway.
+            if not isinstance(cond, dict):
+                report_lines.append(
+                    f"    cond[{c_idx}] NOT-A-DICT: {cond!r}")
+                valid = False
+                break
+
+            feat = cond.get('feature', '')
+            op   = cond.get('operator', '')
+            val  = cond.get('value', None)
+
+            in_ind = feat in ind_trimmed.columns
+            in_fm  = (fm_df is not None and feat in fm_df.columns)
+
+            # WHY (Phase A.26.1): If `feat` is duplicated in ind_trimmed,
+            #      ind_trimmed[feat] returns a DataFrame, not a Series,
+            #      and downstream .isna().sum() returns a Series →
+            #      int() raises TypeError. Take the first column when
+            #      duplicates exist and record how many duplicates there
+            #      were. This mirrors what fast_backtest implicitly does
+            #      (its mask-building code crashes silently in the same
+            #      situation), so the diagnostic measures what the
+            #      backtester actually sees.
+            # CHANGED: April 2026 — Phase A.26.1
+            _ind_dup_count = int((ind_trimmed.columns == feat).sum()) if in_ind else 0
+
+            # Hit count in indicators_df
+            if not in_ind:
+                hits_bt   = 0
+                nans_bt   = -1
+                col_min   = None
+                col_max   = None
+                col_mean  = None
+                cond_mask_bt = _a26_pd.Series(False, index=ind_trimmed.index)
+                rule_mask_bt &= cond_mask_bt
+                valid = False
+            else:
+                _raw_bt = ind_trimmed[feat]
+                if isinstance(_raw_bt, _a26_pd.DataFrame):
+                    # Duplicate column name — take first occurrence
+                    col_bt = _raw_bt.iloc[:, 0]
+                else:
+                    col_bt = _raw_bt
+                nans_bt = int(col_bt.isna().sum())
+                try:
+                    col_min  = float(col_bt.min())
+                    col_max  = float(col_bt.max())
+                    col_mean = float(col_bt.mean())
+                except Exception:
+                    col_min = col_max = col_mean = float('nan')
+                if op == '<=':
+                    cond_mask_bt = col_bt <= val
+                elif op == '>':
+                    cond_mask_bt = col_bt > val
+                elif op == '<':
+                    cond_mask_bt = col_bt < val
+                elif op == '>=':
+                    cond_mask_bt = col_bt >= val
+                elif op == '==':
+                    cond_mask_bt = col_bt == val
+                elif op == '!=':
+                    cond_mask_bt = col_bt != val
+                else:
+                    report_lines.append(
+                        f"    cond[{c_idx}] UNKNOWN OP {op!r}")
+                    cond_mask_bt = _a26_pd.Series(False, index=ind_trimmed.index)
+                    valid = False
+                cond_mask_bt = cond_mask_bt.fillna(False)
+                hits_bt = int(cond_mask_bt.sum())
+                rule_mask_bt &= cond_mask_bt
+
+            # Hit count in feature_matrix.csv (cross-ref)
+            if rule_mask_fm is not None:
+                # WHY (Phase A.26.1): Same dedup as ind_trimmed above.
+                # CHANGED: April 2026 — Phase A.26.1
+                _fm_dup_count = (
+                    int((fm_df.columns == feat).sum()) if in_fm else 0
+                )
+                if not in_fm:
+                    cond_mask_fm = _a26_pd.Series(False, index=fm_df.index)
+                    rule_mask_fm &= cond_mask_fm
+                    hits_fm = 0
+                    fm_min = fm_max = fm_mean = None
+                else:
+                    _raw_fm = fm_df[feat]
+                    if isinstance(_raw_fm, _a26_pd.DataFrame):
+                        col_fm = _raw_fm.iloc[:, 0]
+                    else:
+                        col_fm = _raw_fm
+                    try:
+                        fm_min  = float(col_fm.min())
+                        fm_max  = float(col_fm.max())
+                        fm_mean = float(col_fm.mean())
+                    except Exception:
+                        fm_min = fm_max = fm_mean = float('nan')
+                    if op == '<=':
+                        cond_mask_fm = col_fm <= val
+                    elif op == '>':
+                        cond_mask_fm = col_fm > val
+                    elif op == '<':
+                        cond_mask_fm = col_fm < val
+                    elif op == '>=':
+                        cond_mask_fm = col_fm >= val
+                    elif op == '==':
+                        cond_mask_fm = col_fm == val
+                    elif op == '!=':
+                        cond_mask_fm = col_fm != val
+                    else:
+                        cond_mask_fm = _a26_pd.Series(False, index=fm_df.index)
+                    cond_mask_fm = cond_mask_fm.fillna(False)
+                    hits_fm = int(cond_mask_fm.sum())
+                    rule_mask_fm &= cond_mask_fm
+            else:
+                hits_fm = None
+                fm_min = fm_max = fm_mean = None
+
+            # Per-condition line
+            # WHY (Phase A.26.1): Include duplicate count so the report
+            #      flags the duplicate-column bug right next to the
+            #      hit-count number, not only in the panel preamble.
+            # CHANGED: April 2026 — Phase A.26.1
+            report_lines.append(
+                f"  cond[{c_idx}] {feat} {op} {val}")
+            report_lines.append(
+                f"    in_ind={in_ind} in_fm={in_fm} "
+                f"NaNs_in_ind={nans_bt} "
+                f"ind_dup_count={_ind_dup_count} "
+                f"fm_dup_count={_fm_dup_count if rule_mask_fm is not None else 'n/a'}")
+            if in_ind:
+                report_lines.append(
+                    f"    ind_col stats: "
+                    f"min={col_min:.6f} max={col_max:.6f} mean={col_mean:.6f}")
+            if in_fm and fm_min is not None:
+                report_lines.append(
+                    f"    fm_col stats:  "
+                    f"min={fm_min:.6f} max={fm_max:.6f} mean={fm_mean:.6f}")
+            report_lines.append(
+                f"    hits_in_indicators_df = {hits_bt:>10,} "
+                f"({(hits_bt / max(1, len(ind_trimmed)) * 100):.2f}%)")
+            if hits_fm is not None:
+                report_lines.append(
+                    f"    hits_in_feature_matrix = {hits_fm:>10,} "
+                    f"({(hits_fm / max(1, len(fm_df)) * 100):.2f}%)")
+
+        rule_mask_bt = rule_mask_bt.fillna(False)
+        rule_hits_bt = int(rule_mask_bt.sum())
+        report_lines.append(
+            f"  >>> RULE TOTAL hits in indicators_df: {rule_hits_bt:>10,} "
+            f"({(rule_hits_bt / max(1, len(ind_trimmed)) * 100):.2f}%) "
+            f"valid={valid}")
+        if rule_mask_fm is not None:
+            rule_hits_fm = int(rule_mask_fm.fillna(False).sum())
+            report_lines.append(
+                f"  >>> RULE TOTAL hits in feature_matrix:  {rule_hits_fm:>10,} "
+                f"({(rule_hits_fm / max(1, len(fm_df)) * 100):.2f}%)")
+        report_lines.append("")
+
+        if valid:
+            union_mask_bt |= rule_mask_bt
+            if union_mask_fm is not None:
+                union_mask_fm |= rule_mask_fm.fillna(False)
+
+    # Union summary
+    report_lines.append("=" * 78)
+    union_hits_bt = int(union_mask_bt.sum())
+    report_lines.append(
+        f"UNION (any rule fires) in indicators_df: {union_hits_bt:>10,} "
+        f"of {len(ind_trimmed):,} = "
+        f"{(union_hits_bt / max(1, len(ind_trimmed)) * 100):.2f}%")
+    if union_mask_fm is not None:
+        union_hits_fm = int(union_mask_fm.sum())
+        report_lines.append(
+            f"UNION (any rule fires) in feature_matrix: {union_hits_fm:>10,} "
+            f"of {len(fm_df):,} = "
+            f"{(union_hits_fm / max(1, len(fm_df)) * 100):.2f}%")
+    report_lines.append("=" * 78)
+
+    # ── Step 6: write to disk ───────────────────────────────────────────
+    out_dir = _a26_os.path.normpath(_a26_os.path.join(
+        _a26_os.path.dirname(_a26_os.path.abspath(__file__)), '..', 'outputs'
+    ))
+    try:
+        _a26_os.makedirs(out_dir, exist_ok=True)
+    except Exception:
+        pass
+    out_path = _a26_os.path.join(out_dir, 'diagnose_rules.txt')
+    try:
+        with open(out_path, 'w', encoding='utf-8') as _f:
+            _f.write("\n".join(report_lines))
+        output_text.insert(tk.END,
+            "\n" + ("=" * 70) + "\n"
+            f"Diagnostic written to:\n  {out_path}\n"
+            + ("=" * 70) + "\n\n")
+    except Exception as _e:
+        output_text.insert(tk.END,
+            f"\nERROR writing diagnostic file: {_e}\n")
+
+    # Echo the union summary inline for quick visibility
+    for line in report_lines[-6:]:
+        output_text.insert(tk.END, line + "\n")
+    output_text.see(tk.END)
+
+
 def build_panel(parent):
     global _output_text, _progress_label, _progress_bar, _step_label, _run_button, _best_label
 
@@ -1038,14 +1588,42 @@ def build_panel(parent):
     ).pack(anchor="w")
 
     # ── Run button ────────────────────────────────────────────────────────────
+    # WHY (Phase A.26): The Run Backtest button is wrapped in a row frame so
+    #      the new Diagnose Rules button can sit beside it without disturbing
+    #      any other panel layout. The Run button keeps the same callback,
+    #      same padding, same colors — only the parent changes from `panel`
+    #      to `_a26_run_row`.
+    # CHANGED: April 2026 — Phase A.26
+    _a26_run_row = tk.Frame(panel, bg="#ffffff")
+    _a26_run_row.pack(pady=(0, 12))
+
     _run_button = tk.Button(
-        panel, text="Run Backtest",
+        _a26_run_row, text="Run Backtest",
         command=lambda: start_backtest(_output_text, _progress_label,
                                        _progress_bar, _step_label, _run_button),
         bg="#28a745", fg="white", font=("Arial", 12, "bold"),
         relief=tk.FLAT, cursor="hand2", padx=30, pady=12
     )
-    _run_button.pack(pady=(0, 12))
+    _run_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    # WHY (Phase A.26): Read-only diagnostic — does NOT call run_backtest.
+    #      Loads the same indicators_df the backtester would build for the
+    #      configured entry TF, applies each selected rule's mask, and
+    #      writes a per-rule, per-condition hit-count report to
+    #      outputs/diagnose_rules.txt. Used to investigate the discrepancy
+    #      between rule coverage in feature_matrix.csv and signal count
+    #      in Run Backtest.
+    # CHANGED: April 2026 — Phase A.26
+    _a26_diagnose_button = tk.Button(
+        _a26_run_row, text="Diagnose Rules",
+        command=lambda: threading.Thread(
+            target=lambda: _output_text.after(0, lambda: _a26_diagnose_rules(_output_text)),
+            daemon=True,
+        ).start(),
+        bg="#6c757d", fg="white", font=("Arial", 11),
+        relief=tk.FLAT, cursor="hand2", padx=20, pady=12
+    )
+    _a26_diagnose_button.pack(side=tk.LEFT)
 
     # ── Progress area ─────────────────────────────────────────────────────────
     prog_frame = tk.Frame(panel, bg="#ffffff")

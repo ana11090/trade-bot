@@ -500,9 +500,25 @@ def compute_feature_importance(df):
 
 # ── Section 3: Rule Extraction ────────────────────────────────────────────────
 
-def extract_rules(df, model_result):
+def extract_rules(df, model_result, direction=None):
     """
     Extract human-readable IF/THEN rules from a shallow decision tree.
+
+    direction: optional bot-level direction string ('BUY', 'SELL', 'BOTH')
+        derived by run_analysis from the trade history. When provided,
+        every emitted rule gets an 'action' field set to this value, so
+        downstream P2 code that filters or branches on rule['action']
+        stops getting None. When None (legacy callers), 'action' is
+        omitted to preserve backward compat.
+
+    WHY (Phase A.27): step6_extract_rules.py stamps an 'action' field on
+         every rule based on the bot's overall direction. analyze.py's
+         extract_rules never set this field, so its rules went into P2
+         missing the direction info that the backtester (and EA generator)
+         expect. This is half of the BUY-forced-on-every-signal bug — the
+         other half is on the Run Backtest panel side and is fixed in
+         Phase A.28.
+    CHANGED: April 2026 — Phase A.27 — accept direction parameter
     """
     from sklearn.tree import DecisionTreeClassifier
 
@@ -519,16 +535,40 @@ def extract_rules(df, model_result):
 
     # WHY (Phase 57 Fix 3): read rule_min_confidence from config so the
     #      user's panel setting actually takes effect.
+    # WHY (Phase A.29): also read the four hardcoded tree params and
+    #      the new rule_min_avg_pips filter from config. The Run
+    #      Scenarios panel exposes all six in the Discovery Settings
+    #      card. Defaults match the old hardcoded values so behaviour
+    #      is identical until the user actually touches the panel.
+    # CHANGED: April 2026 — Phase A.29 — config-driven tree params
     try:
         import config_loader as _cl
-        _min_confidence = float(_cl.load().get('rule_min_confidence', '0.55'))
+        _a29_cfg          = _cl.load()
+        _min_confidence   = float(_a29_cfg.get('rule_min_confidence',        '0.65'))
+        _a29_max_depth    = int(  _a29_cfg.get('rule_tree_max_depth',        '5'))
+        _a29_min_leaf     = int(  _a29_cfg.get('rule_tree_min_samples_leaf', '20'))
+        _a29_min_split    = int(  _a29_cfg.get('rule_tree_min_samples_split','40'))
+        _a29_leaf_filter  = int(  _a29_cfg.get('rule_min_leaf_samples',      '15'))
+        _a29_min_avg_pips = float(_a29_cfg.get('rule_min_avg_pips',          '0'))
     except Exception:
-        _min_confidence = 0.55
+        _min_confidence   = 0.65
+        _a29_max_depth    = 5
+        _a29_min_leaf     = 20
+        _a29_min_split    = 40
+        _a29_leaf_filter  = 15
+        _a29_min_avg_pips = 0.0
+
+    log.info(
+        f"[ANALYZE] Discovery params: depth={_a29_max_depth} "
+        f"leaf={_a29_min_leaf} split={_a29_min_split} "
+        f"leaf_filter={_a29_leaf_filter} "
+        f"min_conf={_min_confidence:.2f} min_avg_pips={_a29_min_avg_pips:.1f}"
+    )
 
     tree = DecisionTreeClassifier(
-        max_depth=5,
-        min_samples_leaf=20,
-        min_samples_split=40,
+        max_depth=_a29_max_depth,
+        min_samples_leaf=_a29_min_leaf,
+        min_samples_split=_a29_min_split,
         random_state=42,
     )
     tree.fit(X, y)
@@ -553,11 +593,21 @@ def extract_rules(df, model_result):
             #      Users who raised their threshold in the panel still got
             #      low-confidence rules. Read from config_loader; fall back
             #      to 0.55 only if config cannot be loaded (safe default).
-            #      WARNING: raises the floor for most users (0.55→0.65),
-            #      which will produce fewer rules — quality over quantity.
-            # CHANGED: April 2026 — Phase 57 Fix 3 — config-driven confidence floor
-            #          (audit Part D MEDIUM #48)
-            if samples >= 15 and confidence >= _min_confidence:
+            # WHY (Phase A.29): Two changes — (1) the hardcoded `samples
+            #      >= 15` check now reads from `_a29_leaf_filter`, which
+            #      defaults to 15 but is exposed in the panel. (2) Add
+            #      a separate avg_pips check AFTER the matching_pips
+            #      computation below, so a leaf with low confidence
+            #      can still survive if its average pips is at or above
+            #      `_a29_min_avg_pips`. The user explicitly wants
+            #      mixed-confidence leaves welcome as long as they are
+            #      profitable. Both filters are ANDed — the leaf must
+            #      pass BOTH the confidence floor AND the avg-pips
+            #      floor. Setting either to a permissive value
+            #      (confidence=0, avg_pips=-1000) effectively disables
+            #      it.
+            # CHANGED: April 2026 — Phase A.29 — config-driven filters
+            if samples >= _a29_leaf_filter and confidence >= _min_confidence:
                 mask = pd.Series(True, index=X.index)
                 for cond in conditions:
                     col_vals = X[cond['feature']]
@@ -586,15 +636,37 @@ def extract_rules(df, model_result):
                 else:
                     matching_pips = pd.Series([0])
 
-                rules.append({
+                # WHY (Phase A.29): Compute avg_pips first so we can filter
+                #      before appending. Reject leaves where
+                #      avg_pips < _a29_min_avg_pips — this is the second
+                #      filter leg (confidence is the first). Both must pass.
+                # CHANGED: April 2026 — Phase A.29 — avg_pips filter
+                avg_pips = round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0
+                if avg_pips < _a29_min_avg_pips:
+                    return  # Reject leaf: avg pips below threshold
+
+                # WHY (Phase A.27): Add the 'action' field so P2 backtester
+                #      and EA generator stop getting None when they read
+                #      rule['action']. Direction is bot-level (derived by
+                #      run_analysis from the action column of the trade
+                #      history) — a single decision-tree run sees only
+                #      win/loss labels and cannot distinguish long from
+                #      short on its own, so every rule from one analysis
+                #      run gets the same direction. This matches what
+                #      step6_extract_rules.py already does on line ~376.
+                # CHANGED: April 2026 — Phase A.27
+                _rule_record = {
                     'conditions':   conditions.copy(),
                     'prediction':   prediction,
                     'confidence':   round(float(confidence), 3),
                     'coverage':     int(samples),
                     'coverage_pct': round(samples / len(X) * 100, 1),
                     'win_rate':     round(float(win_rate), 3),
-                    'avg_pips':     round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0,
-                })
+                    'avg_pips':     avg_pips,
+                }
+                if direction is not None:
+                    _rule_record['action'] = direction
+                rules.append(_rule_record)
             return
 
         feature   = feature_cols[tree_.feature[node_id]]
@@ -1162,7 +1234,30 @@ def run_analysis(feature_matrix_path=None):
 
     # 3. Rules
     log.info('\n[3/8] Extracting trading rules...')
-    rules = extract_rules(df, model_result)
+    # WHY (Phase A.27): Derive a P2-compatible direction string from the
+    #      profile (which build_robot_profile already computed from the
+    #      trade history's action column at step 1 above) and pass it
+    #      into extract_rules so every emitted rule carries an 'action'
+    #      field. profile['direction'] uses lowercase 'buy_only' /
+    #      'sell_only' / 'both' / 'unknown'; P2 expects uppercase 'BUY' /
+    #      'SELL' / 'BOTH'. Map explicitly. 'unknown' → omit (None) so
+    #      extract_rules falls back to its no-action behavior and
+    #      downstream code keeps working with whatever fallback it had.
+    # CHANGED: April 2026 — Phase A.27
+    _profile_dir = (profile or {}).get('direction', 'unknown')
+    if _profile_dir == 'buy_only':
+        _rule_action = 'BUY'
+    elif _profile_dir == 'sell_only':
+        _rule_action = 'SELL'
+    elif _profile_dir == 'both':
+        _rule_action = 'BOTH'
+    else:
+        _rule_action = None
+    if _rule_action is not None:
+        log.info(f"  Rule action stamp: {_rule_action} (from profile.direction={_profile_dir!r})")
+    else:
+        log.info(f"  No direction stamp — profile.direction={_profile_dir!r}")
+    rules = extract_rules(df, model_result, direction=_rule_action)
     log.info(f'  Extracted {len(rules)} rules')
     for i, rule in enumerate(rules[:3]):
         conds = ' AND '.join(f"{c['feature']} {c['operator']} {c['value']}" for c in rule['conditions'])

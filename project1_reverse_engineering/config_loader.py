@@ -50,6 +50,21 @@ DEFAULTS = {
     'rule_min_confidence':       '0.65',
     'rule_min_coverage':         '5',
     'match_rate_threshold':      '0.70',
+    # WHY (Phase A.29): five new tunables exposed in the Run Scenarios panel
+    #      so the user can widen / tighten the rule discovery without
+    #      editing analyze.py. Old code hardcoded depth=5, leaf=20,
+    #      split=40, leaf-filter=15. With those defaults the resulting
+    #      rule set was very narrow — ~10 rules covering only a few
+    #      percent of candles. Lowering them produces 30–80 rules
+    #      covering a much larger fraction. rule_min_avg_pips is new
+    #      and lets mixed-confidence leaves survive if they are still
+    #      profitable on average — the user explicitly wants this.
+    # CHANGED: April 2026 — Phase A.29
+    'rule_tree_max_depth':       '5',
+    'rule_tree_min_samples_leaf':'20',
+    'rule_tree_min_samples_split':'40',
+    'rule_min_leaf_samples':     '15',
+    'rule_min_avg_pips':         '0',
 
     # ── Regime Analysis ───────────────────────────────────────────────────────
     # WHY (Phase 57 Fix 4): ADX 25 was hardcoded in analyze.py.
@@ -114,3 +129,65 @@ def load():
             except Exception:
                 print(_err)
     return cfg
+
+
+# WHY (Phase A.29): Run Scenarios panel needs to persist the new
+#      Discovery Settings card values back to p1_config.json. Old
+#      code only had load() — saving was done by other panels with
+#      their own ad-hoc writers. Provide a single shared writer
+#      that merges new values into the existing file (preserves
+#      every other key untouched), validates against DEFAULTS so
+#      typos don't silently disappear via the dropped-key path,
+#      and writes atomically (write to .tmp then rename).
+# CHANGED: April 2026 — Phase A.29 — save() helper
+def save(updates):
+    """Merge `updates` (dict of str→str) into p1_config.json on disk.
+
+    Only keys that exist in DEFAULTS are accepted. Unknown keys are
+    silently ignored (matching the load() drop semantics) — caller
+    should add them to DEFAULTS first if they want them to stick.
+    Atomic via write-then-rename.
+    """
+    cfg = load()  # current state, including any saved overrides
+    for k, v in (updates or {}).items():
+        if k in DEFAULTS:
+            cfg[k] = str(v)
+    # Drop the inherited DEFAULTS entries that were never customised
+    # — only persist the actual file content. Read the existing file
+    # first to know which keys were explicitly saved before, then
+    # overlay the new updates.
+    on_disk = {}
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, 'r') as f:
+                on_disk = json.load(f)
+        except Exception:
+            on_disk = {}
+    for k, v in (updates or {}).items():
+        if k in DEFAULTS:
+            on_disk[k] = str(v)
+    tmp_path = _CONFIG_FILE + '.tmp'
+    try:
+        with open(tmp_path, 'w') as f:
+            json.dump(on_disk, f, indent=2)
+        # Atomic replace
+        if os.path.exists(_CONFIG_FILE):
+            os.replace(tmp_path, _CONFIG_FILE)
+        else:
+            os.rename(tmp_path, _CONFIG_FILE)
+        return True
+    except Exception as e:
+        try:
+            from shared.logging_setup import get_logger
+            get_logger(__name__).error(
+                f"[config_loader] Could not save p1_config.json: {e}"
+            )
+        except Exception:
+            print(f"[config_loader] Could not save p1_config.json: {e}")
+        # Clean up the tmp file if it was written
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        return False

@@ -547,7 +547,7 @@ def map_rule_indicators_to_compute_groups(indicator_names):
     return sorted(groups)
 
 
-def compute_indicators(df, only=None, prefix=""):
+def compute_indicators(df, only=None, prefix="", skip_smart=False):
     """
     Compute technical indicators on a candle DataFrame.
 
@@ -557,6 +557,14 @@ def compute_indicators(df, only=None, prefix=""):
               e.g. ["adx", "aroon", "cci"] — skips all other groups.
               If None, computes all indicators (equivalent to compute_all_indicators).
         prefix: optional column name prefix (e.g. "H1_")
+        skip_smart: if True, do NOT call smart_features.compute_smart_features
+              at the end. Per-TF callers (e.g. strategy_backtester._load_tf_indicators)
+              pass skip_smart=True because the frame they hand in contains only
+              one TF's columns and SMART features need cross-TF lookups —
+              computing them on a single-TF frame produces all-zero garbage
+              and floods the log with _safe_col warnings.
+              Multi-TF callers (e.g. step2_compute_indicators on an already-
+              merged multi-TF frame) leave the default.
 
     Returns:
         DataFrame indexed by timestamp with computed indicator columns.
@@ -872,17 +880,32 @@ def compute_indicators(df, only=None, prefix=""):
     #      SMART_ rules were applied during backtesting.
     # CHANGED: April 2026 — Phase 74 Fix 26 — call smart_features in selective path
     #          (audit Part F HIGH #26)
-    try:
-        from project1_reverse_engineering import smart_features as _sf
-        from shared import feature_toggles as _ft
-        if _ft.get_smart() or _ft.get_regime():
-            indicators = _sf.compute_smart_features(indicators)
-    except Exception as _e:
-        # Smart features are optional — log but don't fail
-        import logging as _log
-        _log.getLogger(__name__).warning(
-            f"[indicator_utils] smart_features unavailable in selective path: {_e}"
-        )
+    #
+    # WHY (Phase A.28.1): Phase 74 Fix 26 was correct for callers that
+    #      pass an already-merged multi-TF frame (step2_compute_indicators,
+    #      etc.). It is wrong for per-TF callers — strategy_backtester's
+    #      _load_tf_indicators calls this function once per TF with a
+    #      frame containing only that TF's columns. compute_smart_features
+    #      then tries _safe_col(df, 'H1_candle_range') on an M5-only
+    #      frame, falls back to zeros, emits a warning, and produces
+    #      all-zero SMART columns. This wastes CPU, floods the log, and
+    #      poisoned the cache before A.28 started stripping SMART cols
+    #      on write. Fix: honor skip_smart=True to disable the block
+    #      for per-TF callers. Default stays False so every existing
+    #      multi-TF caller is unchanged.
+    # CHANGED: April 2026 — Phase A.28.1
+    if not skip_smart:
+        try:
+            from project1_reverse_engineering import smart_features as _sf
+            from shared import feature_toggles as _ft
+            if _ft.get_smart() or _ft.get_regime():
+                indicators = _sf.compute_smart_features(indicators)
+        except Exception as _e:
+            # Smart features are optional — log but don't fail
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                f"[indicator_utils] smart_features unavailable in selective path: {_e}"
+            )
     return indicators
 
 

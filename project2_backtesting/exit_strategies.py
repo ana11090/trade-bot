@@ -92,17 +92,47 @@ class ExitStrategy:
 
 
 class FixedSLTP(ExitStrategy):
-    """Fixed stop loss and take profit in pips."""
+    """Fixed stop loss and take profit in pips.
+
+    WHY (Phase A.28.2): Old version had no max-hold ceiling. A trade
+         that opened during a long sideways period could drift for
+         the entire test window without triggering either SL or TP,
+         hit END_OF_DATA, and (combined with the END_OF_DATA lockout
+         in fast_backtest) lock out every subsequent signal. Result:
+         many rule × exit combos produced 1-5 trades when the data
+         actually contained thousands of viable signals.
+         Added optional max_candles parameter; default None preserves
+         old behavior for any external caller, but get_default_exit_strategies
+         now passes max_candles=1000 so the matrix runs out of the
+         box without trade-count collapse.
+    CHANGED: April 2026 — Phase A.28.2
+    """
     name = "Fixed SL/TP"
 
-    def __init__(self, sl_pips=150, tp_pips=300, pip_size=0.01):
-        super().__init__(pip_size=pip_size, sl_pips=sl_pips, tp_pips=tp_pips)
-        self.sl_pips = sl_pips
-        self.tp_pips = tp_pips
+    def __init__(self, sl_pips=150, tp_pips=300, max_candles=None, pip_size=0.01):
+        super().__init__(pip_size=pip_size, sl_pips=sl_pips,
+                         tp_pips=tp_pips, max_candles=max_candles)
+        self.sl_pips     = sl_pips
+        self.tp_pips     = tp_pips
+        self.max_candles = max_candles
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
         direction = pos["direction"]
+
+        # WHY (Phase A.28.2): Time-based ceiling — checked first because
+        #      the iterative path calls this once per candle and we want
+        #      to cut hold time before any other check. The vectorized
+        #      path enforces max_candles separately at the numpy layer
+        #      so this branch is only used by non-vectorized callers.
+        # CHANGED: April 2026 — Phase A.28.2
+        if self.max_candles is not None:
+            held = pos.get("candles_held", 0)
+            if held >= self.max_candles:
+                return {
+                    "exit_price": float(candle["close"]),
+                    "reason":     "FIXED_MAX_CANDLES",
+                }
 
         if direction == "BUY":
             sl_price = entry - self.sl_pips * self.pip_size
@@ -123,6 +153,8 @@ class FixedSLTP(ExitStrategy):
         return None
 
     def describe(self):
+        if self.max_candles is not None:
+            return f"Fixed SL {self.sl_pips} pips / TP {self.tp_pips} pips / max {self.max_candles} candles"
         return f"Fixed SL {self.sl_pips} pips / TP {self.tp_pips} pips"
 
 
@@ -533,10 +565,18 @@ class HybridExit(ExitStrategy):
 
 def get_default_exit_strategies(pip_size=0.01):
     """Return a list of exit strategies with default parameters for testing."""
+    # WHY (Phase A.28.2): Pass max_candles=1000 to every FixedSLTP so a
+    #      trade can not drift for the entire test window. On M5 that
+    #      is ~3.5 days of hold time — generous for any fixed-SL/TP
+    #      strategy. Without this ceiling, FixedSLTP combos where the
+    #      first trade does not hit SL/TP would lock out every
+    #      subsequent signal in the backtest via the END_OF_DATA
+    #      lockout in fast_backtest.
+    # CHANGED: April 2026 — Phase A.28.2
     return [
-        FixedSLTP(sl_pips=150, tp_pips=200,  pip_size=pip_size),
-        FixedSLTP(sl_pips=150, tp_pips=300,  pip_size=pip_size),
-        FixedSLTP(sl_pips=150, tp_pips=500,  pip_size=pip_size),
+        FixedSLTP(sl_pips=150, tp_pips=200,  max_candles=1000, pip_size=pip_size),
+        FixedSLTP(sl_pips=150, tp_pips=300,  max_candles=1000, pip_size=pip_size),
+        FixedSLTP(sl_pips=150, tp_pips=500,  max_candles=1000, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=50,  trail_distance_pips=100,
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150,

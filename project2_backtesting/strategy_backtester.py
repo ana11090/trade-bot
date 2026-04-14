@@ -137,10 +137,27 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     else:
         csv_path = new_path   # will trigger "not found" warning below
 
-    # Separate cache file for partial vs full builds — they must not conflict
+    # WHY (Phase A.28): Old code built the cache filename from
+    #      "_".join(sorted(needed_indicators))[:50]. Two different
+    #      indicator sets that happened to share the same first 50
+    #      characters after sorting collided on the same cache file —
+    #      so a previous run with fewer indicators (e.g. no
+    #      D1_atr_14) would overwrite the cache, and the next run
+    #      that DID need D1_atr_14 would silently load the smaller
+    #      cache and silently fall back to zeros via _safe_col.
+    #      That all-zero D1_atr_14 then made SMART_daily_range_used =
+    #      H1_candle_range / D1_atr_14 = 0 everywhere, killing every
+    #      rule that referenced it.
+    #      Fix: hash the FULL sorted indicator list (8 hex chars is
+    #      enough — 4 billion buckets, vanishing collision risk for
+    #      this many possible indicator sets). Filenames stay short
+    #      and Windows-safe.
+    # CHANGED: April 2026 — Phase A.28
     if needed_indicators:
-        cache_suffix = "_" + "_".join(sorted(needed_indicators))[:50]
-        cache_path = os.path.join(data_dir, f".cache_{tf}_partial{cache_suffix}.parquet")
+        import hashlib as _a28_hashlib
+        _a28_key = "|".join(sorted(needed_indicators)).encode("utf-8")
+        _a28_hash = _a28_hashlib.sha1(_a28_key).hexdigest()[:8]
+        cache_path = os.path.join(data_dir, f".cache_{tf}_partial_{_a28_hash}.parquet")
     else:
         cache_path = os.path.join(data_dir, f".cache_{tf}_indicators.parquet")
 
@@ -169,6 +186,28 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
         if cache_valid:
             df['timestamp'] = normalize_timestamp(df['timestamp'])
             df = df.dropna(subset=['timestamp']).reset_index(drop=True)
+            # WHY (Phase A.28): Per-TF caches must not contain SMART_ or
+            #      REGIME_ columns. Those features are derived from
+            #      multiple TFs at once (e.g. SMART_daily_range_used =
+            #      H1_candle_range / D1_atr_14) and belong only on the
+            #      final cross-TF indicators_df, computed fresh every
+            #      run by run_comparison_matrix. Old runs that
+            #      accidentally persisted SMART_/REGIME_ columns into
+            #      per-TF caches now load them back, get them
+            #      duplicated 5x by the per-TF concat in
+            #      build_multi_tf_indicators, and any column named
+            #      SMART_daily_range_used returns a 5-col DataFrame
+            #      from df[col] — turning every comparison into a
+            #      broken mask. Strip them on load.
+            # CHANGED: April 2026 — Phase A.28
+            _bad_cols = [c for c in df.columns
+                         if c.startswith('SMART_') or c.startswith('REGIME_')]
+            if _bad_cols:
+                log.info(
+                    f"  {tf}: stripping {len(_bad_cols)} stale SMART_/REGIME_ "
+                    f"columns from cache (these belong on the cross-TF frame)"
+                )
+                df = df.drop(columns=_bad_cols)
             return df
 
     if needed_indicators:
@@ -196,8 +235,21 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     candles = candles.sort_values('timestamp').reset_index(drop=True)
 
     if needed_indicators:
-        # compute_indicators sets timestamp as the DataFrame index
-        ind = indicator_utils.compute_indicators(candles, only=compute_groups, prefix=f"{tf}_")
+        # WHY (Phase A.28.1): Pass skip_smart=True so the per-TF compute
+        #      path never calls smart_features.compute_smart_features.
+        #      The frame here contains only {tf}_ columns — SMART
+        #      features need cross-TF lookups and would fall back to
+        #      zeros for every cross-TF column, emit a flood of
+        #      _safe_col warnings, and produce garbage SMART columns
+        #      that A.28 then has to strip on cache write. Cheaper
+        #      and cleaner to simply not compute them here. SMART
+        #      features are computed once on the final merged frame
+        #      by run_comparison_matrix, which is the only place
+        #      they can be computed correctly.
+        # CHANGED: April 2026 — Phase A.28.1
+        ind = indicator_utils.compute_indicators(
+            candles, only=compute_groups, prefix=f"{tf}_", skip_smart=True
+        )
         ind = ind.reset_index()   # timestamp index → 'timestamp' column
     else:
         ind = indicator_utils.compute_all_indicators(candles, prefix=f"{tf}_")
@@ -218,6 +270,17 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
 
     ind['timestamp'] = normalize_timestamp(ind['timestamp'])
     ind = ind.dropna(subset=['timestamp']).reset_index(drop=True)
+
+    # WHY (Phase A.28): Belt-and-braces — even when freshly computed
+    #      via compute_indicators, no SMART_/REGIME_ column should
+    #      land in the per-TF cache. Strip before writing so future
+    #      loads can never inherit cross-TF features from a per-TF
+    #      file. Pairs with the load-time strip above.
+    # CHANGED: April 2026 — Phase A.28
+    _bad_cols = [c for c in ind.columns
+                 if c.startswith('SMART_') or c.startswith('REGIME_')]
+    if _bad_cols:
+        ind = ind.drop(columns=_bad_cols)
 
     ind.to_parquet(cache_path, index=False)
     log.info(f"  {tf}: {len(ind.columns) - 1} indicators cached -> {cache_path}")
@@ -292,6 +355,29 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
         combined = pd.concat([combined, _ind_block], axis=1)
 
     combined = combined.drop(columns=['timestamp']).reset_index(drop=True)
+
+    # WHY (Phase A.28): Defensive de-duplication. Even with the per-TF
+    #      cache strip above, a stale parquet from before this phase
+    #      may still have duplicate columns the first time the new
+    #      hashed cache filename is built. And in general, two TFs
+    #      could legitimately compute a column with the same prefixed
+    #      name (e.g. both M5 and M15 emit M5_hour_of_day if a future
+    #      bug were introduced). Either way: pandas df[col] returns a
+    #      DataFrame instead of a Series on duplicates, fast_backtest
+    #      builds an all-False mask, signals never fire. Take the FIRST
+    #      occurrence of any duplicated name. Logged so the user sees
+    #      it if it happens.
+    # CHANGED: April 2026 — Phase A.28
+    _dupes = combined.columns[combined.columns.duplicated(keep=False)]
+    if len(_dupes) > 0:
+        _dupe_set = sorted(set(_dupes.tolist()))
+        log.warning(
+            f"  [build_multi_tf_indicators] {len(_dupe_set)} duplicate "
+            f"column name(s) — keeping FIRST occurrence: "
+            f"{_dupe_set[:10]}{'...' if len(_dupe_set) > 10 else ''}"
+        )
+        combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
+
     return combined
 
 
@@ -342,6 +428,14 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
     sl_pips = exit_strategy.sl_pips
     tp_pips = exit_strategy.tp_pips
+    # WHY (Phase A.28.2): Read max_candles off the strategy (None when
+    #      unset, preserving old behavior for callers that did not pass
+    #      it). The hot loop below caps the future-candle scan window
+    #      at max_candles so a trade can not drift to END_OF_DATA in
+    #      a sideways period and trigger the occupied_until_idx
+    #      lockout that wipes out every subsequent signal.
+    # CHANGED: April 2026 — Phase A.28.2
+    _a282_max_candles = getattr(exit_strategy, 'max_candles', None)
 
     # Pre-extract numpy arrays (read-only, no copy)
     all_opens  = df['open'].values.astype(float)
@@ -413,6 +507,19 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         future_lows  = all_lows[start:]
         future_opens = all_opens[start:]
 
+        # WHY (Phase A.28.2): Cap the search window at max_candles. Old
+        #      code scanned all future candles → trades that never hit
+        #      SL/TP within the test window dragged to END_OF_DATA and
+        #      tripped the occupied_until_idx lockout, killing every
+        #      subsequent signal. Slicing here is cheap (numpy view, no
+        #      copy) and gives FixedSLTP the same hold ceiling that
+        #      TrailingStop/ATRBased already enforce internally.
+        # CHANGED: April 2026 — Phase A.28.2
+        if _a282_max_candles is not None and len(future_highs) > _a282_max_candles:
+            future_highs = future_highs[:_a282_max_candles]
+            future_lows  = future_lows[:_a282_max_candles]
+            future_opens = future_opens[:_a282_max_candles]
+
         # ── Find exit candle with numpy ──────────────────────────────────
         # WHY: Instead of looping candle-by-candle, we check ALL future candles
         #      at once. numpy finds the first match in microseconds.
@@ -482,11 +589,30 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             exit_time    = all_times[exit_pos]
             candles_held = exit_offset + 1
         else:
-            # No SL/TP hit — close at end of data
-            exit_pos     = len(df) - 1
-            exit_price   = all_closes[-1]
-            exit_time    = all_times[-1]
-            exit_reason  = "END_OF_DATA"
+            # No SL/TP hit within the (possibly max_candles-capped)
+            # search window — exit at the last candle of the search
+            # window, not the last candle of the dataset. With
+            # max_candles=1000, the typical case is FIXED_MAX_CANDLES
+            # at start+1000, NOT END_OF_DATA at len(df)-1. END_OF_DATA
+            # only occurs for trades opened within max_candles of the
+            # dataset end.
+            # WHY (Phase A.28.2): Old code set exit_pos = len(df) - 1
+            #      unconditionally → occupied_until_idx jumped to the
+            #      end of the dataset and locked out every subsequent
+            #      signal. New code uses start + len(future_highs) - 1
+            #      which is the actual exit position (capped by
+            #      max_candles when applicable, otherwise still the
+            #      true last candle).
+            # CHANGED: April 2026 — Phase A.28.2
+            exit_pos = start + len(future_highs) - 1
+            if exit_pos >= len(df):
+                exit_pos = len(df) - 1
+            exit_price = all_closes[exit_pos]
+            exit_time  = all_times[exit_pos]
+            if _a282_max_candles is not None and (exit_pos - start + 1) >= _a282_max_candles:
+                exit_reason = "FIXED_MAX_CANDLES"
+            else:
+                exit_reason = "END_OF_DATA"
             candles_held = len(future_highs)
 
         # P&L
@@ -917,7 +1043,24 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             exit_price  = float(last_candle["close"])
             exit_time   = last_candle["timestamp"]
             exit_reason = "END_OF_DATA"
-            occupied_until_idx = df.index[-1]
+            # WHY (Phase A.28.2): Old code set occupied_until_idx to the
+            #      very last index of the dataset on END_OF_DATA, which
+            #      then made the next-iteration check
+            #      `if sig_idx <= occupied_until_idx: continue` skip
+            #      every remaining signal. One trade that drifted to the
+            #      end killed the entire combo. Use the actual position
+            #      where the trade was finally booked instead — which
+            #      for run_backtest's per-candle simulation is the
+            #      future_idx the loop landed on, or the dataset end
+            #      only if we genuinely reached it. The variable
+            #      future_idx is set inside the loop when an exit fires;
+            #      when no exit fires we fall through to here. The
+            #      cleanest sentinel is the signal index itself (the
+            #      candle where this trade opened) — subsequent signals
+            #      strictly greater than sig_idx get a fair chance to
+            #      open their own trades.
+            # CHANGED: April 2026 — Phase A.28.2
+            occupied_until_idx = sig_idx
 
         pnl_pips = (exit_price - entry_price) / pip_size
         if trade_dir == "SELL":
@@ -1328,6 +1471,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 'reason':     'END_OF_DATA',
             }
             exit_idx = len(future_candles) - 1
+            # WHY (Phase A.28.2): END_OF_DATA in the iterative path used
+            #      to set occupied_until_idx = df.index[-1] further down,
+            #      blocking every subsequent signal forever. The fix
+            #      lives at the assignment site below; this comment is
+            #      a marker so future readers understand why that
+            #      line uses the actual exit position instead of the
+            #      dataset end.
+            # CHANGED: April 2026 — Phase A.28.2
 
         exit_price  = result['exit_price']
         exit_reason = result.get('reason', result.get('exit_reason', 'unknown'))

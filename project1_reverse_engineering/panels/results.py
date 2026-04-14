@@ -268,11 +268,23 @@ def _load_analysis_json_rules(rules_text):
     for i, rule in enumerate(rules, 1):
         prediction = rule.get('prediction', '?')
         confidence = rule.get('confidence', 0)
-        samples    = rule.get('samples', 0)
+        # WHY (Phase A.27): Old code read rule.get('samples', 0) but
+        #      analyze.py::extract_rules writes the key 'coverage', never
+        #      'samples'. The mismatch has existed since phase 48 (commit
+        #      f4d57245) — every rule has shown "Samples: 0" in this
+        #      panel ever since. Robot Analysis panel reads 'coverage'
+        #      correctly. Read 'coverage' first, fall back to 'samples'
+        #      only if some legacy writer is still emitting it.
+        # CHANGED: April 2026 — Phase A.27 — read coverage key
+        samples    = rule.get('coverage', rule.get('samples', 0))
         win_rate   = rule.get('win_rate', 0)
         conditions = rule.get('conditions', [])
+        # WHY (Phase A.27): Display the actual count under a label that
+        #      matches what every other panel calls it ("trades"), so
+        #      users don't compare apples to oranges between panels.
+        # CHANGED: April 2026 — Phase A.27 — relabel Samples → Trades
         rules_text.insert('end', f"Rule {i}: {prediction}\n")
-        rules_text.insert('end', f"  Samples: {samples}, Confidence: {confidence:.2f}, "
+        rules_text.insert('end', f"  Trades: {samples}, Confidence: {confidence:.2f}, "
                                  f"Win Rate: {win_rate:.2%}\n")
         for cond in conditions:
             feat = cond.get('feature', '?')
