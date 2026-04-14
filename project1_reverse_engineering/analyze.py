@@ -1243,25 +1243,136 @@ def run_analysis(feature_matrix_path=None):
     #      'SELL' / 'BOTH'. Map explicitly. 'unknown' → omit (None) so
     #      extract_rules falls back to its no-action behavior and
     #      downstream code keeps working with whatever fallback it had.
-    # CHANGED: April 2026 — Phase A.27
+    # WHY (Phase A.32): For bidirectional bots, training one decision
+    #      tree on the full mixed dataset buries directional edges.
+    #      A leaf for "RSI < 30" might be an 80% winner for BUY trades
+    #      and a 20% winner for SELL trades — average 50%, tree rejects
+    #      it as noise. The rule that should have been "BUY when RSI<30"
+    #      is never emitted. Fix: when profile.direction == 'both',
+    #      split df by the action column and run compute_feature_importance
+    #      + extract_rules TWICE — once on buys, once on sells — then
+    #      merge. Every rule emitted is directional by construction and
+    #      tagged 'BUY' or 'SELL'. No more 'BOTH' rules from analyze.py.
+    #      Single-direction bots (buy_only / sell_only / unknown) keep
+    #      the existing single-model path.
+    # CHANGED: April 2026 — Phase A.32
     _profile_dir = (profile or {}).get('direction', 'unknown')
-    if _profile_dir == 'buy_only':
-        _rule_action = 'BUY'
-    elif _profile_dir == 'sell_only':
-        _rule_action = 'SELL'
-    elif _profile_dir == 'both':
-        _rule_action = 'BOTH'
+
+    if _profile_dir == 'both' and 'action' in df.columns:
+        # Per-direction split
+        _a32_action_norm = df['action'].astype(str).str.upper().str.strip()
+        _a32_buy_mask  = _a32_action_norm.str.contains('BUY')  | (_a32_action_norm == 'LONG')
+        _a32_sell_mask = _a32_action_norm.str.contains('SELL') | (_a32_action_norm == 'SHORT')
+        _df_buy  = df[_a32_buy_mask].copy().reset_index(drop=True)
+        _df_sell = df[_a32_sell_mask].copy().reset_index(drop=True)
+
+        log.info(
+            f"  Bidirectional bot — splitting rule discovery by direction: "
+            f"{len(_df_buy)} BUY trades, {len(_df_sell)} SELL trades"
+        )
+
+        # Minimum subset size — too few trades can't support a real tree.
+        # Use 2x the tree's min_samples_split as a floor. If subset is
+        # too small, fall back to direction=None on that subset and log
+        # a warning.
+        _A32_MIN_SUBSET = 40
+
+        rules = []
+
+        # ── BUY subset ────────────────────────────────────────────────────
+        if len(_df_buy) >= _A32_MIN_SUBSET:
+            log.info(f"  [BUY] Training model on {len(_df_buy)} trades...")
+            try:
+                _mr_buy = compute_feature_importance(_df_buy)
+                if _mr_buy is None:
+                    log.info("  [BUY] compute_feature_importance returned None — skipping BUY rules")
+                    _buy_rules = []
+                else:
+                    log.info(
+                        f"  [BUY] Accuracy: train={_mr_buy['train_accuracy']*100:.1f}%, "
+                        f"test={_mr_buy['test_accuracy']*100:.1f}%"
+                    )
+                    _buy_rules = extract_rules(_df_buy, _mr_buy, direction='BUY')
+                    log.info(f"  [BUY] Extracted {len(_buy_rules)} rules")
+            except Exception as _e:
+                log.info(f"  [BUY] Rule extraction failed: {type(_e).__name__}: {_e}")
+                _buy_rules = []
+        else:
+            log.info(
+                f"  [BUY] Only {len(_df_buy)} trades — below minimum of "
+                f"{_A32_MIN_SUBSET}. Skipping BUY rules."
+            )
+            _buy_rules = []
+
+        # ── SELL subset ───────────────────────────────────────────────────
+        if len(_df_sell) >= _A32_MIN_SUBSET:
+            log.info(f"  [SELL] Training model on {len(_df_sell)} trades...")
+            try:
+                _mr_sell = compute_feature_importance(_df_sell)
+                if _mr_sell is None:
+                    log.info("  [SELL] compute_feature_importance returned None — skipping SELL rules")
+                    _sell_rules = []
+                else:
+                    log.info(
+                        f"  [SELL] Accuracy: train={_mr_sell['train_accuracy']*100:.1f}%, "
+                        f"test={_mr_sell['test_accuracy']*100:.1f}%"
+                    )
+                    _sell_rules = extract_rules(_df_sell, _mr_sell, direction='SELL')
+                    log.info(f"  [SELL] Extracted {len(_sell_rules)} rules")
+            except Exception as _e:
+                log.info(f"  [SELL] Rule extraction failed: {type(_e).__name__}: {_e}")
+                _sell_rules = []
+        else:
+            log.info(
+                f"  [SELL] Only {len(_df_sell)} trades — below minimum of "
+                f"{_A32_MIN_SUBSET}. Skipping SELL rules."
+            )
+            _sell_rules = []
+
+        rules = _buy_rules + _sell_rules
+        log.info(
+            f"  [A.32] Directional rule extraction complete: "
+            f"{len(_buy_rules)} BUY rules + {len(_sell_rules)} SELL rules "
+            f"= {len(rules)} total"
+        )
+
+        if not rules:
+            log.info(
+                "  [A.32] WARNING: both direction subsets produced zero rules. "
+                "Falling back to single-model extraction on the full dataset "
+                "so the pipeline does not return empty."
+            )
+            rules = extract_rules(df, model_result, direction='BOTH')
+
     else:
-        _rule_action = None
-    if _rule_action is not None:
-        log.info(f"  Rule action stamp: {_rule_action} (from profile.direction={_profile_dir!r})")
-    else:
-        log.info(f"  No direction stamp — profile.direction={_profile_dir!r}")
-    rules = extract_rules(df, model_result, direction=_rule_action)
-    log.info(f'  Extracted {len(rules)} rules')
+        # Single-direction bot OR no action column — use the original
+        # single-model path with the full-dataset model_result from [2/8].
+        if _profile_dir == 'buy_only':
+            _rule_action = 'BUY'
+        elif _profile_dir == 'sell_only':
+            _rule_action = 'SELL'
+        elif _profile_dir == 'both':
+            # Fell through because action column missing — can't split
+            _rule_action = 'BOTH'
+            log.info(
+                "  [A.32] profile.direction='both' but 'action' column "
+                "missing from df — falling back to single-model path. "
+                "Add the action column to your trade history for "
+                "directional rule discovery."
+            )
+        else:
+            _rule_action = None
+        if _rule_action is not None:
+            log.info(f"  Rule action stamp: {_rule_action} (from profile.direction={_profile_dir!r})")
+        else:
+            log.info(f"  No direction stamp — profile.direction={_profile_dir!r}")
+        rules = extract_rules(df, model_result, direction=_rule_action)
+
+    log.info(f'  Extracted {len(rules)} rules (total)')
     for i, rule in enumerate(rules[:3]):
         conds = ' AND '.join(f"{c['feature']} {c['operator']} {c['value']}" for c in rule['conditions'])
-        log.info(f"  Rule {i+1}: IF {conds}")
+        _r_action = rule.get('action', '?')
+        log.info(f"  Rule {i+1} ({_r_action}): IF {conds}")
         log.info(f"           THEN {rule['prediction']} (conf: {rule['confidence']*100:.0f}%, "
               f"coverage: {rule['coverage']} trades, WR: {rule['win_rate']*100:.0f}%)")
 

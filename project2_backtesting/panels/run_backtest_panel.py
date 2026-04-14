@@ -1159,6 +1159,498 @@ def _a26_diagnose_rules(output_text):
     output_text.see(tk.END)
 
 
+# WHY (Phase A.33): Read-only diagnostic that loads four files and
+#      prints a formatted report answering the four "why only N trades"
+#      questions. No side effects. Called by the Full Diagnostic
+#      Summary button.
+# CHANGED: April 2026 — Phase A.33
+def _a33_run_full_diagnostic(output_widget):
+    """Print a full diagnostic report to `output_widget`.
+
+    Reads (if present):
+      - project1_reverse_engineering/outputs/analysis_report.json
+      - project1_reverse_engineering/outputs/bot_entry_rules.json
+      - project1_reverse_engineering/outputs/feature_matrix.csv
+      - project2_backtesting/outputs/backtest_matrix.json
+
+    Each file is read independently with try/except so a missing or
+    corrupted one does not block the rest. All output is formatted
+    plain text with section headers.
+    """
+    import os as _os
+    import json as _json
+    import tkinter as _tk
+
+    def _log(msg):
+        try:
+            output_widget.insert(_tk.END, str(msg) + "\n")
+            output_widget.see(_tk.END)
+            output_widget.update_idletasks()
+        except Exception:
+            print(msg)
+
+    def _hdr(title):
+        _log("\n" + "=" * 72)
+        _log(f"  {title}")
+        _log("=" * 72)
+
+    try:
+        output_widget.delete("1.0", _tk.END)
+    except Exception:
+        pass
+
+    _log("FULL DIAGNOSTIC SUMMARY — A.33")
+    _log("Reads four files on disk. No re-running of discovery or backtest.")
+
+    # Resolve project root from this file's location
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    _project_root = _os.path.abspath(_os.path.join(_here, "..", ".."))
+
+    p1_out = _os.path.join(_project_root, "project1_reverse_engineering", "outputs")
+    p2_out = _os.path.join(_project_root, "project2_backtesting", "outputs")
+
+    analysis_path     = _os.path.join(p1_out, "analysis_report.json")
+    bot_entry_path    = _os.path.join(p1_out, "bot_entry_rules.json")
+    feature_matrix    = _os.path.join(p1_out, "feature_matrix.csv")
+    backtest_matrix   = _os.path.join(p2_out, "backtest_matrix.json")
+
+    # Track summary-level flags for the final recommendation
+    _summary = {
+        "has_analysis":     False,
+        "has_bot_entry":    False,
+        "has_fm":           False,
+        "has_matrix":       False,
+        "n_analysis_rules": 0,
+        "n_buy_rules":      0,
+        "n_sell_rules":     0,
+        "n_both_rules":     0,
+        "n_bot_entry":      0,
+        "bot_one_at_time":  None,  # True / False / None (unknown)
+        "max_concurrent":   None,
+        "n_trades_hist":    0,
+        "days_span":        0,
+        "max_single_rule":  0,
+        "max_combined":     0,
+        "best_combo_name":  None,
+    }
+
+    # ─── SECTION 1: analysis_report.json ──────────────────────────────────
+    _hdr("1. analysis_report.json (analyze.py pipeline)")
+    try:
+        if not _os.path.exists(analysis_path):
+            _log(f"  NOT FOUND: {analysis_path}")
+            _log("  → Run Project 1 → Run Selected Scenarios to generate this file.")
+        else:
+            with open(analysis_path, "r", encoding="utf-8") as f:
+                ar = _json.load(f)
+            _summary["has_analysis"] = True
+
+            rules = ar.get("rules", []) or []
+            _summary["n_analysis_rules"] = len(rules)
+
+            action_counts = {}
+            for r in rules:
+                a = str(r.get("action", "MISSING")).upper()
+                action_counts[a] = action_counts.get(a, 0) + 1
+
+            _summary["n_buy_rules"]  = action_counts.get("BUY", 0)
+            _summary["n_sell_rules"] = action_counts.get("SELL", 0)
+            _summary["n_both_rules"] = action_counts.get("BOTH", 0)
+
+            _log(f"  Path:             {analysis_path}")
+            _log(f"  Discovery method: {ar.get('discovery_method', '?')}")
+            _log(f"  Report direction: {ar.get('direction', '?')}")
+            _log(f"  Total rules:      {len(rules)}")
+            _log(f"  Action counts:    {action_counts}")
+
+            if rules:
+                # Sort by coverage_pct descending
+                sorted_rules = sorted(
+                    rules,
+                    key=lambda r: float(r.get("coverage_pct", 0) or 0),
+                    reverse=True,
+                )
+                _log("")
+                _log("  Top 10 rules by coverage_pct:")
+                _log(f"    {'#':<4}{'action':<8}{'conds':<8}{'cov':<10}{'cov_pct':<10}{'conf':<10}{'win_rate':<10}{'avg_pips':<10}")
+                for i, r in enumerate(sorted_rules[:10]):
+                    _log(
+                        f"    {i+1:<4}"
+                        f"{str(r.get('action','?'))[:6]:<8}"
+                        f"{len(r.get('conditions',[])):<8}"
+                        f"{int(r.get('coverage',0)):<10}"
+                        f"{float(r.get('coverage_pct',0)):<10.2f}"
+                        f"{float(r.get('confidence',0)):<10.3f}"
+                        f"{float(r.get('win_rate',0)):<10.3f}"
+                        f"{float(r.get('avg_pips',0)):<10.1f}"
+                    )
+    except Exception as e:
+        _log(f"  ERROR reading analysis_report.json: {type(e).__name__}: {e}")
+
+    # ─── SECTION 2: bot_entry_rules.json ──────────────────────────────────
+    _hdr("2. bot_entry_rules.json (bot_entry_discovery pipeline)")
+    try:
+        if not _os.path.exists(bot_entry_path):
+            _log(f"  NOT FOUND: {bot_entry_path}")
+            _log("  → This file is produced by Step 4 of Run Selected Scenarios")
+            _log("    (Phase A.31 + A.31.1). Run the pipeline to generate it.")
+        else:
+            with open(bot_entry_path, "r", encoding="utf-8") as f:
+                be = _json.load(f)
+            _summary["has_bot_entry"] = True
+
+            rules = be.get("rules", []) or []
+            _summary["n_bot_entry"] = len(rules)
+
+            action_counts = {}
+            tf_counts = {}
+            for r in rules:
+                a = str(r.get("action", "MISSING")).upper()
+                action_counts[a] = action_counts.get(a, 0) + 1
+                tf = str(r.get("entry_timeframe", "?"))
+                tf_counts[tf] = tf_counts.get(tf, 0) + 1
+
+            _log(f"  Path:             {bot_entry_path}")
+            _log(f"  Discovery method: {be.get('discovery_method', '?')}")
+            _log(f"  Total rules:      {len(rules)}")
+            _log(f"  Action counts:    {action_counts}")
+            _log(f"  By timeframe:     {tf_counts}")
+
+            params = be.get("params", {})
+            if params:
+                _log(f"  Params used:      {params}")
+
+            if rules:
+                sorted_rules = sorted(
+                    rules,
+                    key=lambda r: float(r.get("coverage_pct", 0) or 0),
+                    reverse=True,
+                )
+                _log("")
+                _log("  Top 10 rules by coverage_pct:")
+                _log(f"    {'#':<4}{'tf':<6}{'action':<8}{'conds':<8}{'cov':<10}{'cov_pct':<10}{'conf':<10}{'win_rate':<10}{'avg_pips':<10}")
+                for i, r in enumerate(sorted_rules[:10]):
+                    _log(
+                        f"    {i+1:<4}"
+                        f"{str(r.get('entry_timeframe','?'))[:4]:<6}"
+                        f"{str(r.get('action','?'))[:6]:<8}"
+                        f"{len(r.get('conditions',[])):<8}"
+                        f"{int(r.get('coverage',0)):<10}"
+                        f"{float(r.get('coverage_pct',0)):<10.2f}"
+                        f"{float(r.get('confidence',0)):<10.3f}"
+                        f"{float(r.get('win_rate',0)):<10.3f}"
+                        f"{float(r.get('avg_pips',0)):<10.1f}"
+                    )
+    except Exception as e:
+        _log(f"  ERROR reading bot_entry_rules.json: {type(e).__name__}: {e}")
+
+    # ─── SECTION 3: feature_matrix.csv — overlap + duration analysis ──────
+    _hdr("3. Historical trade overlap + duration (feature_matrix.csv)")
+    try:
+        if not _os.path.exists(feature_matrix):
+            _log(f"  NOT FOUND: {feature_matrix}")
+        else:
+            import pandas as _pd
+
+            _header = _pd.read_csv(feature_matrix, nrows=0).columns.tolist()
+            _want = [c for c in ["open_time", "close_time", "action", "pips"] if c in _header]
+            if "open_time" not in _want or "close_time" not in _want:
+                _log(f"  ERROR: feature_matrix.csv is missing open_time or close_time column.")
+                _log(f"  Columns found: {_header[:20]}...")
+            else:
+                tdf = _pd.read_csv(feature_matrix, usecols=_want)
+                tdf["open_time"]  = _pd.to_datetime(tdf["open_time"],  errors="coerce")
+                tdf["close_time"] = _pd.to_datetime(tdf["close_time"], errors="coerce")
+                tdf = tdf.dropna(subset=["open_time", "close_time"])
+                tdf = tdf.sort_values("open_time").reset_index(drop=True)
+
+                n_trades = len(tdf)
+                _summary["n_trades_hist"] = n_trades
+                _log(f"  Path:             {feature_matrix}")
+                _log(f"  Total trades:     {n_trades}")
+
+                if n_trades == 0:
+                    _log("  Empty file — no analysis possible.")
+                else:
+                    # Overlap count (trade i overlaps with SOME earlier trade)
+                    overlap_count = 0
+                    prev_close_max = tdf["close_time"].iloc[0]
+                    for i in range(1, n_trades):
+                        if tdf["open_time"].iloc[i] < prev_close_max:
+                            overlap_count += 1
+                        if tdf["close_time"].iloc[i] > prev_close_max:
+                            prev_close_max = tdf["close_time"].iloc[i]
+
+                    # Max concurrent positions via sweep-line
+                    events = []
+                    for _, row in tdf.iterrows():
+                        events.append((row["open_time"],  +1))
+                        events.append((row["close_time"], -1))
+                    events.sort()
+                    running = 0
+                    max_concurrent = 0
+                    for _ts, delta in events:
+                        running += delta
+                        if running > max_concurrent:
+                            max_concurrent = running
+
+                    _summary["max_concurrent"]  = max_concurrent
+                    _summary["bot_one_at_time"] = (max_concurrent <= 1)
+
+                    _log(f"  Overlapping trades (with ANY prior open trade): {overlap_count}")
+                    _log(f"  Max concurrent positions at any instant:        {max_concurrent}")
+
+                    # Duration distribution in minutes
+                    dur_min = (tdf["close_time"] - tdf["open_time"]).dt.total_seconds() / 60.0
+                    dur_min = dur_min.dropna()
+                    if len(dur_min) > 0:
+                        _log("")
+                        _log("  Trade duration (minutes):")
+                        _log(f"    min:      {dur_min.min():>10.1f}")
+                        _log(f"    25th:     {dur_min.quantile(0.25):>10.1f}")
+                        _log(f"    median:   {dur_min.median():>10.1f}")
+                        _log(f"    75th:     {dur_min.quantile(0.75):>10.1f}")
+                        _log(f"    99th:     {dur_min.quantile(0.99):>10.1f}")
+                        _log(f"    max:      {dur_min.max():>10.1f}")
+                        _log(f"    mean:     {dur_min.mean():>10.1f}")
+
+                    # Trade rate
+                    span_days = (
+                        tdf["open_time"].iloc[-1] - tdf["open_time"].iloc[0]
+                    ).total_seconds() / 86400.0
+                    _summary["days_span"] = span_days
+                    if span_days > 0:
+                        _log("")
+                        _log(f"  Calendar span:    {span_days:,.1f} days")
+                        _log(f"  Trades / day:     {n_trades / span_days:.3f}")
+                        _log(f"  Trades / week:    {n_trades / (span_days / 7.0):.2f}")
+                        _log(f"  Trades / month:   {n_trades / (span_days / 30.0):.2f}")
+
+                    # Action breakdown
+                    if "action" in tdf.columns:
+                        ac_norm = tdf["action"].astype(str).str.upper().str.strip()
+                        n_buy  = int(ac_norm.str.contains("BUY").sum())
+                        n_sell = int(ac_norm.str.contains("SELL").sum())
+                        _log("")
+                        _log(f"  Historical direction: {n_buy} BUY / {n_sell} SELL "
+                             f"(ratio {n_buy / max(n_trades, 1):.0%} / {n_sell / max(n_trades, 1):.0%})")
+
+                    _summary["has_fm"] = True
+    except Exception as e:
+        _log(f"  ERROR reading feature_matrix.csv: {type(e).__name__}: {e}")
+
+    # ─── SECTION 4: backtest_matrix.json — last run combos ────────────────
+    _hdr("4. Last backtest run (backtest_matrix.json)")
+    try:
+        if not _os.path.exists(backtest_matrix):
+            _log(f"  NOT FOUND: {backtest_matrix}")
+            _log("  → Run Project 2 → Run Backtest at least once.")
+        else:
+            # Detect Git LFS pointer — if present, skip instead of crashing
+            with open(backtest_matrix, "r", encoding="utf-8") as f:
+                first = f.readline()
+            if first.startswith("version https://git-lfs.github.com/spec/v1"):
+                _log(f"  SKIP: file is a Git LFS pointer, not a real JSON.")
+                _log("  → Run a backtest locally to produce a real file.")
+            else:
+                with open(backtest_matrix, "r", encoding="utf-8") as f:
+                    mx = _json.load(f)
+                results = mx.get("results", []) or []
+                _summary["has_matrix"] = True
+                _log(f"  Path:          {backtest_matrix}")
+                _log(f"  Total combos:  {len(results)}")
+
+                if not results:
+                    _log("  Empty results array — nothing to report.")
+                else:
+                    # Normalise stats access
+                    def _st(r, k, default=0):
+                        s = r.get("stats", r)
+                        return s.get(k, r.get(k, default))
+
+                    # Top 10 by trade count
+                    by_trades = sorted(
+                        results,
+                        key=lambda r: int(_st(r, "total_trades", 0) or 0),
+                        reverse=True,
+                    )[:10]
+                    _log("")
+                    _log("  Top 10 combos by trade count:")
+                    _log(f"    {'#':<4}{'trades':<10}{'win%':<8}{'net_pips':<12}{'pf':<8}  name")
+                    for i, r in enumerate(by_trades):
+                        _log(
+                            f"    {i+1:<4}"
+                            f"{int(_st(r,'total_trades',0)):<10}"
+                            f"{float(_st(r,'win_rate',0)):<8.1f}"
+                            f"{float(_st(r,'net_total_pips',0)):<12,.0f}"
+                            f"{float(_st(r,'net_profit_factor',0)):<8.2f}  "
+                            f"{r.get('rule_combo','?')} × {r.get('exit_name','?')}"
+                        )
+
+                    # Top 10 by net pips
+                    by_pips = sorted(
+                        results,
+                        key=lambda r: float(_st(r, "net_total_pips", 0) or 0),
+                        reverse=True,
+                    )[:10]
+                    _log("")
+                    _log("  Top 10 combos by net pips:")
+                    _log(f"    {'#':<4}{'trades':<10}{'win%':<8}{'net_pips':<12}{'pf':<8}  name")
+                    for i, r in enumerate(by_pips):
+                        _log(
+                            f"    {i+1:<4}"
+                            f"{int(_st(r,'total_trades',0)):<10}"
+                            f"{float(_st(r,'win_rate',0)):<8.1f}"
+                            f"{float(_st(r,'net_total_pips',0)):<12,.0f}"
+                            f"{float(_st(r,'net_profit_factor',0)):<8.2f}  "
+                            f"{r.get('rule_combo','?')} × {r.get('exit_name','?')}"
+                        )
+
+                    # Split combos: single-rule vs multi-rule unions
+                    def _is_union(name):
+                        n = str(name or "").lower()
+                        return (
+                            "all rules" in n
+                            or "top 3" in n
+                            or "top 5" in n
+                            or "combined" in n
+                        )
+
+                    singles = [r for r in results if not _is_union(r.get("rule_combo",""))]
+                    unions  = [r for r in results if _is_union(r.get("rule_combo",""))]
+
+                    if singles:
+                        max_single = max(
+                            int(_st(r, "total_trades", 0) or 0) for r in singles
+                        )
+                        _summary["max_single_rule"] = max_single
+                        _log("")
+                        _log(f"  Best SINGLE rule combo trade count: {max_single}")
+                    if unions:
+                        max_union = max(
+                            int(_st(r, "total_trades", 0) or 0) for r in unions
+                        )
+                        _summary["max_combined"] = max_union
+                        _log(f"  Best UNION rule combo trade count:  {max_union}")
+
+                    # Absolute best combo
+                    if by_trades:
+                        top = by_trades[0]
+                        _summary["best_combo_name"] = (
+                            f"{top.get('rule_combo','?')} × {top.get('exit_name','?')}"
+                        )
+                        _log(f"  Highest-trade combo overall:        "
+                             f"{_summary['best_combo_name']} "
+                             f"({int(_st(top,'total_trades',0))} trades)")
+    except Exception as e:
+        _log(f"  ERROR reading backtest_matrix.json: {type(e).__name__}: {e}")
+
+    # ─── SECTION 5: Recommendation ────────────────────────────────────────
+    _hdr("5. Recommendation — what to fix next")
+
+    _recs = []
+
+    # Bot concurrency check
+    if _summary["max_concurrent"] is not None:
+        if _summary["max_concurrent"] > 1:
+            _recs.append(
+                f"[CRITICAL] Bot ran up to {_summary['max_concurrent']} concurrent "
+                f"positions historically. The backtester's occupied_until_idx "
+                f"lockout in fast_backtest forces max_open_trades=1. No amount "
+                f"of rule tuning can match the bot's historical trade count "
+                f"until a real max_open_trades > 1 implementation is added. "
+                f"Need a new phase for that."
+            )
+        else:
+            _recs.append(
+                "[OK] Bot was one-at-a-time historically "
+                f"(max concurrent = {_summary['max_concurrent']}). The backtester's "
+                "one-at-a-time lockout is correct for your data. Trade-count "
+                "ceiling is not from concurrency."
+            )
+
+    # Rule count check
+    n_dir_rules = _summary["n_buy_rules"] + _summary["n_sell_rules"]
+    if _summary["has_analysis"]:
+        if n_dir_rules < 10:
+            _recs.append(
+                f"[HIGH] Only {n_dir_rules} directional rules from analyze.py "
+                f"({_summary['n_buy_rules']} BUY + {_summary['n_sell_rules']} SELL). "
+                "The A.32 per-direction split is emitting very few rules. "
+                "Drop Discovery Settings further: confidence=0.50, "
+                "min_samples_leaf=3, min_leaf_samples=3, max_depth=8. "
+                "Restart, re-run scenarios, re-run backtest."
+            )
+        elif _summary["n_both_rules"] > 0:
+            _recs.append(
+                f"[MED] analyze.py still emitted {_summary['n_both_rules']} rules "
+                "with action=BOTH — unexpected after A.32. Either A.32 didn't "
+                "apply, or your profile.direction is not 'both'. Check the "
+                "[3/8] log lines from the last scenario run."
+            )
+        else:
+            _recs.append(
+                f"[OK] analyze.py emitted {n_dir_rules} directional rules "
+                f"({_summary['n_buy_rules']} BUY + {_summary['n_sell_rules']} SELL). "
+                "Discovery side looks healthy."
+            )
+
+    # Bot entry availability
+    if _summary["has_bot_entry"]:
+        _recs.append(
+            f"[INFO] bot_entry_rules.json has {_summary['n_bot_entry']} rules — "
+            "run a backtest against this source too (Run Backtest → refresh → "
+            "select 'Bot Entry Rules') and compare trade counts. Entry-condition "
+            "rules often cover more candles than win-condition rules."
+        )
+    else:
+        _recs.append(
+            "[INFO] bot_entry_rules.json not found. Apply A.31 + A.31.1 so "
+            "Run Selected Scenarios produces it as Step 4."
+        )
+
+    # Single vs union ceiling
+    if _summary["max_single_rule"] and _summary["max_combined"]:
+        if _summary["max_combined"] > _summary["max_single_rule"] * 1.3:
+            _recs.append(
+                f"[OK] Best union combo ({_summary['max_combined']} trades) "
+                f"beats best single-rule combo ({_summary['max_single_rule']} trades) "
+                f"meaningfully. The rule-union mechanism is working."
+            )
+        else:
+            _recs.append(
+                f"[HIGH] Best union combo ({_summary['max_combined']} trades) "
+                f"is only marginally better than best single rule "
+                f"({_summary['max_single_rule']} trades). Rules are highly "
+                "overlapping on the same candles — union isn't adding coverage. "
+                "This suggests either too few rules, or rules that all fire "
+                "on the same regime. Loosen discovery AND run bot_entry_discovery "
+                "to get a more diverse rule set."
+            )
+
+    # Trade rate target check
+    if _summary["has_fm"] and _summary["days_span"] > 0:
+        hist_rate = _summary["n_trades_hist"] / _summary["days_span"]
+        _recs.append(
+            f"[TARGET] Historical bot rate = {hist_rate:.3f} trades/day "
+            f"({_summary['n_trades_hist']} trades / {_summary['days_span']:.0f} days). "
+            f"User goal = 0.5-1.0 trades/day. "
+            f"Historical bot {'meets' if hist_rate >= 0.5 else 'does NOT meet'} the goal "
+            "by itself. If backtest rate is BELOW historical rate, the rules are "
+            "under-covering. If backtest rate matches or exceeds historical rate, "
+            "the rules are replaying the bot adequately and any gap is the bot's "
+            "natural frequency."
+        )
+
+    for rec in _recs:
+        _log("  " + rec)
+        _log("")
+
+    _log("=" * 72)
+    _log("END OF DIAGNOSTIC")
+    _log("=" * 72)
+
+
 def build_panel(parent):
     global _output_text, _progress_label, _progress_bar, _step_label, _run_button, _best_label
 
@@ -1624,6 +2116,26 @@ def build_panel(parent):
         relief=tk.FLAT, cursor="hand2", padx=20, pady=12
     )
     _a26_diagnose_button.pack(side=tk.LEFT)
+
+    # WHY (Phase A.33): Read-only summary that answers the four "why
+    #      only 700 trades" questions by reading analysis_report.json,
+    #      bot_entry_rules.json, feature_matrix.csv, and
+    #      backtest_matrix.json. No re-running, no backtest
+    #      invocation. Prints a formatted multi-section report to the
+    #      diagnostic console so the user can see the current state
+    #      of their pipeline and know what to fix next without
+    #      guessing.
+    # CHANGED: April 2026 — Phase A.33
+    full_diag_btn = tk.Button(
+        _a26_run_row, text="📊 Full Diagnostic Summary",
+        command=lambda: threading.Thread(
+            target=lambda: _output_text.after(0, lambda: _a33_run_full_diagnostic(_output_text)),
+            daemon=True,
+        ).start(),
+        bg="#16a085", fg="white", font=("Arial", 11),
+        relief=tk.FLAT, cursor="hand2", padx=20, pady=12
+    )
+    full_diag_btn.pack(side=tk.LEFT, padx=(5, 0))
 
     # ── Progress area ─────────────────────────────────────────────────────────
     prog_frame = tk.Frame(panel, bg="#ffffff")

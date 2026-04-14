@@ -168,18 +168,21 @@ def build_panel(parent):
     steps_frame = tk.Frame(left_frame, bg="#e8f4f8", padx=15, pady=15)
     steps_frame.pack(fill="x", pady=(15, 0))
 
-    tk.Label(steps_frame, text="7 Steps per Scenario:",
+    # WHY (Phase A.31.1): The current pipeline has 4 real steps, not 7.
+    #      The 7-step list was historical (the old pipeline through
+    #      step1..step7). The modern pipeline runs only step1, step2,
+    #      analyze.run_analysis, and bot_entry_discovery. Update the
+    #      label so it matches what actually runs.
+    # CHANGED: April 2026 — Phase A.31.1
+    tk.Label(steps_frame, text="4 Steps per Scenario:",
              bg="#e8f4f8", fg="#16213e",
              font=("Segoe UI", 10, "bold")).pack(anchor="w")
 
     steps = [
-        "1. Align price data",
-        "2. Compute indicators",
-        "3. Label trades",
-        "4. Train ML model",
-        "5. SHAP analysis",
-        "6. Extract rules",
-        "7. Validate results"
+        "1. Align price data (step1)",
+        "2. Compute indicators (step2)",
+        "3. Extract win-condition rules (analyze.py)",
+        "4. Discover bot entry rules (bot_entry_discovery)",
     ]
 
     for step in steps:
@@ -472,16 +475,23 @@ def build_panel(parent):
          "entries. Default: 0.55."),
     )
 
-    bot_entry_btn = tk.Button(
-        bot_entry_frame, text="🤖 Discover Bot Entry Rules",
-        bg="#8e44ad", fg="white",
-        font=("Segoe UI", 10, "bold"),
-        bd=0, pady=10, cursor="hand2",
-        command=lambda: run_bot_entry_discovery(
-            output_text, progress_label, progress_bar, pct_label, bot_entry_btn
-        ),
-    )
-    bot_entry_btn.pack(fill="x", pady=(8, 0))
+    # WHY (Phase A.31.1): the standalone button was removed. Bot Entry
+    #      Discovery now runs as Step 4 inside the main pipeline that
+    #      "🚀 Run Selected Scenarios" already executes. The user
+    #      tunes the four spinboxes above, then clicks the green
+    #      button — every selected scenario runs Step 1 (align price),
+    #      Step 2 (compute indicators), Step 3 (analyze + win-condition
+    #      rules), Step 4 (bot entry discovery). Both
+    #      analysis_report.json AND bot_entry_rules.json are produced
+    #      by the same run.
+    # CHANGED: April 2026 — Phase A.31.1
+    tk.Label(
+        bot_entry_frame,
+        text="↑ Tunables. Discovery runs as Step 4 of '🚀 Run Selected Scenarios'.",
+        bg="white", fg="#888",
+        font=("Segoe UI", 8, "italic"),
+        wraplength=320, justify="left",
+    ).pack(anchor="w", pady=(8, 0))
 
     # Progress indicator
     progress_label = tk.Label(right_frame, text="Ready to run",
@@ -523,149 +533,6 @@ def build_panel(parent):
     output_text.insert(tk.END, "Select scenarios from the left and click Run.\n\n")
 
     return panel
-
-
-# WHY (Phase A.31): Worker that runs bot_entry_discovery in a background
-#      thread so the UI stays responsive. Mirrors the threading pattern
-#      already used by run_scenarios. Output is appended to the same
-#      console widget. After completion, the user clicks the refresh
-#      button on the Run Backtest panel's source dropdown to pick up
-#      the new bot_entry_rules.json.
-# CHANGED: April 2026 — Phase A.31
-def run_bot_entry_discovery(output_text, progress_label, progress_bar,
-                            pct_label, btn):
-    """Run bot_entry_discovery in a background thread.
-
-    Reads the four bot_entry_* hyperparameters from p1_config.json,
-    invokes discover_bot_entry_rules(), and writes progress to the
-    shared output_text console. UI updates are bounced through
-    state.window.after(0, ...) per project rule.
-    """
-    global _running
-    with _running_lock:
-        if _running:
-            try:
-                from tkinter import messagebox
-                messagebox.showwarning(
-                    "Already Running",
-                    "A discovery run is already in progress.\n"
-                    "Please wait for it to complete."
-                )
-            except Exception:
-                pass
-            return
-        _running = True
-
-    # Disable the button so double-click doesn't queue two runs
-    try:
-        btn.configure(state="disabled", text="⏳ Running...", bg="#95a5a6")
-    except Exception:
-        pass
-
-    # Read tunables
-    try:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        import config_loader as _cl
-        _cfg = _cl.load()
-        _max_rules    = int(  _cfg.get('bot_entry_max_rules',    '25'))
-        _max_depth    = int(  _cfg.get('bot_entry_max_depth',    '4'))
-        _min_coverage = int(  _cfg.get('bot_entry_min_coverage', '20'))
-        _min_wr       = float(_cfg.get('bot_entry_min_win_rate', '0.55'))
-    except Exception:
-        _max_rules, _max_depth, _min_coverage, _min_wr = 25, 4, 20, 0.55
-
-    # Per-row try/except guard inside the worker — never let a single
-    # progress-callback failure kill the run.
-    def _ui_log(msg):
-        try:
-            state.window.after(
-                0,
-                lambda m=msg: (
-                    output_text.insert(tk.END, m + "\n"),
-                    output_text.see(tk.END),
-                ),
-            )
-        except Exception:
-            pass
-
-    def _ui_progress(text):
-        try:
-            state.window.after(
-                0,
-                lambda t=text: progress_label.config(text=t),
-            )
-        except Exception:
-            pass
-
-    def _worker():
-        global _running
-        try:
-            _ui_log("\n" + ("=" * 60))
-            _ui_log("# BOT ENTRY DISCOVERY")
-            _ui_log("=" * 60)
-            _ui_log(
-                f"Params: max_rules={_max_rules} max_depth={_max_depth} "
-                f"min_coverage={_min_coverage} min_win_rate={_min_wr}"
-            )
-            _ui_progress("Bot entry discovery running...")
-
-            # Lazy import — avoid loading xgboost at panel build time
-            from project1_reverse_engineering.bot_entry_discovery import (
-                discover_bot_entry_rules,
-            )
-
-            result = discover_bot_entry_rules(
-                max_rules=_max_rules,
-                max_depth=_max_depth,
-                min_coverage=_min_coverage,
-                min_win_rate=_min_wr,
-                progress_callback=_ui_log,
-            )
-
-            n_rules = len(result.get('rules', []))
-            _ui_log(f"\n✓ DONE — {n_rules} rules written to bot_entry_rules.json")
-
-            # Per-rule action distribution
-            actions = {}
-            for r in result.get('rules', []):
-                a = r.get('action', 'MISSING')
-                actions[a] = actions.get(a, 0) + 1
-            _ui_log(f"  Action distribution: {actions}")
-
-            _ui_log(
-                "\nNext step: open Project 2 → Run Backtest, click 🔄 to "
-                "refresh the source dropdown, select 'Bot Entry Rules', "
-                "and run a backtest."
-            )
-            _ui_progress("Bot entry discovery complete.")
-        except FileNotFoundError as fe:
-            _ui_log(f"\nERROR: {fe}")
-            _ui_progress("Error — see console")
-        except ImportError as ie:
-            _ui_log(f"\nERROR: {ie}")
-            _ui_progress("Error — see console")
-        except Exception as e:
-            import traceback as _tb
-            _ui_log(f"\nERROR: {type(e).__name__}: {e}")
-            _ui_log(_tb.format_exc())
-            _ui_progress("Error — see console")
-        finally:
-            with _running_lock:
-                _running = False
-            try:
-                state.window.after(
-                    0,
-                    lambda: btn.configure(
-                        state="normal",
-                        text="🤖 Discover Bot Entry Rules",
-                        bg="#8e44ad",
-                    ),
-                )
-            except Exception:
-                pass
-
-    t = _threading.Thread(target=_worker, daemon=True)
-    t.start()
 
 
 def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label, run_btn=None):
@@ -859,10 +726,85 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                               f"scenario_{scenario}: {_ce}")
                 return True
 
+            # WHY (Phase A.31.1): bot_entry_discovery is now Step 4 of
+            #      the pipeline. Both rule producers run from one click.
+            #      Like analyze, it runs once total (not per scenario)
+            #      because it processes all timeframes internally and
+            #      writes a single bot_entry_rules.json. The
+            #      `bot_entry_already_run` latch enforces this.
+            #      Tunables come from p1_config.json via the four
+            #      spinboxes in the Bot Entry Discovery card built in
+            #      build_panel above.
+            # CHANGED: April 2026 — Phase A.31.1
+            bot_entry_already_run = [False]
+
+            def _bot_entry_wrapper(scenario):
+                if bot_entry_already_run[0]:
+                    print("  (Bot entry discovery already run — skipping)")
+                    return True
+                try:
+                    import config_loader as _bcl
+                    _bcfg = _bcl.load()
+                    _be_max_rules    = int(  _bcfg.get('bot_entry_max_rules',    '25'))
+                    _be_max_depth    = int(  _bcfg.get('bot_entry_max_depth',    '4'))
+                    _be_min_coverage = int(  _bcfg.get('bot_entry_min_coverage', '20'))
+                    _be_min_wr       = float(_bcfg.get('bot_entry_min_win_rate', '0.55'))
+                except Exception:
+                    _be_max_rules, _be_max_depth, _be_min_coverage, _be_min_wr = (
+                        25, 4, 20, 0.55,
+                    )
+
+                print(
+                    f"  Bot Entry Discovery params: "
+                    f"max_rules={_be_max_rules} max_depth={_be_max_depth} "
+                    f"min_coverage={_be_min_coverage} min_win_rate={_be_min_wr}"
+                )
+                try:
+                    from project1_reverse_engineering.bot_entry_discovery import (
+                        discover_bot_entry_rules,
+                    )
+                except ImportError as _ie:
+                    print(f"  ERROR: bot_entry_discovery not importable: {_ie}")
+                    return False
+                except Exception as _e:
+                    print(f"  ERROR loading bot_entry_discovery: {_e}")
+                    return False
+
+                try:
+                    result = discover_bot_entry_rules(
+                        max_rules=_be_max_rules,
+                        max_depth=_be_max_depth,
+                        min_coverage=_be_min_coverage,
+                        min_win_rate=_be_min_wr,
+                        progress_callback=lambda m: print(m),
+                    )
+                except FileNotFoundError as _fe:
+                    print(f"  ERROR: {_fe}")
+                    return False
+                except Exception as _e:
+                    import traceback as _tb
+                    print(f"  ERROR running bot_entry_discovery: "
+                          f"{type(_e).__name__}: {_e}")
+                    print(_tb.format_exc())
+                    return False
+
+                _rules = result.get('rules', [])
+                _action_dist = {}
+                for _r in _rules:
+                    _a = _r.get('action', 'MISSING')
+                    _action_dist[_a] = _action_dist.get(_a, 0) + 1
+                print(
+                    f"  Bot entry rules written: {len(_rules)}  "
+                    f"action distribution: {_action_dist}"
+                )
+                bot_entry_already_run[0] = True
+                return True
+
             steps = [
                 ("Step 1: Align Price",              _step1_wrapper),
                 ("Step 2: Compute Indicators",       _step2_wrapper),
                 ("Step 3: Analyze & Extract Rules",  _analyze_wrapper),
+                ("Step 4: Bot Entry Discovery",      _bot_entry_wrapper),
             ]
             # total_steps derived from actual list (Phase 55 Fix 7a)
             total_steps = len(selected) * len(steps)
