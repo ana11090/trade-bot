@@ -1,0 +1,48 @@
+TRADING RULES REPORT — M5
+============================================================
+
+Extraction Parameters:
+  Minimum Confidence: 65%
+  Minimum Coverage: 5 trades
+  Best Tree Accuracy: 0.559
+
+Top 10 Most Important Features (SHAP):
+  1. M5_atr_7
+  2. M5_candle_range
+  3. M5_atr_14
+  4. M5_std_dev_50
+  5. M5_lower_shadow
+  6. M5_std_dev_20
+  7. M5_atr_28
+  8. M5_bb_50_2_width
+  9. M5_bb_20_3_width
+  10. M5_bb_20_3_lower
+
+============================================================
+
+DISCOVERED RULES (9 total):
+
+RULE #1
+  Test Confidence:  87.5% (35/40 trades won)
+  Train Confidence: 76.0%
+  Coverage: 40 trades
+  Conditions:
+    - M5_atr_7 > 4.7297
+    - M5_std_dev_50 > 17.9610
+    - M5_macd_std_signal <= -7.7285
+  Action: BUY or SELL
+
+RULE #2
+  Test Confidence:  71.9% (23/32 trades won)
+  Train Confidence: 86.7%
+  Coverage: 32 trades
+  Conditions:
+    - M5_atr_7 > 4.7297
+    - M5_std_dev_50 <= 17.9610
+    - M5_upper_shadow > 0.0250
+    - M5_volume_change > 0.0499
+  Action: BUY or SELL
+
+RULE #3
+  Test Confidence:  70.0% (14/20 trades won)
+  Train Confidence: 93.5%

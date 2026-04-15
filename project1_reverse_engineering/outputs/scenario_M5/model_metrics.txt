@@ -1,0 +1,24 @@
+MODEL EVALUATION METRICS — M5
+============================================================
+
+Test Set Performance:
+  Accuracy:  0.658 (65.8%)
+  Precision: 0.675
+  Recall:    0.939
+  F1 Score:  0.785
+  ROC-AUC:   0.574
+
+Train Set Performance:
+  Accuracy:  0.829 (82.9%)
+
+Baseline: 0.667
+
+Classification Report:
+              precision    recall  f1-score   support
+
+        Loss       0.44      0.09      0.16        74
+         Win       0.67      0.94      0.79       148
+
+    accuracy                           0.66       222
+   macro avg       0.56      0.52      0.47       222
+weighted avg       0.60      0.66      0.58       222

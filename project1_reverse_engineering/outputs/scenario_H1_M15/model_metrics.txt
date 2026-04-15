@@ -1,0 +1,24 @@
+MODEL EVALUATION METRICS — H1_M15
+============================================================
+
+Test Set Performance:
+  Accuracy:  0.662 (66.2%)
+  Precision: 0.668
+  Recall:    0.980
+  F1 Score:  0.795
+  ROC-AUC:   0.603
+
+Train Set Performance:
+  Accuracy:  0.820 (82.0%)
+
+Baseline: 0.667
+
+Classification Report:
+              precision    recall  f1-score   support
+
+        Loss       0.40      0.03      0.05        74
+         Win       0.67      0.98      0.79       148
+
+    accuracy                           0.66       222
+   macro avg       0.53      0.50      0.42       222
+weighted avg       0.58      0.66      0.55       222

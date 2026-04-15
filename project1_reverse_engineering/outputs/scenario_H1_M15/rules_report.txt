@@ -1,0 +1,59 @@
+TRADING RULES REPORT — H1_M15
+============================================================
+
+Extraction Parameters:
+  Minimum Confidence: 65%
+  Minimum Coverage: 5 trades
+  Best Tree Accuracy: 0.572
+
+Top 10 Most Important Features (SHAP):
+  1. H1_candle_range
+  2. M15_atr_7
+  3. H1_candle_body
+  4. H1_kst_signal
+  5. H1_keltner_width
+  6. H1_bb_20_3_width
+  7. M15_volume_change
+  8. M15_upper_shadow
+  9. H1_volume_change
+  10. H1_bb_50_2_width
+
+============================================================
+
+DISCOVERED RULES (12 total):
+
+RULE #1
+  Test Confidence:  66.9% (113/169 trades won)
+  Train Confidence: 53.0%
+  Coverage: 169 trades
+  Conditions:
+    - H1_keltner_width > 0.4545
+    - H1_kst_signal > -12.0832
+  Action: BUY or SELL
+
+RULE #2
+  Test Confidence:  67.4% (60/89 trades won)
+  Train Confidence: 66.8%
+  Coverage: 89 trades
+  Conditions:
+    - H1_keltner_width > 0.4545
+    - H1_kst_signal > -12.0832
+    - M15_volume_change > -0.1547
+    - M15_volume_change <= 0.2732
+  Action: BUY or SELL
+
+RULE #3
+  Test Confidence:  67.1% (49/73 trades won)
+  Train Confidence: 71.5%
+  Coverage: 73 trades
+  Conditions:
+    - H1_keltner_width > 0.4545
+    - H1_kst_signal > -12.0832
+    - M15_volume_change > -0.1547
+    - M15_volume_change <= 0.2732
+    - M15_volume_ratio_20 > 0.6720
+  Action: BUY or SELL
+
+RULE #4
+  Test Confidence:  66.0% (35/53 trades won)
+  Train Confidence: 82.4%

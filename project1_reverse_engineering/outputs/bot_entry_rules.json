@@ -1,0 +1,123 @@
+{
+  "status": "ok",
+  "discovery_method": "bot_entry_v1",
+  "n_trades": 1106,
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.6849
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 46.575
+        },
+        {
+          "feature": "D1_adx_28",
+          "operator": ">",
+          "value": 20.8739
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.831,
+      "win_rate": 0.831,
+      "coverage": 89,
+      "coverage_pct": 15.6,
+      "train_win_rate": 0.96,
+      "train_coverage": 25,
+      "overfit_gap": 0.129,
+      "is_overfit": false,
+      "avg_pips": 255.6,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 335
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.6849
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 11.335
+        },
+        {
+          "feature": "M15_distance_to_fib_500",
+          "operator": "<=",
+          "value": 0.0806
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.619,
+      "win_rate": 0.619,
+      "coverage": 21,
+      "coverage_pct": 3.7,
+      "train_win_rate": 0.714,
+      "train_coverage": 21,
+      "overfit_gap": 0.095,
+      "is_overfit": false,
+      "avg_pips": 160.2,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 40
+    }
+  ],
+  "per_tf_summary": [
+    {
+      "tf": "M5",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 8038,
+      "n_test": 3446,
+      "n_features": 620
+    },
+    {
+      "tf": "M15",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 7753,
+      "n_test": 3324,
+      "n_features": 620
+    },
+    {
+      "tf": "H1",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 7101,
+      "n_test": 3044,
+      "n_features": 620
+    },
+    {
+      "tf": "H4",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 4622,
+      "n_test": 1982,
+      "n_features": 620
+    },
+    {
+      "tf": "D1",
+      "status": "ok",
+      "n_rules": 3,
+      "n_train": 1328,
+      "n_test": 570,
+      "n_features": 620
+    }
+  ],
+  "params": {
+    "max_rules": 25,
+    "max_depth": 4,
+    "n_estimators": 200,
+    "min_coverage": 20,
+    "min_win_rate": 0.55,
+    "neg_ratio": 10
+  }
+}

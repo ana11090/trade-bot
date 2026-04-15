@@ -1,0 +1,20 @@
+=== TK CALLBACK EXCEPTION ===
+Time:  2026-04-15T10:10:22.546197
+Type:  NameError
+Error: NameError("name 'total_steps' is not defined")
+
+--- Full traceback ---
+Traceback (most recent call last):
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 862, in callit
+    func(*args)
+  File "c:\Users\anani\my git delete\trade-bot\project1_reverse_engineering\panels\run_scenarios.py", line 878, in <lambda>
+    progress_bar.after(0, lambda: _update_bar())
+                                  ^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project1_reverse_engineering\panels\run_scenarios.py", line 595, in _update_bar
+    pct = int(completed_steps[0] / total_steps * 100)
+                                   ^^^^^^^^^^^
+NameError: name 'total_steps' is not defined
+

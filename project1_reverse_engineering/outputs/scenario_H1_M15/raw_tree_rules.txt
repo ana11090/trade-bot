@@ -1,0 +1,69 @@
+DECISION TREE RULES — H1_M15
+Tree Index: 107
+Tree Accuracy: 0.572
+============================================================
+
+|--- M15_atr_50 <= 2.88
+|   |--- H1_distance_to_swing_low <= 0.52
+|   |   |--- M15_volume_ratio_20 <= 1.30
+|   |   |   |--- M15_donchian_middle <= 1933.79
+|   |   |   |   |--- M15_ichimoku_a <= 1809.77
+|   |   |   |   |   |--- class: 0.0
+|   |   |   |   |--- M15_ichimoku_a >  1809.77
+|   |   |   |   |   |--- class: 0.0
+|   |   |   |--- M15_donchian_middle >  1933.79
+|   |   |   |   |--- class: 1.0
+|   |   |--- M15_volume_ratio_20 >  1.30
+|   |   |   |--- M15_std_dev_50 <= 2.82
+|   |   |   |   |--- class: 1.0
+|   |   |   |--- M15_std_dev_50 >  2.82
+|   |   |   |   |--- class: 1.0
+|   |--- H1_distance_to_swing_low >  0.52
+|   |   |--- M15_adx_28 <= 15.28
+|   |   |   |--- M15_supertrend_lower <= 1961.14
+|   |   |   |   |--- M15_roc_1 <= -0.07
+|   |   |   |   |   |--- class: 1.0
+|   |   |   |   |--- M15_roc_1 >  -0.07
+|   |   |   |   |   |--- class: 0.0
+|   |   |   |--- M15_supertrend_lower >  1961.14
+|   |   |   |   |--- class: 0.0
+|   |   |--- M15_adx_28 >  15.28
+|   |   |   |--- H1_keltner_width <= 0.36
+|   |   |   |   |--- class: 1.0
+|   |   |   |--- H1_keltner_width >  0.36
+|   |   |   |   |--- M15_ema_20_distance <= -0.21
+|   |   |   |   |   |--- class: 1.0
+|   |   |   |   |--- M15_ema_20_distance >  -0.21
+|   |   |   |   |   |--- truncated branch of depth 2
+|--- M15_atr_50 >  2.88
+|   |--- H1_roc_50 <= -2.58
+|   |   |--- H1_vpt <= -3.15
+|   |   |   |--- H1_bear_power <= -25.37
+|   |   |   |   |--- class: 1.0
+|   |   |   |--- H1_bear_power >  -25.37
+|   |   |   |   |--- class: 1.0
+|   |   |--- H1_vpt >  -3.15
+|   |   |   |--- class: 1.0
+|   |--- H1_roc_50 >  -2.58
+|   |   |--- M15_plus_di <= 15.33
+|   |   |   |--- H1_mfi <= 29.75
+|   |   |   |   |--- H1_roc_20 <= -0.95
+|   |   |   |   |   |--- class: 0.0
+|   |   |   |   |--- H1_roc_20 >  -0.95
+|   |   |   |   |   |--- class: 1.0
+|   |   |   |--- H1_mfi >  29.75
+|   |   |   |   |--- H1_distance_to_swing_low <= 0.77
+|   |   |   |   |   |--- truncated branch of depth 2
+|   |   |   |   |--- H1_distance_to_swing_low >  0.77
+|   |   |   |   |   |--- truncated branch of depth 2
+|   |   |--- M15_plus_di >  15.33
+|   |   |   |--- M15_rsi_21 <= 54.68
+|   |   |   |   |--- H1_roc_5 <= -0.03
+|   |   |   |   |   |--- truncated branch of depth 2
+|   |   |   |   |--- H1_roc_5 >  -0.03
+|   |   |   |   |   |--- truncated branch of depth 2
+|   |   |   |--- M15_rsi_21 >  54.68
+|   |   |   |   |--- M15_rsi_14 <= 59.84
+|   |   |   |   |   |--- truncated branch of depth 2
+|   |   |   |   |--- M15_rsi_14 >  59.84
+|   |   |   |   |   |--- truncated branch of depth 2

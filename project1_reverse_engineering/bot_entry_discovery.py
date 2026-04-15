@@ -169,8 +169,17 @@ def discover_bot_entry_rules(
         )
 
     from sklearn.tree import DecisionTreeClassifier
+    # WHY (Phase A.34): Import line referenced two names that do not
+    #      exist in xgboost_discovery.py. `_dedupe_rules` was a typo —
+    #      the real function is `_deduplicate_rules` (at line 322 of
+    #      xgboost_discovery.py). `fill_feature_nans` never existed in
+    #      that module at all and was never called here anyway — dead
+    #      import, safe to remove. Both names caused the whole import
+    #      to fail with ImportError, killing Step 4 on every scenario.
+    # CHANGED: April 2026 — Phase A.34
     from project1_reverse_engineering.xgboost_discovery import (
-        _extract_xgboost_leaf_rules, _dedupe_rules, fill_feature_nans,
+        _extract_xgboost_leaf_rules,
+        _deduplicate_rules,
     )
 
     # Load the bot's trades — try both feature_matrix.csv (which has open_time)
@@ -436,8 +445,17 @@ def discover_bot_entry_rules(
         all_rules.extend(tf_rules)
 
     # Deduplicate across TFs
+    # WHY (Phase A.34): Old call used wrong function name AND was
+    #      missing the required `max_rules` positional argument.
+    #      The real `_deduplicate_rules` signature is
+    #      `_deduplicate_rules(rules, max_rules)` — rules first,
+    #      max count second. We forward the outer function's
+    #      `max_rules` parameter (which defaults to 25 and is
+    #      controlled by the bot_entry_max_rules config key
+    #      written by the Run Scenarios panel spinbox).
+    # CHANGED: April 2026 — Phase A.34
     _log(f"Total rules across all TFs: {len(all_rules)}", cb)
-    deduped = _dedupe_rules(all_rules)
+    deduped = _deduplicate_rules(all_rules, max_rules)
     _log(f"After dedup: {len(deduped)}", cb)
 
     result = {
