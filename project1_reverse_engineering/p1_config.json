@@ -1,0 +1,5 @@
+{
+  "regime_filter_enabled": "true",
+  "regime_filter_mode": "automatic",
+  "regime_filter_discovered": "{\"status\": \"ok\", \"baseline\": {\"count\": 1106, \"win_rate\": 0.5840867992766727, \"expectancy\": 146.17088607594937}, \"subset\": [{\"feature\": \"H1_std_dev_20\", \"direction\": \">\", \"threshold\": 17.741695}], \"metrics\": {\"count\": 349, \"survival\": 0.3156, \"win_rate\": 0.6905, \"expectancy\": 284.754, \"wr_lift\": 0.1065, \"exp_lift_rel\": 0.9481, \"train_wr\": 0.7025, \"test_wr\": 0.6429, \"score\": 2.412}}"
+}

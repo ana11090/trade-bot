@@ -1462,6 +1462,73 @@ def run_analysis(feature_matrix_path=None):
     for s in suggestions:
         log.info(f"  -> {s['description']}: {s['impact']}")
 
+    # ── Phase A.37: Regime Filter discovery ──────────────────────────────
+    # WHY (Phase A.37): The A.36 Regime Filter card shipped UI-only. When
+    #      the user enables the filter AND picks Automatic mode, run the
+    #      hybrid candidate scan here — after the RF model + regime stats
+    #      already exist, before the report is assembled — and persist
+    #      the result both to p1_config.json (so the panel can show it)
+    #      and into the report (for audit). If the user did not opt in,
+    #      skip entirely; nothing written, nothing logged beyond a single
+    #      status line.
+    # CHANGED: April 2026 — Phase A.37
+    _a37_discovery_payload = None
+    try:
+        import config_loader as _cl_a37
+        _cfg_a37 = _cl_a37.load()
+        _a37_enabled = str(_cfg_a37.get('regime_filter_enabled', 'false')).lower() == 'true'
+        _a37_mode    = str(_cfg_a37.get('regime_filter_mode', 'automatic')).lower()
+        if _a37_enabled and _a37_mode == 'automatic':
+            # WHY (Phase A.37.2): Read the strictness preset from config
+            #      and forward to discover_regime_filter. Defaults to
+            #      'conservative' (matches A.37's original hardcoded
+            #      floors) if the key is missing or has a typo.
+            # CHANGED: April 2026 — Phase A.37.2
+            _a372_strictness = str(_cfg_a37.get('regime_filter_strictness', 'conservative')).lower()
+            if _a372_strictness not in ('conservative', 'balanced', 'strict'):
+                log.warning(
+                    f"[A.37.2] unknown strictness {_a372_strictness!r} in config — "
+                    f"falling back to 'conservative'"
+                )
+                _a372_strictness = 'conservative'
+
+            log.info(f"\n[A.37] Discovering regime filter (automatic mode, "
+                     f"strictness={_a372_strictness})...")
+            from regime_filter_discovery import discover_regime_filter
+            _a37_discovery_payload = discover_regime_filter(
+                df, model_result, regimes,
+                progress_log=lambda _m: log.info(_m),
+                strictness=_a372_strictness,
+            )
+            # Persist only the compact subset back to config so the panel
+            # can render it — full payload stays in analysis_report.json.
+            if _a37_discovery_payload and _a37_discovery_payload.get('status') == 'ok':
+                try:
+                    _compact = {
+                        'status':     'ok',
+                        'strictness': _a37_discovery_payload.get('strictness'),
+                        'baseline':   _a37_discovery_payload.get('baseline'),
+                        'subset':     _a37_discovery_payload.get('best_subset'),
+                        'metrics':    _a37_discovery_payload.get('best_subset_metrics'),
+                    }
+                    _cl_a37.save({'regime_filter_discovered': json.dumps(_compact)})
+                except Exception as _e:
+                    log.warning(f"[A.37] Could not save regime_filter_discovered: {_e}")
+            else:
+                # Record the no-go status too so the UI can show WHY nothing
+                # was recommended rather than looking silently broken.
+                try:
+                    _cl_a37.save({'regime_filter_discovered': json.dumps({
+                        'status':  (_a37_discovery_payload or {}).get('status', 'error'),
+                        'message': (_a37_discovery_payload or {}).get('message', ''),
+                    })})
+                except Exception:
+                    pass
+        elif _a37_enabled and _a37_mode == 'manual':
+            log.info('[A.37] Regime filter enabled in Manual mode — discovery skipped.')
+    except Exception as _e:
+        log.warning(f"[A.37] Regime filter discovery failed: {_e}")
+
     elapsed = time.time() - start
 
     # WHY (Phase A.3 hotfix): analysis_report.json was missing three
@@ -1541,6 +1608,12 @@ def run_analysis(feature_matrix_path=None):
             'top_10':           anomalies['top_anomalies'][:10],
         },
         'suggestions': suggestions,
+        # WHY (Phase A.37): Include discovery payload when it ran so the
+        #      analysis report captures exactly what the filter UI is
+        #      offering. None when the user did not opt in (or discovery
+        #      crashed), so downstream readers can detect that cleanly.
+        # CHANGED: April 2026 — Phase A.37
+        'regime_filter_discovery': _a37_discovery_payload,
     }
 
     # WHY: Phase 25 Fix 4 — Allow caller to redirect outputs to a

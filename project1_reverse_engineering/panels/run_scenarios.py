@@ -71,6 +71,481 @@ def build_panel(parent):
              bg="white", fg="#16213e",
              font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 15))
 
+    # WHY (Phase A.36.1): Regime Filter section was originally placed
+    #      between the Steps display and the Discovery Settings card
+    #      per the A.36 spec. In practice that y-position fell below the
+    #      fold on typical window sizes (content in left_frame exceeds
+    #      ~900px, and left_frame has no scrollbar), so the card was
+    #      invisible to users. Relocated to the very top of left_frame
+    #      — immediately under the "Select Scenarios to Run" title and
+    #      above the scenario checkboxes — so it is always on-screen.
+    #      The section's internal logic (auto-save, visibility toggling,
+    #      config keys) is unchanged.
+    # CHANGED: April 2026 — Phase A.36.1 — move to top of left_frame
+    # WHY (Phase A.36): Config load moved UP from its original location
+    #      inside the Discovery Settings card (below) to here, so that
+    #      the Regime Filter section (which comes before Discovery
+    #      Settings on screen) can read/write config via _cfg and _cl.
+    #      Both sections now share the same module import and loaded
+    #      dict. No behavior change in Discovery Settings.
+    # CHANGED: April 2026 — Phase A.36
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    import config_loader as _cl
+    _cfg = _cl.load()
+
+    # WHY (Phase A.36): Regime Filter UI scaffolding. Lives between the
+    #      steps display and the Discovery Settings card so the user
+    #      sees it before configuring rule discovery — the filter (when
+    #      enabled in A.38) acts as a pre-filter on rule discovery and
+    #      backtest signals. A.36 only adds the UI controls and the
+    #      auto-save plumbing; no filter logic runs yet. The master
+    #      checkbox is unchecked by default → the pipeline behaves
+    #      exactly as before A.36 until the user opts in.
+    #
+    #      Architecture decisions (locked in for A.36 / A.37 / A.38):
+    #        Decision 1 (which features become filters):  hybrid scan —
+    #          analyze_market_regimes() output + top RF features,
+    #          deduplicated by correlation                 [A.37]
+    #        Decision 2 (threshold selection):  per-feature grid search
+    #          with hard floors                            [A.37]
+    #        Decision 3 (subset selection):  test all 2^N subsets,
+    #          pick by score                               [A.37]
+    #        Decision 4 (overfitting controls):  ALL — min trades,
+    #          min WR delta, min expectancy delta, train/test split,
+    #          WFE warning                                 [A.37]
+    #        Decision 5 (where applied):  Step 3 + Backtest (skip
+    #          Step 4 — bot_entry_discovery's question is different)
+    #                                                      [A.38]
+    #        Decision 6 (per-direction):  EMA-like filters check
+    #          price>EMA200 for action='BUY' rules, price<EMA200 for
+    #          action='SELL' rules                         [A.38]
+    #        Decision 7 (rollout):  three phases — A.36 UI, A.37
+    #          discovery, A.38 application
+    # CHANGED: April 2026 — Phase A.36 — UI scaffolding
+    regime_frame = tk.Frame(left_frame, bg="#f0fff4", padx=15, pady=15)
+    regime_frame.pack(fill="x", pady=(15, 0))
+
+    tk.Label(regime_frame, text="🎯 Regime Filter (experimental)",
+             bg="#f0fff4", fg="#16213e",
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 8))
+
+    # ── Master enable checkbox ────────────────────────────────────────────
+    # WHY (Phase A.36): tk.BooleanVar wired to trace_add('write', ...) so
+    #      every toggle (mouse, keyboard, programmatic) persists to
+    #      p1_config.json. Same pattern as A.29.1's StringVar handlers
+    #      for the Discovery Settings spinboxes. Initial value comes
+    #      from config (default 'false' → unchecked).
+    # CHANGED: April 2026 — Phase A.36
+    _a36_enabled_var = tk.BooleanVar(
+        value=str(_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
+    )
+
+    _a36_enable_cb = tk.Checkbutton(
+        regime_frame,
+        text="Enable regime filter",
+        variable=_a36_enabled_var,
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 10),
+        activebackground="#f0fff4",
+        anchor="w",
+    )
+    _a36_enable_cb.pack(anchor="w", pady=(0, 4))
+
+    # ── Container that hides/shows everything below the checkbox ─────────
+    # WHY (Phase A.36): Use a single inner Frame so we can pack/pack_forget
+    #      it as one unit when the checkbox toggles. Avoids tracking
+    #      individual widget visibility.
+    # CHANGED: April 2026 — Phase A.36
+    _a36_inner = tk.Frame(regime_frame, bg="#f0fff4")
+    # NOTE: deliberately not pack()'d yet — _a36_apply_visibility() below
+    # will pack it when the checkbox is checked.
+
+    # ── Mode radio buttons (Automatic / Manual) ──────────────────────────
+    tk.Label(_a36_inner, text="Filter discovery mode:",
+             bg="#f0fff4", fg="#444",
+             font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
+
+    _a36_mode_var = tk.StringVar(
+        value=str(_cfg.get('regime_filter_mode', 'automatic')).lower()
+    )
+    # WHY (Phase A.36): Sanity check — if config has anything other than
+    #      the two allowed strings, snap to 'automatic'.
+    # CHANGED: April 2026 — Phase A.36
+    if _a36_mode_var.get() not in ('automatic', 'manual'):
+        _a36_mode_var.set('automatic')
+
+    _a36_radio_frame = tk.Frame(_a36_inner, bg="#f0fff4")
+    _a36_radio_frame.pack(anchor="w", pady=(0, 4))
+
+    tk.Radiobutton(
+        _a36_radio_frame,
+        text="Automatic — discover from data",
+        variable=_a36_mode_var,
+        value='automatic',
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#f0fff4",
+        anchor="w",
+    ).pack(anchor="w")
+
+    tk.Radiobutton(
+        _a36_radio_frame,
+        text="Manual — set thresholds yourself",
+        variable=_a36_mode_var,
+        value='manual',
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#f0fff4",
+        anchor="w",
+    ).pack(anchor="w")
+
+    # ── Strictness preset (Phase A.37.2) ─────────────────────────────────
+    # WHY (Phase A.37.2): Three preset modes that control A.37's four
+    #      overfitting floors. Conservative keeps trade count high
+    #      (~30% survival, single-filter typical). Strict maximises
+    #      WR (~10% survival, 3+ filter combinations typical). The
+    #      preset is read by analyze.py at scenario run time and
+    #      forwarded to discover_regime_filter. Visible only when the
+    #      master checkbox is on AND mode is automatic — the inner
+    #      frame's pack/forget logic in _a36_apply_visibility shows
+    #      this whole block conditionally.
+    # CHANGED: April 2026 — Phase A.37.2
+    _a372_strictness_frame = tk.Frame(_a36_inner, bg="#f0fff4")
+    # NOTE: not pack()'d yet — _a36_apply_visibility() handles it.
+
+    tk.Label(_a372_strictness_frame, text="Filter strictness:",
+             bg="#f0fff4", fg="#444",
+             font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
+
+    _a372_strictness_var = tk.StringVar(
+        value=str(_cfg.get('regime_filter_strictness', 'conservative')).lower()
+    )
+    if _a372_strictness_var.get() not in ('conservative', 'balanced', 'strict'):
+        _a372_strictness_var.set('conservative')
+
+    _a372_radio_frame = tk.Frame(_a372_strictness_frame, bg="#f0fff4")
+    _a372_radio_frame.pack(anchor="w", pady=(0, 4))
+
+    tk.Radiobutton(
+        _a372_radio_frame,
+        text="Conservative — survival ≥30%, typical 1-2 filters",
+        variable=_a372_strictness_var,
+        value='conservative',
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#f0fff4",
+        anchor="w",
+    ).pack(anchor="w")
+
+    tk.Radiobutton(
+        _a372_radio_frame,
+        text="Balanced — survival ≥20%, typical 2-3 filters",
+        variable=_a372_strictness_var,
+        value='balanced',
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#f0fff4",
+        anchor="w",
+    ).pack(anchor="w")
+
+    tk.Radiobutton(
+        _a372_radio_frame,
+        text="Strict — survival ≥10%, typical 3-5 filters, higher WR",
+        variable=_a372_strictness_var,
+        value='strict',
+        bg="#f0fff4", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#f0fff4",
+        anchor="w",
+    ).pack(anchor="w")
+
+    # WHY (Phase A.37.2): Auto-save handler for the strictness preset.
+    #      Uses default-arg binding to dodge the closure trap (same
+    #      pattern as A.29.1 / A.36's other handlers).
+    # CHANGED: April 2026 — Phase A.37.2
+    def _a372_save_strictness(*_args, _v=_a372_strictness_var):
+        try:
+            _cl.save({'regime_filter_strictness': str(_v.get())})
+        except Exception as _e:
+            print(f"[A.37.2] could not save regime_filter_strictness: {_e}")
+
+    _a372_strictness_var.trace_add('write', _a372_save_strictness)
+
+    # ── Automatic-mode display area — dynamic, rebuilt from config ──────
+    # WHY (Phase A.37): A.36 shipped a static placeholder here. A.37 now
+    #      has real discovery output in p1_config.json['regime_filter_
+    #      discovered']. Render from that on every show so re-runs are
+    #      reflected without restarting the app. Rebuild-on-show keeps
+    #      the code dumb — no cross-call state tracking needed.
+    # CHANGED: April 2026 — Phase A.37 — dynamic auto-frame contents
+    _a36_auto_frame = tk.Frame(_a36_inner, bg="#e8f5e9", padx=10, pady=8)
+    # NOTE: deliberately not pack()'d yet — _a36_apply_visibility() does it.
+
+    def _a37_render_auto_frame():
+        """Clear and rebuild _a36_auto_frame from current config."""
+        for _w in list(_a36_auto_frame.winfo_children()):
+            try:
+                _w.destroy()
+            except Exception:
+                pass
+
+        # Reload config each call — config_loader.load() is cheap
+        try:
+            _rf_raw = _cl.load().get('regime_filter_discovered', '') or ''
+        except Exception:
+            _rf_raw = ''
+
+        _rf = None
+        if _rf_raw:
+            try:
+                import json as _json_a37
+                _rf = _json_a37.loads(_rf_raw)
+            except Exception:
+                _rf = None
+
+        if not _rf:
+            tk.Label(
+                _a36_auto_frame,
+                text="No filter discovered yet.",
+                bg="#e8f5e9", fg="#16213e",
+                font=("Segoe UI", 9, "bold"),
+                wraplength=320, justify="left",
+            ).pack(anchor="w")
+            tk.Label(
+                _a36_auto_frame,
+                text="Run the pipeline ('Run Selected Scenarios') with "
+                     "this checkbox enabled to discover filters from your "
+                     "data.",
+                bg="#e8f5e9", fg="#555",
+                font=("Segoe UI", 9),
+                wraplength=320, justify="left",
+            ).pack(anchor="w", pady=(4, 0))
+            return
+
+        _status = str(_rf.get('status', '')).lower()
+        if _status != 'ok':
+            tk.Label(
+                _a36_auto_frame,
+                text="No filter recommended.",
+                bg="#e8f5e9", fg="#16213e",
+                font=("Segoe UI", 9, "bold"),
+                wraplength=320, justify="left",
+            ).pack(anchor="w")
+            _msg = _rf.get('message') or (
+                'Discovery ran but nothing passed the overfitting floors.'
+            )
+            tk.Label(
+                _a36_auto_frame,
+                text=_msg,
+                bg="#e8f5e9", fg="#555",
+                font=("Segoe UI", 9),
+                wraplength=320, justify="left",
+            ).pack(anchor="w", pady=(4, 0))
+            return
+
+        # status == 'ok' → render the filter set
+        _subset = _rf.get('subset') or []
+        _metrics = _rf.get('metrics') or {}
+        _baseline = _rf.get('baseline') or {}
+
+        # WHY (Phase A.37.2): Show which strictness preset was active
+        #      for this discovery so the user can tell at a glance
+        #      whether to expect a wide subset or a single filter.
+        # CHANGED: April 2026 — Phase A.37.2
+        _a372_used = _rf.get('strictness') or 'conservative'
+        tk.Label(
+            _a36_auto_frame,
+            text=f"Discovered filter set ({len(_subset)} rule(s), "
+                 f"strictness={_a372_used}):",
+            bg="#e8f5e9", fg="#16213e",
+            font=("Segoe UI", 9, "bold"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w")
+
+        for _f in _subset:
+            _feat = _f.get('feature', '?')
+            _dir  = _f.get('direction', '?')
+            _thr  = _f.get('threshold')
+            try:
+                _thr_s = f"{float(_thr):.4g}"
+            except Exception:
+                _thr_s = str(_thr)
+            tk.Label(
+                _a36_auto_frame,
+                text=f"  • {_feat} {_dir} {_thr_s}",
+                bg="#e8f5e9", fg="#16213e",
+                font=("Consolas", 9),
+                wraplength=320, justify="left",
+            ).pack(anchor="w", pady=(2, 0))
+
+        def _pct(x):
+            try:
+                return f"{float(x)*100:.1f}%"
+            except Exception:
+                return "—"
+
+        def _num(x, fmt="{:.2f}"):
+            try:
+                return fmt.format(float(x))
+            except Exception:
+                return "—"
+
+        _b_wr  = _pct(_baseline.get('win_rate'))
+        _b_exp = _num(_baseline.get('expectancy'), "{:+.2f}")
+        _b_n   = _baseline.get('count', '—')
+        _m_wr  = _pct(_metrics.get('win_rate'))
+        _m_exp = _num(_metrics.get('expectancy'), "{:+.2f}")
+        _m_surv= _pct(_metrics.get('survival'))
+        _m_n   = _metrics.get('count', '—')
+
+        tk.Label(
+            _a36_auto_frame,
+            text=(f"Baseline: {_b_n} trades, WR {_b_wr}, "
+                  f"expectancy {_b_exp} pips"),
+            bg="#e8f5e9", fg="#555",
+            font=("Segoe UI", 9),
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(6, 0))
+
+        tk.Label(
+            _a36_auto_frame,
+            text=(f"After filter: {_m_n} trades ({_m_surv} survival), "
+                  f"WR {_m_wr}, expectancy {_m_exp} pips"),
+            bg="#e8f5e9", fg="#16213e",
+            font=("Segoe UI", 9, "bold"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(2, 0))
+
+        tk.Label(
+            _a36_auto_frame,
+            text=("Filter is discovered but not yet applied — application "
+                  "comes in Phase A.38."),
+            bg="#e8f5e9", fg="#888",
+            font=("Segoe UI", 8, "italic"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(6, 0))
+
+    # Render once now so the frame has content before first pack().
+    _a37_render_auto_frame()
+
+    # ── Manual-mode display area (placeholder for now) ───────────────────
+    _a36_manual_frame = tk.Frame(_a36_inner, bg="#fff3e0", padx=10, pady=8)
+    # NOTE: deliberately not pack()'d yet — _a36_apply_visibility() does it.
+
+    tk.Label(
+        _a36_manual_frame,
+        text="Manual mode: edit filter thresholds directly.",
+        bg="#fff3e0", fg="#16213e",
+        font=("Segoe UI", 9, "bold"),
+        wraplength=320,
+        justify="left",
+    ).pack(anchor="w")
+
+    tk.Label(
+        _a36_manual_frame,
+        text="Run Automatic mode at least once to populate sensible "
+             "defaults, then switch back here to tune them. Editable "
+             "spinboxes will appear in Phase A.38.",
+        bg="#fff3e0", fg="#555",
+        font=("Segoe UI", 9),
+        wraplength=320,
+        justify="left",
+    ).pack(anchor="w", pady=(4, 0))
+
+    # ── Footer — explicit "no filter applied yet" disclaimer ─────────────
+    _a36_footer = tk.Label(
+        _a36_inner,
+        text="ⓘ UI placeholder only — no filter is applied yet. "
+             "Discovery and application come in A.37 and A.38.",
+        bg="#f0fff4", fg="#888",
+        font=("Segoe UI", 8, "italic"),
+        wraplength=320,
+        justify="left",
+    )
+    # NOTE: packed inside _a36_apply_visibility() so it follows the radios.
+
+    # ── Visibility logic ─────────────────────────────────────────────────
+    # WHY (Phase A.36): One function controls all show/hide transitions
+    #      so the state machine is single-source-of-truth and easy to
+    #      reason about. Called on every checkbox toggle and on every
+    #      radio change.
+    # CHANGED: April 2026 — Phase A.36
+    def _a36_apply_visibility(*_args):
+        # First, unpack everything inside the inner frame
+        # WHY (Phase A.37.2): also forget the strictness frame so it
+        #      only appears in Automatic mode.
+        # CHANGED: April 2026 — Phase A.37.2
+        for w in (_a36_auto_frame, _a36_manual_frame, _a36_footer,
+                  _a372_strictness_frame):
+            try:
+                w.pack_forget()
+            except Exception:
+                pass
+
+        if not _a36_enabled_var.get():
+            # Filter disabled → hide the whole inner block
+            try:
+                _a36_inner.pack_forget()
+            except Exception:
+                pass
+            return
+
+        # Filter enabled → show inner block + the appropriate mode area
+        if not _a36_inner.winfo_ismapped():
+            _a36_inner.pack(fill="x", pady=(4, 0))
+
+        _a36_mode = _a36_mode_var.get()
+        if _a36_mode == 'manual':
+            _a36_manual_frame.pack(fill="x", pady=(4, 4))
+        else:
+            # WHY (Phase A.37.2): Strictness preset only applies in
+            #      Automatic mode — packed before the discovered-filter
+            #      readout so the user sees the control they're tuning
+            #      above the result.
+            # CHANGED: April 2026 — Phase A.37.2
+            _a372_strictness_frame.pack(fill="x", pady=(4, 4))
+            # WHY (Phase A.37): rebuild auto-frame contents from current
+            #      config just before it becomes visible so re-runs of
+            #      the pipeline show their new discovery without
+            #      restarting the panel.
+            # CHANGED: April 2026 — Phase A.37
+            try:
+                _a37_render_auto_frame()
+            except Exception as _e:
+                print(f"[A.37] Could not render auto-frame: {_e}")
+            _a36_auto_frame.pack(fill="x", pady=(4, 4))
+
+        _a36_footer.pack(anchor="w", pady=(8, 0))
+
+    # ── Auto-save handlers ───────────────────────────────────────────────
+    # WHY (Phase A.36): Every change to the checkbox or the radio
+    #      persists immediately to p1_config.json. Same pattern as
+    #      A.29.1 used for the Discovery Settings spinboxes
+    #      (StringVar + trace_add('write', ...) with default-arg
+    #      binding to avoid the closure trap).
+    # CHANGED: April 2026 — Phase A.36
+    def _a36_save_enabled(*_args, _v=_a36_enabled_var):
+        try:
+            _cl.save({'regime_filter_enabled': 'true' if _v.get() else 'false'})
+        except Exception as _e:
+            print(f"[A.36] Could not save regime_filter_enabled: {_e}")
+        _a36_apply_visibility()
+
+    def _a36_save_mode(*_args, _v=_a36_mode_var):
+        try:
+            _cl.save({'regime_filter_mode': str(_v.get())})
+        except Exception as _e:
+            print(f"[A.36] Could not save regime_filter_mode: {_e}")
+        _a36_apply_visibility()
+
+    _a36_enabled_var.trace_add('write', _a36_save_enabled)
+    _a36_mode_var.trace_add('write', _a36_save_mode)
+
+    # ── Initial render ───────────────────────────────────────────────────
+    # WHY (Phase A.36): Apply visibility ONCE after construction so the
+    #      panel renders correctly on first paint based on saved state.
+    # CHANGED: April 2026 — Phase A.36
+    _a36_apply_visibility()
     # WHY (Phase 56 Fix 1): Old scenarios dict was hardcoded. A user
     #      whose config sets align_timeframes=M5,H1,D1 saw the wrong
     #      five options. Now: read align_timeframes from config_loader,
@@ -190,6 +665,7 @@ def build_panel(parent):
                 bg="#e8f4f8", fg="#333",
                 font=("Segoe UI", 9)).pack(anchor="w", pady=1)
 
+
     # WHY (Phase A.29): Old code hardcoded six tunables in analyze.py.
     #      User cannot adjust them without editing code. Add a Discovery
     #      Settings card with spinboxes for all six, hover tooltips, and
@@ -202,10 +678,12 @@ def build_panel(parent):
              bg="#fff9e6", fg="#16213e",
              font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 10))
 
-    # Load current config
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    import config_loader as _cl
-    _cfg = _cl.load()
+    # WHY (Phase A.36): _cfg and _cl are now loaded above (before the
+    #      Regime Filter section). The original load that used to live
+    #      here has been relocated. This block previously re-imported
+    #      config_loader and re-loaded the config — kept as a no-op
+    #      comment to show where the old load was.
+    # CHANGED: April 2026 — Phase A.36
 
     # WHY (Phase A.29.1): The A.29 helper had four real bugs.
     #      (1) Save was bound to <FocusOut> and <Return>. Spinbox up/
@@ -591,10 +1069,37 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
     # Phase 49 Fix 5: track failures to choose the right completion dialog
     _scenario_failures = []
 
-    def _update_bar(extra_label=""):
-        pct = int(completed_steps[0] / total_steps * 100)
-        progress_bar.config(value=pct)
-        pct_label.config(text=f"{pct}%  {extra_label}".strip())
+    # WHY (Phase A.37.1): Old _update_bar referenced `total_steps` as a
+    #      free name. `total_steps` is defined inside run_in_background()
+    #      (the nested function), not in run_scenarios()'s scope where
+    #      _update_bar lives. Tkinter's `after(0, lambda: _update_bar())`
+    #      schedules the lambda to fire on the main thread later — and if
+    #      run_in_background() has already returned, the closure can no
+    #      longer resolve `total_steps` and raises NameError.
+    #
+    #      The bug was latent — earlier runs happened to fire callbacks
+    #      while run_in_background()'s frame was still live, so Python
+    #      found total_steps via outer-scope lookup. After A.37 made
+    #      Step 3 ~2× faster, the timing shifted and the callbacks now
+    #      fire after the function has returned.
+    #
+    #      Fix: take total_steps as a parameter. Both call sites inside
+    #      run_in_background() already have it in scope and pass it
+    #      explicitly via the lambda. Default value 1 prevents division
+    #      by zero if the function is somehow called without a value
+    #      (defensive — should not happen in practice).
+    # CHANGED: April 2026 — Phase A.37.1
+    def _update_bar(extra_label="", total_steps=1):
+        try:
+            _denom = max(int(total_steps), 1)
+            pct = int(completed_steps[0] / _denom * 100)
+            progress_bar.config(value=pct)
+            pct_label.config(text=f"{pct}%  {extra_label}".strip())
+        except Exception as _ub_e:
+            # WHY (Phase A.37.1): Defensive — never let a progress bar
+            #      update crash the UI. The pipeline is what matters,
+            #      not the bar.
+            print(f"[A.37.1] _update_bar swallowed exception: {_ub_e}")
 
     def run_in_background():
         # WHY (Phase 56 Fix 3): module-level guard checked again inside
@@ -830,7 +1335,11 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     log(f">>> {step_name} — {scenario}")
                     update_progress(f"{scenario}: {step_name}")
                     extra = f"({scenario} — {step_name})"
-                    progress_bar.after(0, lambda e=extra: _update_bar(e))
+                    # WHY (Phase A.37.1): pass total_steps explicitly so
+                    #      the lambda doesn't need to resolve it from a
+                    #      vanished closure frame.
+                    # CHANGED: April 2026 — Phase A.37.1
+                    progress_bar.after(0, lambda e=extra, t=total_steps: _update_bar(e, total_steps=t))
 
                     try:
                         import io
@@ -875,7 +1384,9 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                                     log(f"  {line}")
 
                         completed_steps[0] += 1
-                        progress_bar.after(0, lambda: _update_bar())
+                        # WHY (Phase A.37.1): pass total_steps explicitly.
+                        # CHANGED: April 2026 — Phase A.37.1
+                        progress_bar.after(0, lambda t=total_steps: _update_bar(total_steps=t))
 
                         if not success:
                             log(f"✗ FAILED: {step_name}")
@@ -886,7 +1397,9 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                     except Exception as e:
                         completed_steps[0] += 1
-                        progress_bar.after(0, lambda: _update_bar())
+                        # WHY (Phase A.37.1): pass total_steps explicitly.
+                        # CHANGED: April 2026 — Phase A.37.1
+                        progress_bar.after(0, lambda t=total_steps: _update_bar(total_steps=t))
                         log(f"✗ ERROR: {str(e)}")
                         import traceback
                         log(traceback.format_exc())

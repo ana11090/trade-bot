@@ -90,6 +90,32 @@ DEFAULTS = {
     # CHANGED: April 2026 — Phase 60 Fix 1a — UTC offset config
     #          (audit Part D HIGH #7)
     'utc_offset_hours':          '2',   # EET default (broker server UTC+2 in winter)
+
+    # ── Regime Filter (Phase A.36) ────────────────────────────────────────────
+    # WHY (Phase A.36): UI scaffolding for an optional regime filter that
+    #      will (in A.37/A.38) auto-discover which market-condition features
+    #      separate winning trades from losing trades, and apply those
+    #      discovered conditions as a gate at rule-discovery and backtest
+    #      time. A.36 only persists the user's UI choices; no filtering
+    #      happens yet. Defaults are chosen so the feature is OFF until
+    #      the user explicitly opts in. When OFF, the pipeline runs
+    #      exactly as before A.36.
+    # CHANGED: April 2026 — Phase A.36
+    'regime_filter_enabled':     'false',         # master on/off — UI checkbox
+    'regime_filter_mode':        'automatic',     # 'automatic' or 'manual'
+    'regime_filter_discovered':  '',              # JSON string written by A.37 (filled later)
+    'regime_filter_manual':      '',              # JSON string of user's manual overrides (filled by A.38)
+
+    # WHY (Phase A.37.2): Strictness preset for the discovery's overfitting
+    #      controls. A.37 hardcoded survival>=30%, WR lift>=3pp, expectancy
+    #      lift>=1.10x — chosen to preserve trade count over WR
+    #      maximization. Some users want stricter filtering (higher WR,
+    #      fewer trades surviving); some want looser (more candidates
+    #      pass, larger discovered subsets). Three presets cover the
+    #      common shapes; the actual numbers are picked inside
+    #      regime_filter_discovery.py based on this string.
+    # CHANGED: April 2026 — Phase A.37.2
+    'regime_filter_strictness':  'conservative',  # 'conservative' | 'balanced' | 'strict'
 }
 
 
