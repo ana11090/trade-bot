@@ -897,6 +897,37 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         signal_mask |= rule_mask
         signal_rule_ids[new_signals] = rule_idx
 
+    # ── Phase A.38a: Regime filter gating ──────────────────────────────
+    # WHY (Phase A.38a): If the user enabled the regime filter (A.36)
+    #      and discovery produced a subset (A.37 / A.37.2), apply it
+    #      here as a boolean mask AND'd into signal_mask. Signals at
+    #      wrong-regime candles are blocked at evaluation time. Rules
+    #      themselves are unchanged — turning the filter off restores
+    #      identical pre-A.36 behavior.
+    # CHANGED: April 2026 — Phase A.38a
+    try:
+        from project2_backtesting.regime_filter_runtime import (
+            build_regime_pass_mask, log_filter_summary_once,
+        )
+        _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
+            ind, rule_action=direction,
+        )
+        if _a38a_info.get('enabled'):
+            log_filter_summary_once(_a38a_info, source_label='run_backtest')
+            _pre_count = int(signal_mask.sum())
+            signal_mask = signal_mask & pd.Series(_a38a_regime_mask, index=ind.index)
+            _post_count = int(signal_mask.sum())
+            if _pre_count > 0:
+                log.debug(
+                    f"[A.38a/run_backtest] signals: {_pre_count} -> {_post_count} "
+                    f"after regime filter ({_post_count / max(_pre_count, 1) * 100:.1f}% kept)"
+                )
+    except Exception as _a38a_e:
+        log.warning(
+            f"[A.38a/run_backtest] regime filter failed — proceeding without it: "
+            f"{type(_a38a_e).__name__}: {_a38a_e}"
+        )
+
     signal_indices = df.index[signal_mask].tolist()
 
     # WHY (Phase 35 Fix 3c): Create a local RNG for slippage so seeded
@@ -1300,6 +1331,29 @@ def fast_backtest(df, ind, rules, exit_strategy,
         new_signals = rule_mask & ~signal_mask
         signal_mask |= rule_mask
         signal_rule_ids[new_signals] = rule_idx
+
+    # ── Phase A.38a: Regime filter gating ──────────────────────────────
+    # WHY (Phase A.38a): Same gate as run_backtest. fast_backtest is the
+    #      hot path used by the comparison matrix and deep optimizer —
+    #      called hundreds of times per scenario. log_filter_summary_once
+    #      deduplicates log spam: one summary per distinct filter config
+    #      per process, not per call.
+    # CHANGED: April 2026 — Phase A.38a
+    try:
+        from project2_backtesting.regime_filter_runtime import (
+            build_regime_pass_mask, log_filter_summary_once,
+        )
+        _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
+            ind, rule_action=direction,
+        )
+        if _a38a_info.get('enabled'):
+            log_filter_summary_once(_a38a_info, source_label='fast_backtest')
+            signal_mask = signal_mask & pd.Series(_a38a_regime_mask, index=ind.index)
+    except Exception as _a38a_e:
+        log.warning(
+            f"[A.38a/fast_backtest] regime filter failed — proceeding without it: "
+            f"{type(_a38a_e).__name__}: {_a38a_e}"
+        )
 
     signal_indices = df.index[signal_mask].tolist()
 
@@ -2047,6 +2101,19 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
     matrix = []
     count  = 0
+
+    # ── Phase A.38a: Reset regime filter log cache for this run ───────
+    # WHY (Phase A.38a): log_filter_summary_once dedupes by (subset, action)
+    #      key for the process lifetime. Clearing at the start of each
+    #      comparison matrix run means the user sees one fresh summary
+    #      per Run Backtest click — even if they switched strictness
+    #      presets between clicks.
+    # CHANGED: April 2026 — Phase A.38a
+    try:
+        from project2_backtesting.regime_filter_runtime import reset_logging_cache
+        reset_logging_cache()
+    except Exception:
+        pass
 
     for combo in rule_combos:
         for exit_strat in exit_strategies:
