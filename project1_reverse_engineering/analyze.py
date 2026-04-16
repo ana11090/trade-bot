@@ -1592,11 +1592,17 @@ def run_analysis(feature_matrix_path=None):
                 'tie_break_within_pct':       _cfg_a39b.get('srm_a_tie_break_within_pct'),
             }
 
+            # WHY (Phase A.39b.1): pass model_result so the discovery
+            #      can tie-break ties on tightness by RF importance.
+            #      model_result is computed earlier in run_analysis
+            #      (same object the rest of this function uses).
+            # CHANGED: April 2026 — Phase A.39b.1
             _a39b_payload = discover_mode_a(
                 trade_df=df,
                 background_df=_a39b_background,
                 progress_log=lambda _m: log.info(_m),
                 params=_a39b_params,
+                model_result=model_result,
             )
 
             # Persist to outputs/single_rule_mode.json next to the feature matrix.

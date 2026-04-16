@@ -231,13 +231,35 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                 except Exception as _be:
                     log.debug(f"[A.39b] background cov failed for {col}: {_be}")
 
-            # Tightness: lower is tighter. If background is available, use it
-            # directly (0.30 means the bound cuts 70% of the natural range).
-            # If not, fall back to a proxy based on where the threshold sits
-            # within the trade set's own range.
-            if bg_cov is not None:
-                tightness = bg_cov
+            # WHY (Phase A.39b.1): Old code treated bg_cov=0.0 as
+            #      "maximally tight" → such features sorted to the top
+            #      of the pool. But bg_cov=0.0 actually means the
+            #      background computation is BROKEN or MEANINGLESS —
+            #      the feature's values across the background set do
+            #      not span the trade-set threshold at all (e.g. VWAP
+            #      compared against 25 years of mis-scoped candles).
+            #      Treating that as "tight" guarantees garbage ranking.
+            #
+            #      New rule: bg_cov must be > a small epsilon to be
+            #      trusted as a tightness signal. If bg_cov is below
+            #      epsilon, or None, fall back to the proxy (trade-range
+            #      threshold position). Record which path was taken so
+            #      the pool ranking can apply a tiebreaker.
+            # CHANGED: April 2026 — Phase A.39b.1 — Bug 2 fix
+            _BG_COV_VALID_EPS = 0.001   # bg_cov must exceed 0.1% to be usable
+            bg_cov_valid = (bg_cov is not None) and (bg_cov > _BG_COV_VALID_EPS)
+
+            if bg_cov_valid:
+                # Primary scoring path — use background coverage directly.
+                # Smaller bg_cov = fewer background candles pass the bound
+                # = tighter / more specific condition.
+                tightness = float(bg_cov)
             else:
+                # Fallback proxy — normalize threshold within trade range.
+                # Worse than bg_cov (doesn't compare to broader population)
+                # but at least deterministic and monotonic with threshold
+                # position. Capped in [0, 1]. A constant feature resolves
+                # to 1.0 (not useful).
                 try:
                     vmin, vmax = float(vals.min()), float(vals.max())
                     span = vmax - vmin
@@ -251,6 +273,13 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                         tightness = max(0.0, min(1.0, float(tightness)))
                 except Exception:
                     tightness = 1.0
+                # Extra penalty for fallback-path candidates so bg-valid
+                # candidates always outrank them at the top of the pool
+                # when both are available. The 0.5 offset pushes proxy
+                # scores into the lower half of [0, 1]; a bg_cov=0.3
+                # candidate (real) will sort above a proxy-tight=0.2
+                # candidate because 0.3 < 0.7.
+                tightness = 0.5 + 0.5 * tightness   # now lives in [0.5, 1.0]
 
             out.append({
                 'feature':             col,
@@ -258,6 +287,7 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                 'threshold':           round(thr, 6),
                 'trade_coverage':      round(trade_cov, 4),
                 'background_coverage': round(bg_cov, 4) if bg_cov is not None else None,
+                'background_coverage_valid': bool(bg_cov_valid),
                 'tightness':           round(tightness, 4),
             })
 
@@ -319,7 +349,8 @@ def _combinations_capped(pool, r, cap):
         yield combo
 
 
-def discover_mode_a(trade_df, background_df=None, progress_log=None, params=None):
+def discover_mode_a(trade_df, background_df=None, progress_log=None,
+                    params=None, model_result=None):
     """Main entry. Returns dict suitable for JSON serialization.
 
     Args:
@@ -377,6 +408,75 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None, params=None
 
         _l(f"  [A.39b] trade dataset: {n_trades} trades")
 
+        # WHY (Phase A.39b.1 — Bug 1 fix): The H1 indicator cache spans
+        #      the full candle history (~2000 onwards). Trades typically
+        #      span a much shorter recent window. Cumulative indicators
+        #      like VWAP have radically different value ranges across
+        #      eras; comparing trade-time VWAP thresholds against
+        #      candle-era VWAP values gives garbage tightness scores.
+        #      Fix: restrict background_df to candles whose timestamp
+        #      falls within the trade history's time window.
+        # CHANGED: April 2026 — Phase A.39b.1 — Bug 1 fix
+        if background_df is not None and 'timestamp' in background_df.columns:
+            try:
+                if 'open_time' in trade_df.columns:
+                    _t_series = pd.to_datetime(
+                        trade_df['open_time'], errors='coerce'
+                    ).dropna()
+                    if len(_t_series) > 0:
+                        _t_min = _t_series.min()
+                        _t_max = _t_series.max()
+                        _bg_ts = pd.to_datetime(
+                            background_df['timestamp'], errors='coerce'
+                        )
+                        _in_window = (_bg_ts >= _t_min) & (_bg_ts <= _t_max)
+                        _n_before = len(background_df)
+                        background_df = background_df[_in_window].reset_index(drop=True)
+                        _n_after = len(background_df)
+                        _l(
+                            f"  [A.39b.1] scoped background to trade time window "
+                            f"[{_t_min.date()} .. {_t_max.date()}]: "
+                            f"{_n_before} -> {_n_after} candles "
+                            f"({_n_after / max(_n_before, 1) * 100:.1f}% kept)"
+                        )
+                        if _n_after < 1000:
+                            _l(
+                                f"  [A.39b.1] WARNING: only {_n_after} background "
+                                f"candles overlap the trade window — tightness "
+                                f"scoring may be unreliable. Consider expanding the "
+                                f"background cache or shortening the trade history."
+                            )
+                else:
+                    _l(
+                        "  [A.39b.1] trade_df has no 'open_time' column — "
+                        "cannot scope background. Using full background as-is."
+                    )
+            except Exception as _scoping_e:
+                _l(
+                    f"  [A.39b.1] background scoping failed: {_scoping_e} — "
+                    f"using full background as-is"
+                )
+
+        # WHY (Phase A.39b.1 — Bug 4 fix): Build an RF importance lookup
+        #      so the pool-ranking sort can tie-break by "is this
+        #      feature informative according to the Random Forest"
+        #      when two candidates share rounded tightness.
+        # CHANGED: April 2026 — Phase A.39b.1 — Bug 4 fix
+        rf_importance_map = {}
+        try:
+            if model_result is not None:
+                for _feat, _imp in (model_result.get('importances') or []):
+                    try:
+                        rf_importance_map[str(_feat)] = float(_imp)
+                    except Exception:
+                        pass
+                _l(
+                    f"  [A.39b.1] loaded RF importance for "
+                    f"{len(rf_importance_map)} features (tiebreaker enabled)"
+                )
+        except Exception as _rf_e:
+            _l(f"  [A.39b.1] could not load RF importance — no tiebreaker: {_rf_e}")
+
         # ── Step 1-3: candidate scan + tightness + pool ──────────────────
         all_cands = _scan_candidate_conditions(trade_df, background_df, params=p)
         _l(f"  [A.39b] scanned {len(all_cands)} single-sided candidate conditions")
@@ -395,9 +495,77 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None, params=None
                 'reason':          'No usable feature columns produced candidate conditions.',
             }
 
-        # Sort by tightness ascending (tightest first) and keep top N
-        all_cands.sort(key=lambda c: (c['tightness'], -c['trade_coverage']))
-        pool = all_cands[:p['pool_size']]
+        # WHY (Phase A.39b.1 — Bug 3 fix): Filter out TRIVIAL candidates
+        #      before pool ranking. A candidate is trivial if:
+        #        (a) bg_cov is invalid (fallback-proxy path) AND trade
+        #            coverage is >=98% — i.e. the condition is trivially
+        #            true on the trade set and we have no way to assess
+        #            how restrictive it would be in the broader population
+        #            (e.g. "upper_shadow > 0", "aroon_up < 100"), OR
+        #        (b) bg_cov is valid but both trade_coverage and bg_cov
+        #            are >=90% AND their absolute difference is <2pp —
+        #            the condition covers almost everything, everywhere,
+        #            and so carries essentially no signal.
+        #      These candidates used to dominate the pool ranking because
+        #      their apparent tightness was artificially low. Removing
+        #      them here lets genuinely restrictive features come to the
+        #      top.
+        # CHANGED: April 2026 — Phase A.39b.1 — Bug 3 fix
+        _TRIVIAL_TRADE_COV_FLOOR = 0.98      # "trivially true" threshold
+        _TRIVIAL_JOINT_FLOOR     = 0.90      # both coverages >= this
+        _TRIVIAL_DELTA_CEIL      = 0.02      # AND their delta < this
+        non_trivial = []
+        _trivial_dropped = 0
+        for c in all_cands:
+            is_trivial = False
+            if not c.get('background_coverage_valid', False):
+                if c['trade_coverage'] >= _TRIVIAL_TRADE_COV_FLOOR:
+                    is_trivial = True
+            else:
+                bg = c.get('background_coverage') or 0.0
+                tc = c.get('trade_coverage') or 0.0
+                if bg >= _TRIVIAL_JOINT_FLOOR and tc >= _TRIVIAL_JOINT_FLOOR:
+                    if abs(tc - bg) < _TRIVIAL_DELTA_CEIL:
+                        is_trivial = True
+            if is_trivial:
+                _trivial_dropped += 1
+            else:
+                non_trivial.append(c)
+        _l(f"  [A.39b.1] filtered {_trivial_dropped} trivial candidates "
+           f"({len(non_trivial)} remain after triviality filter)")
+
+        if not non_trivial:
+            return {
+                'status':  'no_candidates',
+                'variant': 'a',
+                'target_coverage': p['target_coverage'],
+                'trade_count':     n_trades,
+                'candidate_pool':  [],
+                'chosen':          [],
+                'chosen_stats':    None,
+                'top_10_conjunctions': [],
+                'params':          p,
+                'reason':          f'All {len(all_cands)} candidates were trivial '
+                                   f'(covered >={int(_TRIVIAL_TRADE_COV_FLOOR*100)}% of '
+                                   f'trades with no measurable background contrast). '
+                                   f'The indicator cache may not overlap the trade '
+                                   f'time range — check that trades fall within the '
+                                   f'background candle timestamps.',
+            }
+
+        # WHY (Phase A.39b.1 — Bug 4 fix): Add an RF-importance tiebreaker
+        #      to the sort. When two candidates share the same rounded
+        #      tightness, the one the Random Forest already identified
+        #      as informative wins. rf_importance_map is built from
+        #      model_result at the top of discover_mode_a.
+        # CHANGED: April 2026 — Phase A.39b.1 — Bug 4 fix
+        non_trivial.sort(key=lambda c: (
+            round(c['tightness'], 3),                                  # primary
+            -c['trade_coverage'],                                      # secondary
+            -float(rf_importance_map.get(c['feature'], 0.0)),          # tiebreaker
+            c['feature'],                                              # final determinism
+        ))
+        pool = non_trivial[:p['pool_size']]
         _l(f"  [A.39b] candidate pool: top {len(pool)} by tightness")
         for i, c in enumerate(pool[:5]):
             bg_str = (
