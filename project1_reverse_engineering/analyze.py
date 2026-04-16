@@ -1552,30 +1552,117 @@ def run_analysis(feature_matrix_path=None):
             log.info("\n[A.39b] Single Rule Mode — Mode A (tightest conjunction)...")
             from single_rule_mode_discovery import discover_mode_a
 
-            # Try to load a background candle dataset for tightness scoring.
-            # If cache isn't available, discover_mode_a falls back to a
-            # weaker proxy — still functional.
+            # WHY (Phase A.39b.2): The old code loaded only the H1
+            #      indicator cache as the tightness background. But the
+            #      trade feature matrix has 620 features across 5
+            #      timeframes (M5_*, M15_*, H1_*, H4_*, D1_*, ~124 each).
+            #      H1 cache only provides H1_* columns — the other 496
+            #      features landed on the fallback-proxy path with
+            #      tightness=0.500 across the board. That flat plateau
+            #      made the pool ranking noise.
+            #
+            #      Fix: use strategy_backtester.build_multi_tf_indicators
+            #      — the same multi-TF join bot_entry_discovery uses —
+            #      to build a single frame with ALL 620 features present,
+            #      aligned to an H1 spine restricted to the trade time
+            #      window. Each M5/M15/H4/D1 feature is backward-asof'd
+            #      to the corresponding H1 bucket (no look-ahead).
+            #
+            #      Memory: ~35K rows × 620 features × float32 ≈ 87 MB,
+            #      well within budget.
+            # CHANGED: April 2026 — Phase A.39b.2 — proper cross-TF background
             _a39b_background = None
             try:
                 _cache_dir = os.path.normpath(
                     os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  '..', 'data')
                 )
-                _cache_path = os.path.join(_cache_dir, '.cache_H1_indicators.parquet')
-                if os.path.exists(_cache_path):
-                    _a39b_background = pd.read_parquet(_cache_path)
+                _h1_cache_path = os.path.join(_cache_dir, '.cache_H1_indicators.parquet')
+                if not os.path.exists(_h1_cache_path):
                     log.info(
-                        f"  [A.39b] loaded background candle dataset: "
-                        f"{len(_a39b_background)} rows, "
-                        f"{len(_a39b_background.columns)} cols"
+                        "  [A.39b.2] no H1 indicator cache found at "
+                        f"{_h1_cache_path} — cannot build cross-TF background. "
+                        "Discovery will use the fallback-proxy tightness score."
                     )
                 else:
-                    log.info(
-                        "  [A.39b] no H1 indicator cache found — using proxy "
-                        "tightness scoring (still functional, less informative)"
-                    )
+                    _h1_ind = pd.read_parquet(_h1_cache_path)
+                    if 'timestamp' not in _h1_ind.columns:
+                        log.warning(
+                            "  [A.39b.2] H1 cache has no 'timestamp' column — "
+                            "cannot build cross-TF background. Falling back to "
+                            "H1-only background."
+                        )
+                        _a39b_background = _h1_ind
+                    else:
+                        # Scope spine to trade time window BEFORE the cross-TF
+                        # join so we don't pay merge_asof cost on irrelevant
+                        # pre-trade history.
+                        _spine_ts = pd.to_datetime(
+                            _h1_ind['timestamp'], errors='coerce'
+                        )
+                        _t_series = pd.to_datetime(
+                            df['open_time'], errors='coerce'
+                        ).dropna() if 'open_time' in df.columns else pd.Series(
+                            [], dtype='datetime64[ns]'
+                        )
+
+                        if len(_t_series) > 0:
+                            _t_min = _t_series.min()
+                            _t_max = _t_series.max()
+                            _in_window = (_spine_ts >= _t_min) & (_spine_ts <= _t_max)
+                            _spine = _spine_ts[_in_window].reset_index(drop=True)
+                            log.info(
+                                f"  [A.39b.2] H1 spine scoped to trade window "
+                                f"[{_t_min.date()} .. {_t_max.date()}]: "
+                                f"{len(_spine)} candles"
+                            )
+                        else:
+                            _spine = _spine_ts.reset_index(drop=True)
+                            log.info(
+                                f"  [A.39b.2] no trade open_times — using "
+                                f"full H1 spine ({len(_spine)} candles)"
+                            )
+
+                        try:
+                            import sys as _sys
+                            _p2 = os.path.normpath(os.path.join(
+                                os.path.dirname(os.path.abspath(__file__)),
+                                '..',
+                            ))
+                            if _p2 not in _sys.path:
+                                _sys.path.insert(0, _p2)
+                            from project2_backtesting.strategy_backtester import (
+                                build_multi_tf_indicators as _a39b2_build,
+                            )
+                            log.info(
+                                f"  [A.39b.2] building cross-TF background "
+                                f"(5 timeframes merged via merge_asof backward)..."
+                            )
+                            _a39b_background = _a39b2_build(
+                                data_dir=_cache_dir,
+                                entry_timestamps=_spine,
+                                required_indicators=None,
+                            )
+                            log.info(
+                                f"  [A.39b.2] cross-TF background built: "
+                                f"{len(_a39b_background)} rows, "
+                                f"{len(_a39b_background.columns)} cols "
+                                f"(was {len(_h1_ind.columns)} H1-only)"
+                            )
+                        except Exception as _be:
+                            import traceback as _btb
+                            log.warning(
+                                f"  [A.39b.2] cross-TF merge failed: "
+                                f"{type(_be).__name__}: {_be} — falling back "
+                                f"to H1-only background."
+                            )
+                            log.debug(_btb.format_exc())
+                            _a39b_background = _h1_ind
             except Exception as _be:
-                log.warning(f"  [A.39b] could not load background: {_be} — using proxy")
+                log.warning(
+                    f"  [A.39b.2] could not load background: {_be} — "
+                    f"discovery will use fallback-proxy tightness"
+                )
 
             # WHY (Phase A.39b): the 8 SRM-A knobs are user-tunable from the
             #      Run Scenarios panel via p1_config.json (keys srm_a_*).

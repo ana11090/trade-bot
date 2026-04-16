@@ -412,11 +412,16 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
         #      the full candle history (~2000 onwards). Trades typically
         #      span a much shorter recent window. Cumulative indicators
         #      like VWAP have radically different value ranges across
-        #      eras; comparing trade-time VWAP thresholds against
-        #      candle-era VWAP values gives garbage tightness scores.
-        #      Fix: restrict background_df to candles whose timestamp
-        #      falls within the trade history's time window.
-        # CHANGED: April 2026 — Phase A.39b.1 — Bug 1 fix
+        #      eras. Fix: restrict background_df to candles whose
+        #      timestamp falls within the trade history's time window.
+        # WHY (Phase A.39b.2): analyze.py now scopes the background
+        #      BEFORE calling discover_mode_a (to save a costly cross-TF
+        #      merge over irrelevant pre-trade candles). This block is
+        #      now a safety net — it detects whether the frame is
+        #      already scoped and either skips silently or re-scopes
+        #      if the caller passed an un-scoped frame (test harnesses,
+        #      custom invocations).
+        # CHANGED: April 2026 — Phase A.39b.1 / A.39b.2
         if background_df is not None and 'timestamp' in background_df.columns:
             try:
                 if 'open_time' in trade_df.columns:
@@ -429,32 +434,51 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                         _bg_ts = pd.to_datetime(
                             background_df['timestamp'], errors='coerce'
                         )
-                        _in_window = (_bg_ts >= _t_min) & (_bg_ts <= _t_max)
-                        _n_before = len(background_df)
-                        background_df = background_df[_in_window].reset_index(drop=True)
-                        _n_after = len(background_df)
-                        _l(
-                            f"  [A.39b.1] scoped background to trade time window "
-                            f"[{_t_min.date()} .. {_t_max.date()}]: "
-                            f"{_n_before} -> {_n_after} candles "
-                            f"({_n_after / max(_n_before, 1) * 100:.1f}% kept)"
+                        _bg_min = _bg_ts.min()
+                        _bg_max = _bg_ts.max()
+
+                        # If the background is already inside the trade
+                        # window (analyze.py did the scoping for us),
+                        # don't re-scope. Tolerance: 1 day either side
+                        # to absorb float/date rounding.
+                        _already_scoped = (
+                            pd.notna(_bg_min) and pd.notna(_bg_max)
+                            and (_bg_min >= _t_min - pd.Timedelta(days=1))
+                            and (_bg_max <= _t_max + pd.Timedelta(days=1))
                         )
-                        if _n_after < 1000:
+
+                        if _already_scoped:
                             _l(
-                                f"  [A.39b.1] WARNING: only {_n_after} background "
-                                f"candles overlap the trade window — tightness "
-                                f"scoring may be unreliable. Consider expanding the "
-                                f"background cache or shortening the trade history."
+                                f"  [A.39b.1/2] background already scoped to trade "
+                                f"window by caller ({len(background_df)} rows). "
+                                f"Skipping redundant scoping."
                             )
+                        else:
+                            _in_window = (_bg_ts >= _t_min) & (_bg_ts <= _t_max)
+                            _n_before = len(background_df)
+                            background_df = background_df[_in_window].reset_index(drop=True)
+                            _n_after = len(background_df)
+                            _l(
+                                f"  [A.39b.1] scoped background to trade time window "
+                                f"[{_t_min.date()} .. {_t_max.date()}]: "
+                                f"{_n_before} -> {_n_after} candles "
+                                f"({_n_after / max(_n_before, 1) * 100:.1f}% kept)"
+                            )
+                            if _n_after < 1000:
+                                _l(
+                                    f"  [A.39b.1] WARNING: only {_n_after} background "
+                                    f"candles overlap the trade window — tightness "
+                                    f"scoring may be unreliable."
+                                )
                 else:
                     _l(
                         "  [A.39b.1] trade_df has no 'open_time' column — "
-                        "cannot scope background. Using full background as-is."
+                        "cannot scope background. Using as-is."
                     )
             except Exception as _scoping_e:
                 _l(
-                    f"  [A.39b.1] background scoping failed: {_scoping_e} — "
-                    f"using full background as-is"
+                    f"  [A.39b.1] background scoping check failed: "
+                    f"{_scoping_e} — using background as-is"
                 )
 
         # WHY (Phase A.39b.1 — Bug 4 fix): Build an RF importance lookup
@@ -566,12 +590,24 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
             c['feature'],                                              # final determinism
         ))
         pool = non_trivial[:p['pool_size']]
-        _l(f"  [A.39b] candidate pool: top {len(pool)} by tightness")
+        # WHY (Phase A.39b.2): Diagnostic — report how many pool members
+        #      have a VALID bg coverage measurement. If this number is
+        #      low (< 5 out of 40), the cross-TF background merge
+        #      probably failed and the pool is dominated by proxy-path
+        #      candidates again.
+        # CHANGED: April 2026 — Phase A.39b.2
+        _n_valid_bg = sum(1 for c in pool if c.get('background_coverage_valid'))
+        _l(
+            f"  [A.39b] candidate pool: top {len(pool)} by tightness "
+            f"({_n_valid_bg}/{len(pool)} have valid background coverage)"
+        )
         for i, c in enumerate(pool[:5]):
-            bg_str = (
-                f"bg={c['background_coverage']:.2%}"
-                if c['background_coverage'] is not None else "bg=n/a"
-            )
+            if c.get('background_coverage') is not None:
+                bg_str = f"bg={c['background_coverage']:.2%}"
+                if not c.get('background_coverage_valid'):
+                    bg_str += " (invalid)"
+            else:
+                bg_str = "bg=n/a"
             _l(f"    [{i+1}] {c['feature']} {c['operator']} {c['threshold']}  "
                f"trade={c['trade_coverage']:.2%} {bg_str} tight={c['tightness']:.3f}")
 
