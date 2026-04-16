@@ -796,6 +796,29 @@ def build_panel(parent):
     #      use it WITHOUT reading code.
     # CHANGED: April 2026 — Phase A.39b.5
 
+    # WHY (Phase A.39b.5.1 hotfix): The original A.39b.5 tooltip calls
+    #      referenced `_a291_add_tooltip` which is defined ~670 lines
+    #      LATER in this same function. At widget-construction time the
+    #      name didn't exist yet, so every tooltip attach raised
+    #      NameError, silently swallowed by try/except, leaving the
+    #      checkbox and radios with no hover help.
+    #
+    #      Fix: import the tooltip helper LOCALLY at the top of this
+    #      block under a distinct name (`_a39b5_tooltip`) and use that
+    #      for A.39b.5's three attachments. The later A.29.1 block
+    #      continues to work unchanged.
+    # CHANGED: April 2026 — Phase A.39b.5.1
+    try:
+        from shared.tooltip import add_tooltip as _a39b5_tooltip
+    except Exception as _a39b5_tt_import_err:
+        # Fall back to no-op so downstream code still runs even if the
+        # tooltip module is missing. Print once so the reason is visible
+        # during development — no-op in production logs.
+        print(f"[A.39b.5.1] shared.tooltip unavailable: {_a39b5_tt_import_err} — "
+              f"Mode A controls will have no hover text.")
+        def _a39b5_tooltip(*_args, **_kwargs):
+            return None
+
     # ---- Control 1: Dedup correlated features checkbox ----
     _a39b5_dedup_frame = tk.Frame(_a39b_params_frame, bg="#fffbea")
     _a39b5_dedup_frame.pack(fill="x", pady=(0, 4))
@@ -840,10 +863,11 @@ def build_panel(parent):
         "to hit. If you enable dedup and no conjunction is found, try "
         "lowering \"Target coverage\" below."
     )
-    try:
-        _a291_add_tooltip(_a39b5_dedup_cb, _a39b5_dedup_tooltip, wraplength=420)
-    except Exception:
-        pass
+    # WHY (Phase A.39b.5.1 hotfix): use the locally-imported tooltip
+    #      helper; the original _a291_add_tooltip reference was not yet
+    #      defined at this point in the function body.
+    # CHANGED: April 2026 — Phase A.39b.5.1
+    _a39b5_tooltip(_a39b5_dedup_cb, _a39b5_dedup_tooltip, wraplength=420)
 
     def _a39b5_on_dedup_change(*_a):
         try:
@@ -877,11 +901,12 @@ def build_panel(parent):
         "Both options respect \"Target coverage\" — conjunctions below "
         "the target are excluded regardless of strategy."
     )
-    try:
-        _a291_add_tooltip(_a39b5_winner_header, _a39b5_winner_header_tooltip,
-                          wraplength=420)
-    except Exception:
-        pass
+    # WHY (Phase A.39b.5.1 hotfix): use the locally-imported tooltip
+    #      helper; the original _a291_add_tooltip reference was not yet
+    #      defined at this point in the function body.
+    # CHANGED: April 2026 — Phase A.39b.5.1
+    _a39b5_tooltip(_a39b5_winner_header, _a39b5_winner_header_tooltip,
+                   wraplength=420)
 
     _a39b5_winner_var = tk.StringVar(
         value=str(_cfg.get('srm_a_winner_selection', 'tightness')).lower()
@@ -926,11 +951,10 @@ def build_panel(parent):
         "actually meets (e.g. 86% or higher), and want the tightest rule "
         "that reaches that floor."
     )
-    try:
-        _a291_add_tooltip(_a39b5_tightness_rb, _a39b5_tightness_tooltip,
-                          wraplength=420)
-    except Exception:
-        pass
+    # WHY (Phase A.39b.5.1 hotfix): use the locally-imported tooltip helper.
+    # CHANGED: April 2026 — Phase A.39b.5.1
+    _a39b5_tooltip(_a39b5_tightness_rb, _a39b5_tightness_tooltip,
+                   wraplength=420)
 
     _a39b5_coverage_rb = tk.Radiobutton(
         _a39b5_radio_frame,
@@ -967,11 +991,10 @@ def build_panel(parent):
         "• The current Tightness setting gave you a rule at exactly the "
         "floor coverage, and you want to know if a wider rule exists."
     )
-    try:
-        _a291_add_tooltip(_a39b5_coverage_rb, _a39b5_coverage_tooltip,
-                          wraplength=420)
-    except Exception:
-        pass
+    # WHY (Phase A.39b.5.1 hotfix): use the locally-imported tooltip helper.
+    # CHANGED: April 2026 — Phase A.39b.5.1
+    _a39b5_tooltip(_a39b5_coverage_rb, _a39b5_coverage_tooltip,
+                   wraplength=420)
 
     def _a39b5_on_winner_change(*_a):
         try:
