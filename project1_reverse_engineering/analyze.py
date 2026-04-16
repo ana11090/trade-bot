@@ -1424,6 +1424,46 @@ def run_analysis(feature_matrix_path=None):
         log.info(f"           THEN {rule['prediction']} (conf: {rule['confidence']*100:.0f}%, "
               f"coverage: {rule['coverage']} trades, WR: {rule['win_rate']*100:.0f}%)")
 
+    # WHY (Phase A.40a): Step 3's decision-tree extraction is the
+    #      original rule-discovery path; pipe it into saved_rules.json
+    #      so freshly extracted rules show up in the Saved Rules
+    #      panel without the user clicking 💾 on each one. Per-rule
+    #      source tag carries scenario / prediction / confidence so a
+    #      rediscovery with different scenario settings produces
+    #      distinguishable entries.
+    # CHANGED: April 2026 — Phase A.40a
+    try:
+        from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
+        _a40a_scenario = 'unknown'
+        if feature_matrix_path is not None:
+            _a40a_scenario = os.path.basename(
+                os.path.dirname(os.path.abspath(feature_matrix_path))
+            ) or 'unknown'
+        _a40a_total_saved = 0
+        _a40a_total_dedup = 0
+        _a40a_total_invalid = 0
+        for _r in rules:
+            _pred = str(_r.get('prediction', 'BUY'))
+            try:
+                _conf_n = int(round(float(_r.get('confidence', 0.0)) * 100))
+            except Exception:
+                _conf_n = 0
+            _src = f"Step3:{_a40a_scenario}:{_pred}:conf{_conf_n}"
+            _s, _d, _i = _a40a_save([_r], source=_src, dedup=True)
+            _a40a_total_saved   += _s
+            _a40a_total_dedup   += _d
+            _a40a_total_invalid += _i
+        log.info(
+            f"  [A.40a] Step 3 auto-save totals: "
+            f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
+            f"invalid={_a40a_total_invalid}"
+        )
+    except Exception as _a40a_e:
+        log.warning(
+            f"  [A.40a] Step 3 auto-save skipped: "
+            f"{type(_a40a_e).__name__}: {_a40a_e}"
+        )
+
     # 4. Clusters
     log.info('\n[4/8] Clustering trades...')
     clusters = cluster_trades(df, model_result)

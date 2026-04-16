@@ -442,10 +442,18 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
             _BG_COV_VALID_EPS = 0.001
             bg_cov_valid = (bg_cov is not None) and (bg_cov > _BG_COV_VALID_EPS)
 
+            # WHY (Phase A.40a): emit BOTH 'threshold' (legacy Mode A
+            #      key) and 'value' (canonical key used by Step 3, Step 4,
+            #      and the backtester). Older consumers keep reading
+            #      'threshold'; new consumers including the rule library
+            #      bridge see 'value'. Same number under two keys.
+            # CHANGED: April 2026 — Phase A.40a
+            _thr_rounded = round(thr, 6)
             out.append({
                 'feature':             col,
                 'operator':            op,
-                'threshold':           round(thr, 6),
+                'threshold':           _thr_rounded,
+                'value':               _thr_rounded,
                 'trade_coverage':      round(trade_cov, 4),
                 'background_coverage': round(bg_cov, 4) if bg_cov is not None else None,
                 'background_coverage_valid': bool(bg_cov_valid),
@@ -1014,6 +1022,45 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 'tightness_product': v['tightness_product'],
                 'cardinality':       v['cardinality'],
             })
+
+        # WHY (Phase A.40a): pipe the discovered Mode A conjunction
+        #      into the shared saved_rules.json library so the Saved
+        #      Rules panel and the backtester see it without the user
+        #      manually clicking 💾. Source tag captures the key
+        #      shape parameters so a rediscovery with different
+        #      settings produces a distinct-source entry. Honors the
+        #      global auto-save checkbox via is_auto_save_enabled().
+        # CHANGED: April 2026 — Phase A.40a
+        try:
+            from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
+            _a40a_rule = {
+                'conditions': [
+                    {
+                        'feature':  c['feature'],
+                        'operator': c['operator'],
+                        'value':    c.get('value', c.get('threshold')),
+                    }
+                    for c in chosen_conditions
+                ],
+                'prediction':       'BUY',  # Mode A is direction-agnostic; default BUY
+                'win_rate':         None,
+                'coverage':         int(round(float(chosen['joint_coverage']) * n_trades)),
+                'confidence':       float(chosen['joint_coverage']),
+                'tightness_product': float(chosen['tightness_product']),
+            }
+            _winner = p.get('winner_selection', 'tightness')
+            _src = (
+                f"ModeA:cov{int(round(float(chosen['joint_coverage'])*100))}%"
+                f":tight{float(chosen['tightness_product']):.3f}"
+                f":winner={_winner}"
+            )
+            _a40a_save([_a40a_rule], source=_src, dedup=True)
+        except Exception as _a40a_e:
+            try:
+                _l(f"  [A.40a] mode-A auto-save skipped: "
+                   f"{type(_a40a_e).__name__}: {_a40a_e}")
+            except Exception:
+                pass
 
         return {
             'status':           'ok',

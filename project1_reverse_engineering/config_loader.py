@@ -164,6 +164,18 @@ DEFAULTS = {
     # CHANGED: April 2026 — Phase A.39b.5
     'srm_a_dedup_correlated':           'false',      # drop features >0.7 correlated with a higher-ranked pool member
     'srm_a_winner_selection':           'tightness',  # 'tightness' (default, original) or 'coverage' (new alternative)
+
+    # ── Rule Library Auto-Save (Phase A.40a) ─────────────────────────────────
+    # WHY (Phase A.40a): Step 3 (decision-tree extraction), Step 4 (bot-entry
+    #      discovery), and Mode A (single-rule discovery) all dump rules to
+    #      their own per-run JSON files. The Saved Rules panel and the
+    #      backtester both consume saved_rules.json. Without auto-save the
+    #      user has to click 💾 on every discovered rule manually for it to
+    #      reach the library. Default ON so freshly discovered rules show up
+    #      in Saved Rules immediately; user can toggle off from the
+    #      checkbox at the top of the Run Scenarios panel.
+    # CHANGED: April 2026 — Phase A.40a
+    'auto_save_discovered_rules':       'true',
 }
 
 

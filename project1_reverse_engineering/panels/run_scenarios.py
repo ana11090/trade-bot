@@ -147,6 +147,67 @@ def build_panel(parent):
     import config_loader as _cl
     _cfg = _cl.load()
 
+    # WHY (Phase A.40a): Global auto-save toggle for the rule library.
+    #      Sits at the very top of the Run Scenarios panel — above the
+    #      regime filter card — because it controls behavior shared by
+    #      Step 3, Step 4, and Mode A. When ON (default), every
+    #      discovered rule is appended to saved_rules.json (the same
+    #      file used by the Saved Rules panel and the backtester);
+    #      duplicates are deduped by structural hash so a rerun on
+    #      identical data adds nothing new. When OFF, the three
+    #      discovery paths still write their own per-run JSON files
+    #      but don't touch saved_rules.json.
+    # CHANGED: April 2026 — Phase A.40a
+    _a40a_frame = tk.Frame(left_frame, bg="#f5f5fa", padx=15, pady=10)
+    _a40a_frame.pack(fill="x", pady=(0, 10))
+
+    _a40a_var = tk.BooleanVar(
+        value=str(_cfg.get('auto_save_discovered_rules', 'true')).lower() == 'true'
+    )
+
+    _a40a_cb = tk.Checkbutton(
+        _a40a_frame,
+        text="💾 Auto-save discovered rules to library",
+        variable=_a40a_var,
+        bg="#f5f5fa", fg="#16213e",
+        font=("Segoe UI", 10, "bold"),
+        activebackground="#f5f5fa",
+        anchor="w",
+    )
+    _a40a_cb.pack(anchor="w")
+
+    def _a40a_on_toggle(*_):
+        try:
+            _cl.save({
+                'auto_save_discovered_rules': 'true' if _a40a_var.get() else 'false'
+            })
+        except Exception as _e:
+            print(f"[A.40a] could not save auto_save_discovered_rules: {_e}")
+
+    _a40a_var.trace_add('write', _a40a_on_toggle)
+
+    try:
+        from shared.tooltip import add_tooltip as _a40a_tooltip
+        _a40a_tooltip(
+            _a40a_cb,
+            "When ON (default), every rule discovered by Step 3 (decision-tree "
+            "extraction), Step 4 (bot-entry discovery), and Mode A (single-rule "
+            "discovery) is appended to saved_rules.json — the same library the "
+            "Saved Rules panel and the backtester read from.\n\n"
+            "Duplicates are detected by a structural hash over the rule's "
+            "conditions and prediction (not over source/notes/win-rate), so "
+            "rerunning on the same data adds nothing new and the same rule "
+            "rediscovered with different settings still collapses to one "
+            "library entry.\n\n"
+            "When OFF, the three discovery paths still write their own per-run "
+            "JSON files (analysis_report.json, bot_entry_rules.json, "
+            "single_rule_mode.json) but the shared library is left untouched. "
+            "Use OFF when experimenting with discovery hyperparameters and you "
+            "don't want the library cluttered."
+        )
+    except Exception:
+        pass
+
     # WHY (Phase A.36): Regime Filter UI scaffolding. Lives between the
     #      steps display and the Discovery Settings card so the user
     #      sees it before configuring rule discovery — the filter (when
@@ -1222,6 +1283,42 @@ def build_panel(parent):
             font=("Segoe UI", 8, "italic"),
             wraplength=320, justify="left",
         ).pack(anchor="w", pady=(6, 0))
+
+        # WHY (Phase A.40a): Manual Save button on the green Mode A
+        #      discovered-rule display. The global auto-save checkbox
+        #      already saves Mode A rules at discovery time, but the
+        #      user may have run the discovery with auto-save OFF, or
+        #      they may want to save the SAME rule again with a fresh
+        #      note. The button posts the currently-displayed Mode A
+        #      conjunction to saved_rules.json with the standard
+        #      "Mode A (manual)" source tag.
+        # CHANGED: April 2026 — Phase A.40a
+        try:
+            from shared.saved_rules import build_save_button as _a40a_build_btn
+            _a40a_manual_rule = {
+                'conditions': [
+                    {
+                        'feature':  _c.get('feature'),
+                        'operator': _c.get('operator'),
+                        'value':    _c.get('value', _c.get('threshold')),
+                    }
+                    for _c in _chosen
+                ],
+                'prediction':       'BUY',
+                'win_rate':         None,
+                'coverage':         int(round(float(_stats.get('joint_coverage', 0.0)) * _tc)),
+                'confidence':       float(_stats.get('joint_coverage', 0.0)),
+                'tightness_product': _stats.get('tightness_product'),
+            }
+            _a40a_btn = _a40a_build_btn(
+                _a39b_discovered_frame,
+                _a40a_manual_rule,
+                source="Mode A (manual)",
+                bg="#e8f5e9",
+            )
+            _a40a_btn.pack(anchor="w", pady=(8, 0))
+        except Exception as _a40a_e:
+            print(f"[A.40a] manual save button skipped: {_a40a_e}")
 
         return True
 

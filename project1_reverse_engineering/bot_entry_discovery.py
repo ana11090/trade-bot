@@ -478,4 +478,38 @@ def discover_bot_entry_rules(
         json.dump(result, f, indent=2, default=str)
     _log(f"Saved: {BOT_RULES_PATH}", cb)
 
+    # WHY (Phase A.40a): Step 4 (bot-entry discovery) is the second
+    #      independent rule-discovery path. Its rules previously lived
+    #      only in bot_entry_rules.json; pipe them into the shared
+    #      saved_rules.json library so they're visible alongside Step 3
+    #      and Mode A rules. Per-rule source tag carries TF + action so
+    #      duplicates across runs (same TF + same action + same
+    #      conditions) collapse to a single library entry.
+    # CHANGED: April 2026 — Phase A.40a
+    try:
+        from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
+        _a40a_total_saved = 0
+        _a40a_total_dedup = 0
+        _a40a_total_invalid = 0
+        for _r in deduped:
+            _tf = str(_r.get('timeframe', _r.get('tf', '?')))
+            _act = str(_r.get('action', '?'))
+            _src = f"Step4:{_tf}:{_act}"
+            _s, _d, _i = _a40a_save([_r], source=_src, dedup=True)
+            _a40a_total_saved   += _s
+            _a40a_total_dedup   += _d
+            _a40a_total_invalid += _i
+        _log(
+            f"[A.40a] Step 4 auto-save totals: "
+            f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
+            f"invalid={_a40a_total_invalid}",
+            cb,
+        )
+    except Exception as _a40a_e:
+        _log(
+            f"[A.40a] Step 4 auto-save skipped: "
+            f"{type(_a40a_e).__name__}: {_a40a_e}",
+            cb,
+        )
+
     return result
