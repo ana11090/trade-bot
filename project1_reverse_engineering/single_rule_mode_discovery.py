@@ -1043,7 +1043,14 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                     for c in chosen_conditions
                 ],
                 'prediction':       'BUY',  # Mode A is direction-agnostic; default BUY
-                'win_rate':         None,
+                # WHY (Phase A.40a hotfix): Mode A doesn't compute a WR
+                #      (it's a coverage/tightness optimiser). Writing
+                #      None here crashed the Saved Rules panel which
+                #      compares wr <= 1.0. Use 0.0 — display path
+                #      already treats it as "no WR available".
+                # CHANGED: April 2026 — Phase A.40a hotfix
+                'win_rate':         0.0,
+                'avg_pips':         0.0,
                 'coverage':         int(round(float(chosen['joint_coverage']) * n_trades)),
                 'confidence':       float(chosen['joint_coverage']),
                 'tightness_product': float(chosen['tightness_product']),

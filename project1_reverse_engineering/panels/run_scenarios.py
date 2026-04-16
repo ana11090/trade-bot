@@ -1305,7 +1305,12 @@ def build_panel(parent):
                     for _c in _chosen
                 ],
                 'prediction':       'BUY',
-                'win_rate':         None,
+                # WHY (Phase A.40a hotfix): Mode A has no WR; use 0.0
+                #      not None so the Saved Rules panel can render
+                #      the entry without TypeError.
+                # CHANGED: April 2026 — Phase A.40a hotfix
+                'win_rate':         0.0,
+                'avg_pips':         0.0,
                 'coverage':         int(round(float(_stats.get('joint_coverage', 0.0)) * _tc)),
                 'confidence':       float(_stats.get('joint_coverage', 0.0)),
                 'tightness_product': _stats.get('tightness_product'),

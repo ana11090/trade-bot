@@ -190,9 +190,17 @@ def _refresh_list(inner, canvas, window_id):
                   command=_a40b_backtest_this_rule).pack(side=tk.RIGHT, padx=(0, 4))
 
         # Conditions
-        wr = rule.get('win_rate', 0)
-        pips = rule.get('avg_pips', 0)
-        cov = rule.get('coverage', 0)
+        # WHY (Phase A.40a hotfix): Mode A discovery doesn't compute a
+        #      win-rate (it's a coverage/tightness optimisation, not a
+        #      WR-maximiser), so its auto-saved entries arrive with
+        #      win_rate=None. The old `wr <= 1.0` comparison raises
+        #      TypeError on None and crashes _refresh_list, blocking
+        #      the whole Saved Rules panel from rendering. Coerce None
+        #      to 0 here so the entry still displays (just with WR=0%).
+        # CHANGED: April 2026 — Phase A.40a hotfix
+        wr = rule.get('win_rate') or 0
+        pips = rule.get('avg_pips') or 0
+        cov = rule.get('coverage') or 0
 
         # WHY (Phase 68 Fix 41): `:.0%` multiplies by 100. A rule with
         #      win_rate=65 (already percent) displayed as '6500%'. Guard
