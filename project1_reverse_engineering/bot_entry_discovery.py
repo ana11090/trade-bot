@@ -482,14 +482,24 @@ def discover_bot_entry_rules(
     #      independent rule-discovery path. Its rules previously lived
     #      only in bot_entry_rules.json; pipe them into the shared
     #      saved_rules.json library so they're visible alongside Step 3
-    #      and Mode A rules. Per-rule source tag carries TF + action so
-    #      duplicates across runs (same TF + same action + same
-    #      conditions) collapse to a single library entry.
-    # WHY (Phase A.40a.2): Honor the global auto-save checkbox at the
-    #      hook level. Snapshot library size before/after so the log
-    #      shows a real delta. Surface first invalid-rule reason via
-    #      the bridge's diag field.
-    # CHANGED: April 2026 — Phase A.40a / A.40a.2
+    #      and Mode A rules.
+    # CHANGED: April 2026 — Phase A.40a / A.40a.2 / A.40a.3
+
+    # WHY (Phase A.40a.3): Loud entry line OUTSIDE try/except.
+    # CHANGED: April 2026 — Phase A.40a.3
+    _log(
+        f"[A.40a.3] >>> ENTERING Step 4 auto-save hook "
+        f"({len(deduped)} rules to process)",
+        cb,
+    )
+    if deduped:
+        _first = deduped[0]
+        _log(
+            f"[A.40a.3]   first rule keys={sorted(_first.keys()) if isinstance(_first, dict) else type(_first).__name__}, "
+            f"n_conditions={len(_first.get('conditions', [])) if isinstance(_first, dict) else '?'}, "
+            f"prediction={_first.get('prediction', 'MISSING') if isinstance(_first, dict) else '?'}",
+            cb,
+        )
     try:
         from shared.rule_library_bridge import (
             auto_save_discovered_rules as _a40a_save,

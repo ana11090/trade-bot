@@ -1427,16 +1427,23 @@ def run_analysis(feature_matrix_path=None):
     # WHY (Phase A.40a): Step 3's decision-tree extraction is the
     #      original rule-discovery path; pipe it into saved_rules.json
     #      so freshly extracted rules show up in the Saved Rules
-    #      panel without the user clicking 💾 on each one. Per-rule
-    #      source tag carries scenario / prediction / confidence so a
-    #      rediscovery with different scenario settings produces
-    #      distinguishable entries.
-    # WHY (Phase A.40a.2): Honor the global auto-save checkbox at the
-    #      hook level (loud "disabled" log line so users see WHY no
-    #      [A.40a] saved=N message followed). Snapshot library size
-    #      before/after so the log shows a real delta. Surface the
-    #      first invalid-rule reason via the bridge's new diag field.
-    # CHANGED: April 2026 — Phase A.40a / A.40a.2
+    #      panel without the user clicking 💾 on each one.
+    # CHANGED: April 2026 — Phase A.40a / A.40a.2 / A.40a.3
+
+    # WHY (Phase A.40a.3): Loud entry line OUTSIDE try/except so we
+    #      always see whether the hook code was reached at all.
+    # CHANGED: April 2026 — Phase A.40a.3
+    log.info(
+        f"  [A.40a.3] >>> ENTERING Step 3 auto-save hook "
+        f"({len(rules)} rules to process)"
+    )
+    if rules:
+        _first = rules[0]
+        log.info(
+            f"  [A.40a.3]   first rule keys={sorted(_first.keys()) if isinstance(_first, dict) else type(_first).__name__}, "
+            f"n_conditions={len(_first.get('conditions', [])) if isinstance(_first, dict) else '?'}, "
+            f"prediction={_first.get('prediction', 'MISSING') if isinstance(_first, dict) else '?'}"
+        )
     try:
         from shared.rule_library_bridge import (
             auto_save_discovered_rules as _a40a_save,

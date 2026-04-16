@@ -1024,21 +1024,16 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
             })
 
         # WHY (Phase A.40a): pipe the discovered Mode A conjunction
-        #      into the shared saved_rules.json library so the Saved
-        #      Rules panel and the backtester see it without the user
-        #      manually clicking 💾. Source tag captures the key
-        #      shape parameters so a rediscovery with different
-        #      settings produces a distinct-source entry. Honors the
-        #      global auto-save checkbox via is_auto_save_enabled().
-        # WHY (Phase A.40a.2): Mode A previously logged ONLY on
-        #      exception, so a successful save was completely silent
-        #      from the user's perspective — they had to dig into
-        #      saved_rules.json to confirm anything happened. Add an
-        #      explicit success log line with library size delta and
-        #      surface the first invalid-rule reason via the bridge's
-        #      diag field. Also honor the global auto-save checkbox at
-        #      the hook level for symmetry with Step 3 / Step 4.
-        # CHANGED: April 2026 — Phase A.40a / A.40a.2
+        #      into the shared saved_rules.json library.
+        # CHANGED: April 2026 — Phase A.40a / A.40a.2 / A.40a.3
+
+        # WHY (Phase A.40a.3): Loud entry line OUTSIDE try/except.
+        # CHANGED: April 2026 — Phase A.40a.3
+        try:
+            _l(f"  [A.40a.3] >>> ENTERING Mode A auto-save hook "
+               f"({len(chosen_conditions)} conditions in chosen conjunction)")
+        except Exception:
+            pass
         try:
             from shared.rule_library_bridge import (
                 auto_save_discovered_rules as _a40a_save,

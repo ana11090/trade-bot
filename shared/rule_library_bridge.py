@@ -161,8 +161,15 @@ def _why_invalid(rule):
         if c.get('value') is None and c.get('threshold') is None:
             return (False, f"condition[{i}] missing both 'value' and 'threshold'",
                     list(c.keys())[:8])
-    if not str(rule.get('prediction', '')).strip():
-        return (False, "rule missing/empty 'prediction'",
+    # WHY (Phase A.40a.3): Accept 'action' as a fallback for 'prediction'.
+    #      Step 4 rules have 'prediction' today (from _extract_rules_from_tree),
+    #      but also carry 'action'. Future discovery paths or user-composed
+    #      rules might only have 'action'. Accepting both costs nothing and
+    #      prevents a silent rejection that's hard to debug.
+    # CHANGED: April 2026 — Phase A.40a.3
+    _pred = str(rule.get('prediction', '') or rule.get('action', '')).strip()
+    if not _pred:
+        return (False, "rule missing both 'prediction' and 'action'",
                 list(rule.keys())[:8])
     return (True, None, None)
 
@@ -192,9 +199,14 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
     Honors the global auto-save checkbox: when off, returns
     (0, 0, 0, None) without touching the disk.
     """
-    if not is_auto_save_enabled():
-        log.debug(f"[A.40a] auto-save disabled — skipping {source}")
-        return (0, 0, 0, None)
+    # WHY (Phase A.40a.3): Removed the redundant is_auto_save_enabled()
+    #      check here. The THREE caller hooks each check it themselves
+    #      and log a loud "DISABLED" message when off. Having the bridge
+    #      also check it created an invisible (debug-level) early return
+    #      that produced (0,0,0,None) — hooks saw saved=0 with no
+    #      explanation if the double-check disagreed (edge case). One
+    #      gatekeeper (the hooks) is enough.
+    # CHANGED: April 2026 — Phase A.40a.3
 
     rules = list(rules or [])
     if not rules:
