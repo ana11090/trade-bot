@@ -116,6 +116,47 @@ DEFAULTS = {
     #      regime_filter_discovery.py based on this string.
     # CHANGED: April 2026 — Phase A.37.2
     'regime_filter_strictness':  'conservative',  # 'conservative' | 'balanced' | 'strict'
+
+    # ── Single Rule Mode (Phase A.39a) ────────────────────────────────────────
+    # WHY (Phase A.39a): Single Rule Mode is a parallel discovery track to the
+    #      multi-rule extraction we've had since day one. Instead of learning
+    #      a decision tree of 3-7 rules AND'd together, it searches for ONE
+    #      single, human-readable rule (e.g. "BUY when RSI<30 AND EMA9>EMA20")
+    #      that by itself produces positive expectancy. Four mode variants:
+    #        A — single feature + threshold ("RSI < 30")
+    #        B — single crossover pair    ("EMA9 crosses above EMA20")
+    #        C — two-feature conjunction  ("RSI < 30 AND ADX > 25")
+    #        D — regime-gated single rule ("In trending regime: EMA9 > EMA20")
+    #      A.39a ships only the UI scaffolding and persistence keys —
+    #      algorithms arrive in A.39b (Mode A), A.39c (Mode B), A.39d
+    #      (Mode C), A.39e (Mode D). Master checkbox defaults OFF so the
+    #      pipeline's behavior is unchanged until the user opts in.
+    #
+    #      Mutual exclusivity with Regime Filter: Single Rule Mode has its
+    #      own philosophy for regime handling (Mode D gates on regime; the
+    #      others deliberately don't). Allowing both checkboxes on at once
+    #      would double-gate signals in confusing ways. The UI layer
+    #      enforces that at most one of the two checkboxes is on at a time.
+    # CHANGED: April 2026 — Phase A.39a
+    'single_rule_mode_enabled':  'false',        # master on/off — UI checkbox
+    'single_rule_mode_variant':  'a',            # 'a' | 'b' | 'c' | 'd'
+    'single_rule_mode_discovered': '',           # JSON string — written by A.39b/c/d/e later
+
+    # ── Single Rule Mode A — tunable discovery parameters (Phase A.39b) ──
+    # WHY (Phase A.39b): Mode A's algorithm has 8 knobs that used to be
+    #      hardcoded in single_rule_mode_discovery.py. Expose them in
+    #      config so the user can tune them from the Run Scenarios panel
+    #      without editing Python. Defaults match the original hardcoded
+    #      values so behavior is unchanged until the user touches them.
+    # CHANGED: April 2026 — Phase A.39b — expose SRM-A params to UI
+    'srm_a_target_coverage':            '0.95',  # joint conjunction must cover >= this fraction of trades
+    'srm_a_per_condition_coverage':     '0.95',  # each single-sided condition covers >= this fraction
+    'srm_a_min_non_nan_frac':           '0.95',  # feature usable only if >= this fraction of trades non-NaN
+    'srm_a_pool_size':                  '40',    # keep top N tightest conditions
+    'srm_a_min_cardinality':            '2',     # min conjunction size
+    'srm_a_max_cardinality':            '5',     # max conjunction size
+    'srm_a_max_enumerations_per_level': '5000',  # cap per-cardinality combos
+    'srm_a_tie_break_within_pct':       '0.10',  # prefer shorter conjunction when scores within this pct
 }
 
 

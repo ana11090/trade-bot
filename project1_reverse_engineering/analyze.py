@@ -1529,6 +1529,127 @@ def run_analysis(feature_matrix_path=None):
     except Exception as _e:
         log.warning(f"[A.37] Regime filter discovery failed: {_e}")
 
+    # ── Phase A.39b: Single Rule Mode A discovery ─────────────────────────
+    # WHY (Phase A.39b): A.39a added the Single Rule Mode UI with 4 inert
+    #      variants. A.39b wires up variant 'a' — find the tightest
+    #      AND-conjunction of 2-5 conditions covering >=95% of trades.
+    #      Only runs when Single Rule Mode is ON and variant is 'a'.
+    #      Mutual exclusivity with the Regime Filter is enforced by
+    #      the UI — both master checkboxes can't be on simultaneously.
+    #
+    #      Output: writes outputs/single_rule_mode.json (independent of
+    #      analysis_report.json) so nothing downstream that reads
+    #      analysis_report.json is affected. The Run Scenarios panel
+    #      reads config's single_rule_mode_discovered to render the rule.
+    # CHANGED: April 2026 — Phase A.39b
+    _a39b_payload = None
+    try:
+        import config_loader as _cl_a39b
+        _cfg_a39b = _cl_a39b.load()
+        _a39b_enabled = str(_cfg_a39b.get('single_rule_mode_enabled', 'false')).lower() == 'true'
+        _a39b_variant = str(_cfg_a39b.get('single_rule_mode_variant', 'a')).lower()
+        if _a39b_enabled and _a39b_variant == 'a':
+            log.info("\n[A.39b] Single Rule Mode — Mode A (tightest conjunction)...")
+            from single_rule_mode_discovery import discover_mode_a
+
+            # Try to load a background candle dataset for tightness scoring.
+            # If cache isn't available, discover_mode_a falls back to a
+            # weaker proxy — still functional.
+            _a39b_background = None
+            try:
+                _cache_dir = os.path.normpath(
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 '..', 'data')
+                )
+                _cache_path = os.path.join(_cache_dir, '.cache_H1_indicators.parquet')
+                if os.path.exists(_cache_path):
+                    _a39b_background = pd.read_parquet(_cache_path)
+                    log.info(
+                        f"  [A.39b] loaded background candle dataset: "
+                        f"{len(_a39b_background)} rows, "
+                        f"{len(_a39b_background.columns)} cols"
+                    )
+                else:
+                    log.info(
+                        "  [A.39b] no H1 indicator cache found — using proxy "
+                        "tightness scoring (still functional, less informative)"
+                    )
+            except Exception as _be:
+                log.warning(f"  [A.39b] could not load background: {_be} — using proxy")
+
+            # WHY (Phase A.39b): the 8 SRM-A knobs are user-tunable from the
+            #      Run Scenarios panel via p1_config.json (keys srm_a_*).
+            #      Build the param dict here so discover_mode_a uses the
+            #      user's current settings rather than its module defaults.
+            _a39b_params = {
+                'target_coverage':            _cfg_a39b.get('srm_a_target_coverage'),
+                'per_condition_coverage':     _cfg_a39b.get('srm_a_per_condition_coverage'),
+                'min_non_nan_frac':           _cfg_a39b.get('srm_a_min_non_nan_frac'),
+                'pool_size':                  _cfg_a39b.get('srm_a_pool_size'),
+                'min_cardinality':            _cfg_a39b.get('srm_a_min_cardinality'),
+                'max_cardinality':            _cfg_a39b.get('srm_a_max_cardinality'),
+                'max_enumerations_per_level': _cfg_a39b.get('srm_a_max_enumerations_per_level'),
+                'tie_break_within_pct':       _cfg_a39b.get('srm_a_tie_break_within_pct'),
+            }
+
+            _a39b_payload = discover_mode_a(
+                trade_df=df,
+                background_df=_a39b_background,
+                progress_log=lambda _m: log.info(_m),
+                params=_a39b_params,
+            )
+
+            # Persist to outputs/single_rule_mode.json next to the feature matrix.
+            if feature_matrix_path is not None:
+                _a39b_out_dir = os.path.dirname(os.path.abspath(feature_matrix_path))
+            else:
+                _a39b_out_dir = OUTPUT_DIR
+            os.makedirs(_a39b_out_dir, exist_ok=True)
+            _a39b_json_path = os.path.join(_a39b_out_dir, 'single_rule_mode.json')
+            try:
+                _a39b_payload_to_write = dict(_a39b_payload or {})
+                _a39b_payload_to_write['generated_at'] = datetime.now().isoformat()
+                _a39b_payload_to_write['scenario']     = _scenario_name if '_scenario_name' in dir() else None
+                with open(_a39b_json_path, 'w') as _f:
+                    json.dump(_a39b_payload_to_write, _f, indent=2, default=str)
+                log.info(f"  [A.39b] wrote {_a39b_json_path}")
+            except Exception as _we:
+                log.warning(f"  [A.39b] could not write single_rule_mode.json: {_we}")
+
+            # Also persist a compact version to config so the panel can
+            # render the rule without re-reading the JSON file.
+            try:
+                if _a39b_payload and _a39b_payload.get('status') == 'ok':
+                    _a39b_compact = {
+                        'status':          'ok',
+                        'variant':         'a',
+                        'trade_count':     _a39b_payload.get('trade_count'),
+                        'chosen':          _a39b_payload.get('chosen'),
+                        'chosen_stats':    _a39b_payload.get('chosen_stats'),
+                        'target_coverage': _a39b_payload.get('target_coverage'),
+                    }
+                    _cl_a39b.save({'single_rule_mode_discovered': json.dumps(_a39b_compact)})
+                else:
+                    _cl_a39b.save({'single_rule_mode_discovered': json.dumps({
+                        'status':  (_a39b_payload or {}).get('status', 'error'),
+                        'variant': 'a',
+                        'reason':  (_a39b_payload or {}).get('reason', 'unknown'),
+                    })})
+            except Exception as _se:
+                log.warning(f"  [A.39b] could not save to config: {_se}")
+
+        elif _a39b_enabled and _a39b_variant != 'a':
+            log.info(
+                f"  [A.39b] Single Rule Mode is ON but variant={_a39b_variant!r} "
+                f"(not 'a'). Mode {_a39b_variant.upper()} is implemented in a "
+                f"later phase — skipping Mode A."
+            )
+        # else: SRM disabled → fully silent no-op
+    except Exception as _e:
+        import traceback as _tb
+        log.warning(f"[A.39b] Single Rule Mode A discovery failed: {_e}")
+        log.debug(_tb.format_exc())
+
     elapsed = time.time() - start
 
     # WHY (Phase A.3 hotfix): analysis_report.json was missing three

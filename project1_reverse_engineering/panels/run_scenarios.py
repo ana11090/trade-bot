@@ -63,9 +63,63 @@ def build_panel(parent):
     content_frame = tk.Frame(panel, bg="#f0f2f5")
     content_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-    # Left column - Scenario selection
-    left_frame = tk.Frame(content_frame, bg="white", padx=20, pady=20)
-    left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+    # ── Left column: scrollable container ────────────────────────────────
+    # WHY: Left column content (regime filter + SRM + scenarios + steps +
+    #      discovery settings) exceeds ~1000px and was getting cut off on
+    #      smaller windows. Wrap in a Canvas + Scrollbar so the column
+    #      scrolls independently. left_frame is kept as the inner
+    #      scrollable Frame so all existing pack() calls against
+    #      left_frame continue to work unchanged.
+    _left_container = tk.Frame(content_frame, bg="white")
+    _left_container.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+    _left_canvas = tk.Canvas(_left_container, bg="white", highlightthickness=0)
+    _left_scrollbar = tk.Scrollbar(
+        _left_container, orient="vertical", command=_left_canvas.yview
+    )
+    _left_canvas.configure(yscrollcommand=_left_scrollbar.set)
+    _left_scrollbar.pack(side="right", fill="y")
+    _left_canvas.pack(side="left", fill="both", expand=True)
+
+    # The old `left_frame` name now refers to the inner scrollable frame
+    # that lives inside the Canvas. All downstream pack() calls on
+    # left_frame work exactly the same.
+    left_frame = tk.Frame(_left_canvas, bg="white", padx=20, pady=20)
+    _left_canvas_window = _left_canvas.create_window(
+        (0, 0), window=left_frame, anchor="nw"
+    )
+
+    def _left_on_frame_configure(_e):
+        # Keep scrollregion synced with inner frame height
+        _left_canvas.configure(scrollregion=_left_canvas.bbox("all"))
+    left_frame.bind("<Configure>", _left_on_frame_configure)
+
+    def _left_on_canvas_configure(event):
+        # Make inner frame width match canvas width so fill="x" packing works
+        _left_canvas.itemconfigure(_left_canvas_window, width=event.width)
+    _left_canvas.bind("<Configure>", _left_on_canvas_configure)
+
+    # ── Mousewheel support (hover-based) ─────────────────────────────────
+    # bind_all catches wheel events on every descendant widget while the
+    # pointer is over the left column. Unbind on leave so the right
+    # column (or other panels) aren't affected.
+    def _left_on_mousewheel(event):
+        try:
+            _left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        except Exception:
+            pass
+    def _left_bind_wheel(_e):
+        _left_canvas.bind_all("<MouseWheel>", _left_on_mousewheel)
+        _left_canvas.bind_all("<Button-4>",
+                              lambda e: _left_canvas.yview_scroll(-1, "units"))
+        _left_canvas.bind_all("<Button-5>",
+                              lambda e: _left_canvas.yview_scroll(1, "units"))
+    def _left_unbind_wheel(_e):
+        _left_canvas.unbind_all("<MouseWheel>")
+        _left_canvas.unbind_all("<Button-4>")
+        _left_canvas.unbind_all("<Button-5>")
+    _left_container.bind("<Enter>", _left_bind_wheel)
+    _left_container.bind("<Leave>", _left_unbind_wheel)
 
     tk.Label(left_frame, text="📊 Select Scenarios to Run",
              bg="white", fg="#16213e",
@@ -546,6 +600,537 @@ def build_panel(parent):
     #      panel renders correctly on first paint based on saved state.
     # CHANGED: April 2026 — Phase A.36
     _a36_apply_visibility()
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PHASE A.39a — Single Rule Mode UI scaffolding
+    # ════════════════════════════════════════════════════════════════════════
+    # ── Cross-card links for disabling Discovery Settings when SRM is on ──
+    # WHY: Discovery Settings only tune the Step 3 DecisionTreeClassifier
+    #      — they have no effect on Single Rule Mode (which uses its own
+    #      hardcoded algorithm). Disable the spinboxes when SRM is on so
+    #      the user isn't misled into thinking the knobs do anything.
+    #      The spinbox list is populated later (after _make_spinbox() is
+    #      defined + called); the updater is safe to call before then —
+    #      it iterates an empty list until spinboxes are added.
+    _a39b_discovery_spinboxes = []
+    _a39b_discovery_hint_ref  = {'label': None}
+
+    def _a39b_update_discovery_state():
+        srm_on = bool(_a39a_enabled_var.get())
+        new_state = 'disabled' if srm_on else 'normal'
+        for _sb in _a39b_discovery_spinboxes:
+            try:
+                _sb.configure(state=new_state)
+            except Exception:
+                pass
+        _lbl = _a39b_discovery_hint_ref.get('label')
+        if _lbl is not None:
+            try:
+                if srm_on:
+                    _lbl.configure(
+                        text="⚠ Disabled — Single Rule Mode is active "
+                             "(it uses its own algorithm, these knobs do nothing)",
+                        fg="#b8860b",
+                    )
+                else:
+                    _lbl.configure(
+                        text="💡 Changes save automatically",
+                        fg="#666",
+                    )
+            except Exception:
+                pass
+    # WHY (Phase A.39a): Adds a parallel discovery-mode card beneath the
+    #      Regime Filter card. Master checkbox + 4 variant radios (A/B/C/D)
+    #      + yellow "not yet wired" disclaimer. Mutually exclusive with the
+    #      Regime Filter checkbox — the save handlers share a mutex so we
+    #      never end up with both on at once. No pipeline code reads these
+    #      keys yet; A.39b onwards wire each variant individually.
+    # CHANGED: April 2026 — Phase A.39a
+    _a39a_frame = tk.Frame(left_frame, bg="#fffbea", padx=15, pady=15)
+    _a39a_frame.pack(fill="x", pady=(15, 0))
+
+    tk.Label(_a39a_frame, text="🎲 Single Rule Mode (experimental)",
+             bg="#fffbea", fg="#16213e",
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 8))
+
+    # ── Master enable checkbox ──────────────────────────────────────────────
+    _a39a_enabled_var = tk.BooleanVar(
+        value=str(_cfg.get('single_rule_mode_enabled', 'false')).lower() == 'true'
+    )
+
+    _a39a_enable_cb = tk.Checkbutton(
+        _a39a_frame,
+        text="Enable single rule mode",
+        variable=_a39a_enabled_var,
+        bg="#fffbea", fg="#16213e",
+        font=("Segoe UI", 10),
+        activebackground="#fffbea",
+        anchor="w",
+    )
+    _a39a_enable_cb.pack(anchor="w", pady=(0, 4))
+
+    # ── Container for mode radios + disclaimer ──────────────────────────────
+    _a39a_inner = tk.Frame(_a39a_frame, bg="#fffbea")
+    # NOTE: pack()'d by _a39a_apply_visibility() below.
+
+    # ── Mode variant radios (A/B/C/D) ───────────────────────────────────────
+    tk.Label(_a39a_inner, text="Rule variant:",
+             bg="#fffbea", fg="#444",
+             font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
+
+    _a39a_variant_var = tk.StringVar(
+        value=str(_cfg.get('single_rule_mode_variant', 'a')).lower()
+    )
+    if _a39a_variant_var.get() not in ('a', 'b', 'c', 'd'):
+        _a39a_variant_var.set('a')
+
+    _a39a_radio_frame = tk.Frame(_a39a_inner, bg="#fffbea")
+    _a39a_radio_frame.pack(anchor="w", pady=(0, 4))
+
+    for _val, _lbl in (
+        ('a', "Mode A — single feature + threshold (e.g. RSI < 30)"),
+        ('b', "Mode B — single crossover (e.g. EMA9 crosses above EMA20)"),
+        ('c', "Mode C — two-feature conjunction (e.g. RSI<30 AND ADX>25)"),
+        ('d', "Mode D — regime-gated single rule"),
+    ):
+        tk.Radiobutton(
+            _a39a_radio_frame,
+            text=_lbl,
+            variable=_a39a_variant_var,
+            value=_val,
+            bg="#fffbea", fg="#16213e",
+            font=("Segoe UI", 9),
+            activebackground="#fffbea",
+            anchor="w",
+        ).pack(anchor="w")
+
+    # ── Status / disclaimer area (yellow "not wired") ──────────────────────
+    # WHY (Phase A.39a): Shown when the selected variant has no discovery
+    #      algorithm yet (B/C/D today) OR when Mode A is selected but no
+    #      discovery has run yet. A.39b replaces this with a green frame
+    #      (_a39b_discovered_frame below) for valid Mode A results.
+    # CHANGED: April 2026 — Phase A.39b (simplified: yellow only)
+    _a39a_status_frame = tk.Frame(_a39a_inner, bg="#fff8dc", padx=10, pady=8)
+    # NOTE: packed inside _a39a_apply_visibility().
+
+    def _a39a_render_status():
+        """Render the yellow 'not yet wired' message. Content varies
+        slightly based on selected variant."""
+        for _w in list(_a39a_status_frame.winfo_children()):
+            try:
+                _w.destroy()
+            except Exception:
+                pass
+
+        _v = (_a39a_variant_var.get() or 'a').lower()
+        _phase_map = {'a': 'A.39b', 'b': 'A.39c', 'c': 'A.39d', 'd': 'A.39e'}
+        _phase = _phase_map.get(_v, 'a follow-up phase')
+
+        tk.Label(
+            _a39a_status_frame,
+            text="⚠ Not yet wired — UI scaffolding only." if _v != 'a'
+                 else "ⓘ Mode A has not produced a discovery yet.",
+            bg="#fff8dc", fg="#b8860b",
+            font=("Segoe UI", 9, "bold"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w")
+        tk.Label(
+            _a39a_status_frame,
+            text=(f"Mode {_v.upper()}'s discovery algorithm is implemented in "
+                  f"phase {_phase}. Toggling the checkbox today only persists "
+                  f"your preference — it does not alter rule extraction or "
+                  f"backtest behavior." if _v != 'a'
+                  else "Run a scenario with Single Rule Mode + Mode A enabled "
+                       "to populate the discovered conjunction here."),
+            bg="#fff8dc", fg="#555",
+            font=("Segoe UI", 9),
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(4, 0))
+
+    _a39a_render_status()
+
+    # ── Phase A.39b: Mode A discovery parameters (user-tunable) ─────────────
+    # WHY (Phase A.39b): The 8 knobs that control Mode A's
+    #      tightest-conjunction search used to be hardcoded in
+    #      single_rule_mode_discovery.py. Expose them here so the user can
+    #      tune them from the Run Scenarios panel without editing Python.
+    #      Defaults (from config_loader.DEFAULTS) match the original
+    #      hardcoded values so behavior is unchanged until the user
+    #      touches them. Panel is visible only when variant == 'a' since
+    #      these settings only apply to Mode A.
+    # CHANGED: April 2026 — Phase A.39b
+    _a39b_params_frame = tk.LabelFrame(
+        _a39a_inner,
+        text="Mode A Discovery Settings (editable)",
+        bg="#fffbea", fg="#16213e",
+        font=("Segoe UI", 9, "bold"),
+        padx=8, pady=6,
+    )
+    # NOTE: packed conditionally by _a39a_apply_visibility().
+
+    tk.Label(
+        _a39b_params_frame,
+        text=("These parameters tune Mode A's tightest-conjunction search. "
+              "Defaults work for most cases; tweak if discovery returns "
+              "no conjunction or you want to widen/tighten the result."),
+        bg="#fffbea", fg="#555",
+        font=("Segoe UI", 8, "italic"),
+        wraplength=320, justify="left",
+    ).pack(anchor="w", pady=(0, 6))
+
+    def _a39b_make_param_spinbox(parent, label_text, config_key,
+                                 from_, to, increment, tooltip_text,
+                                 is_float=False):
+        """Parallel to _make_spinbox but styled for the SRM yellow panel
+        and supports float increments. Defined inline (not reusing
+        _make_spinbox) because _make_spinbox is declared later in the
+        function — moving it would reorder unrelated code, and the
+        styling diverges anyway (SRM yellow vs Discovery beige)."""
+        row = tk.Frame(parent, bg="#fffbea")
+        row.pack(fill="x", pady=2)
+
+        label = tk.Label(
+            row, text=label_text, bg="#fffbea", fg="#333",
+            font=("Segoe UI", 9), width=26, anchor="w",
+        )
+        label.pack(side="left")
+        try:
+            _a291_add_tooltip(label, tooltip_text, wraplength=380)
+        except Exception:
+            pass
+
+        var = tk.StringVar(value=str(_cfg.get(config_key, str(from_))))
+
+        spinbox = tk.Spinbox(
+            row, from_=from_, to=to, increment=increment,
+            textvariable=var,
+            font=("Segoe UI", 9), width=10,
+            bg="white", relief="solid", borderwidth=1,
+            format=("%.2f" if is_float else "%.0f"),
+        )
+        spinbox.pack(side="right")
+        try:
+            _a291_add_tooltip(spinbox, tooltip_text, wraplength=380)
+        except Exception:
+            pass
+
+        def _on_var_change(*_a, _var=var, _key=config_key):
+            try:
+                _cl.save({_key: _var.get()})
+                try:
+                    _a291_flash_saved(_key)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[A.39b] Could not save {_key}: {e}")
+
+        var.trace_add('write', _on_var_change)
+        return spinbox
+
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Target coverage:", "srm_a_target_coverage",
+        0.01, 1.00, 0.01,
+        "Minimum fraction of trades the joint AND-conjunction must cover. "
+        "Default 0.95 — the bot's trigger must be present in >=95% of "
+        "historical trades. Lower for noisier datasets; higher for "
+        "strictly deterministic bots.",
+        is_float=True,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Per-condition coverage:", "srm_a_per_condition_coverage",
+        0.01, 1.00, 0.01,
+        "Minimum fraction of trades each single-sided candidate condition "
+        "must cover on its own. Default 0.95 matches the 5th/95th "
+        "percentile construction. Lower to let tighter-but-rarer "
+        "conditions into the pool.",
+        is_float=True,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Min non-NaN fraction:", "srm_a_min_non_nan_frac",
+        0.01, 1.00, 0.01,
+        "A feature is usable only if >= this fraction of trade rows "
+        "have a non-NaN value for it. Default 0.95 excludes features "
+        "that fail to evaluate on many candles.",
+        is_float=True,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Pool size:", "srm_a_pool_size",
+        1, 500, 1,
+        "Keep the top-N tightest single-sided candidate conditions for "
+        "conjunction enumeration. Default 40. Larger pool = more "
+        "conjunctions explored but slower.",
+        is_float=False,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Min cardinality:", "srm_a_min_cardinality",
+        1, 10, 1,
+        "Minimum number of conditions in the discovered conjunction. "
+        "Default 2 — a single-feature rule is trivial.",
+        is_float=False,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Max cardinality:", "srm_a_max_cardinality",
+        1, 10, 1,
+        "Maximum number of conditions. Default 5. Higher allows more "
+        "complex conjunctions but grows combinatorially.",
+        is_float=False,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Max enumerations/level:", "srm_a_max_enumerations_per_level",
+        1, 1000000, 1000,
+        "Cap per-cardinality combinations. Default 5000. When exceeded, "
+        "a seeded random sample is drawn. Increase for thoroughness, "
+        "decrease for speed.",
+        is_float=False,
+    )
+    _a39b_make_param_spinbox(
+        _a39b_params_frame, "Tie-break within pct:", "srm_a_tie_break_within_pct",
+        0.0, 1.0, 0.01,
+        "When multiple conjunctions score within this fraction of the "
+        "best, prefer fewer conditions. Default 0.10 (10%). 0 disables "
+        "the tie-break.",
+        is_float=True,
+    )
+
+    # ── Phase A.39b: Discovered-rule display for Mode A ─────────────────────
+    # WHY (Phase A.39b): When Mode A has run successfully, show the
+    #      discovered conjunction here instead of the yellow warning.
+    #      Rebuilt every time the user switches into variant 'a' via
+    #      _a39b_render_discovered. Reads from single_rule_mode_discovered
+    #      config key (written by analyze.py at the end of Step 3 when
+    #      Mode A ran).
+    # CHANGED: April 2026 — Phase A.39b
+    _a39b_discovered_frame = tk.Frame(_a39a_inner, bg="#e8f5e9", padx=10, pady=8)
+    # NOTE: _a39a_apply_visibility() packs exactly ONE of (status_frame,
+    #       discovered_frame) at a time.
+
+    def _a39b_render_discovered():
+        """Rebuild the green discovered-rule display from the latest
+        single_rule_mode_discovered config value. Returns True if a valid
+        Mode A discovery is present and rendered; False otherwise (caller
+        falls back to showing the yellow status_frame)."""
+        for _w in list(_a39b_discovered_frame.winfo_children()):
+            try:
+                _w.destroy()
+            except Exception:
+                pass
+
+        try:
+            _raw = _cl.load().get('single_rule_mode_discovered', '') or ''
+        except Exception:
+            _raw = ''
+        if not _raw:
+            return False
+
+        try:
+            import json as _a39b_json
+            _disc = _a39b_json.loads(_raw)
+        except Exception:
+            return False
+
+        if _disc.get('status') != 'ok' or _disc.get('variant') != 'a':
+            return False
+
+        _chosen = _disc.get('chosen') or []
+        if not _chosen:
+            return False
+
+        _stats  = _disc.get('chosen_stats') or {}
+        _tc     = _disc.get('trade_count', 0)
+        _target = _disc.get('target_coverage', 0.95)
+
+        tk.Label(
+            _a39b_discovered_frame,
+            text=f"✓ Discovered conjunction ({_stats.get('cardinality', len(_chosen))} "
+                 f"condition(s)):",
+            bg="#e8f5e9", fg="#16213e",
+            font=("Segoe UI", 9, "bold"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w")
+
+        for _cond in _chosen:
+            tk.Label(
+                _a39b_discovered_frame,
+                text=f"  {_cond.get('feature')} {_cond.get('operator')} "
+                     f"{_cond.get('threshold')}",
+                bg="#e8f5e9", fg="#16213e",
+                font=("Consolas", 9),
+                anchor="w",
+            ).pack(anchor="w", pady=(2, 0))
+
+        try:
+            _joint = float(_stats.get('joint_coverage', 0)) * 100
+            _tp    = _stats.get('tightness_product', None)
+            _summary = (
+                f"Joint coverage: {_joint:.1f}% of {_tc} trades "
+                f"(target >={_target*100:.0f}%)"
+            )
+            if _tp is not None:
+                _summary += f"\nTightness product: {_tp:.4f} "
+                _summary += "(lower = tighter / more specific)"
+            tk.Label(
+                _a39b_discovered_frame,
+                text=_summary,
+                bg="#e8f5e9", fg="#16213e",
+                font=("Segoe UI", 9),
+                wraplength=320, justify="left",
+            ).pack(anchor="w", pady=(6, 0))
+        except Exception:
+            pass
+
+        tk.Label(
+            _a39b_discovered_frame,
+            text="ⓘ Discovery only — rule is NOT applied to the pipeline. "
+                 "Full details in outputs/single_rule_mode.json.",
+            bg="#e8f5e9", fg="#888",
+            font=("Segoe UI", 8, "italic"),
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(6, 0))
+
+        return True
+
+    # ── Visibility ──────────────────────────────────────────────────────────
+    # WHY (Phase A.39b): Switches between showing the green discovered_frame
+    #      (Mode A result available) vs the yellow status_frame (no result
+    #      yet, or a non-A variant selected).
+    # CHANGED: April 2026 — Phase A.39b
+    def _a39a_apply_visibility(*_args):
+        for _w in (_a39a_status_frame, _a39b_discovered_frame, _a39b_params_frame):
+            try:
+                _w.pack_forget()
+            except Exception:
+                pass
+
+        if not _a39a_enabled_var.get():
+            try:
+                _a39a_inner.pack_forget()
+            except Exception:
+                pass
+            return
+
+        if not _a39a_inner.winfo_ismapped():
+            _a39a_inner.pack(fill="x", pady=(4, 0))
+
+        _variant_is_a = (_a39a_variant_var.get() or 'a').lower() == 'a'
+
+        # Mode A params panel — only shown for variant 'a'.
+        if _variant_is_a:
+            _a39b_params_frame.pack(fill="x", pady=(8, 0))
+
+        _rendered_discovered = False
+        if _variant_is_a:
+            try:
+                _rendered_discovered = _a39b_render_discovered()
+            except Exception as _re:
+                print(f"[A.39b] render failed: {_re}")
+                _rendered_discovered = False
+
+        if _rendered_discovered:
+            _a39b_discovered_frame.pack(fill="x", pady=(8, 0))
+        else:
+            try:
+                _a39a_render_status()
+            except Exception as _e:
+                print(f"[A.39a] Could not render status: {_e}")
+            _a39a_status_frame.pack(fill="x", pady=(8, 0))
+
+        # Sync the Discovery Settings enable/disable state.
+        try:
+            _a39b_update_discovery_state()
+        except Exception:
+            pass
+
+    # ── Mutual-exclusivity mutex ────────────────────────────────────────────
+    # WHY (Phase A.39a): Both the Regime Filter checkbox and the Single
+    #      Rule Mode checkbox have trace_add save handlers. When we flip
+    #      one programmatically from within the other's handler, the
+    #      second handler fires recursively. A small mutex ('busy' flag
+    #      in a mutable dict so closures share state) short-circuits the
+    #      inner invocation so each user-initiated toggle causes exactly
+    #      one save per checkbox.
+    # CHANGED: April 2026 — Phase A.39a
+    _a39a_mutex_lock = {'busy': False}
+
+    def _a39a_save_enabled(*_args, _v=_a39a_enabled_var,
+                            _other=_a36_enabled_var, _lock=_a39a_mutex_lock):
+        if _lock['busy']:
+            return
+        _lock['busy'] = True
+        try:
+            _cl.save({
+                'single_rule_mode_enabled': 'true' if _v.get() else 'false'
+            })
+            # If this turned ON and the regime filter is also ON, force
+            # regime filter OFF so they're mutually exclusive.
+            if _v.get() and _other.get():
+                _other.set(False)
+                try:
+                    _cl.save({'regime_filter_enabled': 'false'})
+                except Exception as _e:
+                    print(f"[A.39a] Could not disable regime filter: {_e}")
+        except Exception as _e:
+            print(f"[A.39a] Could not save single_rule_mode_enabled: {_e}")
+        finally:
+            _lock['busy'] = False
+        _a39a_apply_visibility()
+
+    def _a39a_save_variant(*_args, _v=_a39a_variant_var):
+        try:
+            _cl.save({'single_rule_mode_variant': str(_v.get())})
+        except Exception as _e:
+            print(f"[A.39a] Could not save single_rule_mode_variant: {_e}")
+        # Re-render card so green/yellow frame swaps when variant changes.
+        try:
+            _a39a_apply_visibility()
+        except Exception:
+            pass
+
+    _a39a_enabled_var.trace_add('write', _a39a_save_enabled)
+    _a39a_variant_var.trace_add('write', _a39a_save_variant)
+
+    # Mirror handler on the A.36 side: when Regime Filter turns on and
+    # Single Rule Mode is on, force Single Rule Mode off.
+    def _a39a_mirror_from_a36(*_args, _v=_a36_enabled_var,
+                               _other=_a39a_enabled_var,
+                               _lock=_a39a_mutex_lock):
+        if _lock['busy']:
+            return
+        if _v.get() and _other.get():
+            _lock['busy'] = True
+            try:
+                _other.set(False)
+                try:
+                    _cl.save({'single_rule_mode_enabled': 'false'})
+                except Exception as _e:
+                    print(f"[A.39a] Could not disable single rule mode: {_e}")
+            finally:
+                _lock['busy'] = False
+            # SRM was just forced off — refresh UI (SRM card + Discovery
+            # Settings state) since _a39a_save_enabled is short-circuited
+            # by the mutex and won't do it.
+            try:
+                _a39a_apply_visibility()
+            except Exception:
+                pass
+
+    _a36_enabled_var.trace_add('write', _a39a_mirror_from_a36)
+
+    # Startup hygiene: if config somehow has both on, prefer the regime
+    # filter (since A.37 already writes real discovery output) and turn
+    # single rule mode off.
+    if _a36_enabled_var.get() and _a39a_enabled_var.get():
+        _a39a_mutex_lock['busy'] = True
+        try:
+            _a39a_enabled_var.set(False)
+            try:
+                _cl.save({'single_rule_mode_enabled': 'false'})
+            except Exception as _e:
+                print(f"[A.39a] Startup hygiene save failed: {_e}")
+        finally:
+            _a39a_mutex_lock['busy'] = False
+
+    _a39a_apply_visibility()
+
     # WHY (Phase 56 Fix 1): Old scenarios dict was hardcoded. A user
     #      whose config sets align_timeframes=M5,H1,D1 saw the wrong
     #      five options. Now: read align_timeframes from config_loader,
@@ -799,54 +1384,54 @@ def build_panel(parent):
         return spinbox
 
     # Six tunables with tooltips
-    _make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
                  1, 20, 1,
                  "Maximum depth of the decision tree. Each leaf becomes one "
                  "rule, and depth = number of conditions stacked in that rule. "
                  "Higher = more specific rules with more conditions per rule "
                  "(each catching fewer trades). Lower = simpler rules covering "
-                 "more candles. Safe range 3-10. Default: 5. Try 7 for more variety.")
+                 "more candles. Safe range 3-10. Default: 5. Try 7 for more variety."))
 
-    _make_spinbox(discovery_frame, "Tree Min Samples Leaf:", "rule_tree_min_samples_leaf",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Tree Min Samples Leaf:", "rule_tree_min_samples_leaf",
                  1, 100, 1,
                  "Minimum number of training trades required at each leaf. "
                  "The tree won't create a leaf with fewer trades than this. "
                  "Lower = more leaves = more rules, each matching fewer trades. "
                  "Higher = fewer, broader rules. Safe range 5-50. Default: 20. "
-                 "Drop to 5 if you want many rules.")
+                 "Drop to 5 if you want many rules."))
 
-    _make_spinbox(discovery_frame, "Tree Min Samples Split:", "rule_tree_min_samples_split",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Tree Min Samples Split:", "rule_tree_min_samples_split",
                  2, 200, 1,
                  "Minimum number of trades a node needs before the tree is "
                  "allowed to split it further. Should be ~2x Min Samples Leaf. "
                  "Higher = shallower trees with fewer rules. Lower = deeper "
-                 "trees with more rules. Safe range 10-100. Default: 40.")
+                 "trees with more rules. Safe range 10-100. Default: 40."))
 
-    _make_spinbox(discovery_frame, "Min Leaf Samples Filter:", "rule_min_leaf_samples",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Min Leaf Samples Filter:", "rule_min_leaf_samples",
                  1, 100, 1,
                  "Final post-tree filter — after the tree is built, only "
                  "leaves with at least this many training trades become rules. "
                  "Different from Min Samples Leaf above (which controls tree "
                  "construction). This is a second sanity check. Lower = more "
-                 "rules survive. Safe range 5-50. Default: 15.")
+                 "rules survive. Safe range 5-50. Default: 15."))
 
-    _make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
                  0.0, 1.0, 0.05,
                  "Minimum win rate (0.0-1.0) a rule must have on training "
                  "trades to be kept. 0.65 = at least 65% wins. 0.55 = at "
                  "least 55%. Set to 0 to disable this filter entirely (then "
                  "use Min Avg Pips below to keep only profitable rules "
                  "regardless of win rate). Default: 0.65. Drop to 0.55 for "
-                 "many more rules.")
+                 "many more rules."))
 
-    _make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
+    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
                  -1000, 1000, 1,
                  "Minimum average pips per trade a rule must earn on training "
                  "trades to be kept. Lets you accept rules with mixed wins/"
                  "losses as long as they're profitable on average. Set to 0 "
                  "to require any positive expectancy. Set to a positive number "
                  "to demand minimum profit per trade. Set to -1000 to disable. "
-                 "Default: 0.")
+                 "Default: 0."))
 
     # WHY (Phase A.29.1): Replaces the static "Changes save automatically"
     #      label with a live indicator that flashes green for ~2.5s
@@ -862,6 +1447,15 @@ def build_panel(parent):
     )
     _a291_indicator.pack(anchor="w", pady=(8, 0))
     _a291_save_indicator['label'] = _a291_indicator
+
+    # Hook the hint label into the SRM updater so it shows the
+    # "disabled by Single Rule Mode" message when appropriate, then
+    # run the updater once so initial state matches config.
+    _a39b_discovery_hint_ref['label'] = _a291_indicator
+    try:
+        _a39b_update_discovery_state()
+    except Exception as _e:
+        print(f"[A.39b] initial discovery-state sync failed: {_e}")
 
     # Right column - Execution controls
     right_frame = tk.Frame(content_frame, bg="white", padx=20, pady=20)

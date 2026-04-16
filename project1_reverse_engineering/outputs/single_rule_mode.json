@@ -1,0 +1,344 @@
+{
+  "status": "no_conjunction",
+  "variant": "a",
+  "target_coverage": 0.95,
+  "trade_count": 1106,
+  "candidate_pool": [
+    {
+      "feature": "H1_vwap",
+      "operator": ">",
+      "threshold": 1704.693024,
+      "trade_coverage": 0.9493,
+      "background_coverage": 0.0,
+      "tightness": 0.0
+    },
+    {
+      "feature": "M15_is_late_session",
+      "operator": "<",
+      "threshold": 1.0,
+      "trade_coverage": 0.9456,
+      "background_coverage": null,
+      "tightness": 0.0
+    },
+    {
+      "feature": "M5_aroon_up",
+      "operator": "<",
+      "threshold": 100.0,
+      "trade_coverage": 0.941,
+      "background_coverage": null,
+      "tightness": 0.0
+    },
+    {
+      "feature": "M5_upper_shadow",
+      "operator": ">",
+      "threshold": 0.0,
+      "trade_coverage": 0.9382,
+      "background_coverage": null,
+      "tightness": 0.0
+    },
+    {
+      "feature": "H4_swing_high_50",
+      "operator": "<",
+      "threshold": 5598.26,
+      "trade_coverage": 0.9328,
+      "background_coverage": null,
+      "tightness": 0.0
+    },
+    {
+      "feature": "H1_is_late_session",
+      "operator": "<",
+      "threshold": 1.0,
+      "trade_coverage": 0.9327,
+      "background_coverage": null,
+      "tightness": 0.0
+    },
+    {
+      "feature": "D1_volume_change",
+      "operator": ">",
+      "threshold": -0.97425,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "tightness": 0.0002
+    },
+    {
+      "feature": "M15_lower_shadow",
+      "operator": ">",
+      "threshold": 0.04,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0009
+    },
+    {
+      "feature": "M15_upper_shadow",
+      "operator": ">",
+      "threshold": 0.03,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "tightness": 0.0009
+    },
+    {
+      "feature": "M5_lower_shadow",
+      "operator": ">",
+      "threshold": 0.02,
+      "trade_coverage": 0.9456,
+      "background_coverage": null,
+      "tightness": 0.0009
+    },
+    {
+      "feature": "D1_candle_body",
+      "operator": ">",
+      "threshold": 0.894,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0016
+    },
+    {
+      "feature": "H4_upper_shadow",
+      "operator": ">",
+      "threshold": 0.24,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0017
+    },
+    {
+      "feature": "H4_lower_shadow",
+      "operator": ">",
+      "threshold": 0.32,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0017
+    },
+    {
+      "feature": "H4_candle_body",
+      "operator": ">",
+      "threshold": 0.6425,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "tightness": 0.0019
+    },
+    {
+      "feature": "D1_bb_20_2_upper",
+      "operator": "<",
+      "threshold": 5402.404377,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0019
+    },
+    {
+      "feature": "M5_distance_to_swing_low",
+      "operator": ">",
+      "threshold": 0.010481,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0022
+    },
+    {
+      "feature": "M15_distance_to_swing_low",
+      "operator": ">",
+      "threshold": 0.01894,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0023
+    },
+    {
+      "feature": "D1_lower_shadow",
+      "operator": ">",
+      "threshold": 0.874,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0026
+    },
+    {
+      "feature": "M15_candle_body",
+      "operator": ">",
+      "threshold": 0.24,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0027
+    },
+    {
+      "feature": "M5_candle_body",
+      "operator": ">",
+      "threshold": 0.122,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.003
+    },
+    {
+      "feature": "D1_upper_shadow",
+      "operator": ">",
+      "threshold": 0.456,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0041
+    },
+    {
+      "feature": "H4_distance_from_high",
+      "operator": ">",
+      "threshold": 0.033844,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "tightness": 0.0048
+    },
+    {
+      "feature": "D1_distance_from_high",
+      "operator": ">",
+      "threshold": 0.057071,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.005
+    },
+    {
+      "feature": "M15_distance_from_high",
+      "operator": ">",
+      "threshold": 0.010799,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0052
+    },
+    {
+      "feature": "H4_distance_to_swing_high",
+      "operator": ">",
+      "threshold": 0.131869,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "tightness": 0.006
+    },
+    {
+      "feature": "M5_distance_from_high",
+      "operator": ">",
+      "threshold": 0.006668,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0061
+    },
+    {
+      "feature": "D1_candle_range",
+      "operator": ">",
+      "threshold": 6.786,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0062
+    },
+    {
+      "feature": "H4_candle_range",
+      "operator": ">",
+      "threshold": 4.8525,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "tightness": 0.0066
+    },
+    {
+      "feature": "H4_std_dev_20",
+      "operator": ">",
+      "threshold": 5.609926,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "tightness": 0.0071
+    },
+    {
+      "feature": "M15_distance_to_swing_high",
+      "operator": ">",
+      "threshold": 0.078713,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.0087
+    },
+    {
+      "feature": "M15_std_dev_50",
+      "operator": ">",
+      "threshold": 2.253659,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0089
+    },
+    {
+      "feature": "D1_volume_ratio_20",
+      "operator": ">",
+      "threshold": 0.038437,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0091
+    },
+    {
+      "feature": "D1_distance_to_swing_high",
+      "operator": ">",
+      "threshold": 0.183952,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0097
+    },
+    {
+      "feature": "M15_std_dev_20",
+      "operator": ">",
+      "threshold": 1.668768,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0099
+    },
+    {
+      "feature": "M5_obv",
+      "operator": "<",
+      "threshold": 5499.904686,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "tightness": 0.01
+    },
+    {
+      "feature": "M5_std_dev_50",
+      "operator": ">",
+      "threshold": 1.586908,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0101
+    },
+    {
+      "feature": "H4_volume_change",
+      "operator": ">",
+      "threshold": -0.709304,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "tightness": 0.0106
+    },
+    {
+      "feature": "M5_close_position_in_range",
+      "operator": ">",
+      "threshold": 0.010698,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0107
+    },
+    {
+      "feature": "M5_std_dev_20",
+      "operator": ">",
+      "threshold": 1.014613,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0108
+    },
+    {
+      "feature": "M15_atr_50",
+      "operator": ">",
+      "threshold": 1.801762,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "tightness": 0.0113
+    }
+  ],
+  "chosen": [],
+  "chosen_stats": null,
+  "top_10_conjunctions": [],
+  "params": {
+    "target_coverage": 0.95,
+    "per_condition_coverage": 0.95,
+    "min_non_nan_frac": 0.95,
+    "pool_size": 40,
+    "min_cardinality": 2,
+    "max_cardinality": 5,
+    "max_enumerations_per_level": 5000,
+    "tie_break_within_pct": 0.1
+  },
+  "reason": "No conjunction of 2..5 conditions reached 95% coverage. The bot may use conditions that span beyond the 40-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
+  "generated_at": "2026-04-16T10:24:50.589557",
+  "scenario": null
+}
