@@ -21,6 +21,62 @@ _SAVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _save_lock = threading.Lock()
 
 
+# WHY (Phase A.40a.1): When a rule is saved or deleted, other panels
+#      displaying library counts (Run Backtest source dropdown, etc.)
+#      need to refresh. Listeners register here; every mutation notifies
+#      them. Kept simple (list of callables) to avoid importing UI
+#      frameworks in a data-layer module.
+#
+#      Listeners MUST be fast (they fire inside the write path) and
+#      MUST NOT block or raise. If a listener wraps widget updates, it
+#      MUST marshal to the UI main thread itself (e.g. tk.after(0,...))
+#      — save/delete can be called from worker threads and touching
+#      widgets directly from a worker thread will crash Tk.
+# CHANGED: April 2026 — Phase A.40a.1
+_change_listeners = []
+_listeners_lock = threading.Lock()
+
+
+def register_change_listener(cb):
+    """Register a callable to be invoked after any library mutation.
+
+    The callback receives two args: event ('save' | 'delete' | 'delete_all')
+    and a payload dict ({'id': int} for save/delete, {} for delete_all).
+
+    Returns the callable itself so callers can hold a ref for later
+    unregistration. Silently ignores duplicate registrations.
+    """
+    with _listeners_lock:
+        if cb not in _change_listeners:
+            _change_listeners.append(cb)
+    return cb
+
+
+def unregister_change_listener(cb):
+    """Remove a previously-registered listener. No-op if not found."""
+    with _listeners_lock:
+        try:
+            _change_listeners.remove(cb)
+        except ValueError:
+            pass
+
+
+def _notify_change(event, payload):
+    """Fire all registered listeners. Never raises — listener failures
+    are swallowed so they can't break the save/delete write path."""
+    with _listeners_lock:
+        listeners = list(_change_listeners)
+    for cb in listeners:
+        try:
+            cb(event, dict(payload))
+        except Exception:
+            # Listeners must be safe; we don't propagate their failures
+            # but we also don't let them spam our logs. If a listener
+            # is broken, it silently stops updating. A bug caught at
+            # develop time, not a runtime failure mode for users.
+            pass
+
+
 # WHY: All write paths previously used open(w) which truncates the file
 #      immediately. A crash between truncate and json.dump completing
 #      leaves saved_rules.json empty or partial — all saved rules lost.
@@ -95,7 +151,14 @@ def save_rule(rule, source="unknown", notes=""):
         # CHANGED: April 2026 — atomic write (audit MED #67)
         _atomic_write_json(all_rules, _SAVE_PATH)
 
-        return entry["id"]
+    # WHY (Phase A.40a.1): Notify listeners OUTSIDE the _save_lock so a
+    #      slow listener can't block other save/delete operations. The
+    #      library state is already persisted by this point — listeners
+    #      observe committed state.
+    # CHANGED: April 2026 — Phase A.40a.1
+    _notify_change('save', {'id': entry["id"]})
+
+    return entry["id"]
 
 
 def delete_rule(rule_id):
@@ -108,6 +171,11 @@ def delete_rule(rule_id):
         # CHANGED: April 2026 — atomic write (audit MED #67)
         _atomic_write_json(all_rules, _SAVE_PATH)
 
+    # WHY (Phase A.40a.1): notify listeners AFTER the lock is released
+    #      so they observe committed state without blocking other writes.
+    # CHANGED: April 2026 — Phase A.40a.1
+    _notify_change('delete', {'id': rule_id})
+
 
 def delete_all():
     """Delete all saved rules."""
@@ -115,6 +183,10 @@ def delete_all():
     with _save_lock:
         # CHANGED: April 2026 — atomic write (audit MED #67)
         _atomic_write_json([], _SAVE_PATH)
+
+    # WHY (Phase A.40a.1): notify listeners AFTER the lock is released.
+    # CHANGED: April 2026 — Phase A.40a.1
+    _notify_change('delete_all', {})
 
 
 def export_to_report(rule_ids=None):

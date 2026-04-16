@@ -2226,6 +2226,53 @@ def build_panel(parent):
     _a40b_refs['load_fn']       = lambda: _load_rules_from_source(source_paths)
     _a40b_refs['rule_hash_fn']  = _a40b_rule_hash
 
+    # WHY (Phase A.40a.1): Subscribe to library mutations so the source
+    #      dropdown refreshes automatically when a rule is saved or
+    #      deleted anywhere in the app. Without this, A.40a's auto-save
+    #      adds entries that the dropdown doesn't show, and deletions
+    #      leave the dropdown listing stale rules — both bugs the user
+    #      hit immediately after A.40a landed.
+    #
+    #      Listener fires from whatever thread called save/delete (may
+    #      be a worker thread during discovery auto-save). We marshal
+    #      the widget refresh to the Tk main thread via panel.after(0,
+    #      ...) so we never touch widgets off-thread.
+    #
+    #      Capture source_paths, source_combo, _get_available_sources,
+    #      and panel by closure so the listener has everything it
+    #      needs. The listener registration survives panel rebuild
+    #      attempts because saved_rules module-level state is shared
+    #      across the whole app process.
+    # CHANGED: April 2026 — Phase A.40a.1
+    try:
+        from shared.saved_rules import (
+            register_change_listener as _a40a1_register,
+        )
+
+        def _a40a1_on_library_change(event, payload, _pnl=panel,
+                                     _combo=source_combo,
+                                     _paths=source_paths,
+                                     _get_fn=_get_available_sources):
+            # Called from whatever thread fired save_rule/delete_rule.
+            # Use after(0, ...) to hop back to the Tk main loop before
+            # calling _refresh_sources, which manipulates widgets.
+            try:
+                _pnl.after(0, lambda: _refresh_sources(_combo, _paths, _get_fn))
+            except Exception:
+                # panel may have been destroyed during app shutdown —
+                # silently ignore, nothing left to refresh.
+                pass
+
+        _a40a1_register(_a40a1_on_library_change)
+    except Exception as _a40a1_reg_err:
+        # Import failure or attribute missing — log once, don't crash
+        # the panel build. The manual 🔄 button still works.
+        print(
+            f"[A.40a.1] could not register library-change listener: "
+            f"{_a40a1_reg_err}. Run Backtest source dropdown will only "
+            f"refresh on manual 🔄 click."
+        )
+
     # Load initial rules
     _load_rules_from_source(source_paths)
 
