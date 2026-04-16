@@ -151,13 +151,21 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
       feature > p5  (covers 95% of trades by construction)
       feature < p95 (covers 95% of trades by construction)
 
-    Tightness is computed against `background_df` when provided. The
-    background is the broader candle dataset (all candles in the
-    indicator cache) — it tells us what fraction of the feature's
-    natural range is cut by the trade-derived bound. If no background
-    is available, tightness falls back to the width of the bound
-    relative to the feature's own trade-set std (less informative but
-    non-zero).
+    Tightness is SELF-CONTAINED (Phase A.39b.4) — computed only from the
+    trade dataset's own distribution. For each threshold the score is:
+
+        extremity = |threshold - median| / IQR
+        tightness = 1 / (1 + extremity)   in (0, 1]
+
+    A threshold far from the median (in IQR units) scores near 0 (tight
+    / specific). A threshold near the median scores near 1 (loose).
+    This replaces the old background-based scoring, which was broken
+    because the trade-level feature matrix and the cross-TF background
+    compute some indicators at incompatible scales (A.39b.3 diagnostic).
+
+    `background_df` is still accepted (and optionally exercised for
+    diagnostic bg_cov metrics), but it does NOT affect tightness or
+    ranking.
 
     Returns a list of dicts, each:
         {
@@ -165,10 +173,9 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
           'operator':       '>' or '<',
           'threshold':      float,
           'trade_coverage': float in [0,1],  # fraction of trades passing
-          'background_coverage': float in [0,1] or None,
-                          # fraction of background candles passing;
-                          # None if background unavailable
-          'tightness':      float in [0,1],  # lower = tighter
+          'background_coverage': float in [0,1] or None,  # diagnostic only
+          'background_coverage_valid': bool,               # diagnostic only
+          'tightness':      float in (0,1],  # lower = tighter
         }
     """
     p = _resolve_params(params)
@@ -360,55 +367,46 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                                 f"{col!r}: {type(_be).__name__}: {_be}"
                             )
 
-            # WHY (Phase A.39b.1): Old code treated bg_cov=0.0 as
-            #      "maximally tight" → such features sorted to the top
-            #      of the pool. But bg_cov=0.0 actually means the
-            #      background computation is BROKEN or MEANINGLESS —
-            #      the feature's values across the background set do
-            #      not span the trade-set threshold at all (e.g. VWAP
-            #      compared against 25 years of mis-scoped candles).
-            #      Treating that as "tight" guarantees garbage ranking.
-            #
-            #      New rule: bg_cov must be > a small epsilon to be
-            #      trusted as a tightness signal. If bg_cov is below
-            #      epsilon, or None, fall back to the proxy (trade-range
-            #      threshold position). Record which path was taken so
-            #      the pool ranking can apply a tiebreaker.
-            # CHANGED: April 2026 — Phase A.39b.1 — Bug 2 fix
-            _BG_COV_VALID_EPS = 0.001   # bg_cov must exceed 0.1% to be usable
-            bg_cov_valid = (bg_cov is not None) and (bg_cov > _BG_COV_VALID_EPS)
-
-            if bg_cov_valid:
-                # Primary scoring path — use background coverage directly.
-                # Smaller bg_cov = fewer background candles pass the bound
-                # = tighter / more specific condition.
-                tightness = float(bg_cov)
-            else:
-                # Fallback proxy — normalize threshold within trade range.
-                # Worse than bg_cov (doesn't compare to broader population)
-                # but at least deterministic and monotonic with threshold
-                # position. Capped in [0, 1]. A constant feature resolves
-                # to 1.0 (not useful).
-                try:
-                    vmin, vmax = float(vals.min()), float(vals.max())
-                    span = vmax - vmin
-                    if span <= 1e-12:
-                        tightness = 1.0   # constant feature → not useful
-                    else:
-                        if op == '>':
-                            tightness = (thr - vmin) / span
-                        else:
-                            tightness = (vmax - thr) / span
-                        tightness = max(0.0, min(1.0, float(tightness)))
-                except Exception:
+            # WHY (Phase A.39b.4): Background-based tightness was abandoned
+            #      after A.39b.3 diagnostics proved the trade and
+            #      cross-TF bg datasets compute indicators at different
+            #      scales (e.g. H1_vwap trade=$1507..$5534 vs bg=$1235..
+            #      $1612), so bg_cov comparisons are meaningless. Replace
+            #      with a SELF-CONTAINED tightness based only on the
+            #      trade dataset's own distribution: how far is the
+            #      threshold from the feature's median, in IQR units?
+            #        extremity = |thr - median| / IQR
+            #        tightness = 1 / (1 + extremity)  ∈ (0, 1]
+            #      A threshold far from the median (large extremity)
+            #      scores close to 0 → tight. A threshold near the
+            #      median (small extremity) scores close to 1 → loose.
+            #      No cross-dataset alignment, no cache, no scale
+            #      mismatch possible.
+            # CHANGED: April 2026 — Phase A.39b.4
+            try:
+                _median = float(np.median(vals))
+                _q1 = float(np.percentile(vals, 25))
+                _q3 = float(np.percentile(vals, 75))
+                _iqr = _q3 - _q1
+                if _iqr <= 1e-12:
+                    # Degenerate: distribution is a point mass around
+                    # the median. Any threshold is either on top of the
+                    # median (loose) or arbitrarily far (tight in raw
+                    # units but meaningless). Score as loose.
                     tightness = 1.0
-                # Extra penalty for fallback-path candidates so bg-valid
-                # candidates always outrank them at the top of the pool
-                # when both are available. The 0.5 offset pushes proxy
-                # scores into the lower half of [0, 1]; a bg_cov=0.3
-                # candidate (real) will sort above a proxy-tight=0.2
-                # candidate because 0.3 < 0.7.
-                tightness = 0.5 + 0.5 * tightness   # now lives in [0.5, 1.0]
+                else:
+                    extremity = abs(thr - _median) / _iqr
+                    tightness = 1.0 / (1.0 + extremity)
+                    tightness = max(0.0, min(1.0, float(tightness)))
+            except Exception:
+                tightness = 1.0
+
+            # Keep the bg_cov_valid flag for diagnostic/back-compat
+            # purposes (it's still surfaced in the candidate dict and
+            # used by the post-scan distribution summary) but it no
+            # longer feeds into tightness scoring.
+            _BG_COV_VALID_EPS = 0.001
+            bg_cov_valid = (bg_cov is not None) and (bg_cov > _BG_COV_VALID_EPS)
 
             out.append({
                 'feature':             col,
@@ -420,21 +418,24 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                 'tightness':           round(tightness, 4),
             })
 
-    # WHY (Phase A.39b.3): End-of-scan summary of WHERE bg_cov came
-    #      from. If 'bg_cov_valid' is small and 'column_not_in_bg' is
-    #      large, the cross-TF merge didn't actually expose all
-    #      columns. If 'bg_cov_zero' + 'bg_cov_one' dominates, the
-    #      thresholds don't separate the background at all (scale
-    #      mismatch). If 'coercion_failed' is high, types are wrong.
-    # CHANGED: April 2026 — Phase A.39b.3
-    _total = sum(_bg_outcome_counts.values())
-    log.info(f"  [A.39b.3] bg_cov outcome distribution (total={_total}):")
-    for _k in ('bg_cov_valid', 'bg_cov_zero', 'bg_cov_one',
-               'bg_cov_low', 'column_not_in_bg',
-               'too_few_non_nan', 'coercion_failed'):
-        _v = _bg_outcome_counts.get(_k, 0)
-        _pct = (100.0 * _v / _total) if _total > 0 else 0.0
-        log.info(f"  [A.39b.3]   {_k:<18} {_v:>5}  ({_pct:5.1f}%)")
+    # WHY (Phase A.39b.4): bg_cov no longer drives tightness — this
+    #      summary is purely diagnostic now, and only meaningful if a
+    #      background frame was actually supplied. Suppress it when
+    #      there's no background so the log isn't cluttered with
+    #      all-zero rows.
+    # CHANGED: April 2026 — Phase A.39b.4
+    if background_df is not None:
+        _total = sum(_bg_outcome_counts.values())
+        log.info(
+            f"  [A.39b.4] bg_cov outcome distribution (diagnostic only, "
+            f"no longer affects tightness; total={_total}):"
+        )
+        for _k in ('bg_cov_valid', 'bg_cov_zero', 'bg_cov_one',
+                   'bg_cov_low', 'column_not_in_bg',
+                   'too_few_non_nan', 'coercion_failed'):
+            _v = _bg_outcome_counts.get(_k, 0)
+            _pct = (100.0 * _v / _total) if _total > 0 else 0.0
+            log.info(f"  [A.39b.4]   {_k:<18} {_v:>5}  ({_pct:5.1f}%)")
 
     return out
 
@@ -674,44 +675,39 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 'reason':          'No usable feature columns produced candidate conditions.',
             }
 
-        # WHY (Phase A.39b.1 — Bug 3 fix): Filter out TRIVIAL candidates
-        #      before pool ranking. A candidate is trivial if:
-        #        (a) bg_cov is invalid (fallback-proxy path) AND trade
-        #            coverage is >=98% — i.e. the condition is trivially
-        #            true on the trade set and we have no way to assess
-        #            how restrictive it would be in the broader population
-        #            (e.g. "upper_shadow > 0", "aroon_up < 100"), OR
-        #        (b) bg_cov is valid but both trade_coverage and bg_cov
-        #            are >=90% AND their absolute difference is <2pp —
-        #            the condition covers almost everything, everywhere,
-        #            and so carries essentially no signal.
-        #      These candidates used to dominate the pool ranking because
-        #      their apparent tightness was artificially low. Removing
-        #      them here lets genuinely restrictive features come to the
-        #      top.
-        # CHANGED: April 2026 — Phase A.39b.1 — Bug 3 fix
-        _TRIVIAL_TRADE_COV_FLOOR = 0.98      # "trivially true" threshold
-        _TRIVIAL_JOINT_FLOOR     = 0.90      # both coverages >= this
-        _TRIVIAL_DELTA_CEIL      = 0.02      # AND their delta < this
+        # WHY (Phase A.39b.4): Triviality filter is now driven by
+        #      self-contained tightness instead of background coverage.
+        #      A threshold sitting right on or very close to the
+        #      feature's own median (extremity ≈ 0, tightness ≈ 1) is
+        #      trivially true on the trade set and carries no signal
+        #      — drop it. The secondary guard catches the edge case of
+        #      a candidate that is just barely under the ceiling but
+        #      also covers nearly every trade (≥98%) with almost no
+        #      tightness to speak of.
+        # CHANGED: April 2026 — Phase A.39b.4
+        _TRIVIAL_TIGHTNESS_CEIL  = 0.95   # tightness >= ceil → trivial
+        _TRIVIAL_TRADE_COV_FLOOR = 0.98   # secondary guard
+        _TRIVIAL_SECONDARY_TIGHT = 0.80   # secondary guard tightness
         non_trivial = []
         _trivial_dropped = 0
         for c in all_cands:
             is_trivial = False
-            if not c.get('background_coverage_valid', False):
-                if c['trade_coverage'] >= _TRIVIAL_TRADE_COV_FLOOR:
-                    is_trivial = True
-            else:
-                bg = c.get('background_coverage') or 0.0
-                tc = c.get('trade_coverage') or 0.0
-                if bg >= _TRIVIAL_JOINT_FLOOR and tc >= _TRIVIAL_JOINT_FLOOR:
-                    if abs(tc - bg) < _TRIVIAL_DELTA_CEIL:
-                        is_trivial = True
+            tight = c.get('tightness')
+            if tight is None:
+                is_trivial = True
+            elif tight >= _TRIVIAL_TIGHTNESS_CEIL:
+                is_trivial = True
+            elif (tight >= _TRIVIAL_SECONDARY_TIGHT
+                  and c.get('trade_coverage', 0.0) >= _TRIVIAL_TRADE_COV_FLOOR):
+                is_trivial = True
             if is_trivial:
                 _trivial_dropped += 1
             else:
                 non_trivial.append(c)
-        _l(f"  [A.39b.1] filtered {_trivial_dropped} trivial candidates "
-           f"({len(non_trivial)} remain after triviality filter)")
+        _l(f"  [A.39b.4] filtered {_trivial_dropped} trivial candidates "
+           f"(tightness>={_TRIVIAL_TIGHTNESS_CEIL} or "
+           f"tightness>={_TRIVIAL_SECONDARY_TIGHT}+trade_cov>={_TRIVIAL_TRADE_COV_FLOOR}); "
+           f"{len(non_trivial)} remain")
 
         if not non_trivial:
             return {
@@ -745,17 +741,23 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
             c['feature'],                                              # final determinism
         ))
         pool = non_trivial[:p['pool_size']]
-        # WHY (Phase A.39b.2): Diagnostic — report how many pool members
-        #      have a VALID bg coverage measurement. If this number is
-        #      low (< 5 out of 40), the cross-TF background merge
-        #      probably failed and the pool is dominated by proxy-path
-        #      candidates again.
-        # CHANGED: April 2026 — Phase A.39b.2
-        _n_valid_bg = sum(1 for c in pool if c.get('background_coverage_valid'))
-        _l(
-            f"  [A.39b] candidate pool: top {len(pool)} by tightness "
-            f"({_n_valid_bg}/{len(pool)} have valid background coverage)"
-        )
+        # WHY (Phase A.39b.4): tightness is self-contained now, so the
+        #      meaningful diagnostic is the spread of pool tightness
+        #      scores — if they cluster near 1.0 the pool has no tight
+        #      candidates; if they span a wide range the pool is
+        #      healthy.
+        # CHANGED: April 2026 — Phase A.39b.4
+        _pool_tights = [c.get('tightness', 1.0) for c in pool]
+        if _pool_tights:
+            _t_min = min(_pool_tights)
+            _t_max = max(_pool_tights)
+            _t_med = float(np.median(_pool_tights))
+            _l(
+                f"  [A.39b] candidate pool: top {len(pool)} by tightness "
+                f"(range: min={_t_min:.3f}, median={_t_med:.3f}, max={_t_max:.3f})"
+            )
+        else:
+            _l(f"  [A.39b] candidate pool: top {len(pool)} by tightness (empty)")
         for i, c in enumerate(pool[:5]):
             if c.get('background_coverage') is not None:
                 bg_str = f"bg={c['background_coverage']:.2%}"
