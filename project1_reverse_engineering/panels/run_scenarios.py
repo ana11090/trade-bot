@@ -778,6 +778,219 @@ def build_panel(parent):
         wraplength=320, justify="left",
     ).pack(anchor="w", pady=(0, 6))
 
+    # WHY (Phase A.39b.5): Two new strategy controls ABOVE the numeric
+    #      spinboxes. User decides HOW Mode A searches first, then tunes
+    #      the numeric parameters.
+    #
+    #      Control 1: Dedup checkbox — removes features >0.7 Pearson
+    #      correlated with a higher-ranked pool member BEFORE conjunction
+    #      enumeration. Fixes the "3 ATR features chosen together"
+    #      problem from A.39b.4.
+    #
+    #      Control 2: Winner-selection radio — tightness (default, picks
+    #      the most specific conjunction above target) vs coverage
+    #      (picks the highest-coverage conjunction above target).
+    #
+    #      Both tooltips are multi-paragraph plain-language explanations
+    #      so the user knows exactly what each option does AND when to
+    #      use it WITHOUT reading code.
+    # CHANGED: April 2026 — Phase A.39b.5
+
+    # ---- Control 1: Dedup correlated features checkbox ----
+    _a39b5_dedup_frame = tk.Frame(_a39b_params_frame, bg="#fffbea")
+    _a39b5_dedup_frame.pack(fill="x", pady=(0, 4))
+
+    _a39b5_dedup_var = tk.BooleanVar(
+        value=str(_cfg.get('srm_a_dedup_correlated', 'false')).lower() == 'true'
+    )
+    _a39b5_dedup_cb = tk.Checkbutton(
+        _a39b5_dedup_frame,
+        text="Dedup correlated features before search",
+        variable=_a39b5_dedup_var,
+        bg="#fffbea", fg="#333",
+        font=("Segoe UI", 9),
+        anchor="w",
+        activebackground="#fffbea",
+    )
+    _a39b5_dedup_cb.pack(side="left", anchor="w")
+
+    _a39b5_dedup_tooltip = (
+        "WHAT IT DOES:\n"
+        "Before searching for conjunctions, removes any candidate feature "
+        "that is too similar (>70% Pearson correlation) to a higher-ranked "
+        "feature already in the pool.\n\n"
+        "WHY YOU MIGHT WANT IT:\n"
+        "Without this, Mode A can pick 3 highly-correlated features (e.g. "
+        "H4_atr_14, H1_atr_28, M5_atr_100 — which all say \"low "
+        "volatility\") as 3 of its 5 conditions. The result looks like a "
+        "5-condition rule but is really the same condition measured 3 "
+        "ways. Turning this ON forces diverse, informationally-distinct "
+        "features into each conjunction slot.\n\n"
+        "WHEN TO USE:\n"
+        "• Your discovered rule has obvious duplicates (\"ATR < X\" on "
+        "three timeframes, or \"EMA_20 > Y\" and \"EMA_50 > Y\").\n"
+        "• You want a cleaner, more interpretable rule.\n\n"
+        "WHEN TO LEAVE OFF:\n"
+        "• Default. Preserves original A.39b.4 behavior.\n"
+        "• You want the absolute tightest conjunction regardless of "
+        "structural redundancy.\n\n"
+        "TRADE-OFF:\n"
+        "ON reduces the candidate pool size (some candidates are "
+        "dropped), which may make a 95% joint-coverage target harder "
+        "to hit. If you enable dedup and no conjunction is found, try "
+        "lowering \"Target coverage\" below."
+    )
+    try:
+        _a291_add_tooltip(_a39b5_dedup_cb, _a39b5_dedup_tooltip, wraplength=420)
+    except Exception:
+        pass
+
+    def _a39b5_on_dedup_change(*_a):
+        try:
+            _cl.save({'srm_a_dedup_correlated':
+                      'true' if _a39b5_dedup_var.get() else 'false'})
+            try:
+                _a291_flash_saved('srm_a_dedup_correlated')
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[A.39b.5] Could not save srm_a_dedup_correlated: {e}")
+    _a39b5_dedup_var.trace_add('write', _a39b5_on_dedup_change)
+
+    # ---- Control 2: Winner-selection radio group ----
+    _a39b5_winner_outer = tk.Frame(_a39b_params_frame, bg="#fffbea")
+    _a39b5_winner_outer.pack(fill="x", pady=(0, 6))
+
+    _a39b5_winner_header = tk.Label(
+        _a39b5_winner_outer,
+        text="Winner selection:",
+        bg="#fffbea", fg="#333",
+        font=("Segoe UI", 9, "bold"),
+        anchor="w",
+    )
+    _a39b5_winner_header.pack(anchor="w")
+
+    _a39b5_winner_header_tooltip = (
+        "When multiple candidate conjunctions meet the coverage target, "
+        "Mode A needs to pick ONE as the final answer. This radio chooses "
+        "the selection strategy.\n\n"
+        "Both options respect \"Target coverage\" — conjunctions below "
+        "the target are excluded regardless of strategy."
+    )
+    try:
+        _a291_add_tooltip(_a39b5_winner_header, _a39b5_winner_header_tooltip,
+                          wraplength=420)
+    except Exception:
+        pass
+
+    _a39b5_winner_var = tk.StringVar(
+        value=str(_cfg.get('srm_a_winner_selection', 'tightness')).lower()
+    )
+    if _a39b5_winner_var.get() not in ('tightness', 'coverage'):
+        _a39b5_winner_var.set('tightness')
+
+    _a39b5_radio_frame = tk.Frame(_a39b5_winner_outer, bg="#fffbea")
+    _a39b5_radio_frame.pack(anchor="w", padx=(12, 0))
+
+    _a39b5_tightness_rb = tk.Radiobutton(
+        _a39b5_radio_frame,
+        text="Tightness (default, original)",
+        variable=_a39b5_winner_var, value='tightness',
+        bg="#fffbea", fg="#333",
+        font=("Segoe UI", 9),
+        activebackground="#fffbea",
+        anchor="w",
+    )
+    _a39b5_tightness_rb.pack(anchor="w")
+
+    _a39b5_tightness_tooltip = (
+        "WHAT IT DOES:\n"
+        "Among all conjunctions that meet the Target coverage, picks the "
+        "one with the LOWEST tightness product — the most specific rule. "
+        "Tightness is 1/(1+|threshold-median|/IQR), so low tightness = "
+        "thresholds are far from the feature's median (at the fat tail "
+        "of the distribution).\n\n"
+        "EXAMPLE:\n"
+        "Target = 86%. Say the search finds:\n"
+        "  Conjunction A: 2 conditions, covers 95%, tightness product 0.08\n"
+        "  Conjunction B: 5 conditions, covers 86%, tightness product 0.00004\n"
+        "Under TIGHTNESS, B wins (smallest product, most specific).\n\n"
+        "WHY YOU MIGHT WANT IT:\n"
+        "• Reverse-engineering: if the bot uses MANY tight conditions, "
+        "this finds them even if their joint coverage is near the floor.\n"
+        "• You trust your Target coverage setting and want maximum "
+        "specificity above it.\n\n"
+        "WHEN TO USE:\n"
+        "• Default. Preserves original A.39b.4 behavior.\n"
+        "• You've set Target coverage to a level you're sure the bot "
+        "actually meets (e.g. 86% or higher), and want the tightest rule "
+        "that reaches that floor."
+    )
+    try:
+        _a291_add_tooltip(_a39b5_tightness_rb, _a39b5_tightness_tooltip,
+                          wraplength=420)
+    except Exception:
+        pass
+
+    _a39b5_coverage_rb = tk.Radiobutton(
+        _a39b5_radio_frame,
+        text="Coverage (highest coverage wins)",
+        variable=_a39b5_winner_var, value='coverage',
+        bg="#fffbea", fg="#333",
+        font=("Segoe UI", 9),
+        activebackground="#fffbea",
+        anchor="w",
+    )
+    _a39b5_coverage_rb.pack(anchor="w")
+
+    _a39b5_coverage_tooltip = (
+        "WHAT IT DOES:\n"
+        "Among all conjunctions that meet the Target coverage, picks the "
+        "one covering the HIGHEST fraction of trades. Tightness is used "
+        "only as a tie-breaker when multiple conjunctions have very "
+        "similar coverage.\n\n"
+        "EXAMPLE:\n"
+        "Target = 86%. Say the search finds:\n"
+        "  Conjunction A: 2 conditions, covers 95%, tightness product 0.08\n"
+        "  Conjunction B: 5 conditions, covers 86%, tightness product 0.00004\n"
+        "Under COVERAGE, A wins (highest coverage).\n\n"
+        "WHY YOU MIGHT WANT IT:\n"
+        "• Reverse-engineering: you want the rule that BEST DESCRIBES "
+        "the majority of the bot's trades, even if it's less tight.\n"
+        "• Your Target coverage is set low (e.g. 80%) to just rule out "
+        "obvious outliers, and you want the highest-coverage rule above "
+        "that floor rather than the tightest.\n\n"
+        "WHEN TO USE:\n"
+        "• You set Target coverage to a conservative floor (80-90%) and "
+        "want Mode A to tell you the BIGGEST rule it can find above "
+        "that floor.\n"
+        "• The current Tightness setting gave you a rule at exactly the "
+        "floor coverage, and you want to know if a wider rule exists."
+    )
+    try:
+        _a291_add_tooltip(_a39b5_coverage_rb, _a39b5_coverage_tooltip,
+                          wraplength=420)
+    except Exception:
+        pass
+
+    def _a39b5_on_winner_change(*_a):
+        try:
+            _v = _a39b5_winner_var.get()
+            if _v not in ('tightness', 'coverage'):
+                _v = 'tightness'
+            _cl.save({'srm_a_winner_selection': _v})
+            try:
+                _a291_flash_saved('srm_a_winner_selection')
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[A.39b.5] Could not save srm_a_winner_selection: {e}")
+    _a39b5_winner_var.trace_add('write', _a39b5_on_winner_change)
+
+    # ---- Thin separator before the numeric spinboxes ----
+    _a39b5_sep = tk.Frame(_a39b_params_frame, bg="#e8d982", height=1)
+    _a39b5_sep.pack(fill="x", pady=(4, 6))
+
     def _a39b_make_param_spinbox(parent, label_text, config_key,
                                  from_, to, increment, tooltip_text,
                                  is_float=False):

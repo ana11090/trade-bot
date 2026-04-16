@@ -157,6 +157,13 @@ DEFAULTS = {
     'srm_a_max_cardinality':            '5',     # max conjunction size
     'srm_a_max_enumerations_per_level': '5000',  # cap per-cardinality combos
     'srm_a_tie_break_within_pct':       '0.10',  # prefer shorter conjunction when scores within this pct
+    # WHY (Phase A.39b.5): Two new user controls to fix the 5-condition
+    #      result from A.39b.4 that picked 3 correlated ATR features and
+    #      chose tightness over coverage. Both default to preserve
+    #      A.39b.4 behavior byte-equivalently.
+    # CHANGED: April 2026 — Phase A.39b.5
+    'srm_a_dedup_correlated':           'false',      # drop features >0.7 correlated with a higher-ranked pool member
+    'srm_a_winner_selection':           'tightness',  # 'tightness' (default, original) or 'coverage' (new alternative)
 }
 
 

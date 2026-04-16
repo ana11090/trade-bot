@@ -1677,6 +1677,11 @@ def run_analysis(feature_matrix_path=None):
                 'max_cardinality':            _cfg_a39b.get('srm_a_max_cardinality'),
                 'max_enumerations_per_level': _cfg_a39b.get('srm_a_max_enumerations_per_level'),
                 'tie_break_within_pct':       _cfg_a39b.get('srm_a_tie_break_within_pct'),
+                # WHY (Phase A.39b.5): two new user controls — correlated-feature
+                #      dedup toggle + winner-selection strategy radio.
+                # CHANGED: April 2026 — Phase A.39b.5
+                'dedup_correlated':           _cfg_a39b.get('srm_a_dedup_correlated'),
+                'winner_selection':           _cfg_a39b.get('srm_a_winner_selection'),
             }
 
             # WHY (Phase A.39b.1): pass model_result so the discovery

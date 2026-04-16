@@ -83,6 +83,31 @@ def _resolve_params(params=None):
             return int(float(v)) if v is not None else default
         except Exception:
             return default
+    # WHY (Phase A.39b.5): Two new coercion helpers. _b parses truthy/falsy
+    #      values robustly (tkinter writes 'true'/'false' strings; other
+    #      callers may pass booleans or 1/0). _s clamps a string choice
+    #      to a fixed allowlist.
+    # CHANGED: April 2026 — Phase A.39b.5
+    def _b(key, default):
+        try:
+            v = p.get(key, default)
+            if isinstance(v, bool):
+                return v
+            if v is None:
+                return default
+            return str(v).strip().lower() in ('true', '1', 'yes', 'on')
+        except Exception:
+            return default
+    def _s(key, default, allowed):
+        try:
+            v = p.get(key, default)
+            if v is None:
+                return default
+            s = str(v).strip().lower()
+            return s if s in allowed else default
+        except Exception:
+            return default
+
     out = {
         'target_coverage':            _f('target_coverage',            _DEFAULT_TARGET_COVERAGE),
         'per_condition_coverage':     _f('per_condition_coverage',     _DEFAULT_PER_CONDITION_COVERAGE),
@@ -92,6 +117,15 @@ def _resolve_params(params=None):
         'max_cardinality':            _i('max_cardinality',            _DEFAULT_MAX_CARDINALITY),
         'max_enumerations_per_level': _i('max_enumerations_per_level', _DEFAULT_MAX_ENUMERATIONS_PER_LEVEL),
         'tie_break_within_pct':       _f('tie_break_within_pct',       _DEFAULT_TIE_BREAK_WITHIN_PCT),
+        # WHY (Phase A.39b.5): Two new user-tunable flags. dedup_correlated
+        #      removes features >0.7 correlated with a higher-ranked pool
+        #      member BEFORE conjunction enumeration. winner_selection
+        #      switches the final-conjunction sort from tightness-first
+        #      to coverage-first.
+        # CHANGED: April 2026 — Phase A.39b.5
+        'dedup_correlated':           _b('dedup_correlated',           False),
+        'winner_selection':           _s('winner_selection',           'tightness',
+                                         {'tightness', 'coverage'}),
     }
     # Defensive clamping so pathological inputs don't crash the search
     out['target_coverage']        = max(0.01, min(1.0,  out['target_coverage']))
@@ -740,7 +774,96 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
             -float(rf_importance_map.get(c['feature'], 0.0)),          # tiebreaker
             c['feature'],                                              # final determinism
         ))
-        pool = non_trivial[:p['pool_size']]
+
+        # WHY (Phase A.39b.5): Optional correlation-based dedup. When
+        #      enabled, iterate the tightness-sorted candidates and
+        #      reject any whose FEATURE has |Pearson corr| > 0.7 with
+        #      a feature already kept. Correlation is computed on the
+        #      trade dataframe (shared non-NaN rows) — the same data
+        #      the thresholds were derived from, so it's self-consistent.
+        #
+        #      Two candidates with the SAME feature (one '>' at P5 and
+        #      one '<' at P95) are NOT deduped against each other —
+        #      they represent opposite sides of the distribution and
+        #      carry different information. Dedup is feature-to-feature.
+        #
+        #      A single pass over non_trivial collecting at most
+        #      pool_size unique-feature-class members avoids computing
+        #      pairwise correlations for the full 1069-candidate pool
+        #      (would be O(N^2) = ~1.1M corr calls). Instead we compute
+        #      O(kept * candidate_scan) ≈ O(pool_size * 2 * pool_size) =
+        #      ~3200 corr calls for pool_size=40. Fast.
+        # CHANGED: April 2026 — Phase A.39b.5
+        if p['dedup_correlated']:
+            _DEDUP_CORR_THRESHOLD = 0.7
+            _kept_features = []         # list of feature names already in dedup_pool
+            _kept_series_cache = {}     # feature_name -> numpy array of non-NaN trade values (for reuse)
+            dedup_pool = []
+            _dedup_rejected = 0
+            for cand in non_trivial:
+                if len(dedup_pool) >= p['pool_size']:
+                    break
+                _feat = cand['feature']
+                # Same-feature candidates (e.g. '>' at P5 and '<' at P95)
+                # share dedup status. If this feature is already kept,
+                # admit the new candidate without a corr check — it's the
+                # opposite threshold direction, informationally distinct.
+                if _feat in _kept_features:
+                    dedup_pool.append(cand)
+                    continue
+                # Check corr vs every DIFFERENT feature already kept
+                try:
+                    _cand_vals = trade_df[_feat]
+                    _cand_arr = pd.to_numeric(_cand_vals, errors='coerce').to_numpy(
+                        dtype=float, copy=False
+                    )
+                except Exception:
+                    # If we can't pull the values, we can't dedup — admit it.
+                    dedup_pool.append(cand)
+                    _kept_features.append(_feat)
+                    continue
+                is_redundant = False
+                for _kept_feat in _kept_features:
+                    if _kept_feat == _feat:
+                        continue
+                    _kept_arr = _kept_series_cache.get(_kept_feat)
+                    if _kept_arr is None:
+                        try:
+                            _kept_arr = pd.to_numeric(
+                                trade_df[_kept_feat], errors='coerce'
+                            ).to_numpy(dtype=float, copy=False)
+                            _kept_series_cache[_kept_feat] = _kept_arr
+                        except Exception:
+                            continue
+                    # Both arrays same length (= n_trades). Mask to shared non-NaN.
+                    _mask = ~(np.isnan(_cand_arr) | np.isnan(_kept_arr))
+                    if _mask.sum() < 50:
+                        continue  # too few shared rows to trust the corr
+                    try:
+                        _a = _cand_arr[_mask]
+                        _b = _kept_arr[_mask]
+                        _sa, _sb = _a.std(), _b.std()
+                        if _sa <= 1e-12 or _sb <= 1e-12:
+                            continue  # one side is constant → corr undefined
+                        _corr = float(np.corrcoef(_a, _b)[0, 1])
+                        if np.isnan(_corr):
+                            continue
+                        if abs(_corr) > _DEDUP_CORR_THRESHOLD:
+                            is_redundant = True
+                            break
+                    except Exception:
+                        continue
+                if is_redundant:
+                    _dedup_rejected += 1
+                else:
+                    dedup_pool.append(cand)
+                    _kept_features.append(_feat)
+                    _kept_series_cache[_feat] = _cand_arr
+            _l(f"  [A.39b.5] dedup correlated features (>{_DEDUP_CORR_THRESHOLD}): "
+               f"rejected {_dedup_rejected}, pool size {len(dedup_pool)}/{p['pool_size']}")
+            pool = dedup_pool[:p['pool_size']]
+        else:
+            pool = non_trivial[:p['pool_size']]
         # WHY (Phase A.39b.4): tightness is self-contained now, so the
         #      meaningful diagnostic is the spread of pool tightness
         #      scores — if they cluster near 1.0 the pool has no tight
@@ -830,14 +953,45 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                                    f'the pool size.',
             }
 
-        # ── Step 6-7: sort by tightness product; tie-break prefers shorter ──
-        valid_conjunctions.sort(key=lambda v: v['tightness_product'])
-        best_score = valid_conjunctions[0]['tightness_product']
-        tie_limit = best_score * (1.0 + p['tie_break_within_pct'])
-
-        near_best = [v for v in valid_conjunctions if v['tightness_product'] <= tie_limit]
-        near_best.sort(key=lambda v: (v['cardinality'], v['tightness_product']))
-        chosen = near_best[0]
+        # ── Step 6-7: winner selection — tightness-first or coverage-first ──
+        # WHY (Phase A.39b.5): User-tunable. Default 'tightness' preserves
+        #      A.39b.4 behavior. 'coverage' picks the highest-coverage
+        #      conjunction above target, tie-breaking by tightness.
+        #
+        #      In both paths: after identifying a best-scoring candidate,
+        #      admit all conjunctions within tie_break_within_pct of that
+        #      best score, then prefer SHORTER conjunctions (fewer
+        #      conditions = simpler rule) as the final tiebreaker.
+        # CHANGED: April 2026 — Phase A.39b.5
+        if p['winner_selection'] == 'coverage':
+            # Higher joint_coverage = better → sort descending by coverage,
+            # then ascending by tightness_product (tighter is better).
+            valid_conjunctions.sort(key=lambda v: (-v['joint_coverage'],
+                                                   v['tightness_product']))
+            best_coverage = valid_conjunctions[0]['joint_coverage']
+            # Tie zone: accept conjunctions within tie_break_within_pct of
+            # the best coverage. Symmetric with the tightness path: both
+            # use tie_break_within_pct to widen the winner zone.
+            cov_floor = best_coverage * (1.0 - p['tie_break_within_pct'])
+            near_best = [v for v in valid_conjunctions
+                         if v['joint_coverage'] >= cov_floor]
+            # Final tiebreak: shorter conjunction, then tighter product.
+            near_best.sort(key=lambda v: (v['cardinality'], v['tightness_product']))
+            chosen = near_best[0]
+            _l(f"  [A.39b.5] winner_selection=coverage: best cov="
+               f"{best_coverage:.2%}, admitted {len(near_best)} in tie zone, "
+               f"final: {chosen['cardinality']} conds cov="
+               f"{chosen['joint_coverage']:.2%} tightness_product="
+               f"{chosen['tightness_product']}")
+        else:
+            # Tightness-first (original A.39b/A.39b.1/A.39b.4 behavior)
+            valid_conjunctions.sort(key=lambda v: v['tightness_product'])
+            best_score = valid_conjunctions[0]['tightness_product']
+            tie_limit = best_score * (1.0 + p['tie_break_within_pct'])
+            near_best = [v for v in valid_conjunctions
+                         if v['tightness_product'] <= tie_limit]
+            near_best.sort(key=lambda v: (v['cardinality'], v['tightness_product']))
+            chosen = near_best[0]
 
         chosen_conditions = [pool[k] for k in chosen['indices']]
         _l(f"  [A.39b] chosen conjunction: {chosen['cardinality']} conditions, "
