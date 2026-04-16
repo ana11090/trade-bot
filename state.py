@@ -33,6 +33,16 @@ SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}
 PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_xgboost", "p1_search"}
 PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results", "p2_refiner", "p2_validator", "p2_prop_test", "p2_saved", "p2_playground"}
+
+# WHY (Phase A.40b): Cross-panel coordination for the "▶ Backtest this
+#      rule" button on the Saved Rules panel. The button sets these
+#      globals, navigates to p2_run, then schedules a callback that
+#      calls the run_backtest_panel helper to consume them. Using
+#      list-of-one so we can mutate the reference without reassigning
+#      a module attribute (avoids import-order surprises).
+# CHANGED: April 2026 — Phase A.40b
+pending_backtest_rule_id   = [None]   # int | None — rule id from saved_rules.json
+pending_backtest_auto_run  = [False]  # bool — if True, click Run Backtest after selecting
 PROJECT3_SUB_PANELS = {"p3_generator", "p3_monitor"}
 PROJECT4_SUB_PANELS = {"p4_scratch"}
 PROJECT0_EXTRA_PANELS = {"prop_explorer", "compare_histories", "lifecycle_sim"}

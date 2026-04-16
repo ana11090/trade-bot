@@ -41,6 +41,148 @@ _best_result_lock = _rb_threading.Lock()  # Phase 69 Fix 38: guard concurrent wr
 _rule_vars     = []  # list of (BooleanVar, rule_dict) tuples
 _current_rules = []  # loaded rules
 _current_source_path = [None]
+
+# WHY (Phase A.40b): Module-level dict that stores widget/fn references
+#      set during build() so the public apply_pending_rule_selection()
+#      can reach them. Using a dict instead of raw globals keeps the
+#      refs grouped and avoids polluting the module namespace.
+# CHANGED: April 2026 — Phase A.40b
+_a40b_refs = {}
+
+
+def apply_pending_rule_selection():
+    """Consume state.pending_backtest_rule_id and set up the backtest
+    panel to test that single rule.
+
+    Steps:
+        1. Read the pending rule ID from state.
+        2. Load saved_rules.json and find the matching entry.
+        3. Set the Rule Source dropdown to the saved-rules label.
+        4. Load rules from that source (populates the checkbox list).
+        5. Iterate the checkbox list; check only the rule matching the
+           target rule's condition-hash, uncheck all others.
+        6. If state.pending_backtest_auto_run[0] is True, click the
+           Run Backtest button.
+        7. Clear both pending flags.
+
+    Called by saved_rules_panel after navigating to p2_run. Safe to
+    call when no rule is pending (returns quickly). Never raises —
+    any error is logged and the function returns.
+    """
+    import logging as _a40b_log_mod
+    _a40b_log = _a40b_log_mod.getLogger(__name__)
+    try:
+        import state as _a40b_state
+        rule_id = _a40b_state.pending_backtest_rule_id[0]
+        auto_run = bool(_a40b_state.pending_backtest_auto_run[0])
+        if rule_id is None:
+            return
+        # Clear immediately so a duplicate invocation doesn't re-fire.
+        _a40b_state.pending_backtest_rule_id[0] = None
+        _a40b_state.pending_backtest_auto_run[0] = False
+    except Exception as e:
+        _a40b_log.warning(f"[A.40b] could not read pending state: {e}")
+        return
+
+    refs = _a40b_refs
+    if not refs:
+        _a40b_log.warning(
+            "[A.40b] backtest panel not yet built — cannot apply pending "
+            "selection. Rule navigation will fall back to user manually "
+            "selecting the source."
+        )
+        return
+
+    try:
+        # Step 1 — find the rule by id in saved_rules.json.
+        from shared.saved_rules import load_all
+        all_entries = load_all() or []
+        target_entry = next(
+            (e for e in all_entries if e.get('id') == rule_id), None
+        )
+        if target_entry is None:
+            _a40b_log.warning(
+                f"[A.40b] rule id {rule_id} not found in saved_rules.json"
+            )
+            return
+        target_rule = target_entry.get('rule', {}) or {}
+        # Normalise conditions the same way the panel's _load_rules_from_source does.
+        try:
+            from helpers import normalize_conditions
+            target_rule_norm = normalize_conditions(dict(target_rule))
+        except Exception:
+            target_rule_norm = target_rule
+        target_hash = refs['rule_hash_fn'](target_rule_norm)
+
+        # Step 2 — find the saved-rules label among available sources.
+        saved_label = None
+        for label in refs.get('source_labels', []):
+            if label.startswith("Saved/Bookmarked Rules"):
+                saved_label = label
+                break
+        if saved_label is None:
+            # Source list may be stale. Refresh once and retry.
+            try:
+                import os as _a40b_os
+                import json as _a40b_json
+                project_root = _a40b_os.path.abspath(
+                    _a40b_os.path.join(_a40b_os.path.dirname(__file__), '../..')
+                )
+                saved_path = _a40b_os.path.join(project_root, 'saved_rules.json')
+                if _a40b_os.path.exists(saved_path):
+                    with open(saved_path, encoding='utf-8') as f:
+                        d = _a40b_json.load(f)
+                    if d:
+                        saved_label = f"Saved/Bookmarked Rules ({len(d)} rules)"
+                        # Patch the refs dicts so the selector has the entry
+                        refs['source_labels'].append(saved_label)
+                        refs['source_paths'][saved_label] = saved_path
+                        refs['source_combo']['values'] = list(refs['source_labels'])
+            except Exception:
+                pass
+        if saved_label is None:
+            _a40b_log.warning(
+                "[A.40b] 'Saved/Bookmarked Rules' source not available in "
+                "backtest panel — cannot pre-select."
+            )
+            return
+
+        # Step 3 — set the dropdown to the saved-rules label and load.
+        refs['source_var'].set(saved_label)
+        refs['source_combo'].set(saved_label)
+        refs['load_fn']()   # populates _rule_vars
+
+        # Step 4 — iterate checkboxes, check only the target.
+        _rule_vars_list = _rule_vars   # module global populated by _load_rules_from_source
+        found = False
+        for var, rule_dict in _rule_vars_list:
+            try:
+                h = refs['rule_hash_fn'](rule_dict)
+            except Exception:
+                h = None
+            if h == target_hash:
+                var.set(True)
+                found = True
+            else:
+                var.set(False)
+
+        if not found:
+            _a40b_log.warning(
+                f"[A.40b] rule id {rule_id} was found in saved_rules.json but "
+                f"didn't match any checkbox entry after load — the rule may "
+                f"have been filtered (e.g. a non-WIN/LOSS prediction). "
+                f"Falling back to leaving all rules unchecked."
+            )
+            return
+
+        # Step 5 — optional auto-run (not used under A.40b default wiring).
+        if auto_run and refs.get('run_button') is not None:
+            try:
+                refs['run_button'].invoke()
+            except Exception as e:
+                _a40b_log.warning(f"[A.40b] auto-run invoke failed: {e}")
+    except Exception as e:
+        _a40b_log.warning(f"[A.40b] apply_pending_rule_selection failed: {e}")
 _source_var    = None
 _rule_canvas   = None
 _rule_inner    = None
@@ -2024,6 +2166,66 @@ def build_panel(parent):
 
     source_combo.bind("<<ComboboxSelected>>", lambda e: _load_rules_from_source(source_paths))
 
+    # WHY (Phase A.40b): Cross-panel hook — expose a public function on
+    #      this module that the Saved Rules panel's "▶ Backtest" button
+    #      can call to pre-select a specific rule. The function reads
+    #      state.pending_backtest_rule_id[0], finds the matching entry
+    #      in saved_rules.json by ID, switches the source dropdown to
+    #      the saved-rules source, loads the rules, then iterates the
+    #      resulting checkboxes to check ONLY the target rule (matching
+    #      by content hash so we're robust against the saved rule
+    #      being normalised during load).
+    #
+    #      Exposed as a module-level function (not nested inside
+    #      `build`) so other modules can import it. Binds to the
+    #      widgets via the module-level globals _source_var,
+    #      source_paths, source_combo, _rule_vars, _run_button.
+    # CHANGED: April 2026 — Phase A.40b
+    import hashlib as _a40b_hashlib
+
+    def _a40b_rule_hash(rule):
+        """Content hash of a rule's condition set. Matches the logic in
+        shared.rule_library_bridge so saved rules hash identically
+        whether read from saved_rules.json or from normalize_conditions
+        output."""
+        conds = rule.get('conditions', []) or []
+        triples = []
+        for c in conds:
+            if not isinstance(c, dict):
+                continue
+            feat = c.get('feature')
+            op = c.get('operator')
+            val = c.get('value') if 'value' in c else c.get('threshold')
+            if feat is None or op is None or val is None:
+                continue
+            try:
+                val_f = float(val)
+            except Exception:
+                continue
+            triples.append((str(feat), str(op), round(val_f, 10)))
+        triples_sorted = sorted(triples)
+        h = _a40b_hashlib.sha1()
+        for f, o, v in triples_sorted:
+            h.update(f.encode('utf-8'))
+            h.update(b'|')
+            h.update(o.encode('utf-8'))
+            h.update(b'|')
+            h.update(f"{v:.10f}".encode('utf-8'))
+            h.update(b';')
+        return h.hexdigest()
+
+    # Attach refs the helper needs on the module-level dict so
+    # apply_pending_rule_selection (defined at module level) can reach
+    # them. `build` is called once per app start so this runs exactly
+    # once. _run_button is patched in below after it's instantiated —
+    # at this point in build() it doesn't exist yet.
+    _a40b_refs['source_var']    = _source_var
+    _a40b_refs['source_combo']  = source_combo
+    _a40b_refs['source_paths']  = source_paths
+    _a40b_refs['source_labels'] = source_labels
+    _a40b_refs['load_fn']       = lambda: _load_rules_from_source(source_paths)
+    _a40b_refs['rule_hash_fn']  = _a40b_rule_hash
+
     # Load initial rules
     _load_rules_from_source(source_paths)
 
@@ -2126,6 +2328,12 @@ def build_panel(parent):
         relief=tk.FLAT, cursor="hand2", padx=30, pady=12
     )
     _run_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    # WHY (Phase A.40b): Patch the run-button reference into the A.40b
+    #      refs dict now that it exists. Used only by the optional
+    #      auto-run path in apply_pending_rule_selection.
+    # CHANGED: April 2026 — Phase A.40b
+    _a40b_refs['run_button'] = _run_button
 
     # WHY (Phase A.26): Read-only diagnostic — does NOT call run_backtest.
     #      Loads the same indicators_df the backtester would build for the

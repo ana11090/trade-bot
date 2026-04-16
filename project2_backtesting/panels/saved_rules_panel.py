@@ -143,6 +143,52 @@ def _refresh_list(inner, canvas, window_id):
                   bg="#dc3545", fg="white", relief=tk.FLAT, padx=4,
                   command=lambda r=rid: _delete_one(r, inner, canvas, window_id)).pack(side=tk.RIGHT)
 
+        # WHY (Phase A.40b): One-click "▶ Backtest" button per saved
+        #      rule. Sets state.pending_backtest_rule_id to this entry's
+        #      id, navigates to the Run Backtest panel (lazy-builds if
+        #      first access), then schedules a 200ms callback to the
+        #      run_backtest_panel's apply_pending_rule_selection helper
+        #      which picks up the pending id, switches the source to
+        #      "Saved/Bookmarked Rules", and checks ONLY this rule.
+        #      User then clicks "Run Backtest" to start.
+        #
+        #      200ms delay is enough for lazy-build + first paint on
+        #      typical hardware. If a panel-not-ready warning fires in
+        #      practice, increase to 500ms. We don't block/poll because
+        #      that hangs the UI thread.
+        # CHANGED: April 2026 — Phase A.40b
+        def _a40b_backtest_this_rule(r=rid):
+            try:
+                import state as _a40b_state
+                import sidebar as _a40b_sidebar
+                from project2_backtesting.panels import run_backtest_panel as _a40b_rbp
+
+                _a40b_state.pending_backtest_rule_id[0] = r
+                _a40b_state.pending_backtest_auto_run[0] = False
+
+                # Navigate to the backtest panel (lazy-builds on first show).
+                _a40b_sidebar.show_panel("p2_run")
+
+                # Schedule apply after the panel has had a chance to paint.
+                # Using the tk `after` mechanism so we don't block. The
+                # card widget is still alive here so card.after is safe.
+                card.after(200, _a40b_rbp.apply_pending_rule_selection)
+            except Exception as e:
+                try:
+                    from tkinter import messagebox as _a40b_mb
+                    _a40b_mb.showerror(
+                        "Backtest error",
+                        f"Could not start backtest: {e}\n\n"
+                        f"You can still switch manually: Project 2 → Run "
+                        f"Backtest → source = 'Saved/Bookmarked Rules'."
+                    )
+                except Exception:
+                    pass
+
+        tk.Button(header, text="▶ Backtest", font=("Arial", 8, "bold"),
+                  bg="#28a745", fg="white", relief=tk.FLAT, padx=8,
+                  command=_a40b_backtest_this_rule).pack(side=tk.RIGHT, padx=(0, 4))
+
         # Conditions
         wr = rule.get('win_rate', 0)
         pips = rule.get('avg_pips', 0)
