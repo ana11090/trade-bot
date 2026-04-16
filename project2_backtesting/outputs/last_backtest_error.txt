@@ -1,20 +1,29 @@
 === TK CALLBACK EXCEPTION ===
-Time:  2026-04-15T10:10:22.546197
-Type:  NameError
-Error: NameError("name 'total_steps' is not defined")
+Time:  2026-04-16T14:44:26.386752
+Type:  TypeError
+Error: TypeError("'<=' not supported between instances of 'NoneType' and 'float'")
 
 --- Full traceback ---
 Traceback (most recent call last):
   File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
     return self.func(*args)
            ^^^^^^^^^^^^^^^^
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 862, in callit
-    func(*args)
-  File "c:\Users\anani\my git delete\trade-bot\project1_reverse_engineering\panels\run_scenarios.py", line 878, in <lambda>
-    progress_bar.after(0, lambda: _update_bar())
-                                  ^^^^^^^^^^^^^
-  File "c:\Users\anani\my git delete\trade-bot\project1_reverse_engineering\panels\run_scenarios.py", line 595, in _update_bar
-    pct = int(completed_steps[0] / total_steps * 100)
-                                   ^^^^^^^^^^^
-NameError: name 'total_steps' is not defined
+  File "c:\Users\anani\my git delete\trade-bot\sidebar.py", line 491, in <lambda>
+    btn_p2_saved = _sub_btn(project2_extras, "💾 Saved Rules", lambda: show_panel("p2_saved"))
+                                                                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\sidebar.py", line 156, in show_panel
+    state.all_panels[name] = state.panel_builders[name]()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\main_app.py", line 161, in _build
+    panel = build_fn()
+            ^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\main_app.py", line 239, in <lambda>
+    "p2_saved":          _make_builder(lambda: p2_saved.build_panel(content), "p2_saved"),
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\saved_rules_panel.py", line 89, in build_panel
+    _refresh_list(inner, canvas, window_id)
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\saved_rules_panel.py", line 202, in _refresh_list
+    _wr_display = wr * 100 if wr <= 1.0 else wr
+                              ^^^^^^^^^
+TypeError: '<=' not supported between instances of 'NoneType' and 'float'
 

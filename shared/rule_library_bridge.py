@@ -133,6 +133,40 @@ def _is_valid_rule(rule):
     return True
 
 
+# WHY (Phase A.40a.2): Inline reason-aware validity check. Used to be
+#      a bare True/False via _is_valid_rule(); callers couldn't tell
+#      WHY a rule was rejected. Now returns (ok, reason, sample) so
+#      auto_save_discovered_rules can surface the first failure.
+# CHANGED: April 2026 — Phase A.40a.2
+def _why_invalid(rule):
+    """Return (ok, reason, sample). ok=True means the rule is savable
+    and reason/sample are None. ok=False means rule is rejected and
+    reason/sample explain why."""
+    if not isinstance(rule, dict):
+        return (False, f"not a dict (got {type(rule).__name__})", repr(rule)[:60])
+    conds = rule.get('conditions') or []
+    if not conds or not isinstance(conds, list):
+        return (False, "rule has no 'conditions' key OR it's empty/non-list",
+                list(rule.keys())[:8])
+    for i, c in enumerate(conds):
+        if not isinstance(c, dict):
+            return (False, f"condition[{i}] is not a dict (got {type(c).__name__})",
+                    repr(c)[:60])
+        if not c.get('feature'):
+            return (False, f"condition[{i}] missing 'feature'",
+                    list(c.keys())[:8])
+        if not c.get('operator'):
+            return (False, f"condition[{i}] missing 'operator'",
+                    list(c.keys())[:8])
+        if c.get('value') is None and c.get('threshold') is None:
+            return (False, f"condition[{i}] missing both 'value' and 'threshold'",
+                    list(c.keys())[:8])
+    if not str(rule.get('prediction', '')).strip():
+        return (False, "rule missing/empty 'prediction'",
+                list(rule.keys())[:8])
+    return (True, None, None)
+
+
 # ── Public API ─────────────────────────────────────────────────────────────
 def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
     """Persist `rules` into saved_rules.json via shared.saved_rules.save_rule.
@@ -148,33 +182,54 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
       notes:  optional free-text note attached to every saved entry.
 
     Returns:
-      (saved_count, dedup_skipped_count, invalid_count)
+      (saved_count, dedup_skipped_count, invalid_count, diag)
 
-    Honors the global auto-save checkbox: when off, returns (0, 0, 0)
-    without touching the disk.
+    diag is None when nothing was rejected, otherwise a dict
+        {'reason': str, 'sample': any} describing the FIRST invalid
+        rule we hit in this batch. Hooks log this so users can see why
+        rules didn't make it into the library.
+
+    Honors the global auto-save checkbox: when off, returns
+    (0, 0, 0, None) without touching the disk.
     """
     if not is_auto_save_enabled():
         log.debug(f"[A.40a] auto-save disabled — skipping {source}")
-        return (0, 0, 0)
+        return (0, 0, 0, None)
 
     rules = list(rules or [])
     if not rules:
-        return (0, 0, 0)
+        return (0, 0, 0, None)
 
     try:
         from shared import saved_rules as _sr
     except Exception as _e:
         log.warning(f"[A.40a] cannot import shared.saved_rules: {_e}")
-        return (0, 0, 0)
+        return (0, 0, 0, {'reason': f'shared.saved_rules import failed: {_e}',
+                          'sample': None})
 
     seen_hashes = _existing_hashes() if dedup else set()
     saved = 0
     dedup_skipped = 0
     invalid = 0
+    # WHY (Phase A.40a.2): Track the FIRST invalid-rule reason so the
+    #      caller can include it in its log line. Without this, hooks
+    #      that report invalid=N > 0 don't tell the user WHY any rule
+    #      was rejected — "invalid" is a black box.
+    # CHANGED: April 2026 — Phase A.40a.2
+    first_invalid_reason = None
+    first_invalid_sample = None
+
+    def _note_invalid(reason, sample=None):
+        nonlocal first_invalid_reason, first_invalid_sample
+        if first_invalid_reason is None:
+            first_invalid_reason = reason
+            first_invalid_sample = sample
 
     for r in rules:
-        if not _is_valid_rule(r):
+        ok, _why, _sample = _why_invalid(r)
+        if not ok:
             invalid += 1
+            _note_invalid(_why, _sample)
             continue
         h = _rule_hash(r)
         if dedup and h in seen_hashes:
@@ -190,9 +245,14 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
                 f"{type(_e).__name__}: {_e}"
             )
             invalid += 1
+            _note_invalid(f"save_rule exception: {type(_e).__name__}: {_e}",
+                          sample=None)
 
     log.info(
         f"[A.40a] auto-save {source} rules: "
         f"saved={saved}, dedup-skipped={dedup_skipped}, invalid={invalid}"
     )
-    return (saved, dedup_skipped, invalid)
+    diag = None
+    if first_invalid_reason is not None:
+        diag = {'reason': first_invalid_reason, 'sample': first_invalid_sample}
+    return (saved, dedup_skipped, invalid, diag)

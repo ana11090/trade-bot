@@ -1431,33 +1431,66 @@ def run_analysis(feature_matrix_path=None):
     #      source tag carries scenario / prediction / confidence so a
     #      rediscovery with different scenario settings produces
     #      distinguishable entries.
-    # CHANGED: April 2026 — Phase A.40a
+    # WHY (Phase A.40a.2): Honor the global auto-save checkbox at the
+    #      hook level (loud "disabled" log line so users see WHY no
+    #      [A.40a] saved=N message followed). Snapshot library size
+    #      before/after so the log shows a real delta. Surface the
+    #      first invalid-rule reason via the bridge's new diag field.
+    # CHANGED: April 2026 — Phase A.40a / A.40a.2
     try:
-        from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
-        _a40a_scenario = 'unknown'
-        if feature_matrix_path is not None:
-            _a40a_scenario = os.path.basename(
-                os.path.dirname(os.path.abspath(feature_matrix_path))
-            ) or 'unknown'
-        _a40a_total_saved = 0
-        _a40a_total_dedup = 0
-        _a40a_total_invalid = 0
-        for _r in rules:
-            _pred = str(_r.get('prediction', 'BUY'))
-            try:
-                _conf_n = int(round(float(_r.get('confidence', 0.0)) * 100))
-            except Exception:
-                _conf_n = 0
-            _src = f"Step3:{_a40a_scenario}:{_pred}:conf{_conf_n}"
-            _s, _d, _i = _a40a_save([_r], source=_src, dedup=True)
-            _a40a_total_saved   += _s
-            _a40a_total_dedup   += _d
-            _a40a_total_invalid += _i
-        log.info(
-            f"  [A.40a] Step 3 auto-save totals: "
-            f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
-            f"invalid={_a40a_total_invalid}"
+        from shared.rule_library_bridge import (
+            auto_save_discovered_rules as _a40a_save,
+            is_auto_save_enabled as _a40a_enabled,
         )
+        if not _a40a_enabled():
+            log.info(
+                f"  [A.40a.2] Step 3 auto-save DISABLED via global checkbox "
+                f"— {len(rules)} discovered rule(s) NOT piped into library"
+            )
+        else:
+            try:
+                from shared.saved_rules import load_all as _a40a_load_all
+                _a40a_size_before = len(_a40a_load_all() or [])
+            except Exception:
+                _a40a_size_before = -1
+            _a40a_scenario = 'unknown'
+            if feature_matrix_path is not None:
+                _a40a_scenario = os.path.basename(
+                    os.path.dirname(os.path.abspath(feature_matrix_path))
+                ) or 'unknown'
+            _a40a_total_saved = 0
+            _a40a_total_dedup = 0
+            _a40a_total_invalid = 0
+            _a40a_first_diag = None
+            for _r in rules:
+                _pred = str(_r.get('prediction', 'BUY'))
+                try:
+                    _conf_n = int(round(float(_r.get('confidence', 0.0)) * 100))
+                except Exception:
+                    _conf_n = 0
+                _src = f"Step3:{_a40a_scenario}:{_pred}:conf{_conf_n}"
+                _s, _d, _i, _diag = _a40a_save([_r], source=_src, dedup=True)
+                _a40a_total_saved   += _s
+                _a40a_total_dedup   += _d
+                _a40a_total_invalid += _i
+                if _diag is not None and _a40a_first_diag is None:
+                    _a40a_first_diag = _diag
+            try:
+                _a40a_size_after = len(_a40a_load_all() or [])
+            except Exception:
+                _a40a_size_after = -1
+            log.info(
+                f"  [A.40a] Step 3 auto-save: "
+                f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
+                f"invalid={_a40a_total_invalid} "
+                f"(library: {_a40a_size_before} → {_a40a_size_after})"
+            )
+            if _a40a_total_invalid > 0 and _a40a_first_diag is not None:
+                log.warning(
+                    f"  [A.40a.2] Step 3 first invalid rule reason: "
+                    f"{_a40a_first_diag.get('reason')}; "
+                    f"sample={_a40a_first_diag.get('sample')}"
+                )
     except Exception as _a40a_e:
         log.warning(
             f"  [A.40a] Step 3 auto-save skipped: "

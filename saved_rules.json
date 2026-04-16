@@ -1,512 +1,510 @@
 [
   {
     "id": 1,
-    "saved_at": "2026-04-12T19:03:10.295749",
-    "source": "Thread0",
-    "notes": "Rule0",
+    "saved_at": "2026-04-16T14:32:51.744222",
+    "source": "Step3:outputs:WIN:conf99",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule0",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": ">",
+          "value": 0.7913
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.986,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.986,
+      "avg_pips": 480.6,
+      "action": "BUY"
     }
   },
   {
     "id": 2,
-    "saved_at": "2026-04-12T19:03:10.302266",
-    "source": "Thread1",
-    "notes": "Rule0",
+    "saved_at": "2026-04-16T14:32:51.753063",
+    "source": "Step3:outputs:WIN:conf89",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread1_rule0",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": "<=",
+          "value": 0.6051
+        },
+        {
+          "feature": "H1_stoch_14_d",
+          "operator": ">",
+          "value": 18.6137
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": ">",
+          "value": 21.7328
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.889,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.889,
+      "avg_pips": 301.4,
+      "action": "BUY"
     }
   },
   {
     "id": 3,
-    "saved_at": "2026-04-12T19:03:10.309759",
-    "source": "Thread2",
-    "notes": "Rule0",
+    "saved_at": "2026-04-16T14:32:51.763344",
+    "source": "Step3:outputs:LOSS:conf78",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread2_rule0",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": "<=",
+          "value": 21.9115
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "LOSS",
+      "confidence": 0.78,
+      "coverage": 41,
+      "coverage_pct": 4.6,
+      "win_rate": 0.22,
+      "avg_pips": 27.5,
+      "action": "BUY"
     }
   },
   {
     "id": 4,
-    "saved_at": "2026-04-12T19:03:10.316266",
-    "source": "Thread0",
-    "notes": "Rule1",
+    "saved_at": "2026-04-16T14:32:51.764672",
+    "source": "Step3:outputs:WIN:conf88",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule1",
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
           "operator": ">",
-          "value": 0
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": ">",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_diff",
+          "operator": ">",
+          "value": -0.5668
+        },
+        {
+          "feature": "D1_day_of_month",
+          "operator": "<=",
+          "value": 6.5
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.875,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.875,
+      "avg_pips": 261.4,
+      "action": "BUY"
     }
   },
   {
     "id": 5,
-    "saved_at": "2026-04-12T19:03:10.323782",
-    "source": "Thread1",
-    "notes": "Rule1",
+    "saved_at": "2026-04-16T14:32:51.777937",
+    "source": "Step3:outputs:WIN:conf87",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread1_rule1",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": ">",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_roc_20",
+          "operator": "<=",
+          "value": -0.3725
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.871,
+      "coverage": 31,
+      "coverage_pct": 3.5,
+      "win_rate": 0.871,
+      "avg_pips": 390.6,
+      "action": "BUY"
     }
   },
   {
     "id": 6,
-    "saved_at": "2026-04-12T19:03:10.330796",
-    "source": "Thread0",
-    "notes": "Rule2",
+    "saved_at": "2026-04-16T14:32:51.781006",
+    "source": "Step3:outputs:WIN:conf90",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule2",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": ">",
+          "value": 71.4269
+        },
+        {
+          "feature": "M5_atr_100",
+          "operator": "<=",
+          "value": 5.2248
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.905,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.905,
+      "avg_pips": 276.2,
+      "action": "BUY"
     }
   },
   {
     "id": 7,
-    "saved_at": "2026-04-12T19:03:10.338458",
-    "source": "Thread2",
-    "notes": "Rule1",
+    "saved_at": "2026-04-16T14:32:51.789612",
+    "source": "Step3:outputs:WIN:conf76",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread2_rule1",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": "<=",
+          "value": 0.7913
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.76,
+      "coverage": 25,
+      "coverage_pct": 2.8,
+      "win_rate": 0.76,
+      "avg_pips": 239.4,
+      "action": "BUY"
     }
   },
   {
     "id": 8,
-    "saved_at": "2026-04-12T19:03:10.345967",
-    "source": "Thread0",
-    "notes": "Rule3",
+    "saved_at": "2026-04-16T14:32:51.800089",
+    "source": "Step3:outputs:WIN:conf65",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule3",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": ">",
+          "value": 21.9115
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.654,
+      "coverage": 26,
+      "coverage_pct": 2.9,
+      "win_rate": 0.654,
+      "avg_pips": 142.8,
+      "action": "BUY"
     }
   },
   {
     "id": 9,
-    "saved_at": "2026-04-12T19:03:10.352970",
-    "source": "Thread1",
-    "notes": "Rule2",
+    "saved_at": "2026-04-16T14:32:51.811482",
+    "source": "Step3:outputs:WIN:conf67",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread1_rule2",
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
           "operator": ">",
-          "value": 0
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": "<=",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_signal",
+          "operator": "<=",
+          "value": -1.0984
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.667,
+      "avg_pips": 93.5,
+      "action": "BUY"
     }
   },
   {
     "id": 10,
-    "saved_at": "2026-04-12T19:03:10.360999",
-    "source": "Thread0",
-    "notes": "Rule4",
+    "saved_at": "2026-04-16T14:32:51.811482",
+    "source": "Step3:outputs:WIN:conf65",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule4",
+          "feature": "M5_std_dev_50",
           "operator": ">",
-          "value": 0
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": ">",
+          "value": 2.5631
         }
       ],
+      "prediction": "WIN",
+      "confidence": 0.65,
+      "coverage": 20,
+      "coverage_pct": 2.3,
       "win_rate": 0.65,
-      "avg_pips": 10
+      "avg_pips": 380.8,
+      "action": "BUY"
     }
   },
   {
     "id": 11,
-    "saved_at": "2026-04-12T19:03:10.369507",
-    "source": "Thread2",
-    "notes": "Rule2",
+    "saved_at": "2026-04-16T14:32:58.968927",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread2_rule2",
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
           "operator": ">",
-          "value": 0
+          "value": -116.272441
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "BUY",
+      "win_rate": null,
+      "coverage": 975,
+      "confidence": 0.8816,
+      "tightness_product": 0.003479
     }
   },
   {
     "id": 12,
-    "saved_at": "2026-04-12T19:03:10.377019",
-    "source": "Thread1",
-    "notes": "Rule3",
+    "saved_at": "2026-04-16T14:33:48.824662",
+    "source": "Step4:?:BUY",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread1_rule3",
+          "feature": "D1_distance_from_high",
           "operator": ">",
-          "value": 0
+          "value": 0.6849
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 46.575
+        },
+        {
+          "feature": "D1_adx_28",
+          "operator": ">",
+          "value": 20.8739
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.831,
+      "win_rate": 0.831,
+      "coverage": 89,
+      "coverage_pct": 15.6,
+      "train_win_rate": 0.96,
+      "train_coverage": 25,
+      "overfit_gap": 0.129,
+      "is_overfit": false,
+      "avg_pips": 255.6,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 335
     }
   },
   {
     "id": 13,
-    "saved_at": "2026-04-12T19:03:10.383015",
-    "source": "Thread0",
-    "notes": "Rule5",
+    "saved_at": "2026-04-16T14:33:48.836719",
+    "source": "Step4:?:BUY",
+    "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "thread0_rule5",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 14,
-    "saved_at": "2026-04-12T19:03:10.392763",
-    "source": "Thread1",
-    "notes": "Rule4",
-    "rule": {
-      "conditions": [
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.6849
+        },
         {
-          "feature": "thread1_rule4",
+          "feature": "D1_lower_shadow",
           "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 15,
-    "saved_at": "2026-04-12T19:03:10.400946",
-    "source": "Thread2",
-    "notes": "Rule3",
-    "rule": {
-      "conditions": [
+          "value": 11.335
+        },
         {
-          "feature": "thread2_rule3",
-          "operator": ">",
-          "value": 0
+          "feature": "M15_distance_to_fib_500",
+          "operator": "<=",
+          "value": 0.0806
         }
       ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 16,
-    "saved_at": "2026-04-12T19:03:10.409455",
-    "source": "Thread0",
-    "notes": "Rule6",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread0_rule6",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 17,
-    "saved_at": "2026-04-12T19:03:10.418625",
-    "source": "Thread1",
-    "notes": "Rule5",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread1_rule5",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 18,
-    "saved_at": "2026-04-12T19:03:10.427138",
-    "source": "Thread2",
-    "notes": "Rule4",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule4",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 19,
-    "saved_at": "2026-04-12T19:03:10.434664",
-    "source": "Thread0",
-    "notes": "Rule7",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread0_rule7",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 20,
-    "saved_at": "2026-04-12T19:03:10.441669",
-    "source": "Thread2",
-    "notes": "Rule5",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule5",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 21,
-    "saved_at": "2026-04-12T19:03:10.450177",
-    "source": "Thread1",
-    "notes": "Rule6",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread1_rule6",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 22,
-    "saved_at": "2026-04-12T19:03:10.459979",
-    "source": "Thread2",
-    "notes": "Rule6",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule6",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 23,
-    "saved_at": "2026-04-12T19:03:10.469550",
-    "source": "Thread0",
-    "notes": "Rule8",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread0_rule8",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 24,
-    "saved_at": "2026-04-12T19:03:10.477053",
-    "source": "Thread1",
-    "notes": "Rule7",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread1_rule7",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 25,
-    "saved_at": "2026-04-12T19:03:10.486058",
-    "source": "Thread2",
-    "notes": "Rule7",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule7",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 26,
-    "saved_at": "2026-04-12T19:03:10.493569",
-    "source": "Thread0",
-    "notes": "Rule9",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread0_rule9",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 27,
-    "saved_at": "2026-04-12T19:03:10.500587",
-    "source": "Thread1",
-    "notes": "Rule8",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread1_rule8",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 28,
-    "saved_at": "2026-04-12T19:03:10.510364",
-    "source": "Thread2",
-    "notes": "Rule8",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule8",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 29,
-    "saved_at": "2026-04-12T19:03:10.518364",
-    "source": "Thread1",
-    "notes": "Rule9",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread1_rule9",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
-    }
-  },
-  {
-    "id": 30,
-    "saved_at": "2026-04-12T19:03:10.530609",
-    "source": "Thread2",
-    "notes": "Rule9",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "thread2_rule9",
-          "operator": ">",
-          "value": 0
-        }
-      ],
-      "win_rate": 0.65,
-      "avg_pips": 10
+      "prediction": "WIN",
+      "confidence": 0.619,
+      "win_rate": 0.619,
+      "coverage": 21,
+      "coverage_pct": 3.7,
+      "train_win_rate": 0.714,
+      "train_coverage": 21,
+      "overfit_gap": 0.095,
+      "is_overfit": false,
+      "avg_pips": 160.2,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 40
     }
   }
 ]

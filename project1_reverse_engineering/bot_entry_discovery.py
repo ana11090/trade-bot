@@ -485,26 +485,60 @@ def discover_bot_entry_rules(
     #      and Mode A rules. Per-rule source tag carries TF + action so
     #      duplicates across runs (same TF + same action + same
     #      conditions) collapse to a single library entry.
-    # CHANGED: April 2026 — Phase A.40a
+    # WHY (Phase A.40a.2): Honor the global auto-save checkbox at the
+    #      hook level. Snapshot library size before/after so the log
+    #      shows a real delta. Surface first invalid-rule reason via
+    #      the bridge's diag field.
+    # CHANGED: April 2026 — Phase A.40a / A.40a.2
     try:
-        from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
-        _a40a_total_saved = 0
-        _a40a_total_dedup = 0
-        _a40a_total_invalid = 0
-        for _r in deduped:
-            _tf = str(_r.get('timeframe', _r.get('tf', '?')))
-            _act = str(_r.get('action', '?'))
-            _src = f"Step4:{_tf}:{_act}"
-            _s, _d, _i = _a40a_save([_r], source=_src, dedup=True)
-            _a40a_total_saved   += _s
-            _a40a_total_dedup   += _d
-            _a40a_total_invalid += _i
-        _log(
-            f"[A.40a] Step 4 auto-save totals: "
-            f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
-            f"invalid={_a40a_total_invalid}",
-            cb,
+        from shared.rule_library_bridge import (
+            auto_save_discovered_rules as _a40a_save,
+            is_auto_save_enabled as _a40a_enabled,
         )
+        if not _a40a_enabled():
+            _log(
+                f"[A.40a.2] Step 4 auto-save DISABLED via global checkbox "
+                f"— {len(deduped)} discovered rule(s) NOT piped into library",
+                cb,
+            )
+        else:
+            try:
+                from shared.saved_rules import load_all as _a40a_load_all
+                _a40a_size_before = len(_a40a_load_all() or [])
+            except Exception:
+                _a40a_size_before = -1
+            _a40a_total_saved = 0
+            _a40a_total_dedup = 0
+            _a40a_total_invalid = 0
+            _a40a_first_diag = None
+            for _r in deduped:
+                _tf = str(_r.get('timeframe', _r.get('tf', '?')))
+                _act = str(_r.get('action', '?'))
+                _src = f"Step4:{_tf}:{_act}"
+                _s, _d, _i, _diag = _a40a_save([_r], source=_src, dedup=True)
+                _a40a_total_saved   += _s
+                _a40a_total_dedup   += _d
+                _a40a_total_invalid += _i
+                if _diag is not None and _a40a_first_diag is None:
+                    _a40a_first_diag = _diag
+            try:
+                _a40a_size_after = len(_a40a_load_all() or [])
+            except Exception:
+                _a40a_size_after = -1
+            _log(
+                f"[A.40a] Step 4 auto-save: "
+                f"saved={_a40a_total_saved}, dedup-skipped={_a40a_total_dedup}, "
+                f"invalid={_a40a_total_invalid} "
+                f"(library: {_a40a_size_before} → {_a40a_size_after})",
+                cb,
+            )
+            if _a40a_total_invalid > 0 and _a40a_first_diag is not None:
+                _log(
+                    f"[A.40a.2] Step 4 first invalid rule reason: "
+                    f"{_a40a_first_diag.get('reason')}; "
+                    f"sample={_a40a_first_diag.get('sample')}",
+                    cb,
+                )
     except Exception as _a40a_e:
         _log(
             f"[A.40a] Step 4 auto-save skipped: "

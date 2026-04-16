@@ -1030,9 +1030,20 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
         #      shape parameters so a rediscovery with different
         #      settings produces a distinct-source entry. Honors the
         #      global auto-save checkbox via is_auto_save_enabled().
-        # CHANGED: April 2026 — Phase A.40a
+        # WHY (Phase A.40a.2): Mode A previously logged ONLY on
+        #      exception, so a successful save was completely silent
+        #      from the user's perspective — they had to dig into
+        #      saved_rules.json to confirm anything happened. Add an
+        #      explicit success log line with library size delta and
+        #      surface the first invalid-rule reason via the bridge's
+        #      diag field. Also honor the global auto-save checkbox at
+        #      the hook level for symmetry with Step 3 / Step 4.
+        # CHANGED: April 2026 — Phase A.40a / A.40a.2
         try:
-            from shared.rule_library_bridge import auto_save_discovered_rules as _a40a_save
+            from shared.rule_library_bridge import (
+                auto_save_discovered_rules as _a40a_save,
+                is_auto_save_enabled as _a40a_enabled,
+            )
             _a40a_rule = {
                 'conditions': [
                     {
@@ -1061,7 +1072,35 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 f":tight{float(chosen['tightness_product']):.3f}"
                 f":winner={_winner}"
             )
-            _a40a_save([_a40a_rule], source=_src, dedup=True)
+            if not _a40a_enabled():
+                try:
+                    _l(f"  [A.40a.2] Mode A auto-save DISABLED via global "
+                       f"checkbox — discovered rule NOT piped into library")
+                except Exception:
+                    pass
+            else:
+                try:
+                    from shared.saved_rules import load_all as _a40a_load_all
+                    _a40a_size_before = len(_a40a_load_all() or [])
+                except Exception:
+                    _a40a_size_before = -1
+                _s, _d, _i, _diag = _a40a_save([_a40a_rule], source=_src, dedup=True)
+                try:
+                    _a40a_size_after = len(_a40a_load_all() or [])
+                except Exception:
+                    _a40a_size_after = -1
+                try:
+                    _l(f"  [A.40a] Mode A auto-save: "
+                       f"saved={_s}, dedup-skipped={_d}, invalid={_i} "
+                       f"(library: {_a40a_size_before} → {_a40a_size_after})")
+                except Exception:
+                    pass
+                if _i > 0 and _diag is not None:
+                    try:
+                        _l(f"  [A.40a.2] Mode A first invalid rule reason: "
+                           f"{_diag.get('reason')}; sample={_diag.get('sample')}")
+                    except Exception:
+                        pass
         except Exception as _a40a_e:
             try:
                 _l(f"  [A.40a] mode-A auto-save skipped: "

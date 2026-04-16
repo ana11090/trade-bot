@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-04-16T10:24:50.595013",
+  "generated_at": "2026-04-16T14:32:58.975363",
   "entry_timeframe": null,
-  "activated_at": "2026-04-16 10:24:50",
+  "activated_at": "2026-04-16 14:32:58",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 17.8,
+  "analysis_time_s": 11.6,
   "trade_count": 1106,
   "feature_count": 629,
   "profile": {
