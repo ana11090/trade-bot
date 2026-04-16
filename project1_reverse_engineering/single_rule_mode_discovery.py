@@ -105,6 +105,15 @@ def _resolve_params(params=None):
     return out
 
 
+# ── Phase A.39b.3 diagnostic state ─────────────────────────────────────────
+# WHY (Phase A.39b.3): Module-level set of exception signatures already
+#      reported during a scan so we don't spam the log with the same
+#      failure repeated 620 times. Cleared at the start of each
+#      discover_mode_a call (see reset inside that function).
+# CHANGED: April 2026 — Phase A.39b.3
+_scan_reported_exceptions = set()
+
+
 # ── LEAK columns (same set analyze.py uses) ────────────────────────────────
 # WHY: Feature selection must NOT consider trade outcome columns or meta
 #      columns — that would produce a rule like "pips > 0" which trivially
@@ -178,6 +187,95 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
 
     bg_cols = set(background_df.columns) if background_df is not None else set()
 
+    # WHY (Phase A.39b.3): When the cross-TF background merge succeeds
+    #      but zero candidates end up with valid bg_cov, we need to
+    #      know WHERE the mismatch is. Log the column overlap by
+    #      prefix group so we can see at a glance whether specific
+    #      timeframes are missing, or whether it's a naming drift
+    #      between feature_matrix.csv and build_multi_tf_indicators().
+    # CHANGED: April 2026 — Phase A.39b.3
+    trade_cols_set = set(usable_cols)
+    both = trade_cols_set & bg_cols
+    trade_only = trade_cols_set - bg_cols
+    bg_only = bg_cols - trade_cols_set
+    log.info(
+        f"  [A.39b.3] column overlap trade vs background: "
+        f"both={len(both)} trade_only={len(trade_only)} bg_only={len(bg_only)}"
+    )
+    for _prefix in ('M5_', 'M15_', 'H1_', 'H4_', 'D1_'):
+        _t = sum(1 for c in trade_cols_set if c.startswith(_prefix))
+        _b_in_both = sum(1 for c in both if c.startswith(_prefix))
+        _t_only = sum(1 for c in trade_only if c.startswith(_prefix))
+        log.info(
+            f"  [A.39b.3]   {_prefix}* — trade has {_t}, overlap with bg={_b_in_both}, "
+            f"trade-only (not in bg)={_t_only}"
+        )
+    if trade_only:
+        _sample = sorted(list(trade_only))[:5]
+        log.info(f"  [A.39b.3]   sample trade-only features: {_sample}")
+
+    # Value-range spot check on canonical features present in both frames.
+    # If trade_df and background_df compute indicators differently (different
+    # windowing, different scaling, wrong units, wrong timezone), the value
+    # ranges will disagree and every threshold comparison will be nonsense.
+    for _probe in ('H1_vwap', 'H1_atr_band_upper', 'H1_std_dev_20',
+                   'H1_adx_14', 'M5_std_dev_50'):
+        _in_t = _probe in trade_df.columns
+        _in_b = (background_df is not None) and (_probe in bg_cols)
+        if not _in_t and not _in_b:
+            continue
+        _msg = f"  [A.39b.3]   probe {_probe}:"
+        if _in_t:
+            try:
+                _tv = pd.to_numeric(trade_df[_probe], errors='coerce').to_numpy(
+                    dtype=float, copy=False
+                )
+                _tv_nn = _tv[~np.isnan(_tv)]
+                if len(_tv_nn) > 0:
+                    _msg += (
+                        f" trade[min={_tv_nn.min():.4g},"
+                        f" max={_tv_nn.max():.4g},"
+                        f" mean={_tv_nn.mean():.4g},"
+                        f" n={len(_tv_nn)}]"
+                    )
+                else:
+                    _msg += " trade[all_NaN]"
+            except Exception as _pe:
+                _msg += f" trade[probe_failed:{_pe}]"
+        else:
+            _msg += " trade[NOT_IN_TRADE]"
+        if _in_b:
+            try:
+                _bv = pd.to_numeric(background_df[_probe], errors='coerce').to_numpy(
+                    dtype=float, copy=False
+                )
+                _bv_nn = _bv[~np.isnan(_bv)]
+                if len(_bv_nn) > 0:
+                    _msg += (
+                        f" bg[min={_bv_nn.min():.4g},"
+                        f" max={_bv_nn.max():.4g},"
+                        f" mean={_bv_nn.mean():.4g},"
+                        f" n={len(_bv_nn)}]"
+                    )
+                else:
+                    _msg += " bg[all_NaN]"
+            except Exception as _pe:
+                _msg += f" bg[probe_failed:{_pe}]"
+        else:
+            _msg += " bg[NOT_IN_BG]"
+        log.info(_msg)
+
+    # Per-feature outcome counters for the post-scan distribution summary.
+    _bg_outcome_counts = {
+        'column_not_in_bg': 0,
+        'coercion_failed':  0,
+        'too_few_non_nan':  0,
+        'bg_cov_zero':      0,
+        'bg_cov_one':       0,
+        'bg_cov_valid':     0,
+        'bg_cov_low':       0,
+    }
+
     for col in usable_cols:
         col_vals = trade_df[col]
         non_nan = col_vals.notna()
@@ -212,7 +310,12 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
 
             # Background coverage — fraction of all candle rows passing
             bg_cov = None
-            if background_df is not None and col in bg_cols:
+            if background_df is None or col not in bg_cols:
+                # WHY (Phase A.39b.3): Record the dominant reason why
+                #      bg_cov couldn't be computed.
+                # CHANGED: April 2026 — Phase A.39b.3
+                _bg_outcome_counts['column_not_in_bg'] += 1
+            else:
                 try:
                     bg_series = background_df[col]
                     if isinstance(bg_series, pd.DataFrame):
@@ -221,15 +324,41 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                         dtype=float, copy=False
                     )
                     bg_non_nan = ~np.isnan(bg_arr)
-                    if bg_non_nan.sum() > 100:
+                    _n_bg_valid = int(bg_non_nan.sum())
+                    if _n_bg_valid <= 100:
+                        # WHY (Phase A.39b.3): differentiate "column missing"
+                        #      from "column present but mostly NaN".
+                        # CHANGED: April 2026 — Phase A.39b.3
+                        _bg_outcome_counts['too_few_non_nan'] += 1
+                    else:
                         with np.errstate(invalid='ignore'):
                             if op == '>':
                                 bg_passes = bg_arr[bg_non_nan] > thr
                             else:
                                 bg_passes = bg_arr[bg_non_nan] < thr
-                        bg_cov = float(bg_passes.sum() / bg_non_nan.sum())
+                        bg_cov = float(bg_passes.sum() / _n_bg_valid)
+                        if bg_cov == 0.0:
+                            _bg_outcome_counts['bg_cov_zero'] += 1
+                        elif bg_cov == 1.0:
+                            _bg_outcome_counts['bg_cov_one'] += 1
+                        elif bg_cov > 0.001:
+                            _bg_outcome_counts['bg_cov_valid'] += 1
+                        else:
+                            _bg_outcome_counts['bg_cov_low'] += 1
                 except Exception as _be:
-                    log.debug(f"[A.39b] background cov failed for {col}: {_be}")
+                    # WHY (Phase A.39b.3): Upgrade from silent debug to
+                    #      visible warning. Cap at 3 distinct exception
+                    #      signatures per scan to avoid spam.
+                    # CHANGED: April 2026 — Phase A.39b.3
+                    _bg_outcome_counts['coercion_failed'] += 1
+                    _exc_key = f"{type(_be).__name__}:{str(_be)[:60]}"
+                    if _exc_key not in _scan_reported_exceptions:
+                        _scan_reported_exceptions.add(_exc_key)
+                        if len(_scan_reported_exceptions) <= 3:
+                            log.warning(
+                                f"  [A.39b.3] bg_cov computation failed for "
+                                f"{col!r}: {type(_be).__name__}: {_be}"
+                            )
 
             # WHY (Phase A.39b.1): Old code treated bg_cov=0.0 as
             #      "maximally tight" → such features sorted to the top
@@ -290,6 +419,22 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                 'background_coverage_valid': bool(bg_cov_valid),
                 'tightness':           round(tightness, 4),
             })
+
+    # WHY (Phase A.39b.3): End-of-scan summary of WHERE bg_cov came
+    #      from. If 'bg_cov_valid' is small and 'column_not_in_bg' is
+    #      large, the cross-TF merge didn't actually expose all
+    #      columns. If 'bg_cov_zero' + 'bg_cov_one' dominates, the
+    #      thresholds don't separate the background at all (scale
+    #      mismatch). If 'coercion_failed' is high, types are wrong.
+    # CHANGED: April 2026 — Phase A.39b.3
+    _total = sum(_bg_outcome_counts.values())
+    log.info(f"  [A.39b.3] bg_cov outcome distribution (total={_total}):")
+    for _k in ('bg_cov_valid', 'bg_cov_zero', 'bg_cov_one',
+               'bg_cov_low', 'column_not_in_bg',
+               'too_few_non_nan', 'coercion_failed'):
+        _v = _bg_outcome_counts.get(_k, 0)
+        _pct = (100.0 * _v / _total) if _total > 0 else 0.0
+        log.info(f"  [A.39b.3]   {_k:<18} {_v:>5}  ({_pct:5.1f}%)")
 
     return out
 
@@ -391,6 +536,16 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 pass
 
     try:
+        # WHY (Phase A.39b.3): Reset the per-module exception signature
+        #      cache so diagnostic warnings fire fresh for each
+        #      scenario run, not just the very first run after
+        #      process start.
+        # CHANGED: April 2026 — Phase A.39b.3
+        try:
+            _scan_reported_exceptions.clear()
+        except Exception:
+            pass
+
         p = _resolve_params(params)
         _l(f"  [A.39b] params: target={p['target_coverage']:.2%} "
            f"per_cond={p['per_condition_coverage']:.2%} "
