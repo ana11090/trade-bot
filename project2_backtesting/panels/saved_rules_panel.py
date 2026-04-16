@@ -127,7 +127,13 @@ def _refresh_list(inner, canvas, window_id):
 
         tk.Label(header, text=f"#{entry.get('id', '?')}",
                  font=("Arial", 10, "bold"), bg="#f8f9fa", fg="#667eea").pack(side=tk.LEFT)
-        tk.Label(header, text=f"  from {entry.get('source', '?')}  •  {entry.get('saved_at', '?')[:10]}",
+        # WHY: show date + time (HH:MM:SS) so users can distinguish
+        #      multiple discovery runs on the same day. ISO format
+        #      "YYYY-MM-DDTHH:MM:SS.ffffff" — slice to 19 chars to drop
+        #      microseconds, swap 'T' for a space for readability.
+        _saved_at_raw = entry.get('saved_at', '?')
+        _saved_at_disp = _saved_at_raw[:19].replace('T', ' ') if _saved_at_raw else '?'
+        tk.Label(header, text=f"  from {entry.get('source', '?')}  •  {_saved_at_disp}",
                  font=("Arial", 9), bg="#f8f9fa", fg="#888888").pack(side=tk.LEFT)
 
         # TF badge — show entry_tf if present on the rule
