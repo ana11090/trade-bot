@@ -188,6 +188,10 @@ _rule_canvas   = None
 _rule_inner    = None
 _use_safety_var  = None  # BooleanVar for safety stops toggle
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
+# WHY (Phase A.42): Max Trades Per Day control globals.
+# CHANGED: April 2026 — Phase A.42
+_a42_max_trades_mode_var  = None  # StringVar: "normal" | "custom"
+_a42_max_trades_value_var = None  # IntVar: custom limit
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
 #      into output_text via format_exc(), but the user reported they
@@ -568,6 +572,19 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
             use_safety = _use_safety_var.get() if _use_safety_var is not None else True
             output_text.insert(tk.END, f"Safety stops: {'ON' if use_safety else 'OFF'}\n")
+
+            # WHY (Phase A.42): Read the max trades/day radio + spinbox.
+            # CHANGED: April 2026 — Phase A.42
+            _a42_mode = _a42_max_trades_mode_var.get() if _a42_max_trades_mode_var is not None else "normal"
+            if _a42_mode == "custom":
+                _a42_limit = _a42_max_trades_value_var.get() if _a42_max_trades_value_var is not None else 1
+                _a42_limit = max(1, int(_a42_limit))
+            else:
+                _a42_limit = 0  # 0 = no limit
+            output_text.insert(
+                tk.END,
+                f"Max trades/day: {'unlimited' if _a42_limit == 0 else _a42_limit}\n"
+            )
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n\n")
 
             # Determine which TFs to test
@@ -613,12 +630,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             output_text.insert(tk.END, f"    Skipping {tf} — no candle file found\n")
                         continue
 
+                    # WHY (Phase A.42): Pass max_trades_per_day so the
+                    #      backtester enforces the daily limit.
+                    # CHANGED: April 2026 — Phase A.42
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
                         report_path=temp_path,
                         progress_callback=_progress,
                         use_safety_stops=use_safety,
+                        max_trades_per_day=_a42_limit,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -2337,6 +2358,77 @@ def build_panel(parent):
         safety_frame,
         text="    ON  = matches live EA behavior (recommended)\n"
              "    OFF = raw strategy test, no safety net (shows true risk)",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Phase A.42: Max Trades Per Day control ────────────────────────────────
+    # WHY (Phase A.42): The EA generator already outputs MaxTradesPerDay
+    #      in the generated MQL5 code, but the backtester doesn't enforce
+    #      it. Adding the limit here aligns backtest behavior with live EA.
+    # CHANGED: April 2026 — Phase A.42
+    global _a42_max_trades_mode_var, _a42_max_trades_value_var
+
+    _a42_frame = tk.Frame(panel, bg="white", pady=6)
+    _a42_frame.pack(fill="x", padx=20)
+
+    tk.Label(
+        _a42_frame,
+        text="📊 Max Trades Per Day:",
+        font=("Segoe UI", 10, "bold"),
+        bg="white", fg="#16213e",
+    ).pack(anchor="w")
+
+    _a42_max_trades_mode_var = tk.StringVar(value="normal")
+    _a42_max_trades_value_var = tk.IntVar(value=1)
+
+    _a42_radio_frame = tk.Frame(_a42_frame, bg="white")
+    _a42_radio_frame.pack(anchor="w", pady=(4, 0))
+
+    tk.Radiobutton(
+        _a42_radio_frame,
+        text="Normal — no daily limit",
+        variable=_a42_max_trades_mode_var,
+        value="normal",
+        bg="white", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="white",
+    ).pack(anchor="w")
+
+    _a42_custom_row = tk.Frame(_a42_radio_frame, bg="white")
+    _a42_custom_row.pack(anchor="w", fill="x")
+
+    tk.Radiobutton(
+        _a42_custom_row,
+        text="Custom limit:",
+        variable=_a42_max_trades_mode_var,
+        value="custom",
+        bg="white", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="white",
+    ).pack(side=tk.LEFT)
+
+    tk.Spinbox(
+        _a42_custom_row,
+        from_=1, to=50,
+        textvariable=_a42_max_trades_value_var,
+        width=4,
+        font=("Segoe UI", 9),
+    ).pack(side=tk.LEFT, padx=(4, 4))
+
+    tk.Label(
+        _a42_custom_row,
+        text="trades/day",
+        font=("Segoe UI", 9),
+        bg="white", fg="#666",
+    ).pack(side=tk.LEFT)
+
+    tk.Label(
+        _a42_frame,
+        text="    Limits how many trades the backtester opens per calendar day.\n"
+             "    Matches the MaxTradesPerDay setting in the generated EA.",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",

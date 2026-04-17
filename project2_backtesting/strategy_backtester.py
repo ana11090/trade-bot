@@ -446,6 +446,10 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
     index_positions = {idx: pos for pos, idx in enumerate(df.index)}
     occupied_until_idx = -1
+    # WHY (Phase A.42): Per-day trade counter for max_trades_per_day.
+    # CHANGED: April 2026 — Phase A.42
+    _a42_daily_counts: dict = {}
+    _a42_limit = int(max_trades_per_day) if max_trades_per_day and max_trades_per_day > 0 else 0
 
     for sig_idx in signal_indices:
         if sig_idx <= occupied_until_idx:
@@ -456,6 +460,16 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         if entry_pos + 1 >= len(df):
             continue
+
+        # WHY (Phase A.42): Enforce max trades per calendar day.
+        # CHANGED: April 2026 — Phase A.42
+        if _a42_limit > 0:
+            try:
+                _a42_day = str(pd.Timestamp(all_times[entry_pos + 1]).date())
+                if _a42_daily_counts.get(_a42_day, 0) >= _a42_limit:
+                    continue
+            except Exception:
+                pass
 
         # WHY: The for-loop path in run_backtest checks is_news_blackout
         #      before each entry, but this vectorized path was missing it.
@@ -649,6 +663,15 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
+        # WHY (Phase A.42): Increment daily counter after a trade opens.
+        # CHANGED: April 2026 — Phase A.42
+        if _a42_limit > 0:
+            try:
+                _a42_entry_day = str(pd.Timestamp(entry_time).date())
+                _a42_daily_counts[_a42_entry_day] = _a42_daily_counts.get(_a42_entry_day, 0) + 1
+            except Exception:
+                pass
+
         trades.append({
             'entry_time':   str(entry_time),
             'exit_time':    str(exit_time),
@@ -686,7 +709,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  account_size=None, risk_per_trade_pct=1.0,
                  default_sl_pips=150.0, pip_value_per_lot=10.0,
                  swap_cost_per_lot_per_night=0.0,
-                 news_blackout_minutes=0):
+                 news_blackout_minutes=0,
+                 # WHY (Phase A.42): 0 = no limit; positive int = max trades
+                 #      per calendar day, matching live EA's MaxTradesPerDay.
+                 # CHANGED: April 2026 — Phase A.42
+                 max_trades_per_day=0):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -955,6 +982,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     # ── Simulate trades from signal candles ──────────────────────────────────
     occupied_until_idx = -1   # index of last candle in current open trade
+    # WHY (Phase A.42): Per-day trade counter for max_trades_per_day.
+    # CHANGED: April 2026 — Phase A.42
+    _a42_daily_counts_rb: dict = {}
+    _a42_limit_rb = int(max_trades_per_day) if max_trades_per_day and max_trades_per_day > 0 else 0
 
     # Build positional lookup once (integer positions for slicing forward)
     index_positions = {idx: pos for pos, idx in enumerate(df.index)}
@@ -970,6 +1001,16 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if entry_pos_int + 1 >= len(df):
             continue
         next_candle = df.iloc[entry_pos_int + 1]
+
+        # WHY (Phase A.42): Enforce max trades per calendar day.
+        # CHANGED: April 2026 — Phase A.42
+        if _a42_limit_rb > 0:
+            try:
+                _a42_day_rb = str(pd.Timestamp(next_candle['timestamp']).date())
+                if _a42_daily_counts_rb.get(_a42_day_rb, 0) >= _a42_limit_rb:
+                    continue
+            except Exception:
+                pass
 
         # News blackout filter
         if news_blackout_minutes > 0:
@@ -1172,6 +1213,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: April 2026 — Phase 28 Fix 3 — add 'pips' key for schema
         #          consistency with fast_backtest (audit Part C crit #6)
         _pips_post_spread = pnl_pips - spread_pips
+        # WHY (Phase A.42): Increment daily counter after trade opens.
+        # CHANGED: April 2026 — Phase A.42
+        if _a42_limit_rb > 0:
+            try:
+                _a42_entry_day_rb = str(pd.Timestamp(entry_time).date())
+                _a42_daily_counts_rb[_a42_entry_day_rb] = _a42_daily_counts_rb.get(_a42_entry_day_rb, 0) + 1
+            except Exception:
+                pass
         trades.append({
             "entry_time":  entry_time,
             "exit_time":   exit_time,
@@ -1201,7 +1250,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   spread_pips=2.5, commission_pips=0.0,
                   slippage_pips=0.0,
                   account_size=None, risk_per_trade_pct=1.0,
-                  default_sl_pips=150.0, pip_value_per_lot=10.0):
+                  default_sl_pips=150.0, pip_value_per_lot=10.0,
+                  # WHY (Phase A.42): 0 = no limit; positive int = max trades
+                  #      per calendar day, matching live EA's MaxTradesPerDay.
+                  # CHANGED: April 2026 — Phase A.42
+                  max_trades_per_day=0):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -1811,7 +1864,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           breach_daily_dd_limit_pct=5.0,
                           breach_total_dd_limit_pct=10.0,
                           breach_daily_safety_pct=4.0,
-                          breach_total_safety_pct=8.0):
+                          breach_total_safety_pct=8.0,
+                          # WHY (Phase A.42): max_trades_per_day=0 means no limit
+                          #      (default, preserves pre-A.42 behavior). Any positive
+                          #      integer limits how many trades the backtester opens
+                          #      per calendar day. Passed through to fast_backtest.
+                          # CHANGED: April 2026 — Phase A.42
+                          max_trades_per_day=0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2152,6 +2211,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
+                # WHY (Phase A.42): Enforce daily trade limit per user setting.
+                # CHANGED: April 2026 — Phase A.42
+                max_trades_per_day=max_trades_per_day,
             )
             stats = compute_stats(trades)
 
@@ -2293,6 +2355,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         json.dump({
             "generated_at":      time.strftime("%Y-%m-%d %H:%M"),
             "entry_timeframe":   top_level_tf,
+            # WHY (Phase A.42): Store so EA generator can read the
+            #      daily limit that was used during backtesting.
+            # CHANGED: April 2026 — Phase A.42
+            "max_trades_per_day": max_trades_per_day,
             "tested_timeframes": unique_tfs,
             "combinations":      total,
             "elapsed_seconds":   round(elapsed, 1),
