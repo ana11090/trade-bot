@@ -33,6 +33,19 @@ _summary_frame = None
 _sort_key = ['net_total_pips']  # default sort
 _sort_reverse = [True]
 
+# WHY (Phase A.44): Filter state must survive display_summary re-calls
+#      (sort buttons, filter changes all call display_summary which
+#      destroys and recreates all widgets). Same pattern as _sort_key.
+# CHANGED: April 2026 — Phase A.44
+_a44_state = {
+    'exit_filter':   'All',
+    'profit_filter': 'all',
+    'min_trades': '',
+    'min_wr':     '',
+    'min_pf':     '',
+    'max_dd':     '',
+}
+
 
 # WHY: Used by both display_summary() and _display_results_inner().
 #      Was originally a nested function inside display_summary() but
@@ -241,6 +254,99 @@ def _display_results_inner(output_text, summary_frame, data, results,
         tf_menu.config(font=("Arial", 8), bg="#fff", relief=tk.FLAT, padx=2, pady=1)
         tf_menu.pack(side=tk.LEFT)
 
+    # ═══════════════════════════════════════════════════════════════════
+    # Phase A.44: Enhanced filter controls
+    # WHY (Phase A.44): With 60+ results (5 TFs × 12 exit strategies),
+    #      the user needs to quickly narrow down to what matters. All
+    #      filters are AND-combined. State lives in module-level
+    #      _a44_state so it survives display_summary re-calls (sort
+    #      buttons recreate all widgets from scratch).
+    # CHANGED: April 2026 — Phase A.44
+    # ═══════════════════════════════════════════════════════════════════
+    filter_frame = tk.Frame(summary_frame, bg="#f0f2f5", padx=10, pady=6)
+    filter_frame.pack(fill="x", padx=10, pady=(2, 5))
+
+    # ── Row 1: Exit strategy dropdown + profitability radio ──
+    row1 = tk.Frame(filter_frame, bg="#f0f2f5")
+    row1.pack(fill="x", pady=(0, 4))
+
+    tk.Label(row1, text="Exit Strategy:", font=("Segoe UI", 9),
+             bg="#f0f2f5", fg="#333").pack(side=tk.LEFT)
+
+    _all_exits = sorted(set(
+        r.get('exit_name', r.get('exit_strategy', '?'))
+        for r in results if r.get('total_trades', 0) > 0
+    ))
+    _exit_choices = ['All'] + _all_exits
+    if _a44_state['exit_filter'] not in _exit_choices:
+        _a44_state['exit_filter'] = 'All'
+    exit_filter_var = tk.StringVar(value=_a44_state['exit_filter'])
+
+    def _on_exit_change(val):
+        _a44_state['exit_filter'] = val
+        display_summary(output_text, summary_frame)
+
+    # WHY: OptionMenu parent must equal its pack container — using
+    #      filter_frame as parent then pack(in_=row1) is invalid in
+    #      tkinter. Parent = row1 directly.
+    exit_menu = tk.OptionMenu(row1, exit_filter_var, *_exit_choices,
+                               command=_on_exit_change)
+    exit_menu.config(font=("Segoe UI", 8), bg="#fff", relief=tk.FLAT, width=16)
+    exit_menu.pack(side=tk.LEFT, padx=(4, 12))
+
+    tk.Label(row1, text="Show:", font=("Segoe UI", 9),
+             bg="#f0f2f5", fg="#333").pack(side=tk.LEFT, padx=(0, 4))
+
+    profit_filter_var = tk.StringVar(value=_a44_state['profit_filter'])
+
+    def _on_profit_change():
+        _a44_state['profit_filter'] = profit_filter_var.get()
+        display_summary(output_text, summary_frame)
+
+    for _pf_text, _pf_val in [("All", "all"), ("Profitable only", "profit"), ("Losing only", "loss")]:
+        tk.Radiobutton(
+            row1, text=_pf_text, variable=profit_filter_var, value=_pf_val,
+            bg="#f0f2f5", font=("Segoe UI", 8), activebackground="#f0f2f5",
+            command=_on_profit_change,
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+    # ── Row 2: Numeric range filters ──
+    row2 = tk.Frame(filter_frame, bg="#f0f2f5")
+    row2.pack(fill="x")
+
+    _a44_entry_vars = {}
+    for _lbl, _key, _w in [
+        ("Min trades:", "min_trades", 5),
+        ("Min WR%:",    "min_wr",     5),
+        ("Min PF:",     "min_pf",     5),
+        ("Max DD pips:", "max_dd",    7),
+    ]:
+        tk.Label(row2, text=_lbl, font=("Segoe UI", 8),
+                 bg="#f0f2f5", fg="#555").pack(side=tk.LEFT, padx=(6, 2))
+        _var = tk.StringVar(value=_a44_state[_key])
+        tk.Entry(row2, textvariable=_var, width=_w,
+                 font=("Segoe UI", 8), relief=tk.SOLID, bd=1).pack(side=tk.LEFT, padx=(0, 4))
+        _a44_entry_vars[_key] = _var
+
+    def _apply_a44():
+        for _k, _v in _a44_entry_vars.items():
+            _a44_state[_k] = _v.get().strip()
+        display_summary(output_text, summary_frame)
+
+    def _reset_a44():
+        _a44_state['exit_filter']   = 'All'
+        _a44_state['profit_filter'] = 'all'
+        for _k in ('min_trades', 'min_wr', 'min_pf', 'max_dd'):
+            _a44_state[_k] = ''
+        display_summary(output_text, summary_frame)
+
+    tk.Button(row2, text="Apply", font=("Segoe UI", 8, "bold"),
+              bg="#667eea", fg="white", relief=tk.FLAT, padx=8, pady=1,
+              command=_apply_a44).pack(side=tk.LEFT, padx=(8, 0))
+    tk.Button(row2, text="Reset", font=("Segoe UI", 8),
+              bg="#ccc", fg="#333", relief=tk.FLAT, padx=8, pady=1,
+              command=_reset_a44).pack(side=tk.LEFT, padx=(4, 0))
+
     # ── Sort results ──
     sorted_results = sorted(results, key=lambda r: r.get(_sort_key[0], 0), reverse=_sort_reverse[0])
 
@@ -252,6 +358,45 @@ def _display_results_inner(output_text, summary_frame, data, results,
     selected_tf = tf_filter_var.get()
     if selected_tf and selected_tf != 'All TFs':
         sorted_results = [r for r in sorted_results if r.get('entry_tf', '') == selected_tf]
+
+    # ── Phase A.44 filters (read from _a44_state for persistence) ──
+    _sel_exit = _a44_state['exit_filter']
+    if _sel_exit and _sel_exit != 'All':
+        sorted_results = [
+            r for r in sorted_results
+            if _sel_exit in (r.get('exit_name', ''), r.get('exit_strategy', ''))
+        ]
+
+    _sel_profit = _a44_state['profit_filter']
+    if _sel_profit == 'profit':
+        sorted_results = [r for r in sorted_results if r.get('net_total_pips', 0) > 0]
+    elif _sel_profit == 'loss':
+        sorted_results = [r for r in sorted_results if r.get('net_total_pips', 0) <= 0]
+
+    def _safe_float_a44(key, default=None):
+        try:
+            val = _a44_state.get(key, '').strip()
+            return float(val) if val else default
+        except (ValueError, TypeError):
+            return default
+
+    _min_trades = _safe_float_a44('min_trades')
+    _min_wr     = _safe_float_a44('min_wr')
+    _min_pf     = _safe_float_a44('min_pf')
+    _max_dd     = _safe_float_a44('max_dd')
+
+    if _min_trades is not None:
+        sorted_results = [r for r in sorted_results if r.get('total_trades', 0) >= _min_trades]
+    if _min_wr is not None:
+        sorted_results = [
+            r for r in sorted_results
+            if (r.get('win_rate', 0) if r.get('win_rate', 0) >= 1
+                else r.get('win_rate', 0) * 100) >= _min_wr
+        ]
+    if _min_pf is not None:
+        sorted_results = [r for r in sorted_results if r.get('net_profit_factor', 0) >= _min_pf]
+    if _max_dd is not None:
+        sorted_results = [r for r in sorted_results if abs(r.get('max_dd_pips', 0)) <= _max_dd]
 
     # ── Scrollable results area ──
     results_canvas = tk.Canvas(summary_frame, bg="#ffffff", highlightthickness=0)
