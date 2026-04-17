@@ -1313,6 +1313,17 @@ def run_analysis(feature_matrix_path=None):
                                 f"  [A.38b]   Conditions applied: "
                                 f"{', '.join(_a38b_cond_strs)}"
                             )
+                            # WHY (Phase A.38b.1 hotfix): Save the original df
+                            #      so we can restore it after rule extraction.
+                            #      A.38b must only affect extract_rules — the
+                            #      downstream steps (clustering, regimes,
+                            #      anomalies, suggestions, Mode A) all need
+                            #      the FULL trade dataset. The original A.38b
+                            #      mutated df in place, causing cluster_trades
+                            #      to crash with "Length of values (1106) does
+                            #      not match length of index (349)".
+                            # CHANGED: April 2026 — Phase A.38b.1 hotfix
+                            _a38b_original_df = df
                             df = df[_a38b_mask].reset_index(drop=True)
                             log.info(
                                 f"  [A.38b]   Step 3 will extract rules "
@@ -1616,6 +1627,23 @@ def run_analysis(feature_matrix_path=None):
         )
 
     # 4. Clusters
+    # WHY (Phase A.38b.1 hotfix): If A.38b filtered df for rule extraction,
+    #      restore the original full-size df now. Steps 4-8 and Mode A all
+    #      need the FULL trade dataset, not the regime-filtered subset.
+    #      _a38b_original_df only exists when the filter actually ran.
+    # CHANGED: April 2026 — Phase A.38b.1 hotfix
+    try:
+        if '_a38b_original_df' in dir() and _a38b_original_df is not None:
+            _a38b_n_filtered = len(df)
+            df = _a38b_original_df
+            log.info(
+                f"  [A.38b.1] restored original df ({len(df)} trades) "
+                f"after regime-filtered rule extraction ({_a38b_n_filtered} trades)"
+            )
+            _a38b_original_df = None
+    except Exception:
+        pass
+
     log.info('\n[4/8] Clustering trades...')
     clusters = cluster_trades(df, model_result)
     for c in clusters:
