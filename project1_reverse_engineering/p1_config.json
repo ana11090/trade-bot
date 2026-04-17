@@ -8,6 +8,6 @@
   "srm_a_target_coverage": "0.86",
   "srm_a_dedup_correlated": "true",
   "srm_a_winner_selection": "coverage",
-  "regime_filter_at_discovery": "true",
+  "regime_filter_at_discovery": "false",
   "regime_filter_strictness": "balanced"
 }
