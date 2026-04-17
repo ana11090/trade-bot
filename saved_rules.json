@@ -1,7 +1,7 @@
 [
   {
     "id": 1,
-    "saved_at": "2026-04-17T13:37:18.985451",
+    "saved_at": "2026-04-17T15:14:03.672540",
     "source": "Step3:outputs:WIN:conf99",
     "notes": "",
     "rule": {
@@ -39,18 +39,12 @@
       "win_rate": 0.986,
       "avg_pips": 480.6,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 2,
-    "saved_at": "2026-04-17T13:37:18.993667",
+    "saved_at": "2026-04-17T15:14:03.692728",
     "source": "Step3:outputs:WIN:conf89",
     "notes": "",
     "rule": {
@@ -88,18 +82,12 @@
       "win_rate": 0.889,
       "avg_pips": 301.4,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 3,
-    "saved_at": "2026-04-17T13:37:18.999341",
+    "saved_at": "2026-04-17T15:14:03.710787",
     "source": "Step3:outputs:LOSS:conf78",
     "notes": "",
     "rule": {
@@ -137,18 +125,12 @@
       "win_rate": 0.22,
       "avg_pips": 27.5,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 4,
-    "saved_at": "2026-04-17T13:37:19.005678",
+    "saved_at": "2026-04-17T15:14:03.731119",
     "source": "Step3:outputs:WIN:conf88",
     "notes": "",
     "rule": {
@@ -186,18 +168,12 @@
       "win_rate": 0.875,
       "avg_pips": 261.4,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 5,
-    "saved_at": "2026-04-17T13:37:19.011699",
+    "saved_at": "2026-04-17T15:14:03.751400",
     "source": "Step3:outputs:WIN:conf87",
     "notes": "",
     "rule": {
@@ -230,18 +206,12 @@
       "win_rate": 0.871,
       "avg_pips": 390.6,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 6,
-    "saved_at": "2026-04-17T13:37:19.018287",
+    "saved_at": "2026-04-17T15:14:03.774204",
     "source": "Step3:outputs:WIN:conf90",
     "notes": "",
     "rule": {
@@ -279,18 +249,12 @@
       "win_rate": 0.905,
       "avg_pips": 276.2,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 7,
-    "saved_at": "2026-04-17T13:37:19.025728",
+    "saved_at": "2026-04-17T15:14:03.794382",
     "source": "Step3:outputs:WIN:conf76",
     "notes": "",
     "rule": {
@@ -328,18 +292,12 @@
       "win_rate": 0.76,
       "avg_pips": 239.4,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 8,
-    "saved_at": "2026-04-17T13:37:19.032579",
+    "saved_at": "2026-04-17T15:14:03.816121",
     "source": "Step3:outputs:WIN:conf65",
     "notes": "",
     "rule": {
@@ -377,18 +335,12 @@
       "win_rate": 0.654,
       "avg_pips": 142.8,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 9,
-    "saved_at": "2026-04-17T13:37:19.039428",
+    "saved_at": "2026-04-17T15:14:03.835249",
     "source": "Step3:outputs:WIN:conf67",
     "notes": "",
     "rule": {
@@ -421,18 +373,12 @@
       "win_rate": 0.667,
       "avg_pips": 93.5,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 10,
-    "saved_at": "2026-04-17T13:37:19.047196",
+    "saved_at": "2026-04-17T15:14:03.855507",
     "source": "Step3:outputs:WIN:conf65",
     "notes": "",
     "rule": {
@@ -465,18 +411,39 @@
       "win_rate": 0.65,
       "avg_pips": 380.8,
       "action": "BUY",
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
     "id": 11,
-    "saved_at": "2026-04-17T13:38:12.625813",
+    "saved_at": "2026-04-17T15:14:09.291910",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        }
+      ],
+      "prediction": "BUY",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 975,
+      "confidence": 0.8816,
+      "tightness_product": 0.003479,
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 12,
+    "saved_at": "2026-04-17T15:15:05.808442",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -516,23 +483,12 @@
       "entry_timeframe": "H4",
       "action": "BUY",
       "n_real_trades_in_rule": 190,
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "direction": ">",
-          "threshold": 1.7
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
-    "id": 12,
-    "saved_at": "2026-04-17T13:38:12.649507",
+    "id": 13,
+    "saved_at": "2026-04-17T15:15:05.829709",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -567,23 +523,12 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 373,
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "direction": ">",
-          "threshold": 1.7
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
-    "id": 13,
-    "saved_at": "2026-04-17T13:38:12.673077",
+    "id": 14,
+    "saved_at": "2026-04-17T15:15:05.848388",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -623,23 +568,12 @@
       "entry_timeframe": "H1",
       "action": "BUY",
       "n_real_trades_in_rule": 253,
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "direction": ">",
-          "threshold": 1.7
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
-    "id": 14,
-    "saved_at": "2026-04-17T13:38:12.695198",
+    "id": 15,
+    "saved_at": "2026-04-17T15:15:05.866671",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -679,23 +613,12 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 91,
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "direction": ">",
-          "threshold": 1.7
-        }
-      ]
+      "regime_filter": null
     }
   },
   {
-    "id": 15,
-    "saved_at": "2026-04-17T13:38:12.717537",
+    "id": 16,
+    "saved_at": "2026-04-17T15:15:05.886559",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -735,36 +658,7 @@
       "entry_timeframe": "M15",
       "action": "BUY",
       "n_real_trades_in_rule": 76,
-      "regime_filter": [
-        {
-          "feature": "H1_std_dev_20",
-          "direction": ">",
-          "threshold": 20.177186
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "direction": ">",
-          "threshold": 1.7
-        }
-      ]
-    }
-  },
-  {
-    "id": 16,
-    "saved_at": "2026-04-17T13:55:33.696045",
-    "source": "Backtest Result",
-    "notes": "i like this one",
-    "rule": {
-      "rule_combo": "Rule 1 (BUY)",
-      "exit_strategy": "SL 150 pips, exit when H1_rsi_14 above 70, max 500 candles",
-      "exit_name": "Indicator Exit",
-      "prediction": "WIN",
-      "win_rate": 18.6,
-      "net_total_pips": 106550.0,
-      "net_profit_factor": 1.34,
-      "total_trades": 2692,
-      "max_dd_pips": 37528.0,
-      "entry_tf": "M5"
+      "regime_filter": null
     }
   }
 ]

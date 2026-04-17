@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-17T10:45:46.939641
+Generated: 2026-04-17T15:14:09.319564
 Trades analyzed: 1106 | Features: 629
 ======================================================================
 
@@ -33,33 +33,45 @@ Trades analyzed: 1106 | Features: 629
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 100%, 48 trades)
-    IF H1_candle_body > 14.94 AND M15_plus_di <= 24.3427 AND M15_cci_50 > -152.2146 AND M5_position_in_swing_range <= 0.5943
-    Win rate: 100% | Avg pips: +591
+  RULE 1 (WIN, conf: 99%, 72 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 > 30.3743 AND M15_mass_index <= 26.0426 AND M15_macd_std_diff <= 2.5631 AND M5_bb_50_2_width > 0.7913
+    Win rate: 99% | Avg pips: +481
 
-  RULE 2 (WIN, conf: 92%, 37 trades)
-    IF H1_candle_body <= 14.94 AND H1_close_position_in_range <= 0.5782 AND M15_adx_21 <= 28.1507 AND M5_ema_9_distance > -0.1359
-    Win rate: 92% | Avg pips: +488
+  RULE 2 (WIN, conf: 89%, 72 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 <= 30.3743 AND M5_position_in_swing_range <= 0.6051 AND H1_stoch_14_d > 18.6137 AND M15_adx_21 > 21.7328
+    Win rate: 89% | Avg pips: +301
 
-  RULE 3 (WIN, conf: 67%, 39 trades)
-    IF H1_candle_body <= 14.94 AND H1_close_position_in_range > 0.5782 AND H4_macd_fast_diff > 1.5637
-    Win rate: 67% | Avg pips: +199
+  RULE 3 (LOSS, conf: 78%, 41 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 <= 30.3743 AND M5_position_in_swing_range > 0.6051 AND H4_cci_14 <= 71.4269 AND M15_adx_28 <= 21.9115
+    Win rate: 22% | Avg pips: +28
 
-  RULE 4 (LOSS, conf: 79%, 33 trades)
-    IF H1_candle_body <= 14.94 AND H1_close_position_in_range > 0.5782 AND H4_macd_fast_diff <= 1.5637
-    Win rate: 21% | Avg pips: +10
+  RULE 4 (WIN, conf: 88%, 32 trades)
+    IF M5_std_dev_50 <= 5.5525 AND M5_volume_ratio_20 > 1.0015 AND H1_adx_28 > 13.2362 AND H1_macd_fast_diff > -0.5668 AND D1_day_of_month <= 6.5
+    Win rate: 88% | Avg pips: +261
 
-  RULE 5 (WIN, conf: 83%, 24 trades)
-    IF H1_candle_body > 14.94 AND M15_plus_di <= 24.3427 AND M15_cci_50 > -152.2146 AND M5_position_in_swing_range > 0.5943
-    Win rate: 83% | Avg pips: +294
+  RULE 5 (WIN, conf: 87%, 31 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 > 30.3743 AND M15_mass_index > 26.0426 AND M15_roc_20 <= -0.3725
+    Win rate: 87% | Avg pips: +391
 
-  RULE 6 (WIN, conf: 67%, 24 trades)
-    IF H1_candle_body <= 14.94 AND H1_close_position_in_range <= 0.5782 AND M15_adx_21 <= 28.1507 AND M5_ema_9_distance <= -0.1359
-    Win rate: 67% | Avg pips: +239
+  RULE 6 (WIN, conf: 90%, 21 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 <= 30.3743 AND M5_position_in_swing_range > 0.6051 AND H4_cci_14 > 71.4269 AND M5_atr_100 <= 5.2248
+    Win rate: 90% | Avg pips: +276
 
-  RULE 7 (WIN, conf: 67%, 21 trades)
-    IF H1_candle_body > 14.94 AND M15_plus_di <= 24.3427 AND M15_cci_50 <= -152.2146
-    Win rate: 67% | Avg pips: +418
+  RULE 7 (WIN, conf: 76%, 25 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 > 30.3743 AND M15_mass_index <= 26.0426 AND M15_macd_std_diff <= 2.5631 AND M5_bb_50_2_width <= 0.7913
+    Win rate: 76% | Avg pips: +239
+
+  RULE 8 (WIN, conf: 65%, 26 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 <= 30.3743 AND M5_position_in_swing_range > 0.6051 AND H4_cci_14 <= 71.4269 AND M15_adx_28 > 21.9115
+    Win rate: 65% | Avg pips: +143
+
+  RULE 9 (WIN, conf: 67%, 21 trades)
+    IF M5_std_dev_50 <= 5.5525 AND M5_volume_ratio_20 > 1.0015 AND H1_adx_28 <= 13.2362 AND H1_macd_fast_signal <= -1.0984
+    Win rate: 67% | Avg pips: +94
+
+  RULE 10 (WIN, conf: 65%, 20 trades)
+    IF M5_std_dev_50 > 5.5525 AND H4_adx_14 > 30.3743 AND M15_mass_index <= 26.0426 AND M15_macd_std_diff > 2.5631
+    Win rate: 65% | Avg pips: +381
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 53 trades (4.8%), WR 87%, avg +574 pips, avg dur 0min
