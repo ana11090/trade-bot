@@ -1860,7 +1860,28 @@ def _a33_run_full_diagnostic(output_widget, btn=None):
 def build_panel(parent):
     global _output_text, _progress_label, _progress_bar, _step_label, _run_button, _best_label
 
-    panel = tk.Frame(parent, bg="#ffffff")
+    # ── Scrollable wrapper ────────────────────────────────────────────────────
+    # Outer frame is returned to the app; inner content_frame holds all widgets.
+    # The Canvas + Scrollbar combo lets the user scroll the full panel with
+    # mouse wheel (the global _route_scroll in main_app.py finds this canvas
+    # automatically by walking the widget hierarchy).
+    _outer = tk.Frame(parent, bg="#ffffff")
+    _panel_canvas = tk.Canvas(_outer, bg="#ffffff", highlightthickness=0)
+    _panel_scrollbar = tk.Scrollbar(_outer, orient="vertical", command=_panel_canvas.yview)
+    _panel_canvas.configure(yscrollcommand=_panel_scrollbar.set)
+    _panel_scrollbar.pack(side=tk.RIGHT, fill="y")
+    _panel_canvas.pack(side=tk.LEFT, fill="both", expand=True)
+
+    panel = tk.Frame(_panel_canvas, bg="#ffffff")
+    _panel_canvas_win = _panel_canvas.create_window((0, 0), window=panel, anchor="nw", tags="_panel_content")
+
+    def _on_panel_configure(event):
+        _panel_canvas.configure(scrollregion=_panel_canvas.bbox("all"))
+    panel.bind("<Configure>", _on_panel_configure)
+
+    def _on_canvas_resize(event):
+        _panel_canvas.itemconfig("_panel_content", width=event.width)
+    _panel_canvas.bind("<Configure>", _on_canvas_resize)
 
     # WHY (Phase A.22): install Tk-level exception handler so callback
     #      exceptions land in outputs/last_backtest_error.txt via A.21.
@@ -2662,7 +2683,7 @@ def build_panel(parent):
     _output_text.insert(tk.END, "  4. Generate visual HTML report\n\n")
     _output_text.insert(tk.END, "Estimated time: 2-5 minutes\n")
 
-    return panel
+    return _outer
 
 
 def refresh():

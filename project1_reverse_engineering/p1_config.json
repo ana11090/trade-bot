@@ -1,11 +1,13 @@
 {
-  "regime_filter_enabled": "false",
+  "regime_filter_enabled": "true",
   "regime_filter_mode": "automatic",
-  "regime_filter_discovered": "{\"status\": \"ok\", \"baseline\": {\"count\": 1106, \"win_rate\": 0.5840867992766727, \"expectancy\": 146.17088607594937}, \"subset\": [{\"feature\": \"H1_std_dev_20\", \"direction\": \">\", \"threshold\": 17.741695}], \"metrics\": {\"count\": 349, \"survival\": 0.3156, \"win_rate\": 0.6905, \"expectancy\": 284.754, \"wr_lift\": 0.1065, \"exp_lift_rel\": 0.9481, \"train_wr\": 0.7025, \"test_wr\": 0.6429, \"score\": 2.412}}",
-  "single_rule_mode_enabled": "true",
+  "regime_filter_discovered": "{\"status\": \"ok\", \"strictness\": \"balanced\", \"baseline\": {\"count\": 1106, \"win_rate\": 0.5840867992766727, \"expectancy\": 146.17088607594937}, \"subset\": [{\"feature\": \"H1_std_dev_20\", \"direction\": \">\", \"threshold\": 20.177186}], \"metrics\": {\"count\": 296, \"survival\": 0.2676, \"win_rate\": 0.7027, \"expectancy\": 313.574, \"wr_lift\": 0.1186, \"exp_lift_rel\": 1.1453, \"train_wr\": 0.7203, \"test_wr\": 0.6333, \"score\": 2.8319}}",
+  "single_rule_mode_enabled": "false",
   "single_rule_mode_variant": "a",
   "single_rule_mode_discovered": "{\"status\": \"ok\", \"variant\": \"a\", \"trade_count\": 1106, \"chosen\": [{\"feature\": \"D1_volume_change\", \"operator\": \"<\", \"threshold\": 31.238346, \"value\": 31.238346, \"trade_coverage\": 0.9475, \"background_coverage\": 0.9166, \"background_coverage_valid\": true, \"tightness\": 0.0183}, {\"feature\": \"H4_bear_power\", \"operator\": \">\", \"threshold\": -116.272441, \"value\": -116.272441, \"trade_coverage\": 0.9494, \"background_coverage\": 0.996, \"background_coverage_valid\": true, \"tightness\": 0.1901}], \"chosen_stats\": {\"joint_coverage\": 0.8816, \"tightness_product\": 0.003479, \"cardinality\": 2}, \"target_coverage\": 0.86}",
   "srm_a_target_coverage": "0.86",
   "srm_a_dedup_correlated": "true",
-  "srm_a_winner_selection": "coverage"
+  "srm_a_winner_selection": "coverage",
+  "regime_filter_at_discovery": "true",
+  "regime_filter_strictness": "balanced"
 }
