@@ -73,11 +73,18 @@ _SMART_DEPENDENCIES = {
 }
 
 
-def _extract_required_indicators(rules):
+def _extract_required_indicators(rules, exit_strategies=None):
     """
-    Get the set of indicator names needed by the rules, grouped by timeframe.
-    When rules use SMART or REGIME features, also includes all base indicators
-    that those features depend on.
+    Get the set of indicator names needed by the rules AND exit strategies,
+    grouped by timeframe.
+
+    WHY (Phase A.42.1): Old version only extracted from rules' conditions.
+         Exit strategies like ATRBased (needs H1_atr_14) and IndicatorExit
+         (needs H1_rsi_14) also require specific indicators. When partial
+         indicator loading was active, these columns were never computed,
+         causing ATRBased to fall back to ATR_NO_DATA and produce garbage
+         results (trades holding from 2003 to 2026, +175,000 pips).
+    CHANGED: April 2026 — Phase A.42.1
     """
     required = {}
     has_smart = False
@@ -105,6 +112,26 @@ def _extract_required_indicators(rules):
     if has_smart or has_regime:
         for tf, deps in _SMART_DEPENDENCIES.items():
             required.setdefault(tf, set()).update(deps)
+
+    # WHY (Phase A.42.1): Extract indicators needed by exit strategies.
+    #      ATRBased uses atr_column (default "H1_atr_14").
+    #      IndicatorExit uses exit_indicator (default "H1_rsi_14").
+    #      Without these, the exit strategy silently degrades to
+    #      ATR_NO_DATA or indicator-not-found fallback behavior.
+    # CHANGED: April 2026 — Phase A.42.1
+    if exit_strategies:
+        for es in exit_strategies:
+            _atr_col = getattr(es, 'atr_column', None)
+            if _atr_col and isinstance(_atr_col, str):
+                _parts = _atr_col.split('_', 1)
+                if len(_parts) == 2 and _parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    required.setdefault(_parts[0], set()).add(_parts[1])
+
+            _exit_ind = getattr(es, 'exit_indicator', None)
+            if _exit_ind and isinstance(_exit_ind, str):
+                _parts = _exit_ind.split('_', 1)
+                if len(_parts) == 2 and _parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    required.setdefault(_parts[0], set()).add(_parts[1])
 
     return {tf: sorted(list(inds)) for tf, inds in required.items()}
 
@@ -1930,7 +1957,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
              if rule_indices is not None else all_rules)
 
     # Extract which indicators each TF actually needs — skips the other ~575
-    required_indicators = _extract_required_indicators(all_rules)
+    # WHY (Phase A.42.1): Pass exit strategies so their indicator
+    #      requirements (ATR, RSI, etc.) are included in the load set.
+    # CHANGED: April 2026 — Phase A.42.1
+    required_indicators = _extract_required_indicators(all_rules, exit_strategies)
     total_needed = sum(len(v) for v in required_indicators.values())
     log.info(f"\n[BACKTESTER] Required indicators per TF ({total_needed} total vs 595 full):")
     for tf, inds in required_indicators.items():
