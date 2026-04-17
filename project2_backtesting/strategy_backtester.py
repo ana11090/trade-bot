@@ -1961,7 +1961,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      integer limits how many trades the backtester opens
                           #      per calendar day. Passed through to fast_backtest.
                           # CHANGED: April 2026 — Phase A.42
-                          max_trades_per_day=0):
+                          max_trades_per_day=0,
+                          # WHY (Phase A.45): When True, generate every possible
+                          #      OR-combination (pairs, triples, etc.) of the
+                          #      selected rules instead of the legacy All+Top3+Top5
+                          #      combos. Default False = pre-A.45 behavior.
+                          # CHANGED: April 2026 — Phase A.45
+                          combine_all_rules=False):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2171,6 +2177,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         return ['BUY']
 
     rule_combos = []
+
+    # ── Individual rules (always present) ──
     for i, r in enumerate(rules):
         for _dir in _a30_rule_directions(r):
             rule_combos.append({
@@ -2180,24 +2188,52 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 "direction": _dir,
             })
 
-    if len(rules) > 1:
-        # WHY (Phase A.30): For multi-rule combos, build BUY and SELL
-        #      versions separately. A BUY combo includes every rule
-        #      whose action is BUY or BOTH. A SELL combo includes
-        #      every rule whose action is SELL or BOTH. If every
-        #      rule in the set has the same single direction, only
-        #      that one combo is built.
-        # CHANGED: April 2026 — Phase A.30
-        def _a30_rules_for_dir(rule_list, dir_name):
-            picked     = []
-            picked_idx = []
-            for j, rr in enumerate(rule_list):
-                allowed = _a30_rule_directions(rr)
-                if dir_name in allowed:
-                    picked.append(rr)
-                    picked_idx.append(j)
-            return picked, picked_idx
+    def _a30_rules_for_dir(rule_list, dir_name):
+        picked     = []
+        picked_idx = []
+        for j, rr in enumerate(rule_list):
+            allowed = _a30_rule_directions(rr)
+            if dir_name in allowed:
+                picked.append(rr)
+                picked_idx.append(j)
+        return picked, picked_idx
 
+    if len(rules) > 1 and combine_all_rules:
+        # ═══════════════════════════════════════════════════════════════
+        # Phase A.45: Generate ALL possible OR-combinations of selected
+        #      rules (pairs, triples, quads, etc.). Each combo means:
+        #      if ANY rule in the combo fires, a trade opens.
+        #
+        #      Produces 2^N - 1 - N additional combos (excluding the
+        #      empty set and individuals already added above).
+        #      Per-direction: only rules compatible with BUY/SELL are
+        #      included in each directional combo.
+        # CHANGED: April 2026 — Phase A.45
+        # ═══════════════════════════════════════════════════════════════
+        import itertools
+        for combo_size in range(2, len(rules) + 1):
+            for idx_tuple in itertools.combinations(range(len(rules)), combo_size):
+                combo_label = "+".join(str(j + 1) for j in idx_tuple)
+                for _dir in ('BUY', 'SELL'):
+                    _dir_rules = []
+                    _dir_indices = []
+                    for j in idx_tuple:
+                        if _dir in _a30_rule_directions(rules[j]):
+                            _dir_rules.append(rules[j])
+                            _dir_indices.append(j)
+                    if _dir_rules:
+                        rule_combos.append({
+                            "name":      f"Rules {combo_label} ({_dir})",
+                            "rules":     _dir_rules,
+                            "indices":   _dir_indices,
+                            "direction": _dir,
+                        })
+
+    elif len(rules) > 1:
+        # ── Legacy combo mode (A.30): All combined, Top 3, Top 5 ──
+        # WHY (Phase A.30): For multi-rule combos, build BUY and SELL
+        #      versions separately.
+        # CHANGED: April 2026 — Phase A.30
         for _dir in ('BUY', 'SELL'):
             _all_rules, _all_idx = _a30_rules_for_dir(rules, _dir)
             if _all_rules:

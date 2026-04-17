@@ -192,6 +192,7 @@ _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # CHANGED: April 2026 — Phase A.42
 _a42_max_trades_mode_var  = None  # StringVar: "normal" | "custom"
 _a42_max_trades_value_var = None  # IntVar: custom limit
+_a45_combine_var          = None  # BooleanVar: test all rule combinations
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
 #      into output_text via format_exc(), but the user reported they
@@ -585,6 +586,29 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 tk.END,
                 f"Max trades/day: {'unlimited' if _a42_limit == 0 else _a42_limit}\n"
             )
+
+            # WHY (Phase A.45): Read the "test all combinations" checkbox.
+            # CHANGED: April 2026 — Phase A.45
+            _a45_combine = _a45_combine_var.get() if _a45_combine_var is not None else False
+            if _a45_combine and len(selected_rules) > 1:
+                _a45_combo_count = (2 ** len(selected_rules)) - 1
+                output_text.insert(
+                    tk.END,
+                    f"Rule combinations: ALL ({_a45_combo_count} combos from "
+                    f"{len(selected_rules)} rules)\n"
+                )
+                if len(selected_rules) >= 6:
+                    output_text.insert(
+                        tk.END,
+                        f"⚠️  {_a45_combo_count} combos × 12 exits = "
+                        f"{_a45_combo_count * 12} backtests — this may take a while\n"
+                    )
+            elif _a45_combine:
+                output_text.insert(tk.END, "Rule combinations: OFF (need ≥2 rules selected)\n")
+                _a45_combine = False
+            else:
+                output_text.insert(tk.END, "Rule combinations: OFF (individual rules only)\n")
+
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n\n")
 
             # Determine which TFs to test
@@ -640,6 +664,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         progress_callback=_progress,
                         use_safety_stops=use_safety,
                         max_trades_per_day=_a42_limit,
+                        combine_all_rules=_a45_combine,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -2450,6 +2475,39 @@ def build_panel(parent):
         _a42_frame,
         text="    Limits how many trades the backtester opens per calendar day.\n"
              "    Matches the MaxTradesPerDay setting in the generated EA.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Phase A.45: Test all rule combinations ────────────────────────────────
+    # WHY (Phase A.45): The user wants to know which combination of rules
+    #      produces the best backtest results. When checked, the backtester
+    #      generates all possible OR-combinations (pairs, triples, etc.)
+    #      of the selected rules. Each combo is tested against all exit
+    #      strategies. Default OFF = current behavior (individuals + All
+    #      combined + Top 3/5).
+    # CHANGED: April 2026 — Phase A.45
+    global _a45_combine_var
+
+    _a45_frame = tk.Frame(panel, bg="white", pady=6)
+    _a45_frame.pack(fill="x", padx=20)
+
+    _a45_combine_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(
+        _a45_frame,
+        text="🔀 Test all rule combinations (pairs, triples, etc.)",
+        variable=_a45_combine_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    tk.Label(
+        _a45_frame,
+        text="    OFF = test each rule individually (faster)\n"
+             "    ON  = also test every OR-combination of selected rules\n"
+             "    ⚠️  5 rules = 31 combos × 12 exits = 372 tests. 8 rules = 3,060 tests.",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
