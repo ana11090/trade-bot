@@ -952,20 +952,26 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         signal_mask |= rule_mask
         signal_rule_ids[new_signals] = rule_idx
 
-    # ── Phase A.38a: Regime filter gating ──────────────────────────────
+    # ── Phase A.38a / A.43: Regime filter gating ───────────────────────
     # WHY (Phase A.38a): If the user enabled the regime filter (A.36)
     #      and discovery produced a subset (A.37 / A.37.2), apply it
     #      here as a boolean mask AND'd into signal_mask. Signals at
-    #      wrong-regime candles are blocked at evaluation time. Rules
-    #      themselves are unchanged — turning the filter off restores
-    #      identical pre-A.36 behavior.
-    # CHANGED: April 2026 — Phase A.38a
+    #      wrong-regime candles are blocked at evaluation time.
+    # WHY (Phase A.43): Rules saved while the filter was active carry
+    #      their discovery-time conditions under key 'regime_filter'.
+    #      Use those as an override so the backtest always reproduces
+    #      the exact regime context of discovery.
+    # CHANGED: April 2026 — Phase A.38a / A.43
     try:
         from project2_backtesting.regime_filter_runtime import (
             build_regime_pass_mask, log_filter_summary_once,
         )
+        _a43_override = next(
+            (r.get('regime_filter') for r in rules if r.get('regime_filter')),
+            None,
+        )
         _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
-            ind, rule_action=direction,
+            ind, rule_action=direction, override_conditions=_a43_override,
         )
         if _a38a_info.get('enabled'):
             log_filter_summary_once(_a38a_info, source_label='run_backtest')
@@ -1414,19 +1420,24 @@ def fast_backtest(df, ind, rules, exit_strategy,
         signal_mask |= rule_mask
         signal_rule_ids[new_signals] = rule_idx
 
-    # ── Phase A.38a: Regime filter gating ──────────────────────────────
+    # ── Phase A.38a / A.43: Regime filter gating ───────────────────────
     # WHY (Phase A.38a): Same gate as run_backtest. fast_backtest is the
     #      hot path used by the comparison matrix and deep optimizer —
     #      called hundreds of times per scenario. log_filter_summary_once
     #      deduplicates log spam: one summary per distinct filter config
     #      per process, not per call.
-    # CHANGED: April 2026 — Phase A.38a
+    # WHY (Phase A.43): Use per-rule baked conditions when available.
+    # CHANGED: April 2026 — Phase A.38a / A.43
     try:
         from project2_backtesting.regime_filter_runtime import (
             build_regime_pass_mask, log_filter_summary_once,
         )
+        _a43_override = next(
+            (r.get('regime_filter') for r in rules if r.get('regime_filter')),
+            None,
+        )
         _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
-            ind, rule_action=direction,
+            ind, rule_action=direction, override_conditions=_a43_override,
         )
         if _a38a_info.get('enabled'):
             log_filter_summary_once(_a38a_info, source_label='fast_backtest')
@@ -1956,6 +1967,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     rules = ([all_rules[i] for i in rule_indices if i < len(all_rules)]
              if rule_indices is not None else all_rules)
 
+    # WHY (Bug fix): exit_strategies default was populated ~200 lines below,
+    #      so _extract_required_indicators always received None and missed
+    #      ATR/RSI columns needed by exit strategies (e.g. ATRBased).
+    #      Moved here so the extraction sees the real exit strategy list.
+    if exit_strategies is None:
+        exit_strategies = get_default_exit_strategies(pip_size=pip_size)
+
     # Extract which indicators each TF actually needs — skips the other ~575
     # WHY (Phase A.42.1): Pass exit strategies so their indicator
     #      requirements (ATR, RSI, etc.) are included in the load set.
@@ -2175,9 +2193,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         f"{_a30_sell_count} rules trade SELL, "
         f"{len(rule_combos)} total combos after expansion"
     )
-
-    if exit_strategies is None:
-        exit_strategies = get_default_exit_strategies(pip_size=pip_size)
 
     total = len(rule_combos) * len(exit_strategies)
     log.info(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "

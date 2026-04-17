@@ -217,24 +217,39 @@ def _load_active_filter():
     return (True, mode, subset, strictness)
 
 
-def build_regime_pass_mask(ind, rule_action='BUY'):
+def build_regime_pass_mask(ind, rule_action='BUY', override_conditions=None):
     """Build a boolean numpy array of length len(ind), True where the
     regime filter passes for the given rule action.
 
     Args:
-        ind:         indicators DataFrame (the same `ind` the backtester
-                     uses for rule mask building).
-        rule_action: 'BUY', 'SELL', or 'BOTH'. Direction-aware features
-                     get their operator inverted for SELL. 'BOTH' uses
-                     the BUY interpretation (the discovered threshold is
-                     stored in BUY orientation).
+        ind:                indicators DataFrame (the same `ind` the
+                            backtester uses for rule mask building).
+        rule_action:        'BUY', 'SELL', or 'BOTH'. Direction-aware
+                            features get their operator inverted for SELL.
+        override_conditions: list of condition dicts (same schema as
+                            'subset' in the discovery payload) to use
+                            directly, bypassing the global config. When
+                            provided, the config is not read — these
+                            are the conditions baked into the rule at
+                            save time (Phase A.43).
 
     Returns:
         (mask, info). When the filter is off, mask is all-True and
         info['enabled'] is False.
     """
     n = len(ind)
-    enabled, mode, subset, strictness = _load_active_filter()
+    # WHY (Phase A.43): When override_conditions is supplied, use them
+    #      directly — the rule carries its own discovery-time conditions.
+    #      This lets the backtester reproduce the exact regime that was
+    #      active when the rule was found, regardless of the current
+    #      global config state.
+    # CHANGED: April 2026 — Phase A.43
+    if override_conditions is not None:
+        enabled  = True
+        subset   = override_conditions
+        strictness = None
+    else:
+        enabled, mode, subset, strictness = _load_active_filter()
 
     if not enabled or not subset:
         return (

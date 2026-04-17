@@ -714,7 +714,9 @@ def build_panel(parent):
     # CHANGED: April 2026 — Phase A.36
     def _a36_save_enabled(*_args, _v=_a36_enabled_var):
         try:
-            _cl.save({'regime_filter_enabled': 'true' if _v.get() else 'false'})
+            _val = 'true' if _v.get() else 'false'
+            _cl.save({'regime_filter_enabled': _val})
+            print(f"[A.36] regime_filter_enabled saved as: {_val}")
         except Exception as _e:
             print(f"[A.36] Could not save regime_filter_enabled: {_e}")
         _a36_apply_visibility()

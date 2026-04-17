@@ -2660,7 +2660,8 @@ def build_panel(parent):
             _conds_display = "  •  ".join(_cond_strs) if _cond_strs else "(no conditions)"
             _a38b_regime_banner.config(
                 text=(f"🎯 Regime Filter: ON — {_conds_display}\n"
-                      f"    Signals at wrong-regime candles will be blocked during backtest."),
+                      f"    Signals at wrong-regime candles will be blocked during backtest.\n"
+                      f"    These conditions are baked into newly saved rules (applied per-rule)."),
                 fg="#1565c0", bg="#e3f2fd",
             )
         except Exception as _e:

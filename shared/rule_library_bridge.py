@@ -237,6 +237,27 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
             first_invalid_reason = reason
             first_invalid_sample = sample
 
+    # WHY (Phase A.43): Bake the active regime filter conditions into each rule
+    #      at save time so the backtester can reproduce the exact filter that
+    #      was in effect during discovery — even if the user later changes the
+    #      global config. Conditions are stored under key 'regime_filter' in the
+    #      rule dict. Rules saved when the filter is off carry no key.
+    # CHANGED: April 2026 — Phase A.43
+    _a43_conditions = None
+    try:
+        _a43_cfg = _load_p1_config()
+        if str(_a43_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
+            _a43_disc_str = _a43_cfg.get('regime_filter_discovered', '') or ''
+            if _a43_disc_str:
+                _a43_disc = json.loads(_a43_disc_str)
+                if _a43_disc.get('status') == 'ok':
+                    _a43_sub = (_a43_disc.get('subset')
+                                or _a43_disc.get('subset_chosen') or [])
+                    if _a43_sub:
+                        _a43_conditions = _a43_sub
+    except Exception as _a43_e:
+        log.debug(f"[A.43] could not read regime filter for rule save: {_a43_e}")
+
     for r in rules:
         ok, _why, _sample = _why_invalid(r)
         if not ok:
@@ -248,7 +269,9 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
             dedup_skipped += 1
             continue
         try:
-            _sr.save_rule(r, source=source, notes=notes)
+            _r_to_save = ({**r, 'regime_filter': _a43_conditions}
+                          if _a43_conditions else r)
+            _sr.save_rule(_r_to_save, source=source, notes=notes)
             seen_hashes.add(h)
             saved += 1
         except Exception as _e:
