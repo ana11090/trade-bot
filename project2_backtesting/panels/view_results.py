@@ -521,6 +521,71 @@ def _display_results_inner(output_text, summary_frame, data, results,
             except Exception:
                 pass
 
+            # ── Phase A.47: Export Trades button ──────────────────────────
+            # WHY (Phase A.47): Each result card's trade list is stored in
+            #      backtest_matrix.json but invisible to the user. This
+            #      button exports the trades to a CSV file so the user can
+            #      analyze individual trades in Excel / Google Sheets.
+            # CHANGED: April 2026 — Phase A.47
+            try:
+                _a47_trades = r.get('trades', [])
+                if _a47_trades and len(_a47_trades) > 0:
+                    def _make_export_fn(trade_list, combo_name, exit_name, entry_tf):
+                        def _export():
+                            try:
+                                import csv
+                                import subprocess
+                                _out_dir = os.path.join(
+                                    os.path.abspath(os.path.join(
+                                        os.path.dirname(__file__), '../..')),
+                                    'project2_backtesting', 'outputs'
+                                )
+                                os.makedirs(_out_dir, exist_ok=True)
+                                _clean_combo = str(combo_name).replace(' ', '_').replace('/', '_')[:30]
+                                _clean_exit  = str(exit_name).replace(' ', '_').replace('/', '_')[:20]
+                                _tf_tag = f"_{entry_tf}" if entry_tf else ""
+                                _fname  = f"trades_{_clean_combo}_{_clean_exit}{_tf_tag}.csv"
+                                _fpath  = os.path.join(_out_dir, _fname)
+                                _keys = list(trade_list[0].keys())
+                                with open(_fpath, 'w', newline='', encoding='utf-8') as _f:
+                                    _w = csv.DictWriter(_f, fieldnames=_keys)
+                                    _w.writeheader()
+                                    for t in trade_list:
+                                        _w.writerow(t)
+                                messagebox.showinfo(
+                                    "Trades Exported",
+                                    f"Exported {len(trade_list)} trades to:\n{_fpath}"
+                                )
+                                try:
+                                    if sys.platform == 'win32':
+                                        os.startfile(os.path.dirname(_fpath))
+                                    elif sys.platform == 'darwin':
+                                        subprocess.Popen(['open', os.path.dirname(_fpath)])
+                                    else:
+                                        subprocess.Popen(['xdg-open', os.path.dirname(_fpath)])
+                                except Exception:
+                                    pass
+                            except Exception as _e:
+                                messagebox.showerror("Export Error",
+                                                     f"Could not export trades:\n{_e}")
+                        return _export
+
+                    tk.Button(
+                        header_row,
+                        text=f"📥 Trades ({len(_a47_trades)})",
+                        command=_make_export_fn(
+                            _a47_trades,
+                            r.get('rule_combo', 'unknown'),
+                            r.get('exit_name', r.get('exit_strategy', 'unknown')),
+                            r.get('entry_tf', ''),
+                        ),
+                        font=("Segoe UI", 8),
+                        bg="#17a2b8", fg="white",
+                        relief=tk.FLAT, padx=6, pady=1, cursor="hand2",
+                    ).pack(side=tk.RIGHT, padx=3)
+            except Exception:
+                pass
+
             if trades > 0:
                 # WHY: compute_stats and strategy_backtester.compute_stats
                 #      both always return win_rate as percent (0-100).
