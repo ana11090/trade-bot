@@ -1233,6 +1233,117 @@ def run_analysis(feature_matrix_path=None):
         log.info(f'    {feat}: {imp*100:.1f}%')
 
     # 3. Rules
+    # WHY (Phase A.38b): When the user has enabled BOTH the main regime
+    #      filter checkbox AND the "Also apply during Step 3 discovery"
+    #      checkbox, drop trades that fail the discovered regime filter
+    #      conditions BEFORE extracting rules. This way the decision tree
+    #      trains only on "good regime" trades, producing rules optimized
+    #      for the regime the user plans to trade in.
+    #
+    #      Each trade row in the feature matrix already has the indicator
+    #      values (H1_adx_14, H1_std_dev_20, etc.) in its columns, so the
+    #      threshold comparison works directly — no candle merge needed.
+    #      If filtering fails for any reason we proceed with all trades.
+    # CHANGED: April 2026 — Phase A.38b
+    try:
+        import json as _a38b_json
+        import config_loader as _a38b_cl
+        _a38b_cfg = _a38b_cl.load()
+        _a38b_main_enabled = str(_a38b_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
+        _a38b_disc_enabled = str(_a38b_cfg.get('regime_filter_at_discovery', 'false')).lower() == 'true'
+        if _a38b_main_enabled and _a38b_disc_enabled:
+            _a38b_disc_str = _a38b_cfg.get('regime_filter_discovered', '') or ''
+            if _a38b_disc_str:
+                _a38b_disc = _a38b_json.loads(_a38b_disc_str)
+                if _a38b_disc.get('status') == 'ok':
+                    _a38b_subset = _a38b_disc.get('subset') or _a38b_disc.get('subset_chosen') or []
+                    if _a38b_subset:
+                        _a38b_n_before = len(df)
+                        _a38b_mask = pd.Series([True] * _a38b_n_before, index=df.index)
+                        _a38b_cond_strs = []
+                        for _cond in _a38b_subset:
+                            _feat = _cond.get('feature', '')
+                            _op   = _cond.get('direction', _cond.get('operator', '>'))
+                            _thr  = _cond.get('threshold', _cond.get('value'))
+                            if _feat not in df.columns:
+                                log.warning(
+                                    f"  [A.38b] regime filter feature {_feat!r} "
+                                    f"not in feature matrix — skipping condition"
+                                )
+                                continue
+                            try:
+                                _thr_f = float(_thr)
+                            except (TypeError, ValueError):
+                                log.warning(
+                                    f"  [A.38b] threshold {_thr!r} for {_feat} "
+                                    f"not numeric — skipping condition"
+                                )
+                                continue
+                            _col_vals = pd.to_numeric(df[_feat], errors='coerce')
+                            if _op == '>':
+                                _cmask = _col_vals > _thr_f
+                            elif _op == '>=':
+                                _cmask = _col_vals >= _thr_f
+                            elif _op == '<':
+                                _cmask = _col_vals < _thr_f
+                            elif _op == '<=':
+                                _cmask = _col_vals <= _thr_f
+                            else:
+                                log.warning(
+                                    f"  [A.38b] unknown operator {_op!r} "
+                                    f"for {_feat} — skipping condition"
+                                )
+                                continue
+                            _cmask = _cmask.fillna(False)
+                            _a38b_mask = _a38b_mask & _cmask
+                            _a38b_cond_strs.append(f"{_feat} {_op} {_thr_f}")
+                        if _a38b_cond_strs:
+                            _a38b_n_after = int(_a38b_mask.sum())
+                            _a38b_n_dropped = _a38b_n_before - _a38b_n_after
+                            log.info(
+                                f"\n  [A.38b] Regime filter at discovery: "
+                                f"{_a38b_n_before} trades → {_a38b_n_after} trades "
+                                f"({_a38b_n_after / max(_a38b_n_before, 1) * 100:.1f}% kept)"
+                            )
+                            log.info(
+                                f"  [A.38b]   Dropped {_a38b_n_dropped} trades "
+                                f"failing regime conditions"
+                            )
+                            log.info(
+                                f"  [A.38b]   Conditions applied: "
+                                f"{', '.join(_a38b_cond_strs)}"
+                            )
+                            df = df[_a38b_mask].reset_index(drop=True)
+                            log.info(
+                                f"  [A.38b]   Step 3 will extract rules "
+                                f"from {len(df)} regime-filtered trades"
+                            )
+                    else:
+                        log.info(
+                            "  [A.38b] regime filter at discovery: "
+                            "no conditions in discovered subset — using all trades"
+                        )
+                else:
+                    log.info(
+                        f"  [A.38b] regime filter at discovery: "
+                        f"discovery status is {_a38b_disc.get('status')!r} — using all trades"
+                    )
+            else:
+                log.info(
+                    "  [A.38b] regime filter at discovery: no discovery found "
+                    "— using all trades (run scenarios with regime filter ON first)"
+                )
+        elif _a38b_disc_enabled and not _a38b_main_enabled:
+            log.info(
+                "  [A.38b] 'Apply during Step 3' is checked but the main "
+                "regime filter is OFF — ignoring"
+            )
+    except Exception as _a38b_e:
+        log.warning(
+            f"  [A.38b] regime filter at discovery failed (non-fatal): "
+            f"{type(_a38b_e).__name__}: {_a38b_e} — proceeding with all trades"
+        )
+
     log.info('\n[3/8] Extracting trading rules...')
     # WHY (Phase A.27): Rules need an 'action' field so P2's backtester
     #      knows which direction each rule trades. profile['direction']

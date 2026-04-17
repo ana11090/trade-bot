@@ -386,6 +386,79 @@ def build_panel(parent):
 
     _a372_strictness_var.trace_add('write', _a372_save_strictness)
 
+    # WHY (Phase A.38b): Separate checkbox for applying the regime filter
+    #      DURING Step 3's rule discovery (not just at backtest time).
+    #      Default OFF so Step 3 sees all trades — identical to pre-A.38b.
+    #      Grayed out when the main regime filter checkbox is OFF (no
+    #      conditions to filter with).
+    # CHANGED: April 2026 — Phase A.38b
+    try:
+        from shared.tooltip import add_tooltip as _a38b_tooltip
+    except Exception:
+        def _a38b_tooltip(*_args, **_kwargs):
+            return None
+
+    _a38b_disc_var = tk.BooleanVar(
+        value=str(_cfg.get('regime_filter_at_discovery', 'false')).lower() == 'true'
+    )
+    _a38b_disc_cb = tk.Checkbutton(
+        _a36_inner,
+        text="Also apply regime filter during Step 3 rule discovery",
+        variable=_a38b_disc_var,
+        bg="#f0fff4", fg="#333",
+        font=("Segoe UI", 9),
+        anchor="w",
+        activebackground="#f0fff4",
+    )
+    _a38b_disc_cb.pack(anchor="w", pady=(8, 0))
+
+    _a38b_tooltip(_a38b_disc_cb, (
+        "WHAT IT DOES:\n"
+        "When checked, Step 3 (Analyze & Extract Rules) drops all trades "
+        "that FAIL the discovered regime filter conditions BEFORE extracting "
+        "decision-tree rules. So instead of training on all trades "
+        "(mixed good and bad regimes), Step 3 trains only on the trades "
+        "that pass the regime filter.\n\n"
+        "WHY YOU MIGHT WANT IT:\n"
+        "The rules Step 3 discovers from regime-filtered trades will be "
+        "DIFFERENT from the ones discovered from all trades. Without this "
+        "checkbox, Step 3's rules include conditions that distinguish "
+        "good-regime-winners from bad-regime-losers. With this checkbox ON, "
+        "the rules focus purely on what separates winners from losers "
+        "WITHIN the good regime.\n\n"
+        "WHEN TO USE:\n"
+        "You've already run with the main regime filter and are happy with "
+        "the discovered conditions, and want Step 3 to find rules optimized "
+        "FOR that regime.\n\n"
+        "WHEN TO LEAVE OFF (default):\n"
+        "First run, or when you want Step 3's rules to work universally "
+        "with the regime filter as an optional add-on at backtest time.\n\n"
+        "INTERACTION:\n"
+        "Main regime filter OFF → this checkbox is ignored (grayed out).\n"
+        "Main ON + this OFF → Step 3 sees all trades (current behavior).\n"
+        "Main ON + this ON → Step 3 sees ONLY regime-passing trades."
+    ), wraplength=430)
+
+    def _a38b_save_disc(*_a):
+        try:
+            _cl.save({
+                'regime_filter_at_discovery':
+                    'true' if _a38b_disc_var.get() else 'false'
+            })
+        except Exception as _e:
+            print(f"[A.38b] Could not save regime_filter_at_discovery: {_e}")
+    _a38b_disc_var.trace_add('write', _a38b_save_disc)
+
+    def _a38b_update_disc_state(*_a):
+        try:
+            _a38b_disc_cb.config(
+                state='normal' if _a36_enabled_var.get() else 'disabled'
+            )
+        except Exception:
+            pass
+    _a36_enabled_var.trace_add('write', _a38b_update_disc_state)
+    _a38b_update_disc_state()
+
     # ── Automatic-mode display area — dynamic, rebuilt from config ──────
     # WHY (Phase A.37): A.36 shipped a static placeholder here. A.37 now
     #      has real discovery output in p1_config.json['regime_filter_

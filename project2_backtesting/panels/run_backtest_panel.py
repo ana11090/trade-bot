@@ -459,16 +459,30 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             # Calculate approximate P&L in % using config-loaded dollar-per-pip
                             approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
 
+                            # WHY (Phase A.38b): Show "N trades (M before filter)"
+                            #      when the regime filter blocked some signals.
+                            # CHANGED: April 2026 — Phase A.38b
+                            _sig_before = result_dict.get('signals_before_regime_filter', 0)
+                            _sig_after  = result_dict.get('signals_after_regime_filter', 0)
+                            _filter_active = (_sig_before > 0 and _sig_before != _sig_after)
+                            if _filter_active:
+                                _trades_str = f"{trades} trades ({_sig_before} before filter)"
+                            else:
+                                _trades_str = f"{trades} trades"
+
                             # Color code: green if profitable, red if not, gray if 0 trades
                             if trades == 0:
                                 color = "#888888"
-                                line = f"  [{cur}/{tot}] {name}: 0 trades\n"
+                                if _filter_active:
+                                    line = f"  [{cur}/{tot}] {name}: 0 trades ({_sig_before} before filter — all blocked) ⚠️\n"
+                                else:
+                                    line = f"  [{cur}/{tot}] {name}: 0 trades\n"
                             elif net > 0:
                                 color = "#28a745"
-                                line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
+                                line = f"  [{cur}/{tot}] {name}: {_trades_str}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
                             else:
                                 color = "#dc3545"
-                                line = f"  [{cur}/{tot}] {name}: {trades} trades, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
+                                line = f"  [{cur}/{tot}] {name}: {_trades_str}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
 
                             output_text.insert(tk.END, line)
                             # Apply color to the last line
@@ -2474,6 +2488,74 @@ def build_panel(parent):
                                  font=("Arial", 11, "bold"), bg="#ffffff", fg="#333333",
                                  padx=10, pady=10)
     output_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+    # WHY (Phase A.38b): Regime filter status banner — always visible at
+    #      the top of the output area so the user knows whether signals
+    #      will be filtered during backtests.
+    # CHANGED: April 2026 — Phase A.38b
+    _a38b_regime_banner = tk.Label(
+        output_frame, text="", bg="#f8f8f8", fg="#888888",
+        font=("Segoe UI", 9), anchor="w", justify="left",
+        wraplength=620,
+    )
+    _a38b_regime_banner.pack(anchor="w", fill="x", pady=(0, 4))
+
+    def _a38b_update_regime_banner():
+        """Read regime filter config and refresh the banner."""
+        try:
+            import sys as _sys
+            _p1_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), '..', '..',
+                             'project1_reverse_engineering')
+            )
+            if _p1_dir not in _sys.path:
+                _sys.path.insert(0, _p1_dir)
+            import config_loader as _a38b_cl
+            _cfg = _a38b_cl.load()
+            _enabled = str(_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
+            if not _enabled:
+                _a38b_regime_banner.config(
+                    text="🎯 Regime Filter: OFF",
+                    fg="#888888", bg="#f8f8f8",
+                )
+                return
+            _disc_str = _cfg.get('regime_filter_discovered', '') or ''
+            if not _disc_str:
+                _a38b_regime_banner.config(
+                    text="🎯 Regime Filter: ON — no discovery yet (run scenarios first)",
+                    fg="#e67e22", bg="#fff8e1",
+                )
+                return
+            _disc = json.loads(_disc_str)
+            if _disc.get('status') != 'ok':
+                _a38b_regime_banner.config(
+                    text=f"🎯 Regime Filter: ON — discovery status = {_disc.get('status', '?')}",
+                    fg="#e67e22", bg="#fff8e1",
+                )
+                return
+            _subset = _disc.get('subset') or _disc.get('subset_chosen') or []
+            _cond_strs = []
+            for _cond in _subset:
+                _feat = _cond.get('feature', '?')
+                _op   = _cond.get('direction', _cond.get('operator', '>'))
+                _thr  = _cond.get('threshold', _cond.get('value', '?'))
+                try:
+                    _thr = f"{float(_thr):.2f}"
+                except Exception:
+                    _thr = str(_thr)
+                _cond_strs.append(f"{_feat} {_op} {_thr}")
+            _conds_display = "  •  ".join(_cond_strs) if _cond_strs else "(no conditions)"
+            _a38b_regime_banner.config(
+                text=(f"🎯 Regime Filter: ON — {_conds_display}\n"
+                      f"    Signals at wrong-regime candles will be blocked during backtest."),
+                fg="#1565c0", bg="#e3f2fd",
+            )
+        except Exception as _e:
+            _a38b_regime_banner.config(
+                text=f"🎯 Regime Filter: status unknown ({_e})",
+                fg="#888888", bg="#f8f8f8",
+            )
+    _a38b_update_regime_banner()
 
     _output_text = scrolledtext.ScrolledText(output_frame, height=20,
                                              font=("Courier", 9), bg="#f8f9fa",

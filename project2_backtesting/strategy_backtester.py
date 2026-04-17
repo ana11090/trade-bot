@@ -1348,7 +1348,16 @@ def fast_backtest(df, ind, rules, exit_strategy,
         )
         if _a38a_info.get('enabled'):
             log_filter_summary_once(_a38a_info, source_label='fast_backtest')
+            _fb_pre  = int(signal_mask.sum())
             signal_mask = signal_mask & pd.Series(_a38a_regime_mask, index=ind.index)
+            _fb_post = int(signal_mask.sum())
+            # WHY (Phase A.38b): Store pre/post counts on the function
+            #      object so run_comparison_matrix can read them without
+            #      changing fast_backtest's return signature. The caller
+            #      is synchronous so there's no race.
+            # CHANGED: April 2026 — Phase A.38b
+            fast_backtest._last_sig_before = _fb_pre
+            fast_backtest._last_sig_after  = _fb_post
     except Exception as _a38a_e:
         log.warning(
             f"[A.38a/fast_backtest] regime filter failed — proceeding without it: "
@@ -2174,11 +2183,20 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 #      (so the panel's existing reads still work) and add the
                 #      three identity fields needed by _update_best().
                 # CHANGED: April 2026 — Phase A.5 — merge identity + stats
+                # WHY (Phase A.38b): Carry regime filter signal counts into
+                #      the progress payload so the Run Backtest panel can
+                #      show "N trades (M before filter)". Read from the
+                #      function-attribute stash fast_backtest wrote above.
+                # CHANGED: April 2026 — Phase A.38b
+                _a38b_sig_before = getattr(fast_backtest, '_last_sig_before', 0)
+                _a38b_sig_after  = getattr(fast_backtest, '_last_sig_after',  0)
                 _progress_payload = {
                     **stats,
                     'rule_combo': combo['name'],
                     'exit_name':  exit_strat.name,
                     'exit_class': type(exit_strat).__name__,
+                    'signals_before_regime_filter': _a38b_sig_before,
+                    'signals_after_regime_filter':  _a38b_sig_after,
                 }
                 try:
                     # Try new signature with result_dict parameter

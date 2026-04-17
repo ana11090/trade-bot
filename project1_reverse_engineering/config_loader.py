@@ -116,6 +116,12 @@ DEFAULTS = {
     #      regime_filter_discovery.py based on this string.
     # CHANGED: April 2026 — Phase A.37.2
     'regime_filter_strictness':  'conservative',  # 'conservative' | 'balanced' | 'strict'
+    # WHY (Phase A.38b): Separate toggle for filtering trades BEFORE
+    #      Step 3's rule extraction. Independent from regime_filter_enabled
+    #      (which controls discovery + backtest-time filtering). OFF by
+    #      default so Step 3 sees all trades — same as pre-A.38b.
+    # CHANGED: April 2026 — Phase A.38b
+    'regime_filter_at_discovery': 'false',
 
     # ── Single Rule Mode (Phase A.39a) ────────────────────────────────────────
     # WHY (Phase A.39a): Single Rule Mode is a parallel discovery track to the
