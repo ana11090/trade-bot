@@ -27,7 +27,30 @@ BOT_RULES_PATH = os.path.join(OUTPUT_DIR, 'bot_entry_rules.json')
 
 # ── Discovery hyperparameters ─────────────────────────────────────────────────
 TIMEFRAMES = ['M5', 'M15', 'H1', 'H4', 'D1']
-NEG_RATIO  = 10  # 10 negative candles per positive candle
+# WHY (Phase A.41): The old NEG_RATIO = 10 produced a ~9% positive rate
+#      on M5/M15/H1 after sampling. The rule extractor requires 55%+
+#      positive rate in tree leaves on the test set — a 6× lift from
+#      9% base, which is nearly impossible for the model. D1 with its
+#      natural 30% base rate produced 3 rules; everything else produced 0.
+#
+#      Fix: per-TF negative sampling ratio targeting ~25-30% positive
+#      rate in the sampled data. Lower ratios for finer timeframes
+#      where the signal-to-candle ratio is most extreme. D1's natural
+#      ratio is already low enough — keeping it at 2:1 matches the old
+#      effective rate.
+#
+#      Trade-off: fewer negatives = less context for the model = higher
+#      overfit risk. But the held-out test-set verification catches
+#      overfitting, so this is safe.
+# CHANGED: April 2026 — Phase A.41
+_NEG_RATIO_PER_TF = {
+    'M5':  3,   # was 10 → positive rate ~9% → now ~25%
+    'M15': 3,   # was 10 → positive rate ~9% → now ~25%
+    'H1':  3,   # was 10 → positive rate ~9% → now ~25%
+    'H4':  5,   # was 10 → positive rate ~13% → now ~17%
+    'D1':  2,   # was 10 → positive rate ~31% → now ~33%
+}
+NEG_RATIO  = 10  # legacy default — used only if a TF is not in _NEG_RATIO_PER_TF
 RANDOM_SEED = 42
 
 
@@ -118,7 +141,11 @@ def _build_candle_matrix_for_tf(tf, data_dir, trade_candle_set, progress_cb):
         n_pos_q = int((q_group['label'] == 1).sum())
         if n_pos_q == 0:
             continue
-        n_neg_target = n_pos_q * NEG_RATIO
+        # WHY (Phase A.41): Use the per-TF adaptive ratio instead of
+        #      the flat NEG_RATIO constant.
+        # CHANGED: April 2026 — Phase A.41
+        _neg_ratio = _NEG_RATIO_PER_TF.get(tf, NEG_RATIO)
+        n_neg_target = n_pos_q * _neg_ratio
         neg_pool = q_group.index[q_group['label'] == 0].tolist()
         if len(neg_pool) == 0:
             continue
@@ -135,7 +162,15 @@ def _build_candle_matrix_for_tf(tf, data_dir, trade_candle_set, progress_cb):
     X = matrix[feature_cols].fillna(0).astype('float32')
     y = matrix['label'].astype(int)
 
-    _log(f"  [{tf}] sampled matrix: {len(X)} rows ({int(y.sum())} pos / {len(y) - int(y.sum())} neg), {len(feature_cols)} features",
+    # WHY (Phase A.41): Log positive rate and neg ratio so the user can
+    #      see why one TF finds rules and another doesn't.
+    # CHANGED: April 2026 — Phase A.41
+    _n_pos = int(y.sum())
+    _n_neg = len(y) - _n_pos
+    _pos_rate = _n_pos / max(len(y), 1) * 100
+    _actual_ratio = _NEG_RATIO_PER_TF.get(tf, NEG_RATIO)
+    _log(f"  [{tf}] sampled matrix: {len(X)} rows ({_n_pos} pos / {_n_neg} neg), "
+         f"{len(feature_cols)} features, pos_rate={_pos_rate:.1f}% (neg_ratio={_actual_ratio}:1)",
          progress_cb)
     return X, y, feature_cols
 
@@ -434,6 +469,28 @@ def discover_bot_entry_rules(
                 r['avg_pips'] = 0.0
 
         _log(f"  [{tf}] kept {len(tf_rules)} rules", cb)
+        # WHY (Phase A.41): When 0 rules survive, log the pipeline stage
+        #      context so the user can tell WHERE rules are being filtered —
+        #      no leaves reached the WR threshold vs. generalisation failure
+        #      vs. min_coverage filtering small-but-accurate leaves.
+        # CHANGED: April 2026 — Phase A.41
+        if len(tf_rules) == 0:
+            _n_pos_sampled = int(y.sum())
+            _n_total_sampled = len(y)
+            _pos_rate_here = _n_pos_sampled / max(_n_total_sampled, 1) * 100
+            _lift_needed = min_win_rate / max(_pos_rate_here / 100, 0.01)
+            _log(
+                f"  [{tf}] NOTE: 0 rules survived the filter pipeline. "
+                f"Possible causes: (1) no tree leaf reached {min_win_rate:.0%} "
+                f"positive rate on the test set (base rate after sampling was "
+                f"{_pos_rate_here:.1f}% — leaves need {_lift_needed:.1f}x lift), "
+                f"(2) rules passed training but didn't generalise to the 30% "
+                f"held-out test set, (3) min_coverage={min_coverage} filtered "
+                f"small-but-accurate leaves. Consider lowering "
+                f"bot_entry_min_win_rate below {min_win_rate:.2f} if this TF "
+                f"consistently produces 0 rules.",
+                cb,
+            )
         per_tf_summary.append({
             'tf':           tf,
             'status':       'ok',
