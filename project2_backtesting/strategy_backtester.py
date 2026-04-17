@@ -1767,6 +1767,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
+        # WHY (Quick Fix): The vectorized path includes candles_held and
+        #      cost_pips in each trade dict. The non-vectorized path was
+        #      missing both. exit_idx is 0-based (0 = exited on entry
+        #      candle), so candles_held = exit_idx + 1.
+        # CHANGED: April 2026 — add candles_held + cost_pips to trade dict
         trade = {
             'entry_time':   str(entry_time),
             'exit_time':    str(exit_time),
@@ -1775,8 +1780,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'direction':    direction,
             'pips':         round(pips, 1),
             'net_pips':     round(net_pips, 1),
+            'cost_pips':    round(commission_pips, 1),
             'net_profit':   round(net_profit, 2),
             'lot_size':     lot_size,
+            'candles_held': exit_idx + 1,
             'exit_reason':  exit_reason,
             'rule_id':      int(signal_rule_ids.loc[sig_idx]),
         }
