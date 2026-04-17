@@ -2490,17 +2490,39 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     unique_tfs = sorted(set(r.get('entry_tf', timeframe) for r in summary))
     top_level_tf = 'multi' if len(unique_tfs) > 1 else (unique_tfs[0] if unique_tfs else timeframe)
 
+    # ── Phase A.48: Save trades to separate file, strip from main JSON ──
+    # WHY (Phase A.48): Storing full trade lists inside backtest_matrix.json
+    #      caused 3-4 GB JSON files and out-of-memory crashes on multi-TF
+    #      runs. Fix: save trades to a compact separate file keyed by
+    #      combo index. The main JSON carries stats only (trade_count
+    #      field replaces trades array). The A.47 export button reads
+    #      from the separate trades file.
+    # CHANGED: April 2026 — Phase A.48
+
+    # Save trades to separate per-TF file
+    trades_path = os.path.join(output_dir, f'backtest_trades_{timeframe}.json')
+    try:
+        trades_data = {}
+        for idx, m in enumerate(summary):
+            t_list = m.get('trades', [])
+            if t_list:
+                trades_data[str(idx)] = t_list
+        with open(trades_path, 'w', encoding='utf-8') as tf_file:
+            json.dump(trades_data, tf_file, default=str)
+        log.info(f"Saved: {trades_path} ({len(trades_data)} combos with trades)")
+    except Exception as _te:
+        log.warning(f"Could not save trades file: {_te}")
+
+    # Strip trades from summary for the main JSON (keeps it small)
+    for m in summary:
+        m['trade_count'] = len(m.get('trades', []))
+        m.pop('trades', None)
+
     summary_path = os.path.join(output_dir, 'backtest_matrix.json')
-    # WHY: Downstream panels (validator, refiner, EA generator) need to know which
-    #      entry TF was used so they load the correct candle file and calculate
-    #      correct hold times.
     with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump({
             "generated_at":      time.strftime("%Y-%m-%d %H:%M"),
             "entry_timeframe":   top_level_tf,
-            # WHY (Phase A.42): Store so EA generator can read the
-            #      daily limit that was used during backtesting.
-            # CHANGED: April 2026 — Phase A.42
             "max_trades_per_day": max_trades_per_day,
             "tested_timeframes": unique_tfs,
             "combinations":      total,
@@ -2513,8 +2535,15 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     log.info(f"Saved: {summary_path}")
 
     csv_path = os.path.join(output_dir, 'backtest_matrix.csv')
-    pd.DataFrame(summary).to_csv(csv_path, index=False)
-    log.info(f"Saved: {csv_path}")
+    try:
+        pd.DataFrame(summary).to_csv(csv_path, index=False)
+        log.info(f"Saved: {csv_path}")
+    except Exception:
+        pass
+
+    # Strip trades from returned matrix too (saves memory in panel)
+    for m in matrix:
+        m.pop('trades', None)
 
     return {
         "matrix":       matrix,

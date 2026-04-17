@@ -159,7 +159,7 @@ def display_summary(output_text, summary_frame):
             output_text.insert(tk.END, "No backtest results available.\n\nRun the backtest first.")
             return
 
-        results = data.get('results', [])
+        results = data.get('results', data.get('matrix', []))
         if not results:
             output_text.delete(1.0, tk.END)
             output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
@@ -521,68 +521,133 @@ def _display_results_inner(output_text, summary_frame, data, results,
             except Exception:
                 pass
 
-            # ── Phase A.47: Export Trades button ──────────────────────────
-            # WHY (Phase A.47): Each result card's trade list is stored in
-            #      backtest_matrix.json but invisible to the user. This
-            #      button exports the trades to a CSV file so the user can
-            #      analyze individual trades in Excel / Google Sheets.
-            # CHANGED: April 2026 — Phase A.47
+            # ── Phase A.47 + A.48: Export Trades button ──────────────────
+            # WHY (Phase A.48): Trades are no longer stored in
+            #      backtest_matrix.json (too large). They're saved in
+            #      separate per-TF files: backtest_trades_{TF}.json.
+            #      The button loads trades from there on demand.
+            # CHANGED: April 2026 — Phase A.48
             try:
-                _a47_trades = r.get('trades', [])
-                if _a47_trades and len(_a47_trades) > 0:
-                    def _make_export_fn(trade_list, combo_name, exit_name, entry_tf):
+                _a47_trade_count = r.get('trade_count', r.get('total_trades', 0))
+                if _a47_trade_count and _a47_trade_count > 0:
+                    def _make_export_fn(result_row, result_idx, all_results):
                         def _export():
                             try:
                                 import csv
                                 import subprocess
+
                                 _out_dir = os.path.join(
-                                    os.path.abspath(os.path.join(
-                                        os.path.dirname(__file__), '../..')),
+                                    os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')),
                                     'project2_backtesting', 'outputs'
                                 )
+
+                                # Load trades from per-TF file
+                                _entry_tf = result_row.get('entry_tf', 'H1')
+                                _trades_file = os.path.join(_out_dir, f'backtest_trades_{_entry_tf}.json')
+
+                                _trades = []
+                                if os.path.exists(_trades_file):
+                                    try:
+                                        import json as _tj
+                                        with open(_trades_file, 'r', encoding='utf-8') as _tf:
+                                            _all_trades = _tj.load(_tf)
+                                        # Find the matching combo index
+                                        # The trades file keys are string indices from
+                                        # the per-TF run. We need to match by combo name + exit.
+                                        _target_combo = result_row.get('rule_combo', '')
+                                        _target_exit = result_row.get('exit_strategy',
+                                                        result_row.get('exit_name', ''))
+
+                                        # Try direct index first (works for single-TF runs)
+                                        _str_idx = str(result_idx)
+                                        if _str_idx in _all_trades:
+                                            _trades = _all_trades[_str_idx]
+                                        else:
+                                            # Search by combo+exit name match
+                                            # Load the per-TF matrix to find the right index
+                                            _tf_matrix_file = os.path.join(_out_dir, 'backtest_matrix.json')
+                                            if os.path.exists(_tf_matrix_file):
+                                                with open(_tf_matrix_file, 'r', encoding='utf-8') as _mf:
+                                                    _matrix_data = _tj.load(_mf)
+                                                _results = _matrix_data.get('results',
+                                                            _matrix_data.get('matrix', []))
+                                                # Find results for this TF
+                                                _tf_results = [r2 for r2 in _results
+                                                               if r2.get('entry_tf', '') == _entry_tf]
+                                                for _ti, _tr in enumerate(_tf_results):
+                                                    if (_tr.get('rule_combo', '') == _target_combo and
+                                                        (_tr.get('exit_strategy', '') == _target_exit or
+                                                         _tr.get('exit_name', '') == _target_exit)):
+                                                        if str(_ti) in _all_trades:
+                                                            _trades = _all_trades[str(_ti)]
+                                                            break
+                                    except Exception as _load_e:
+                                        print(f"[A.47] Could not load trades from {_trades_file}: {_load_e}")
+
+                                # Fallback: check if trades are inline (old format)
+                                if not _trades:
+                                    _trades = result_row.get('trades', [])
+
+                                if not _trades:
+                                    messagebox.showwarning(
+                                        "No Trades Found",
+                                        f"Could not find trade data for this result.\n"
+                                        f"Looked in: {_trades_file}\n\n"
+                                        f"Try re-running the backtest."
+                                    )
+                                    return
+
                                 os.makedirs(_out_dir, exist_ok=True)
-                                _clean_combo = str(combo_name).replace(' ', '_').replace('/', '_')[:30]
-                                _clean_exit  = str(exit_name).replace(' ', '_').replace('/', '_')[:20]
-                                _tf_tag = f"_{entry_tf}" if entry_tf else ""
-                                _fname  = f"trades_{_clean_combo}_{_clean_exit}{_tf_tag}.csv"
-                                _fpath  = os.path.join(_out_dir, _fname)
-                                _keys = list(trade_list[0].keys())
-                                with open(_fpath, 'w', newline='', encoding='utf-8') as _f:
-                                    _w = csv.DictWriter(_f, fieldnames=_keys)
-                                    _w.writeheader()
-                                    for t in trade_list:
-                                        _w.writerow(t)
-                                messagebox.showinfo(
-                                    "Trades Exported",
-                                    f"Exported {len(trade_list)} trades to:\n{_fpath}"
-                                )
-                                try:
-                                    if sys.platform == 'win32':
-                                        os.startfile(os.path.dirname(_fpath))
-                                    elif sys.platform == 'darwin':
-                                        subprocess.Popen(['open', os.path.dirname(_fpath)])
-                                    else:
-                                        subprocess.Popen(['xdg-open', os.path.dirname(_fpath)])
-                                except Exception:
-                                    pass
+                                _combo = str(result_row.get('rule_combo', 'unknown'))
+                                _exit = str(result_row.get('exit_name',
+                                            result_row.get('exit_strategy', 'unknown')))
+                                _clean_combo = _combo.replace(' ', '_').replace('/', '_')[:30]
+                                _clean_exit = _exit.replace(' ', '_').replace('/', '_')[:20]
+                                _tf_tag = f"_{_entry_tf}" if _entry_tf else ""
+                                _fname = f"trades_{_clean_combo}_{_clean_exit}{_tf_tag}.csv"
+                                _fpath = os.path.join(_out_dir, _fname)
+
+                                if _trades:
+                                    _keys = list(_trades[0].keys())
+                                    with open(_fpath, 'w', newline='', encoding='utf-8') as _f:
+                                        writer = csv.DictWriter(_f, fieldnames=_keys)
+                                        writer.writeheader()
+                                        for t in _trades:
+                                            writer.writerow(t)
+
+                                    messagebox.showinfo(
+                                        "Trades Exported",
+                                        f"Exported {len(_trades)} trades to:\n{_fpath}"
+                                    )
+                                    try:
+                                        if sys.platform == 'win32':
+                                            os.startfile(os.path.dirname(_fpath))
+                                        elif sys.platform == 'darwin':
+                                            subprocess.Popen(['open', os.path.dirname(_fpath)])
+                                        else:
+                                            subprocess.Popen(['xdg-open', os.path.dirname(_fpath)])
+                                    except Exception:
+                                        pass
                             except Exception as _e:
-                                messagebox.showerror("Export Error",
-                                                     f"Could not export trades:\n{_e}")
+                                messagebox.showerror("Export Error", f"Could not export trades:\n{_e}")
                         return _export
 
-                    tk.Button(
+                    # Find this result's index among results with the same TF
+                    _a47_tf = r.get('entry_tf', '')
+                    _a47_tf_idx = 0
+                    for _si, _sr in enumerate(sorted_results[:i]):
+                        if _sr.get('entry_tf', '') == _a47_tf:
+                            _a47_tf_idx += 1
+
+                    _a47_btn = tk.Button(
                         header_row,
-                        text=f"📥 Trades ({len(_a47_trades)})",
-                        command=_make_export_fn(
-                            _a47_trades,
-                            r.get('rule_combo', 'unknown'),
-                            r.get('exit_name', r.get('exit_strategy', 'unknown')),
-                            r.get('entry_tf', ''),
-                        ),
+                        text=f"📥 Trades ({_a47_trade_count})",
+                        command=_make_export_fn(r, _a47_tf_idx, sorted_results),
                         font=("Segoe UI", 8),
                         bg="#17a2b8", fg="white",
                         relief=tk.FLAT, padx=6, pady=1, cursor="hand2",
-                    ).pack(side=tk.RIGHT, padx=3)
+                    )
+                    _a47_btn.pack(side=tk.RIGHT, padx=3)
             except Exception:
                 pass
 

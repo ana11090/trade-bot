@@ -737,12 +737,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     'elapsed': total_elapsed,
                 }
 
-                # WHY (Phase A.48): When Multi-TF is ON, each per-TF call
-                #      to run_comparison_matrix overwrites backtest_matrix.json
-                #      with only that TF's results. The last TF (D1) wins and
-                #      View Results shows only ~96 results instead of all 480.
-                #      After the loop, save the COMBINED results (all TFs).
-                # CHANGED: April 2026 — Phase A.48 — save combined multi-TF
+                # WHY (Phase A.48): Save combined results when multi-TF.
+                #      Each per-TF run_comparison_matrix overwrites the JSON.
+                #      After the loop, save ALL results into one file.
+                #      Trades are already stripped by the backtester (saved
+                #      to separate per-TF files), so this is lightweight.
+                # CHANGED: April 2026 — Phase A.48
                 if len(tfs_to_test) > 1 and all_matrix:
                     try:
                         import time as _save_time
@@ -754,30 +754,15 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         ))
                         _combined_output = {
                             "generated_at": _save_time.strftime("%Y-%m-%d %H:%M"),
-                            "entry_timeframe": "multi" if len(_all_tfs) > 1 else (_all_tfs[0] if _all_tfs else "H1"),
+                            "entry_timeframe": "multi",
                             "tested_timeframes": _all_tfs,
                             "max_trades_per_day": _a42_limit,
                             "spread_pips": _cfg_spread,
                             "commission_pips": _cfg_commission,
-                            "matrix": all_matrix,
+                            "results": all_matrix,
                         }
                         with open(_combined_path, 'w', encoding='utf-8') as _cf:
                             json.dump(_combined_output, _cf, indent=2, default=str)
-                        # Also save CSV
-                        try:
-                            _csv_path = _combined_path.replace('.json', '.csv')
-                            _csv_keys = ['rule_combo', 'exit_strategy', 'entry_tf',
-                                         'total_trades', 'win_rate', 'net_profit_factor',
-                                         'net_total_pips', 'max_dd_pips', 'net_avg_pips']
-                            import csv as _csv_mod
-                            with open(_csv_path, 'w', newline='', encoding='utf-8') as _csvf:
-                                writer = _csv_mod.DictWriter(_csvf, fieldnames=_csv_keys, extrasaction='ignore')
-                                writer.writeheader()
-                                for _row in all_matrix:
-                                    writer.writerow(_row)
-                        except Exception:
-                            pass
-
                         output_text.insert(
                             tk.END,
                             f"\nSaved combined: {len(all_matrix)} results across "
