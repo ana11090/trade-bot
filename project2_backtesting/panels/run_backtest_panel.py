@@ -2004,6 +2004,13 @@ def build_panel(parent):
             except Exception:
                 pass
 
+        # WHY (Phase A.46): Add "All Sources Combined" at the top so the
+        #      user can select rules from every source in one unified list.
+        #      Only shown when ≥2 sources exist (pointless otherwise).
+        # CHANGED: April 2026 — Phase A.46
+        if len(sources) > 1:
+            sources.insert(0, (f"📦 All Sources Combined ({len(sources)} sources)",
+                               "__ALL_SOURCES__"))
         return sources
 
     available_sources = _get_available_sources()
@@ -2070,40 +2077,97 @@ def build_panel(parent):
 
         label = _source_var.get()
         path = source_paths.get(label)
-        if not path or not os.path.exists(path):
-            tk.Label(_rule_inner, text="No rules found for this source.",
-                     font=("Arial", 9), bg="#ffffff", fg="#888").pack(pady=10)
-            return
 
-        _current_source_path[0] = path
+        # ═══════════════════════════════════════════════════════════════
+        # Phase A.46: "All Sources Combined" — merge rules from ALL files
+        # WHY (Phase A.46): When "__ALL_SOURCES__" is selected, iterate
+        #      every real source file, load and tag rules with their
+        #      origin, deduplicate by conditions hash, and display them
+        #      in one unified list. The _a46_source_tag key is used by
+        #      the checkbox label builder to show [Step3], [Saved], etc.
+        # CHANGED: April 2026 — Phase A.46
+        # ═══════════════════════════════════════════════════════════════
+        if path == "__ALL_SOURCES__":
+            from helpers import normalize_conditions
+            import hashlib as _a46_hashlib
 
-        try:
-            with open(path, encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception:
-            return
+            def _a46_rule_hash(r):
+                conds_str = str(sorted(str(c) for c in r.get('conditions', [])))
+                return _a46_hashlib.md5(
+                    f"{conds_str}|{r.get('prediction','')}|{r.get('action','')}".encode()
+                ).hexdigest()
 
-        # Extract rules depending on file format
-        if isinstance(data, list):
-            # saved_rules.json format: list of {id, rule, source, ...}
-            rules = [entry.get('rule', entry) for entry in data]
+            def _a46_source_tag(lbl):
+                if 'Active Rules' in lbl or 'Decision Tree' in lbl:
+                    return 'Step3'
+                if 'Bot Entry' in lbl:
+                    return 'BotEntry'
+                if 'Saved' in lbl or 'Bookmarked' in lbl:
+                    return 'Saved'
+                if 'XGBoost' in lbl:
+                    return 'XGB'
+                if 'Scratch' in lbl:
+                    return 'Scratch'
+                return 'Other'
+
+            all_rules = []
+            _seen = set()
+            for src_label, src_path in source_paths.items():
+                if src_path == "__ALL_SOURCES__" or not src_path:
+                    continue
+                if not os.path.exists(src_path):
+                    continue
+                try:
+                    with open(src_path, encoding='utf-8') as f:
+                        _d = json.load(f)
+                    _src_rules = ([e.get('rule', e) for e in _d]
+                                  if isinstance(_d, list) else _d.get('rules', []))
+                    _src_rules = [normalize_conditions(r) for r in _src_rules]
+                    tag = _a46_source_tag(src_label)
+                    for r in _src_rules:
+                        if r.get('prediction', 'WIN') not in ('WIN', 'LOSS'):
+                            continue
+                        h = _a46_rule_hash(r)
+                        if h in _seen:
+                            continue
+                        _seen.add(h)
+                        r['_a46_source_tag'] = tag
+                        all_rules.append(r)
+                except Exception as _e:
+                    print(f"[A.46] could not load {src_path}: {_e}")
+
+            win_rules = all_rules
+            _current_rules = win_rules
+            _current_source_path[0] = "__ALL_SOURCES__"
+
         else:
-            rules = data.get('rules', [])
+            # ── Original single-source path (unchanged) ──
+            if not path or not os.path.exists(path):
+                tk.Label(_rule_inner, text="No rules found for this source.",
+                         font=("Arial", 9), bg="#ffffff", fg="#888").pack(pady=10)
+                return
 
-        # Normalize conditions to dict format (analysis_report stores them as strings)
-        from helpers import normalize_conditions
-        rules = [normalize_conditions(r) for r in rules]
+            _current_source_path[0] = path
 
-        # WHY (Phase 67 Fix 37): Old code filtered to prediction=='WIN' only.
-        #      A sell-only strategy extracted by analyze.py uses prediction='LOSS'
-        #      (because it wins by being on the loss-of-going-long side).
-        #      These rules were completely invisible in the backtest panel.
-        #      Include both WIN and LOSS rules so sell strategies can be tested.
-        # CHANGED: April 2026 — Phase 67 Fix 37 — include SELL/LOSS rules
-        #          (audit Part E MEDIUM #37)
-        win_rules = [r for r in rules
-                     if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
-        _current_rules = win_rules
+            try:
+                with open(path, encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                return
+
+            if isinstance(data, list):
+                rules = [entry.get('rule', entry) for entry in data]
+            else:
+                rules = data.get('rules', [])
+
+            from helpers import normalize_conditions
+            rules = [normalize_conditions(r) for r in rules]
+
+            # WHY (Phase 67 Fix 37): Include SELL/LOSS rules.
+            # CHANGED: April 2026 — Phase 67 Fix 37
+            win_rules = [r for r in rules
+                         if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
+            _current_rules = win_rules
 
         if not win_rules:
             tk.Label(_rule_inner, text="No WIN rules in this source.",
@@ -2156,23 +2220,29 @@ def build_panel(parent):
             if len(features) > 3:
                 feat_str += f" +{len(features)-3}"
 
+            # WHY (Phase A.46): Show source tag when viewing all sources combined.
+            # CHANGED: April 2026 — Phase A.46
+            _a46_tag = rule.get('_a46_source_tag', '')
+            _a46_prefix = f"[{_a46_tag}] " if _a46_tag else ""
+
             color = "#28a745" if wr >= 0.65 else "#e67e22" if wr >= 0.55 else "#dc3545"
-            info = f"Rule {i+1}: WR {wr:.0%} | {pips:+.0f} pips | {feat_str}"
+            info = f"{_a46_prefix}Rule {i+1}: WR {wr:.0%} | {pips:+.0f} pips | {feat_str}"
             tk.Label(row, text=info, font=("Courier", 8), bg=row['bg'],
                      fg=color, anchor="w").pack(side=tk.LEFT, fill="x", expand=True)
 
-            # Delete button (permanently removes from source file)
-            def _delete(idx=i, r=rule):
-                feat_names = [_feat_name(c) for c in r.get('conditions', [])]
-                if messagebox.askyesno("Delete Rule",
-                    f"Permanently delete Rule {idx+1} from this source file?\n"
-                    f"Features: {', '.join(feat_names)}"):
-                    _delete_rule_from_source(idx, source_paths)
-                    _load_rules_from_source(source_paths)  # refresh
+            # Delete button — hidden in All Sources mode (index would be wrong)
+            if _current_source_path[0] != "__ALL_SOURCES__":
+                def _delete(idx=i, r=rule):
+                    feat_names = [_feat_name(c) for c in r.get('conditions', [])]
+                    if messagebox.askyesno("Delete Rule",
+                        f"Permanently delete Rule {idx+1} from this source file?\n"
+                        f"Features: {', '.join(feat_names)}"):
+                        _delete_rule_from_source(idx, source_paths)
+                        _load_rules_from_source(source_paths)  # refresh
 
-            tk.Button(row, text="🗑️", font=("Arial", 7),
-                      bg="#dc3545", fg="white", relief=tk.FLAT, padx=3,
-                      command=_delete).pack(side=tk.RIGHT)
+                tk.Button(row, text="🗑️", font=("Arial", 7),
+                          bg="#dc3545", fg="white", relief=tk.FLAT, padx=3,
+                          command=_delete).pack(side=tk.RIGHT)
 
             # Save/bookmark button
             try:
