@@ -269,8 +269,11 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
             dedup_skipped += 1
             continue
         try:
-            _r_to_save = ({**r, 'regime_filter': _a43_conditions}
-                          if _a43_conditions else r)
+            # WHY (Code Audit Fix — Bug 3a): Always write the key so
+            #      the backtester can distinguish "old rule, no key →
+            #      fall back to global config" from "new rule, key=None
+            #      → filter was OFF at discovery, suppress filtering".
+            _r_to_save = {**r, 'regime_filter': _a43_conditions}
             _sr.save_rule(_r_to_save, source=source, notes=notes)
             seen_hashes.add(h)
             saved += 1

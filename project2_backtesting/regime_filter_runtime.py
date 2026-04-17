@@ -245,9 +245,23 @@ def build_regime_pass_mask(ind, rule_action='BUY', override_conditions=None):
     #      global config state.
     # CHANGED: April 2026 — Phase A.43
     if override_conditions is not None:
-        enabled  = True
-        subset   = override_conditions
-        strictness = None
+        if not override_conditions:
+            # Empty list = rule was saved with filter OFF → no filtering
+            return (
+                np.ones(n, dtype=bool),
+                {
+                    'enabled':          False,
+                    'subset':           [],
+                    'strictness':       'per-rule',
+                    'pass_count':       n,
+                    'total':            n,
+                    'pass_pct':         100.0,
+                    'rule_action_used': rule_action,
+                },
+            )
+        enabled   = True
+        subset    = override_conditions
+        strictness = 'per-rule'
     else:
         enabled, mode, subset, strictness = _load_active_filter()
 

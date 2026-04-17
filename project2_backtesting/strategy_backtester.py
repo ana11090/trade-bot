@@ -966,10 +966,24 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         from project2_backtesting.regime_filter_runtime import (
             build_regime_pass_mask, log_filter_summary_once,
         )
-        _a43_override = next(
-            (r.get('regime_filter') for r in rules if r.get('regime_filter')),
-            None,
-        )
+        # WHY (Code Audit Fix — Bug 3c): Distinguish three cases:
+        #   (a) rules have no 'regime_filter' key (old rules) → None →
+        #       fall back to global config (backward compat)
+        #   (b) rules have key with conditions (filter ON at discovery)
+        #       → use those conditions
+        #   (c) rules have key but value is None/[] (filter OFF) → [] →
+        #       explicitly suppress filtering regardless of global config
+        _a43_rule_rf = None
+        for _r in rules:
+            _rf = _r.get('regime_filter')
+            if _rf and isinstance(_rf, list) and len(_rf) > 0:
+                _a43_rule_rf = _rf
+                break
+        _a43_has_key = any('regime_filter' in _r for _r in rules)
+        if _a43_has_key and _a43_rule_rf is None:
+            _a43_override = []   # new rule, filter was OFF at discovery
+        else:
+            _a43_override = _a43_rule_rf  # conditions or None (old rule)
         _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
             ind, rule_action=direction, override_conditions=_a43_override,
         )
@@ -1432,10 +1446,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
         from project2_backtesting.regime_filter_runtime import (
             build_regime_pass_mask, log_filter_summary_once,
         )
-        _a43_override = next(
-            (r.get('regime_filter') for r in rules if r.get('regime_filter')),
-            None,
-        )
+        _a43_rule_rf = None
+        for _r in rules:
+            _rf = _r.get('regime_filter')
+            if _rf and isinstance(_rf, list) and len(_rf) > 0:
+                _a43_rule_rf = _rf
+                break
+        _a43_has_key = any('regime_filter' in _r for _r in rules)
+        if _a43_has_key and _a43_rule_rf is None:
+            _a43_override = []
+        else:
+            _a43_override = _a43_rule_rf
         _a38a_regime_mask, _a38a_info = build_regime_pass_mask(
             ind, rule_action=direction, override_conditions=_a43_override,
         )
@@ -1537,9 +1558,20 @@ def fast_backtest(df, ind, rules, exit_strategy,
         }
 
         # Some exits (ATRBased) need on_entry hook for setup
+        # WHY (Code Audit Fix — Bug 1a): Old code passed only df.iloc
+        #      (price data) to on_entry. Exit strategies like ATRBased
+        #      need indicator data (H1_atr_14) which lives in `ind`.
+        #      Without the merge, ATR/IndicatorExit never find their
+        #      columns and produce garbage results. Match run_backtest's
+        #      behavior: merge price + indicator data into a single dict.
+        # CHANGED: April 2026 — Code Audit Fix
         if hasattr(exit_strategy, 'on_entry'):
             try:
-                exit_strategy.on_entry(df.iloc[entry_pos_int])
+                _entry_dict = df.iloc[entry_pos_int].to_dict()
+                if 0 <= entry_pos_int < len(ind.index):
+                    _sig_idx = ind.index[entry_pos_int]
+                    _entry_dict.update(ind.loc[_sig_idx].to_dict())
+                exit_strategy.on_entry(_entry_dict)
             except Exception:
                 pass
 
@@ -1606,8 +1638,26 @@ def fast_backtest(df, ind, rules, exit_strategy,
             #      name (candle['close'], candle['high'], etc.) so we
             #      still need a Series-shaped object for the callback.
             #      This is the only retained .iloc in the hot loop.
-            # CHANGED: April 2026 — Phase A.10
+            # WHY (Code Audit Fix — Bug 1b): Old code passed only price
+            #      data from future_candles. Exit strategies that read
+            #      indicator columns (ATRBased reads H1_atr_14,
+            #      IndicatorExit reads H1_rsi_14) got None and silently
+            #      degraded. Merge indicator row from `ind` into the
+            #      candle dict, matching run_backtest's behavior.
+            #      Performance note: .to_dict() + .update() adds ~20µs
+            #      per candle. The vectorized FixedSLTP path (majority
+            #      of combos) is unaffected.
+            # CHANGED: April 2026 — Code Audit Fix
             candle = future_candles.iloc[ci]
+            _future_abs_idx = entry_pos_int + 1 + ci
+            if _future_abs_idx < len(ind):
+                try:
+                    _ind_idx = ind.index[_future_abs_idx]
+                    _candle_dict = candle.to_dict()
+                    _candle_dict.update(ind.loc[_ind_idx].to_dict())
+                    candle = _candle_dict
+                except Exception:
+                    pass
 
             try:
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
