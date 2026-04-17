@@ -1139,18 +1139,16 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 candle_dict.update(ind.loc[signal_idx].to_dict())   # indicators from SIGNAL bar
             exit_strategy.on_entry(candle_dict)
 
-        # WHY: Old code started scanning at entry_pos_int + 2, which skipped
-        #      the entry candle entirely. Entry happens at the OPEN of the
-        #      entry candle (entry_pos_int + 1), and same-bar SL/TP hits
-        #      happen within that candle — they must be checked. fast_backtest
-        #      already uses +1; this aligns the two paths so the deep
-        #      optimizer and the displayed backtester no longer produce
-        #      different trade sets for the same strategy. pos["highest_since_entry"]
-        #      is already seeded from next_candle above, so the per-candle
-        #      max/min update is idempotent on the entry candle.
-        # CHANGED: April 2026 — Phase 28 Fix 2 — include entry candle
-        #          (audit Part C crit #5)
-        remaining_df = df.iloc[entry_pos_int + 1:]
+        # WHY (same-bar exit bias fix): pos["highest_since_entry"] is seeded
+        #      from next_candle (the entry candle, df.iloc[entry_pos_int+1]).
+        #      Starting remaining_df at +1 meant the first iteration processed
+        #      that same candle, updated highest/lowest (idempotent), then
+        #      called on_new_candle — which could trigger a trailing-stop exit
+        #      on the entry bar itself: pure look-ahead bias.
+        #      Starting at +2 skips the entry candle; earliest exit is the
+        #      candle AFTER entry (candles_held=1). This matches fast_backtest.
+        # CHANGED: April 2026 — same-bar exit look-ahead bias fix
+        remaining_df = df.iloc[entry_pos_int + 2:]
 
         exit_price  = None
         exit_time   = None
@@ -1614,14 +1612,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         result = None
         exit_idx = -1
-        for ci in range(_n_future):
-            # WHY (Phase 35 Fix 4): Old code set candles_held = ci, where
-            #      ci=0 is the first candle AFTER entry. Use ci+1 so a
-            #      TimeBased(max_candles=6) strategy exits on bar 6 not 7.
-            # CHANGED: April 2026 — Phase 35 Fix 4 — off-by-one fix
-            #          (audit Part C MED #22)
-            pos_info['candles_held'] = ci + 1
-            pos_info['minutes_held'] = (ci + 1) * candle_minutes
+        for ci in range(1, _n_future):
+            # WHY (same-bar exit bias fix): The loop previously started at
+            #      ci=0, which is future_candles.iloc[0] — the ENTRY candle
+            #      itself. pos_info['highest_since_entry'] is seeded from that
+            #      same candle's HIGH before the loop, so ci=0 immediately
+            #      triggered trailing-stop exits on the entry bar: look-ahead
+            #      bias. Starting at ci=1 skips the entry candle. With ci now
+            #      1-based, candles_held = ci directly (ci=1 → held 1 candle).
+            # CHANGED: April 2026 — same-bar exit look-ahead bias fix
+            pos_info['candles_held'] = ci
+            pos_info['minutes_held'] = ci * candle_minutes
             close = _closes_np[ci]
             high  = _highs_np[ci]
             low   = _lows_np[ci]
@@ -1767,11 +1768,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
-        # WHY (Quick Fix): The vectorized path includes candles_held and
-        #      cost_pips in each trade dict. The non-vectorized path was
-        #      missing both. exit_idx is 0-based (0 = exited on entry
-        #      candle), so candles_held = exit_idx + 1.
-        # CHANGED: April 2026 — add candles_held + cost_pips to trade dict
+        # WHY (Quick Fix + same-bar bias fix): The vectorized path includes
+        #      candles_held and cost_pips in each trade dict. The non-vectorized
+        #      path was missing both. After the same-bar bias fix, the loop
+        #      starts at ci=1, so exit_idx is 1-based (minimum 1). Therefore
+        #      candles_held = exit_idx (not exit_idx + 1).
+        # CHANGED: April 2026 — add candles_held + cost_pips; updated for bias fix
         trade = {
             'entry_time':   str(entry_time),
             'exit_time':    str(exit_time),
@@ -1783,7 +1785,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'cost_pips':    round(commission_pips, 1),
             'net_profit':   round(net_profit, 2),
             'lot_size':     lot_size,
-            'candles_held': exit_idx + 1,
+            'candles_held': exit_idx,
             'exit_reason':  exit_reason,
             'rule_id':      int(signal_rule_ids.loc[sig_idx]),
         }
