@@ -193,6 +193,7 @@ _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 _a42_max_trades_mode_var  = None  # StringVar: "normal" | "custom"
 _a42_max_trades_value_var = None  # IntVar: custom limit
 _a45_combine_var          = None  # BooleanVar: test all rule combinations
+_a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
 #      into output_text via format_exc(), but the user reported they
@@ -609,7 +610,43 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             else:
                 output_text.insert(tk.END, "Rule combinations: OFF (individual rules only)\n")
 
-            output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n\n")
+            output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n")
+
+            # ── Phase A.48: Read configuration if checkbox is ON ──
+            # WHY (Phase A.48): When checked, read spread/commission/account/pip_value
+            #      from backtest_config.json and pass to run_comparison_matrix.
+            #      When unchecked, use function defaults (pre-A.48 behavior).
+            # CHANGED: April 2026 — Phase A.48
+            _a48_use_cfg = _a48_use_config_var.get() if _a48_use_config_var is not None else False
+            if _a48_use_cfg:
+                try:
+                    from project2_backtesting.panels.configuration import load_config as _cfg_load
+                    from project2_backtesting.panels.configuration import INSTRUMENT_SPECS as _cfg_specs
+                    _bt_cfg = _cfg_load()
+                    _cfg_spread      = float(_bt_cfg.get('spread', 2.5))
+                    _cfg_commission  = float(_bt_cfg.get('commission', 0.0))
+                    _cfg_account     = float(_bt_cfg.get('starting_capital', 100000))
+                    _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
+                    _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 10.0))
+                    # pip_size from instrument specs based on symbol
+                    _cfg_symbol = _bt_cfg.get('symbol', 'XAUUSD')
+                    _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
+                    output_text.insert(tk.END,
+                        f"Config: spread={_cfg_spread}, commission={_cfg_commission}, "
+                        f"account=${_cfg_account:,.0f}, risk={_cfg_risk_pct}%, "
+                        f"pip_value=${_cfg_pip_value}/lot, pip_size={_cfg_pip_size}\n\n"
+                    )
+                except Exception as _cfg_e:
+                    output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")
+                    _a48_use_cfg = False
+
+            if not _a48_use_cfg:
+                _cfg_spread = 2.5
+                _cfg_commission = 0.0
+                _cfg_account = None
+                _cfg_risk_pct = 1.0
+                _cfg_pip_value = 10.0
+                _cfg_pip_size = 0.01
 
             # Determine which TFs to test
             # WHY (Phase 33 Fix 9): Old list missed D1 timeframe. Some users
@@ -654,9 +691,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             output_text.insert(tk.END, f"    Skipping {tf} — no candle file found\n")
                         continue
 
-                    # WHY (Phase A.42): Pass max_trades_per_day so the
-                    #      backtester enforces the daily limit.
-                    # CHANGED: April 2026 — Phase A.42
+                    # WHY (Phase A.48): Pass config values so the backtester
+                    #      uses the user's actual spread/commission/account.
+                    # CHANGED: April 2026 — Phase A.48
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -665,6 +702,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         use_safety_stops=use_safety,
                         max_trades_per_day=_a42_limit,
                         combine_all_rules=_a45_combine,
+                        spread_pips=_cfg_spread,
+                        commission_pips=_cfg_commission,
+                        pip_size=_cfg_pip_size,
+                        account_size=_cfg_account,
+                        risk_per_trade_pct=_cfg_risk_pct,
+                        pip_value_per_lot=_cfg_pip_value,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -693,6 +736,58 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     'matrix':  all_matrix,
                     'elapsed': total_elapsed,
                 }
+
+                # WHY (Phase A.48): When Multi-TF is ON, each per-TF call
+                #      to run_comparison_matrix overwrites backtest_matrix.json
+                #      with only that TF's results. The last TF (D1) wins and
+                #      View Results shows only ~96 results instead of all 480.
+                #      After the loop, save the COMBINED results (all TFs).
+                # CHANGED: April 2026 — Phase A.48 — save combined multi-TF
+                if len(tfs_to_test) > 1 and all_matrix:
+                    try:
+                        import time as _save_time
+                        _combined_path = os.path.join(
+                            project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json'
+                        )
+                        _all_tfs = sorted(set(
+                            r.get('entry_tf', '') for r in all_matrix if r.get('entry_tf', '')
+                        ))
+                        _combined_output = {
+                            "generated_at": _save_time.strftime("%Y-%m-%d %H:%M"),
+                            "entry_timeframe": "multi" if len(_all_tfs) > 1 else (_all_tfs[0] if _all_tfs else "H1"),
+                            "tested_timeframes": _all_tfs,
+                            "max_trades_per_day": _a42_limit,
+                            "spread_pips": _cfg_spread,
+                            "commission_pips": _cfg_commission,
+                            "matrix": all_matrix,
+                        }
+                        with open(_combined_path, 'w', encoding='utf-8') as _cf:
+                            json.dump(_combined_output, _cf, indent=2, default=str)
+                        # Also save CSV
+                        try:
+                            _csv_path = _combined_path.replace('.json', '.csv')
+                            _csv_keys = ['rule_combo', 'exit_strategy', 'entry_tf',
+                                         'total_trades', 'win_rate', 'net_profit_factor',
+                                         'net_total_pips', 'max_dd_pips', 'net_avg_pips']
+                            import csv as _csv_mod
+                            with open(_csv_path, 'w', newline='', encoding='utf-8') as _csvf:
+                                writer = _csv_mod.DictWriter(_csvf, fieldnames=_csv_keys, extrasaction='ignore')
+                                writer.writeheader()
+                                for _row in all_matrix:
+                                    writer.writerow(_row)
+                        except Exception:
+                            pass
+
+                        output_text.insert(
+                            tk.END,
+                            f"\nSaved combined: {len(all_matrix)} results across "
+                            f"{len(_all_tfs)} TFs → backtest_matrix.json\n"
+                        )
+                    except Exception as _save_e:
+                        output_text.insert(
+                            tk.END,
+                            f"\n⚠️ Could not save combined results: {_save_e}\n"
+                        )
 
             # Clean up temp file
             try:
@@ -2578,6 +2673,53 @@ def build_panel(parent):
         text="    OFF = test each rule individually (faster)\n"
              "    ON  = also test every OR-combination of selected rules\n"
              "    ⚠️  5 rules = 31 combos × 12 exits = 372 tests. 8 rules = 3,060 tests.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Phase A.48: Use Configuration settings ────────────────────────────────
+    # WHY (Phase A.48): The Configuration panel has spread, commission,
+    #      account size, pip value, etc. But run_comparison_matrix was called
+    #      without any of these — it used hardcoded defaults. This checkbox
+    #      controls whether to read and pass those values. Default OFF
+    #      preserves pre-A.48 behavior (function defaults).
+    # CHANGED: April 2026 — Phase A.48
+    global _a48_use_config_var
+
+    _a48_frame = tk.Frame(panel, bg="white", pady=6)
+    _a48_frame.pack(fill="x", padx=20)
+
+    _a48_use_config_var = tk.BooleanVar(value=False)
+
+    # Read current config values to show in the label
+    _a48_preview = ""
+    try:
+        from project2_backtesting.panels.configuration import load_config as _a48_load
+        _a48_cfg = _a48_load()
+        _a48_preview = (
+            f"    Current: spread={_a48_cfg.get('spread', '?')} pips, "
+            f"commission={_a48_cfg.get('commission', '?')} pips, "
+            f"account=${float(_a48_cfg.get('starting_capital', 0)):,.0f}, "
+            f"risk={_a48_cfg.get('risk_pct', '?')}%"
+        )
+    except Exception:
+        _a48_preview = "    (could not read config)"
+
+    tk.Checkbutton(
+        _a48_frame,
+        text="⚙️ Use Configuration settings (spread, commission, account, etc.)",
+        variable=_a48_use_config_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    tk.Label(
+        _a48_frame,
+        text=f"    OFF = use defaults (spread=2.5, commission=0, no account sizing)\n"
+             f"    ON  = read from Configuration panel\n"
+             f"{_a48_preview}",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
