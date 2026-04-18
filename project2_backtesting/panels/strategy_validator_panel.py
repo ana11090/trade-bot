@@ -1559,6 +1559,9 @@ def _display_wf_results(wf_result):
 
 
 def _display_mc_results(mc_result):
+    print(f"[validator] _display_mc_results called: "
+          f"result={'None' if mc_result is None else mc_result.get('verdict', '?')}, "
+          f"_mc_frame={'exists' if _mc_frame else 'None'}")
     if _mc_frame is None:
         return
     for w in _mc_frame.winfo_children():

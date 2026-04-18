@@ -801,6 +801,9 @@ def monte_carlo_test(
     """
     _stop_flag.clear()
 
+    print(f"[MC] Starting: {len(trades)} trades, firm={firm_id!r}, "
+          f"challenge_id={challenge_id!r}, sims={n_simulations}, account={account_size}")
+
     import sys
     project_root = os.path.abspath(os.path.join(_HERE, '..'))
     if project_root not in sys.path:
@@ -881,6 +884,7 @@ def monte_carlo_test(
         baseline_pass_rate = float(baseline_summary.eval_pass_rate) if baseline_summary else 0.0
     except Exception as e:
         baseline_pass_rate = 0.0
+    print(f"[MC] Baseline pass rate: {baseline_pass_rate:.2%}")
 
     # Shuffle simulations — shuffle Pips, let simulator compute Profit
     pips_values = list(trades_df['Pips'].values) if 'Pips' in trades_df.columns else list(trades_df['Profit'].values)
@@ -944,6 +948,9 @@ def monte_carlo_test(
         except Exception:
             rate = 0.0
         shuffled_rates.append(rate)
+
+    print(f"[MC] Completed {len(shuffled_rates)}/{n_simulations} shuffles, "
+          f"mean_rate={float(np.mean(shuffled_rates)) if shuffled_rates else 0:.2%}")
 
     if not shuffled_rates:
         return {'verdict': 'INSUFFICIENT_DATA', 'error': 'No shuffles completed'}
