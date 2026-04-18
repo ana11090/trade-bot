@@ -120,14 +120,84 @@ def _get_selected_index():
 
 
 def _get_strategy_data(idx):
-    """Load full strategy data from backtest_matrix.json."""
+    """Load full strategy data from backtest matrix, saved rules, or optimizer output.
+
+    WHY: The index can be:
+      - Integer (0, 1, 2, ...): direct backtest matrix index
+      - "saved_N": load from saved_rules.json entry #N
+      - "optimizer_latest": load from _validator_optimized.json
+
+    CHANGED: April 2026 — EA generator supports saved rules and optimizer results
+    """
+    # ── Saved rules ──
+    if isinstance(idx, str) and idx.startswith('saved_'):
+        try:
+            rule_id = int(idx.split('_')[1])
+            from shared.saved_rules import load_all
+            for entry in load_all():
+                if entry.get('id') == rule_id:
+                    rule = entry.get('rule', {})
+                    result = dict(rule)
+                    # Ensure 'rules' has rule dicts with conditions
+                    if not result.get('rules') or not any(r.get('conditions') for r in result.get('rules', [])):
+                        opt = result.get('optimized_rules', [])
+                        if opt and any(r.get('conditions') for r in opt):
+                            result['rules'] = opt
+                    if not result.get('rules') or not any(r.get('conditions') for r in result.get('rules', [])):
+                        conds = result.get('conditions', [])
+                        if conds:
+                            result['rules'] = [{'prediction': 'WIN', 'conditions': conds}]
+                    # Normalize keys
+                    if not result.get('exit_params') and result.get('exit_strategy_params'):
+                        result['exit_params'] = result['exit_strategy_params']
+                    if not result.get('exit_strategy_params') and result.get('exit_params'):
+                        result['exit_strategy_params'] = result['exit_params']
+                    if not result.get('entry_tf'):
+                        result['entry_tf'] = result.get('entry_timeframe', '')
+                    print(f"[EA GEN] Loaded saved rule #{rule_id}: "
+                          f"{len(result.get('rules', []))} rules, "
+                          f"exit={result.get('exit_name', result.get('exit_class', '?'))}")
+                    return result
+        except Exception as e:
+            print(f"[EA GEN] Error loading saved rule {idx}: {e}")
+            import traceback; traceback.print_exc()
+        return {}
+
+    # ── Optimizer latest ──
+    if isinstance(idx, str) and idx == 'optimizer_latest':
+        try:
+            opt_path = os.path.join(project_root, 'project2_backtesting',
+                                     'outputs', '_validator_optimized.json')
+            if os.path.exists(opt_path):
+                with open(opt_path, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                if not result.get('exit_strategy_params') and result.get('exit_params'):
+                    result['exit_strategy_params'] = result['exit_params']
+                return result
+        except Exception:
+            pass
+        return {}
+
+    # ── Separator ──
+    if isinstance(idx, str) and idx.startswith('__separator'):
+        return {}
+
+    # ── Integer index → backtest matrix ──
     try:
+        if isinstance(idx, str) and idx.isdigit():
+            idx = int(idx)
         path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return data['results'][idx]
+        results = data.get('results', []) or data.get('matrix', [])
+        if isinstance(idx, int) and 0 <= idx < len(results):
+            r = results[idx]
+            if not r.get('exit_strategy_params') and r.get('exit_params'):
+                r['exit_strategy_params'] = r['exit_params']
+            return r
     except Exception:
-        return {}
+        pass
+    return {}
 
 
 def _update_strat_info():
@@ -539,10 +609,27 @@ def _generate():
     day_filter     = [i + 1 for i, (d, var) in enumerate(_day_vars.items()) if var.get()]
 
     try:
+        # WHY: Read exit_params from both possible key names. Include direction.
+        # CHANGED: April 2026
+        _exit_params = (strat_data.get('exit_params') or
+                        strat_data.get('exit_strategy_params') or {})
+        _exit_name = strat_data.get('exit_name', strat_data.get('exit_class', 'FixedSLTP'))
+        _direction = strat_data.get('direction', '')
+        if not _direction:
+            for _r in strat_data.get('rules', strat_data.get('optimized_rules', [])):
+                if _r.get('action') in ('BUY', 'SELL'):
+                    _direction = _r['action']
+                    break
+        if not _direction:
+            _direction = 'BUY'
+
         strategy = {
             'rules':                strat_data.get('rules', []),
-            'exit_name':            strat_data.get('exit_name', 'FixedSLTP'),
-            'exit_strategy_params': strat_data.get('exit_strategy_params', {}),
+            'exit_name':            _exit_name,
+            'exit_strategy_params': _exit_params,
+            'rule_combo':           strat_data.get('rule_combo', ''),
+            'direction':            _direction,
+            'filters_applied':      strat_data.get('filters_applied', {}),
             'stats':                {
                 'win_rate':      strat_data.get('win_rate', 0) / 100.0,
                 'total_pips':    strat_data.get('net_total_pips', 0),
@@ -677,7 +764,9 @@ def _save_file():
         return
     with open(path, 'w', encoding='utf-8') as f:
         f.write(code)
-    messagebox.showinfo("Saved", f"Saved to:\n{path}")
+    _vpath = path.rsplit('.', 1)[0] + '_verification.txt'
+    _extra = f"\n\nVerification report:\n{_vpath}" if os.path.exists(_vpath) else ""
+    messagebox.showinfo("Saved", f"Saved to:\n{path}{_extra}")
 
 
 def _copy_to_clipboard():

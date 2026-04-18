@@ -680,14 +680,20 @@ def walk_forward_validate(
             in_wr_frac  = _wr_to_fraction(in_wr)
             out_wr_frac = _wr_to_fraction(out_wr)
             degradation = (out_wr_frac - in_wr_frac) / in_wr_frac * 100.0
-            edge_held   = out_wr_frac >= _DEFAULT_EDGE_HELD_WR
+            # WHY: Edge held if EITHER WR >= 50% OR PF > 1.0 (profitable).
+            #      Asymmetric strategies (trailing stop) have WR 30-45% but
+            #      PF 1.2-2.0 — the edge IS real, just asymmetric.
+            # CHANGED: April 2026 — PF-aware edge detection
+            _out_pf = out_stats.get('profit_factor', 0)
+            edge_held = (out_wr_frac >= _DEFAULT_EDGE_HELD_WR or _out_pf > 1.0)
         else:
             # WHY: Old fallback used out_wr without normalizing → percent
             #      format always >= 0.50 → edge_held was always True even
             #      when the out-of-sample win rate was actually low.
             # CHANGED: April 2026 — normalize in fallback too
             degradation = 0.0
-            edge_held = _wr_to_fraction(out_wr) >= _DEFAULT_EDGE_HELD_WR
+            _out_pf = out_stats.get('profit_factor', 0)
+            edge_held = (_wr_to_fraction(out_wr) >= _DEFAULT_EDGE_HELD_WR or _out_pf > 1.0)
 
         results_windows.append({
             'window_idx':   i + 1,
@@ -723,13 +729,24 @@ def walk_forward_validate(
             verdict = 'INSUFFICIENT_DATA'
         else:
             out_wrs = [w['out_sample']['win_rate'] for w in results_windows]
+            out_pfs = [w['out_sample']['profit_factor'] for w in results_windows]
             degs    = [w['degradation'] for w in results_windows]
             held    = [w['edge_held'] for w in results_windows]
 
             avg_out_wr      = float(np.mean(out_wrs))
+            avg_out_pf      = float(np.mean(out_pfs))
             avg_degradation = float(np.mean(degs))
             edge_held_count = sum(held)
             edge_held_ratio = edge_held_count / len(held)
+
+            # WHY: Count windows where PF > 1.0 (profitable) as "edge held"
+            #      for asymmetric strategies (low WR, high PF like trailing stop).
+            #      Old code only checked WR >= 50%. A strategy with 40% WR
+            #      but PF 1.4 is profitable — the edge IS held.
+            # CHANGED: April 2026 — PF-aware edge detection
+            pf_held_count = sum(1 for w in results_windows
+                               if w['out_sample']['profit_factor'] > 1.0)
+            pf_held_ratio = pf_held_count / max(len(results_windows), 1)
 
             # WHY: Old verdict was a three-way cliff — a strategy at
             #      avg_out_wr=0.549 got INCONCLUSIVE; one at 0.551 got
@@ -739,6 +756,14 @@ def walk_forward_validate(
             #      close calls are labeled honestly.
             # CHANGED: April 2026 — Phase 31 Fix 6 — MARGINAL verdict zone
             #          (audit Part C HIGH #39)
+            #
+            # WHY: Old grading only checked WR. Trailing stop strategies have
+            #      30-45% WR but PF 1.2-2.0 (winners much bigger than losers).
+            #      A strategy with PF > 1.2 across 90%+ of OOS windows is
+            #      clearly profitable regardless of WR. Add PF-based path.
+            # CHANGED: April 2026 — PF-aware grading for asymmetric strategies
+
+            # Path 1: High WR strategies (symmetric, WR > 50%)
             if avg_out_wr >= 0.55 and avg_degradation > -15 and edge_held_ratio >= 0.60:
                 verdict = 'LIKELY_REAL'
             elif (0.52 <= avg_out_wr < 0.55
@@ -747,10 +772,24 @@ def walk_forward_validate(
                 verdict = 'MARGINAL'
             elif avg_out_wr >= 0.50 and edge_held_ratio >= 0.40:
                 verdict = 'INCONCLUSIVE'
+
+            # Path 2: High PF strategies (asymmetric, WR < 50% but big winners)
+            elif avg_out_pf >= 1.3 and pf_held_ratio >= 0.80:
+                verdict = 'LIKELY_REAL'
+                print(f"[WF] PF-based verdict: avg_out_pf={avg_out_pf:.2f}, "
+                      f"pf_held={pf_held_count}/{len(results_windows)} ({pf_held_ratio:.0%})")
+            elif avg_out_pf >= 1.15 and pf_held_ratio >= 0.65:
+                verdict = 'MARGINAL'
+            elif avg_out_pf >= 1.0 and pf_held_ratio >= 0.50:
+                verdict = 'INCONCLUSIVE'
+
             else:
                 verdict = 'LIKELY_OVERFITTING'
 
+    in_wrs_all  = [w['in_sample']['win_rate'] for w in results_windows] if results_windows else [0.0]
     out_wrs_all = [w['out_sample']['win_rate'] for w in results_windows] if results_windows else [0.0]
+    out_pfs_all = [w['out_sample']['profit_factor'] for w in results_windows] if results_windows else [0.0]
+    in_pfs_all  = [w['in_sample']['profit_factor'] for w in results_windows] if results_windows else [0.0]
     degs_all    = [w['degradation'] for w in results_windows] if results_windows else [0.0]
     held_all    = [w['edge_held'] for w in results_windows] if results_windows else []
     total_in    = sum(w['in_sample']['count'] for w in results_windows) if results_windows else 0
@@ -761,7 +800,10 @@ def walk_forward_validate(
         'windows_completed': completed,
         'total_in_trades':   total_in,
         'total_out_trades':  total_out,
+        'avg_in_wr':         round(float(np.mean(in_wrs_all)), 4),
         'avg_out_wr':        round(float(np.mean(out_wrs_all)), 4),
+        'avg_in_pf':         round(float(np.mean(in_pfs_all)), 3),
+        'avg_out_pf':        round(float(np.mean(out_pfs_all)), 3),
         'avg_degradation':   round(float(np.mean(degs_all)), 2),
         'edge_held_count':   sum(held_all),
         'edge_held_ratio':   round(sum(held_all) / max(len(held_all), 1), 3),
@@ -1186,6 +1228,17 @@ def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result
 
     edge_held_ratio = wf_summary.get('edge_held_ratio', 0.0)
     score += int(edge_held_ratio * 15)
+
+    # WHY: Bonus for high PF strategies. A strategy with PF 1.4 avg across
+    #      OOS windows has a real edge even at 40% WR.
+    # CHANGED: April 2026 — PF bonus in combined score
+    avg_out_pf = wf_summary.get('avg_out_pf', 0)
+    if avg_out_pf >= 1.3:
+        score += 15
+    elif avg_out_pf >= 1.15:
+        score += 8
+    elif avg_out_pf >= 1.0:
+        score += 3
 
     avg_deg = wf_summary.get('avg_degradation', 0.0)
     if avg_deg < -20:

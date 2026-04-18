@@ -63,7 +63,17 @@ def generate_ea(
     rules     = strategy.get('rules', [])
     win_rules = [r for r in rules if r.get('prediction') == 'WIN']
     exit_name = strategy.get('exit_name', strategy.get('exit_strategy', 'FixedSLTP'))
-    exit_params = strategy.get('exit_strategy_params', {'sl_pips': 150, 'tp_pips': 300})
+
+    # ── Normalize exit_params key name ───────────────────────────────────
+    # WHY: Some sources (saved rules, optimizer) use 'exit_params', others
+    #      use 'exit_strategy_params'. Read from both, prioritize the one
+    #      that exists.
+    # CHANGED: April 2026 — fix inconsistent key names between save sources
+    exit_params = (
+        strategy.get('exit_strategy_params') or
+        strategy.get('exit_params') or
+        {'sl_pips': 150, 'tp_pips': 300}
+    )
 
     # WHY: Strategy direction was silently ignored — every generated EA
     #      emitted trade.Buy() regardless of whether the strategy was BUY
@@ -168,6 +178,67 @@ def generate_ea(
             f.write(code)
         print(f"[EA GEN] Saved to {output_path}")
 
+        # ── Save verification report as separate .txt ──
+        # WHY: Standalone file for easy review alongside the .mq5
+        # CHANGED: April 2026
+        try:
+            _rp = output_path.rsplit('.', 1)[0] + '_verification.txt'
+            _rl = []
+            _rl.append("=" * 70)
+            _rl.append("EA STRATEGY VERIFICATION REPORT")
+            _rl.append("=" * 70)
+            _rl.append("")
+            _rl.append(f"{'Parameter':<30} {'Backtest':<20} {'EA':<20}")
+            _rl.append("-" * 70)
+            _rl.append(f"{'Direction':<30} {direction or '?':<20} {_dir:<20}")
+            _rl.append(f"{'Entry TF':<30} {entry_timeframe:<20} {mql_period:<20}")
+            _rl.append(f"{'Exit Strategy':<30} {exit_name:<20} {exit_class:<20}")
+            _rl.append(f"{'SL (pips)':<30} {sl_pips:<20} {sl_pips:<20}")
+            _rl.append(f"{'TP (pips)':<30} {tp_pips:<20} {tp_pips:<20}")
+            _rl.append(f"{'Risk %':<30} {risk_per_trade_pct:<20} {risk_per_trade_pct:<20}")
+            _rl.append(f"{'Max trades/day':<30} {max_trades_per_day:<20} {max_trades_per_day:<20}")
+            _rl.append(f"{'Min hold (min)':<30} {min_hold_minutes:<20} {min_hold_minutes:<20}")
+            _rl.append(f"{'Cooldown (min)':<30} {cooldown_minutes:<20} {cooldown_minutes:<20}")
+            _rl.append(f"{'Symbol':<30} {symbol:<20} {symbol:<20}")
+            if exit_class == 'TrailingStop':
+                _act = trail_activation_pips
+                _rl.append(f"{'Trail activation':<30} {_act:<20} {_act:<20}")
+                _rl.append(f"{'Trail distance':<30} {trail_distance_pips:<20} {trail_distance_pips:<20}")
+            elif exit_class == 'ATRBased':
+                _rl.append(f"{'SL ATR mult':<30} {sl_atr_mult:<20} {sl_atr_mult:<20}")
+                _rl.append(f"{'TP ATR mult':<30} {tp_atr_mult:<20} {tp_atr_mult:<20}")
+            elif exit_class == 'TimeBased':
+                _rl.append(f"{'Max candles':<30} {max_candles:<20} {max_candles:<20}")
+            elif exit_class == 'HybridExit':
+                _rl.append(f"{'Breakeven at':<30} {breakeven_pips:<20} {breakeven_pips:<20}")
+                _rl.append(f"{'Max candles':<30} {max_candles:<20} {max_candles:<20}")
+            _rl.append("")
+            _rl.append("ENTRY RULES")
+            _rl.append("-" * 70)
+            _rl.append(f"{len(win_rules)} rules with OR logic (any rule triggers entry)")
+            _rl.append("")
+            for _ri, _rule in enumerate(win_rules, 1):
+                _cs = _rule.get('conditions', [])
+                _rl.append(f"Rule {_ri} ({len(_cs)} conditions):")
+                for _ci, _c in enumerate(_cs, 1):
+                    _f = _c.get('feature', '?')
+                    _o = _c.get('operator', '>')
+                    _v = _c.get('value', 0)
+                    _rl.append(f"  {_ci}. {_f} {_o} {_v:.6f}")
+                _rl.append("")
+            _rl.append("EXIT: " + exit_class)
+            _rl.append(f"  Full params: {exit_params}")
+            _rl.append("")
+            _rl.append(f"Filters: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min")
+            _rl.append(f"Prop firm: {prop_firm_name} ({stage}), DD {dd_daily_pct}%/{dd_total_pct}%")
+            _rl.append(f"Validation: Grade {grade} ({score}/100)")
+            _rl.append("=" * 70)
+            with open(_rp, 'w', encoding='utf-8') as _rf:
+                _rf.write('\n'.join(_rl))
+            print(f"[EA GEN] Verification report: {_rp}")
+        except Exception as _e:
+            print(f"[EA GEN] Could not save verification report: {_e}")
+
         # WHY: The emitted EA reads news_calendar.csv via FileOpen with a
         #      relative path, which in MT5 means MQL5/Files/ — a different
         #      folder from MQL5/Experts/ where the .mq5 file lives.
@@ -243,7 +314,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
-    trail_pips = exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))
+
+    # ── Trailing stop parameters ──────────────────────────────────────
+    # WHY: TrailingStop has two thresholds:
+    #      1. activation_pips: profit needed before trailing starts
+    #      2. trail_distance_pips: how far behind price the SL stays
+    #      The old code used trail_pips for BOTH, which is wrong.
+    # CHANGED: April 2026 — separate activation and distance
+    trail_activation_pips = exit_params.get('activation_pips', 50)
+    trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
 
     # WHY: Direction-dependent code fragments. Old code hardcoded BUY logic
     #      everywhere — for SELL strategies, the EA placed BUY orders with
@@ -258,7 +337,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         _entry_price_src    = "ask"
         _profit_pips_expr   = "(_bid - _openP) / GetPipSize()"      # for trailing/hybrid
         _be_new_sl_expr     = "_openP + _Point"                      # breakeven SL
-        _trail_new_sl_expr  = "_bid - TrailPips * GetPipSize()"
+        _trail_new_sl_expr  = "_bid - TrailDistance * GetPipSize()"
         # WHY: SELL has "|| _curSL == 0" fallback for positions opened
         #      without an SL. BUY technically works without it (because
         #      _newSL > 0 + _Point is true anyway), but adding the
@@ -276,7 +355,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         _entry_price_src    = "bid"
         _profit_pips_expr   = "(_openP - _ask) / GetPipSize()"      # SELL profits when price drops
         _be_new_sl_expr     = "_openP - _Point"                      # breakeven SL ABOVE entry for sells (wait, see below)
-        _trail_new_sl_expr  = "_ask + TrailPips * GetPipSize()"     # SL above ask for sell
+        _trail_new_sl_expr  = "_ask + TrailDistance * GetPipSize()"     # SL above ask for sell
         _trail_sl_compare   = "_newSL < _curSL - _Point || _curSL == 0"
         _direction_label    = "SELL"
         _trade_dir_const    = "ORDER_TYPE_SELL"
@@ -319,6 +398,8 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # Indicator exit params
     exit_indicator = exit_params.get('exit_indicator', 'H1_rsi_14')
     exit_threshold = exit_params.get('exit_threshold', 70)
+    exit_direction = exit_params.get('exit_direction', 'above' if is_buy else 'below')
+    _ind_compare = '>=' if exit_direction == 'above' else '<='
 
     # Hybrid params
     breakeven_pips = exit_params.get('breakeven_activation_pips', 50)
@@ -356,9 +437,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             len(_tsi_rules), '; '.join(_tsi_rules)
         )
 
-    # Build condition input params
+    # WHY: Old code AND'd ALL conditions from ALL rules. For multi-rule
+    #      strategies the EA required all 42 conditions true simultaneously.
+    #      The backtest uses OR between rules. Fix: per-rule blocks.
+    # CHANGED: April 2026
     condition_inputs = []
     condition_checks = []
+
+    # Declare all input parameters first
     for ri, rule in enumerate(win_rules, 1):
         for ci, cond in enumerate(rule.get('conditions', []), 1):
             feat = cond['feature']
@@ -366,15 +452,54 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             val  = cond.get('value', 0)
             safe_name = re.sub(r'[^a-zA-Z0-9]', '_', feat)
             param_name = f"Rule{ri}_Cond{ci}_{safe_name[:20]}"
-            condition_inputs.append(f'input double {param_name} = {val:.6f}; // {feat} {op} threshold')
+            condition_inputs.append(f'input double {param_name} = {val:.6f}; // Rule {ri}: {feat} {op} threshold')
 
+    # Build check blocks
+    if len(win_rules) == 1:
+        # Single rule — simple AND
+        rule = win_rules[0]
+        for ci, cond in enumerate(rule.get('conditions', []), 1):
+            feat = cond['feature']
+            op   = cond.get('operator', '>')
+            safe_name = re.sub(r'[^a-zA-Z0-9]', '_', feat)
+            param_name = f"Rule1_Cond{ci}_{safe_name[:20]}"
             mql = get_mql_code(feat, 'mt5')
             var_n = mql['var_name']
             mql_op = OPERATOR_MAP_MQL.get(op, '>')
             condition_checks.append(
-                f'   // Rule {ri}, Condition {ci}: {feat} {op} {val:.4f}\n'
+                f'   // Condition {ci}: {feat} {op} {cond.get("value", 0):.4f}\n'
                 f'   {mql["read_code"]}\n'
                 f'   if(!(val_{var_n} {mql_op} {param_name})) entrySignal = false;\n'
+            )
+    else:
+        # Multiple rules — OR between rules, AND within each
+        condition_checks.append(
+            f'   // {len(win_rules)} rules combined with OR logic\n'
+            f'   entrySignal = false;\n'
+        )
+        for ri, rule in enumerate(win_rules, 1):
+            conds = rule.get('conditions', [])
+            if not conds:
+                continue
+            condition_checks.append(
+                f'   if(!entrySignal) {{ // Rule {ri} ({len(conds)} conditions)\n'
+                f'      bool rule{ri} = true;\n'
+            )
+            for ci, cond in enumerate(conds, 1):
+                feat = cond['feature']
+                op   = cond.get('operator', '>')
+                safe_name = re.sub(r'[^a-zA-Z0-9]', '_', feat)
+                param_name = f"Rule{ri}_Cond{ci}_{safe_name[:20]}"
+                mql = get_mql_code(feat, 'mt5')
+                var_n = mql['var_name']
+                mql_op = OPERATOR_MAP_MQL.get(op, '>')
+                condition_checks.append(
+                    f'      {mql["read_code"]}\n'
+                    f'      if(!(val_{var_n} {mql_op} {param_name})) rule{ri} = false;\n'
+                )
+            condition_checks.append(
+                f'      if(rule{ri}) entrySignal = true;\n'
+                f'   }}\n'
             )
 
     # Handle variable declarations
@@ -1065,9 +1190,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      double atrVal = atrBuf[0];\n'
             f'      g_entrySL = atrVal * SL_ATR_Mult;\n'
             f'      g_entryTP = atrVal * TP_ATR_Mult;\n'
+            f'      // ATR SL/TP: direction-aware ({_direction_label})\n'
             f'      trade.PositionModify(trade.ResultOrder(),\n'
-            f'         entryPrice - g_entrySL,\n'
-            f'         entryPrice + g_entryTP);\n'
+            f'         entryPrice {"- g_entrySL" if is_buy else "+ g_entrySL"},\n'
+            f'         entryPrice {"+ g_entryTP" if is_buy else "- g_entryTP"});\n'
         )
 
     elif exit_class == 'TimeBased':
@@ -1115,10 +1241,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         if ind_code.get('handle_init'):
             extra_init.append(f'   {ind_code["handle_init"]}')
         exit_management = (
-            f'   // Indicator Exit: close when {exit_indicator} crosses {exit_threshold}\n'
+            f'   // Indicator Exit: close when {exit_indicator} crosses threshold\n'
             f'   {{\n'
             f'      {ind_code["read_code"]}\n'
-            f'      if(val_{ind_code["var_name"]} >= ExitThreshold)\n'
+            f'      if(val_{ind_code["var_name"]} {_ind_compare} ExitThreshold)\n'
             f'      {{\n'
             f'         CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
             f'         Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
@@ -1166,7 +1292,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'         Print("[EA] Breakeven set at ", _openP);\n'
             f'      }}\n'
             f'      // Trailing: move SL toward profit as price moves\n'
-            f'      if(g_breakevenSet && TrailPips > 0)\n'
+            f'      if(g_breakevenSet && TrailDistance > 0)\n'
             f'      {{\n'
             f'         double _newSL = {_trail_new_sl_expr};\n'
             f'         if({_trail_sl_compare})\n'
@@ -1196,17 +1322,57 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # Exit-specific blocks (computed outside f-string to avoid backslash issues)
     exit_on_entry_block = exit_on_entry if exit_on_entry else '      trade.PositionModify(trade.ResultOrder(),\n         entryPrice - sl,\n         entryPrice + tp);'
 
+    # ── Build verification report for EA header ──
+    # WHY: User needs to verify at a glance that every rule, condition,
+    #      exit param, and filter was correctly translated to MQL5.
+    # CHANGED: April 2026
+    _vr = []
+    _vr.append("STRATEGY VERIFICATION REPORT")
+    _vr.append(f"Generated: {generated_at}")
+    _vr.append("")
+    _vr.append(f"ENTRY: {len(win_rules)} rules ({'OR logic' if len(win_rules) > 1 else 'single rule'}), Direction: {_direction_label}, TF: {entry_timeframe}")
+    _vr.append("")
+    for _i, _r in enumerate(win_rules, 1):
+        _cs = _r.get('conditions', [])
+        _vr.append(f"Rule {_i}: {_direction_label} when ALL of:")
+        for _c in _cs:
+            _vr.append(f"  {_c.get('feature','?')} {_c.get('operator','>')} {_c.get('value',0):.6f}")
+        _vr.append("")
+    _vr.append(f"EXIT: {exit_class}  SL={sl_pips}  TP={tp_pips}")
+    if exit_class == 'TrailingStop':
+        _vr.append(f"  Activation: +{trail_activation_pips} pips, Trail: {trail_distance_pips} pips")
+    elif exit_class == 'ATRBased':
+        _vr.append(f"  SL: {sl_atr_mult}x ATR, TP: {tp_atr_mult}x ATR")
+    elif exit_class == 'TimeBased':
+        _vr.append(f"  Max hold: {max_candles} candles")
+    elif exit_class == 'HybridExit':
+        _vr.append(f"  Breakeven: +{breakeven_pips}, Trail: {trail_distance_pips}, Max: {max_candles} candles")
+    _vr.append("")
+    _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
+    _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
+    _vr.append(f"  Max spread: {max_spread_pips} pips  |  News: {news_filter_minutes}min")
+    _vr.append("")
+    _vr.append(f"SETTINGS: {symbol}, Risk {risk_per_trade_pct}%, Account ${account_size:,.0f}, Magic {magic_number}")
+    _vr.append(f"  Firm: {prop_firm_name} ({stage}), DD: {dd_daily_pct}%/{dd_total_pct}%")
+    _vr.append(f"  Validation: Grade {grade} ({score}/100)")
+    _vr.append(f"  Backtest: WR {base_stats.get('win_rate',0)*100:.1f}%, PF {base_stats.get('profit_factor',0):.2f}, {base_stats.get('total_pips',0):+,.0f} pips")
+    # Warnings
+    _vrw = []
+    if not win_rules: _vrw.append("NO RULES — EA will never trade!")
+    if exit_class == 'FixedSLTP' and exit_name not in ('FixedSLTP', 'Fixed SL/TP'): _vrw.append(f"Exit defaulted to FixedSLTP but strategy uses '{exit_name}'")
+    if min_hold_minutes == 0: _vrw.append("No min hold — scalping trades included")
+    if _vrw:
+        _vr.append("")
+        _vr.append("WARNINGS:")
+        for _w in _vrw: _vr.append(f"  ⚠ {_w}")
+
+    _vr_header = '//+------------------------------------------------------------------+\n'
+    for _l in _vr:
+        _vr_header += f'//| {_l:<66} |\n'
+    _vr_header += '//+------------------------------------------------------------------+\n'
+
     code = f"""\
-//+------------------------------------------------------------------+
-//| Strategy: {exit_name}                                             |
-//| Generated: {generated_at}                                         |
-//| Platform: MetaTrader 5 (MQL5)                                     |
-//| Validation: Grade {grade} ({score}/100)                           |
-//| Backtest: WR {base_stats.get('win_rate', 0)*100:.1f}%, {base_stats.get('total_pips', 0):.0f} net pips, PF {base_stats.get('profit_factor', 0):.2f}  |
-//| Prop Firm: {prop_firm_name}                                        |
-//| Sessions: {session_comment}                                        |
-//| Days: {day_comment}                                               |
-//+------------------------------------------------------------------+
+{_vr_header}\
 #property copyright "Generated by Trade Bot"
 #property version   "1.00"
 #property strict
@@ -1238,7 +1404,8 @@ input int    DailyResetMinute     = 0;                       // Daily reset minu
 //--- Exit parameters
 input double SLPips             = {sl_pips};                 // Stop loss (pips)
 input double TPPips             = {tp_pips};                 // Take profit (pips)
-input double TrailPips          = {trail_pips};              // Trailing stop (pips, 0=off)
+input double TrailActivation    = {trail_activation_pips};   // Activate trailing after this profit (pips)
+input double TrailDistance      = {trail_distance_pips};     // Trailing distance behind price (pips, 0=off)
 {exit_inputs}
 //--- Entry rule thresholds (one per condition — tweak without recompiling)
 {conditions_block}
@@ -1569,12 +1736,16 @@ double CalculateLots(double slDistance)
 
 //+------------------------------------------------------------------+
 //| Manage trailing stop on open position                              |
+//| WHY: TrailingStop has two thresholds:                              |
+//|      - activation: profit needed before trailing starts            |
+//|      - distance: how far behind price the SL stays                 |
+//| CHANGED: April 2026 — separate activation and distance             |
 //+------------------------------------------------------------------+
 void ManageTrailingStop()
 {{
-   if(TrailPips <= 0) return; // trailing stop disabled
+   if(TrailDistance <= 0) return; // trailing stop disabled
 
-   double trailDistance = TrailPips * GetPipSize();
+   double trailDistance = TrailDistance * GetPipSize();
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {{
@@ -1592,9 +1763,9 @@ void ManageTrailingStop()
 
       if(posType == POSITION_TYPE_BUY)
       {{
-         // Only trail if price has moved enough in profit
+         // Only trail if price has moved past activation threshold
          double profitPips = (bid - openPrice) / GetPipSize();
-         if(profitPips >= TrailPips)
+         if(profitPips >= TrailActivation)
          {{
             double newSL = bid - trailDistance;
             // Only move SL up, never down (|| currentSL==0 handles positions opened without SL)
@@ -1609,7 +1780,7 @@ void ManageTrailingStop()
       else if(posType == POSITION_TYPE_SELL)
       {{
          double profitPips = (openPrice - ask) / GetPipSize();
-         if(profitPips >= TrailPips)
+         if(profitPips >= TrailActivation)
          {{
             double newSL = ask + trailDistance;
             if(newSL < currentSL - _Point || currentSL == 0)

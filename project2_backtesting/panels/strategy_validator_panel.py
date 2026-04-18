@@ -268,8 +268,10 @@ def _copy_validation_results():
         lines.append("WALK-FORWARD RESULTS")
         summary = wf.get('summary', {})
         lines.append(f"Windows completed: {summary.get('windows_completed', 0)}")
-        lines.append(f"Avg IN WR: {summary.get('avg_in_wr', 0):.1f}%")
-        lines.append(f"Avg OUT WR: {summary.get('avg_out_wr', 0):.1f}%")
+        lines.append(f"Avg IN WR: {summary.get('avg_in_wr', 0)*100:.1f}%")
+        lines.append(f"Avg OUT WR: {summary.get('avg_out_wr', 0)*100:.1f}%")
+        lines.append(f"Avg IN PF: {summary.get('avg_in_pf', 0):.2f}")
+        lines.append(f"Avg OUT PF: {summary.get('avg_out_pf', 0):.2f}")
         lines.append(f"Avg degradation: {summary.get('avg_degradation', 0):.1f}pp")
         lines.append(f"Verdict: {summary.get('verdict', '?')}")
 
@@ -282,11 +284,11 @@ def _copy_validation_results():
                 out_s = w.get('out_sample', {})
                 lines.append(f"  {label}")
                 lines.append(f"    IN:  {in_s.get('count', 0):>5} trades  "
-                             f"WR {in_s.get('win_rate', 0):>5.1f}%  "
+                             f"WR {in_s.get('win_rate', 0)*100:>5.1f}%  "
                              f"avg {in_s.get('avg_pips', 0):>+7.1f} pips  "
                              f"PF {in_s.get('profit_factor', 0):>5.2f}")
                 lines.append(f"    OUT: {out_s.get('count', 0):>5} trades  "
-                             f"WR {out_s.get('win_rate', 0):>5.1f}%  "
+                             f"WR {out_s.get('win_rate', 0)*100:>5.1f}%  "
                              f"avg {out_s.get('avg_pips', 0):>+7.1f} pips  "
                              f"PF {out_s.get('profit_factor', 0):>5.2f}")
 
@@ -296,10 +298,10 @@ def _copy_validation_results():
         lines.append("\n" + "-" * 40)
         lines.append("MONTE CARLO RESULTS")
         lines.append(f"Simulations: {mc.get('n_simulations', 0)}")
-        lines.append(f"Pass rate: {mc.get('pass_rate', 0):.1f}%")
-        lines.append(f"Avg ending balance: {mc.get('avg_ending_balance', 0):,.0f}")
-        lines.append(f"Median ending balance: {mc.get('median_ending_balance', 0):,.0f}")
-        lines.append(f"Worst drawdown: {mc.get('worst_dd_pct', 0):.1f}%")
+        lines.append(f"Baseline pass rate: {mc.get('baseline_pass_rate', 0)*100:.1f}%")
+        lines.append(f"Mean pass rate: {mc.get('mean_pass_rate', 0)*100:.1f}%")
+        lines.append(f"P5 pass rate: {mc.get('p5_pass_rate', 0)*100:.1f}%")
+        lines.append(f"P95 pass rate: {mc.get('p95_pass_rate', 0)*100:.1f}%")
         lines.append(f"Verdict: {mc.get('verdict', '?')}")
 
     # ── Slippage ──
@@ -315,19 +317,36 @@ def _copy_validation_results():
             lines.append("Levels:")
             for lv in levels:
                 lines.append(f"  {lv.get('slippage_pips', '?')} pips: "
-                             f"WR {lv.get('avg_wr', 0):.1f}%  "
+                             f"WR {lv.get('avg_wr', 0)*100:.1f}%  "
                              f"avg {lv.get('avg_pips', 0):+.1f} pips  "
                              f"PF {lv.get('avg_pf', 0):.2f}")
 
     # ── Live Firm ──
+    # WHY: live_firm_results can be a list (normal), dict with _error (error),
+    #      or None (not run). Handle all three cases.
+    # CHANGED: April 2026 — handle list vs dict formats
     live = r.get('live_firm_results')
-    if live and not live.get('_error'):
+    if live:
         lines.append("\n" + "-" * 40)
         lines.append("LIVE FIRM SIMULATION")
-        for firm_id, firm_data in live.items():
-            if isinstance(firm_data, dict) and 'pass_rate' in firm_data:
-                lines.append(f"  {firm_id}: pass {firm_data.get('pass_rate', 0):.0f}%  "
-                             f"avg_days {firm_data.get('avg_days', 0):.0f}")
+        try:
+            if isinstance(live, dict):
+                if live.get('_error'):
+                    lines.append(f"  Error: {live['_error']}")
+                else:
+                    for firm_id, firm_data in live.items():
+                        if isinstance(firm_data, dict) and 'pass_rate' in firm_data:
+                            lines.append(f"  {firm_id}: pass {firm_data.get('pass_rate', 0):.0f}%  "
+                                         f"avg_days {firm_data.get('avg_days', 0):.0f}")
+            elif isinstance(live, list):
+                for item in live:
+                    if isinstance(item, dict):
+                        firm = item.get('firm_id', item.get('firm', '?'))
+                        pr = item.get('pass_rate', item.get('eval_pass_rate', 0))
+                        days = item.get('avg_days', 0)
+                        lines.append(f"  {firm}: pass {float(pr)*100:.0f}%  avg_days {days:.0f}")
+        except Exception as _e:
+            lines.append(f"  (Could not format: {_e})")
 
     lines.append("\n" + "=" * 60)
 

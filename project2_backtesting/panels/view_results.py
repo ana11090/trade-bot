@@ -601,7 +601,15 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     'entry_timeframe':   r.get('entry_tf', ''),
                     'rules':             r.get('rules', []),
                     'rule_indices':      r.get('rule_indices', []),
-                    'conditions':        r.get('rules', [{}])[0].get('conditions', []) if r.get('rules') else [],
+                    # WHY: Old code only saved the first rule's conditions.
+                    #      For multi-rule strategies ("All rules combined"),
+                    #      the other 8 rules' conditions were lost. Now
+                    #      flatten ALL rules' conditions into the conditions list.
+                    #      The 'rules' key already has the full rule dicts, so
+                    #      'conditions' is used as a fallback by old code only.
+                    # CHANGED: April 2026 — save all rules' conditions
+                    'conditions':        [c for _rule in r.get('rules', [])
+                                         for c in _rule.get('conditions', [])],
                     'spread_pips':       r.get('spread_pips', 2.5),
                     'commission_pips':   r.get('commission_pips', 0.0),
                 }
