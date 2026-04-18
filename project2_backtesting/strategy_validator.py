@@ -152,9 +152,45 @@ def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size):
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     import project2_backtesting.exit_strategies as es_mod
+
+    # WHY (Hotfix): exit_strategy_class can be empty string or None when
+    #      the optimizer/refiner didn't store it. Try to detect from
+    #      params, map common exit_name strings, fall back to FixedSLTP.
+    # CHANGED: April 2026 — Hotfix
+    if not exit_strategy_class:
+        # Try to detect from params
+        params = exit_strategy_params or {}
+        if 'trail_distance_pips' in params or 'activation_pips' in params:
+            exit_strategy_class = 'TrailingStop'
+        elif 'sl_atr_mult' in params or 'tp_atr_mult' in params:
+            exit_strategy_class = 'ATRBased'
+        elif 'exit_indicator' in params:
+            exit_strategy_class = 'IndicatorExit'
+        elif 'breakeven_activation_pips' in params or 'breakeven_pips' in params:
+            exit_strategy_class = 'HybridExit'
+        elif 'max_candles' in params and 'tp_pips' not in params:
+            exit_strategy_class = 'TimeBased'
+        else:
+            exit_strategy_class = 'FixedSLTP'
+        log.warning(f"[VALIDATOR] exit_strategy_class was empty — detected as {exit_strategy_class} from params")
+
     cls = getattr(es_mod, exit_strategy_class, None)
     if cls is None:
-        raise ValueError(f"Unknown exit strategy class: {exit_strategy_class!r}")
+        # Try common name mappings
+        _name_to_class = {
+            'fixed sl/tp': 'FixedSLTP',
+            'trailing stop': 'TrailingStop',
+            'atr-based': 'ATRBased',
+            'time-based': 'TimeBased',
+            'indicator exit': 'IndicatorExit',
+            'hybrid': 'HybridExit',
+        }
+        mapped = _name_to_class.get(exit_strategy_class.lower().strip())
+        if mapped:
+            cls = getattr(es_mod, mapped, None)
+        if cls is None:
+            log.warning(f"[VALIDATOR] Unknown exit class {exit_strategy_class!r} — using FixedSLTP")
+            cls = es_mod.FixedSLTP
     params = dict(exit_strategy_params or {})
     # Only pass pip_size if the constructor accepts it
     import inspect
