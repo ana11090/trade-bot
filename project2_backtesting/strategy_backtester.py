@@ -2541,12 +2541,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     except Exception:
         pass
 
-    # Strip trades from returned matrix too (saves memory in panel)
-    for m in matrix:
-        m.pop('trades', None)
-
+    # WHY (Hotfix): Old code returned `matrix` which has stats nested
+    #      under 'stats' key and NO 'breaches'. The panel's combined
+    #      multi-TF save wrote this to backtest_matrix.json, causing
+    #      View Results to show no breach/DD/survival data.
+    #      Return `summary` instead — it has stats flattened at top
+    #      level, breaches computed, and trade_count set. Trades are
+    #      already stripped (line 2517-2519).
+    # CHANGED: April 2026 — return summary instead of matrix
     return {
-        "matrix":       matrix,
+        "matrix":       summary,
         "rules_tested": [c["name"] for c in rule_combos],
         "exits_tested": [e.describe() for e in exit_strategies],
         "elapsed":      elapsed,
