@@ -1,21 +1,15 @@
-=== WORKER THREAD EXCEPTION ===
-Time:  2026-04-17T12:26:12.237093
+=== TK CALLBACK EXCEPTION ===
+Time:  2026-04-18T17:14:47.509263
 Type:  NameError
-Error: NameError("name 'max_trades_per_day' is not defined")
+Error: NameError("free variable 'e' referenced before assignment in enclosing scope")
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 636, in run_in_thread
-    tf_results = run_comparison_matrix(
-                 ^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 2203, in run_comparison_matrix
-    trades = fast_backtest(
-             ^^^^^^^^^^^^^^
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 1430, in fast_backtest
-    return _vectorized_fixed_sltp_exits(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 452, in _vectorized_fixed_sltp_exits
-    _a42_limit = int(max_trades_per_day) if max_trades_per_day and max_trades_per_day > 0 else 0
-                                            ^^^^^^^^^^^^^^^^^^
-NameError: name 'max_trades_per_day' is not defined
+  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1892, in __call__
+    return self.func(*args)
+  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 814, in callit
+    func(*args)
+  File "d:\traiding data\trade-bot\project2_backtesting\panels\strategy_validator_panel.py", line 2493, in <lambda>
+    text=f"Error: {e}", fg=RED))
+NameError: free variable 'e' referenced before assignment in enclosing scope
 

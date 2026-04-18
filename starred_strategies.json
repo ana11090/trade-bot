@@ -1,5 +1,8 @@
 [
   "test1|EXIT1",
   "test2|EXIT2",
-  "Rule 1 (BUY)|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|H1"
+  "Rule 1 (BUY)|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|H1",
+  "Rule 3 (BUY)|SL 150 pips, close after 12 candles|M5",
+  "All rules combined (BUY)|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|H1",
+  "Rules 2+3 (BUY)|SL 150 pips, close after 12 candles|M5"
 ]
