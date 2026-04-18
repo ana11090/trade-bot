@@ -1021,11 +1021,13 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
     wr_str = f"{wr*100:.1f}%" if (wr or 0) <= 1 else f"{wr:.1f}%"
     wr_color = GREEN if ((wr or 0) if (wr or 0) <= 1 else (wr or 0)/100) >= 0.60 else AMBER
 
+    # Add risk % info if present
+    _risk_str = f"  |  Risk: {cand.get('risk_pct', '?')}%" if cand.get('risk_pct') else ""
     stats_text = (f"Trades: {stats.get('count', 0)}  |  WR: {wr_str}  |  "
                   f"Avg: {stats.get('avg_pips', 0):+.1f} pips  |  "
                   f"Total: {stats.get('total_pips', 0):+,.0f} pips  |  "
                   f"PF: {stats.get('profit_factor', 0):.2f}  |  "
-                  f"{stats.get('trades_per_day', 0):.1f}/day")
+                  f"{stats.get('trades_per_day', 0):.1f}/day{_risk_str}")
     tk.Label(card, text=stats_text, font=("Segoe UI", 9), bg=card_bg,
              fg=wr_color).pack(anchor="w", pady=(2, 0))
 
@@ -1465,7 +1467,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
 
-    def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap):
+    def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap, c=cand):
         try:
             from shared.saved_rules import save_rule
 
@@ -1475,10 +1477,18 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             #      Without exit strategy, the validator can't reconstruct the trade logic.
             #      Without entry TF, the backtester loads the wrong candle file.
             # CHANGED: April 2026 — save complete strategy
+            # WHY: Old code read exit info from backtest_matrix[idx], but idx
+            #      doesn't always match (optimizer changes selection). Also:
+            #      rules_snap may be empty for filter-only optimizations.
+            #      Now: read the BASE strategy from the matrix, use its rules
+            #      if rules_snap is empty, and always capture exit info.
+            # CHANGED: April 2026 — robust optimizer save
             idx = _get_selected_index()
             exit_class = ''
             exit_params = {}
             exit_name = ''
+            _base_rules = []
+            _base_direction = ''
             if idx is not None:
                 try:
                     matrix_path = os.path.join(project_root, 'project2_backtesting',
@@ -1487,11 +1497,24 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                         import json as _json
                         with open(matrix_path) as _mf:
                             _matrix = _json.load(_mf)
-                        if idx < len(_matrix.get('results', [])):
-                            _strat = _matrix['results'][idx]
+                        _results = _matrix.get('results', []) or _matrix.get('matrix', [])
+                        if isinstance(idx, int) and idx < len(_results):
+                            _strat = _results[idx]
+                        elif isinstance(idx, str) and idx.isdigit() and int(idx) < len(_results):
+                            _strat = _results[int(idx)]
+                        else:
+                            _strat = {}
+                        if _strat:
                             exit_class = _strat.get('exit_class', _strat.get('exit_strategy', ''))
                             exit_params = _strat.get('exit_params', _strat.get('exit_strategy_params', {}))
                             exit_name = _strat.get('exit_name', '')
+                            _base_rules = _strat.get('rules', [])
+                            # Infer direction from rule_combo name
+                            _combo = _strat.get('rule_combo', '')
+                            if '(BUY)' in _combo:
+                                _base_direction = 'BUY'
+                            elif '(SELL)' in _combo:
+                                _base_direction = 'SELL'
                 except Exception:
                     pass
 
@@ -1511,26 +1534,54 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             #      large strategies) so the validator can use them directly
             #      without re-running a backtest.
             # CHANGED: April 2026 — include rule_combo + trades in saved data
+            # WHY: Use base strategy rules if optimizer rules are empty.
+            #      Filter-only optimizations (min_hold, sessions) don't
+            #      change rules — they just filter the trade list. The
+            #      rules come from the base strategy in the backtest matrix.
+            # CHANGED: April 2026 — include base rules + direction + fix WR format
+            _save_rules = list(r) if r else list(_base_rules)
+
+            # Normalize WR to percentage (backtest uses %, optimizer uses decimal)
+            _wr = s.get('win_rate', 0)
+            if isinstance(_wr, (int, float)) and 0 < _wr < 1.0:
+                _wr = _wr * 100.0  # Convert decimal to percentage
+
             data = {
-                'rule_combo': n,                       # NEW — strategy name
-                'trades': list(trades_snap),           # NEW — actual trade list
+                'rule_combo': n,
+                'trades': list(trades_snap),
                 'conditions': [],
                 'prediction': 'WIN',
-                'win_rate': s.get('win_rate', 0),
+                'win_rate': round(_wr, 2),
                 'avg_pips': s.get('avg_pips', 0),
                 'total_pips': s.get('total_pips', 0),
                 'net_total_pips': s.get('total_pips', 0),
                 'total_trades': s.get('count', 0),
                 'max_dd_pips': s.get('max_dd_pips', 0),
                 'net_profit_factor': s.get('profit_factor', 0),
-                'optimized_rules': r,
+                'optimized_rules': _save_rules,
+                'rules': _save_rules,
                 'filters_applied': f,
                 'exit_class': exit_class,
                 'exit_params': exit_params,
                 'exit_name': exit_name,
                 'entry_timeframe': entry_tf,
+                'direction': _base_direction,
+                # WHY: The refiner's risk/stage/firm/account are set by the user
+                #      based on the prop firm they're targeting. These values were
+                #      used during optimization but never saved — so the EA generator
+                #      had no way to know what risk the strategy was optimized for.
+                # CHANGED: April 2026 — save risk management settings
+                # WHY: Risk optimization step finds the optimal risk_pct. Save it
+                #      from the candidate if present, else from UI.
+                # CHANGED: April 2026 — risk optimization
+                'risk_settings': {
+                    'risk_pct': float(c.get('risk_pct', _risk_var.get() if _risk_var else 1.0)),
+                    'account_size': int(float(_acct_var.get())) if _acct_var else 100000,
+                    'firm': _opt_target_var.get() if _opt_target_var else '',
+                    'stage': _stage_var.get() if _stage_var else 'Funded',
+                },
             }
-            for rule in r:
+            for rule in _save_rules:
                 if rule.get('prediction') == 'WIN':
                     data['conditions'].extend(rule.get('conditions', []))
             rid = save_rule(data, source=f"Optimizer: {n}", notes=str(f))
@@ -1776,6 +1827,12 @@ def _show_opt_results(candidates):
                         'exit_params': c.get('exit_params', {}),
                         'exit_name': c.get('exit_name', ''),
                         'entry_timeframe': c.get('entry_timeframe', 'H1'),
+                        'risk_settings': {
+                            'risk_pct': float(c.get('risk_pct', _risk_var.get() if _risk_var else 1.0)),
+                            'account_size': int(float(_acct_var.get())) if _acct_var else 100000,
+                            'firm': _opt_target_var.get() if _opt_target_var else '',
+                            'stage': _stage_var.get() if _stage_var else 'Funded',
+                        },
                     }
                     for rule in c.get('rules', []):
                         if rule.get('prediction') == 'WIN':

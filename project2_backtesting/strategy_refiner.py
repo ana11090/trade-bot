@@ -1243,7 +1243,7 @@ def stop_optimization():
 
 
 def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
-                  sl_pips=None):
+                  sl_pips=None, risk_pct=None):
     """
     Score trades for prop firm suitability.
 
@@ -1326,11 +1326,11 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
             _cfg = load_config()
             _sl_pips_eval = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
             pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
-            risk_pct_cfg  = float(_cfg.get('risk_pct', 1.0))
+            risk_pct_cfg  = float(risk_pct) if risk_pct is not None else float(_cfg.get('risk_pct', 1.0))
         except Exception:
             _sl_pips_eval = float(sl_pips) if sl_pips is not None else 150.0
             pip_value    = 10.0
-            risk_pct_cfg = 1.0
+            risk_pct_cfg = float(risk_pct) if risk_pct is not None else 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
         lot_size      = max(0.01, risk_dollars / (_sl_pips_eval * pip_value)) if (_sl_pips_eval * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
@@ -1383,11 +1383,11 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
             _cfg = load_config()
             _sl_pips_fund = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
             pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
-            risk_pct_cfg  = float(_cfg.get('risk_pct', 1.0))
+            risk_pct_cfg  = float(risk_pct) if risk_pct is not None else float(_cfg.get('risk_pct', 1.0))
         except Exception:
             _sl_pips_fund = float(sl_pips) if sl_pips is not None else 150.0
             pip_value    = 10.0
-            risk_pct_cfg = 1.0
+            risk_pct_cfg = float(risk_pct) if risk_pct is not None else 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
         lot_size      = max(0.01, risk_dollars / (_sl_pips_fund * pip_value)) if (_sl_pips_fund * pip_value) > 0 else 0.01
         dollar_per_pip = pip_value * lot_size
@@ -1552,6 +1552,7 @@ def deep_optimize(
             'exit_params':      exit_params or {},
             'exit_name':        exit_name,
             'exit_strategy':    exit_strategy_desc,
+            'risk_pct':         None,  # filled by risk optimization step if relevant
         }
         candidates.append(candidate)
         if score > best_so_far['score']:
@@ -1588,7 +1589,8 @@ def deep_optimize(
         # No firm selected — test all presets
         preset_list = [(k, v) for k, v in presets.items() if k != 'Custom']
 
-    total_steps = len(preset_list) + 20 + 5 + 3
+    # Add risk optimization steps (approximate — actual count varies by firm)
+    total_steps = len(preset_list) + 20 + 5 + 3 + 10
 
     # ── Apply locks ───────────────────────────────────────────────────────────
     # WHY: User explicitly told us not to touch certain parts of the strategy.
@@ -1661,6 +1663,95 @@ def deep_optimize(
             kept, _ = apply_filters(trades, filt)
             _maybe_add(f"Hold {hold}m + max {maxd}/day", kept,
                        f"min hold {hold}m, max {maxd}/day", filt)
+
+    # ── Step 6: Risk % optimization ──────────────────────────────────────────
+    # WHY: Different risk levels produce different DD profiles. The optimizer
+    #      tests a grid of risk values on the best candidate's trades to find
+    #      the sweet spot — maximum score balancing profit speed and DD safety.
+    #      This is fast because risk only affects lot size → DD%, not trades.
+    # CHANGED: April 2026 — risk optimization step
+    if not _stop_flag.is_set():
+        # Build risk grid from firm trading_rules or default
+        _risk_grid = [0.25, 0.3, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+        if target_firm_data and isinstance(target_firm_data, dict):
+            _firm_data = target_firm_data.get('firm_data', {})
+            _trading_rules = _firm_data.get('trading_rules', [])
+            for _rule in _trading_rules:
+                if _rule.get('stage') == stage:
+                    _params = _rule.get('parameters', {})
+                    _range = _params.get('risk_pct_range', [])
+                    if _range and len(_range) == 2:
+                        _lo, _hi = float(_range[0]), float(_range[1])
+                        # Build fine grid within the firm's recommended range
+                        _risk_grid = []
+                        _step = round((_hi - _lo) / 8, 2)
+                        if _step < 0.05:
+                            _step = 0.05
+                        _v = _lo
+                        while _v <= _hi + 0.001:
+                            _risk_grid.append(round(_v, 2))
+                            _v += _step
+                        # Also test slightly outside the range
+                        if _lo > 0.1:
+                            _risk_grid.insert(0, round(_lo * 0.75, 2))
+                        _risk_grid.append(round(_hi * 1.2, 2))
+                        break
+                    _single = _params.get('risk_pct')
+                    if _single:
+                        _s = float(_single)
+                        _risk_grid = [round(_s * 0.5, 2), round(_s * 0.75, 2),
+                                      _s, round(_s * 1.25, 2), round(_s * 1.5, 2)]
+                        break
+
+        # Use best candidate's trades (or base trades if no candidates)
+        _risk_trades = trades
+        _risk_filters = {}
+        if candidates:
+            _best = candidates[0]
+            _risk_trades = _best.get('trades', trades)
+            _risk_filters = _best.get('filters_applied', {})
+
+        _risk_base_step = base_step2 + len(combos) + 1 if not lock_filters else base_step + 1
+        for _ri, _rp in enumerate(_risk_grid):
+            if _stop_flag.is_set():
+                break
+            _report(f"Risk test: {_rp}%", total_steps, _risk_base_step + _ri)
+
+            _r_score = _score_trades(_risk_trades, target_firm_data, stage, account_size,
+                                     sl_pips=_base_sl_pips, risk_pct=_rp)
+            if _r_score > -900:
+                _r_stats = compute_stats_summary(_risk_trades)
+                _r_candidate = {
+                    'name':             f"Risk {_rp}%",
+                    'rules':            base_rules,
+                    'filters_applied':  dict(_risk_filters),
+                    'trades':           _risk_trades,
+                    'stats':            _r_stats,
+                    'prop_score':       {},
+                    'score':            _r_score,
+                    'changes_from_base': f"risk={_rp}%",
+                    'exit_class':       exit_class,
+                    'exit_params':      exit_params or {},
+                    'exit_name':        exit_name,
+                    'exit_strategy_desc': exit_strategy_desc,
+                    'risk_pct':         _rp,
+                }
+                candidates.append(_r_candidate)
+
+                if _r_score > best_so_far['score']:
+                    best_so_far = {
+                        'name':           f"Risk {_rp}%",
+                        'trades':         len(_risk_trades),
+                        'win_rate':       _r_stats['win_rate'],
+                        'avg_pips':       _r_stats['avg_pips'],
+                        'trades_per_day': _r_stats['trades_per_day'],
+                        'prop_pass_rate': None,
+                        'score':          _r_score,
+                        'risk_pct':       _rp,
+                    }
+
+        print(f"[OPTIMIZER] Risk optimization: tested {len(_risk_grid)} values "
+              f"({min(_risk_grid):.2f}% - {max(_risk_grid):.2f}%)")
 
     # Sort by score descending
     candidates.sort(key=lambda c: c['score'], reverse=True)

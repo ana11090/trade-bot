@@ -154,6 +154,62 @@ def _get_strategy_data(idx):
                         result['exit_strategy_params'] = result['exit_params']
                     if not result.get('entry_tf'):
                         result['entry_tf'] = result.get('entry_timeframe', '')
+
+                    # WHY: Old optimizer saves have empty rules/exit/direction.
+                    #      Resolve from backtest_matrix or analysis_report.
+                    # CHANGED: April 2026 — resolve missing data
+                    _needs_resolution = (not result.get('exit_name') and not result.get('exit_class'))
+                    if _needs_resolution:
+                        try:
+                            _combo = result.get('rule_combo', '')
+                            # Skip resolution if combo is empty (prevents matching everything)
+                            if _combo and len(_combo) > 3:  # Valid combo names are longer than 3 chars
+                                _mp = os.path.join(project_root, 'project2_backtesting',
+                                                    'outputs', 'backtest_matrix.json')
+                                if os.path.exists(_mp):
+                                    import os.path as _osp
+                                    # Only proceed if file is reasonably sized (< 50MB)
+                                    if _osp.getsize(_mp) < 50 * 1024 * 1024:
+                                        with open(_mp, 'r', encoding='utf-8') as _mf:
+                                            _md = json.load(_mf)
+                                        _results = _md.get('results', []) or _md.get('matrix', [])
+                                        # Limit search to first 100 entries to prevent hangs
+                                        for _res in _results[:100]:
+                                            _res_combo = str(_res.get('rule_combo', ''))
+                                            if _res_combo == _combo:
+                                                result['exit_name'] = _res.get('exit_name', '')
+                                                result['exit_class'] = _res.get('exit_class', '')
+                                                result['exit_params'] = _res.get('exit_params', {})
+                                                result['exit_strategy_params'] = _res.get('exit_params', {})
+                                                if not result.get('direction'):
+                                                    if '(BUY)' in _res_combo: result['direction'] = 'BUY'
+                                                    elif '(SELL)' in _res_combo: result['direction'] = 'SELL'
+                                                if not result.get('rules') or not any(r.get('conditions') for r in result.get('rules', [])):
+                                                    result['rules'] = _res.get('rules', [])
+                                                    result['optimized_rules'] = _res.get('rules', [])
+                                                print(f"[EA GEN] Resolved exit/rules from matrix: "
+                                                      f"exit={result.get('exit_name', '?')}, rules={len(result.get('rules', []))}")
+                                                break
+                        except Exception as _e:
+                            print(f"[EA GEN] Could not resolve missing data: {_e}")
+
+                    # Auto-fill risk settings from saved rule
+                    _rs = result.get('risk_settings', {})
+                    if _rs:
+                        if _rs.get('risk_pct') and _risk_var:
+                            _risk_var.set(str(_rs['risk_pct']))
+                        if _rs.get('account_size') and _ea_account_var:
+                            try:
+                                _ea_account_var.set(str(int(_rs['account_size'])))
+                            except (ValueError, TypeError):
+                                pass
+                        if _rs.get('firm') and _firm_var:
+                            try: _firm_var.set(_rs['firm'])
+                            except Exception: pass
+                        if _rs.get('stage') and _ea_stage_var:
+                            try: _ea_stage_var.set(_rs['stage'])
+                            except Exception: pass
+
                     print(f"[EA GEN] Loaded saved rule #{rule_id}: "
                           f"{len(result.get('rules', []))} rules, "
                           f"exit={result.get('exit_name', result.get('exit_class', '?'))}")
@@ -253,6 +309,82 @@ def _update_strat_info():
     _refresh_condition_vars(idx)
 
 
+def _auto_fill_risk(strat_data):
+    """Auto-fill risk management fields from strategy's saved risk_settings.
+
+    WHY: The Strategy Refiner sets risk % based on the prop firm and stage
+         (e.g., FTMO Funded → 0.5%). This was used during optimization but
+         wasn't flowing to the EA Generator — user had to re-enter manually,
+         risking mismatches. Now auto-fills from saved settings.
+    CHANGED: April 2026 — risk auto-fill
+    """
+    rs = strat_data.get('risk_settings', {})
+    if not rs:
+        # Fall back to backtest config for strategies without risk_settings
+        try:
+            cfg_path = os.path.join(project_root, 'project2_backtesting', 'backtest_config.json')
+            if os.path.exists(cfg_path):
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                rs = {
+                    'risk_pct': float(cfg.get('risk_pct', 1.0)),
+                    'account_size': int(float(cfg.get('starting_capital', 10000))),
+                    'firm': '',
+                    'stage': '',
+                }
+        except Exception:
+            return
+
+    # Risk %
+    risk = rs.get('risk_pct')
+    if risk and _risk_var:
+        _risk_var.set(str(risk))
+
+    # Account size
+    acct = rs.get('account_size')
+    if acct and _ea_account_var:
+        try:
+            _ea_account_var.set(str(int(acct)))
+        except (ValueError, TypeError):
+            pass
+
+    # Firm
+    firm = rs.get('firm', '')
+    if firm and _firm_var:
+        try:
+            _firm_var.set(firm)
+        except Exception:
+            pass
+
+    # Stage
+    stage = rs.get('stage', '')
+    if stage and _ea_stage_var:
+        try:
+            _ea_stage_var.set(stage)
+        except Exception:
+            pass
+
+    # Symbol from backtest config
+    try:
+        cfg_path = os.path.join(project_root, 'project2_backtesting', 'backtest_config.json')
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            sym = cfg.get('symbol', '')
+            if sym and _symbol_var:
+                _symbol_var.set(sym)
+    except Exception:
+        pass
+
+    _parts = []
+    if risk: _parts.append(f"risk={risk}%")
+    if acct: _parts.append(f"account=${acct:,}")
+    if firm: _parts.append(f"firm={firm}")
+    if stage: _parts.append(f"stage={stage}")
+    if _parts:
+        print(f"[EA GEN] Auto-filled risk settings: {', '.join(_parts)}")
+
+
 def _refresh_condition_vars(idx):
     global _condition_vars
     if not _condition_frame:
@@ -334,6 +466,12 @@ def _refresh_condition_vars(idx):
         except Exception:
             entry_tf = 'H1'
     print(f"[EA GEN] Using entry timeframe: {entry_tf}")
+
+    # ── Auto-fill risk management from saved strategy ────────────────
+    # WHY: The strategy was optimized at a specific risk/firm/stage.
+    #      Auto-fill so the EA matches exactly. User can still edit.
+    # CHANGED: April 2026 — risk auto-fill from saved strategy
+    _auto_fill_risk(strat_data)
 
 
 _condition_frame = None
@@ -631,7 +769,13 @@ def _generate():
             'direction':            _direction,
             'filters_applied':      strat_data.get('filters_applied', {}),
             'stats':                {
-                'win_rate':      strat_data.get('win_rate', 0) / 100.0,
+                # WHY: Backtest results store WR as percentage (49.7),
+                #      optimizer saves store WR as decimal (0.497).
+                #      Normalize to fraction (0.497) for the EA stats dict.
+                # CHANGED: April 2026 — handle both WR formats
+                'win_rate':      strat_data.get('win_rate', 0) / 100.0
+                                 if strat_data.get('win_rate', 0) > 1.0
+                                 else strat_data.get('win_rate', 0),
                 'total_pips':    strat_data.get('net_total_pips', 0),
                 'profit_factor': strat_data.get('net_profit_factor', 0),
             },
