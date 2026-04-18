@@ -802,6 +802,21 @@ def _start_optimization():
                 print("[OPTIMIZER] Running Quick Optimize mode...")
                 _update_status("Quick Optimize: testing filter combinations...")
 
+                # WHY (Hotfix): Extract exit info from selected strategy so
+                #      quick optimize candidates carry it through to the
+                #      Validate button and _validator_optimized.json.
+                # CHANGED: April 2026 — Hotfix
+                _sel_exit_class = ''
+                _sel_exit_params = {}
+                _sel_exit_name = ''
+                _sel_exit_desc = ''
+                if selected_strategy_row:
+                    _sel_exit_class = selected_strategy_row.get('exit_class', '')
+                    _sel_exit_params = selected_strategy_row.get('exit_params', {})
+                    _sel_exit_name = selected_strategy_row.get('exit_name', '')
+                    _sel_exit_desc = selected_strategy_row.get('exit_strategy', '')
+                print(f"[OPTIMIZER] Selected exit: class={_sel_exit_class!r}, name={_sel_exit_name!r}")
+
                 from project2_backtesting.strategy_refiner import deep_optimize
                 quick_results = deep_optimize(
                     trades=current_trades,
@@ -816,6 +831,12 @@ def _start_optimization():
                     lock_exit=_lock_exit_var.get() if _lock_exit_var else False,
                     lock_sltp=_lock_sltp_var.get() if _lock_sltp_var else False,
                     lock_filters=_lock_filters_var.get() if _lock_filters_var else False,
+                    # WHY (Hotfix): Pass exit info so candidates carry it.
+                    # CHANGED: April 2026 — Hotfix
+                    exit_class=_sel_exit_class,
+                    exit_params=_sel_exit_params,
+                    exit_name=_sel_exit_name,
+                    exit_strategy_desc=_sel_exit_desc,
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -1421,6 +1442,23 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
         'exit_name': cand.get('exit_name', ''),
         'exit_strategy': cand.get('exit_strategy', ''),
     }
+
+    # WHY (Hotfix): If candidate has no exit info (quick optimize pre-fix),
+    #      read it from the currently selected strategy in the dropdown.
+    # CHANGED: April 2026 — Hotfix
+    if not _exit_info_snap.get('exit_class'):
+        try:
+            _sel_idx = _get_selected_index()
+            if _sel_idx is not None:
+                for _s in _strategies:
+                    if _s.get('index') == _sel_idx:
+                        _exit_info_snap['exit_class'] = _s.get('exit_class', '')
+                        _exit_info_snap['exit_params'] = _s.get('exit_params', {})
+                        _exit_info_snap['exit_name'] = _s.get('exit_name', '')
+                        _exit_info_snap['exit_strategy'] = _s.get('exit_strategy', '')
+                        break
+        except Exception:
+            pass
 
     tk.Button(btn, text="📊 Trades",
               command=lambda t=trades_snap: _show_candidate_trades(t),

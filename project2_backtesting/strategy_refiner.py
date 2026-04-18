@@ -1432,6 +1432,14 @@ def deep_optimize(
     lock_exit=False,
     lock_sltp=False,
     lock_filters=False,
+    # WHY (Hotfix): Quick optimize candidates need exit info so the
+    #      Validate button can write it to _validator_optimized.json.
+    #      Without it, the validator defaults to FixedSLTP.
+    # CHANGED: April 2026 — Hotfix
+    exit_class='',
+    exit_params=None,
+    exit_name='',
+    exit_strategy_desc='',
 ):
     """
     Deep optimization starting from existing trades.
@@ -1528,6 +1536,12 @@ def deep_optimize(
             'prop_score':       {},
             'score':            score,
             'changes_from_base': changes,
+            # WHY (Hotfix): Quick optimize candidates need exit info.
+            # CHANGED: April 2026 — Hotfix
+            'exit_class':       exit_class,
+            'exit_params':      exit_params or {},
+            'exit_name':        exit_name,
+            'exit_strategy':    exit_strategy_desc,
         }
         candidates.append(candidate)
         if score > best_so_far['score']:
