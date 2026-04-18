@@ -398,6 +398,10 @@ def walk_forward_validate(
     risk_per_trade_pct=1.0,
     pip_value_per_lot=10.0,
     default_sl_pips=150.0,
+    # WHY (Validator Fix): Add filters parameter so optimizer filters
+    #      (min_hold, sessions, etc.) can be applied to validation results.
+    # CHANGED: April 2026 — Validator Fix
+    filters=None,
 ):
     """
     Rule-stability test across sliding time windows.
@@ -538,6 +542,18 @@ def walk_forward_validate(
             log.info(f"  [WF] Window {i+1} IN-SAMPLE ERROR: {e}")
             traceback.print_exc()
 
+        # WHY (Validator Fix): Apply optimizer filters (min_hold, sessions, etc.)
+        #      to the generated trades. Without this, the validator tests a
+        #      different strategy than what the optimizer found.
+        # CHANGED: April 2026 — Validator Fix
+        if filters and in_trades:
+            try:
+                from project2_backtesting.strategy_refiner import apply_filters, enrich_trades
+                in_trades = enrich_trades(list(in_trades))
+                in_trades, _ = apply_filters(in_trades, filters)
+            except Exception:
+                pass
+
         if progress_callback:
             progress_callback(i, len(windows_schedule),
                               f"Window {i+1}/{len(windows_schedule)}: backtesting out-of-sample...")
@@ -570,6 +586,16 @@ def walk_forward_validate(
             import traceback
             log.info(f"  [WF] Window {i+1} OUT-OF-SAMPLE ERROR: {e}")
             traceback.print_exc()
+
+        # WHY (Validator Fix): Apply optimizer filters to out-of-sample trades.
+        # CHANGED: April 2026 — Validator Fix
+        if filters and out_trades:
+            try:
+                from project2_backtesting.strategy_refiner import apply_filters, enrich_trades
+                out_trades = enrich_trades(list(out_trades))
+                out_trades, _ = apply_filters(out_trades, filters)
+            except Exception:
+                pass
 
         in_stats  = _compute_rich_window_stats(in_trades, account_size)
         out_stats = _compute_rich_window_stats(out_trades, account_size)

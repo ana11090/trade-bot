@@ -462,7 +462,7 @@ def _get_strategy_meta(idx):
     CHANGED: April 2026 — handle saved + optimizer index types
     """
     # Default fallback for total failure
-    _empty = ([], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0)
+    _empty = ([], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0, None)
 
     try:
         # ── Saved rule branch ──────────────────────────────────────────────
@@ -498,7 +498,8 @@ def _get_strategy_meta(idx):
                     print(f"[validator] WARNING: saved rule {idx} has no trades — "
                           f"this is a stale save from before April 2026. "
                           f"Re-save it from the optimizer to pick up the new format.")
-                return _rules, _exit_class, _exit_params, _trades, _spread, _comm
+                _filters = rule.get('filters', rule.get('filters_applied', None))
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters
 
             print(f"[validator] Saved rule {idx} not found in saved_rules.json")
             return _empty
@@ -532,7 +533,10 @@ def _get_strategy_meta(idx):
                 if not _trades:
                     print(f"[validator] _validator_optimized.json exists but contains no trades. "
                           f"Re-click ✅ Validate on the optimizer card you want to test.")
-                return _rules, _exit_class, _exit_params, _trades, _spread, _comm
+                # WHY (Validator Fix): Read and return optimizer filters.
+                # CHANGED: April 2026 — Validator Fix
+                _filters = opt.get('filters', opt.get('filters_applied', None))
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters
             except Exception as e:
                 import traceback; traceback.print_exc()
                 print(f"[validator] Failed to load _validator_optimized.json: {e}")
@@ -615,7 +619,11 @@ def _get_strategy_meta(idx):
                 print(f"[validator] Could not load trades from per-TF file: {_te}")
         spread     = r.get('spread_pips', 2.5)
         commission = r.get('commission_pips', 0.0)
-        return rules, exit_class, exit_params, trades, spread, commission
+        # WHY (Validator Fix): Include filters from the result row.
+        #      Optimizer results store filters; backtest results don't.
+        # CHANGED: April 2026 — Validator Fix
+        filters = r.get('filters', r.get('filters_applied', None))
+        return rules, exit_class, exit_params, trades, spread, commission, filters
 
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -2321,7 +2329,7 @@ def _run(mode, override_idx=None, done_event=None):
         else:
             return
 
-    rules, exit_class, exit_params, trades, spread_meta, comm_meta = _get_strategy_meta(idx)
+    rules, exit_class, exit_params, trades, spread_meta, comm_meta, strategy_filters = _get_strategy_meta(idx)
 
     # WHY: Old code silently ran validation on empty trade lists, producing
     #      "validated 0 trades" results that looked like normal output but
@@ -2446,12 +2454,31 @@ def _run(mode, override_idx=None, done_event=None):
                     account_size=account_size,
                     custom_windows=custom_windows,
                     progress_callback=_make_progress_cb("Walk-Forward"),
+                    # WHY (Validator Fix): Pass optimizer filters so walk-forward
+                    #      validates the ACTUAL optimized strategy, not the raw one.
+                    # CHANGED: April 2026 — Validator Fix
+                    filters=strategy_filters,
                 )
                 state.window.after(0, lambda r=wf_result: _display_wf_results(r))
 
+            # WHY (Validator Fix): Apply optimizer filters to trades before
+            #      Monte Carlo. MC shuffles the trade list — it must be the
+            #      filtered list, not the raw one.
+            # CHANGED: April 2026 — Validator Fix
+            _mc_trades = trades
+            if strategy_filters and trades:
+                try:
+                    from project2_backtesting.strategy_refiner import apply_filters, enrich_trades
+                    _enriched = enrich_trades(list(trades))
+                    _mc_trades, _ = apply_filters(_enriched, strategy_filters)
+                    print(f"[validator] Applied filters to MC trades: {len(trades)} → {len(_mc_trades)}")
+                except Exception as _fe:
+                    print(f"[validator] Could not apply filters to MC trades: {_fe}")
+                    _mc_trades = trades
+
             if mode in ('mc', 'full'):
                 mc_result = monte_carlo_test(
-                    trades=trades,
+                    trades=_mc_trades,
                     firm_id=mc_firm,
                     account_size=account_size,
                     n_simulations=n_sims,
@@ -2482,7 +2509,9 @@ def _run(mode, override_idx=None, done_event=None):
                     account_size=account_size,
                     n_runs_per_level=3,
                     progress_callback=_make_progress_cb("Slippage Test"),
-                    filters=None,  # TODO: pass filters from strategy metadata when available
+                    # WHY (Validator Fix): Pass actual optimizer filters.
+                    # CHANGED: April 2026 — Validator Fix
+                    filters=strategy_filters,
                 )
                 state.window.after(0, lambda r=slip_result: _display_slip_results(r))
 
