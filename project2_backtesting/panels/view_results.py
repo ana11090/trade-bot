@@ -159,7 +159,11 @@ def display_summary(output_text, summary_frame):
             output_text.insert(tk.END, "No backtest results available.\n\nRun the backtest first.")
             return
 
-        results = data.get('results', data.get('matrix', []))
+        # WHY (Phase A.48 fix): The per-TF backtester saves under "results"
+        #      but the combined multi-TF save writes under "matrix". Accept
+        #      either key so both single-TF and multi-TF runs display.
+        # CHANGED: April 2026 — Phase A.48
+        results = data.get('results', []) or data.get('matrix', [])
         if not results:
             output_text.delete(1.0, tk.END)
             output_text.insert(tk.END, "Backtest matrix is empty. Re-run the backtest.\n")
