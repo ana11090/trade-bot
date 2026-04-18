@@ -1411,6 +1411,17 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     if k not in ('firm_data', 'description', 'stage')} if isinstance(filters, dict) else {}
     stats_snap = dict(stats)
 
+    # WHY (Validator Fix): Capture exit info from the candidate so the
+    #      Validate button doesn't depend on the backtest matrix lookup
+    #      (which fails for optimizer results with string indices).
+    # CHANGED: April 2026 — Validator Fix
+    _exit_info_snap = {
+        'exit_class': cand.get('exit_class', ''),
+        'exit_params': cand.get('exit_params', {}),
+        'exit_name': cand.get('exit_name', ''),
+        'exit_strategy': cand.get('exit_strategy', ''),
+    }
+
     tk.Button(btn, text="📊 Trades",
               command=lambda t=trades_snap: _show_candidate_trades(t),
               bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
@@ -1509,7 +1520,8 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               bg="#17a2b8", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
 
-    def _validate(t=trades_snap, r=rules_snap, n=strategy_name, f=filters_snap):
+    def _validate(t=trades_snap, r=rules_snap, n=strategy_name, f=filters_snap,
+                  _ei=_exit_info_snap):
         try:
             import json
             # WHY: Validator needs rules + exit + filters to reproduce the exact strategy.
@@ -1532,6 +1544,24 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                             }
                 except Exception:
                     pass
+
+            # WHY (Validator Fix): If matrix lookup failed (optimizer result
+            #      with string idx), use the captured candidate exit info.
+            # CHANGED: April 2026 — Validator Fix
+            if not exit_info.get('exit_class'):
+                exit_info = dict(_ei)
+            # Final fallback: parse from exit description
+            if not exit_info.get('exit_class') and exit_info.get('exit_name'):
+                _name = exit_info['exit_name'].lower().strip()
+                _class_map = {
+                    'fixed sl/tp': 'FixedSLTP',
+                    'trailing stop': 'TrailingStop',
+                    'atr-based': 'ATRBased',
+                    'time-based': 'TimeBased',
+                    'indicator exit': 'IndicatorExit',
+                    'hybrid': 'HybridExit',
+                }
+                exit_info['exit_class'] = _class_map.get(_name, 'FixedSLTP')
 
             p = os.path.join(project_root, 'project2_backtesting', 'outputs', '_validator_optimized.json')
             with open(p, 'w') as fp:

@@ -2031,6 +2031,13 @@ def deep_optimize_generate(
             'rules':             rules,
             'exit_strategy':     exit_desc,
             'exit_name':         exit_name,
+            # WHY (Validator Fix): Candidate was missing exit_class.
+            #      The validator needs it to reconstruct the exit strategy
+            #      object. Without it, _validator_optimized.json has no
+            #      exit_class and walk_forward_validate crashes.
+            # CHANGED: April 2026 — Validator Fix
+            'exit_class':        type(exit_strat).__name__,
+            'exit_params':       exit_strat.params if hasattr(exit_strat, 'params') else {},
             'filters_applied':   filters or {},
             'trades':            final_trades,
             'stats':             stats,
