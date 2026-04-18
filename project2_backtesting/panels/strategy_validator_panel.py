@@ -555,20 +555,64 @@ def _get_strategy_meta(idx):
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
         with open(backtest_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        results = data.get('results', [])
+        results = data.get('results', []) or data.get('matrix', [])
         if not (0 <= idx < len(results)):
             print(f"[validator] Index {idx} out of range (0..{len(results)-1})")
             return _empty
         r = results[idx]
 
         rules = _resolve_rules(r)
-        exit_class = r.get('exit_class', '')
-        exit_params = r.get('exit_params')
-        if not exit_class or exit_params is None:
+        # WHY (Validator Fix): exit_class can be empty in results from
+        #      old backtest runs or combined multi-TF saves. Always fall
+        #      back to parsing the exit description string.
+        # CHANGED: April 2026 — Validator Fix
+        exit_class = r.get('exit_class', '') or ''
+        exit_params = r.get('exit_params') or r.get('exit_strategy_params')
+        if not exit_class or not exit_params:
             exit_class, exit_params = _parse_exit_strategy(
                 r.get('exit_name', ''), r.get('exit_strategy', ''))
 
-        trades     = r.get('trades', [])
+        # WHY (Validator Fix): A.48 stripped trades from backtest_matrix.json
+        #      to prevent OOM crashes. Load from per-TF trade files instead.
+        # CHANGED: April 2026 — Validator Fix
+        trades = r.get('trades', [])
+        if not trades:
+            # Try per-TF trade file
+            try:
+                _entry_tf = r.get('entry_tf', '')
+                if _entry_tf:
+                    _trades_path = os.path.join(
+                        project_root, 'project2_backtesting', 'outputs',
+                        f'backtest_trades_{_entry_tf}.json'
+                    )
+                    if os.path.exists(_trades_path):
+                        import json as _tj
+                        with open(_trades_path, 'r', encoding='utf-8') as _tf:
+                            _all_trades = _tj.load(_tf)
+
+                        # Find matching index: count results with this TF before idx
+                        _tf_local_idx = 0
+                        for _ri in range(idx):
+                            if _ri < len(results) and results[_ri].get('entry_tf', '') == _entry_tf:
+                                _tf_local_idx += 1
+                        if str(_tf_local_idx) in _all_trades:
+                            trades = _all_trades[str(_tf_local_idx)]
+                            print(f"[validator] Loaded {len(trades)} trades from {_trades_path} (tf_idx={_tf_local_idx})")
+                        else:
+                            # Fallback: match by combo name + exit
+                            _target_combo = r.get('rule_combo', '')
+                            _target_exit = r.get('exit_strategy', r.get('exit_name', ''))
+                            _tf_results = [rr for rr in results if rr.get('entry_tf', '') == _entry_tf]
+                            for _ti, _tr in enumerate(_tf_results):
+                                if (_tr.get('rule_combo', '') == _target_combo and
+                                    (_tr.get('exit_strategy', '') == _target_exit or
+                                     _tr.get('exit_name', '') == _target_exit)):
+                                    if str(_ti) in _all_trades:
+                                        trades = _all_trades[str(_ti)]
+                                        print(f"[validator] Loaded {len(trades)} trades by name match from {_trades_path}")
+                                    break
+            except Exception as _te:
+                print(f"[validator] Could not load trades from per-TF file: {_te}")
         spread     = r.get('spread_pips', 2.5)
         commission = r.get('commission_pips', 0.0)
         return rules, exit_class, exit_params, trades, spread, commission
@@ -2250,12 +2294,12 @@ def _run(mode, override_idx=None, done_event=None):
         # CHANGED: April 2026 — safe int check for string indices
         _row = {}
         if isinstance(idx, int):
-            _results = _mdata.get('results', [])
+            _results = _mdata.get('results', []) or _mdata.get('matrix', [])
             if idx < len(_results):
                 _row = _results[idx]
         elif isinstance(idx, str) and idx.isdigit():
             _ii = int(idx)
-            _results = _mdata.get('results', [])
+            _results = _mdata.get('results', []) or _mdata.get('matrix', [])
             if _ii < len(_results):
                 _row = _results[_ii]
         # WHY: Same as view_results.py fix — stats are flattened to top level
@@ -2489,8 +2533,14 @@ def _run(mode, override_idx=None, done_event=None):
 
         except Exception as e:
             import traceback; traceback.print_exc()
-            state.window.after(0, lambda: _status_lbl.configure(
-                text=f"Error: {e}", fg=RED))
+            # WHY (Validator Fix): Python 3 deletes `e` at end of except
+            #      block. The lambda captures by reference — when it runs
+            #      in the main thread via after(), `e` is gone → NameError.
+            #      Capture as default arg to bind immediately.
+            # CHANGED: April 2026 — Validator Fix
+            _err_msg = str(e)
+            state.window.after(0, lambda _m=_err_msg: _status_lbl.configure(
+                text=f"Error: {_m}", fg=RED))
         finally:
             if not _batch_mode:
                 state.window.after(0, lambda: _set_buttons(False))
