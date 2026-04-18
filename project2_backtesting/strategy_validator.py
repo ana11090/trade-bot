@@ -172,7 +172,8 @@ def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size):
             exit_strategy_class = 'TimeBased'
         else:
             exit_strategy_class = 'FixedSLTP'
-        log.warning(f"[VALIDATOR] exit_strategy_class was empty — detected as {exit_strategy_class} from params")
+        log.warning(f"[VALIDATOR] exit_strategy_class was empty — detected as "
+                    f"{exit_strategy_class} from params: {list((exit_strategy_params or {}).keys())}")
 
     cls = getattr(es_mod, exit_strategy_class, None)
     if cls is None:

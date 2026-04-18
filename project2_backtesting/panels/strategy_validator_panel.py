@@ -566,15 +566,31 @@ def _get_strategy_meta(idx):
         r = results[idx]
 
         rules = _resolve_rules(r)
-        # WHY (Validator Fix): exit_class can be empty in results from
-        #      old backtest runs or combined multi-TF saves. Always fall
-        #      back to parsing the exit description string.
-        # CHANGED: April 2026 — Validator Fix
+        # WHY (Hotfix): exit_class and exit_params can be empty in old
+        #      backtest results. ALWAYS parse from exit_name/exit_strategy
+        #      as primary source — these human-readable strings are always
+        #      saved correctly. Only use stored exit_class/exit_params if
+        #      they actually exist.
+        # CHANGED: April 2026 — Hotfix
         exit_class = r.get('exit_class', '') or ''
         exit_params = r.get('exit_params') or r.get('exit_strategy_params')
-        if not exit_class or not exit_params:
-            exit_class, exit_params = _parse_exit_strategy(
-                r.get('exit_name', ''), r.get('exit_strategy', ''))
+
+        # Always try parsing the description — it's the most reliable source
+        _parsed_class, _parsed_params = _parse_exit_strategy(
+            r.get('exit_name', ''), r.get('exit_strategy', ''))
+
+        # Use parsed values if stored ones are missing
+        if not exit_class:
+            exit_class = _parsed_class
+        if not exit_params:
+            exit_params = _parsed_params
+
+        # Debug log so we can trace what the validator uses
+        print(f"[validator] Strategy idx={idx}: "
+              f"exit_class={exit_class!r}, "
+              f"exit_name={r.get('exit_name', '')!r}, "
+              f"exit_strategy={r.get('exit_strategy', '')!r}, "
+              f"exit_params keys={list((exit_params or {}).keys())}")
 
         # WHY (Validator Fix): A.48 stripped trades from backtest_matrix.json
         #      to prevent OOM crashes. Load from per-TF trade files instead.
