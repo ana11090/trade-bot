@@ -1209,6 +1209,8 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      // Time-Based: record entry bar index\n'
             f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
         )
+        # Guard TimeBased exit with min hold check
+        _time_guard = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
         exit_management = (
             f'   // Time-Based exit: close after MaxHoldCandles\n'
             f'   if(g_entryBarIndex > 0)\n'
@@ -1216,7 +1218,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      int barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
             f'      if(barsHeld >= MaxHoldCandles)\n'
             f'      {{\n'
-            f'         CloseAllPositions("TimeExit");\n'
+            f'         {_time_guard}CloseAllPositions("TimeExit");\n'
             f'         g_entryBarIndex = 0;\n'
             f'         Print("[EA] Time exit after ", barsHeld, " candles");\n'
             f'      }}\n'
@@ -1240,13 +1242,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             exit_globals = ind_code['handle_var'] + '\n'
         if ind_code.get('handle_init'):
             extra_init.append(f'   {ind_code["handle_init"]}')
+        # Guard IndicatorExit with min hold check
+        _ind_guard = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
         exit_management = (
             f'   // Indicator Exit: close when {exit_indicator} crosses threshold\n'
             f'   {{\n'
             f'      {ind_code["read_code"]}\n'
             f'      if(val_{ind_code["var_name"]} {_ind_compare} ExitThreshold)\n'
             f'      {{\n'
-            f'         CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
+            f'         {_ind_guard}CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
             f'         Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
             f'      }}\n'
             f'   }}\n'
@@ -1268,6 +1272,18 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
             f'      g_breakevenSet = false;\n'
         )
+        # Guard HybridExit time limit with min hold check
+        _hybrid_time_guard = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
+        # Per-position min hold check for breakeven/trailing
+        _hybrid_pos_check = (
+            f'      // Per-position min hold check: skip breakeven/trailing if not aged enough\n'
+            f'      if(MinHoldMinutes > 0)\n'
+            f'      {{\n'
+            f'         datetime _openT = (datetime)PositionGetInteger(POSITION_TIME);\n'
+            f'         int _holdSec = (int)(TimeCurrent() - _openT);\n'
+            f'         if(_holdSec < MinHoldMinutes * 60) continue;  // Skip this position\n'
+            f'      }}\n'
+        ) if min_hold_minutes > 0 else ''
         exit_management = (
             f'   // Hybrid exit: breakeven + trailing + time limit ({_direction_label})\n'
             f'   // WHY: Old code hardcoded BUY math here. For SELL trades, breakeven\n'
@@ -1278,6 +1294,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      ulong _ht = PositionGetTicket(_hi);\n'
             f'      if(_ht <= 0 || PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;\n'
             f'      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;\n'
+            f'{_hybrid_pos_check}'
             f'      double _openP = PositionGetDouble(POSITION_PRICE_OPEN);\n'
             f'      double _curSL = PositionGetDouble(POSITION_SL);\n'
             f'      double _curTP = PositionGetDouble(POSITION_TP);\n'
@@ -1305,7 +1322,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      int _barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
             f'      if(_barsHeld >= MaxHoldCandles)\n'
             f'      {{\n'
-            f'         CloseAllPositions("HybridTimeExit");\n'
+            f'         {_hybrid_time_guard}CloseAllPositions("HybridTimeExit");\n'
             f'         g_entryBarIndex = 0;\n'
             f'      }}\n'
             f'   }}\n'
@@ -1321,6 +1338,46 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     # Exit-specific blocks (computed outside f-string to avoid backslash issues)
     exit_on_entry_block = exit_on_entry if exit_on_entry else '      trade.PositionModify(trade.ResultOrder(),\n         entryPrice - sl,\n         entryPrice + tp);'
+
+    # ── MinHoldMinutes enforcement helper ──
+    # WHY: Backtester post-filters trades < N minutes. EA must prevent voluntary
+    #      early exits (trailing, time, indicator) but allow SL/TP to work normally.
+    # CHANGED: April 2026 — conditional code generation
+    min_hold_check = ''
+    if min_hold_minutes > 0:
+        min_hold_check = f'''//+------------------------------------------------------------------+
+//| Check if position meets minimum hold time                          |
+//| WHY: Backtester post-filters trades < N minutes. EA must prevent  |
+//|      voluntary early exits (trailing, time, indicator) but allow  |
+//|      SL/TP to work normally.                                       |
+//| CHANGED: April 2026 — MinHoldMinutes enforcement                  |
+//+------------------------------------------------------------------+
+bool IsMinHoldMet()
+{{
+   if(MinHoldMinutes <= 0) return true;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {{
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+
+      datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+      datetime now = TimeCurrent();
+      int holdSec = (int)(now - openTime);
+
+      if(holdSec < MinHoldMinutes * 60)
+      {{
+         // At least one position hasn't met min hold time
+         return false;
+      }}
+   }}
+
+   return true;  // All positions met min hold OR no positions open
+}}
+
+'''
 
     # ── Build verification report for EA header ──
     # WHY: User needs to verify at a glance that every rule, condition,
@@ -1509,7 +1566,7 @@ void OnTick()
    // WHY: Trailing stop must be checked every tick, not just on new bars.
    //      Price can hit the trail level between bars.
    // CHANGED: April 2026 — trailing stop management
-   ManageTrailingStop();
+   {"if(IsMinHoldMet()) " if min_hold_minutes > 0 else ""}ManageTrailingStop();
 
    // WHY: Exit-specific management (time-based, indicator-based, hybrid).
    //      Must be checked every tick for time/indicator exits.
@@ -1734,7 +1791,7 @@ double CalculateLots(double slDistance)
    return NormalizeDouble(lots, decimals);
 }}
 
-//+------------------------------------------------------------------+
+{min_hold_check}//+------------------------------------------------------------------+
 //| Manage trailing stop on open position                              |
 //| WHY: TrailingStop has two thresholds:                              |
 //|      - activation: profit needed before trailing starts            |
@@ -1753,6 +1810,14 @@ void ManageTrailingStop()
       if(ticket <= 0) continue;
       if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
       if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+
+      // Per-position min hold check: skip trailing if this position hasn't aged enough
+      if(MinHoldMinutes > 0)
+      {{
+         datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+         int holdSec = (int)(TimeCurrent() - openTime);
+         if(holdSec < MinHoldMinutes * 60) continue;  // Skip this position
+      }}
 
       double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
       double currentSL = PositionGetDouble(POSITION_SL);
