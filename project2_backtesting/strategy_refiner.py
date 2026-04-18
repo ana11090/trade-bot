@@ -810,8 +810,18 @@ def load_strategy_list():
                         'source':            'saved',
                         'label':             '  '.join(label_parts),
                         'rule_combo':        f"Saved #{rid}",
-                        'exit_strategy':     'Default',
-                        'exit_name':         'Default',
+                        # WHY (Hotfix): Old code hardcoded 'Default' for saved rules.
+                        #      Read actual exit info from the saved rule data.
+                        # CHANGED: April 2026 — Hotfix
+                        'exit_strategy':     rule.get('exit_strategy',
+                                             rule.get('exit_name', 'Default')),
+                        'exit_name':         rule.get('exit_name',
+                                             rule.get('exit_class', 'Default')),
+                        'exit_class':        rule.get('exit_class', ''),
+                        'exit_params':       rule.get('exit_params',
+                                             rule.get('exit_strategy_params', {})),
+                        'entry_tf':          rule.get('entry_timeframe',
+                                             rule.get('entry_tf', '')),
                         'total_trades':      rule.get('total_trades', 0),
                         'win_rate':          wr,
                         'net_total_pips':    rule.get('net_total_pips', 0),

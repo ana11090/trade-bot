@@ -201,6 +201,7 @@ _filt_trades    = None
 
 # Widgets
 _strat_info_lbl  = None
+_strat_detail_lbl = None
 _prev_result_lbl = None
 _start_wf_btn    = None
 _start_mc_btn    = None
@@ -757,18 +758,76 @@ def _update_strat_info():
         _strat_info_lbl.configure(text="")
         return
 
-    # Strategy stats - show combined name like View Results
+    # WHY (Hotfix): Show complete strategy details so the user can verify
+    #      exit strategy, entry TF, and filters BEFORE running validation.
+    # CHANGED: April 2026 — Hotfix
     for s in _strategies:
         if s['index'] == idx:
             rule_name = s.get('rule_combo', '?')
             exit_name = s.get('exit_name', '?')
-            combined_name = f"{rule_name} × {exit_name}"
 
-            text = (f"{combined_name} [{s['total_trades']} trades, "
-                    f"WR {s['win_rate']:.1f}%, "
-                    f"PF {s['net_profit_factor']:.2f}, "
-                    f"{s['net_total_pips']:+,.0f} pips]")
-            _strat_info_lbl.configure(text=text, fg=MIDGREY)
+            # ── Extract detailed info from strategy or saved rule ──
+            _exit_class = s.get('exit_class', '')
+            _exit_params = s.get('exit_params', {})
+            _exit_desc = s.get('exit_strategy', exit_name)
+            _entry_tf = s.get('entry_tf', '')
+            _filters = {}
+            _has_trades = s.get('has_trades', False)
+            _trade_count = s.get('total_trades', 0)
+
+            # For saved rules, dig into the saved_rule dict
+            _saved = s.get('saved_rule', {})
+            if _saved:
+                if not _exit_class:
+                    _exit_class = _saved.get('exit_class', '')
+                if not _exit_params:
+                    _exit_params = _saved.get('exit_params', _saved.get('exit_strategy_params', {}))
+                if not _exit_desc or _exit_desc == 'Default':
+                    _en = _saved.get('exit_name', '')
+                    _es = _saved.get('exit_strategy', '')
+                    _exit_desc = _es if _es else (_en if _en else 'Default')
+                if not _entry_tf:
+                    _entry_tf = _saved.get('entry_timeframe', _saved.get('entry_tf', ''))
+                _filters = _saved.get('filters_applied', {})
+                if not _trade_count:
+                    _trade_count = _saved.get('total_trades', 0)
+                if _saved.get('trades'):
+                    _has_trades = True
+
+            # Build display lines
+            line1 = f"{rule_name} × {_exit_desc}"
+            if _entry_tf:
+                line1 += f"  [{_entry_tf}]"
+            line1 += f"  [{_trade_count} trades, WR {s['win_rate']:.1f}%, PF {s['net_profit_factor']:.2f}, {s['net_total_pips']:+,.0f} pips]"
+
+            details = []
+            if _exit_class:
+                details.append(f"Exit class: {_exit_class}")
+            if _exit_params:
+                _params_str = ', '.join(f"{k}={v}" for k, v in _exit_params.items())
+                details.append(f"Exit params: {_params_str}")
+            if _filters:
+                _filt_str = ', '.join(f"{k}={v}" for k, v in _filters.items())
+                details.append(f"Filters: {_filt_str}")
+            if not _has_trades and _trade_count > 0:
+                details.append("⚠️ Trades in per-TF file (will load on validate)")
+            elif not _has_trades and _trade_count == 0:
+                details.append("⚠️ No trade data — re-run backtest")
+
+            line2 = "  |  ".join(details) if details else ""
+
+            _strat_info_lbl.configure(text=line1, fg=MIDGREY)
+
+            # Show details on a second label (create if needed)
+            global _strat_detail_lbl
+            try:
+                if _strat_detail_lbl and _strat_detail_lbl.winfo_exists():
+                    if line2:
+                        _strat_detail_lbl.configure(text=line2, fg="#888")
+                    else:
+                        _strat_detail_lbl.configure(text="")
+            except Exception:
+                pass
             break
     # Previous validation result
     if _prev_result_lbl:
@@ -2899,6 +2958,14 @@ def build_panel(parent):
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
     _strat_info_lbl.pack(anchor="w", pady=(4, 0))
+
+    # WHY (Hotfix): Show exit strategy, entry TF, and filters on a
+    #      second line so the user can verify before running validation.
+    # CHANGED: April 2026 — Hotfix
+    global _strat_detail_lbl
+    _strat_detail_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 8),
+                                  bg=WHITE, fg="#888")
+    _strat_detail_lbl.pack(anchor="w", pady=(0, 0))
 
     _prev_result_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9, "italic"),
                                  bg=WHITE, fg=GREY)
