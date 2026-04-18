@@ -435,6 +435,28 @@ def _display_results_inner(output_text, summary_frame, data, results,
              bg="#ffffff", fg="#888").pack(anchor="w", pady=(0, 5))
 
     # ── Result cards ──
+    # WHY (Hotfix): 480+ cards freeze tkinter (7200+ widgets).
+    #      Cap at 100 cards. Use filters to narrow down.
+    # CHANGED: April 2026 — Hotfix for A.48 multi-TF freeze
+    _MAX_CARDS = 100
+    if len(sorted_results) > _MAX_CARDS:
+        tk.Label(results_inner,
+                 text=f"⚠️ Showing top {_MAX_CARDS} of {len(sorted_results)} results. "
+                      f"Use filters above to narrow down.",
+                 font=("Segoe UI", 9, "bold"), bg="#fff3cd", fg="#856404",
+                 padx=8, pady=4).pack(fill="x", pady=(0, 5))
+        sorted_results = sorted_results[:_MAX_CARDS]
+
+    # WHY (Hotfix): is_starred() reads starred_strategies.json from disk
+    #      on every call. With 480 cards = 480 file reads. Cache it once.
+    # CHANGED: April 2026 — Hotfix
+    _starred_cache = set()
+    try:
+        from shared.starred import _load as _load_starred
+        _starred_cache = set(_load_starred())
+    except Exception:
+        pass
+
     for i, r in enumerate(sorted_results):
         # FIX 4: per-card error handling — one broken result doesn't kill the display
         try:
@@ -500,7 +522,9 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 rc = r.get('rule_combo', '?')
                 es = r.get('exit_strategy', r.get('exit_name', '?'))
                 etf = r.get('entry_tf', '')
-                starred = is_starred(rc, es, etf)
+                # Use cached starred list instead of per-card disk read
+                _star_key = f"{rc}|{es}|{etf}" if etf else f"{rc}|{es}"
+                starred = _star_key in _starred_cache or f"{rc}|{es}" in _starred_cache
 
                 def _make_star_toggle(combo_name, exit_name, tf, btn_ref):
                     def _toggle():
