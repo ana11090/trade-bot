@@ -478,21 +478,26 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_trades_from_matrix(strategy_index):
-    """Load trades for one strategy from backtest_matrix.json.
+def load_trades_from_matrix(strategy_index, entry_tf=None):
+    """Load trades for one strategy from per-TF trade files or backtest_matrix.json.
 
-    WHY: strategy_index can be:
-      - int: index into backtest_matrix results (from Run Backtest)
-      - 'optimizer_latest': from the optimizer output file
-      - 'saved_X': from saved_rules.json (no trades — needs re-backtest)
+    WHY (Phase A.48 fix): Trades are no longer stored in backtest_matrix.json
+         (too large, caused OOM crashes). They're saved in separate per-TF
+         files: backtest_trades_{TF}.json, keyed by combo index.
+         This function tries the per-TF file first, falls back to the
+         main JSON for backward compatibility with old backtest runs.
 
-    CHANGED: April 2026 — handle non-integer indices
+    Args:
+        strategy_index: int index into results, or 'saved_X', 'optimizer_latest'
+        entry_tf: optional TF string (e.g. 'H1') to find the right trades file.
+                  If None, tries to read it from the matrix result.
+
+    CHANGED: April 2026 — Phase A.48 fix — read from per-TF trade files
     """
     # ── Saved rules don't have trades in the matrix ───────────────────────
-    # WHY: Saved rules store conditions and stats but not individual trade data.
     if isinstance(strategy_index, str):
         if strategy_index.startswith('saved_'):
-            return None  # No trades — panel should prompt to re-backtest
+            return None
         if strategy_index == 'optimizer_latest':
             try:
                 opt_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '_validator_optimized.json')
@@ -507,24 +512,99 @@ def load_trades_from_matrix(strategy_index):
             return None
         return None
 
-    # ── Normal integer index — load from backtest matrix ──────────────────
-    if not os.path.exists(BACKTEST_MATRIX_PATH):
+    # ── Normal integer index — load from per-TF trade file or matrix ��─────
+    if not isinstance(strategy_index, int) or strategy_index < 0:
         return None
+
+    # Step 1: Determine entry_tf from the matrix result if not provided
+    if entry_tf is None:
+        try:
+            if os.path.exists(BACKTEST_MATRIX_PATH):
+                with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                results = data.get('results', []) or data.get('matrix', [])
+                if 0 <= strategy_index < len(results):
+                    entry_tf = results[strategy_index].get('entry_tf', '')
+        except Exception:
+            pass
+
+    # Step 2: Try per-TF trades file first (A.48 format)
+    if entry_tf:
+        trades_path = os.path.join(
+            os.path.dirname(BACKTEST_MATRIX_PATH),
+            f'backtest_trades_{entry_tf}.json'
+        )
+        if os.path.exists(trades_path):
+            try:
+                with open(trades_path, 'r', encoding='utf-8') as f:
+                    trades_data = json.load(f)
+
+                # The per-TF file is keyed by combo index WITHIN that TF's run.
+                # But strategy_index is the GLOBAL index across all TFs.
+                # We need to find which per-TF index this corresponds to.
+
+                # First try: count how many results before this TF
+                # to compute the per-TF offset
+                try:
+                    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+                        matrix_data = json.load(f)
+                    all_results = matrix_data.get('results', []) or matrix_data.get('matrix', [])
+
+                    # Count results with this TF that come before strategy_index
+                    tf_local_idx = 0
+                    for ri in range(strategy_index):
+                        if ri < len(all_results) and all_results[ri].get('entry_tf', '') == entry_tf:
+                            tf_local_idx += 1
+
+                    str_idx = str(tf_local_idx)
+                    if str_idx in trades_data:
+                        return trades_data[str_idx]
+                except Exception:
+                    pass
+
+                # Fallback: try direct index
+                str_idx = str(strategy_index)
+                if str_idx in trades_data:
+                    return trades_data[str_idx]
+
+                # Fallback: try matching by rule_combo + exit name
+                try:
+                    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+                        matrix_data = json.load(f)
+                    all_results = matrix_data.get('results', []) or matrix_data.get('matrix', [])
+                    if 0 <= strategy_index < len(all_results):
+                        target = all_results[strategy_index]
+                        target_combo = target.get('rule_combo', '')
+                        target_exit = target.get('exit_strategy', target.get('exit_name', ''))
+                        # Find matching index in trades file
+                        tf_results = [r for r in all_results if r.get('entry_tf', '') == entry_tf]
+                        for ti, tr in enumerate(tf_results):
+                            if (tr.get('rule_combo', '') == target_combo and
+                                (tr.get('exit_strategy', '') == target_exit or
+                                 tr.get('exit_name', '') == target_exit)):
+                                if str(ti) in trades_data:
+                                    return trades_data[str(ti)]
+                                break
+                except Exception:
+                    pass
+
+            except Exception as e:
+                log.info(f"[REFINER] Error reading per-TF trades file: {e}")
+
+    # Step 3: Fallback — try reading from main matrix (old format, pre-A.48)
     try:
-        with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        results = data.get('results', [])
-        # WHY (Phase 66 Fix 6): Old code only guarded the upper bound.
-        #      A negative integer index silently sliced from the end of
-        #      the list and returned the wrong strategy's trades.
-        # CHANGED: April 2026 — Phase 66 Fix 6 — guard negative index
-        #          (audit Part E HIGH #6)
-        if not isinstance(strategy_index, int) or strategy_index < 0 or strategy_index >= len(results):
-            return None
-        return results[strategy_index].get('trades', None)
+        if os.path.exists(BACKTEST_MATRIX_PATH):
+            with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            results = data.get('results', []) or data.get('matrix', [])
+            if 0 <= strategy_index < len(results):
+                trades = results[strategy_index].get('trades', None)
+                if trades:
+                    return trades
     except Exception as e:
         log.info(f"[REFINER] Error loading trades from matrix: {e}")
-        return None
+
+    return None
 
 
 def load_strategy_list():
@@ -550,7 +630,11 @@ def load_strategy_list():
                 else:
                     f.seek(0)
                     data = json.load(f)
-                    for i, r in enumerate(data.get('results', [])):
+                    # WHY (Phase A.48 fix): Combined multi-TF save may use
+                    #      'results' or 'matrix' key depending on version.
+                    # CHANGED: April 2026 — Phase A.48 fix
+                    _all_results = data.get('results', []) or data.get('matrix', [])
+                    for i, r in enumerate(_all_results):
                         stats = r.get('stats', r)  # stats might be nested or at top level
                         wr = stats.get('win_rate', r.get('win_rate', 0))
                         # WHY: compute_stats in strategy_backtester.py always
@@ -568,6 +652,7 @@ def load_strategy_list():
                             'index':             i,
                             'source':            'backtest',
                             'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
+                                                  f"{'  [' + r.get('entry_tf','') + ']' if r.get('entry_tf','') else ''}"
                                                   f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
                             'rule_combo':        r.get('rule_combo', '?'),
                             'exit_strategy':     r.get('exit_strategy', '?'),
@@ -580,7 +665,13 @@ def load_strategy_list():
                             'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
                             'spread_pips':       r.get('spread_pips', 2.5),
                             'commission_pips':   r.get('commission_pips', 0.0),
-                            'has_trades':        'trades' in r and bool(r.get('trades')),
+                            'entry_tf':          r.get('entry_tf', ''),
+                            # WHY (Phase A.48 fix): Trades are stripped from
+                            #      backtest_matrix.json. Check trade_count or
+                            #      total_trades instead of looking for 'trades' key.
+                            # CHANGED: April 2026 — Phase A.48 fix
+                            'has_trades':        (r.get('trade_count', 0) > 0 or
+                                                  stats.get('total_trades', r.get('total_trades', 0)) > 0),
                         })
     except Exception as e:
         # WHY: Don't let matrix errors prevent saved rules from loading.

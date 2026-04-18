@@ -116,14 +116,22 @@ def _load_strategies(force=False):
     global _strategies, _strategies_cache, _cache_mtime
     try:
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
+        # WHY (Phase A.48 fix): Check BOTH backtest_matrix.json AND
+        #      saved_rules.json mtimes. Saving a new rule changes
+        #      saved_rules.json but not the matrix — without this,
+        #      the cache doesn't invalidate and the new rule doesn't
+        #      appear in the dropdown until restart.
+        # CHANGED: April 2026 — Phase A.48 fix
+        saved_path = os.path.join(project_root, 'saved_rules.json')
+        current_mtime = 0
         if os.path.exists(backtest_path):
-            current_mtime = os.path.getmtime(backtest_path)
-            # WHY: force=True skips the cache so star toggles take effect
-            #      immediately without restarting the panel.
-            if not force and current_mtime == _cache_mtime and _strategies_cache:
-                _strategies = _strategies_cache
-                return
-            _cache_mtime = current_mtime
+            current_mtime += os.path.getmtime(backtest_path)
+        if os.path.exists(saved_path):
+            current_mtime += os.path.getmtime(saved_path)
+        if not force and current_mtime == _cache_mtime and _strategies_cache:
+            _strategies = _strategies_cache
+            return
+        _cache_mtime = current_mtime
 
         from project2_backtesting.strategy_refiner import load_strategy_list
         _strategies = load_strategy_list()
@@ -234,7 +242,14 @@ def _load_selected_strategy():
                 from project2_backtesting.strategy_refiner import (
                     load_trades_from_matrix, enrich_trades
                 )
-                raw = load_trades_from_matrix(matched_idx)
+                # WHY (Phase A.48 fix): Pass entry_tf so the function
+                #      can find the right per-TF trades file.
+                _matched_tf = None
+                for s in _strategies:
+                    if s.get('index') == matched_idx and s.get('source') == 'backtest':
+                        _matched_tf = s.get('entry_tf', '')
+                        break
+                raw = load_trades_from_matrix(matched_idx, entry_tf=_matched_tf)
                 if raw:
                     _base_trades = enrich_trades(list(raw))
                     _filtered_trades = list(_base_trades)
@@ -279,7 +294,13 @@ def _load_selected_strategy():
         from project2_backtesting.strategy_refiner import (
             load_trades_from_matrix, enrich_trades
         )
-        raw = load_trades_from_matrix(idx)
+        # WHY (Phase A.48 fix): Pass entry_tf from the selected strategy.
+        _sel_tf = None
+        for s in _strategies:
+            if s.get('index') == idx:
+                _sel_tf = s.get('entry_tf', '')
+                break
+        raw = load_trades_from_matrix(idx, entry_tf=_sel_tf)
         if not raw:
             messagebox.showwarning(
                 "No Trades",
