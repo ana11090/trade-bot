@@ -578,17 +578,32 @@ def _display_results_inner(output_text, summary_frame, data, results,
             # Save button
             try:
                 from shared.saved_rules import build_save_button
+                # WHY (Fix 8): Old save_data was missing exit_class,
+                #      exit_params, entry_timeframe, rules/conditions.
+                #      The Refiner's stale check flagged every saved
+                #      rule as missing data. Include all fields from
+                #      the result dict that downstream tools need.
+                # CHANGED: April 2026 — complete save data
                 save_data = {
-                    'rule_combo': r.get('rule_combo', '?'),
-                    'exit_strategy': r.get('exit_strategy', '?'),
-                    'exit_name': r.get('exit_name', '?'),
-                    'prediction': 'WIN',
-                    'win_rate': wr,
-                    'net_total_pips': net_pips,
+                    'rule_combo':        r.get('rule_combo', '?'),
+                    'exit_strategy':     r.get('exit_strategy', '?'),
+                    'exit_name':         r.get('exit_name', '?'),
+                    'exit_class':        r.get('exit_class', ''),
+                    'exit_params':       r.get('exit_params', {}),
+                    'exit_strategy_params': r.get('exit_params', {}),
+                    'prediction':        'WIN',
+                    'win_rate':          wr,
+                    'net_total_pips':    net_pips,
                     'net_profit_factor': pf,
-                    'total_trades': trades,
-                    'max_dd_pips': dd,
-                    'entry_tf': r.get('entry_tf', ''),
+                    'total_trades':      trades,
+                    'max_dd_pips':       dd,
+                    'entry_tf':          r.get('entry_tf', ''),
+                    'entry_timeframe':   r.get('entry_tf', ''),
+                    'rules':             r.get('rules', []),
+                    'rule_indices':      r.get('rule_indices', []),
+                    'conditions':        r.get('rules', [{}])[0].get('conditions', []) if r.get('rules') else [],
+                    'spread_pips':       r.get('spread_pips', 2.5),
+                    'commission_pips':   r.get('commission_pips', 0.0),
                 }
                 sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
                 sb.pack(side=tk.RIGHT, padx=3)
