@@ -1743,12 +1743,46 @@ def deep_optimize_generate(
     #      Match the backtester's path format so the fast-path works.
     # CHANGED: April 2026 — Phase 30 Fix 5 — match backtester cache path
     #          (audit Part C HIGH #30)
+    # WHY (Deep Optimizer Fix): Old code loaded the per-TF cache
+    #      (.cache_H1_indicators.parquet) which only has H1_ columns.
+    #      Rules use cross-TF indicators (M5_, M15_, H4_, D1_) which
+    #      aren't in a single-TF cache. The cross-TF build was skipped
+    #      because indicators_df was already set, causing every
+    #      fast_backtest call to fail (missing columns) and producing
+    #      "No candidates found."
+    #      Fix: Check if the cache has cross-TF columns. If not, set
+    #      indicators_df = None so the cross-TF build runs.
+    # CHANGED: April 2026 — Deep Optimizer Fix
     cache_path = os.path.join(data_dir, f".cache_{timeframe}_indicators.parquet")
     if os.path.exists(cache_path):
         log.info(f"  [GENERATE] Loading cached indicators: {cache_path}")
         indicators_df = pd.read_parquet(cache_path)
         if 'timestamp' in indicators_df.columns:
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
+
+        # Check if rules need cross-TF columns not in this cache
+        _needed_prefixes = set()
+        for r in base_rules:
+            for c in r.get('conditions', []):
+                feat = c.get('feature', '')
+                parts = feat.split('_', 1)
+                if len(parts) == 2 and parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    _needed_prefixes.add(parts[0])
+
+        _cache_prefixes = set()
+        for col in indicators_df.columns:
+            if col == 'timestamp':
+                continue
+            parts = col.split('_', 1)
+            if len(parts) == 2 and parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                _cache_prefixes.add(parts[0])
+
+        _missing_tfs = _needed_prefixes - _cache_prefixes
+        if _missing_tfs:
+            log.info(f"  [GENERATE] Per-TF cache missing cross-TF data: "
+                     f"need {_needed_prefixes}, cache has {_cache_prefixes}, "
+                     f"missing {_missing_tfs} — forcing cross-TF build")
+            indicators_df = None  # Force the cross-TF build below
 
     # Load top features list first (needed for partial build)
     top_features = []
