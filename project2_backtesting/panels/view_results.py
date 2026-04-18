@@ -46,6 +46,8 @@ _a44_state = {
     'min_wr':     '',
     'min_pf':     '',
     'max_dd':     '',
+    'tf_filter':  'All TFs',
+    'show_zero':  False,
 }
 
 
@@ -240,24 +242,44 @@ def _display_results_inner(output_text, summary_frame, data, results,
                   command=lambda k=key, r=rev: _resort(k, r)).pack(side=tk.LEFT, padx=2)
 
     # ── Filter: hide 0-trade results ──
-    show_zero_var = tk.BooleanVar(value=False)
+    show_zero_var = tk.BooleanVar(value=_a44_state['show_zero'])
+
+    def _toggle_show_zero():
+        _a44_state['show_zero'] = show_zero_var.get()
+        _current_page[0] = 0
+        display_summary(output_text, summary_frame)
+
     tk.Checkbutton(sort_frame, text="Show 0-trade results", variable=show_zero_var,
                     bg="#ffffff", font=("Arial", 8),
-                    command=lambda: (_current_page.__setitem__(0, 0), display_summary(output_text, summary_frame))).pack(side=tk.RIGHT)
+                    command=_toggle_show_zero).pack(side=tk.RIGHT)
 
     # ── TF filter (only shown when multiple TFs present) ──
     # WHY: Multi-TF backtest produces rows for M5/M15/H1/H4 — user needs to filter
     #      to a single TF or view all.
     # CHANGED: April 2026 — multi-TF support
     all_tfs = sorted(set(r.get('entry_tf', '') for r in results if r.get('entry_tf', '')))
-    tf_filter_var = tk.StringVar(value='All TFs')
+
+    # WHY (Hotfix): TF filter was a local var that reset to 'All TFs' every
+    #      time display_summary was called (e.g., on sort button click).
+    #      Now reads/writes _a44_state so the selection persists.
+    # CHANGED: April 2026 — persist TF filter
+    if _a44_state['tf_filter'] not in (['All TFs'] + all_tfs):
+        _a44_state['tf_filter'] = 'All TFs'
+    tf_filter_var = tk.StringVar(value=_a44_state['tf_filter'])
+
     if len(all_tfs) > 1:
         tf_filter_frame = tk.Frame(sort_frame, bg="#ffffff")
         tf_filter_frame.pack(side=tk.RIGHT, padx=(0, 8))
         tk.Label(tf_filter_frame, text="TF:", font=("Arial", 8), bg="#ffffff", fg="#555").pack(side=tk.LEFT)
         tf_choices = ['All TFs'] + all_tfs
+
+        def _on_tf_change(val):
+            _a44_state['tf_filter'] = val
+            _current_page[0] = 0
+            display_summary(output_text, summary_frame)
+
         tf_menu = tk.OptionMenu(tf_filter_frame, tf_filter_var, *tf_choices,
-                                command=lambda _: (_current_page.__setitem__(0, 0), display_summary(output_text, summary_frame)))
+                                command=_on_tf_change)
         tf_menu.config(font=("Arial", 8), bg="#fff", relief=tk.FLAT, padx=2, pady=1)
         tf_menu.pack(side=tk.LEFT)
 
@@ -346,6 +368,8 @@ def _display_results_inner(output_text, summary_frame, data, results,
         _a44_state['profit_filter'] = 'all'
         for _k in ('min_trades', 'min_wr', 'min_pf', 'max_dd'):
             _a44_state[_k] = ''
+        _a44_state['tf_filter'] = 'All TFs'
+        _a44_state['show_zero'] = False
         _current_page[0] = 0  # reset to first page on reset
         display_summary(output_text, summary_frame)
 
