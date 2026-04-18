@@ -809,6 +809,7 @@ def monte_carlo_test(
     from project2_backtesting.prop_firm_tester import load_available_firms
 
     if not trades:
+        print(f"[MC] Empty trades list — returning INSUFFICIENT_DATA")
         return {'verdict': 'INSUFFICIENT_DATA', 'error': 'No trades provided'}
 
     # Discover challenge_id if not given
@@ -845,6 +846,7 @@ def monte_carlo_test(
                         f"Pass challenge_id= explicitly to pick a specific one."
                     )
     if challenge_id is None:
+        print(f"[MC] No challenge found for firm_id={firm_id!r} — returning INSUFFICIENT_DATA")
         return {'verdict': 'INSUFFICIENT_DATA', 'error': f'No challenges found for {firm_id}'}
 
     trades_df = _trades_to_df(

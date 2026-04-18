@@ -2718,6 +2718,9 @@ def _run(mode, override_idx=None, done_event=None):
                     _mc_trades = trades
 
             if mode in ('mc', 'full'):
+                print(f"[validator] Starting MC: {len(_mc_trades)} trades, "
+                      f"firm={mc_firm!r}, account={account_size}, sims={n_sims}, "
+                      f"risk={risk_pct}%, sl={sl_pips}, pip_val={pip_val}")
                 mc_result = monte_carlo_test(
                     trades=_mc_trades,
                     firm_id=mc_firm,
@@ -2728,6 +2731,9 @@ def _run(mode, override_idx=None, done_event=None):
                     pip_value_per_lot=pip_val,
                     progress_callback=_make_progress_cb("Monte Carlo"),
                 )
+                print(f"[validator] MC result: verdict={mc_result.get('verdict', '?')}, "
+                      f"pass_rate={mc_result.get('mean_pass_rate', '?')}, "
+                      f"error={mc_result.get('error', 'none')}")
                 state.window.after(0, lambda r=mc_result: _display_mc_results(r))
 
             if mode in ('slip', 'full') and candles_path:
