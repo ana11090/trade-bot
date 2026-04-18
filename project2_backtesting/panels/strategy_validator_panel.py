@@ -203,6 +203,8 @@ _filt_trades    = None
 _strat_info_lbl  = None
 _strat_detail_lbl = None
 _prev_result_lbl = None
+_copy_results_btn = None
+_last_validation_result = None  # stores the last completed validation result dict
 _start_wf_btn    = None
 _start_mc_btn    = None
 _start_full_btn  = None
@@ -225,6 +227,133 @@ _verdict_frame   = None
 # Cache to prevent reloading 43MB file every time panel is shown
 _strategies_cache = []
 _cache_mtime = 0
+
+
+def _copy_validation_results():
+    """Format validation results as text and copy to clipboard."""
+    global _last_validation_result
+    if not _last_validation_result:
+        import tkinter.messagebox as mb
+        mb.showinfo("No Results", "Run a validation first.")
+        return
+
+    r = _last_validation_result
+    lines = []
+    lines.append("=" * 60)
+    lines.append("STRATEGY VALIDATION RESULTS")
+    lines.append(f"Validated: {r.get('validated_at', '?')[:19]}")
+    lines.append(f"Strategy: {r.get('strategy_index', '?')}")
+    lines.append("=" * 60)
+
+    # ── Combined verdict ──
+    combined = r.get('combined', {})
+    if combined:
+        lines.append(f"\nGRADE: {combined.get('grade', '?')} ({combined.get('confidence_score', 0)}/100)")
+        lines.append(f"Verdict: {combined.get('verdict', '?')}")
+        checks = combined.get('checks', {})
+        if checks:
+            lines.append("\nChecks:")
+            for check_name, check_val in checks.items():
+                if isinstance(check_val, dict):
+                    status = check_val.get('status', '?')
+                    detail = check_val.get('detail', '')
+                    lines.append(f"  {check_name}: {status} — {detail}")
+                else:
+                    lines.append(f"  {check_name}: {check_val}")
+
+    # ── Walk-Forward ──
+    wf = r.get('walk_forward')
+    if wf:
+        lines.append("\n" + "-" * 40)
+        lines.append("WALK-FORWARD RESULTS")
+        summary = wf.get('summary', {})
+        lines.append(f"Windows completed: {summary.get('windows_completed', 0)}")
+        lines.append(f"Avg IN WR: {summary.get('avg_in_wr', 0):.1f}%")
+        lines.append(f"Avg OUT WR: {summary.get('avg_out_wr', 0):.1f}%")
+        lines.append(f"Avg degradation: {summary.get('avg_degradation', 0):.1f}pp")
+        lines.append(f"Verdict: {summary.get('verdict', '?')}")
+
+        windows = wf.get('windows', [])
+        if windows:
+            lines.append(f"\nPer-window details ({len(windows)} windows):")
+            for w in windows:
+                label = w.get('label', '?')
+                in_s = w.get('in_sample', {})
+                out_s = w.get('out_sample', {})
+                lines.append(f"  {label}")
+                lines.append(f"    IN:  {in_s.get('count', 0):>5} trades  "
+                             f"WR {in_s.get('win_rate', 0):>5.1f}%  "
+                             f"avg {in_s.get('avg_pips', 0):>+7.1f} pips  "
+                             f"PF {in_s.get('profit_factor', 0):>5.2f}")
+                lines.append(f"    OUT: {out_s.get('count', 0):>5} trades  "
+                             f"WR {out_s.get('win_rate', 0):>5.1f}%  "
+                             f"avg {out_s.get('avg_pips', 0):>+7.1f} pips  "
+                             f"PF {out_s.get('profit_factor', 0):>5.2f}")
+
+    # ── Monte Carlo ──
+    mc = r.get('monte_carlo')
+    if mc:
+        lines.append("\n" + "-" * 40)
+        lines.append("MONTE CARLO RESULTS")
+        lines.append(f"Simulations: {mc.get('n_simulations', 0)}")
+        lines.append(f"Pass rate: {mc.get('pass_rate', 0):.1f}%")
+        lines.append(f"Avg ending balance: {mc.get('avg_ending_balance', 0):,.0f}")
+        lines.append(f"Median ending balance: {mc.get('median_ending_balance', 0):,.0f}")
+        lines.append(f"Worst drawdown: {mc.get('worst_dd_pct', 0):.1f}%")
+        lines.append(f"Verdict: {mc.get('verdict', '?')}")
+
+    # ── Slippage ──
+    slip = r.get('slippage')
+    if slip:
+        lines.append("\n" + "-" * 40)
+        lines.append("SLIPPAGE STRESS TEST")
+        lines.append(f"Max safe slippage: {slip.get('max_safe_slippage', '?')} pips")
+        lines.append(f"Breakeven slippage: {slip.get('breakeven_slippage', '?')} pips")
+        lines.append(f"Verdict: {slip.get('verdict', '?')}")
+        levels = slip.get('levels', [])
+        if levels:
+            lines.append("Levels:")
+            for lv in levels:
+                lines.append(f"  {lv.get('slippage_pips', '?')} pips: "
+                             f"WR {lv.get('avg_wr', 0):.1f}%  "
+                             f"avg {lv.get('avg_pips', 0):+.1f} pips  "
+                             f"PF {lv.get('avg_pf', 0):.2f}")
+
+    # ── Live Firm ──
+    live = r.get('live_firm_results')
+    if live and not live.get('_error'):
+        lines.append("\n" + "-" * 40)
+        lines.append("LIVE FIRM SIMULATION")
+        for firm_id, firm_data in live.items():
+            if isinstance(firm_data, dict) and 'pass_rate' in firm_data:
+                lines.append(f"  {firm_id}: pass {firm_data.get('pass_rate', 0):.0f}%  "
+                             f"avg_days {firm_data.get('avg_days', 0):.0f}")
+
+    lines.append("\n" + "=" * 60)
+
+    text = "\n".join(lines)
+
+    # Copy to clipboard
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+        root.destroy()
+    except Exception:
+        # Fallback: use the existing window
+        try:
+            import shared.state as state
+            state.window.clipboard_clear()
+            state.window.clipboard_append(text)
+        except Exception:
+            pass
+
+    import tkinter.messagebox as mb
+    mb.showinfo("Copied", f"Validation results copied to clipboard!\n\n({len(lines)} lines)")
+
 
 def _load_strategies():
     global _strategies, _strategies_cache, _cache_mtime
@@ -2668,6 +2797,11 @@ def _run(mode, override_idx=None, done_event=None):
                 _save_validation(idx, result)
                 state.window.after(0, _update_strat_info)
 
+                # WHY: Store for the Copy Results button
+                # CHANGED: April 2026
+                global _last_validation_result
+                _last_validation_result = result
+
             state.window.after(0, lambda: _status_lbl.configure(
                 text="Validation complete.", fg=GREEN))
             state.window.after(0, lambda: _progress_bar.configure(value=100))
@@ -3255,6 +3389,18 @@ def build_panel(parent):
     _status_lbl = tk.Label(scroll_frame, text="Ready",
                             font=("Segoe UI", 9, "italic"), bg=BG, fg=GREY)
     _status_lbl.pack(pady=(2, 5))
+
+    # ── Copy Results button ──
+    # WHY: Easy way to export validation results as text for sharing/review.
+    # CHANGED: April 2026
+    global _copy_results_btn
+    _copy_results_btn = tk.Button(
+        scroll_frame, text="📋 Copy Results to Clipboard",
+        font=("Segoe UI", 9), bg="#17a2b8", fg="white",
+        relief=tk.FLAT, padx=10, pady=4,
+        command=_copy_validation_results,
+    )
+    _copy_results_btn.pack(anchor="w", padx=20, pady=(5, 0))
 
     # ── Results frames ────────────────────────────────────────────────────────
     # Separator
