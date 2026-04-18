@@ -752,6 +752,18 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _all_tfs = sorted(set(
                             r.get('entry_tf', '') for r in all_matrix if r.get('entry_tf', '')
                         ))
+
+                        # Flatten stats from nested dict to top level for View Results
+                        # WHY: View Results expects stats at top level (r['total_trades'])
+                        #      but backtester returns nested (r['stats']['total_trades'])
+                        _flattened = []
+                        for r in all_matrix:
+                            _flat = dict(r)  # shallow copy
+                            _stats = _flat.pop('stats', {})
+                            if isinstance(_stats, dict):
+                                _flat.update(_stats)  # merge stats to top level
+                            _flattened.append(_flat)
+
                         _combined_output = {
                             "generated_at": _save_time.strftime("%Y-%m-%d %H:%M"),
                             "entry_timeframe": "multi",
@@ -759,7 +771,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             "max_trades_per_day": _a42_limit,
                             "spread_pips": _cfg_spread,
                             "commission_pips": _cfg_commission,
-                            "results": all_matrix,
+                            "results": _flattened,
                         }
                         with open(_combined_path, 'w', encoding='utf-8') as _cf:
                             json.dump(_combined_output, _cf, indent=2, default=str)
