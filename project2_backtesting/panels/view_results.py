@@ -32,6 +32,8 @@ _output_text = None
 _summary_frame = None
 _sort_key = ['net_total_pips']  # default sort
 _sort_reverse = [True]
+_current_page = [0]   # pagination: 0-based page index
+_PAGE_SIZE = 100      # results per page
 
 # WHY (Phase A.44): Filter state must survive display_summary re-calls
 #      (sort buttons, filter changes all call display_summary which
@@ -222,6 +224,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
     def _resort(key, reverse=True):
         _sort_key[0] = key
         _sort_reverse[0] = reverse
+        _current_page[0] = 0  # reset to first page on sort change
         display_summary(output_text, summary_frame)
 
     for label, key, rev in [
@@ -240,7 +243,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
     show_zero_var = tk.BooleanVar(value=False)
     tk.Checkbutton(sort_frame, text="Show 0-trade results", variable=show_zero_var,
                     bg="#ffffff", font=("Arial", 8),
-                    command=lambda: display_summary(output_text, summary_frame)).pack(side=tk.RIGHT)
+                    command=lambda: (_current_page.__setitem__(0, 0), display_summary(output_text, summary_frame))).pack(side=tk.RIGHT)
 
     # ── TF filter (only shown when multiple TFs present) ──
     # WHY: Multi-TF backtest produces rows for M5/M15/H1/H4 — user needs to filter
@@ -254,7 +257,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
         tk.Label(tf_filter_frame, text="TF:", font=("Arial", 8), bg="#ffffff", fg="#555").pack(side=tk.LEFT)
         tf_choices = ['All TFs'] + all_tfs
         tf_menu = tk.OptionMenu(tf_filter_frame, tf_filter_var, *tf_choices,
-                                command=lambda _: display_summary(output_text, summary_frame))
+                                command=lambda _: (_current_page.__setitem__(0, 0), display_summary(output_text, summary_frame)))
         tf_menu.config(font=("Arial", 8), bg="#fff", relief=tk.FLAT, padx=2, pady=1)
         tf_menu.pack(side=tk.LEFT)
 
@@ -335,6 +338,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
     def _apply_a44():
         for _k, _v in _a44_entry_vars.items():
             _a44_state[_k] = _v.get().strip()
+        _current_page[0] = 0  # reset to first page on filter change
         display_summary(output_text, summary_frame)
 
     def _reset_a44():
@@ -342,6 +346,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
         _a44_state['profit_filter'] = 'all'
         for _k in ('min_trades', 'min_wr', 'min_pf', 'max_dd'):
             _a44_state[_k] = ''
+        _current_page[0] = 0  # reset to first page on reset
         display_summary(output_text, summary_frame)
 
     tk.Button(row2, text="Apply", font=("Segoe UI", 8, "bold"),
@@ -428,36 +433,89 @@ def _display_results_inner(output_text, summary_frame, data, results,
     results_canvas.bind("<Enter>", _on_enter)
     results_canvas.bind("<Leave>", _on_leave)
 
-    count_text = f"Showing {len(sorted_results)} of {len(results)} results"
-    if _sort_key[0] == 'max_dd_pips' and not _sort_reverse[0]:
-        count_text += " (sorted by lowest drawdown — safer strategies first)"
-    tk.Label(results_inner, text=count_text, font=("Arial", 9),
-             bg="#ffffff", fg="#888").pack(anchor="w", pady=(0, 5))
-
-    # ── Result cards ──
-    # WHY (Hotfix): 480+ cards freeze tkinter (7200+ widgets).
-    #      Cap at 100 cards. Use filters to narrow down.
+    # ═══════════════════════════════════════════════════════════════════
+    # Hotfix: Pagination — show 100 results per page
+    # WHY: 480+ cards × ~15 widgets = 7200+ tkinter widgets → app freeze.
+    #      Show one page at a time with navigation buttons.
     # CHANGED: April 2026 — Hotfix for A.48 multi-TF freeze
-    _MAX_CARDS = 100
-    if len(sorted_results) > _MAX_CARDS:
-        tk.Label(results_inner,
-                 text=f"⚠️ Showing top {_MAX_CARDS} of {len(sorted_results)} results. "
-                      f"Use filters above to narrow down.",
-                 font=("Segoe UI", 9, "bold"), bg="#fff3cd", fg="#856404",
-                 padx=8, pady=4).pack(fill="x", pady=(0, 5))
-        sorted_results = sorted_results[:_MAX_CARDS]
+    # ═══════════════════════════════════════════════════════════════════
+    _total_results = len(sorted_results)
+    _total_pages = max(1, (_total_results + _PAGE_SIZE - 1) // _PAGE_SIZE)
 
-    # WHY (Hotfix): is_starred() reads starred_strategies.json from disk
-    #      on every call. With 480 cards = 480 file reads. Cache it once.
+    # Clamp current page to valid range
+    if _current_page[0] >= _total_pages:
+        _current_page[0] = _total_pages - 1
+    if _current_page[0] < 0:
+        _current_page[0] = 0
+
+    _page_start = _current_page[0] * _PAGE_SIZE
+    _page_end = min(_page_start + _PAGE_SIZE, _total_results)
+    _page_results = sorted_results[_page_start:_page_end]
+
+    # ── Pagination bar (only if more than 1 page) ──
+    if _total_pages > 1:
+        page_bar = tk.Frame(results_inner, bg="#ffffff")
+        page_bar.pack(fill="x", pady=(0, 5))
+
+        tk.Label(page_bar,
+                 text=f"Showing {_page_start + 1}–{_page_end} of {_total_results} results",
+                 font=("Segoe UI", 9), bg="#ffffff", fg="#888").pack(side=tk.LEFT)
+
+        # Page number buttons
+        btn_frame = tk.Frame(page_bar, bg="#ffffff")
+        btn_frame.pack(side=tk.RIGHT)
+
+        def _go_to_page(p):
+            _current_page[0] = p
+            display_summary(output_text, summary_frame)
+
+        # Previous button
+        if _current_page[0] > 0:
+            tk.Button(btn_frame, text="◀ Prev", font=("Segoe UI", 8),
+                      bg="#667eea", fg="white", relief=tk.FLAT, padx=6, pady=1,
+                      command=lambda: _go_to_page(_current_page[0] - 1)
+                      ).pack(side=tk.LEFT, padx=1)
+
+        # Page number buttons
+        for _pg in range(_total_pages):
+            _is_current = (_pg == _current_page[0])
+            tk.Button(
+                btn_frame,
+                text=str(_pg + 1),
+                font=("Segoe UI", 8, "bold" if _is_current else "normal"),
+                bg="#667eea" if _is_current else "#e0e0e0",
+                fg="white" if _is_current else "#333",
+                relief=tk.FLAT, padx=6, pady=1,
+                command=lambda p=_pg: _go_to_page(p),
+            ).pack(side=tk.LEFT, padx=1)
+
+        # Next button
+        if _current_page[0] < _total_pages - 1:
+            tk.Button(btn_frame, text="Next ▶", font=("Segoe UI", 8),
+                      bg="#667eea", fg="white", relief=tk.FLAT, padx=6, pady=1,
+                      command=lambda: _go_to_page(_current_page[0] + 1)
+                      ).pack(side=tk.LEFT, padx=1)
+    else:
+        tk.Label(results_inner,
+                 text=f"Showing {_total_results} of {len(results)} results",
+                 font=("Segoe UI", 9), bg="#ffffff", fg="#888"
+                 ).pack(anchor="w", pady=(0, 5))
+
+    # ── Cache is_starred to avoid 100+ disk reads per page ──
+    # WHY: is_starred() reads starred_strategies.json from disk on every
+    #      call. Loading once and checking in-memory is instant.
     # CHANGED: April 2026 — Hotfix
     _starred_cache = set()
     try:
-        from shared.starred import _load as _load_starred
-        _starred_cache = set(_load_starred())
+        from shared.starred import _load as _starred_load
+        _starred_cache = set(_starred_load())
     except Exception:
         pass
 
-    for i, r in enumerate(sorted_results):
+    # ── Result cards (only current page) ──
+    for i, r in enumerate(_page_results):
+        # Adjust display index to be global (not per-page)
+        _global_idx = _page_start + i
         # FIX 4: per-card error handling — one broken result doesn't kill the display
         try:
             net_pips = r.get('net_total_pips', 0)
@@ -480,7 +538,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
             header_row = tk.Frame(card, bg=bg_color)
             header_row.pack(fill="x")
 
-            header_text = f"#{i+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
+            header_text = f"#{_global_idx+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
             tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
                      font=("Arial", 10, "bold")).pack(side=tk.LEFT)
 
@@ -523,8 +581,12 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 es = r.get('exit_strategy', r.get('exit_name', '?'))
                 etf = r.get('entry_tf', '')
                 # Use cached starred list instead of per-card disk read
-                _star_key = f"{rc}|{es}|{etf}" if etf else f"{rc}|{es}"
-                starred = _star_key in _starred_cache or f"{rc}|{es}" in _starred_cache
+                try:
+                    from shared.starred import make_key
+                    _skey = make_key(rc, es, etf)
+                    starred = _skey in _starred_cache or f"{rc}|{es}" in _starred_cache
+                except Exception:
+                    starred = False
 
                 def _make_star_toggle(combo_name, exit_name, tf, btn_ref):
                     def _toggle():
