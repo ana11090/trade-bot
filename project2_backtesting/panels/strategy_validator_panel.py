@@ -484,12 +484,49 @@ def _get_strategy_meta(idx):
                 # exit_class, exit_params, and entry_timeframe are present
                 # for newly-saved strategies. Older saves may be missing
                 # them — fall back to whatever we can find.
-                _rules = rule.get('optimized_rules', [])
+                # WHY: Different save buttons use different keys:
+                #   - Optimizer save → 'optimized_rules'
+                #   - View Results save → 'rules'
+                #   - Step 3/4 save → 'conditions' (flat list)
+                #   Check all three in order. For 'conditions', wrap as
+                #   a single rule (these are always from single-rule saves).
+                # CHANGED: April 2026 — check all rule keys
+                _rules = []
+
+                # 1. optimized_rules (from optimizer save)
+                _opt = rule.get('optimized_rules', [])
+                if _opt and any(r.get('conditions') for r in _opt):
+                    _rules = _opt
+                    print(f"[validator] Loaded {len(_rules)} rules from 'optimized_rules'")
+
+                # 2. rules (from View Results save / backtest matrix)
                 if not _rules:
-                    # Fall back to conditions list wrapped as a single rule
+                    _saved = rule.get('rules', [])
+                    if _saved and any(r.get('conditions') for r in _saved):
+                        _rules = _saved
+                        print(f"[validator] Loaded {len(_rules)} rules from 'rules'")
+
+                # 3. conditions (from Step 3/4 single-rule save)
+                if not _rules:
                     conds = rule.get('conditions', [])
                     if conds:
                         _rules = [{'prediction': 'WIN', 'conditions': conds}]
+                        print(f"[validator] Wrapped {len(conds)} conditions as 1 rule")
+
+                # 4. Last resort: load from analysis_report by rule_combo name
+                if not _rules:
+                    _combo = rule.get('rule_combo', '')
+                    if _combo:
+                        _resolved = _resolve_rules({
+                            'rule_combo': _combo,
+                            'rule_indices': rule.get('rule_indices'),
+                        })
+                        if _resolved:
+                            _rules = _resolved
+                            print(f"[validator] Loaded {len(_rules)} rules from analysis_report via '{_combo}'")
+
+                if not _rules:
+                    print(f"[validator] WARNING: saved rule has 0 rules! keys={sorted(rule.keys())}")
                 _exit_class  = rule.get('exit_class', 'FixedSLTP')
                 _exit_params = rule.get('exit_params', {'sl_pips': 150, 'tp_pips': 300})
                 _trades      = rule.get('trades', [])
