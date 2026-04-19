@@ -99,17 +99,31 @@ def _generate_mt5_test(win_rules, strategy_name):
             is_custom  = h.get('custom_indicator', False)
             fail_msg   = (f'"   Download/install {feat} from MQL5 Marketplace"'
                           if is_custom else f'"   Error code: ", GetLastError()')
-            # Track handle variable name for explicit release (Fix 7)
-            # Fix 8: removed no-op var.replace('val_', '') — var never has that prefix
-            handle_names.append(var)
+
+            # WHY: Extract actual handle variable name from handle_var declaration.
+            #      Old code used handle_{var_name} which didn't match — e.g.,
+            #      handle_var="int handle_macd_H4;" → actual name is handle_macd_H4,
+            #      but old code generated handle_h4_macd_fast_diff.
+            # CHANGED: April 2026 — extract real handle name
+            _hv_str = h.get('handle_var', '').strip().rstrip(';').strip()
+            # "int handle_macd_H4" → "handle_macd_H4"
+            _hv_name = _hv_str.split()[-1] if _hv_str else f'handle_{var}'
+
+            handle_names.append(_hv_name)
+
+            # WHY: handle_init may contain return(INIT_FAILED) which is for OnInit,
+            #      not OnStart (void). Replace with plain return.
+            # CHANGED: April 2026 — fix void return
+            init_code = init_code.replace('return(INIT_FAILED)', 'return')
+
             block = f"""\
    // --- {feat}{'  [CUSTOM]' if is_custom else ''} ---
    total++;
    {init_code}
-   if(handle_{var} != INVALID_HANDLE)
+   if({_hv_name} != INVALID_HANDLE)
    {{
       double buf_{var}[1];
-      if(CopyBuffer(handle_{var}, 0, 0, 1, buf_{var}) > 0)
+      if(CopyBuffer({_hv_name}, 0, 0, 1, buf_{var}) > 0)
       {{
          Print("OK  {feat} = ", DoubleToString(buf_{var}[0], 4));
          passed++;
@@ -135,8 +149,11 @@ def _generate_mt5_test(win_rules, strategy_name):
     #      call did nothing. Handles leaked until script exit. Fix: emit
     #      one explicit IndicatorRelease() per handle created by the script.
     # CHANGED: April 2026 — explicit per-handle release (audit HIGH)
+    # WHY: handle_names now contains full handle names (e.g., "handle_macd_H4")
+    #      not just the suffix. Use directly, don't add "handle_" prefix.
+    # CHANGED: April 2026 — use full handle name
     release_block = '\n'.join(
-        f'   if(handle_{h} != INVALID_HANDLE) IndicatorRelease(handle_{h});'
+        f'   if({h} != INVALID_HANDLE) IndicatorRelease({h});'
         for h in handle_names
     ) or '   // No handles to release'
 
