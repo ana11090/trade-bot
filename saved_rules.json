@@ -1787,5 +1787,142 @@
       "tightness_product": 0.003479,
       "regime_filter": null
     }
+  },
+  {
+    "id": 25,
+    "saved_at": "2026-04-19T19:39:01.062010",
+    "source": "Backtest Result",
+    "notes": "31",
+    "rule": {
+      "rule_combo": "Rule 1 (BUY)",
+      "exit_strategy": "SL 150 pips, close after 12 candles",
+      "exit_name": "Time-Based",
+      "exit_class": "TimeBased",
+      "exit_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "exit_strategy_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "prediction": "WIN",
+      "win_rate": 59.2,
+      "net_total_pips": 2200352.0,
+      "net_profit_factor": 3.8,
+      "total_trades": 11458,
+      "max_dd_pips": 9423.0,
+      "entry_tf": "M5",
+      "entry_timeframe": "M5",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": ">",
+              "value": 0.5782
+            },
+            {
+              "feature": "H4_macd_fast_diff",
+              "operator": ">",
+              "value": 1.5637
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 0.667,
+          "coverage": 39,
+          "coverage_pct": 14.0,
+          "win_rate": 0.667,
+          "avg_pips": 198.9,
+          "action": "BUY",
+          "direction": "BUY",
+          "entry_timeframe": "H1",
+          "entry_tf": "H1",
+          "rule_combo": "Rule 3 (BUY)",
+          "scenario": "outputs",
+          "spread_pips": 2.5,
+          "commission_pips": 0.0,
+          "discovery_settings": {
+            "regime_filter_enabled": true,
+            "regime_at_discovery": true,
+            "regime_strictness": "conservative",
+            "regime_mode": "automatic"
+          },
+          "rules": [
+            {
+              "prediction": "WIN",
+              "action": "BUY",
+              "conditions": [
+                {
+                  "feature": "H1_candle_body",
+                  "operator": "<=",
+                  "value": 14.94
+                },
+                {
+                  "feature": "H1_close_position_in_range",
+                  "operator": ">",
+                  "value": 0.5782
+                },
+                {
+                  "feature": "H4_macd_fast_diff",
+                  "operator": ">",
+                  "value": 1.5637
+                }
+              ]
+            }
+          ],
+          "regime_filter": [
+            {
+              "feature": "H1_std_dev_20",
+              "direction": ">",
+              "threshold": 17.741695
+            }
+          ]
+        }
+      ],
+      "rule_indices": [
+        0
+      ],
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": ">",
+          "value": 0.5782
+        },
+        {
+          "feature": "H4_macd_fast_diff",
+          "operator": ">",
+          "value": 1.5637
+        }
+      ],
+      "spread_pips": 0.3,
+      "commission_pips": 4.0,
+      "direction": "",
+      "run_settings": {
+        "rule_source": "Saved/Bookmarked Rules (24 rules)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": false,
+        "regime_filter_conditions": [],
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 1.0,
+        "starting_capital": 10000.0
+      },
+      "signals_before_regime_filter": 103486,
+      "signals_after_regime_filter": 103486
+    }
   }
 ]

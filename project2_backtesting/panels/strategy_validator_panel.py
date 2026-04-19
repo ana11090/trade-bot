@@ -730,6 +730,25 @@ def _get_strategy_meta(idx):
                             break
                 if not _direction:
                     _direction = 'BUY'
+
+                # Embed regime filter from saved rule data
+                _rf_from_rule = rule.get('regime_filter')
+                _rf_from_settings = rule.get('run_settings', {}).get('regime_filter_conditions', [])
+                _rf_enabled = rule.get('run_settings', {}).get('regime_filter_enabled', None)
+
+                if _rf_from_rule is not None:
+                    # Per-rule regime_filter already set (Phase A.43) — use as-is
+                    pass
+                elif _rf_enabled is False:
+                    # Backtest had regime OFF → suppress
+                    for _rule in _rules:
+                        _rule['regime_filter'] = []
+                    print(f"[validator] Saved rule: regime was OFF — suppressing global config fallback")
+                elif _rf_from_settings:
+                    for _rule in _rules:
+                        _rule['regime_filter'] = _rf_from_settings
+                    print(f"[validator] Saved rule: embedded {len(_rf_from_settings)} regime conditions")
+
                 return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters, _direction
 
             print(f"[validator] Saved rule {idx} not found in saved_rules.json")
@@ -768,6 +787,19 @@ def _get_strategy_meta(idx):
                 # CHANGED: April 2026 — Validator Fix
                 _filters = opt.get('filters', opt.get('filters_applied', None))
                 _direction = opt.get('direction', 'BUY')
+
+                # Embed regime filter from optimizer data
+                _opt_rf = opt.get('regime_filter_conditions', [])
+                _opt_rf_on = opt.get('run_settings', {}).get('regime_filter_enabled', None)
+                if _opt_rf_on is False:
+                    for _rule in _rules:
+                        _rule['regime_filter'] = []
+                    print(f"[validator] Optimizer: regime was OFF — suppressing global config fallback")
+                elif _opt_rf:
+                    for _rule in _rules:
+                        _rule['regime_filter'] = _opt_rf
+                    print(f"[validator] Optimizer: embedded {len(_opt_rf)} regime conditions")
+
                 return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters, _direction
             except Exception as e:
                 import traceback; traceback.print_exc()
@@ -812,6 +844,40 @@ def _get_strategy_meta(idx):
                 print(f"[validator] Fallback loaded {len(rules)} rules from analysis_report.json")
             else:
                 print(f"[validator] ❌ analysis_report.json also has 0 rules!")
+
+        # ── Embed regime filter from run_settings into rules ──────────
+        # WHY: run_backtest() checks per-rule 'regime_filter' key (Phase A.43).
+        #      If missing, it falls back to GLOBAL config — which may have
+        #      different settings than when the backtest ran. The backtest
+        #      result carries run_settings.regime_filter_conditions showing
+        #      what was ACTUALLY used. Embed it into each rule so the
+        #      validator reproduces the exact same behavior.
+        #
+        #      Three cases:
+        #      (a) run_settings says filter was OFF → set regime_filter=[]
+        #          (explicitly suppresses global config fallback)
+        #      (b) run_settings has conditions → set regime_filter=conditions
+        #      (c) no run_settings at all (old result) → leave rules unchanged
+        #          (falls back to global config — backward compat)
+        # CHANGED: April 2026 — regime from strategy, not config
+        _run_settings = r.get('run_settings', {})
+        if _run_settings:
+            _rf_enabled = _run_settings.get('regime_filter_enabled', False)
+            _rf_conditions = _run_settings.get('regime_filter_conditions', [])
+            if _rf_enabled and _rf_conditions:
+                # Case (b): embed the actual conditions
+                for _rule in rules:
+                    if 'regime_filter' not in _rule:
+                        _rule['regime_filter'] = _rf_conditions
+                print(f"[validator] Embedded {len(_rf_conditions)} regime conditions from run_settings into {len(rules)} rules")
+            elif not _rf_enabled:
+                # Case (a): explicitly disable — don't fall back to global config
+                for _rule in rules:
+                    if 'regime_filter' not in _rule:
+                        _rule['regime_filter'] = []  # empty = OFF
+                print(f"[validator] Regime filter was OFF during backtest — suppressing global config fallback")
+            # Case (c): no run_settings → don't touch rules → backward compat
+
         # WHY (Hotfix): exit_class and exit_params can be empty in old
         #      backtest results. ALWAYS parse from exit_name/exit_strategy
         #      as primary source — these human-readable strings are always
