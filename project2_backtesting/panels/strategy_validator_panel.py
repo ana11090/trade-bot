@@ -377,22 +377,26 @@ def _copy_validation_results():
 def _load_strategies():
     global _strategies, _strategies_cache, _cache_mtime
     try:
-        # Check if backtest_matrix.json has been modified
         backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
-        if os.path.exists(backtest_path):
-            current_mtime = os.path.getmtime(backtest_path)
-            if current_mtime == _cache_mtime and _strategies_cache:
-                # Use cached data — file hasn't changed
-                _strategies = _strategies_cache
-                return
+        saved_path = os.path.join(project_root, 'saved_rules.json')
 
-            # File changed or no cache — reload
-            from project2_backtesting.strategy_refiner import load_strategy_list
-            _strategies = load_strategy_list()
-            _strategies_cache = _strategies
-            _cache_mtime = current_mtime
-        else:
-            _strategies = []
+        # WHY: Old code only checked backtest_matrix.json mtime. If a new
+        #      rule was saved, the cache wasn't invalidated — new rules
+        #      didn't appear until app restart.
+        # CHANGED: April 2026 — check both file mtimes
+        _bt_mtime = os.path.getmtime(backtest_path) if os.path.exists(backtest_path) else 0
+        _sr_mtime = os.path.getmtime(saved_path) if os.path.exists(saved_path) else 0
+        _combined_mtime = _bt_mtime + _sr_mtime
+
+        if _combined_mtime == _cache_mtime and _strategies_cache:
+            _strategies = _strategies_cache
+            return
+
+        # File changed or no cache — reload
+        from project2_backtesting.strategy_refiner import load_strategy_list
+        _strategies = load_strategy_list()
+        _strategies_cache = _strategies
+        _cache_mtime = _combined_mtime
     except Exception as e:
         print(f"[validator_panel] {e}")
         _strategies = []
@@ -3178,6 +3182,8 @@ def build_panel(parent):
         _tree.tag_configure("profitable", foreground="#28a745")
         _tree.tag_configure("losing", foreground="#dc3545")
         _tree.tag_configure("no_trades", foreground="#888888")
+        _tree.tag_configure("saved_good", foreground="#2980b9")   # blue — saved rule with good stats
+        _tree.tag_configure("separator", foreground="#aaa", background="#f5f5f5")
 
         def _rebuild_tree():
             global _check_vars, _selected_count
@@ -3216,7 +3222,26 @@ def build_panel(parent):
                 net = s.get('net_total_pips', 0)
                 dd = s.get('max_dd_pips', 0)
 
-                if trades == 0:
+                # WHY: Stale saved rules (missing exit, conditions, etc.) are
+                #      useless for validation — skip them entirely. Don't
+                #      clutter the list with broken entries.
+                # CHANGED: April 2026 — hide stale rules, source-aware coloring
+                _source = s.get('source', '')
+                if _source == 'separator':
+                    tag = "separator"
+                elif _source == 'saved':
+                    # Skip stale rules entirely — they can't be validated
+                    if s.get('is_stale'):
+                        continue
+                    # Skip rules with no conditions and no stats
+                    wr_val = wr / 100 if wr > 1 else wr
+                    if wr_val == 0 and pf == 0 and trades == 0:
+                        continue
+                    if pf > 1.0 or wr_val > 0.5:
+                        tag = "saved_good"
+                    else:
+                        tag = "saved_good"
+                elif trades == 0:
                     tag = "no_trades"
                 elif net > 0:
                     tag = "profitable"
@@ -3301,6 +3326,19 @@ def build_panel(parent):
         tk.Button(btn_frame, text="Deselect All", font=("Segoe UI", 8),
                   bg="#6c757d", fg="white", relief=tk.FLAT, padx=8,
                   command=_deselect_all).pack(side=tk.LEFT)
+
+        def _refresh_list():
+            """Force reload from disk — picks up newly saved rules."""
+            global _strategies, _strategies_cache, _cache_mtime
+            _cache_mtime = 0  # Invalidate cache
+            _strategies_cache = None
+            _load_strategies()
+            _rebuild_tree()
+            print(f"[VALIDATOR] Refreshed — {len(_strategies)} strategies loaded")
+
+        tk.Button(btn_frame, text="🔄 Refresh", font=("Segoe UI", 8),
+                  bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
+                  command=_refresh_list).pack(side=tk.LEFT, padx=(10, 0))
 
         # Selection info
         sel_info = tk.Label(sel_frame, text="Click the checkbox (✓) column to select strategies for validation.",
