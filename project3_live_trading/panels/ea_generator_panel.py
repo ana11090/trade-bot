@@ -516,69 +516,34 @@ _condition_frame = None
 
 
 def _auto_fill_filters(idx, strat_data):
-    """Auto-fill trading filter fields from optimizer results or saved rules.
+    """Auto-fill trading filter fields from the strategy's own data ONLY.
 
-    WHY: When the user optimizes a strategy, the optimizer finds the best values
-         for max_trades_per_day, sessions, cooldown, etc. These values need to
-         carry over to the EA so it trades exactly as optimized.
-
-    Priority:
-      1. Strategy data itself (if it has filters_applied from optimizer)
-      2. Matching saved rule (might have optimizer filters)
-      3. _validator_optimized.json (latest optimizer output)
-      4. Leave current UI values unchanged (user's manual settings)
-
-    CHANGED: April 2026 — connect optimizer → EA filters
+    WHY: Old code searched saved_rules.json and _validator_optimized.json
+         for matching filters using OR logic (rule_combo OR exit_name).
+         This loaded filters from DIFFERENT strategies that happened to
+         share the same exit name. A min_hold=30m from an optimizer run
+         on "All rules combined" would apply to "Rule 1" just because
+         both used Time-Based exit.
+    CHANGED: April 2026 — only use strategy's own filters, no guessing
     """
-    filters = None
-
-    # ── Source 1: Strategy data from backtest matrix ──────────────────────
-    # WHY: If this strategy was saved from the optimizer, it might have
-    #      filters_applied baked into the matrix result.
+    # Only use filters that are PART OF this strategy's data
     filters = strat_data.get('filters_applied')
 
-    # ── Source 2: Check saved_rules.json for matching strategy ────────────
-    # WHY: User might have saved the optimized strategy with its filters.
-    #      Match by rule_combo + exit_strategy name.
-    if not filters:
-        try:
-            saved_path = os.path.join(project_root, 'saved_rules.json')
-            if os.path.exists(saved_path):
-                with open(saved_path, 'r', encoding='utf-8') as f:
-                    saved = json.load(f)
+    # For saved rules: check the rule's own filters
+    if not filters and isinstance(idx, str) and idx.startswith('saved_'):
+        filters = strat_data.get('filters', strat_data.get('filters_applied'))
 
-                rule_combo = strat_data.get('rule_combo', '')
-                exit_name  = strat_data.get('exit_name', '')
-
-                for entry in saved:
-                    rule = entry.get('rule', {})
-                    if (rule.get('rule_combo', '') == rule_combo or
-                            rule.get('exit_name', '') == exit_name):
-                        saved_filters = rule.get('filters_applied')
-                        if saved_filters:
-                            filters = saved_filters
-                            print(f"[EA GEN] Loaded filters from saved rule #{entry.get('id')}: {filters}")
-                            break
-        except Exception:
-            pass
-
-    # ── Source 3: Check _validator_optimized.json ─────────────────────────
-    # WHY: The optimizer's latest result file might have filters
-    if not filters:
-        try:
-            opt_path = os.path.join(project_root, 'project2_backtesting',
-                                    'outputs', '_validator_optimized.json')
-            if os.path.exists(opt_path):
-                with open(opt_path, 'r', encoding='utf-8') as f:
-                    opt_data = json.load(f)
-                filters = opt_data.get('filters')
-        except Exception:
-            pass
+    # For optimizer_latest: use its own filters
+    if not filters and isinstance(idx, str) and idx == 'optimizer_latest':
+        filters = strat_data.get('filters', strat_data.get('filters_applied'))
 
     if not filters:
-        return  # No optimized filters found — keep current UI values
+        # No filters for this strategy — reset to defaults
+        if _cooldown_var: _cooldown_var.set("0")
+        _auto_min_hold[0] = 0
+        return
 
-    # ── Apply filters to UI fields ────────────────────────────────────────
+    # Apply filters to UI fields
     applied = []
 
     max_per_day = filters.get('max_trades_per_day')
@@ -590,17 +555,18 @@ def _auto_fill_filters(idx, strat_data):
     if cooldown and _cooldown_var:
         _cooldown_var.set(str(int(cooldown)))
         applied.append(f"cooldown {cooldown}min")
+    else:
+        if _cooldown_var: _cooldown_var.set("0")
 
     min_hold = filters.get('min_hold_minutes')
     if min_hold and min_hold > 0:
         _auto_min_hold[0] = int(min_hold)
         applied.append(f"min hold {min_hold}min")
-
-    # WHY: min_pips removed April 2026 — look-ahead bias.
+    else:
+        _auto_min_hold[0] = 0
 
     sessions = filters.get('sessions', [])
     if sessions and _session_vars:
-        # WHY: Uncheck all sessions first, then check only the optimized ones
         for var in _session_vars.values():
             var.set(False)
         for sess in sessions:
@@ -610,25 +576,26 @@ def _auto_fill_filters(idx, strat_data):
 
     days = filters.get('days', [])
     if days and _day_vars:
-        day_names = list(_day_vars.keys())
         for var in _day_vars.values():
             var.set(False)
-        for day_num in days:
-            if 0 < day_num <= len(day_names):
-                _day_vars[day_names[day_num - 1]].set(True)
+        day_names = list(_day_vars.keys())
+        for d in days:
+            if isinstance(d, int) and 1 <= d <= len(day_names):
+                list(_day_vars.values())[d - 1].set(True)
         applied.append(f"days: {days}")
 
-    if applied:
-        print(f"[EA GEN] Auto-filled filters from optimizer: {', '.join(applied)}")
-        try:
-            if _strat_info_lbl:
-                current = _strat_info_lbl.cget('text')
-                _strat_info_lbl.configure(
-                    text=f"{current}\nOptimizer filters loaded: {', '.join(applied)}",
-                    fg=GREEN,
-                )
-        except Exception:
-            pass
+    if applied and _strat_info_lbl:
+        current = _strat_info_lbl.cget('text')
+        _strat_info_lbl.configure(
+            text=current + f"\n    Optimizer filters loaded: {', '.join(applied)}")
+    elif _strat_info_lbl:
+        current = _strat_info_lbl.cget('text')
+        # Remove old filter text if no filters
+        if 'Optimizer filters' in current:
+            current = current.split('\n')[0]
+            _strat_info_lbl.configure(text=current)
+
+    print(f"[EA GEN] Filters for {idx}: {filters if filters else 'none'}")
 
 
 
