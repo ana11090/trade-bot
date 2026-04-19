@@ -80,6 +80,47 @@ def build_panel(parent):
     tk.Button(btn_frame, text="🗑️ Delete All",
               command=lambda: _delete_all(inner, canvas, window_id),
               bg="#dc3545", fg="white", font=("Arial", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT, padx=(0, 5))
+
+    def _cleanup_stale():
+        """Remove saved rules that have no exit strategy and no trade data."""
+        from shared.saved_rules import load_all, delete_rule
+        from tkinter import messagebox
+        all_rules = load_all() or []
+        _stale_ids = []
+        for entry in all_rules:
+            rule = entry.get('rule', {})
+            has_exit = bool(rule.get('exit_name') or rule.get('exit_class'))
+            has_trades = (rule.get('total_trades', 0) > 0 or
+                         rule.get('trade_count', 0) > 0)
+            has_pf = (rule.get('net_profit_factor', 0) > 0)
+            # Keep if it has exit strategy OR trade data OR PF
+            if not has_exit and not has_trades and not has_pf:
+                _stale_ids.append(entry.get('id'))
+
+        if not _stale_ids:
+            messagebox.showinfo("Clean", "No stale rules found — all rules have complete data.")
+            return
+
+        if messagebox.askyesno("Clean Up",
+                              f"Found {len(_stale_ids)} stale rules (no exit strategy, no trades).\n\n"
+                              f"Delete them?\n\n"
+                              f"(Rules with complete backtest data will be kept.)"):
+            for rid in _stale_ids:
+                try:
+                    delete_rule(rid)
+                except Exception:
+                    pass
+            print(f"[SAVED RULES] Cleaned up {len(_stale_ids)} stale rules")
+            _refresh_list(inner, canvas, window_id)
+
+    # WHY: Stale rules are bare discovery outputs with no exit strategy,
+    #      no trades, no PF. They clutter the list and can't be used for
+    #      validation or EA generation. This button removes them.
+    # CHANGED: April 2026 — cleanup button
+    tk.Button(btn_frame, text="🧹 Clean Up Stale",
+              command=_cleanup_stale,
+              bg="#e67e22", fg="white", font=("Arial", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT)
 
     # Content frame for rule cards
