@@ -1566,6 +1566,8 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 'exit_name': exit_name,
                 'entry_timeframe': entry_tf,
                 'direction': _base_direction,
+                # Regime filter conditions (if active during backtest)
+                'regime_filter_conditions': [],
                 # WHY: The refiner's risk/stage/firm/account are set by the user
                 #      based on the prop firm they're targeting. These values were
                 #      used during optimization but never saved — so the EA generator
@@ -1584,6 +1586,31 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             for rule in _save_rules:
                 if rule.get('prediction') == 'WIN':
                     data['conditions'].extend(rule.get('conditions', []))
+
+            # Embed regime conditions from config into saved data + rules
+            try:
+                import sys as _sys
+                _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                if _p1_dir not in _sys.path:
+                    _sys.path.insert(0, _p1_dir)
+                import config_loader as _rf_cl
+                _rf_cfg = _rf_cl.load()
+                if str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
+                    _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
+                    if _rf_disc_str:
+                        _rf_disc = json.loads(_rf_disc_str)
+                        if _rf_disc.get('status') == 'ok':
+                            _rf_conds = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
+                            data['regime_filter_conditions'] = _rf_conds
+                            # Embed per-rule (Phase A.43)
+                            for _rule in data.get('optimized_rules', []):
+                                _rule['regime_filter'] = _rf_conds
+                            for _rule in data.get('rules', []):
+                                _rule['regime_filter'] = _rf_conds
+                            print(f"[OPTIMIZER SAVE] Embedded {len(_rf_conds)} regime conditions into saved rule")
+            except Exception as _rfe:
+                print(f"[OPTIMIZER SAVE] Could not embed regime conditions: {_rfe}")
+
             rid = save_rule(data, source=f"Optimizer: {n}", notes=str(f))
             messagebox.showinfo("Saved", f"Saved as #{rid}!")
         except Exception as e:

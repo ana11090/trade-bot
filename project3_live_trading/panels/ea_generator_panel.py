@@ -176,7 +176,15 @@ def _get_strategy_data(idx):
                                         # Limit search to first 100 entries to prevent hangs
                                         for _res in _results[:100]:
                                             _res_combo = str(_res.get('rule_combo', ''))
-                                            if _res_combo == _combo:
+                                            # WHY: Old saves have optimizer-assigned names
+                                            #      like 'Min hold 30m' which don't match
+                                            #      matrix names like 'All rules combined (BUY)'.
+                                            #      Try exact match first, then partial match,
+                                            #      then fall back to best-trade-count match.
+                                            # CHANGED: April 2026 — fuzzy rule_combo matching
+                                            if (_res_combo == _combo or
+                                                _combo in _res_combo or
+                                                _res_combo in _combo):
                                                 result['exit_name'] = _res.get('exit_name', '')
                                                 result['exit_class'] = _res.get('exit_class', '')
                                                 result['exit_params'] = _res.get('exit_params', {})
@@ -190,6 +198,24 @@ def _get_strategy_data(idx):
                                                 print(f"[EA GEN] Resolved exit/rules from matrix: "
                                                       f"exit={result.get('exit_name', '?')}, rules={len(result.get('rules', []))}")
                                                 break
+                                        # Fallback: if no match by name, use the result with
+                                        # the most trades (likely the main strategy)
+                                        if not result.get('exit_name') and _results:
+                                            _best = max(_results, key=lambda x: x.get('total_trades', x.get('trade_count', 0)))
+                                            result['exit_name'] = _best.get('exit_name', '')
+                                            result['exit_class'] = _best.get('exit_class', '')
+                                            result['exit_params'] = _best.get('exit_params', {})
+                                            result['exit_strategy_params'] = _best.get('exit_params', {})
+                                            if not result.get('direction'):
+                                                _bc = str(_best.get('rule_combo', ''))
+                                                if '(BUY)' in _bc: result['direction'] = 'BUY'
+                                                elif '(SELL)' in _bc: result['direction'] = 'SELL'
+                                            if not result.get('rules') or not any(r.get('conditions') for r in result.get('rules', [])):
+                                                result['rules'] = _best.get('rules', [])
+                                                result['optimized_rules'] = _best.get('rules', [])
+                                            print(f"[EA GEN] Fallback: resolved from best result "
+                                                  f"({_best.get('rule_combo','?')}, "
+                                                  f"{_best.get('total_trades', _best.get('trade_count', 0))} trades)")
                         except Exception as _e:
                             print(f"[EA GEN] Could not resolve missing data: {_e}")
 

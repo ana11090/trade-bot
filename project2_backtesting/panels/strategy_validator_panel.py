@@ -561,12 +561,18 @@ def _resolve_rules(r):
     if saved_rules and len(saved_rules) > 0:
         # Verify they actually have conditions (not just metadata)
         if any(rule.get('conditions') for rule in saved_rules):
+            print(f"[validator] _resolve_rules: found {len(saved_rules)} embedded rules with conditions")
             return saved_rules
+        else:
+            print(f"[validator] _resolve_rules: {len(saved_rules)} embedded rules but NONE have conditions")
 
     # 2) Fallback: load from analysis_report.json and use rule_combo name to select
     all_rules = _load_rules_from_report()
     if not all_rules:
+        print(f"[validator] _resolve_rules: analysis_report.json has 0 rules!")
         return []
+    print(f"[validator] _resolve_rules: analysis_report has {len(all_rules)} rules, "
+          f"looking for combo '{r.get('rule_combo', '')}')")
 
     # Check for saved rule_indices first
     indices = r.get('rule_indices')
@@ -576,26 +582,49 @@ def _resolve_rules(r):
     # Parse the rule_combo name to figure out which rules were used
     combo_name = r.get('rule_combo', '')
 
-    if combo_name == 'All rules combined':
+    if not combo_name:
+        print(f"[validator] _resolve_rules: empty combo_name, returning all {len(all_rules)} rules")
+        return all_rules
+
+    # WHY: Old code did exact match — 'All rules combined (BUY)' != 'All rules combined'.
+    #      Use substring match so direction suffix doesn't break the lookup.
+    # CHANGED: April 2026 — substring match for combo names
+    if 'All rules combined' in combo_name:
+        print(f"[validator] _resolve_rules: matched 'All rules combined' → returning {len(all_rules)} rules")
         return all_rules
 
     m = re.match(r'^Rule\s+(\d+)', combo_name)
     if m:
         idx = int(m.group(1)) - 1  # "Rule 1" → index 0
         if 0 <= idx < len(all_rules):
+            print(f"[validator] _resolve_rules: matched Rule {idx+1} → 1 rule")
             return [all_rules[idx]]
+        else:
+            print(f"[validator] _resolve_rules: Rule {idx+1} out of range (have {len(all_rules)} rules)")
 
     m = re.match(r'^Top\s+(\d+)\s+rules', combo_name)
     if m:
         n = int(m.group(1))
+        print(f"[validator] _resolve_rules: matched Top {n} rules → returning {min(n, len(all_rules))} rules")
         return all_rules[:n]
 
+    # Handle "Rules 1+2+3 (BUY)" format
+    m = re.match(r'^Rules?\s+([\d+]+)', combo_name)
+    if m:
+        _idx_str = m.group(1)
+        _indices = [int(x) - 1 for x in _idx_str.split('+')]
+        _picked = [all_rules[j] for j in _indices if 0 <= j < len(all_rules)]
+        if _picked:
+            print(f"[validator] _resolve_rules: matched Rules {_idx_str} → {len(_picked)} rules")
+            return _picked
+
     # Unknown combo name — try all rules as fallback
+    print(f"[validator] _resolve_rules: unknown combo '{combo_name}', returning all {len(all_rules)} rules as fallback")
     return all_rules
 
 
 def _get_strategy_meta(idx):
-    """Return (rules, exit_class, exit_params, trades, spread, commission) for strategy idx.
+    """Return (rules, exit_class, exit_params, trades, spread, commission, filters, direction) for strategy idx.
 
     Handles three index types:
       - int → row N of backtest_matrix.json's results array
@@ -611,7 +640,9 @@ def _get_strategy_meta(idx):
     CHANGED: April 2026 — handle saved + optimizer index types
     """
     # Default fallback for total failure
-    _empty = ([], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0, None)
+    # WHY: Added direction (8th element) so walk-forward tests the correct side.
+    # CHANGED: April 2026 — direction in _get_strategy_meta
+    _empty = ([], 'FixedSLTP', {'sl_pips': 150, 'tp_pips': 300}, [], 2.5, 0.0, None, 'BUY')
 
     try:
         # ── Saved rule branch ──────────────────────────────────────────────
@@ -685,7 +716,21 @@ def _get_strategy_meta(idx):
                           f"this is a stale save from before April 2026. "
                           f"Re-save it from the optimizer to pick up the new format.")
                 _filters = rule.get('filters', rule.get('filters_applied', None))
-                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters
+                _direction = rule.get('direction', '')
+                if not _direction:
+                    # Infer from rule_combo name
+                    _combo = rule.get('rule_combo', '')
+                    if '(BUY)' in _combo: _direction = 'BUY'
+                    elif '(SELL)' in _combo: _direction = 'SELL'
+                if not _direction:
+                    # Infer from rule action
+                    for _r in _rules:
+                        if _r.get('action') in ('BUY', 'SELL'):
+                            _direction = _r['action']
+                            break
+                if not _direction:
+                    _direction = 'BUY'
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters, _direction
 
             print(f"[validator] Saved rule {idx} not found in saved_rules.json")
             return _empty
@@ -722,7 +767,8 @@ def _get_strategy_meta(idx):
                 # WHY (Validator Fix): Read and return optimizer filters.
                 # CHANGED: April 2026 — Validator Fix
                 _filters = opt.get('filters', opt.get('filters_applied', None))
-                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters
+                _direction = opt.get('direction', 'BUY')
+                return _rules, _exit_class, _exit_params, _trades, _spread, _comm, _filters, _direction
             except Exception as e:
                 import traceback; traceback.print_exc()
                 print(f"[validator] Failed to load _validator_optimized.json: {e}")
@@ -750,8 +796,22 @@ def _get_strategy_meta(idx):
             print(f"[validator] Index {idx} out of range (0..{len(results)-1})")
             return _empty
         r = results[idx]
+        print(f"[validator] Matrix result[{idx}]: rule_combo={r.get('rule_combo','?')}, "
+              f"exit_name={r.get('exit_name','?')}, "
+              f"embedded_rules={len(r.get('rules',[]))}, "
+              f"trade_count={r.get('trade_count', r.get('total_trades', '?'))}")
 
         rules = _resolve_rules(r)
+        print(f"[validator] _resolve_rules returned {len(rules)} rules")
+        if not rules:
+            print(f"[validator] ⚠️ _resolve_rules found NOTHING. Attempting fallback...")
+            # Fallback: load ALL rules from analysis_report
+            _all = _load_rules_from_report()
+            if _all:
+                rules = _all
+                print(f"[validator] Fallback loaded {len(rules)} rules from analysis_report.json")
+            else:
+                print(f"[validator] ❌ analysis_report.json also has 0 rules!")
         # WHY (Hotfix): exit_class and exit_params can be empty in old
         #      backtest results. ALWAYS parse from exit_name/exit_strategy
         #      as primary source — these human-readable strings are always
@@ -825,7 +885,13 @@ def _get_strategy_meta(idx):
         #      Optimizer results store filters; backtest results don't.
         # CHANGED: April 2026 — Validator Fix
         filters = r.get('filters', r.get('filters_applied', None))
-        return rules, exit_class, exit_params, trades, spread, commission, filters
+        _direction = r.get('direction', '')
+        if not _direction:
+            _combo = r.get('rule_combo', '')
+            if '(BUY)' in _combo: _direction = 'BUY'
+            elif '(SELL)' in _combo: _direction = 'SELL'
+            else: _direction = 'BUY'
+        return rules, exit_class, exit_params, trades, spread, commission, filters, _direction
 
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -2592,7 +2658,31 @@ def _run(mode, override_idx=None, done_event=None):
         else:
             return
 
-    rules, exit_class, exit_params, trades, spread_meta, comm_meta, strategy_filters = _get_strategy_meta(idx)
+    rules, exit_class, exit_params, trades, spread_meta, comm_meta, strategy_filters, strategy_direction = _get_strategy_meta(idx)
+    print(f"[VALIDATOR] Strategy direction: {strategy_direction}")
+
+    # ── Loud diagnostics — print everything the validator will use ──
+    # WHY: 0-trade walks are silent. Without diagnostics you can't tell
+    #      if rules didn't load, indicators are missing, or candle data
+    #      doesn't cover the date range.
+    # CHANGED: April 2026 — validator diagnostics
+    print(f"[VALIDATOR] ═══ STRATEGY META FOR idx={idx!r} ═══")
+    print(f"[VALIDATOR]   Rules: {len(rules)} rules")
+    if rules:
+        for _ri, _r in enumerate(rules):
+            _conds = _r.get('conditions', [])
+            print(f"[VALIDATOR]     Rule {_ri+1}: prediction={_r.get('prediction','?')}, "
+                  f"{len(_conds)} conditions")
+            for _c in _conds[:2]:
+                print(f"[VALIDATOR]       {_c.get('feature','?')} {_c.get('operator','?')} {_c.get('value','?')}")
+            if len(_conds) > 2:
+                print(f"[VALIDATOR]       ... and {len(_conds)-2} more")
+    else:
+        print(f"[VALIDATOR]   ⚠️ NO RULES — walk-forward will produce 0 trades!")
+    print(f"[VALIDATOR]   Exit: {exit_class} {exit_params}")
+    print(f"[VALIDATOR]   Trades: {len(trades)}")
+    print(f"[VALIDATOR]   Filters: {strategy_filters}")
+    print(f"[VALIDATOR] ═══════════════════════════════════════")
 
     # WHY: Old code silently ran validation on empty trade lists, producing
     #      "validated 0 trades" results that looked like normal output but
@@ -2721,6 +2811,7 @@ def _run(mode, override_idx=None, done_event=None):
                     #      validates the ACTUAL optimized strategy, not the raw one.
                     # CHANGED: April 2026 — Validator Fix
                     filters=strategy_filters,
+                    direction=strategy_direction,
                 )
                 state.window.after(0, lambda r=wf_result: _display_wf_results(r))
 

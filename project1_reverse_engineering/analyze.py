@@ -1591,14 +1591,75 @@ def run_analysis(feature_matrix_path=None):
             _a40a_total_dedup = 0
             _a40a_total_invalid = 0
             _a40a_first_diag = None
-            for _r in rules:
+            # WHY: Auto-save was missing entry_timeframe, direction, scenario,
+            #      rule_combo, and wrapped 'rules' list. Downstream tools
+            #      (Refiner, Validator, EA Generator) need these to work
+            #      without falling back to defaults or guessing.
+            # CHANGED: April 2026 — complete auto-save data
+
+            # Read config for entry_tf and spread/commission
+            _a40a_entry_tf = 'H1'
+            _a40a_spread = 2.5
+            _a40a_commission = 0.0
+            _a40a_regime_enabled = False
+            _a40a_regime_at_discovery = False
+            _a40a_regime_strictness = ''
+            _a40a_regime_mode = ''
+            try:
+                import config_loader as _a40a_cl
+                _a40a_cfg = _a40a_cl.load()
+                _a40a_entry_tf = _a40a_cfg.get('winning_scenario', 'H1')
+                _a40a_spread = float(_a40a_cfg.get('spread', 2.5))
+                _a40a_commission = float(_a40a_cfg.get('commission', 0.0))
+                # Regime filter settings — checkbox + radio
+                _a40a_regime_enabled = str(_a40a_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
+                _a40a_regime_at_discovery = str(_a40a_cfg.get('regime_filter_at_discovery', 'false')).lower() == 'true'
+                _a40a_regime_strictness = str(_a40a_cfg.get('regime_filter_strictness', ''))
+                _a40a_regime_mode = str(_a40a_cfg.get('regime_filter_mode', ''))
+            except Exception:
+                pass
+
+            for _ri, _r in enumerate(rules, 1):
                 _pred = str(_r.get('prediction', 'BUY'))
+                _action = str(_r.get('action', 'BUY'))
                 try:
                     _conf_n = int(round(float(_r.get('confidence', 0.0)) * 100))
                 except Exception:
                     _conf_n = 0
-                _src = f"Step3:{_a40a_scenario}:{_pred}:conf{_conf_n}"
-                _s, _d, _i, _diag = _a40a_save([_r], source=_src, dedup=True)
+
+                # Build a proper rule_combo name
+                _combo_name = f"Rule {_ri} ({_action})"
+
+                # Enrich rule with metadata available at discovery time
+                _enriched = dict(_r)
+                _enriched['direction'] = _action
+                _enriched['entry_timeframe'] = _a40a_entry_tf
+                _enriched['entry_tf'] = _a40a_entry_tf
+                _enriched['rule_combo'] = _combo_name
+                _enriched['scenario'] = _a40a_scenario
+                _enriched['spread_pips'] = _a40a_spread
+                _enriched['commission_pips'] = _a40a_commission
+                # Discovery settings — what checkboxes/radio buttons were active
+                _enriched['discovery_settings'] = {
+                    'regime_filter_enabled': _a40a_regime_enabled,
+                    'regime_at_discovery': _a40a_regime_at_discovery,
+                    'regime_strictness': _a40a_regime_strictness,
+                    'regime_mode': _a40a_regime_mode,
+                    'single_rule_mode_enabled': str(_a40a_cfg.get('single_rule_mode_enabled', 'false')).lower() == 'true' if _a40a_cfg else False,
+                    'single_rule_mode_variant': str(_a40a_cfg.get('single_rule_mode_variant', 'a')) if _a40a_cfg else '',
+                    'srm_dedup_correlated': str(_a40a_cfg.get('srm_a_dedup_correlated', 'false')).lower() == 'true' if _a40a_cfg else False,
+                    'srm_winner_selection': str(_a40a_cfg.get('srm_a_winner_selection', 'tightness')) if _a40a_cfg else '',
+                }
+                # Wrap conditions as a 'rules' list (format downstream tools expect)
+                if not _enriched.get('rules'):
+                    _enriched['rules'] = [{
+                        'prediction': _pred,
+                        'action': _action,
+                        'conditions': _enriched.get('conditions', []),
+                    }]
+
+                _src = f"Step3:{_a40a_scenario}:{_action}:conf{_conf_n}"
+                _s, _d, _i, _diag = _a40a_save([_enriched], source=_src, dedup=True)
                 _a40a_total_saved   += _s
                 _a40a_total_dedup   += _d
                 _a40a_total_invalid += _i
@@ -1909,6 +1970,19 @@ def run_analysis(feature_matrix_path=None):
             "will flag this report as missing entry_timeframe."
         )
 
+    # WHY: direction and entry_timeframe were None in the report.
+    #      Every downstream tool (backtester, validator, EA generator)
+    #      fell back to defaults. Now set explicitly from the discovery
+    #      config so saved rules carry the correct context.
+    # CHANGED: April 2026 — set direction in report
+    # Infer direction from rules — all WIN rules should have same action
+    _report_direction = 'BUY'  # default
+    _actions = set(r.get('action', 'BUY') for r in rules if r.get('prediction') == 'WIN')
+    if len(_actions) == 1:
+        _report_direction = _actions.pop()
+    elif 'BUY' in _actions and 'SELL' in _actions:
+        _report_direction = 'BOTH'
+
     # Assemble report
     report = {
         'generated_at':    datetime.now().isoformat(),
@@ -1920,6 +1994,7 @@ def run_analysis(feature_matrix_path=None):
         #      already emit these.
         # CHANGED: April 2026 — Phase A.3
         'entry_timeframe': _entry_timeframe,
+        'direction':       _report_direction,
         'activated_at':    time.strftime('%Y-%m-%d %H:%M:%S'),
         'discovery_method': 'p1_run_scenarios',
         'scenario':        _scenario_name,

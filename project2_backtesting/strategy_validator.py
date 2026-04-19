@@ -45,8 +45,28 @@ _cached_candles_df    = None
 _cached_indicators_df = None
 
 
-def _load_data_cached(candles_path):
-    """Load candles + indicators, returning cached copies if path matches last call."""
+def _check_missing_features(rules, indicators_df):
+    """Return set of feature names that rules need but indicators_df doesn't have."""
+    if not rules or indicators_df is None:
+        return set()
+    _needed = set()
+    for r in rules:
+        for c in r.get('conditions', []):
+            feat = c.get('feature', '')
+            if feat:
+                _needed.add(feat)
+    _have = set(indicators_df.columns)
+    return _needed - _have
+
+
+def _load_data_cached(candles_path, rules=None):
+    """Load candles + indicators, returning cached copies if path matches last call.
+
+    WHY: Old code cached by path only. If rules changed, the cached parquet
+         might be missing indicator columns the new rules need. Now checks
+         required columns and forces rebuild when missing.
+    CHANGED: April 2026 — column-aware cache validation
+    """
     global _cached_candles_path, _cached_candles_df, _cached_indicators_df
 
     candles_path = os.path.abspath(candles_path)
@@ -56,8 +76,16 @@ def _load_data_cached(candles_path):
     if (_cached_candles_path == candles_path
             and _cached_candles_df is not None
             and _cached_indicators_df is not None):
-        log.info(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
-        return _cached_candles_df, _cached_indicators_df
+        # Check if cached data has all columns the rules need
+        _missing = _check_missing_features(rules, _cached_indicators_df)
+        if not _missing:
+            log.info(f"[VALIDATOR] Using cached data for {os.path.basename(candles_path)}")
+            return _cached_candles_df, _cached_indicators_df
+        else:
+            log.info(f"[VALIDATOR] Cache hit but {len(_missing)} columns missing — rebuilding")
+            _cached_candles_path  = None
+            _cached_candles_df    = None
+            _cached_indicators_df = None
 
     # Reset all cache vars before load so a partial failure leaves no stale state
     _cached_candles_path  = None
@@ -70,11 +98,20 @@ def _load_data_cached(candles_path):
     candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')
 
     cache_path = candles_path.replace('.csv', '_indicators.parquet')
+    _need_rebuild = False
+
     if os.path.exists(cache_path):
         indicators_df = pd.read_parquet(cache_path)
         if 'timestamp' in indicators_df.columns:
             indicators_df['timestamp'] = indicators_df['timestamp'].astype('datetime64[ns]')
-    else:
+        # Check if all required columns exist
+        _missing = _check_missing_features(rules, indicators_df)
+        if _missing:
+            log.info(f"[VALIDATOR] Parquet cache missing {len(_missing)} columns: "
+                     f"{list(_missing)[:5]}... — forcing rebuild")
+            _need_rebuild = True
+
+    if not os.path.exists(cache_path) or _need_rebuild:
         _, _, build_multi_tf_indicators = _load_backtester()
         data_dir = os.path.dirname(candles_path)
         _ALL_GROUPS = [
@@ -87,6 +124,22 @@ def _load_data_cached(candles_path):
         _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
         indicators_df = build_multi_tf_indicators(
             data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
+
+        # Delete stale partial cache files that caused the miss
+        # WHY: build_multi_tf_indicators uses hash-based partial caches.
+        #      If they're stale (missing columns), they'll be loaded again
+        #      next time and cause the same 0-trade issue. Delete them so
+        #      the next call builds fresh.
+        # CHANGED: April 2026 — clean stale partial caches
+        if _need_rebuild:
+            import glob as _glob
+            data_dir = os.path.dirname(candles_path)
+            for _stale in _glob.glob(os.path.join(data_dir, '.cache_*_partial_*.parquet')):
+                try:
+                    os.remove(_stale)
+                    log.info(f"[VALIDATOR] Removed stale cache: {os.path.basename(_stale)}")
+                except Exception:
+                    pass
 
     _cached_candles_path  = candles_path
     _cached_candles_df    = candles_df
@@ -475,10 +528,58 @@ def walk_forward_validate(
     _stop_flag.clear()
     run_backtest, compute_stats, build_multi_tf_indicators = _load_backtester()
 
+    # Diagnostic: print rule summary
+    _win_rules = [r for r in rules if r.get('prediction') == 'WIN']
+    _total_conds = sum(len(r.get('conditions', [])) for r in rules)
+    print(f"[WF] Rules: {len(rules)} total ({len(_win_rules)} WIN), {_total_conds} total conditions")
+    if not _win_rules:
+        print(f"[WF] ⚠️ NO WIN rules! Only LOSS/other predictions → run_backtest will find 0 trades")
+        print(f"[WF] Rule predictions: {[r.get('prediction') for r in rules]}")
+
     if progress_callback:
         progress_callback(0, n_windows, "Loading candle data...")
 
-    candles_df, indicators_df = _load_data_cached(candles_path)
+    candles_df, indicators_df = _load_data_cached(candles_path, rules=rules)
+
+    print(f"[WF] Candles: {len(candles_df)} rows, "
+          f"{candles_df['timestamp'].min()} to {candles_df['timestamp'].max()}")
+    print(f"[WF] Indicators: {len(indicators_df)} rows, {len(indicators_df.columns)} columns")
+
+    # Check if indicator columns required by rules exist
+    _missing_features = []
+    for _r in rules:
+        for _c in _r.get('conditions', []):
+            _feat = _c.get('feature', '')
+            if _feat and _feat not in indicators_df.columns:
+                _missing_features.append(_feat)
+    if _missing_features:
+        print(f"[WF] ⚠️ MISSING {len(_missing_features)} indicator columns that rules need:")
+        for _mf in sorted(set(_missing_features))[:10]:
+            print(f"[WF]   ❌ {_mf}")
+        print(f"[WF]   (These conditions will always fail → 0 trades)")
+    else:
+        print(f"[WF] ✅ All rule features found in indicators_df")
+
+    # Check regime filter pass rate on first window
+    # WHY: A regime filter that blocks 99.8% of candles effectively means
+    #      0 trades. Warn the user so they can adjust strictness.
+    # CHANGED: April 2026 — regime filter pass rate warning
+    try:
+        from project2_backtesting.regime_filter_runtime import build_regime_pass_mask
+        _regime_mask, _regime_info = build_regime_pass_mask(
+            indicators_df, rule_action=direction)
+        if _regime_info.get('enabled'):
+            _pass_pct = _regime_info.get('pass_pct', 100)
+            _pass_count = _regime_info.get('pass_count', 0)
+            _total = _regime_info.get('total', 0)
+            print(f"[WF] Regime filter: {_pass_count}/{_total} candles pass ({_pass_pct:.1f}%)")
+            if _pass_pct < 5.0:
+                print(f"[WF] ⚠️ REGIME FILTER TOO STRICT — only {_pass_pct:.1f}% of candles pass!")
+                print(f"[WF]   This will produce near-zero trades in most windows.")
+                print(f"[WF]   Consider: changing strictness to 'Balanced' or 'Conservative',")
+                print(f"[WF]   or unchecking 'Apply regime filter during Step 3 discovery'")
+    except Exception:
+        pass
 
     exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
 
@@ -591,6 +692,9 @@ def walk_forward_validate(
             except Exception:
                 pass
 
+        print(f"[WF] Window {i+1} IN: {len(in_trades)} trades "
+              f"({train_start.strftime('%Y')}-{train_end.strftime('%Y')})")
+
         if progress_callback:
             progress_callback(i, len(windows_schedule),
                               f"Window {i+1}/{len(windows_schedule)}: backtesting out-of-sample...")
@@ -633,6 +737,9 @@ def walk_forward_validate(
                 out_trades, _ = apply_filters(out_trades, filters)
             except Exception:
                 pass
+
+        print(f"[WF] Window {i+1} OUT: {len(out_trades)} trades "
+              f"({test_start.strftime('%Y')}-{test_end.strftime('%Y')})")
 
         in_stats  = _compute_rich_window_stats(in_trades, account_size)
         out_stats = _compute_rich_window_stats(out_trades, account_size)
@@ -1077,7 +1184,7 @@ def slippage_stress_test(
     run_backtest, compute_stats, _ = _load_backtester()
     from project2_backtesting.strategy_backtester import fast_backtest
 
-    candles_df, indicators_df = _load_data_cached(candles_path)
+    candles_df, indicators_df = _load_data_cached(candles_path, rules=rules)
 
     # Pre-trim once — slippage loop has no per-level date filter
     _c = candles_df.iloc[200:].reset_index(drop=True)
@@ -1217,8 +1324,13 @@ def combined_score(walk_forward_result, monte_carlo_result=None, slippage_result
     wf_verdict = wf_summary.get('verdict', 'INSUFFICIENT_DATA')
     verdicts['walk_forward'] = wf_verdict
 
+    # WHY: MARGINAL was missing — scored +0, lower than INCONCLUSIVE (+10).
+    #      MARGINAL is between LIKELY_REAL and INCONCLUSIVE, should be +20.
+    # CHANGED: April 2026 — handle MARGINAL verdict in scoring
     if wf_verdict == 'LIKELY_REAL':
         score += 30
+    elif wf_verdict == 'MARGINAL':
+        score += 20
     elif wf_verdict == 'INCONCLUSIVE':
         score += 10
     elif wf_verdict == 'LIKELY_OVERFITTING':

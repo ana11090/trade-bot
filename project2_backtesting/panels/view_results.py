@@ -575,6 +575,32 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 tk.Label(header_row, text=f"[{card_tf}]", bg="#667eea", fg="white",
                          font=("Arial", 8, "bold"), padx=4, pady=1).pack(side=tk.LEFT, padx=(6, 0))
 
+            # Run settings badges
+            # WHY: Show at a glance what mode produced this result.
+            # CHANGED: April 2026 — run settings badges
+            _rs = r.get('run_settings', {})
+            if _rs:
+                _badges = []
+                if _rs.get('regime_filter_enabled'):
+                    _n_conds = len(_rs.get('regime_filter_conditions', []))
+                    _badges.append((f'REGIME ({_n_conds})', '#9b59b6'))
+                if _rs.get('multi_tf'):
+                    _badges.append(('MULTI-TF', '#3498db'))
+                if _rs.get('combine_all_rules'):
+                    _badges.append(('ALL COMBOS', '#e67e22'))
+                if _rs.get('use_config'):
+                    _badges.append(('CONFIG', '#27ae60'))
+                if not _rs.get('safety_stops', True):
+                    _badges.append(('NO SAFETY', '#e74c3c'))
+                _src = _rs.get('rule_source', '')
+                if _src and _src != 'auto':
+                    if 'Saved' in _src:
+                        _badges.append(('SAVED RULES', '#8e44ad'))
+                for _bt, _bc in _badges:
+                    tk.Label(header_row, text=_bt, bg=_bc, fg="white",
+                             font=("Arial", 7, "bold"), padx=3, pady=0
+                             ).pack(side=tk.LEFT, padx=(3, 0))
+
             # Save button
             try:
                 from shared.saved_rules import build_save_button
@@ -612,7 +638,29 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                          for c in _rule.get('conditions', [])],
                     'spread_pips':       r.get('spread_pips', 2.5),
                     'commission_pips':   r.get('commission_pips', 0.0),
+                    'direction':         r.get('direction', ''),
+                    'run_settings':      r.get('run_settings', {}),
+                    'signals_before_regime_filter': r.get('signals_before_regime_filter', 0),
+                    'signals_after_regime_filter':  r.get('signals_after_regime_filter', 0),
                 }
+
+                # Embed regime filter conditions into each rule (Phase A.43)
+                # WHY: Per-rule regime_filter key enables the backtester's
+                #      Phase A.43 override. Without this, loading a saved
+                #      rule with a different config changes regime behavior.
+                # CHANGED: April 2026 — embed regime in saved rules
+                _sv_rs = r.get('run_settings', {})
+                _sv_rf = _sv_rs.get('regime_filter_conditions', [])
+                if _sv_rf:
+                    for _sv_rule in save_data.get('rules', []):
+                        if 'regime_filter' not in _sv_rule:
+                            _sv_rule['regime_filter'] = _sv_rf
+                elif _sv_rs.get('regime_filter_enabled') is False:
+                    # Explicitly mark filter as OFF so A.43 doesn't fall back to global
+                    for _sv_rule in save_data.get('rules', []):
+                        if 'regime_filter' not in _sv_rule:
+                            _sv_rule['regime_filter'] = []
+
                 sb = build_save_button(header_row, save_data, source="Backtest Result", bg=bg_color)
                 sb.pack(side=tk.RIGHT, padx=3)
             except Exception:
@@ -1054,6 +1102,74 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                     f"daily:{daily_safety} = {daily_safety} times touched daily safety limit\n"
                                     f"total:{total_safety} = {total_safety} times touched total safety limit"
                                     f"{safety_dates_text}")
+
+                # ── Regime filter conditions ─────────────────────────
+                # WHY: Show what regime filter was active and its conditions.
+                #      This is the most important metadata — it determines
+                #      which signals were blocked during backtesting.
+                # CHANGED: April 2026 — regime filter display
+                _rs = r.get('run_settings', {})
+                _rf_conds = _rs.get('regime_filter_conditions', [])
+                _rf_enabled = _rs.get('regime_filter_enabled', False)
+
+                # Also check per-rule regime_filter (Phase A.43 data)
+                if not _rf_conds and not _rf_enabled:
+                    _rules_rf = r.get('rules', [])
+                    for _rr in _rules_rf:
+                        _rrf = _rr.get('regime_filter')
+                        if _rrf and isinstance(_rrf, list) and len(_rrf) > 0:
+                            _rf_conds = _rrf
+                            _rf_enabled = True
+                            break
+
+                if _rf_enabled or _rf_conds:
+                    _regime_card = tk.Frame(card, bg="#f3e8ff", padx=8, pady=4,
+                                           highlightbackground="#9b59b6", highlightthickness=1)
+                    _regime_card.pack(fill="x", pady=(4, 0))
+
+                    _sig_before = r.get('signals_before_regime_filter', 0)
+                    _sig_after = r.get('signals_after_regime_filter', 0)
+
+                    _regime_header = "🔀 REGIME FILTER: ACTIVE"
+                    if _sig_before > 0:
+                        _filtered_pct = round((1 - _sig_after / _sig_before) * 100, 1)
+                        _regime_header += f"  |  {_sig_before} → {_sig_after} signals ({_filtered_pct}% filtered out)"
+
+                    tk.Label(_regime_card, text=_regime_header,
+                             bg="#f3e8ff", fg="#7b2d8e", font=("Arial", 8, "bold")
+                             ).pack(anchor="w")
+
+                    if _rf_conds:
+                        _cond_lines = []
+                        for _c in _rf_conds:
+                            _feat = _c.get('feature', '?')
+                            _op = _c.get('direction', _c.get('operator', '>'))
+                            _thr = _c.get('threshold', _c.get('value', '?'))
+                            try:
+                                _thr = f"{float(_thr):.4f}"
+                            except Exception:
+                                _thr = str(_thr)
+                            _cond_lines.append(f"    {_feat} {_op} {_thr}")
+
+                        _conds_text = "\n".join(_cond_lines)
+                        tk.Label(_regime_card, text=_conds_text,
+                                 bg="#f3e8ff", fg="#555", font=("Consolas", 8),
+                                 justify=tk.LEFT, anchor="w"
+                                 ).pack(anchor="w", padx=(8, 0))
+
+                    if _rs.get('regime_filter_mode'):
+                        tk.Label(_regime_card,
+                                 text=f"    Mode: {_rs.get('regime_filter_mode', '?')}  |  "
+                                      f"Strictness: {_rs.get('regime_filter_strictness', '?')}",
+                                 bg="#f3e8ff", fg="#888", font=("Arial", 7)
+                                 ).pack(anchor="w", padx=(8, 0))
+                elif r.get('run_settings'):
+                    # Regime was OFF — show that too
+                    _no_regime = tk.Frame(card, bg=bg_color)
+                    _no_regime.pack(fill="x", pady=(2, 0))
+                    tk.Label(_no_regime, text="🔀 Regime Filter: OFF",
+                             bg=bg_color, fg="#aaa", font=("Arial", 8)
+                             ).pack(side=tk.LEFT)
             else:
                 tk.Label(card, text="0 trades — rule conditions never triggered",
                          bg=bg_color, fg="#888", font=("Arial", 9, "italic")).pack(anchor="w")

@@ -33,6 +33,7 @@ _progress_label = None
 _progress_bar  = None
 _step_label    = None
 _run_button    = None
+_stop_button   = None
 _best_label    = None
 _running       = False
 _best_result      = [None]  # Track best result
@@ -394,6 +395,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         _running = True
 
         run_button.config(state=tk.DISABLED, text="Running...")
+        # WHY: Enable Stop button so user can stop mid-run if needed.
+        # CHANGED: April 2026 — Stop button enable on backtest start
+        global _stop_button
+        if _stop_button:
+            _stop_button.config(state=tk.NORMAL, text="⏹ Stop")
         output_text.delete(1.0, tk.END)
         output_text.insert(tk.END, "=== BACKTEST STARTED ===\n\n")
         output_text.insert(tk.END, "Entry: next candle open (no look-ahead bias)\n\n")
@@ -436,91 +442,102 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             output_text.insert(tk.END, f"Candle data: {candle_path}\n\n")
             output_text.see(tk.END)
 
-            # Progress callback for the backtester - shows real-time results
+            # WHY: Old code updated UI on EVERY combo (480+ times).
+            #      Each update: text insert + new tag + see(tk.END) + label update.
+            #      After hundreds of combos, Tkinter freezes from queued after() calls
+            #      and a text widget with 480 unique tags. Fix: throttle to every 5th
+            #      combo, reuse 3 color tags, buffer text inserts.
+            # CHANGED: April 2026 — throttle UI updates to prevent freeze
+            _progress_buffer = []  # Buffer lines between flushes
+            _progress_last_flush = [0]  # time.time() of last flush
+            _FLUSH_INTERVAL = 0.5  # seconds — flush at most 2x/sec
+
+            # Pre-create reusable color tags
+            try:
+                output_text.tag_config("_color_green", foreground="#28a745")
+                output_text.tag_config("_color_red", foreground="#dc3545")
+                output_text.tag_config("_color_grey", foreground="#888888")
+            except Exception:
+                pass
+
             def _progress(cur, tot, name, result_dict=None):
-                """Called after each rule × exit combination completes."""
+                """Called after each rule × exit combination completes.
+                Throttled: only flushes to UI every 0.5 seconds."""
+                import time as _pt
                 pct = 10 + int(cur / max(tot, 1) * 75)
 
-                def _update():
-                    # WHY (Phase A.21): UI-thread callbacks can raise
-                    #      exceptions that never reach the worker's
-                    #      outer catch. Capture to disk for diagnosis.
-                    # CHANGED: April 2026 — Phase A.21
-                    try:
-                        progress_bar['value'] = pct
-                        step_label.config(text=f"{cur}/{tot}: {name}")
+                # Always build the line (cheap)
+                if result_dict:
+                    trades = result_dict.get('total_trades', 0)
+                    wr = result_dict.get('win_rate', 0)
+                    net = result_dict.get('net_total_pips', 0)
+                    pf = result_dict.get('net_profit_factor', 0)
+                    wr_display = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                    approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
 
-                        if result_dict:
-                            trades = result_dict.get('total_trades', 0)
-                            wr = result_dict.get('win_rate', 0)
-                            net = result_dict.get('net_total_pips', 0)
-                            pf = result_dict.get('net_profit_factor', 0)
+                    _sig_before = result_dict.get('signals_before_regime_filter', 0)
+                    _sig_after  = result_dict.get('signals_after_regime_filter', 0)
+                    _filter_active = (_sig_before > 0 and _sig_before != _sig_after)
 
-                            # Fix: handle win_rate that might be decimal (0.82) or already percent (82.3)
-                            if wr > 1:
-                                wr_display = f"{wr:.1f}%"  # already in percent
-                            else:
-                                wr_display = f"{wr*100:.1f}%"  # convert decimal to percent
+                    if trades == 0:
+                        color = "_color_grey"
+                        if _filter_active:
+                            line = f"  [{cur}/{tot}] {name}: 0 trades ({_sig_before} before filter) ⚠️\n"
+                        else:
+                            line = f"  [{cur}/{tot}] {name}: 0 trades\n"
+                    elif net > 0:
+                        color = "_color_green"
+                        _ts = f"{trades} trades ({_sig_before} before filter)" if _filter_active else f"{trades} trades"
+                        line = f"  [{cur}/{tot}] {name}: {_ts}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
+                    else:
+                        color = "_color_red"
+                        _ts = f"{trades} trades ({_sig_before} before filter)" if _filter_active else f"{trades} trades"
+                        line = f"  [{cur}/{tot}] {name}: {_ts}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
 
-                            # Calculate approximate P&L in % using config-loaded dollar-per-pip
-                            approx_pnl_pct = (net * _rb_dollar_per_pip) / 1000
+                    _progress_buffer.append((line, color))
 
-                            # WHY (Phase A.38b): Show "N trades (M before filter)"
-                            #      when the regime filter blocked some signals.
-                            # CHANGED: April 2026 — Phase A.38b
-                            _sig_before = result_dict.get('signals_before_regime_filter', 0)
-                            _sig_after  = result_dict.get('signals_after_regime_filter', 0)
-                            _filter_active = (_sig_before > 0 and _sig_before != _sig_after)
-                            if _filter_active:
-                                _trades_str = f"{trades} trades ({_sig_before} before filter)"
-                            else:
-                                _trades_str = f"{trades} trades"
+                    # Update best result (cheap — no UI)
+                    global _best_result
+                    if trades > 0:
+                        with _best_result_lock:
+                            if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
+                                _best_result[0] = result_dict
+                else:
+                    _progress_buffer.append((f"  [{cur}/{tot}] {name}\n", "_color_grey"))
 
-                            # Color code: green if profitable, red if not, gray if 0 trades
-                            if trades == 0:
-                                color = "#888888"
-                                if _filter_active:
-                                    line = f"  [{cur}/{tot}] {name}: 0 trades ({_sig_before} before filter — all blocked) ⚠️\n"
-                                else:
-                                    line = f"  [{cur}/{tot}] {name}: 0 trades\n"
-                            elif net > 0:
-                                color = "#28a745"
-                                line = f"  [{cur}/{tot}] {name}: {_trades_str}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ✅\n"
-                            else:
-                                color = "#dc3545"
-                                line = f"  [{cur}/{tot}] {name}: {_trades_str}, WR {wr_display}, PF {pf:.2f}, {net:+,.0f} pips (~{approx_pnl_pct:+.1f}%) ❌\n"
+                # Throttle: flush to UI at most every 0.5 seconds OR on last combo
+                _now = _pt.time()
+                _should_flush = (_now - _progress_last_flush[0] >= _FLUSH_INTERVAL or
+                                 cur >= tot)
 
-                            output_text.insert(tk.END, line)
-                            # Apply color to the last line
-                            line_count = int(output_text.index('end-1c').split('.')[0])
-                            output_text.tag_add(f"line_{cur}", f"{line_count}.0", f"{line_count}.end")
-                            output_text.tag_config(f"line_{cur}", foreground=color)
-                            output_text.see(tk.END)
+                if _should_flush:
+                    _progress_last_flush[0] = _now
+                    _lines_to_flush = list(_progress_buffer)
+                    _progress_buffer.clear()
+                    _cur_pct = pct
+                    _cur_label = f"{cur}/{tot}: {name}"
 
-                            # WHY (Phase 69 Fix 38): _best_result[0] is written from
-                            #      the background worker and read by _update_best() in
-                            #      the UI thread — no synchronisation. Add a lock.
-                            # CHANGED: April 2026 — Phase 69 Fix 38 — lock _best_result
-                            #          (audit Part E MEDIUM #38)
-                            global _best_result
-                            if trades > 0:
-                                with _best_result_lock:
-                                    if _best_result[0] is None or net > _best_result[0].get('net_total_pips', 0):
-                                        _best_result[0] = result_dict
-                                _update_best()
-                    except Exception as _e:
-                        _a21_write_error("_update CALLBACK EXCEPTION", _e)
+                    def _flush(_lines=_lines_to_flush, _pct=_cur_pct, _lbl=_cur_label):
                         try:
-                            progress_label.config(
-                                text=f"Error: {str(_e)[:60]}", fg="#dc3545"
-                            )
-                        except Exception:
-                            pass
+                            # Limit text widget to last 500 lines to prevent slowdown
+                            _line_count = int(output_text.index('end-1c').split('.')[0])
+                            if _line_count > 600:
+                                output_text.delete("1.0", f"{_line_count - 500}.0")
 
-                try:
-                    progress_bar.after(0, _update)
-                except Exception:
-                    pass
+                            progress_bar['value'] = _pct
+                            step_label.config(text=_lbl)
+
+                            for _line, _clr in _lines:
+                                output_text.insert(tk.END, _line, _clr)
+                            output_text.see(tk.END)
+                            _update_best()
+                        except Exception as _e:
+                            _a21_write_error("_flush CALLBACK EXCEPTION", _e)
+
+                    try:
+                        progress_bar.after(0, _flush)
+                    except Exception:
+                        pass
 
             def _update_best():
                 """Update the best result display."""
@@ -575,6 +592,43 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             use_safety = _use_safety_var.get() if _use_safety_var is not None else True
             output_text.insert(tk.END, f"Safety stops: {'ON' if use_safety else 'OFF'}\n")
 
+            # WHY: Capture all active settings + regime filter conditions
+            #      so they're saved with results. Without this, View Results
+            #      can't show what mode produced each result, and saved rules
+            #      lose their regime context.
+            # CHANGED: April 2026 — run settings + regime conditions metadata
+            _run_settings = {
+                'rule_source': _source_var.get() if _source_var else 'auto',
+                'multi_tf': multi_tf,
+                'combine_all_rules': False,
+                'use_config': False,
+                'safety_stops': use_safety,
+                'regime_filter_enabled': False,
+                'regime_filter_conditions': [],
+            }
+
+            # Read regime filter state + conditions from config
+            try:
+                import sys as _sys
+                _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                if _p1_dir not in _sys.path:
+                    _sys.path.insert(0, _p1_dir)
+                import config_loader as _rf_cl
+                _rf_cfg = _rf_cl.load()
+                _rf_enabled = str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
+                _run_settings['regime_filter_enabled'] = _rf_enabled
+                if _rf_enabled:
+                    _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
+                    if _rf_disc_str:
+                        _rf_disc = json.loads(_rf_disc_str)
+                        if _rf_disc.get('status') == 'ok':
+                            _rf_subset = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
+                            _run_settings['regime_filter_conditions'] = _rf_subset
+                            _run_settings['regime_filter_mode'] = str(_rf_cfg.get('regime_filter_mode', 'automatic'))
+                            _run_settings['regime_filter_strictness'] = str(_rf_cfg.get('regime_filter_strictness', 'conservative'))
+            except Exception as _rf_e:
+                print(f"[BACKTEST] Could not read regime filter config: {_rf_e}")
+
             # WHY (Phase A.42): Read the max trades/day radio + spinbox.
             # CHANGED: April 2026 — Phase A.42
             _a42_mode = _a42_max_trades_mode_var.get() if _a42_max_trades_mode_var is not None else "normal"
@@ -609,6 +663,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _a45_combine = False
             else:
                 output_text.insert(tk.END, "Rule combinations: OFF (individual rules only)\n")
+
+            _run_settings['combine_all_rules'] = _a45_combine
 
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n")
 
@@ -647,6 +703,22 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _cfg_risk_pct = 1.0
                 _cfg_pip_value = 10.0
                 _cfg_pip_size = 0.01
+
+            # Update run settings with config details
+            _run_settings['use_config'] = _a48_use_cfg
+            try:
+                from project2_backtesting.panels.configuration import load_config
+                _run_cfg = load_config()
+                _run_settings['max_one_trade'] = _run_cfg.get('max_one_trade', 'True') == 'True'
+                _run_settings['same_candle_sl'] = _run_cfg.get('same_candle_sl_rule', 'LOSS')
+                _run_settings['risk_pct'] = float(_run_cfg.get('risk_pct', 1.0))
+                _run_settings['starting_capital'] = float(_run_cfg.get('starting_capital', 10000))
+            except Exception:
+                pass
+            print(f"[BACKTEST] Run settings: regime={_run_settings['regime_filter_enabled']}, "
+                  f"multi_tf={_run_settings['multi_tf']}, "
+                  f"combine_all={_run_settings['combine_all_rules']}, "
+                  f"regime_conditions={len(_run_settings['regime_filter_conditions'])}")
 
             # Determine which TFs to test
             # WHY (Phase 33 Fix 9): Old list missed D1 timeframe. Some users
@@ -720,8 +792,26 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             if isinstance(row.get('stats'), dict):
                                 row['stats']['entry_tf'] = tf
 
-                    all_matrix.extend(tf_results.get('matrix', []))
+                    _tf_rows = tf_results.get('matrix', [])
+                    # Inject run settings and regime conditions into each result
+                    for _row in _tf_rows:
+                        _row['run_settings'] = _run_settings
+                        # Embed regime conditions into each rule so Phase A.43 works
+                        if _run_settings.get('regime_filter_enabled') and _run_settings.get('regime_filter_conditions'):
+                            for _rule in _row.get('rules', []):
+                                if 'regime_filter' not in _rule:
+                                    _rule['regime_filter'] = _run_settings['regime_filter_conditions']
+                    all_matrix.extend(_tf_rows)
                     total_elapsed += tf_results.get('elapsed', 0)
+
+                    # WHY: In multi-TF mode, check for stop after each TF completes
+                    #      so user doesn't have to wait for all TFs if they want to stop.
+                    # CHANGED: April 2026 — multi-TF stop check
+                    from project2_backtesting.strategy_backtester import is_backtest_stopped
+                    if is_backtest_stopped():
+                        output_text.insert(tk.END, f"\n⏹ Stop requested — skipping remaining TFs\n")
+                        output_text.see(tk.END)
+                        break
 
                 # Sort combined results by net pips descending
                 # WHY: Same as view_results.py fix — backtest matrix flattens stats
@@ -771,6 +861,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             "max_trades_per_day": _a42_limit,
                             "spread_pips": _cfg_spread,
                             "commission_pips": _cfg_commission,
+                            "run_settings": _run_settings,
                             "results": _flattened,
                         }
                         with open(_combined_path, 'w', encoding='utf-8') as _cf:
@@ -795,20 +886,40 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             output_text.insert(tk.END, capture.getvalue())
             output_text.see(tk.END)
 
+            # WHY: Check if backtest was stopped mid-run vs completed fully.
+            # CHANGED: April 2026 — detect stopped backtest and show appropriate message
+            from project2_backtesting.strategy_backtester import is_backtest_stopped
+            _was_stopped = is_backtest_stopped()
+
             # Show completion
             ui(lambda: _animate_to(progress_bar, int(progress_bar['value']), 100, 30))
-            ui(lambda: progress_bar.config(style="green.Horizontal.TProgressbar"))
-            progress_label.config(text="Backtest completed successfully!", fg="#28a745")
-            step_label.config(text="Done!")
-            output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
-            output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
-            output_text.see(tk.END)
+            if _was_stopped:
+                ui(lambda: progress_bar.config(style="yellow.Horizontal.TProgressbar"))
+                progress_label.config(text="Backtest stopped — partial results saved", fg="#ff8c00")
+                step_label.config(text="Stopped!")
+                output_text.insert(tk.END, "\n=== BACKTEST STOPPED ===\n")
+                output_text.insert(tk.END, "\nPartial results saved. Go to 'View Results' panel to see what completed.\n")
+                output_text.see(tk.END)
 
-            output_text.after(0, lambda: messagebox.showinfo(
-                "Backtest Complete",
-                "Backtest completed successfully!\n\n"
-                "Go to the 'View Results' panel to review results."
-            ))
+                output_text.after(0, lambda: messagebox.showinfo(
+                    "Backtest Stopped",
+                    "Backtest stopped by user.\n\n"
+                    "Partial results have been saved.\n"
+                    "Go to the 'View Results' panel to review them."
+                ))
+            else:
+                ui(lambda: progress_bar.config(style="green.Horizontal.TProgressbar"))
+                progress_label.config(text="Backtest completed successfully!", fg="#28a745")
+                step_label.config(text="Done!")
+                output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
+                output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
+                output_text.see(tk.END)
+
+                output_text.after(0, lambda: messagebox.showinfo(
+                    "Backtest Complete",
+                    "Backtest completed successfully!\n\n"
+                    "Go to the 'View Results' panel to review results."
+                ))
 
         except Exception as e:
             import traceback
@@ -831,8 +942,26 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         finally:
             _running = False
             run_button.config(state=tk.NORMAL, text="Run Backtest")
+            # WHY: Disable Stop button when backtest ends (complete or error).
+            # CHANGED: April 2026 — Stop button disable on backtest end
+            if _stop_button:
+                _stop_button.config(state=tk.DISABLED, text="⏹ Stop")
 
     threading.Thread(target=run_in_thread, daemon=True).start()
+
+
+def _stop_backtest():
+    """
+    WHY: User wants to stop a long-running backtest mid-run and save
+         partial results rather than waiting for all combos or losing
+         everything by force-quitting.
+    CHANGED: April 2026 — graceful stop with partial result save
+    """
+    global _stop_button
+    from project2_backtesting.strategy_backtester import request_backtest_stop
+    request_backtest_stop()
+    if _stop_button:
+        _stop_button.config(state=tk.DISABLED, text="Stopping...")
 
 
 def start_backtest(output_text, progress_label, progress_bar, step_label, run_button):
@@ -2769,6 +2898,18 @@ def build_panel(parent):
         relief=tk.FLAT, cursor="hand2", padx=30, pady=12
     )
     _run_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    # WHY: Allow stopping long backtests mid-run and saving partial results.
+    # CHANGED: April 2026 — Stop button for graceful backtest interruption
+    global _stop_button
+    _stop_button = tk.Button(
+        _a26_run_row, text="⏹ Stop",
+        command=_stop_backtest,
+        bg="#dc3545", fg="white", font=("Arial", 11),
+        relief=tk.FLAT, cursor="hand2", padx=20, pady=12,
+        state=tk.DISABLED  # disabled until backtest starts
+    )
+    _stop_button.pack(side=tk.LEFT, padx=(0, 10))
 
     # WHY (Phase A.40b): Patch the run-button reference into the A.40b
     #      refs dict now that it exists. Used only by the optional

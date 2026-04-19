@@ -115,44 +115,6 @@
     {
       "conditions": [
         {
-          "feature": "D1_distance_from_high",
-          "operator": "<=",
-          "value": 0.6844
-        },
-        {
-          "feature": "D1_lower_shadow",
-          "operator": ">",
-          "value": 9.73
-        },
-        {
-          "feature": "H1_lower_shadow",
-          "operator": "<=",
-          "value": 1.875
-        },
-        {
-          "feature": "H1_distance_to_fib_500",
-          "operator": "<=",
-          "value": 0.7108
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.588,
-      "win_rate": 0.588,
-      "coverage": 34,
-      "coverage_pct": 7.9,
-      "train_win_rate": 0.699,
-      "train_coverage": 73,
-      "overfit_gap": 0.11,
-      "is_overfit": false,
-      "avg_pips": 78.2,
-      "source": "bot_entry",
-      "entry_timeframe": "D1",
-      "action": "BUY",
-      "n_real_trades_in_rule": 91
-    },
-    {
-      "conditions": [
-        {
           "feature": "M5_ema_20_distance",
           "operator": "<=",
           "value": -0.1127
@@ -225,14 +187,14 @@
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 3,
+      "n_rules": 2,
       "n_train": 1008,
       "n_test": 433,
       "n_features": 620
     }
   ],
   "params": {
-    "max_rules": 25,
+    "max_rules": 28,
     "max_depth": 4,
     "n_estimators": 200,
     "min_coverage": 20,

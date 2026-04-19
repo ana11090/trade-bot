@@ -136,13 +136,58 @@ def _refresh_list(inner, canvas, window_id):
         tk.Label(header, text=f"  from {entry.get('source', '?')}  •  {_saved_at_disp}",
                  font=("Arial", 9), bg="#f8f9fa", fg="#888888").pack(side=tk.LEFT)
 
-        # TF badge — show entry_tf if present on the rule
-        # WHY: multi-TF backtest saves separate rules per TF; badge makes it visible
-        # CHANGED: April 2026 — multi-TF support
-        rule_tf = rule.get('entry_tf', '')
+        # TF badge — show entry_tf, infer from conditions if missing
+        # WHY: Old auto-saved rules have no entry_tf. But conditions contain
+        #      TF prefixes (M5_, H4_, etc.). Infer entry TF from conditions
+        #      so ALL rules show a TF badge.
+        # CHANGED: April 2026 — infer entry_tf from conditions
+        rule_tf = rule.get('entry_tf', rule.get('entry_timeframe', ''))
+        if not rule_tf:
+            _tf_order = ['M1', 'M5', 'M15', 'H1', 'H4', 'D1']
+            _found_tfs = set()
+            for _c in rule.get('conditions', []):
+                _feat = _c.get('feature', '') if isinstance(_c, dict) else str(_c)
+                for _tf in _tf_order:
+                    if _feat.startswith(_tf + '_'):
+                        _found_tfs.add(_tf)
+                        break
+            if _found_tfs:
+                for _tf in _tf_order:
+                    if _tf in _found_tfs:
+                        rule_tf = _tf
+                        break
         if rule_tf:
-            tk.Label(header, text=f"[{rule_tf}]", bg="#667eea", fg="white",
+            _tf_color = '#667eea' if (rule.get('entry_tf') or rule.get('entry_timeframe')) else '#999999'
+            tk.Label(header, text=f"[{rule_tf}]", bg=_tf_color, fg="white",
                      font=("Arial", 8, "bold"), padx=4, pady=1).pack(side=tk.LEFT, padx=(6, 0))
+
+        # Discovery context badges
+        # WHY: User needs to see at a glance what mode produced this rule.
+        # CHANGED: April 2026 — discovery context badges
+        _src = entry.get('source', '')
+        _ds_badge = rule.get('discovery_settings', {})
+        _ctx_badges = []
+        _rf = rule.get('regime_filter')
+        if _rf and isinstance(_rf, list) and len(_rf) > 0:
+            _ctx_badges.append(('REGIME', '#9b59b6'))
+        if _ds_badge.get('single_rule_mode_enabled') or 'ModeA' in _src:
+            _variant = _ds_badge.get('single_rule_mode_variant', 'A').upper()
+            _ctx_badges.append((f'SINGLE {_variant}', '#e67e22'))
+        if 'Step3' in _src:
+            _ctx_badges.append(('STEP 3', '#3498db'))
+        elif 'Step4' in _src:
+            _ctx_badges.append(('STEP 4', '#16a085'))
+        elif 'Backtest' in _src:
+            _ctx_badges.append(('BACKTEST', '#27ae60'))
+        elif 'Optimizer' in _src:
+            _ctx_badges.append(('OPTIMIZER', '#2c3e50'))
+        _dir = rule.get('direction', rule.get('action', ''))
+        if _dir:
+            _ctx_badges.append((_dir, '#28a745' if _dir == 'BUY' else '#dc3545'))
+        for _bt, _bc in _ctx_badges:
+            tk.Label(header, text=_bt, bg=_bc, fg="white",
+                     font=("Arial", 7, "bold"), padx=3, pady=0
+                     ).pack(side=tk.LEFT, padx=(3, 0))
 
         rid = entry.get('id')
         tk.Button(header, text="🗑️", font=("Arial", 8),
@@ -239,6 +284,97 @@ def _refresh_list(inner, canvas, window_id):
             except Exception:
                 txt = f"  {str(cond)}"
             tk.Label(card, text=txt, font=("Courier", 9), bg="#f8f9fa", fg=FG).pack(anchor="w")
+
+        # Regime filter conditions
+        _rf = rule.get('regime_filter')
+        if _rf and isinstance(_rf, list) and len(_rf) > 0:
+            tk.Label(card, text="  🔀 Regime filter:",
+                     font=("Arial", 8, "bold"), bg="#f8f9fa", fg="#9b59b6"
+                     ).pack(anchor="w", pady=(4, 0))
+            for _rc in _rf:
+                if isinstance(_rc, dict):
+                    _feat = _rc.get('feature', '?')
+                    _op = _rc.get('direction', _rc.get('operator', '>'))
+                    _val = _rc.get('threshold', _rc.get('value', '?'))
+                    try: _val = f"{float(_val):.4f}"
+                    except Exception: _val = str(_val)
+                    tk.Label(card, text=f"    {_feat} {_op} {_val}",
+                             font=("Courier", 8), bg="#f8f9fa", fg="#7b2d8e"
+                             ).pack(anchor="w")
+
+        # Scenario name
+        _scenario = rule.get('scenario', '')
+        if _scenario:
+            tk.Label(card, text=f"  📁 Scenario: {_scenario}",
+                     font=("Arial", 8), bg="#f8f9fa", fg="#888"
+                     ).pack(anchor="w", pady=(2, 0))
+
+        # Exit strategy (if saved from backtest/optimizer)
+        _exit = rule.get('exit_name', rule.get('exit_class', ''))
+        if _exit:
+            _ep = rule.get('exit_params', rule.get('exit_strategy_params', {}))
+            _exit_text = f"  ⚙️ Exit: {_exit}"
+            if _ep:
+                _ep_parts = [f"{k}={v}" for k, v in _ep.items() if k != 'pip_size']
+                if _ep_parts:
+                    _exit_text += f"  ({', '.join(_ep_parts[:4])})"
+            tk.Label(card, text=_exit_text,
+                     font=("Arial", 8), bg="#f8f9fa", fg="#555"
+                     ).pack(anchor="w", pady=(1, 0))
+
+        # Run settings summary (if saved)
+        _rs = rule.get('run_settings', {})
+        if _rs:
+            _rs_parts = []
+            if _rs.get('regime_filter_enabled'): _rs_parts.append("Regime ON")
+            if _rs.get('multi_tf'): _rs_parts.append("Multi-TF")
+            if _rs.get('combine_all_rules'): _rs_parts.append("All combos")
+            if _rs.get('use_config'): _rs_parts.append("Config")
+            if _rs_parts:
+                tk.Label(card, text=f"  🔧 Settings: {', '.join(_rs_parts)}",
+                         font=("Arial", 8), bg="#f8f9fa", fg="#888"
+                         ).pack(anchor="w", pady=(1, 0))
+
+        # Discovery settings — checkbox/radio state at discovery time
+        _ds = rule.get('discovery_settings', {})
+        if _ds:
+            # Regime settings
+            _ds_parts = []
+            if _ds.get('regime_filter_enabled'):
+                _ds_parts.append("Regime: ON")
+                if _ds.get('regime_at_discovery'):
+                    _ds_parts.append("At discovery: ✅")
+                else:
+                    _ds_parts.append("At discovery: ❌")
+                if _ds.get('regime_strictness'):
+                    _ds_parts.append(f"Strictness: {_ds['regime_strictness'].title()}")
+            else:
+                _ds_parts.append("Regime: OFF")
+            if _ds_parts:
+                tk.Label(card, text=f"  🎛️ Regime: {' | '.join(_ds_parts)}",
+                         font=("Arial", 8), bg="#f8f9fa", fg="#666"
+                         ).pack(anchor="w", pady=(1, 0))
+
+            # Single rule mode settings
+            _srm_parts = []
+            if _ds.get('single_rule_mode_enabled'):
+                _variant = _ds.get('single_rule_mode_variant', 'a').upper()
+                _variant_names = {'A': 'Mode A (single feature)',
+                                  'B': 'Mode B (crossover)',
+                                  'C': 'Mode C (two-feature)',
+                                  'D': 'Mode D (regime-gated)'}
+                _srm_parts.append(f"Single Rule: ON — {_variant_names.get(_variant, f'Mode {_variant}')}")
+                if _variant == 'A':
+                    _dedup = "✅" if _ds.get('srm_dedup_correlated') else "❌"
+                    _winner = _ds.get('srm_winner_selection', 'tightness').title()
+                    _srm_parts.append(f"Dedup: {_dedup}")
+                    _srm_parts.append(f"Winner: {_winner}")
+            else:
+                _srm_parts.append("Single Rule: OFF")
+            if _srm_parts:
+                tk.Label(card, text=f"  🧪 {' | '.join(_srm_parts)}",
+                         font=("Arial", 8), bg="#f8f9fa", fg="#666"
+                         ).pack(anchor="w", pady=(1, 0))
 
         if entry.get('notes'):
             tk.Label(card, text=f"📝 {entry['notes']}", font=("Arial", 8, "italic"),

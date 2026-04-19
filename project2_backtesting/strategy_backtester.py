@@ -37,6 +37,26 @@ log = get_logger(__name__)
 # Timeframes to load, in order: smallest first so merge_asof steps up cleanly
 _TIMEFRAMES = ["M5", "M15", "H1", "H4", "D1"]
 
+import threading as _bt_threading
+
+# WHY: Allows the UI to request a graceful stop mid-backtest.
+#      The inner loop checks this between combos. Results computed
+#      so far are saved normally — no data loss.
+# CHANGED: April 2026 — graceful stop
+_stop_requested = _bt_threading.Event()
+
+def request_backtest_stop():
+    """Signal the backtester to stop after the current combo."""
+    _stop_requested.set()
+
+def clear_backtest_stop():
+    """Clear the stop flag (call before starting a new run)."""
+    _stop_requested.clear()
+
+def is_backtest_stopped():
+    """Check if a stop was requested."""
+    return _stop_requested.is_set()
+
 
 def load_rules_from_report(report_path=None):
     """Load WIN-prediction rules from Project 1 analysis_report.json."""
@@ -1983,6 +2003,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     progress_callback: optional callable(current, total, combo_name) for UI updates.
     Returns dict with "matrix", "rules_tested", "exits_tested", "elapsed".
     """
+    _stop_requested.clear()  # Reset from any previous run
     log.info("=" * 70)
     log.info("STRATEGY BACKTESTER — Vectorized Comparison Matrix")
     log.info("=" * 70)
@@ -2326,8 +2347,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     except Exception:
         pass
 
+    _was_stopped = False
     for combo in rule_combos:
+        if _stop_requested.is_set():
+            log.info(f"[BACKTESTER] Stop requested — saving {len(matrix)} results computed so far")
+            _was_stopped = True
+            break
         for exit_strat in exit_strategies:
+            if _stop_requested.is_set():
+                _was_stopped = True
+                break
             count += 1
 
             # WHY (Phase A.30): Use the combo's per-direction value
@@ -2364,12 +2393,19 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 "rules":        combo["rules"],        # actual rule conditions for validator
                 "rule_combo":   combo["name"],
                 "rule_indices": combo["indices"],
+                # WHY: Direction was only embedded in rule_combo name string
+                #      like "(BUY)". Downstream tools parsed the name to guess
+                #      direction — fragile. Now saved explicitly.
+                # CHANGED: April 2026 — explicit direction in result
+                "direction":    _a30_combo_direction,
                 "exit_strategy": exit_strat.describe(),
                 "exit_name":    exit_strat.name,
                 "exit_class":   type(exit_strat).__name__,
                 "exit_params":  exit_strat.params,
                 "stats":        stats,
                 "trades":       trades,
+                "signals_before_regime_filter": getattr(fast_backtest, '_last_sig_before', 0),
+                "signals_after_regime_filter":  getattr(fast_backtest, '_last_sig_after', 0),
             }
             matrix.append(result)
 
@@ -2473,6 +2509,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             **m["stats"],
             "trades": m["trades"],
             "breaches": breaches,
+            "signals_before_regime_filter": m.get("signals_before_regime_filter", 0),
+            "signals_after_regime_filter":  m.get("signals_after_regime_filter", 0),
         }
         summary.append(result)
 
@@ -2526,6 +2564,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             "max_trades_per_day": max_trades_per_day,
             "tested_timeframes": unique_tfs,
             "combinations":      total,
+            "stopped_early":     _was_stopped,
+            "completed_combos":  count,
+            "total_combos":      total,
             "elapsed_seconds":   round(elapsed, 1),
             "spread_pips":       spread_pips,
             "commission_pips":   commission_pips,

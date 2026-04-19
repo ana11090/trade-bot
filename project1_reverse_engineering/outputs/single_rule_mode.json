@@ -1,7 +1,7 @@
 {
   "status": "ok",
   "variant": "a",
-  "target_coverage": 0.86,
+  "target_coverage": 0.75,
   "trade_count": 1106,
   "candidate_pool": [
     {
@@ -745,17 +745,17 @@
     }
   ],
   "params": {
-    "target_coverage": 0.86,
-    "per_condition_coverage": 0.95,
+    "target_coverage": 0.75,
+    "per_condition_coverage": 0.9,
     "min_non_nan_frac": 0.95,
     "pool_size": 40,
     "min_cardinality": 2,
-    "max_cardinality": 5,
+    "max_cardinality": 8,
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
     "winner_selection": "coverage"
   },
-  "generated_at": "2026-04-17T15:14:09.314219",
+  "generated_at": "2026-04-19T12:30:11.193898",
   "scenario": null
 }
