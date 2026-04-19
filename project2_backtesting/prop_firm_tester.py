@@ -24,55 +24,48 @@ _cache_mtime = None
 
 def load_strategy_list():
     """
-    Load the list of tested strategies from backtest_matrix.json.
-    Returns list of dicts with: rule_combo, exit_strategy, stats summary, trade_count.
-    Returns None if file doesn't exist.
+    Load strategies from backtest_matrix.json + saved rules.
+    Uses the same loader as the validator for consistency.
 
-    WHY: Caches the result to avoid re-parsing the 43MB JSON file on every panel open.
-    CHANGED: April 2026 — add mtime-based caching
+    WHY: Old code only loaded from backtest_matrix.json with basic labels.
+         User couldn't select saved rules or see stats in the dropdown.
+    CHANGED: April 2026 — use shared loader
     """
     global _strategy_list_cache, _cache_mtime
 
-    if not os.path.exists(BACKTEST_MATRIX_PATH):
-        return None
+    # Check cache validity using both files
+    bt_mtime = os.path.getmtime(BACKTEST_MATRIX_PATH) if os.path.exists(BACKTEST_MATRIX_PATH) else 0
+    sr_path = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH), '..', '..', 'saved_rules.json')
+    sr_path = os.path.normpath(sr_path)
+    sr_mtime = os.path.getmtime(sr_path) if os.path.exists(sr_path) else 0
+    combined_mtime = bt_mtime + sr_mtime
 
-    # Check if cached version is still valid
-    current_mtime = os.path.getmtime(BACKTEST_MATRIX_PATH)
-    if _strategy_list_cache is not None and _cache_mtime == current_mtime:
+    if _strategy_list_cache is not None and _cache_mtime == combined_mtime:
         return _strategy_list_cache
 
-    # Load and parse (this is slow for 43MB files)
-    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
-    results = data.get('results', [])
-    strategies = []
-    for i, r in enumerate(results):
-        strategies.append({
-            'index': i,
-            'label': f"{r.get('rule_combo', '?')} × {r.get('exit_name', '?')}",
-            'rule_combo': r.get('rule_combo', '?'),
-            'exit_strategy': r.get('exit_strategy', '?'),
-            'exit_name': r.get('exit_name', '?'),
-            'total_trades': r.get('total_trades', 0),
-            'win_rate': r.get('win_rate', 0),
-            'net_total_pips': r.get('net_total_pips', 0),
-            'net_profit_factor': r.get('net_profit_factor', 0),
-            'has_trades': 'trades' in r and bool(r.get('trades')),
-        })
-
-    # Update cache
-    _strategy_list_cache = strategies
-    _cache_mtime = current_mtime
-
-    return strategies
+    try:
+        from project2_backtesting.strategy_refiner import load_strategy_list as _shared_loader
+        _strategy_list_cache = _shared_loader()
+        _cache_mtime = combined_mtime
+        return _strategy_list_cache
+    except Exception as e:
+        print(f"[prop_firm_tester] Error loading strategies: {e}")
+        return []
 
 
 def load_strategy_trades(index):
     """
     Load the individual trades for a specific strategy from backtest_matrix.json.
     Returns list of trade dicts or None.
+
+    WHY: With saved rules support, index can be a string like 'saved_21'.
+         Only backtest matrix indices (int) have trades in the matrix file.
+    CHANGED: April 2026 — handle non-int indices
     """
+    # Only backtest matrix indices (int) have trades
+    if not isinstance(index, int):
+        return None
+
     if not os.path.exists(BACKTEST_MATRIX_PATH):
         return None
 
@@ -320,6 +313,8 @@ def run_multi_firm_test(
                 'fail_count': summary.eval_fail_count,
                 'num_simulations': summary.num_simulations,
                 'avg_days_to_pass': summary.eval_avg_days_to_pass,
+                'min_days_to_pass': summary.eval_min_days_to_pass,
+                'max_days_to_pass': summary.eval_max_days_to_pass,
                 'median_days_to_pass': summary.eval_median_days_to_pass,
                 'avg_max_dd_pct': summary.eval_avg_max_dd_pct,
                 'funded_avg_monthly': summary.funded_avg_monthly_payout,

@@ -157,23 +157,38 @@ def _on_strategy_select(event=None):
     if idx is None:
         _strat_info_label.configure(text="", fg=GREY)
         return
-    s = _strategies[idx]
+
+    # WHY: idx can be int (backtest matrix) or string ('saved_21', 'optimizer_latest').
+    #      Old code did _strategies[idx] which crashes on strings.
+    # CHANGED: April 2026 — find strategy by index key
+    s = None
+    for _s in _strategies:
+        if _s.get('index') == idx:
+            s = _s
+            break
+    if s is None and isinstance(idx, int) and 0 <= idx < len(_strategies):
+        s = _strategies[idx]
+    if s is None:
+        _strat_info_label.configure(text=f"Strategy {idx} not found", fg=RED)
+        return
+
     has_trades = s.get('has_trades', False)
 
-    # Update spread/commission from backtest data
-    try:
-        from project2_backtesting.prop_firm_tester import load_strategy_list
-        from project2_backtesting.prop_firm_tester import BACKTEST_MATRIX_PATH
-        import json
-        with open(BACKTEST_MATRIX_PATH, encoding='utf-8') as f:
-            data = json.load(f)
-        r = data['results'][idx]
-        if _spread_var:
-            _spread_var.set(str(r.get('spread_pips', 2.5)))
-        if _commission_var:
-            _commission_var.set(str(r.get('commission_pips', 0.0)))
-    except Exception:
-        pass
+    # Update spread/commission from backtest data (only for backtest matrix indices)
+    if isinstance(idx, int):
+        try:
+            from project2_backtesting.prop_firm_tester import load_strategy_list
+            from project2_backtesting.prop_firm_tester import BACKTEST_MATRIX_PATH
+            import json
+            with open(BACKTEST_MATRIX_PATH, encoding='utf-8') as f:
+                data = json.load(f)
+            r = data['results'][idx]
+            if _spread_var:
+                _spread_var.set(str(r.get('spread_pips', 2.5)))
+            if _commission_var:
+                _commission_var.set(str(r.get('commission_pips', 0.0)))
+        except Exception:
+            pass
 
     if has_trades:
         text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
@@ -360,8 +375,8 @@ def _display_results(results, strategy_label):
     col_defs = [
         ("#",          3), ("Firm",      16), ("Challenge", 18),
         ("Size",       8), ("Pass%",      6), ("Sims",       5),
-        ("Avg Days",   9), ("Max DD%",    8), ("Monthly $", 10),
-        ("ROI%",       7), ("Fail Reasons", 30),
+        ("Days (min/avg/max)", 16), ("Max DD%",    8), ("Monthly $", 10),
+        ("ROI%",       7), ("Fail Reasons", 25),
     ]
     for text, width in col_defs:
         tk.Label(header_frame, text=text, font=("Segoe UI", 8, "bold"),
@@ -401,7 +416,7 @@ def _display_results(results, strategy_label):
             (f"${r['account_size']:,}", 8,  GREY,      "Segoe UI"),
             (f"{pass_rate*100:.0f}%",   6,  rate_color,"Segoe UI"),
             (str(r['num_simulations']), 5,  GREY,      "Segoe UI"),
-            (f"{r['avg_days_to_pass'] or 0:.0f}d", 9, DARK, "Segoe UI"),
+            (f"{r.get('min_days_to_pass', 0):.0f} / {r['avg_days_to_pass'] or 0:.0f} / {r.get('max_days_to_pass', 0):.0f}d", 16, DARK, "Segoe UI"),
             (f"{(r['avg_max_dd_pct'] or 0)*100:.1f}%", 8, DARK, "Segoe UI"),
             (f"${monthly:,.0f}" if monthly else "—", 10, GREEN if monthly else GREY, "Segoe UI"),
             (f"{roi:+.0f}%" if roi else "—", 7, roi_color, "Segoe UI"),
@@ -594,9 +609,28 @@ def build_panel(parent):
         _strategy_var = tk.StringVar(value=_strategies[0]['label'])
         labels = [s['label'] for s in _strategies]
         dropdown = ttk.Combobox(strat_frame, textvariable=_strategy_var,
-                                values=labels, state="readonly", width=70)
-        dropdown.pack(anchor="w")
+                                values=labels, state="readonly", width=100)
+        dropdown.pack(anchor="w", fill="x")
         dropdown.bind("<<ComboboxSelected>>", _on_strategy_select)
+
+        # Refresh button
+        def _refresh_strats():
+            global _strategies, _strategy_var
+            from project2_backtesting.prop_firm_tester import load_strategy_list
+            # Invalidate cache
+            import project2_backtesting.prop_firm_tester as _pft_mod
+            _pft_mod._cache_mtime = 0
+            _pft_mod._strategy_list_cache = None
+            _strategies = load_strategy_list() or []
+            new_labels = [s['label'] for s in _strategies]
+            dropdown['values'] = new_labels
+            if new_labels:
+                _strategy_var.set(new_labels[0])
+            print(f"[PROP FIRM] Refreshed — {len(_strategies)} strategies loaded")
+
+        tk.Button(strat_frame, text="🔄 Refresh", font=("Segoe UI", 8),
+                  bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
+                  command=_refresh_strats).pack(anchor="w", pady=(4, 0))
 
     _strat_info_label = tk.Label(strat_frame, text="", font=("Segoe UI", 9),
                                   bg=WHITE, fg=MIDGREY)

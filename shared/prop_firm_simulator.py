@@ -59,6 +59,11 @@ class SimulationSummary:
     eval_avg_days_to_pass: float
     eval_avg_days_to_fail: float
     eval_median_days_to_pass: float
+    # WHY: User needs to know fastest and slowest possible pass time
+    #      to set expectations. Avg alone hides the range.
+    # CHANGED: April 2026 — min/max days
+    eval_min_days_to_pass: float
+    eval_max_days_to_pass: float
     eval_avg_max_dd_pct: float
     eval_pass_count: int
     eval_fail_count: int
@@ -863,6 +868,8 @@ def _aggregate(results, firm, challenge, account_size, mode,
         eval_avg_days_to_pass=round(_mean(days_pass), 1),
         eval_avg_days_to_fail=round(_mean(days_fail), 1),
         eval_median_days_to_pass=round(_median(days_pass), 1),
+        eval_min_days_to_pass=round(min(days_pass), 1) if days_pass else 0,
+        eval_max_days_to_pass=round(max(days_pass), 1) if days_pass else 0,
         eval_avg_max_dd_pct=round(_mean(all_dd), 4),
         eval_pass_count=len(passes),
         eval_fail_count=len(fails),
