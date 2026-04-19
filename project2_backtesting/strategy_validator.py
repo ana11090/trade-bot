@@ -135,16 +135,17 @@ def _load_data_cached(candles_path, rules=None):
         if _deleted:
             log.info(f"[VALIDATOR] Deleted {_deleted} stale cache files before rebuild")
 
-        _ALL_GROUPS = [
-            'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
-            'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
-            'mass_index', 'pivot', 'price_action', 'psar', 'roc', 'rsi', 'session',
-            'sma', 'std_dev', 'stoch', 'supertrend', 'swing', 'tsi', 'uo',
-            'volume', 'vwap', 'williams_r',
-        ]
-        _ALL_TF = {tf: _ALL_GROUPS for tf in ['M5', 'M15', 'H1', 'H4', 'D1']}
+        # WHY: Pass required_indicators=None to build ALL indicators.
+        #      Old code passed group names like 'price_action' as
+        #      required_indicators, but _load_tf_indicators ran them through
+        #      map_rule_indicators_to_compute_groups which treated them as
+        #      indicator names and mangled them: 'price_action' → 'price',
+        #      'elder_ray' → 'elder', 'std_dev' → 'std'. Result: those
+        #      groups were never computed → columns missing → 0 trades.
+        #      Passing None = compute everything, no mapping needed.
+        # CHANGED: April 2026 — pass None to avoid group name mangling
         indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
+            data_dir, candles_df['timestamp'], required_indicators=None)
 
         # Verify the rebuild actually produced the needed columns
         _still_missing = _check_missing_features(rules, indicators_df)
