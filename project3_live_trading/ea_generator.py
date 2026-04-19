@@ -364,13 +364,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
 
-    # WHY: TimeBased and IndicatorExit don't use TP — the backtest exits
-    #      by time or indicator signal, not by TP. Setting TP=300 creates
-    #      a phantom exit that closes trades early — different from backtest.
-    # CHANGED: April 2026 — no phantom TP for time/indicator exits
-    if exit_class in ('TimeBased', 'IndicatorExit'):
-        tp_pips = 0
-
     # ── Trailing stop parameters ──────────────────────────────────────
     # WHY: TrailingStop has two thresholds:
     #      1. activation_pips: profit needed before trailing starts
@@ -442,6 +435,21 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         'Hybrid': 'HybridExit', 'HybridExit': 'HybridExit',
     }
     exit_class = exit_class_map.get(exit_class, 'FixedSLTP')
+
+    # WHY: TimeBased and IndicatorExit don't use TP — the backtest exits
+    #      by time or indicator signal, not by TP. Setting TP=300 creates
+    #      a phantom exit that closes trades early — different from backtest.
+    # CHANGED: April 2026 — no phantom TP for time/indicator exits
+    if exit_class in ('TimeBased', 'IndicatorExit'):
+        tp_pips = 0
+
+    # WHY: TimeBased, IndicatorExit, and FixedSLTP exits don't use trailing.
+    #      Non-zero defaults activate ManageTrailingStop which closes trades
+    #      early — untested behavior not in the backtest.
+    # CHANGED: April 2026 — disable trailing for non-trailing exits
+    if exit_class in ('TimeBased', 'IndicatorExit', 'FixedSLTP'):
+        trail_activation_pips = 0
+        trail_distance_pips = 0
 
     # ATR params
     sl_atr_mult = exit_params.get('sl_atr_mult', 1.5)
@@ -562,10 +570,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     handle_vars  = '\n'.join(h['handle_var'] for h in handles if h.get('handle_var'))
     handle_inits = '\n   '.join(h['handle_init'] for h in handles if h.get('handle_init'))
 
-    session_comment = ', '.join(session_filter) if session_filter else 'All sessions'
-    day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    day_comment = ', '.join(day_names[d - 1] for d in day_filter if 1 <= d <= 7) if day_filter else 'All days'
-
     # ── Build dynamic session filter code ─────────────────────────────────
     # WHY: The optimizer might find that only London+NY sessions are profitable.
     #      The EA must enforce this — otherwise it trades Asian session too,
@@ -577,7 +581,16 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #   London:  07:00 - 16:00
     #   New York: 13:00 - 22:00
     #   Sydney:  22:00 - 07:00 (wraps midnight)
-    if session_filter and len(session_filter) > 0:
+
+    # WHY: If all major sessions are checked (Asian+London+NY), they cover
+    #      hours 0-22 but MISS 22-24 GMT. This is NOT "all sessions" — it's
+    #      a 2-hour gap the backtest didn't have. Treat all-sessions as no filter.
+    # CHANGED: April 2026 — all sessions = no filter
+    _all_sessions = {'asian', 'london', 'new york'}
+    _selected = {s.strip().lower() for s in (session_filter or [])}
+    _is_all_sessions = _all_sessions.issubset(_selected)
+
+    if session_filter and len(session_filter) > 0 and not _is_all_sessions:
         session_checks = []
         for sess in session_filter:
             s = sess.strip().lower()
@@ -612,42 +625,23 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     else:
         day_code = 'if(dow == 0 || dow == 6) return false;\n   return true;  // All weekdays allowed'
 
+    # ── Build comments for verification report ────────────────────────────
+    # WHY: Comments must reflect whether filters are active. If all sessions
+    #      or all weekdays are selected, show "All sessions"/"All days" not
+    #      a confusing list.
+    # CHANGED: April 2026 — accurate filter comments
+    if not session_filter or _is_all_sessions:
+        session_comment = 'All sessions'
+    else:
+        session_comment = ', '.join(session_filter)
+
+    day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    if not day_filter or set(day_filter) == {1, 2, 3, 4, 5}:
+        day_comment = 'All days'
+    else:
+        day_comment = ', '.join(day_names[d - 1] for d in day_filter if 1 <= d <= 7)
+
     conditions_block = '\n'.join(condition_inputs)
-
-    # ── Regime filter check (pre-entry gate) ─────────────────────────
-    # WHY: If the strategy was backtested with a regime filter, the EA
-    #      must apply the same filter. Regime conditions are checked
-    #      BEFORE entry conditions — if regime fails, skip the bar.
-    # CHANGED: April 2026 — regime filter in EA
-    regime_check_block = ''
-    if regime_conditions:
-        _regime_lines = []
-        _regime_lines.append('   // ── Regime Filter (from backtest settings) ──')
-        _regime_lines.append('   bool regimePass = true;')
-        for ri, rcond in enumerate(regime_conditions, 1):
-            _feat = rcond.get('feature', '')
-            _op = rcond.get('direction', rcond.get('operator', '>'))
-            _val = rcond.get('threshold', rcond.get('value', 0))
-            if not _feat:
-                continue
-            try:
-                _mql = get_mql_code(_feat, 'mt5')
-                _var_n = _mql['var_name']
-                _mql_op = OPERATOR_MAP_MQL.get(_op, '>')
-                _regime_lines.append(f'   // Regime {ri}: {_feat} {_op} {_val}')
-                _regime_lines.append(f'   {_mql["read_code"]}')
-                _regime_lines.append(f'   if(!(val_{_var_n} {_mql_op} {float(_val):.6f})) regimePass = false;')
-                # Add handle if needed
-                if _mql.get('handle_var') and _mql['handle_var'] not in exit_globals:
-                    exit_globals += _mql['handle_var'] + '\n'
-                if _mql.get('handle_init'):
-                    extra_init.append(f'   {_mql["handle_init"]}')
-            except Exception as _re:
-                _regime_lines.append(f'   // Regime {ri}: {_feat} — SKIPPED (no MQL mapping: {_re})')
-
-        _regime_lines.append('   if(!regimePass) { LogSkip("regime_filter", 0); return; }')
-        _regime_lines.append('')
-        regime_check_block = '\n'.join(_regime_lines)
 
     conditions_check_block = '\n'.join(condition_checks)
 
@@ -677,6 +671,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_tick_checks = []   # runs every tick BEFORE entry check
     extra_functions = []
     extra_on_trade  = []     # runs when a trade closes (OnTradeTransaction)
+
+    # WHY: g_periodProfit is referenced in GetPayoutStatus() but was only
+    #      declared inside the consistency rule handler. If protect_phase or
+    #      period_reset rules exist without consistency, it's undeclared.
+    # CHANGED: April 2026 — always declare payout globals
+    extra_globals.append('double g_periodProfit = 0.0;  // Always declared for payout tracking')
 
     # Track what capabilities are needed
     has_consistency     = False
@@ -801,7 +801,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             mp = params.get('max_day_pct', 20)
             extra_inputs.append(f'input double ConsistencyMaxPct = {mp}; // [{rname}]')
             extra_globals.append(f'double g_bestDayProfit = 0.0;')
-            extra_globals.append(f'double g_periodProfit = 0.0;')
+            # g_periodProfit now declared globally at top (line 650)
 
         # ── min_profitable_days ───────────────────────────────────────────────
         elif rtype == 'min_profitable_days':
@@ -1197,7 +1197,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         parts.append('"Days=" + IntegerToString(g_profitDayCount) + "/" + IntegerToString(MinProfitDays)')
     if has_consistency:
         parts.append('"Best=" + DoubleToString(g_periodProfit>0 ? g_bestDayProfit/g_periodProfit*100 : 0, 1) + "%"')
-    parts.append('"Profit=$" + DoubleToString(g_periodProfit, 0)')
+    # WHY: g_periodProfit is only tracked when consistency/protect_phase exist
+    # CHANGED: April 2026 — guard usage to prevent showing "0" when not tracked
+    if has_consistency or has_protect_phase:
+        parts.append('"Profit=$" + DoubleToString(g_periodProfit, 0)')
     if has_protect_phase:
         parts.append('(g_payoutCondsMet ? " MET" : " NOT MET")')
     extra_functions.append(
@@ -1420,6 +1423,40 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'   }}\n'
         )
 
+    # ── Regime filter check (pre-entry gate) ─────────────────────────────
+    # WHY: Must be AFTER exit_globals/extra_init are initialized by exit
+    #      strategy code. Old placement was before — exit code reset them.
+    # CHANGED: April 2026 — move after exit strategy init
+    regime_check_block = ''
+    if regime_conditions:
+        _regime_lines = []
+        _regime_lines.append('   // ── Regime Filter (from backtest settings) ──')
+        _regime_lines.append('   bool regimePass = true;')
+        for ri, rcond in enumerate(regime_conditions, 1):
+            _feat = rcond.get('feature', '')
+            _op = rcond.get('direction', rcond.get('operator', '>'))
+            _val = rcond.get('threshold', rcond.get('value', 0))
+            if not _feat:
+                continue
+            try:
+                _mql = get_mql_code(_feat, 'mt5')
+                _var_n = _mql['var_name']
+                _mql_op = OPERATOR_MAP_MQL.get(_op, '>')
+                _regime_lines.append(f'   // Regime {ri}: {_feat} {_op} {_val}')
+                _regime_lines.append(f'   {_mql["read_code"]}')
+                _regime_lines.append(f'   if(!(val_{_var_n} {_mql_op} {float(_val):.6f})) regimePass = false;')
+                # Add handle if needed
+                if _mql.get('handle_var') and _mql['handle_var'] not in exit_globals:
+                    exit_globals += _mql['handle_var'] + '\n'
+                if _mql.get('handle_init'):
+                    extra_init.append(f'   {_mql["handle_init"]}')
+            except Exception as _re:
+                _regime_lines.append(f'   // Regime {ri}: {_feat} — SKIPPED (no MQL mapping: {_re})')
+
+        _regime_lines.append('   if(!regimePass) { LogSkip("regime_filter", 0); return; }')
+        _regime_lines.append('')
+        regime_check_block = '\n'.join(_regime_lines)
+
     # ── Build injection strings ───────────────────────────────────────────
     extra_inputs_block      = '\n'.join(extra_inputs)      if extra_inputs      else ''
     extra_globals_block     = '\n'.join(extra_globals)     if extra_globals     else ''
@@ -1520,6 +1557,42 @@ bool IsMinHoldMet()
         _vr_header += f'//| {_l:<66} |\n'
     _vr_header += '//+------------------------------------------------------------------+\n'
 
+    # ── Build indicator release block for OnDeinit ────────────────────────
+    # WHY: Old code called IndicatorRelease(0). 0 is INVALID_HANDLE — does
+    #      nothing. Handles leak until EA restart. Fix: release all actual
+    #      handles created by the EA.
+    # CHANGED: April 2026 — explicit per-handle release in OnDeinit
+    _release_lines = []
+    _seen_handles = set()
+
+    # Release entry condition handles
+    for h in handles:
+        hv = h.get('handle_var', '').strip().rstrip(';').strip()
+        if hv:
+            # Extract actual handle name: "int handle_macd_H4" → "handle_macd_H4"
+            hname = hv.split()[-1] if hv else ''
+            if hname and hname not in _seen_handles:
+                _seen_handles.add(hname)
+                _release_lines.append(f'   if({hname} != INVALID_HANDLE) IndicatorRelease({hname});')
+
+    # Release regime filter handles
+    if regime_conditions:
+        for rcond in regime_conditions:
+            _feat = rcond.get('feature', '')
+            if _feat:
+                try:
+                    _mql = get_mql_code(_feat, 'mt5')
+                    hv = _mql.get('handle_var', '').strip().rstrip(';').strip()
+                    if hv:
+                        hname = hv.split()[-1] if hv else ''
+                        if hname and hname not in _seen_handles:
+                            _seen_handles.add(hname)
+                            _release_lines.append(f'   if({hname} != INVALID_HANDLE) IndicatorRelease({hname});')
+                except Exception:
+                    pass
+
+    _indicator_release_block = '\n'.join(_release_lines) if _release_lines else '   // No indicator handles to release'
+
     code = f"""\
 {_vr_header}\
 #property copyright "Generated by Trade Bot"
@@ -1612,7 +1685,10 @@ void OnDeinit(const int reason)
 {{
    if(g_logHandle != INVALID_HANDLE)
       FileClose(g_logHandle);
-   IndicatorRelease(0);
+
+   // Release all indicator handles
+{_indicator_release_block}
+
    Print("[EA] Stopped. Reason=", reason);
 }}
 
@@ -1712,7 +1788,10 @@ void OnTick()
    if(spreadPips > MaxSpreadPips)
    {{ LogSkip("spread_too_wide", spreadPips); return; }}
 
-   if(g_dailyTrades >= MaxTradesPerDay)
+   // WHY: MaxTradesPerDay=0 means unlimited. Old code checked
+   //      g_dailyTrades >= 0 which is always true → blocked all trades.
+   // CHANGED: April 2026 — 0 = unlimited
+   if(MaxTradesPerDay > 0 && g_dailyTrades >= MaxTradesPerDay)
    {{ LogSkip("max_trades_per_day", g_dailyTrades); return; }}
 
    if(TimeCurrent() - g_lastTradeTime < CooldownMinutes * 60)

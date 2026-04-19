@@ -435,7 +435,7 @@ INDICATOR_PATTERNS = [
     (r"^std_dev_(\d+)$", {
         "mt5_handle_var":  "int handle_std_{tf}_{p};",
         "mt5_handle_init": "handle_std_{tf}_{p} = iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_std_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _raw_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); if(_raw_{var} == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = _raw_{var} * MathSqrt((double){p} / MathMax((double){p} - 1.0, 1.0)); }",
+        "mt5_buffer_read": "double _raw_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); double val_{var} = 0; if(_raw_{var} == EMPTY_VALUE) {{ indicatorFailed = true; }} else {{ val_{var} = _raw_{var} * MathSqrt((double){p} / MathMax((double){p} - 1.0, 1.0)); }}",
         "tradovate_code":  "df_m{tv_tf}['close'].rolling({p}).std().iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Standard Deviation({p}) on {tf} (ddof=1 to match Python)",

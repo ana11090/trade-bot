@@ -853,26 +853,42 @@ def _generate():
 
         # Extract regime conditions from strategy data
         _ea_regime = []
-        # Source 1: per-rule regime_filter
-        for _r in strategy.get('rules', []):
-            _rf = _r.get('regime_filter')
-            if _rf and isinstance(_rf, list) and len(_rf) > 0:
-                _ea_regime = _rf
-                break
-        # Source 2: run_settings
-        if not _ea_regime:
-            _rs = strat_data.get('run_settings', {})
-            if _rs.get('regime_filter_enabled') and _rs.get('regime_filter_conditions'):
-                _ea_regime = _rs['regime_filter_conditions']
-        # Source 3: top-level regime_filter_conditions
-        if not _ea_regime:
-            _ea_regime = strat_data.get('regime_filter_conditions', [])
+        # WHY: Check run_settings FIRST to see if regime was ON during backtest.
+        #      Old code checked per-rule regime_filter first — but auto-save
+        #      metadata embeds conditions into rules even when regime was OFF.
+        #      This caused the EA to have a regime filter that blocked 99.8%
+        #      of trades even though the backtest filtered 0%.
+        # CHANGED: April 2026 — check if regime was actually enabled
+        _rs = strat_data.get('run_settings', {})
+        _regime_was_enabled = _rs.get('regime_filter_enabled', False)
+
+        if _regime_was_enabled:
+            # Regime was ON during backtest — embed conditions
+            # Source 1: run_settings conditions (most reliable)
+            _rf_conds = _rs.get('regime_filter_conditions', [])
+            if _rf_conds:
+                _ea_regime = _rf_conds
+            # Source 2: per-rule regime_filter (fallback)
+            if not _ea_regime:
+                for _r in strategy.get('rules', []):
+                    _rf = _r.get('regime_filter')
+                    if _rf and isinstance(_rf, list) and len(_rf) > 0:
+                        _ea_regime = _rf
+                        break
+            # Source 3: top-level (last resort)
+            if not _ea_regime:
+                _ea_regime = strat_data.get('regime_filter_conditions', [])
+        else:
+            # Regime was OFF during backtest — DO NOT embed any conditions
+            _ea_regime = []
+            print(f"[EA GEN] Regime filter was OFF during backtest — not embedding in EA")
 
         strategy['regime_filter_conditions'] = _ea_regime
         if _ea_regime:
             print(f"[EA GEN] Regime filter: {len(_ea_regime)} conditions embedded from strategy data")
         else:
-            print(f"[EA GEN] Regime filter: none (strategy had no regime filter or filtered 0%)")
+            if _regime_was_enabled:
+                print(f"[EA GEN] Regime filter: none (strategy had no regime filter or filtered 0%)")
 
         from project3_live_trading.ea_generator import generate_ea
         code = generate_ea(
@@ -1266,8 +1282,14 @@ def build_panel(parent):
     sess_row.pack(fill="x", pady=3)
     tk.Label(sess_row, text="Sessions:", font=("Segoe UI", 9), bg=WHITE, fg=DARK,
              width=24, anchor="w").pack(side=tk.LEFT)
+    # WHY: Old code defaulted London + New York checked. But the backtest
+    #      has no session filter — trades 24/5. Defaulting sessions ON adds
+    #      untested behavior (skips 22-24 GMT). Default all OFF = no filter.
+    #      auto_fill_filters will enable specific sessions IF the optimizer
+    #      found them profitable.
+    # CHANGED: April 2026 — default no session filter (matches backtest)
     for sess in ["Asian", "London", "New York"]:
-        var = tk.BooleanVar(value=(sess in ("London", "New York")))
+        var = tk.BooleanVar(value=False)
         _session_vars[sess] = var
         tk.Checkbutton(sess_row, text=sess, variable=var, bg=WHITE,
                        font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=4)
