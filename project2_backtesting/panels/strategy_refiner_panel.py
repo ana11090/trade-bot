@@ -2238,7 +2238,10 @@ def build_panel(parent):
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
     global _scroll_canvas, _opt_mode_var, _acct_var, _risk_var
 
-    _load_strategies()
+    # WHY (Phase A.49 fix): Loading strategies synchronously freezes the UI
+    #      when backtest_matrix.json is large (44MB+). Load asynchronously
+    #      in a background thread to keep the UI responsive.
+    # CHANGED: April 2026 — Phase A.49 fix — async strategy loading
 
     panel = tk.Frame(parent, bg=BG)
 
@@ -2260,92 +2263,114 @@ def build_panel(parent):
     sel_row = tk.Frame(sel_frame, bg=WHITE)
     sel_row.pack(fill="x")
 
-    if not _strategies:
-        tk.Label(sel_row, text="No backtest results. Run the backtest first.",
-                 font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
-        _strategy_var = tk.StringVar(value="")
-    else:
-        _strategy_var = tk.StringVar(value=_strategies[0]['label'])
-        labels = [s['label'] for s in _strategies]
-        dd = ttk.Combobox(sel_row, textvariable=_strategy_var,
-                          values=labels, state="readonly", width=95)
-        dd.pack(side=tk.LEFT, padx=(0, 10))
+    # Show loading message initially
+    loading_lbl = tk.Label(sel_row, text="⏳ Loading strategies...",
+                           font=("Segoe UI", 10), bg=WHITE, fg=GREY)
+    loading_lbl.pack(side=tk.LEFT)
 
-    tk.Button(sel_row, text="Load", command=_load_selected_strategy,
-              bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
-              relief=tk.FLAT, cursor="hand2", padx=14, pady=4).pack(side=tk.LEFT)
+    _strategy_var = tk.StringVar(value="")
+    dd_container = [None]  # Use list to allow mutation in nested function
 
-    # ── Star/favorite button ──────────────────────────────────────────────
-    # WHY: Star your best strategies so they appear at the top of every dropdown.
-    # CHANGED: April 2026 — star system
-    def _toggle_star():
-        idx = _get_selected_index()
-        if idx is None:
-            return
-        for s in _strategies:
-            if s.get('index') == idx:
-                rc = s.get('rule_combo', '')
-                es = s.get('exit_strategy', s.get('exit_name', ''))
-                try:
-                    from shared.starred import toggle
-                    is_now_starred = toggle(rc, es)
-                    star_btn.configure(
-                        text="⭐ Starred" if is_now_starred else "☆ Star",
-                        bg="#f39c12" if is_now_starred else "#95a5a6",
-                    )
-                    # WHY: Two things must happen for the dropdown to actually
-                    #      reflect the new star state:
-                    #      1. _load_strategies must bypass its mtime cache
-                    #         (force=True), because toggling a star writes to
-                    #         shared.starred storage, NOT backtest_matrix.json,
-                    #         so the cache mtime check passes and the OLD
-                    #         strategies list is returned.
-                    #      2. dd['values'] must be reassigned because the
-                    #         Combobox widget caches its values list — setting
-                    #         _strategy_var alone updates the displayed text
-                    #         but not the available options.
-                    # CHANGED: April 2026 — force-refresh + dd values update
-                    _load_strategies(force=True)
-                    if _strategies:
-                        new_labels = [s['label'] for s in _strategies]
-                        # Push new values to the Combobox widget
+    load_btn = tk.Button(sel_row, text="Load", command=_load_selected_strategy,
+                         bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
+                         relief=tk.FLAT, cursor="hand2", padx=14, pady=4,
+                         state=tk.DISABLED)  # Disabled until loading completes
+    load_btn.pack(side=tk.LEFT, padx=(10, 0))
+
+    # ── Star/favorite button (created after loading) ──────────────────────
+    star_btn_container = [None]  # Placeholder for star button
+
+    # ── Async strategy loading ────────────────────────────────────────────
+    def _on_strategies_loaded():
+        """Called on main thread after strategies finish loading."""
+        nonlocal dd_container, star_btn_container
+
+        # Remove loading message
+        try:
+            loading_lbl.destroy()
+        except:
+            pass
+
+        if not _strategies:
+            # No strategies found
+            tk.Label(sel_row, text="No backtest results. Run the backtest first.",
+                     font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
+        else:
+            # Create dropdown with loaded strategies
+            _strategy_var.set(_strategies[0]['label'])
+            labels = [s['label'] for s in _strategies]
+            dd = ttk.Combobox(sel_row, textvariable=_strategy_var,
+                              values=labels, state="readonly", width=95)
+            dd.pack(side=tk.LEFT)
+            dd_container[0] = dd  # Store reference
+
+            # Enable load button
+            load_btn.configure(state=tk.NORMAL)
+
+            # Create star button
+            def _toggle_star():
+                idx = _get_selected_index()
+                if idx is None:
+                    return
+                for s in _strategies:
+                    if s.get('index') == idx:
+                        rc = s.get('rule_combo', '')
+                        es = s.get('exit_strategy', s.get('exit_name', ''))
                         try:
-                            dd['values'] = new_labels
-                        except (NameError, tk.TclError):
-                            pass  # dd not in scope (no strategies branch) or destroyed
-                        # Re-select the same strategy by index (more reliable
-                        # than substring match — index is stable across re-sorts)
-                        new_label = None
-                        for s2 in _strategies:
-                            if s2.get('index') == idx:
-                                new_label = s2.get('label')
-                                break
-                        if new_label:
-                            _strategy_var.set(new_label)
-                except ImportError:
-                    pass
-                break
+                            from shared.starred import toggle
+                            is_now_starred = toggle(rc, es)
+                            star_btn.configure(
+                                text="⭐ Starred" if is_now_starred else "☆ Star",
+                                bg="#f39c12" if is_now_starred else "#95a5a6",
+                            )
+                            _load_strategies(force=True)
+                            if _strategies:
+                                new_labels = [s['label'] for s in _strategies]
+                                try:
+                                    dd['values'] = new_labels
+                                except (NameError, tk.TclError):
+                                    pass
+                                new_label = None
+                                for s2 in _strategies:
+                                    if s2.get('index') == idx:
+                                        new_label = s2.get('label')
+                                        break
+                                if new_label:
+                                    _strategy_var.set(new_label)
+                        except ImportError:
+                            pass
+                        break
 
-    star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
-                         bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
-                         relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
-    star_btn.pack(side=tk.LEFT, padx=(6, 0))
+            star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
+                                 bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
+                                 relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            star_btn.pack(side=tk.LEFT, padx=(6, 0))
+            star_btn_container[0] = star_btn
 
-    def _update_star_btn(*args):
-        idx = _get_selected_index()
-        if idx is None:
-            return
-        for s in _strategies:
-            if s.get('index') == idx:
-                is_s = s.get('is_starred', False)
-                star_btn.configure(
-                    text="⭐ Starred" if is_s else "☆ Star",
-                    bg="#f39c12" if is_s else "#95a5a6",
-                )
-                break
+            def _update_star_btn(*args):
+                idx = _get_selected_index()
+                if idx is None:
+                    return
+                for s in _strategies:
+                    if s.get('index') == idx:
+                        is_s = s.get('is_starred', False)
+                        star_btn.configure(
+                            text="⭐ Starred" if is_s else "☆ Star",
+                            bg="#f39c12" if is_s else "#95a5a6",
+                        )
+                        break
 
-    if _strategy_var:
-        _strategy_var.trace_add('write', _update_star_btn)
+            _strategy_var.trace_add('write', _update_star_btn)
+            _update_star_btn()  # Initial update
+
+    def _load_in_background():
+        """Background thread: load strategies, then schedule UI update."""
+        _load_strategies()
+        # Schedule UI update on main thread
+        panel.after(0, _on_strategies_loaded)
+
+    # Start background loading
+    threading.Thread(target=_load_in_background, daemon=True).start()
 
     _strat_info_lbl = tk.Label(sel_frame, text="Click Load to load a strategy.",
                                 font=("Segoe UI", 9), bg=WHITE, fg=GREY)
