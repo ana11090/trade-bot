@@ -114,6 +114,27 @@ def _load_data_cached(candles_path, rules=None):
     if not os.path.exists(cache_path) or _need_rebuild:
         _, _, build_multi_tf_indicators = _load_backtester()
         data_dir = os.path.dirname(candles_path)
+
+        # WHY: Delete ALL stale caches BEFORE calling build_multi_tf_indicators.
+        #      The build function has its own per-TF cache mechanism — if stale
+        #      parquet files exist, it loads them (file mtime > csv mtime = valid).
+        #      Old code deleted caches AFTER the build, which was too late.
+        #      Must run regardless of _need_rebuild — even when the validator's
+        #      own cache_path doesn't exist, build_multi_tf_indicators has its
+        #      own per-TF partial caches that may be stale.
+        # CHANGED: April 2026 — delete BEFORE build, always
+        import glob as _glob
+        _deleted = 0
+        for _pattern in ['.cache_*_partial_*.parquet', '.cache_*_indicators.parquet']:
+            for _stale in _glob.glob(os.path.join(data_dir, _pattern)):
+                try:
+                    os.remove(_stale)
+                    _deleted += 1
+                except Exception:
+                    pass
+        if _deleted:
+            log.info(f"[VALIDATOR] Deleted {_deleted} stale cache files before rebuild")
+
         _ALL_GROUPS = [
             'adx', 'ao', 'aroon', 'atr', 'bb', 'cci', 'dmi', 'donchian', 'dpo',
             'elder_ray', 'ema', 'fib', 'ichimoku', 'keltner', 'kst', 'macd',
@@ -125,21 +146,19 @@ def _load_data_cached(candles_path, rules=None):
         indicators_df = build_multi_tf_indicators(
             data_dir, candles_df['timestamp'], required_indicators=_ALL_TF)
 
-        # Delete stale partial cache files that caused the miss
-        # WHY: build_multi_tf_indicators uses hash-based partial caches.
-        #      If they're stale (missing columns), they'll be loaded again
-        #      next time and cause the same 0-trade issue. Delete them so
-        #      the next call builds fresh.
-        # CHANGED: April 2026 — clean stale partial caches
-        if _need_rebuild:
-            import glob as _glob
-            data_dir = os.path.dirname(candles_path)
-            for _stale in _glob.glob(os.path.join(data_dir, '.cache_*_partial_*.parquet')):
-                try:
-                    os.remove(_stale)
-                    log.info(f"[VALIDATOR] Removed stale cache: {os.path.basename(_stale)}")
-                except Exception:
-                    pass
+        # Verify the rebuild actually produced the needed columns
+        _still_missing = _check_missing_features(rules, indicators_df)
+        if _still_missing:
+            log.warning(f"[VALIDATOR] ⚠️ REBUILD FAILED — still missing {len(_still_missing)} columns: "
+                        f"{sorted(_still_missing)[:10]}")
+            log.warning(f"[VALIDATOR] These features may not be in any indicator group. "
+                        f"Walk-forward will produce 0 trades for conditions using them.")
+        else:
+            _needed = _check_missing_features(rules, pd.DataFrame())  # Get all needed features
+            if _needed:
+                log.info(f"[VALIDATOR] ✅ Rebuild complete — all {len(_needed)} needed columns present")
+            else:
+                log.info(f"[VALIDATOR] ✅ Rebuild complete")
 
     _cached_candles_path  = candles_path
     _cached_candles_df    = candles_df
