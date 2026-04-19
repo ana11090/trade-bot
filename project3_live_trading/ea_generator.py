@@ -184,6 +184,34 @@ def generate_ea(
             f.write(code)
         print(f"[EA GEN] Saved to {output_path}")
 
+        # WHY: Verification report used variables from _generate_mt5 scope
+        #      (exit_class, mql_period, sl_pips, etc.) which don't exist here.
+        #      Compute them from generate_ea's own variables.
+        # CHANGED: April 2026 — fix scope error
+        _exit_class_map = {
+            'Fixed SL/TP': 'FixedSLTP', 'FixedSLTP': 'FixedSLTP',
+            'Trailing Stop': 'TrailingStop', 'TrailingStop': 'TrailingStop',
+            'ATR-Based': 'ATRBased', 'ATRBased': 'ATRBased',
+            'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
+            'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
+            'Hybrid Exit': 'HybridExit', 'HybridExit': 'HybridExit',
+        }
+        exit_class = _exit_class_map.get(exit_name, exit_name)
+        _mql_periods = {
+            'M1': 'PERIOD_M1', 'M5': 'PERIOD_M5', 'M15': 'PERIOD_M15',
+            'H1': 'PERIOD_H1', 'H4': 'PERIOD_H4', 'D1': 'PERIOD_D1',
+        }
+        mql_period = _mql_periods.get(entry_timeframe, 'PERIOD_H1')
+        sl_pips = exit_params.get('sl_pips', 150)
+        tp_pips = exit_params.get('tp_pips', 0 if exit_class in ('TimeBased', 'IndicatorExit') else 300)
+        max_candles = exit_params.get('max_candles', 12)
+        trail_activation_pips = exit_params.get('trail_activation_pips', exit_params.get('activation_pips', 50))
+        trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
+        sl_atr_mult = exit_params.get('sl_atr_mult', 2.0)
+        tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
+        breakeven_pips = exit_params.get('breakeven_pips', 50)
+        prop_firm_name = prop_firm.get('name', 'None') if prop_firm else 'None'
+
         # ── Save verification report as separate .txt ──
         # WHY: Standalone file for easy review alongside the .mq5
         # CHANGED: April 2026
