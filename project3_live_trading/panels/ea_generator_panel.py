@@ -905,7 +905,7 @@ def _generate():
             symbol=_symbol_var.get() if _symbol_var else 'XAUUSD',
             magic_number=magic,
             risk_per_trade_pct=float(_risk_var.get()) if _risk_var else 1.0,
-            max_trades_per_day=int(_max_day_var.get()) if _max_day_var else 5,
+            max_trades_per_day=int(_max_day_var.get()) if _max_day_var else 0,
             session_filter=session_filter,
             day_filter=day_filter,
             cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 0,
@@ -1153,7 +1153,7 @@ def build_panel(parent):
     _rules_info_lbl.pack(fill="x", pady=(4,0))
 
     # Max trades/day — from user's strategy, NOT from JSON ranges
-    _max_day_var = _field(pf_frame, "Max trades/day (from strategy):", "5", 4)
+    _max_day_var = _field(pf_frame, "Max trades/day (0=unlimited):", "0", 4)
 
     # ── Callbacks ─────────────────────────────────────────────────────────
     def _on_firm_change(*_):

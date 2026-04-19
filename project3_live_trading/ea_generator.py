@@ -30,7 +30,9 @@ def generate_ea(
     symbol='XAUUSD',
     magic_number=None,
     risk_per_trade_pct=1.0,
-    max_trades_per_day=5,
+    # WHY: Default 5 was arbitrary. Should match backtest. 0 = unlimited.
+    # CHANGED: April 2026 — match backtest default
+    max_trades_per_day=0,
     session_filter=None,
     day_filter=None,
     min_hold_minutes=0,
@@ -333,6 +335,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
+
+    # WHY: TimeBased and IndicatorExit don't use TP — the backtest exits
+    #      by time or indicator signal, not by TP. Setting TP=300 creates
+    #      a phantom exit that closes trades early — different from backtest.
+    # CHANGED: April 2026 — no phantom TP for time/indicator exits
+    if exit_class in ('TimeBased', 'IndicatorExit'):
+        tp_pips = 0
 
     # ── Trailing stop parameters ──────────────────────────────────────
     # WHY: TrailingStop has two thresholds:
@@ -1499,7 +1508,7 @@ input int    MagicNumber        = {magic_number};            // Magic number
 input double MaxSpreadPips      = {max_spread_pips};         // Max spread to allow entry
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
-input bool   UseNewsFilter      = true;                      // Skip trading around news
+input bool   UseNewsFilter      = {'true' if news_filter_minutes > 0 else 'false'};  // Skip trading around news
 input int    NewsFilterMinutes  = {news_filter_minutes};     // Minutes before/after news
 input bool   UsePropFirmMode    = true;                      // Enable prop firm safety
 input double DailyDDLimitPct    = {dd_daily_pct};           // Daily DD blow limit % (firm closes account here)
@@ -1733,14 +1742,14 @@ void OnTick()
    double lots = CalculateLots(sl);
    if(lots <= 0.0) return;
 
-   //--- Calculate SL/TP prices BEFORE placing the order
-   //    WHY: Passing 0 for SL/TP then calling PositionModify after leaves the
-   //         position unprotected if the EA crashes between the two calls.
-   //    CHANGED: April 2026 — atomic SL/TP placement + direction-aware
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double slPrice = NormalizeDouble({_sl_price_expr}, _Digits);
-   double tpPrice = NormalizeDouble({_tp_price_expr}, _Digits);
+   // WHY: TPPips=0 means "no take profit" (TimeBased, IndicatorExit).
+   //      Passing 0 to trade.Buy/Sell = no TP on the order.
+   //      Old code computed ask+0 = entry price = instant TP close.
+   // CHANGED: April 2026 — handle no-TP exits
+   double tpPrice = (TPPips > 0) ? NormalizeDouble({_tp_price_expr}, _Digits) : 0;
 
    //--- Place order WITH SL and TP attached
    if({_entry_call})

@@ -93,11 +93,15 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "ATR({p}) on {tf}",
     }),
-    # MACD diff
+    # WHY: macd_fast_diff = MACD histogram = MACD line - Signal line.
+    #      Old code read buffer 2 but MQL5's iMACD only has buffer 0 (MACD)
+    #      and buffer 1 (Signal). Buffer 2 doesn't exist → EMPTY_VALUE →
+    #      EA never entered trades. Fix: read both buffers and subtract.
+    # CHANGED: April 2026 — fix MACD buffer index
     (r"^macd_fast_diff$", {
         "mt5_handle_var":  "int handle_macd_{tf};",
         "mt5_handle_init": "handle_macd_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_{tf}, 2); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_{tf}, 0); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_{tf}, 1); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDh_12_26_9'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "MACD histogram on {tf}",
@@ -191,6 +195,54 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": True,
         "description": "VPT on {tf} (custom indicator)",
     }),
+
+    # ── Price action indicators (candle body, range, shadows) ─────────
+    # WHY: These are computed in indicator_utils.py as simple OHLC math.
+    #      Missing mappings caused indicatorFailed=true → EA never traded.
+    # CHANGED: April 2026 — add all price_action MQL5 mappings
+    (r"^candle_body$", {
+        "mt5_code":       "MathAbs(iClose(NULL,{mt5_tf},1) - iOpen(NULL,{mt5_tf},1))",
+        "tradovate_code": "abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1])",
+        "custom_indicator_mt5": False,
+        "description": "Candle body size on {tf}",
+    }),
+    (r"^candle_range$", {
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1))",
+        "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1])",
+        "custom_indicator_mt5": False,
+        "description": "Candle range (high-low) on {tf}",
+    }),
+    (r"^upper_shadow$", {
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},1) - MathMax(iOpen(NULL,{mt5_tf},1), iClose(NULL,{mt5_tf},1)))",
+        "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - max(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]))",
+        "custom_indicator_mt5": False,
+        "description": "Upper shadow size on {tf}",
+    }),
+    (r"^lower_shadow$", {
+        "mt5_code":       "(MathMin(iOpen(NULL,{mt5_tf},1), iClose(NULL,{mt5_tf},1)) - iLow(NULL,{mt5_tf},1))",
+        "tradovate_code": "(min(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]) - df_m{tv_tf}['low'].iloc[-1])",
+        "custom_indicator_mt5": False,
+        "description": "Lower shadow size on {tf}",
+    }),
+    (r"^body_to_range_ratio$", {
+        "mt5_code":       "(MathAbs(iClose(NULL,{mt5_tf},1) - iOpen(NULL,{mt5_tf},1)) / MathMax(iHigh(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1), 0.000001))",
+        "tradovate_code": "(abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1]) / max(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1], 1e-6))",
+        "custom_indicator_mt5": False,
+        "description": "Body to range ratio on {tf}",
+    }),
+    (r"^is_bullish$", {
+        "mt5_code":       "(iClose(NULL,{mt5_tf},1) > iOpen(NULL,{mt5_tf},1) ? 1.0 : 0.0)",
+        "tradovate_code": "(1.0 if df_m{tv_tf}['close'].iloc[-1] > df_m{tv_tf}['open'].iloc[-1] else 0.0)",
+        "custom_indicator_mt5": False,
+        "description": "Is candle bullish on {tf}",
+    }),
+    (r"^distance_from_low$", {
+        "mt5_code":       "((iClose(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1)) / MathMax(iClose(NULL,{mt5_tf},1), 0.000001) * 100.0)",
+        "tradovate_code": "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
+        "custom_indicator_mt5": False,
+        "description": "Distance from bar low as % on {tf}",
+    }),
+
     # Close position in bar range
     (r"^close_position_in_range$", {
         "mt5_code":       "(iClose(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1))/(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1)+0.000001)",
