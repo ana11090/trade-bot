@@ -314,22 +314,14 @@ def _update_strat_info():
         except Exception:
             _badge_lbl.configure(text="", fg=GREY)
 
-    # ── Stale rules warning ───────────────────────────────────────────────
-    # WHY: If the analysis_report.json is missing entry_timeframe, the EA
-    #      will use H1 by default. If direction is missing, it generates
-    #      BUY-only code. The user needs to know and fix this.
-    # CHANGED: April 2026 — stale rules detection in EA generator
-    if _badge_lbl:
-        try:
-            from shared.stale_check import check_analysis_report
-            stale = check_analysis_report()
-            if stale['is_stale']:
-                issues_short = '; '.join(stale['issues'][:2])
-                _badge_lbl.configure(
-                    text=f"⚠️ Stale rules: {issues_short} — re-run P4 Discovery",
-                    fg="#e67e00")
-        except ImportError:
-            pass
+    # WHY: Old code overwrote validation badge with analysis_report stale check.
+    #      The stale check applies to the REPORT, not the selected strategy.
+    #      A validated Grade A strategy would show "Stale rules" because the
+    #      analysis_report is old — confusing and wrong.
+    #      Only show stale check for strategies that come FROM the analysis_report
+    #      (source == 'backtest'), not saved rules or optimizer results.
+    # CHANGED: April 2026 — don't overwrite validation with stale check
+    # (Stale check is already in _generate() at line 696 where it matters.)
 
     # Update condition threshold vars
     _refresh_condition_vars(idx)
@@ -420,6 +412,9 @@ def _refresh_condition_vars(idx):
         w.destroy()
     _condition_vars.clear()
 
+    # WHY: Load strategy data ONCE — old code called _get_strategy_data
+    #      twice (line 415 and 442), reading JSON from disk each time.
+    # CHANGED: April 2026 — single load
     strat_data = _get_strategy_data(idx)
     rules = strat_data.get('rules', [])
     win_rules = [r for r in rules if r.get('prediction') == 'WIN']
@@ -446,12 +441,29 @@ def _refresh_condition_vars(idx):
             tk.Entry(row, textvariable=var, width=14, font=("Consolas", 8)
                      ).pack(side=tk.LEFT, padx=(4, 0))
 
-    # Exit params
-    strat_data = _get_strategy_data(idx)
-    exit_params = strat_data.get('exit_strategy_params', {'sl_pips': 150, 'tp_pips': 300})
+    # Exit params — from same strat_data (no second load)
+    exit_name = strat_data.get('exit_name', strat_data.get('exit_class', 'FixedSLTP'))
+    exit_params = strat_data.get('exit_strategy_params', strat_data.get('exit_params', {}))
+
+    # WHY: TimeBased exit has no tp_pips. Old code defaulted to 300,
+    #      making user think TP was active. Show 0 for exits without TP.
+    # CHANGED: April 2026 — exit-aware defaults
+    if exit_name in ('TimeBased', 'Time-Based', 'IndicatorExit', 'Indicator Exit'):
+        _default_tp = 0
+    else:
+        _default_tp = 300
+
     if _sl_var:    _sl_var.set(str(exit_params.get('sl_pips', 150)))
-    if _tp_var:    _tp_var.set(str(exit_params.get('tp_pips', 300)))
+    if _tp_var:    _tp_var.set(str(exit_params.get('tp_pips', _default_tp)))
     if _trail_var: _trail_var.set(str(exit_params.get('trail_pips', exit_params.get('trail_distance_pips', 100))))
+
+    # Show exit strategy name
+    tk.Label(_condition_frame, text=f"\nExit: {exit_name}",
+             font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#667eea").pack(anchor="w", pady=(8, 0))
+    for k, v in exit_params.items():
+        if k != 'pip_size':
+            tk.Label(_condition_frame, text=f"  {k}: {v}",
+                     font=("Consolas", 8), bg=WHITE, fg=MIDGREY).pack(anchor="w", padx=(12, 0))
 
     # ── Auto-fill filters from optimizer or saved rules ───────────────────
     # WHY: The optimizer finds the best filters (max_trades_per_day, sessions,
@@ -1018,11 +1030,28 @@ def build_panel(parent):
         _strategy_var = tk.StringVar(value="")
     else:
         _strategy_var = tk.StringVar(value=_strategies[0]['label'])
-        labels = [s['label'] for s in _strategies]
+        # WHY: Separator rows were selectable in dropdown. Selecting one
+        #      returned __separator__ index → empty data → confusing.
+        # CHANGED: April 2026 — filter separators from dropdown
+        labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
         dd = ttk.Combobox(sel_frame, textvariable=_strategy_var,
                           values=labels, state="readonly", width=70)
         dd.pack(anchor="w")
         dd.bind("<<ComboboxSelected>>", lambda e: _update_strat_info())
+
+        def _refresh_strategies():
+            global _strategies
+            _load_strategies()
+            new_labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
+            dd['values'] = new_labels
+            if new_labels and _strategy_var.get() not in new_labels:
+                _strategy_var.set(new_labels[0])
+            _update_strat_info()
+            print(f"[EA GEN] Refreshed — {len(new_labels)} strategies")
+
+        tk.Button(sel_frame, text="🔄 Refresh", font=("Segoe UI", 8),
+                  bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
+                  command=_refresh_strategies).pack(anchor="w", pady=(4, 0))
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
@@ -1451,7 +1480,7 @@ def refresh():
     global _strategies, _strategy_var
     _load_strategies()
     if _strategy_var is not None and _strategies:
-        labels = [s['label'] for s in _strategies]
+        labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
         if _strategy_var.get() not in labels:
             _strategy_var.set(labels[0])
         _update_strat_info()
