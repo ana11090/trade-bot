@@ -908,9 +908,9 @@ def _generate():
             max_trades_per_day=int(_max_day_var.get()) if _max_day_var else 5,
             session_filter=session_filter,
             day_filter=day_filter,
-            cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 60,
+            cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 0,
             min_hold_minutes=_auto_min_hold[0],
-            news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 5,
+            news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 0,
             max_spread_pips=float(_spread_var.get()) if _spread_var else 5.0,
             direction=_strat_direction,
         )
@@ -1260,7 +1260,11 @@ def build_panel(parent):
     _magic_var    = _field(tr_frame, "Magic number:", "12345", 8)
     _risk_var     = _field(tr_frame, "Risk per trade %:", "1.0", 6)
     _spread_var   = _field(tr_frame, "Max spread (pips):", "5.0", 6)
-    _cooldown_var = _field(tr_frame, "Cooldown (minutes):", "60", 6)
+    # WHY: Cooldown was 60 by default but the backtest doesn't test with
+    #      any cooldown. Adding one in the EA = fewer trades than backtest
+    #      showed = untested behavior. Default to 0 to match backtest.
+    # CHANGED: April 2026 — match backtest defaults
+    _cooldown_var = _field(tr_frame, "Cooldown (minutes):", "0", 6)
 
     sess_row = tk.Frame(tr_frame, bg=WHITE)
     sess_row.pack(fill="x", pady=3)
@@ -1288,7 +1292,11 @@ def build_panel(parent):
              width=24, anchor="w").pack(side=tk.LEFT)
     _news_cb_var  = tk.BooleanVar(value=True)
     tk.Checkbutton(news_row, variable=_news_cb_var, bg=WHITE).pack(side=tk.LEFT)
-    _news_min_var = tk.StringVar(value="5")
+    # WHY: News filter was 5 min by default but the backtest doesn't
+    #      skip candles around news. Adding it in the EA = missed trades
+    #      the backtest counted = untested behavior. Default to 0.
+    # CHANGED: April 2026 — match backtest defaults
+    _news_min_var = tk.StringVar(value="0")
     tk.Entry(news_row, textvariable=_news_min_var, width=4).pack(side=tk.LEFT, padx=2)
     tk.Label(news_row, text="min before/after HIGH impact", font=("Segoe UI", 8),
              bg=WHITE, fg=GREY).pack(side=tk.LEFT)
