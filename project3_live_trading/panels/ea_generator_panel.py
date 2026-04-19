@@ -794,6 +794,13 @@ def _generate():
             'rule_combo':           strat_data.get('rule_combo', ''),
             'direction':            _direction,
             'filters_applied':      strat_data.get('filters_applied', {}),
+            # WHY: Pass regime filter conditions so the EA can replicate
+            #      the backtest's regime gating. Read from three sources:
+            #      1. Per-rule regime_filter key (Phase A.43)
+            #      2. run_settings.regime_filter_conditions
+            #      3. Empty = no regime filter
+            # CHANGED: April 2026 — regime filter in EA
+            'regime_filter_conditions': [],
             'stats':                {
                 # WHY: Backtest results store WR as percentage (49.7),
                 #      optimizer saves store WR as decimal (0.497).
@@ -864,6 +871,29 @@ def _generate():
             print(f"[EA GEN PANEL] Strategy direction: {_strat_direction}")
         else:
             print(f"[EA GEN PANEL] WARNING: selected strategy has no direction field")
+
+        # Extract regime conditions from strategy data
+        _ea_regime = []
+        # Source 1: per-rule regime_filter
+        for _r in strategy.get('rules', []):
+            _rf = _r.get('regime_filter')
+            if _rf and isinstance(_rf, list) and len(_rf) > 0:
+                _ea_regime = _rf
+                break
+        # Source 2: run_settings
+        if not _ea_regime:
+            _rs = strat_data.get('run_settings', {})
+            if _rs.get('regime_filter_enabled') and _rs.get('regime_filter_conditions'):
+                _ea_regime = _rs['regime_filter_conditions']
+        # Source 3: top-level regime_filter_conditions
+        if not _ea_regime:
+            _ea_regime = strat_data.get('regime_filter_conditions', [])
+
+        strategy['regime_filter_conditions'] = _ea_regime
+        if _ea_regime:
+            print(f"[EA GEN] Regime filter: {len(_ea_regime)} conditions embedded from strategy data")
+        else:
+            print(f"[EA GEN] Regime filter: none (strategy had no regime filter or filtered 0%)")
 
         from project3_live_trading.ea_generator import generate_ea
         code = generate_ea(

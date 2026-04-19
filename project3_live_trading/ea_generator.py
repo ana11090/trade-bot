@@ -116,6 +116,9 @@ def generate_ea(
     restrictions  = prop_firm.get('restrictions', {}) if prop_firm else {}
     challenge     = prop_firm.get('challenge', {}) if prop_firm else {}
 
+    # Read regime filter conditions from strategy
+    _regime_conds = strategy.get('regime_filter_conditions', [])
+
     if platform == 'mt5':
         code = _generate_mt5(
             win_rules=win_rules,
@@ -147,6 +150,7 @@ def generate_ea(
             restrictions=restrictions,
             challenge=challenge,
             direction=_dir,  # NEW: pass strategy direction (using _dir from FIX 1A)
+            regime_conditions=_regime_conds,
         )
     else:
         code = _generate_tradovate(
@@ -226,6 +230,20 @@ def generate_ea(
                     _v = _c.get('value', 0)
                     _rl.append(f"  {_ci}. {_f} {_o} {_v:.6f}")
                 _rl.append("")
+
+            # Add regime filter info
+            if _regime_conds:
+                _rl.append("REGIME FILTER (pre-entry gate)")
+                _rl.append("-" * 70)
+                _rl.append(f"{len(_regime_conds)} conditions (must ALL pass before checking entry rules)")
+                _rl.append("")
+                for _ri, _rc in enumerate(_regime_conds, 1):
+                    _f = _rc.get('feature', '?')
+                    _o = _rc.get('direction', _rc.get('operator', '>'))
+                    _v = _rc.get('threshold', _rc.get('value', 0))
+                    _rl.append(f"  {_ri}. {_f} {_o} {_v:.6f}")
+                _rl.append("")
+
             _rl.append("EXIT: " + exit_class)
             _rl.append(f"  Full params: {exit_params}")
             _rl.append("")
@@ -303,7 +321,8 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   dd_mechanics=None, account_size=10000,
                   restrictions=None, challenge=None,
                   entry_timeframe='H1',
-                  direction='BUY'):  # NEW
+                  direction='BUY',
+                  regime_conditions=None):
     """Generate MQL5 EA code. direction must be 'BUY' or 'SELL'."""
     if direction not in ('BUY', 'SELL'):
         raise ValueError(f"_generate_mt5: direction must be BUY or SELL, got {direction!r}")
@@ -557,6 +576,42 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         day_code = 'if(dow == 0 || dow == 6) return false;\n   return true;  // All weekdays allowed'
 
     conditions_block = '\n'.join(condition_inputs)
+
+    # ── Regime filter check (pre-entry gate) ─────────────────────────
+    # WHY: If the strategy was backtested with a regime filter, the EA
+    #      must apply the same filter. Regime conditions are checked
+    #      BEFORE entry conditions — if regime fails, skip the bar.
+    # CHANGED: April 2026 — regime filter in EA
+    regime_check_block = ''
+    if regime_conditions:
+        _regime_lines = []
+        _regime_lines.append('   // ── Regime Filter (from backtest settings) ──')
+        _regime_lines.append('   bool regimePass = true;')
+        for ri, rcond in enumerate(regime_conditions, 1):
+            _feat = rcond.get('feature', '')
+            _op = rcond.get('direction', rcond.get('operator', '>'))
+            _val = rcond.get('threshold', rcond.get('value', 0))
+            if not _feat:
+                continue
+            try:
+                _mql = get_mql_code(_feat, 'mt5')
+                _var_n = _mql['var_name']
+                _mql_op = OPERATOR_MAP_MQL.get(_op, '>')
+                _regime_lines.append(f'   // Regime {ri}: {_feat} {_op} {_val}')
+                _regime_lines.append(f'   {_mql["read_code"]}')
+                _regime_lines.append(f'   if(!(val_{_var_n} {_mql_op} {float(_val):.6f})) regimePass = false;')
+                # Add handle if needed
+                if _mql.get('handle_var') and _mql['handle_var'] not in exit_globals:
+                    exit_globals += _mql['handle_var'] + '\n'
+                if _mql.get('handle_init'):
+                    extra_init.append(f'   {_mql["handle_init"]}')
+            except Exception as _re:
+                _regime_lines.append(f'   // Regime {ri}: {_feat} — SKIPPED (no MQL mapping: {_re})')
+
+        _regime_lines.append('   if(!regimePass) { LogSkip("regime_filter", 0); return; }')
+        _regime_lines.append('')
+        regime_check_block = '\n'.join(_regime_lines)
+
     conditions_check_block = '\n'.join(condition_checks)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1647,6 +1702,7 @@ void OnTick()
    bool entrySignal = true;
    bool indicatorFailed = false;
 
+{regime_check_block}
 {conditions_check_block}
 
    if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
