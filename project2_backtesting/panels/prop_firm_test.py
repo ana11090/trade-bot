@@ -593,9 +593,45 @@ def build_panel(parent):
     tk.Label(header, text="Test your backtested strategy against prop firm challenge rules",
              bg=WHITE, fg=GREY, font=("Segoe UI", 11)).pack(pady=(5, 0))
 
+    # ── Scrollable area ───────────────────────────────────────────────────────
+    # WHY: Panel content is tall (strategy + settings + firms + results + trades).
+    #      Without scrolling, users with small screens can't access bottom content.
+    # CHANGED: April 2026 — add scrollable canvas with mouse wheel support
+    scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
+    vscroll = tk.Scrollbar(panel, orient="vertical", command=scroll_canvas.yview)
+    scroll_frame = tk.Frame(scroll_canvas, bg=BG)
+
+    scroll_frame.bind("<Configure>",
+                      lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
+    cwin = scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    scroll_canvas.configure(yscrollcommand=vscroll.set)
+    scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
+    vscroll.pack(side="right", fill="y", padx=(0, 20))
+
+    # Safe mousewheel binding — only active when mouse is over canvas
+    def _on_enter(event):
+        scroll_canvas.bind("<MouseWheel>",
+            lambda e: scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # Linux
+        scroll_canvas.bind("<Button-4>", lambda e: scroll_canvas.yview_scroll(-3, "units"))
+        scroll_canvas.bind("<Button-5>", lambda e: scroll_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        scroll_canvas.unbind("<MouseWheel>")
+        scroll_canvas.unbind("<Button-4>")
+        scroll_canvas.unbind("<Button-5>")
+
+    scroll_canvas.bind("<Enter>", _on_enter)
+    scroll_canvas.bind("<Leave>", _on_leave)
+    scroll_canvas.bind("<Configure>",
+                        lambda e: scroll_canvas.itemconfig(cwin, width=e.width))
+
+    # Everything below goes inside scroll_frame
+    content = scroll_frame
+
     # ── Strategy selection ────────────────────────────────────────────────────
-    strat_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=15)
-    strat_frame.pack(fill="x", padx=20, pady=(0, 5))
+    strat_frame = tk.Frame(content, bg=WHITE, padx=20, pady=15)
+    strat_frame.pack(fill="x", padx=5, pady=(5, 5))
 
     tk.Label(strat_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
@@ -641,8 +677,8 @@ def build_panel(parent):
     _validation_label.pack(anchor="w", padx=0)
 
     # ── Settings ──────────────────────────────────────────────────────────────
-    settings_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
-    settings_frame.pack(fill="x", padx=20, pady=(0, 5))
+    settings_frame = tk.Frame(content, bg=WHITE, padx=20, pady=12)
+    settings_frame.pack(fill="x", padx=5, pady=(0, 5))
 
     tk.Label(settings_frame, text="Settings", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 8))
@@ -667,8 +703,8 @@ def build_panel(parent):
     _commission_var = _field(row2, "Commission (pips):", "0.0", 5)
 
     # ── Firm / Challenge selection ─────────────────────────────────────────────
-    firms_outer = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
-    firms_outer.pack(fill="x", padx=20, pady=(0, 5))
+    firms_outer = tk.Frame(content, bg=WHITE, padx=20, pady=12)
+    firms_outer.pack(fill="x", padx=5, pady=(0, 5))
 
     hdr_row = tk.Frame(firms_outer, bg=WHITE)
     hdr_row.pack(fill="x", pady=(0, 8))
@@ -750,8 +786,8 @@ def build_panel(parent):
                          font=("Segoe UI", 8), bg="#fafafa", fg=GREY).pack(side=tk.LEFT, padx=(5, 0))
 
     # ── Run button + progress ─────────────────────────────────────────────────
-    run_frame = tk.Frame(panel, bg=BG, pady=10)
-    run_frame.pack(fill="x", padx=20)
+    run_frame = tk.Frame(content, bg=BG, pady=10)
+    run_frame.pack(fill="x", padx=5)
 
     _run_btn = tk.Button(run_frame, text="Run Prop Firm Test",
                          command=_run_test,
@@ -768,14 +804,14 @@ def build_panel(parent):
     _status_label.pack(pady=(0, 5))
 
     # ── Results section ───────────────────────────────────────────────────────
-    results_header = tk.Frame(panel, bg=WHITE, padx=20, pady=8)
-    results_header.pack(fill="x", padx=20, pady=(5, 0))
+    results_header = tk.Frame(content, bg=WHITE, padx=20, pady=8)
+    results_header.pack(fill="x", padx=5, pady=(5, 0))
     tk.Label(results_header, text="Results (sorted by Expected ROI)",
              font=("Segoe UI", 11, "bold"), bg=WHITE, fg=DARK).pack(side=tk.LEFT)
 
     # ── Trade history section ─────────────────────────────────────────────────
-    trades_header = tk.Frame(panel, bg=WHITE, padx=20, pady=8)
-    trades_header.pack(fill="x", padx=20, pady=(8, 0))
+    trades_header = tk.Frame(content, bg=WHITE, padx=20, pady=8)
+    trades_header.pack(fill="x", padx=5, pady=(8, 0))
 
     trades_title_row = tk.Frame(trades_header, bg=WHITE)
     trades_title_row.pack(fill="x")
