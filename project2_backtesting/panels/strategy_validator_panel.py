@@ -869,16 +869,21 @@ def _get_strategy_meta(idx):
             _rf_enabled = _run_settings.get('regime_filter_enabled', False)
             _rf_conditions = _run_settings.get('regime_filter_conditions', [])
             if _rf_enabled and _rf_conditions:
-                # Case (b): embed the actual conditions
+                # Case (b): embed the actual conditions — FORCE override
+                # WHY: Rules may already have regime_filter key from add_run_settings_metadata.
+                #      Must override to ensure validator uses exact backtest conditions.
+                # CHANGED: April 2026 — force override, don't check if key exists
                 for _rule in rules:
-                    if 'regime_filter' not in _rule:
-                        _rule['regime_filter'] = _rf_conditions
+                    _rule['regime_filter'] = _rf_conditions
                 print(f"[validator] Embedded {len(_rf_conditions)} regime conditions from run_settings into {len(rules)} rules")
             elif not _rf_enabled:
-                # Case (a): explicitly disable — don't fall back to global config
+                # Case (a): explicitly disable — FORCE override even if key exists.
+                # WHY: add_run_settings_metadata may have embedded regime conditions
+                #      into the rules during backtest save, even though the filter
+                #      passed 0% of signals (effectively OFF). Force [] to suppress.
+                # CHANGED: April 2026 — force override, don't check if key exists
                 for _rule in rules:
-                    if 'regime_filter' not in _rule:
-                        _rule['regime_filter'] = []  # empty = OFF
+                    _rule['regime_filter'] = []  # empty = OFF
                 print(f"[validator] Regime filter was OFF during backtest — suppressing global config fallback")
             # Case (c): no run_settings → don't touch rules → backward compat
 
