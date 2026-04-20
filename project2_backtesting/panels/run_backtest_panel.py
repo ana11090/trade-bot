@@ -718,6 +718,27 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # Source 3: P2 saved config fallback
                     # WHY: P1 Run Scenarios is where the user selects their firm.
                     # CHANGED: April 2026 — P1 firm flows to P2 backtest
+
+                    # WHY: Firm dropdown was set at panel build time. If user
+                    #      changed firm in P1, the dropdown is stale. Re-read
+                    #      P1 config and update the dropdown before using it.
+                    # CHANGED: April 2026 — refresh firm from P1 at run time
+                    try:
+                        _p1_refresh_path = os.path.join(
+                            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            'project1_reverse_engineering', 'config_loader.py')
+                        import importlib.util as _ilu_refresh
+                        _spec_refresh = _ilu_refresh.spec_from_file_location('_p1_refresh', _p1_refresh_path)
+                        _p1_mod_refresh = _ilu_refresh.module_from_spec(_spec_refresh)
+                        _spec_refresh.loader.exec_module(_p1_mod_refresh)
+                        _p1_cfg_refresh = _p1_mod_refresh.load()
+                        _p1_firm_refresh = _p1_cfg_refresh.get('prop_firm_name', '')
+                        if _p1_firm_refresh and _bt_firm_var:
+                            _bt_firm_var.set(_p1_firm_refresh)
+                            print(f"[BACKTEST] Refreshed firm from P1: {_p1_firm_refresh}")
+                    except Exception as _e_refresh:
+                        print(f"[BACKTEST] Could not refresh firm from P1: {_e_refresh}")
+
                     _cfg_firm_data = {}
                     _selected_firm_name = _bt_firm_var.get() if _bt_firm_var else ''
                     if _selected_firm_name and _selected_firm_name not in ('', 'None'):
@@ -3364,7 +3385,27 @@ def build_panel(parent):
 
 
 def refresh():
-    global _output_text, _progress_label, _progress_bar, _step_label
+    global _output_text, _progress_label, _progress_bar, _step_label, _bt_firm_var
+
+    # WHY: User may have changed firm in P1 Run Scenarios. Refresh the
+    #      dropdown from P1 config so it shows the current firm.
+    # CHANGED: April 2026 — refresh firm when panel becomes visible
+    try:
+        import os
+        _p1_refresh_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            'project1_reverse_engineering', 'config_loader.py')
+        import importlib.util as _ilu_refresh
+        _spec_refresh = _ilu_refresh.spec_from_file_location('_p1_refresh', _p1_refresh_path)
+        _p1_mod_refresh = _ilu_refresh.module_from_spec(_spec_refresh)
+        _spec_refresh.loader.exec_module(_p1_mod_refresh)
+        _p1_cfg_refresh = _p1_mod_refresh.load()
+        _p1_firm_refresh = _p1_cfg_refresh.get('prop_firm_name', '')
+        if _p1_firm_refresh and _bt_firm_var:
+            _bt_firm_var.set(_p1_firm_refresh)
+    except Exception:
+        pass
+
     if _progress_label is not None and not _running:
         _progress_label.config(text="Ready to run backtest", fg="#666666")
         _progress_bar['value'] = 0
