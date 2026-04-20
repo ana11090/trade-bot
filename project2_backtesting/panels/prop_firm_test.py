@@ -214,6 +214,12 @@ def _on_strategy_select(event=None):
                 _spread_var.set(str(r.get('spread_pips', 25.0)))
             if _commission_var:
                 _commission_var.set(str(r.get('commission_pips', 0.0)))
+            # WHY: All broker specs must come from result (single source of truth).
+            # CHANGED: April 2026 — rule-driven broker specs (BUG 6 fix)
+            if r.get('pip_value_per_lot') and _pip_val_var:
+                _pip_val_var.set(str(r['pip_value_per_lot']))
+            if r.get('account_size') and _account_size_var:
+                _account_size_var.set(str(int(float(r['account_size']))))
         except Exception:
             pass
 

@@ -145,6 +145,21 @@ def display_summary(output_text, summary_frame):
         risk_pct = 1.0
         pip_value = 1.0
 
+    # WHY: Read pip_value from first result if available (rule is single source of truth).
+    # CHANGED: April 2026 — rule-driven pip_value (BUG 7 fix)
+    try:
+        data = load_summary_stats()
+        if data:
+            results = data.get('results', []) or data.get('matrix', [])
+            if results and len(results) > 0:
+                first_result = results[0]
+                _vr_rule_pv = (first_result.get('pip_value_per_lot') or
+                              first_result.get('run_settings', {}).get('pip_value_per_lot', 0))
+                if _vr_rule_pv and float(_vr_rule_pv) > 0:
+                    pip_value = float(_vr_rule_pv)
+    except Exception:
+        pass  # Use config pip_value as fallback
+
     # WHY: Each strategy can have a different SL distance. Hardcoding 150 made
     #      the dollar display wrong for any strategy with SL ≠ 150.
     # CHANGED: April 2026 — per-strategy lot sizing via module-level helper

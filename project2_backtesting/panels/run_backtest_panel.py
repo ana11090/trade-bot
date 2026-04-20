@@ -707,12 +707,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
                     _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 1.0))
                     _cfg_slippage    = 1.0  # 1 pip slippage — realistic for XAUUSD
-                    # WHY: Config stores commission in dollars per lot (e.g. $4).
-                    #      Backtester expects pips. Convert: pips = dollars / pip_value.
-                    #      Without this, $4 commission was treated as 4.0 pips = $40/lot.
-                    # CHANGED: April 2026 — commission dollars-to-pips conversion
-                    if _cfg_pip_value > 0:
-                        _cfg_commission = _cfg_commission / _cfg_pip_value
+                    # WHY: Commission conversion moved AFTER rule overrides (BUG 2 fix).
+                    #      Rule's pip_value must be applied before converting commission.
+                    # CHANGED: April 2026 — commission conversion happens after overrides
                     _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
                     _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
                     # pip_size from instrument specs based on symbol
@@ -825,6 +822,38 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         if first_rule.get('spread_pips'):
                             _cfg_spread = float(first_rule['spread_pips'])
                             print(f"[BACKTEST] Using spread from rule: {_cfg_spread} pips")
+                        # WHY: Commission, account, contract_size, slippage, firm
+                        #      must also come from rule (single source of truth).
+                        # CHANGED: April 2026 — all broker specs from rule
+                        if first_rule.get('commission_pips') is not None:
+                            _cfg_commission = float(first_rule['commission_pips'])
+                            print(f"[BACKTEST] Using commission from rule: {_cfg_commission} pips")
+                        if first_rule.get('account_size'):
+                            _cfg_account = float(first_rule['account_size'])
+                            print(f"[BACKTEST] Using account from rule: ${_cfg_account:,.0f}")
+                        if first_rule.get('contract_size'):
+                            _cfg_contract = float(first_rule['contract_size'])
+                        if first_rule.get('slippage_pips') is not None:
+                            _cfg_slippage = float(first_rule['slippage_pips'])
+                            print(f"[BACKTEST] Using slippage from rule: {_cfg_slippage} pips")
+                        if first_rule.get('prop_firm_name'):
+                            _firm_display = first_rule['prop_firm_name']
+                            _stage = first_rule.get('prop_firm_stage', '')
+                            if _stage:
+                                _firm_display += f" ({_stage})"
+                            print(f"[BACKTEST] Using firm from rule: {_firm_display}")
+
+                    # WHY: Commission conversion must happen AFTER rule overrides
+                    #      pip_value, otherwise it divides by the wrong value.
+                    #      Only convert if commission came from config (in dollars).
+                    #      If commission came from rule, it's already in pips.
+                    # CHANGED: April 2026 — fix commission conversion order (BUG 2)
+                    _commission_from_rule = (selected_rules and
+                        selected_rules[0].get('commission_pips') is not None)
+                    if not _commission_from_rule and _cfg_pip_value > 0:
+                        _cfg_commission = _cfg_commission / _cfg_pip_value
+                        print(f"[BACKTEST] Converted commission from config: {_cfg_commission:.2f} pips")
+
                     # WHY: Show leverage prominently — users need to confirm
                     #      that lot sizes are margin-capped for their firm.
                     # CHANGED: April 2026 — prominent leverage display
@@ -846,7 +875,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}%  |  "
                         f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
                         + _period_text +
-                        f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.0f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
+                        f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.2f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n\n"
                     )
                 except Exception as _cfg_e:

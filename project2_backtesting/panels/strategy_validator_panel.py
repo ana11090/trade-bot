@@ -157,6 +157,8 @@ _tree           = None
 _selected_count = None
 _check_vars     = {}  # index -> bool (checkbox state)
 _firm_name_to_id = {}  # firm display name -> firm_id (for Monte Carlo)
+_current_run_settings = {}  # WHY: Store current strategy's run_settings for _show_estimation
+                            # CHANGED: April 2026 — BUG 5 fix (pip_value from rule)
 
 
 # Settings vars
@@ -1801,8 +1803,17 @@ def _show_estimation(trades, parent_frame):
 
     # Read settings from the panel (not hardcoded)
     try:
+        global _current_run_settings
         risk = float(_risk_var.get()) if _risk_var else 1.0
-        pip_value = float(_pipval_var.get()) if _pipval_var else 1.0
+        # WHY: Read pip_value from strategy's run_settings first (single source of truth).
+        # CHANGED: April 2026 — rule-driven pip_value (BUG 5 fix)
+        _rule_pv = _current_run_settings.get('pip_value_per_lot', 0)
+        if _rule_pv and float(_rule_pv) > 0:
+            pip_value = float(_rule_pv)
+        elif _pipval_var:
+            pip_value = float(_pipval_var.get())
+        else:
+            pip_value = 1.0
         sl_pips = float(_sl_var.get()) if _sl_var else 150.0
     except:
         risk = 1.0
@@ -2737,6 +2748,7 @@ def _run(mode, override_idx=None, done_event=None):
     print(f"[VALIDATOR] Strategy direction: {strategy_direction}")
 
     # ── Read run_settings from strategy for leverage auto-detection ──
+    global _current_run_settings
     _val_run_settings = {}
     try:
         if isinstance(idx, (int, str)) and not str(idx).startswith('saved_') and str(idx) != 'optimizer_latest':
@@ -2759,6 +2771,9 @@ def _run(mode, override_idx=None, done_event=None):
                     _val_run_settings = _val_saved[_val_ridx2].get('run_settings', {})
     except Exception as _vex:
         print(f"[VALIDATOR] Could not read run_settings for leverage: {_vex}")
+
+    # Store in global so _show_estimation can read pip_value from strategy
+    _current_run_settings = _val_run_settings
 
     # ── Loud diagnostics — print everything the validator will use ──
     # WHY: 0-trade walks are silent. Without diagnostics you can't tell
@@ -2810,7 +2825,15 @@ def _run(mode, override_idx=None, done_event=None):
         comm_pips     = float(_comm_var.get())
         risk_pct      = float(_risk_var.get())
         sl_pips       = float(_sl_var.get())
-        pip_val       = float(_pipval_var.get())
+        # WHY: Read pip_value from strategy's run_settings first, then UI, then default.
+        #      Strategy carries its own broker specs (single source of truth).
+        # CHANGED: April 2026 — rule-driven pip_value (BUG 5 fix)
+        _mc_rule_pv = _val_run_settings.get('pip_value_per_lot', 0)
+        if _mc_rule_pv and float(_mc_rule_pv) > 0:
+            pip_val = float(_mc_rule_pv)
+            print(f"[VALIDATOR] Using pip value from strategy: ${pip_val}/lot")
+        else:
+            pip_val = float(_pipval_var.get())
         pip_size      = float(_pip_size_var.get())
         n_windows     = int(_windows_var.get())
         train_years   = int(_train_var.get())
