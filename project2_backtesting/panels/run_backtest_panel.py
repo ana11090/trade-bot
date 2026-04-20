@@ -691,10 +691,25 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     #      instrument type so margin-infeasible lots are capped.
                     #      Uses conservative defaults by instrument class.
                     # CHANGED: April 2026 — margin-aware lot sizing
-                    from shared.prop_firm_engine import get_instrument_type as _get_inst
+                    from shared.prop_firm_engine import (
+                        get_instrument_type as _get_inst,
+                        get_leverage_for_symbol as _get_lev,
+                        load_all_firms as _load_firms_bt,
+                    )
                     _inst_type = _get_inst(_cfg_symbol)
-                    _inst_lev_map = {'forex': 30, 'metals': 10, 'indices': 10, 'energies': 5, 'crypto': 1}
-                    _cfg_leverage = _inst_lev_map.get(_inst_type, 30)
+                    # WHY: Read leverage from firm profile rather than a
+                    #      hardcoded map — ensures Get Leveraged 1:10 metals
+                    #      (or any firm's actual value) is used.
+                    # CHANGED: April 2026 — firm-specific leverage (Bug 3 fix)
+                    _cfg_firm_data = {}
+                    try:
+                        _all_bt_firms = _load_firms_bt()
+                        _cfg_firm_id = _bt_cfg.get('firm_id', _bt_cfg.get('firm', ''))
+                        if _cfg_firm_id and _cfg_firm_id in _all_bt_firms:
+                            _cfg_firm_data = _all_bt_firms[_cfg_firm_id].config
+                    except Exception:
+                        pass
+                    _cfg_leverage = _get_lev(_cfg_firm_data, _cfg_symbol)
                     _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
                     output_text.insert(tk.END,
                         f"Config: spread={_cfg_spread}, commission={_cfg_commission}, "

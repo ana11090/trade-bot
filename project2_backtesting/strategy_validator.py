@@ -512,6 +512,12 @@ def walk_forward_validate(
     #      (min_hold, sessions, etc.) can be applied to validation results.
     # CHANGED: April 2026 — Validator Fix
     filters=None,
+    # WHY (leverage): Pass through to fast_backtest so validation uses
+    #      the same margin cap as the backtest it's validating.
+    #      0 = no cap (backward compat).
+    # CHANGED: April 2026 — leverage pass-through
+    leverage=0,
+    contract_size=100.0,
 ):
     """
     Rule-stability test across sliding time windows.
@@ -753,6 +759,7 @@ def walk_forward_validate(
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
+                leverage=leverage, contract_size=contract_size,
             )
         except Exception as e:
             in_trades = []
@@ -800,6 +807,7 @@ def walk_forward_validate(
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
+                leverage=leverage, contract_size=contract_size,
             )
         except Exception as e:
             out_trades = []
@@ -1254,6 +1262,8 @@ def slippage_stress_test(
     n_runs_per_level=3,
     progress_callback=None,
     filters=None,
+    leverage=0,
+    contract_size=100.0,
 ):
     """
     Re-run the backtest at increasing slippage levels to find where the
@@ -1305,6 +1315,7 @@ def slippage_stress_test(
                     commission_pips=commission_pips,
                     slippage_pips=float(slip_pips),
                     account_size=account_size,
+                    leverage=leverage, contract_size=contract_size,
                 )
                 # Apply filters if provided (max_trades_per_day, sessions, etc.)
                 if filters and run_trades:

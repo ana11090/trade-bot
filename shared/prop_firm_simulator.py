@@ -929,6 +929,12 @@ def simulate_challenge(
     default_sl_pips: float = 150.0,
     pip_value_per_lot: float = 1.0,
     daily_dd_safety_pct: float = 80.0,
+    # WHY: 0 = no margin check (backward compat). When > 0, lot size is
+    #      capped so margin ≤ 95% of equity. Pass the firm's per-instrument
+    #      leverage here; or leave 0 to auto-detect from firm profile.
+    # CHANGED: April 2026 — fix dead leverage code
+    leverage: int = 0,
+    contract_size: float = 100.0,
 ) -> Optional[SimulationSummary]:
     """
     Simulate the full prop firm challenge lifecycle.
@@ -963,6 +969,18 @@ def simulate_challenge(
     challenge = firm.get_challenge(challenge_id)
     if not challenge or account_size not in challenge.get("account_sizes", []):
         return None
+
+    # WHY (fix dead leverage code): If caller passed leverage=0, try to
+    #      read it from the firm's leverage_by_instrument profile. Fall back
+    #      to metals as the most common traded instrument.
+    # CHANGED: April 2026 — auto-detect leverage from firm profile
+    if leverage == 0:
+        try:
+            _lev_map = firm.config.get('leverage_by_instrument', {})
+            if _lev_map:
+                leverage = int(_lev_map.get('metals', _lev_map.get('forex', 0)))
+        except Exception:
+            pass
 
     phases     = challenge.get("phases", [])
     funded_cfg = challenge.get("funded", {})
@@ -999,7 +1017,8 @@ def simulate_challenge(
 
     # Rescale profits to match account size and risk level
     df, calculated_lot_size = _rescale_trades(
-        df, account_size, risk_per_trade_pct, default_sl_pips, pip_value_per_lot
+        df, account_size, risk_per_trade_pct, default_sl_pips, pip_value_per_lot,
+        leverage=leverage, contract_size=contract_size,
     )
     log.info(f"[SIMULATOR] Lot size: {calculated_lot_size:.2f} lots "
              f"(risk: {risk_per_trade_pct}%, SL: {default_sl_pips} pips, "

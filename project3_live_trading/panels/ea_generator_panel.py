@@ -352,7 +352,7 @@ def _update_strat_info():
 
         _margin_per_lot = (_contract * _approx_price) / _leverage
         _risk_dollars   = _acct * _risk_pct / 100.0
-        _default_sl     = 150.0
+        _default_sl     = float(_sl_var.get()) if _sl_var else 150.0
         _lot_estimate   = _risk_dollars / (_default_sl * _pip_val) if _default_sl > 0 else 0
         _margin_needed  = _lot_estimate * _margin_per_lot
 
