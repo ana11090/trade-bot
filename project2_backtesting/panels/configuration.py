@@ -527,8 +527,8 @@ def build_panel(parent):
                "Auto-filled from symbol lookup. Override only if your broker differs.")
 
     # Date periods
-    period_frame = tk.LabelFrame(config_frame, text="📅 Date Periods",
-                                 font=("Arial", 9, "bold"), bg="#ffffff", fg="#555555",
+    period_frame = tk.LabelFrame(config_frame, text="📅 Date Periods  (not used by Run Backtest)",
+                                 font=("Arial", 9, "bold"), bg="#f0f0f0", fg="#aaaaaa",
                                  padx=10, pady=8)
     period_frame.pack(fill="x", pady=(0, 8))
     _field_row(period_frame, "In-Sample Start  (YYYY-MM-DD)", _make_var('insample_start'),
@@ -546,7 +546,7 @@ def build_panel(parent):
 
     tk.Button(auto_btn_frame, text="📅 Auto-Detect Dates from CSV (70/30 split)",
               command=lambda: _auto_detect_dates(entries),
-              bg="#28a745", fg="white", font=("Arial", 10, "bold"),
+              bg="#aaaaaa", fg="white", font=("Arial", 10, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=20, pady=8).pack(side=tk.LEFT, padx=5, pady=5)
 
     tk.Label(auto_btn_frame, text="Reads your price data and fills all 4 dates automatically",
@@ -741,12 +741,16 @@ def build_panel(parent):
     _field_row(risk_frame, "Risk Per Trade (%)", _make_var('risk_pct'),
                "Percentage of current balance risked on each trade.\n"
                "1.0 = 1% risk per trade. Only used when Lot Size = DYNAMIC.")
-    _field_row(risk_frame, "Lot Size Calculation", _make_var('lot_size_calc'),
-               "DYNAMIC = auto-calculates lot size each trade based on current equity and risk %.\n"
-               "FIXED = always uses the calculated lot size below. DYNAMIC is recommended.")
-    _field_row(risk_frame, "Calculated Lot Size", _make_var('fixed_lot_size'),
-               "Auto-calculated from your capital, risk %, and pip value.\n"
-               "Used when Lot Size = FIXED. Updates automatically when you change capital or risk.")
+    # WHY: lot_size_calc and fixed_lot_size are not read by Run Backtest —
+    #      the backtester always computes lots dynamically from risk%.
+    # CHANGED: April 2026 — grayed out unused fields
+    _make_var('lot_size_calc')
+    _make_var('fixed_lot_size')
+    _unused_risk = tk.Frame(risk_frame, bg="#f0f0f0")
+    _unused_risk.pack(fill="x", pady=(4, 0))
+    tk.Label(_unused_risk,
+             text="Lot Size Calc / Fixed Lot \u2014 not used by Run Backtest (always DYNAMIC from risk%)",
+             font=("Arial", 8, "italic"), bg="#f0f0f0", fg="#aaaaaa").pack(anchor="w", padx=5, pady=2)
 
     # SL/TP info (backtester handles this automatically)
     sltp_info = tk.Frame(config_frame, bg="#e3f2fd", padx=10, pady=8)
@@ -776,18 +780,22 @@ def build_panel(parent):
                                  font=("Arial", 9, "bold"), bg="#ffffff", fg="#555555",
                                  padx=10, pady=8)
     engine_frame.pack(fill="x", pady=(0, 8))
-    _field_row(engine_frame, "Hard Close Hour (UTC)", _make_var('hard_close_hour'),
-               "Force-close all open trades at this UTC hour daily.\n"
-               "21 = 9pm UTC (end of New York session). Set to 0 to disable.")
-    _field_row(engine_frame, "Warmup Candles", _make_var('warmup_candles'),
-               "Skip the first N candles before the engine starts trading.\n"
-               "Needed to allow indicators (ATR, EMA, etc.) to stabilise. Minimum 50.")
     _field_row(engine_frame, "Max One Trade Open (True/False)", _make_var('max_one_trade'),
                "True = only one trade can be open at a time (recommended for trend systems).\n"
                "False = multiple simultaneous trades allowed.")
     _field_row(engine_frame, "Same-Candle SL Rule (LOSS/WIN)", _make_var('same_candle_sl_rule'),
                "When SL and TP both trigger on the same candle, count it as LOSS or WIN.\n"
                "LOSS is the conservative/realistic default.")
+    # WHY: hard_close_hour is not implemented in the backtester.
+    #      warmup_candles is hardcoded to 200 and not configurable at runtime.
+    # CHANGED: April 2026 — grayed out unused fields
+    _make_var('hard_close_hour')
+    _make_var('warmup_candles')
+    _unused_eng = tk.Frame(engine_frame, bg="#f0f0f0")
+    _unused_eng.pack(fill="x", pady=(4, 0))
+    tk.Label(_unused_eng,
+             text="Hard Close Hour / Warmup Candles \u2014 not used by Run Backtest (warmup hardcoded to 200)",
+             font=("Arial", 8, "italic"), bg="#f0f0f0", fg="#aaaaaa").pack(anchor="w", padx=5, pady=2)
 
     # Buttons
     btn_row = tk.Frame(config_frame, bg="#ffffff")
