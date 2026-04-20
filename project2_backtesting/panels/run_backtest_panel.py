@@ -756,6 +756,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _run_settings['starting_capital'] = float(_run_cfg.get('starting_capital', 10000))
             except Exception:
                 pass
+            # WHY: Save leverage/firm in run_settings so View Results can
+            #      include them in save_data → saved_rules.json → EA generator.
+            # CHANGED: April 2026 — leverage flows through the pipeline
+            _run_settings['leverage']      = _cfg_leverage
+            _run_settings['contract_size'] = _cfg_contract
+            _run_settings['firm_id']       = _bt_cfg.get('firm_id', '') if _a48_use_cfg else ''
+            _run_settings['firm_name']     = _bt_cfg.get('firm_name', '') if _a48_use_cfg else ''
             print(f"[BACKTEST] Run settings: regime={_run_settings['regime_filter_enabled']}, "
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "

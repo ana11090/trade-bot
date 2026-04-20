@@ -230,6 +230,21 @@ def _refresh_list(inner, canvas, window_id):
                      font=("Arial", 7, "bold"), padx=3, pady=0
                      ).pack(side=tk.LEFT, padx=(3, 0))
 
+        # Leverage badge — shows margin constraint active during backtest
+        # WHY: User needs to see at a glance what leverage constraint was
+        #      used when this rule was found, so they know lot sizes are
+        #      comparable to their live account settings.
+        # CHANGED: April 2026 — leverage badge in saved rules
+        _lev = rule.get('leverage', 0)
+        _firm = rule.get('firm_name', rule.get('firm_id', ''))
+        if _lev > 0:
+            _lev_text = f"1:{_lev}"
+            if _firm:
+                _lev_text += f" ({_firm})"
+            tk.Label(header, text=_lev_text, font=("Arial", 7, "bold"),
+                     bg="#e0e0e0", fg="#333333", padx=4, pady=1
+                     ).pack(side=tk.LEFT, padx=(3, 0))
+
         rid = entry.get('id')
         tk.Button(header, text="🗑️", font=("Arial", 8),
                   bg="#dc3545", fg="white", relief=tk.FLAT, padx=4,

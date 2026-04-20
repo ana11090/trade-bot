@@ -552,6 +552,26 @@ def _refresh_condition_vars(idx):
     # CHANGED: April 2026 — risk auto-fill from saved strategy
     _auto_fill_risk(strat_data)
 
+    # ── Leverage info from saved strategy ──────────────────────────
+    # WHY: Show the leverage constraint that was active during the
+    #      backtest so the user knows the lot sizes in the EA match
+    #      what was tested. Reads from top-level leverage key (set by
+    #      View Results save) or from run_settings fallback.
+    # CHANGED: April 2026 — strategy leverage in EA generator
+    _strat_lev = strat_data.get('leverage', 0)
+    _strat_firm = strat_data.get('firm_name', strat_data.get('firm_id', ''))
+    _rs = strat_data.get('run_settings', {})
+    if not _strat_lev:
+        _strat_lev = _rs.get('leverage', 0)
+    if not _strat_firm:
+        _strat_firm = _rs.get('firm_name', _rs.get('firm_id', ''))
+    if _strat_lev > 0 and _condition_frame:
+        _lev_label = f"Leverage: 1:{_strat_lev}"
+        if _strat_firm:
+            _lev_label += f"  ({_strat_firm})"
+        tk.Label(_condition_frame, text=_lev_label,
+                 font=("Segoe UI", 9), bg=WHITE, fg="#e67e00").pack(anchor="w", pady=(4, 0))
+
 
 _condition_frame = None
 

@@ -643,6 +643,15 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     'signals_before_regime_filter': r.get('signals_before_regime_filter', 0),
                     'signals_after_regime_filter':  r.get('signals_after_regime_filter', 0),
                 }
+                # WHY: Hoist leverage/firm from run_settings to top-level so
+                #      saved_rules.json carries them and EA generator/Saved
+                #      Rules panel can read them without digging into run_settings.
+                # CHANGED: April 2026 — leverage in save_data
+                _sv_run = r.get('run_settings', {})
+                save_data['leverage']      = _sv_run.get('leverage', 0)
+                save_data['contract_size'] = _sv_run.get('contract_size', 100.0)
+                save_data['firm_id']       = _sv_run.get('firm_id', '')
+                save_data['firm_name']     = _sv_run.get('firm_name', '')
 
                 # Embed regime filter conditions into each rule (Phase A.43)
                 # WHY: Per-rule regime_filter key enables the backtester's

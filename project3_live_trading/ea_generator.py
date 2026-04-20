@@ -1534,6 +1534,24 @@ bool IsMinHoldMet()
     elif exit_class == 'HybridExit':
         _vr.append(f"  Breakeven: +{breakeven_pips}, Trail: {trail_distance_pips}, Max: {max_candles} candles")
     _vr.append("")
+    # WHY: Include leverage so the verification report shows what margin
+    #      constraint was active during the backtest that produced this EA.
+    # CHANGED: April 2026 — leverage in verification report
+    _ea_gen_leverage = (prop_firm or {}).get('leverage', 0)
+    if not _ea_gen_leverage:
+        try:
+            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+            _firm_d = (prop_firm or {}).get('firm_data', {})
+            _ea_gen_leverage = get_leverage_for_symbol(_firm_d, symbol)
+            _ea_gen_inst = get_instrument_type(symbol)
+            _ea_gen_contract = 100.0 if _ea_gen_inst == 'metals' else 100000.0
+            _vr.append(f"LEVERAGE: 1:{_ea_gen_leverage} ({_ea_gen_inst})  |  Contract size: {_ea_gen_contract}")
+            _vr.append("")
+        except Exception:
+            pass
+    elif _ea_gen_leverage > 0:
+        _vr.append(f"LEVERAGE: 1:{_ea_gen_leverage}")
+        _vr.append("")
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
     _vr.append(f"  Max spread: {max_spread_pips} pips  |  News: {news_filter_minutes}min")
