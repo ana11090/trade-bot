@@ -92,6 +92,13 @@ DEFAULTS = {
     'warmup_candles':      '200',
     'max_one_trade':       'True',
     'same_candle_sl_rule': 'LOSS',
+    # WHY: Firm selection determines leverage, DD limits, risk auto-fill.
+    #      Without these in DEFAULTS, load_config filters them out and
+    #      the entire leverage-from-firm chain breaks.
+    # CHANGED: April 2026 — persist firm selection across sessions
+    'firm_id':             '',
+    'firm_name':           '',
+    'stage':               'Evaluation',
 }
 
 
