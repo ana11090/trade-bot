@@ -456,7 +456,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   default_sl_pips, pip_value_per_lot,
                                   swap_cost_per_lot_per_night=0,
                                   news_blackout_minutes=0,
-                                  max_trades_per_day=0):
+                                  max_trades_per_day=0,
+                                  leverage=0, contract_size=100.0):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -1063,6 +1064,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             swap_cost_per_lot_per_night,
             news_blackout_minutes=news_blackout_minutes,
             max_trades_per_day=max_trades_per_day,
+            leverage=leverage, contract_size=contract_size,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -1540,6 +1542,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             account_size, risk_per_trade_pct,
             default_sl_pips, pip_value_per_lot,
             max_trades_per_day=max_trades_per_day,
+            leverage=leverage, contract_size=contract_size,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────

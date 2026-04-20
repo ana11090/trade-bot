@@ -931,23 +931,48 @@ def _get_session(hour):
 
 
 def enrich_trades(trades):
-    """Add computed fields to each trade dict in-place. Returns the list."""
-    for t in trades:
-        hold_min = compute_hold_time_minutes(t)
-        t['hold_minutes'] = hold_min
-        t['hold_display'] = _fmt_hold(hold_min)
+    """Add computed fields to each trade dict in-place. Returns the list.
+
+    WHY: Old code called pd.to_datetime() 3× per trade (entry + exit for hold,
+         entry again for hour/day). With 1000+ trades that's 3000+ individual
+         pandas calls — each has ~0.1ms overhead = seconds of lag on load.
+         Vectorized batch parsing brings this down to 2 calls total.
+    CHANGED: April 2026 — vectorized datetime parsing
+    """
+    if not trades:
+        return trades
+
+    entry_times = pd.to_datetime(
+        [t.get('entry_time', '') for t in trades], errors='coerce'
+    )
+    exit_times = pd.to_datetime(
+        [t.get('exit_time', '') for t in trades], errors='coerce'
+    )
+    hold_secs = (exit_times - entry_times).total_seconds()
+
+    for i, t in enumerate(trades):
         try:
-            entry_dt = pd.to_datetime(t['entry_time'])
-            t['hour_of_day']  = int(entry_dt.hour)
-            t['day_of_week']  = _DAY_NAMES[entry_dt.dayofweek]
-            t['day_abbrev']   = t['day_of_week'][:3]
-            t['session']      = _get_session(int(entry_dt.hour))
+            hs = hold_secs.iloc[i]
+            t['hold_minutes'] = float(hs) / 60.0 if pd.notna(hs) else 0.0
+        except Exception:
+            t['hold_minutes'] = 0.0
+        t['hold_display'] = _fmt_hold(t['hold_minutes'])
+
+        try:
+            ent = entry_times[i]
+            if pd.isna(ent):
+                raise ValueError
+            t['hour_of_day'] = int(ent.hour)
+            t['day_of_week'] = _DAY_NAMES[ent.dayofweek]
+            t['day_abbrev']  = t['day_of_week'][:3]
+            t['session']     = _get_session(t['hour_of_day'])
         except Exception:
             t['hour_of_day'] = 0
             t['day_of_week'] = 'Unknown'
             t['day_abbrev']  = 'Unk'
             t['session']     = 'Unknown'
         t['is_winner'] = t.get('net_pips', 0) > 0
+
     return trades
 
 

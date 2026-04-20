@@ -687,6 +687,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_account     = float(_bt_cfg.get('starting_capital', 100000))
                     _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
                     _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 10.0))
+                    # WHY: Config stores commission in dollars per lot (e.g. $4).
+                    #      Backtester expects pips. Convert: pips = dollars / pip_value.
+                    #      Without this, $4 commission was treated as 4.0 pips = $40/lot.
+                    # CHANGED: April 2026 — commission dollars-to-pips conversion
+                    if _cfg_pip_value > 0:
+                        _cfg_commission = _cfg_commission / _cfg_pip_value
+                    _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
+                    _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
                     # pip_size from instrument specs based on symbol
                     _cfg_symbol = _bt_cfg.get('symbol', 'XAUUSD')
                     _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
@@ -757,11 +765,20 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         if _selected_firm_name and _selected_firm_name not in ('', 'None')
                         else _bt_cfg.get('firm_name', 'No firm selected')
                     )
+                    if _cfg_bt_start and _cfg_bt_end:
+                        _period_text = f"   Period: {_cfg_bt_start} → {_cfg_bt_end}\n"
+                    elif _cfg_bt_start:
+                        _period_text = f"   Period: {_cfg_bt_start} → present\n"
+                    elif _cfg_bt_end:
+                        _period_text = f"   Period: all data → {_cfg_bt_end}\n"
+                    else:
+                        _period_text = "   Period: all time\n"
                     output_text.insert(tk.END,
                         f"📊 Config: {_firm_display}\n"
                         f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}%  |  "
                         f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
-                        f"   Spread: {_cfg_spread}  |  Commission: {_cfg_commission}  |  "
+                        + _period_text +
+                        f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.0f}/lot)  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n\n"
                     )
                 except Exception as _cfg_e:
@@ -777,6 +794,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _cfg_pip_size = 0.01
                 _cfg_leverage = 0
                 _cfg_contract = 100.0
+                _cfg_bt_start = None
+                _cfg_bt_end = None
 
             # Update run settings with config details
             _run_settings['use_config'] = _a48_use_cfg
@@ -866,6 +885,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — margin-aware lot sizing
                         leverage=_cfg_leverage,
                         contract_size=_cfg_contract,
+                        start_date=_cfg_bt_start,
+                        end_date=_cfg_bt_end,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -2215,6 +2236,20 @@ def build_panel(parent):
         _panel_canvas.itemconfig("_panel_content", width=event.width)
     _panel_canvas.bind("<Configure>", _on_canvas_resize)
 
+    def _panel_scroll_enter(event):
+        _panel_canvas.bind("<MouseWheel>",
+            lambda e: _panel_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        _panel_canvas.bind("<Button-4>", lambda e: _panel_canvas.yview_scroll(-3, "units"))
+        _panel_canvas.bind("<Button-5>", lambda e: _panel_canvas.yview_scroll(3, "units"))
+
+    def _panel_scroll_leave(event):
+        _panel_canvas.unbind("<MouseWheel>")
+        _panel_canvas.unbind("<Button-4>")
+        _panel_canvas.unbind("<Button-5>")
+
+    _panel_canvas.bind("<Enter>", _panel_scroll_enter)
+    _panel_canvas.bind("<Leave>", _panel_scroll_leave)
+
     # WHY (Phase A.22): install Tk-level exception handler so callback
     #      exceptions land in outputs/last_backtest_error.txt via A.21.
     # CHANGED: April 2026 — Phase A.22
@@ -2446,6 +2481,10 @@ def build_panel(parent):
             win_rules = all_rules
             _current_rules = win_rules
             _current_source_path[0] = "__ALL_SOURCES__"
+            try:
+                _a38b_update_regime_banner()
+            except Exception:
+                pass
 
         else:
             # ── Original single-source path (unchanged) ──
@@ -2475,6 +2514,10 @@ def build_panel(parent):
             win_rules = [r for r in rules
                          if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
             _current_rules = win_rules
+            try:
+                _a38b_update_regime_banner()
+            except Exception:
+                pass
 
         if not win_rules:
             tk.Label(_rule_inner, text="No WIN rules in this source.",
@@ -2998,7 +3041,10 @@ def build_panel(parent):
     _a48_frame = tk.Frame(panel, bg="white", pady=6)
     _a48_frame.pack(fill="x", padx=20)
 
-    _a48_use_config_var = tk.BooleanVar(value=False)
+    # WHY: Firm/leverage/risk settings are useless if the user forgets
+    #      to check this box. Default ON so config is always used.
+    # CHANGED: April 2026 — default to ON
+    _a48_use_config_var = tk.BooleanVar(value=True)
 
     # Read current config values to show in the label
     _a48_preview = ""
@@ -3203,59 +3249,38 @@ def build_panel(parent):
     _a38b_regime_banner.pack(anchor="w", fill="x", pady=(0, 4))
 
     def _a38b_update_regime_banner():
-        """Read regime filter config and refresh the banner."""
+        """Show per-rule regime filter status instead of global toggle."""
         try:
-            import sys as _sys
-            _p1_dir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), '..', '..',
-                             'project1_reverse_engineering')
-            )
-            if _p1_dir not in _sys.path:
-                _sys.path.insert(0, _p1_dir)
-            import config_loader as _a38b_cl
-            _cfg = _a38b_cl.load()
-            _enabled = str(_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
-            if not _enabled:
+            _rules_with_regime = 0
+            _rules_without_regime = 0
+            for _sr in (_current_rules or []):
+                _rule_data = _sr if isinstance(_sr, dict) else {}
+                _rf = _rule_data.get('regime_filter')
+                if _rf and isinstance(_rf, list) and len(_rf) > 0:
+                    _rules_with_regime += 1
+                else:
+                    _rules_without_regime += 1
+
+            if _rules_with_regime > 0 and _rules_without_regime > 0:
                 _a38b_regime_banner.config(
-                    text="🎯 Regime Filter: OFF",
+                    text=f"🎯 Regime Filter: per-rule — {_rules_with_regime} rules WITH regime, "
+                         f"{_rules_without_regime} WITHOUT (each tested with its own settings)",
+                    fg="#1565c0", bg="#e3f2fd",
+                )
+            elif _rules_with_regime > 0:
+                _a38b_regime_banner.config(
+                    text=f"🎯 Regime Filter: ON for all {_rules_with_regime} selected rules "
+                         f"(conditions embedded from discovery)",
+                    fg="#2e7d32", bg="#e8f5e9",
+                )
+            else:
+                _a38b_regime_banner.config(
+                    text="🎯 Regime Filter: none of the selected rules have regime conditions",
                     fg="#888888", bg="#f8f8f8",
                 )
-                return
-            _disc_str = _cfg.get('regime_filter_discovered', '') or ''
-            if not _disc_str:
-                _a38b_regime_banner.config(
-                    text="🎯 Regime Filter: ON — no discovery yet (run scenarios first)",
-                    fg="#e67e22", bg="#fff8e1",
-                )
-                return
-            _disc = json.loads(_disc_str)
-            if _disc.get('status') != 'ok':
-                _a38b_regime_banner.config(
-                    text=f"🎯 Regime Filter: ON — discovery status = {_disc.get('status', '?')}",
-                    fg="#e67e22", bg="#fff8e1",
-                )
-                return
-            _subset = _disc.get('subset') or _disc.get('subset_chosen') or []
-            _cond_strs = []
-            for _cond in _subset:
-                _feat = _cond.get('feature', '?')
-                _op   = _cond.get('direction', _cond.get('operator', '>'))
-                _thr  = _cond.get('threshold', _cond.get('value', '?'))
-                try:
-                    _thr = f"{float(_thr):.2f}"
-                except Exception:
-                    _thr = str(_thr)
-                _cond_strs.append(f"{_feat} {_op} {_thr}")
-            _conds_display = "  •  ".join(_cond_strs) if _cond_strs else "(no conditions)"
-            _a38b_regime_banner.config(
-                text=(f"🎯 Regime Filter: ON — {_conds_display}\n"
-                      f"    Signals at wrong-regime candles will be blocked during backtest.\n"
-                      f"    These conditions are baked into newly saved rules (applied per-rule)."),
-                fg="#1565c0", bg="#e3f2fd",
-            )
         except Exception as _e:
             _a38b_regime_banner.config(
-                text=f"🎯 Regime Filter: status unknown ({_e})",
+                text=f"🎯 Regime Filter: per-rule (could not count: {_e})",
                 fg="#888888", bg="#f8f8f8",
             )
     _a38b_update_regime_banner()
@@ -3264,6 +3289,27 @@ def build_panel(parent):
                                              font=("Courier", 9), bg="#f8f9fa",
                                              fg="#333333", wrap=tk.WORD)
     _output_text.pack(fill="both", expand=True)
+
+    def _output_enter(event):
+        _output_text.bind("<MouseWheel>",
+            lambda e: _output_text.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        _output_text.bind("<Button-4>", lambda e: _output_text.yview_scroll(-3, "units"))
+        _output_text.bind("<Button-5>", lambda e: _output_text.yview_scroll(3, "units"))
+        _panel_canvas.unbind("<MouseWheel>")
+        _panel_canvas.unbind("<Button-4>")
+        _panel_canvas.unbind("<Button-5>")
+
+    def _output_leave(event):
+        _output_text.unbind("<MouseWheel>")
+        _output_text.unbind("<Button-4>")
+        _output_text.unbind("<Button-5>")
+        _panel_canvas.bind("<MouseWheel>",
+            lambda e: _panel_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        _panel_canvas.bind("<Button-4>", lambda e: _panel_canvas.yview_scroll(-3, "units"))
+        _panel_canvas.bind("<Button-5>", lambda e: _panel_canvas.yview_scroll(3, "units"))
+
+    _output_text.bind("<Enter>", _output_enter)
+    _output_text.bind("<Leave>", _output_leave)
 
     _output_text.insert(tk.END, "Click 'Run Backtest' to start...\n\n")
     _output_text.insert(tk.END, "The backtest will:\n")

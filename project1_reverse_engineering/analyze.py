@@ -1611,6 +1611,12 @@ def run_analysis(feature_matrix_path=None):
                 _a40a_entry_tf = _a40a_cfg.get('winning_scenario', 'H1')
                 _a40a_spread = float(_a40a_cfg.get('spread', 2.5))
                 _a40a_commission = float(_a40a_cfg.get('commission', 0.0))
+                # WHY: Config stores commission in dollars per lot.
+                #      Convert to pips for the backtester.
+                # CHANGED: April 2026 — commission dollars-to-pips
+                _a40a_pip_value = float(_a40a_cfg.get('pip_value_per_lot', 10.0))
+                if _a40a_pip_value > 0:
+                    _a40a_commission = _a40a_commission / _a40a_pip_value
                 # Regime filter settings — checkbox + radio
                 _a40a_regime_enabled = str(_a40a_cfg.get('regime_filter_enabled', 'false')).lower() == 'true'
                 _a40a_regime_at_discovery = str(_a40a_cfg.get('regime_filter_at_discovery', 'false')).lower() == 'true'

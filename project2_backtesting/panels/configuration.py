@@ -99,6 +99,8 @@ DEFAULTS = {
     'firm_id':             '',
     'firm_name':           '',
     'stage':               'Evaluation',
+    'backtest_start':      '',
+    'backtest_end':        '',
 }
 
 
@@ -124,9 +126,16 @@ def save_config(entries, output_text):
     # Basic validation
     date_keys = ['insample_start', 'insample_end', 'outsample_start', 'outsample_end']
     for k in date_keys:
-        v = values[k]
+        v = values.get(k, '2020-01-01')  # may be hidden
         if len(v) != 10 or v[4] != '-' or v[7] != '-':
             messagebox.showerror("Invalid Date", f"'{k}' must be YYYY-MM-DD format.\nGot: {v}")
+            return
+
+    # Validate backtest dates (empty = all time)
+    for k in ['backtest_start', 'backtest_end']:
+        v = values.get(k, '').strip()
+        if v and (len(v) != 10 or v[4] != '-' or v[7] != '-'):
+            messagebox.showerror("Invalid Date", f"'{k}' must be YYYY-MM-DD or empty.\nGot: {v}")
             return
 
     float_keys = ['pip_value_per_lot', 'starting_capital', 'risk_pct', 'fixed_lot_size',
@@ -516,220 +525,143 @@ def build_panel(parent):
                              values=["M5", "M15", "H1", "H4"], width=14, state="readonly")
     tf_combo.pack(side=tk.LEFT, padx=(5, 0))
 
-    tk.Label(instr_frame,
-             text="How often the bot checks for entry signals.\n"
-                  "M5 = every 5 min (most trades, most noise)  |  M15 = every 15 min\n"
-                  "H1 = every hour (balanced)  |  H4 = every 4 hours (fewest trades, cleanest)",
-             font=("Arial", 8), bg="#ffffff", fg="#888888", justify=tk.LEFT,
-             wraplength=520).pack(fill="x", padx=(4, 0), pady=(1, 4))
+    tk.Label(instr_frame, text="M5=5min | M15=15min | H1=1hr | H4=4hr",
+             font=("Arial", 8), bg="#ffffff", fg="#aaaaaa").pack(anchor="w", padx=4)
 
     _field_row(instr_frame, "Pip Value per Lot ($)", _make_var('pip_value_per_lot'),
                "Auto-filled from symbol lookup. Override only if your broker differs.")
 
-    # Date periods
-    period_frame = tk.LabelFrame(config_frame, text="📅 Date Periods  (not used by Run Backtest)",
-                                 font=("Arial", 9, "bold"), bg="#f0f0f0", fg="#aaaaaa",
+    # ── Backtest Period ────────────────────────────────────────────────
+    # WHY: User needs to control what date range the backtest runs on.
+    #      Quick-select buttons for common periods.
+    # CHANGED: April 2026 — backtest date range with quick buttons
+    period_frame = tk.LabelFrame(config_frame, text="📅 Backtest Period",
+                                 font=("Arial", 9, "bold"), bg="#ffffff", fg="#555555",
                                  padx=10, pady=8)
     period_frame.pack(fill="x", pady=(0, 8))
-    _field_row(period_frame, "In-Sample Start  (YYYY-MM-DD)", _make_var('insample_start'),
-               "First date of the training period — should match your trade history start.")
-    _field_row(period_frame, "In-Sample End    (YYYY-MM-DD)", _make_var('insample_end'),
-               "Last date of the training period.")
-    _field_row(period_frame, "Out-of-Sample Start (YYYY-MM-DD)", _make_var('outsample_start'),
-               "First date of the validation period — data the model has never seen.")
-    _field_row(period_frame, "Out-of-Sample End   (YYYY-MM-DD)", _make_var('outsample_end'),
-               "Last date of the validation period.")
 
-    # Auto-detect dates button — prominent, full width
-    auto_btn_frame = tk.Frame(period_frame, bg="#e8f5e9")  # light green background
-    auto_btn_frame.pack(fill="x", pady=(10, 4), padx=2)
+    _bt_start_var = _make_var('backtest_start')
+    _bt_end_var = _make_var('backtest_end')
 
-    tk.Button(auto_btn_frame, text="📅 Auto-Detect Dates from CSV (70/30 split)",
-              command=lambda: _auto_detect_dates(entries),
-              bg="#aaaaaa", fg="white", font=("Arial", 10, "bold"),
-              relief=tk.FLAT, cursor="hand2", padx=20, pady=8).pack(side=tk.LEFT, padx=5, pady=5)
-
-    tk.Label(auto_btn_frame, text="Reads your price data and fills all 4 dates automatically",
-             font=("Arial", 9), bg="#e8f5e9", fg="#555555").pack(side=tk.LEFT, padx=(10, 0))
-
-    # ── Prop Firm Target ──────────────────────────────────────────────────────
-    firm_frame = tk.LabelFrame(config_frame, text="🏢 Prop Firm Target (auto-fills settings below)",
-                                font=("Arial", 10, "bold"), bg="#ffffff", fg="#333",
-                                padx=10, pady=8)
-    firm_frame.pack(fill="x", pady=(0, 10))
-
-    firm_row = tk.Frame(firm_frame, bg="#ffffff")
-    firm_row.pack(fill="x")
-
-    tk.Label(firm_row, text="Firm:", font=("Arial", 9, "bold"),
+    date_row = tk.Frame(period_frame, bg="#ffffff")
+    date_row.pack(fill="x")
+    tk.Label(date_row, text="Start:", font=("Arial", 9, "bold"),
+             bg="#ffffff", fg="#333", width=6, anchor="w").pack(side=tk.LEFT)
+    tk.Entry(date_row, textvariable=_bt_start_var, width=12,
+             font=("Courier", 10)).pack(side=tk.LEFT, padx=(0, 10))
+    tk.Label(date_row, text="End:", font=("Arial", 9, "bold"),
              bg="#ffffff", fg="#333").pack(side=tk.LEFT)
+    tk.Entry(date_row, textvariable=_bt_end_var, width=12,
+             font=("Courier", 10)).pack(side=tk.LEFT, padx=(0, 10))
+    tk.Label(date_row, text="(empty = all time)",
+             font=("Arial", 8), bg="#ffffff", fg="#999").pack(side=tk.LEFT)
 
-    prop_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
-    firm_names = ["None — manual settings"]
-    for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
+    btn_row = tk.Frame(period_frame, bg="#ffffff")
+    btn_row.pack(fill="x", pady=(6, 0))
+
+    from datetime import datetime as _dt, timedelta as _td
+
+    def _set_period(years):
+        end = _dt.now()
+        if years == 0:
+            _bt_start_var.set('')
+            _bt_end_var.set('')
+        else:
+            start = end - _td(days=years * 365)
+            _bt_start_var.set(start.strftime('%Y-%m-%d'))
+            _bt_end_var.set(end.strftime('%Y-%m-%d'))
+
+    for _yrs, _lbl in [(1, "1Y"), (2, "2Y"), (3, "3Y"), (5, "5Y"), (10, "10Y"), (0, "All")]:
+        _bg = "#667eea" if _yrs > 0 else "#28a745"
+        tk.Button(btn_row, text=_lbl,
+                  command=lambda y=_yrs: _set_period(y),
+                  bg=_bg, fg="white", font=("Arial", 9, "bold"),
+                  relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+                  ).pack(side=tk.LEFT, padx=(0, 4))
+
+    # Keep old insample/outsample variables alive for save_config
+    _make_var('insample_start')
+    _make_var('insample_end')
+    _make_var('outsample_start')
+    _make_var('outsample_end')
+
+    # ── Prop Firm (from P1 Run Scenarios) ───────────────────────────────────
+    # WHY: Firm is now selected in P1 Run Scenarios — single source of truth.
+    #      P2 config just displays what P1 has set and auto-fills fields.
+    # CHANGED: April 2026 — P1 is source of truth; remove duplicate selector
+    _p2_firm_frame = tk.Frame(config_frame, bg="#f5f5fa", padx=10, pady=8)
+    _p2_firm_frame.pack(fill="x", pady=(0, 8))
+
+    _p2_firm_name = ''
+    _p2_firm_stage = 'Evaluation'
+    _p2_firm_account = ''
+    try:
+        import importlib.util as _p2_ilu
+        _p2_cl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                   'project1_reverse_engineering', 'config_loader.py')
+        _p2_spec = _p2_ilu.spec_from_file_location('_p2_cl', _p2_cl_path)
+        _p2_mod = _p2_ilu.module_from_spec(_p2_spec)
+        _p2_spec.loader.exec_module(_p2_mod)
+        _p2_p1cfg = _p2_mod.load()
+        _p2_firm_name = _p2_p1cfg.get('prop_firm_name', '')
+        _p2_firm_stage = _p2_p1cfg.get('prop_firm_stage', 'Evaluation')
+        _p2_firm_account = _p2_p1cfg.get('prop_firm_account', '')
+    except Exception:
+        pass
+
+    _p2_firm_lev = ''
+    if _p2_firm_name:
+        # Auto-fill capital
+        if _p2_firm_account and entries.get('starting_capital'):
+            entries['starting_capital'].set(_p2_firm_account)
+        # Get leverage + auto-fill risk and spread
         try:
-            with open(fp, encoding='utf-8') as f:
-                fd = json.load(f)
-            firm_names.append(fd.get('firm_name', '?'))
-        except:
-            pass
-
-    _config_firm_var = tk.StringVar(value="None — manual settings")
-    firm_combo = ttk.Combobox(firm_row, textvariable=_config_firm_var,
-                               values=firm_names, width=22, state="readonly")
-    firm_combo.pack(side=tk.LEFT, padx=5)
-
-    tk.Label(firm_row, text="Stage:", font=("Arial", 9, "bold"),
-             bg="#ffffff", fg="#333").pack(side=tk.LEFT, padx=(15, 0))
-
-    _config_stage_var = tk.StringVar(value="Funded")
-    stage_combo = ttk.Combobox(firm_row, textvariable=_config_stage_var,
-                                values=["Evaluation", "Funded"], width=12, state="readonly")
-    stage_combo.pack(side=tk.LEFT, padx=5)
-
-    tk.Label(firm_row, text="Account:", font=("Arial", 9, "bold"),
-             bg="#ffffff", fg="#333").pack(side=tk.LEFT, padx=(15, 0))
-
-    _config_acct_var = tk.StringVar(value="")
-    acct_combo = ttk.Combobox(firm_row, textvariable=_config_acct_var,
-                               values=[], width=10, state="readonly")
-    acct_combo.pack(side=tk.LEFT, padx=5)
-
-    # Info label
-    firm_info = tk.Label(firm_frame, text="Select a firm to auto-fill capital, risk, and costs",
-                          font=("Arial", 8), bg="#ffffff", fg="#888")
-    firm_info.pack(anchor="w", pady=(3, 0))
-
-    # Firm rules reminder
-    from shared.firm_rules_reminder import show_reminder_on_firm_change
-    _config_reminder = [None]
-    show_reminder_on_firm_change(_config_firm_var, firm_frame, _config_reminder, _config_stage_var)
-
-    def _on_firm_stage_change(*_):
-        firm = _config_firm_var.get()
-        stage = _config_stage_var.get().lower()
-
-        if firm == "None — manual settings":
-            firm_info.config(text="Manual mode — set values yourself")
-            return
-
-        # Load firm data
-        for fp in sorted(glob.glob(os.path.join(prop_dir, '*.json'))):
-            try:
-                with open(fp, encoding='utf-8') as f:
-                    fd = json.load(f)
-                if fd.get('firm_name') != firm:
+            _p2_prop_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
+            for _p2_fp in sorted(glob.glob(os.path.join(_p2_prop_dir, '*.json'))):
+                with open(_p2_fp, encoding='utf-8') as _p2_ff:
+                    _p2_fd = json.load(_p2_ff)
+                if _p2_fd.get('firm_name') != _p2_firm_name:
                     continue
-
-                challenge = fd['challenges'][0]
-                funded = challenge.get('funded', {})
-
-                # Update account sizes dropdown
-                sizes = challenge.get('account_sizes', [100000])
-                acct_combo['values'] = [str(s) for s in sizes]
-                if sizes:
-                    _config_acct_var.set(str(sizes[0]))
-
-                # Auto-fill starting capital
-                if entries.get('starting_capital'):
-                    entries['starting_capital'].set(_config_acct_var.get())
-
-                # Auto-fill spread from instrument specs (not hardcoded)
-                # WHY: Old code hardcoded "2.5" regardless of symbol —
-                #      EURUSD users got 2.5 pips applied to a 0.8-pip
-                #      market, overstating costs ~3x. Derive from the
-                #      current symbol's entry in INSTRUMENT_SPECS. Falls
-                #      back to 2.5 only if the symbol isn't in the table.
-                # CHANGED: April 2026 — Phase 32 Fix 6 — per-symbol spread
-                #          (audit Part C HIGH #94)
+                from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+                _p2_sym = entries['symbol'].get().strip().upper() if entries.get('symbol') else 'XAUUSD'
+                _p2_firm_lev = f"1:{get_leverage_for_symbol(_p2_fd, _p2_sym)} ({get_instrument_type(_p2_sym)})"
+                # Auto-fill spread
                 if entries.get('spread'):
-                    _cur_symbol = entries['symbol'].get().strip().upper() if entries.get('symbol') else 'XAUUSD'
-                    _spec       = INSTRUMENT_SPECS.get(_cur_symbol, INSTRUMENT_SPECS.get('XAUUSD', {}))
-                    _spread_val = float(_spec.get('typical_spread', 2.5))
-                    entries['spread'].set(f"{_spread_val}")
-
+                    _p2_spec_d = INSTRUMENT_SPECS.get(_p2_sym, INSTRUMENT_SPECS.get('XAUUSD', {}))
+                    entries['spread'].set(str(float(_p2_spec_d.get('typical_spread', 2.5))))
                 # Auto-fill risk from trading_rules
-                trading_rules = fd.get('trading_rules', [])
-                for rule in trading_rules:
-                    if rule.get('stage') not in (stage, 'both'):
+                _p2_stage = _p2_firm_stage.lower()
+                for _p2_rule in _p2_fd.get('trading_rules', []):
+                    if _p2_rule.get('stage') not in (_p2_stage, 'both'):
                         continue
-                    params = rule.get('parameters', {})
-
-                    if rule.get('type') in ('eval_settings', 'eval_strategy'):
-                        risk_range = params.get('risk_pct_range', [0.8, 1.5])
+                    _p2_params = _p2_rule.get('parameters', {})
+                    if _p2_rule.get('type') in ('eval_settings', 'eval_strategy'):
                         if entries.get('risk_pct'):
-                            entries['risk_pct'].set(str(risk_range[0]))
+                            entries['risk_pct'].set(str(_p2_params.get('risk_pct_range', [1.0])[0]))
                         break
-
-                    elif rule.get('type') == 'funded_accumulate':
-                        risk_range = params.get('risk_pct_range', [0.3, 0.5])
+                    elif _p2_rule.get('type') == 'funded_accumulate':
                         if entries.get('risk_pct'):
-                            entries['risk_pct'].set(str(risk_range[1]))
+                            entries['risk_pct'].set(str(_p2_params.get('risk_pct_range', [0.5])[-1]))
                         break
-                else:
-                    # No trading_rules — use defaults
-                    if stage == "evaluation":
-                        if entries.get('risk_pct'):
-                            entries['risk_pct'].set("1.0")
-                    else:
-                        if entries.get('risk_pct'):
-                            entries['risk_pct'].set("0.5")
-
-                # Leverage info — per instrument, not per size
-                # WHY: leverage_by_size shows the same number regardless of
-                #      instrument (it's just a max forex leverage). Show the
-                #      actual per-instrument leverage for the configured symbol
-                #      so the user sees e.g. "1:10 (metals)" for XAUUSD.
-                # CHANGED: April 2026 — instrument-aware leverage display
-                try:
-                    from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-                    _cur_sym  = entries['symbol'].get().strip().upper() if entries.get('symbol') else 'XAUUSD'
-                    _cur_inst = get_instrument_type(_cur_sym)
-                    _cur_lev  = get_leverage_for_symbol(fd, _cur_sym)
-                    lev = f"1:{_cur_lev} ({_cur_inst})"
-                except Exception:
-                    lev = fd.get('leverage', '—')
-
-                # DD info
-                if stage == "evaluation":
-                    phase = challenge.get('phases', [{}])[0]
-                    daily = phase.get('max_daily_drawdown_pct', '?')
-                    total = phase.get('max_total_drawdown_pct', '?')
-                    target = phase.get('profit_target_pct', '?')
-                    firm_info.config(
-                        text=f"Target: {target}% | DD: {daily}%/{total}% | Leverage: {lev} | "
-                             f"Risk auto-set for evaluation")
-                else:
-                    daily = funded.get('max_daily_drawdown_pct', '?')
-                    total = funded.get('max_total_drawdown_pct', '?')
-                    firm_info.config(
-                        text=f"DD: {daily}%/{total}% | Leverage: {lev} | "
-                             f"Risk auto-set for funded (conservative)")
-
                 break
-            except Exception:
-                continue
+        except Exception:
+            pass
+        tk.Label(_p2_firm_frame,
+                 text=f"\U0001f3e2 {_p2_firm_name}  |  {_p2_firm_stage}  |  Leverage: {_p2_firm_lev}",
+                 font=("Segoe UI", 10, "bold"), bg="#f5f5fa", fg="#333").pack(anchor="w")
+        tk.Label(_p2_firm_frame,
+                 text="Selected in P1 Run Scenarios \u2014 capital, risk, spread auto-filled below",
+                 font=("Arial", 8), bg="#f5f5fa", fg="#888").pack(anchor="w")
+    else:
+        tk.Label(_p2_firm_frame,
+                 text="\U0001f3e2 No firm selected \u2014 go to P1 Run Scenarios to choose a prop firm",
+                 font=("Segoe UI", 10, "italic"), bg="#f5f5fa", fg="#999").pack(anchor="w")
 
-    def _on_acct_change(*_):
-        """Update capital when account size changes."""
-        acct = _config_acct_var.get()
-        if acct and entries.get('starting_capital'):
-            entries['starting_capital'].set(acct)
-        _on_firm_stage_change()
-
-    _config_firm_var.trace_add("write", _on_firm_stage_change)
-    _config_stage_var.trace_add("write", _on_firm_stage_change)
-    _config_acct_var.trace_add("write", _on_acct_change)
-
-    # WHY: Restore firm/stage selection from previously saved config so the
-    #      user doesn't have to re-select their firm every time the panel opens.
-    # CHANGED: April 2026 — persist firm selection (Change 4)
-    _saved_firm = cfg.get('firm_name', '')
-    if _saved_firm and _saved_firm in firm_names:
-        _config_firm_var.set(_saved_firm)   # triggers _on_firm_stage_change
-    _saved_stage = cfg.get('stage', '')
-    if _saved_stage and _saved_stage in ("Evaluation", "Funded"):
-        _config_stage_var.set(_saved_stage)
+    # Keep module-level vars alive for save_config compatibility
+    global _config_firm_var, _config_stage_var, _config_acct_var
+    _config_firm_var = tk.StringVar(value=_p2_firm_name or "None — manual settings")
+    _config_stage_var = tk.StringVar(value=_p2_firm_stage or "Evaluation")
+    _config_acct_var = tk.StringVar(value=_p2_firm_account or "")
 
     # Capital & Risk
     risk_frame = tk.LabelFrame(config_frame, text="💰 Capital & Risk",
@@ -751,18 +683,6 @@ def build_panel(parent):
     tk.Label(_unused_risk,
              text="Lot Size Calc / Fixed Lot \u2014 not used by Run Backtest (always DYNAMIC from risk%)",
              font=("Arial", 8, "italic"), bg="#f0f0f0", fg="#aaaaaa").pack(anchor="w", padx=5, pady=2)
-
-    # SL/TP info (backtester handles this automatically)
-    sltp_info = tk.Frame(config_frame, bg="#e3f2fd", padx=10, pady=8)
-    sltp_info.pack(fill="x", pady=(0, 8))
-    tk.Label(sltp_info, text="🎯 Stop Loss & Take Profit",
-             font=("Arial", 9, "bold"), bg="#e3f2fd", fg="#1565c0").pack(anchor="w")
-    tk.Label(sltp_info,
-             text="The backtester automatically tests 12 different exit strategies:\n"
-                  "Fixed SL/TP (100/200, 150/300, 200/400), Trailing Stop, ATR-based,\n"
-                  "Time-based, Indicator Exit, and Hybrid combinations.\n"
-                  "You don't need to set SL/TP here — the best one is found automatically.",
-             font=("Arial", 9), bg="#e3f2fd", fg="#333333", justify=tk.LEFT).pack(anchor="w", pady=(4, 0))
 
     # Costs
     cost_frame = tk.LabelFrame(config_frame, text="💸 Costs",

@@ -251,23 +251,31 @@ def _load_selected_strategy():
                         break
                 raw = load_trades_from_matrix(matched_idx, entry_tf=_matched_tf)
                 if raw:
-                    _base_trades = enrich_trades(list(raw))
-                    _filtered_trades = list(_base_trades)
-
-                    # If saved rule had filters, show them
+                    _strat_info_lbl.configure(text="⏳ Loading trades...", fg="#e67e22")
                     filters = saved_rule.get('filters_applied')
-                    if filters:
-                        print(f"[REFINER] Saved rule had filters: {filters}")
-                        # Apply the saved filters to show filtered results
-                        try:
-                            from project2_backtesting.strategy_refiner import apply_filters
-                            kept, _ = apply_filters(_base_trades, filters)
-                            _filtered_trades = list(kept)
-                        except Exception:
-                            pass
 
-                    _update_strat_info()
-                    _schedule_update()
+                    def _do_load_saved(_raw=raw, _filters=filters):
+                        global _base_trades, _filtered_trades
+                        try:
+                            _base_trades = enrich_trades(list(_raw))
+                            _filtered_trades = list(_base_trades)
+                            if _filters:
+                                try:
+                                    from project2_backtesting.strategy_refiner import apply_filters
+                                    kept, _ = apply_filters(_base_trades, _filters)
+                                    _filtered_trades = list(kept)
+                                except Exception:
+                                    pass
+                            if state.window:
+                                state.window.after(0, _update_strat_info)
+                                state.window.after(50, _schedule_update)
+                        except Exception as _e:
+                            import traceback; traceback.print_exc()
+                            if state.window:
+                                state.window.after(0, lambda: messagebox.showerror("Load Error", str(_e)))
+
+                    import threading
+                    threading.Thread(target=_do_load_saved, daemon=True).start()
                     return
                 else:
                     messagebox.showwarning("No Trades",
@@ -290,30 +298,44 @@ def _load_selected_strategy():
             return
 
     # ── Normal strategy loading (backtest result or optimizer) ────────────
-    try:
-        from project2_backtesting.strategy_refiner import (
-            load_trades_from_matrix, enrich_trades
-        )
-        # WHY (Phase A.48 fix): Pass entry_tf from the selected strategy.
-        _sel_tf = None
-        for s in _strategies:
-            if s.get('index') == idx:
-                _sel_tf = s.get('entry_tf', '')
-                break
-        raw = load_trades_from_matrix(idx, entry_tf=_sel_tf)
-        if not raw:
-            messagebox.showwarning(
-                "No Trades",
-                "This strategy has no trade data.\n\nRe-run the backtest first."
+    # WHY: load_trades_from_matrix reads large JSON files — blocks UI for seconds.
+    #      Run on background thread; update UI on main thread via after().
+    # CHANGED: April 2026 — threaded loading to prevent UI freeze
+    _strat_info_lbl.configure(text="⏳ Loading trades...", fg="#e67e22")
+
+    # Capture tf before entering thread
+    _sel_tf = None
+    for s in _strategies:
+        if s.get('index') == idx:
+            _sel_tf = s.get('entry_tf', '')
+            break
+
+    def _do_load():
+        global _base_trades, _filtered_trades
+        try:
+            from project2_backtesting.strategy_refiner import (
+                load_trades_from_matrix, enrich_trades
             )
-            return
-        _base_trades = enrich_trades(list(raw))
-        _filtered_trades = list(_base_trades)
-        _update_strat_info()
-        _schedule_update()
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        messagebox.showerror("Load Error", str(e))
+            raw = load_trades_from_matrix(idx, entry_tf=_sel_tf)
+            if not raw:
+                if state.window:
+                    state.window.after(0, lambda: messagebox.showwarning(
+                        "No Trades",
+                        "This strategy has no trade data.\n\nRe-run the backtest first."
+                    ))
+                return
+            _base_trades = enrich_trades(list(raw))
+            _filtered_trades = list(_base_trades)
+            if state.window:
+                state.window.after(0, _update_strat_info)
+                state.window.after(50, _schedule_update)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            if state.window:
+                state.window.after(0, lambda: messagebox.showerror("Load Error", str(e)))
+
+    import threading
+    threading.Thread(target=_do_load, daemon=True).start()
 
 
 def _update_strat_info():
@@ -326,6 +348,45 @@ def _update_strat_info():
             f"avg {s['avg_pips']:+.1f} pips  |  {s['trades_per_day']:.1f}/day  |  "
             f"hold {s['avg_hold_minutes']:.0f}m  |  max DD {s['max_dd_pips']:.0f} pips")
     _strat_info_lbl.configure(text=text, fg=MIDGREY)
+
+    # WHY: Auto-fill account/risk/stage from the loaded rule's settings
+    #      so the optimizer uses the same values the rule was tested with.
+    # CHANGED: April 2026 — auto-fill from rule
+    try:
+        _loaded_idx = _get_selected_index()
+        _loaded_row = None
+        for _s in _strategies:
+            if _s.get('index') == _loaded_idx:
+                _loaded_row = _s
+                break
+
+        if _loaded_row:
+            _rs = _loaded_row.get('run_settings', {})
+            _ds = _loaded_row.get('discovery_settings', {})
+
+            _rule_acct = _rs.get('starting_capital', 0)
+            if _rule_acct and float(_rule_acct) > 0 and _acct_var:
+                _acct_var.set(str(int(float(_rule_acct))))
+
+            _rule_risk = _rs.get('risk_pct', 0) or _ds.get('prop_firm_risk_pct', 0)
+            if _rule_risk and float(_rule_risk) > 0 and _risk_var:
+                _risk_var.set(str(float(_rule_risk)))
+
+            _rule_stage = _ds.get('prop_firm_stage', '')
+            if _rule_stage and _stage_var:
+                _stage_var.set(_rule_stage)
+
+            _rule_firm = _ds.get('prop_firm_name', '') or _loaded_row.get('prop_firm_name', '')
+            if _rule_firm and _opt_target_var:
+                for _fv in list(_opt_target_var.cget('values') if hasattr(_opt_target_var, 'cget') else []):
+                    if _rule_firm.lower() in str(_fv).lower():
+                        _opt_target_var.set(str(_fv))
+                        break
+
+            print(f"[REFINER] Auto-filled from rule: account=${_rule_acct}, "
+                  f"risk={_rule_risk}%, stage={_rule_stage}, firm={_rule_firm}")
+    except Exception as _e:
+        print(f"[REFINER] Could not auto-fill from rule: {_e}")
 
 
 def _get_current_filters():
@@ -734,6 +795,7 @@ def _start_optimization():
             account_size = float(_acct_var.get()) if _acct_var else 100000
             risk_pct = float(_risk_var.get()) if _risk_var else 1.0
             print(f"[OPTIMIZER] Stage: {stage}, Account: ${account_size:,.0f}, Risk: {risk_pct}%")
+            print(f"[OPTIMIZER] Spread: {spread_pips} pips, Commission: {commission_pips} pips")
 
             # Pass stage to presets for scoring
             from project2_backtesting.strategy_refiner import get_prop_firm_presets
@@ -798,19 +860,40 @@ def _start_optimization():
                 print(f"[OPTIMIZER] WARNING: No base rules found — optimizer results won't be validatable")
 
             # ── Leverage / contract size for margin-aware optimization ──
+            # WHY: Read leverage from the rule first (it was tested with this).
+            #      Fall back to firm dropdown lookup if not in rule.
+            # CHANGED: April 2026 — rule leverage takes priority
             _opt_leverage = 0
             _opt_contract = 100.0
-            try:
-                from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-                _opt_sym = selected_strategy_row.get('symbol', 'XAUUSD') if selected_strategy_row else 'XAUUSD'
-                _opt_leverage = get_leverage_for_symbol(target_data, _opt_sym)
-                _inst_type = get_instrument_type(_opt_sym)
-                if _inst_type == 'forex':
-                    _opt_contract = 100000.0
-                elif _inst_type == 'indices':
-                    _opt_contract = 1.0
-            except Exception:
-                pass
+            if selected_strategy_row:
+                _opt_leverage = selected_strategy_row.get('leverage', 0)
+                if not _opt_leverage:
+                    _opt_leverage = selected_strategy_row.get('run_settings', {}).get('leverage', 0)
+                _opt_contract = selected_strategy_row.get('contract_size', 100.0)
+                if not _opt_contract or _opt_contract == 100.0:
+                    _opt_contract = selected_strategy_row.get('run_settings', {}).get('contract_size', 100.0)
+
+            if _opt_leverage == 0:
+                try:
+                    from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+                    _opt_sym = selected_strategy_row.get('symbol', 'XAUUSD') if selected_strategy_row else 'XAUUSD'
+                    if not _opt_sym:
+                        try:
+                            from project2_backtesting.panels.configuration import load_config as _opt_cfg_load
+                            _opt_sym = _opt_cfg_load().get('symbol', 'XAUUSD')
+                        except Exception:
+                            _opt_sym = 'XAUUSD'
+                    if target_data:
+                        _opt_leverage = get_leverage_for_symbol(target_data, _opt_sym)
+                    _inst_type = get_instrument_type(_opt_sym)
+                    if _inst_type == 'forex':
+                        _opt_contract = 100000.0
+                    elif _inst_type == 'indices':
+                        _opt_contract = 1.0
+                except Exception:
+                    pass
+
+            print(f"[OPTIMIZER] Leverage: 1:{_opt_leverage}, contract: {_opt_contract}")
 
             # ── Quick optimize (filter existing trades) ──
             if opt_mode == "quick":
@@ -1787,6 +1870,14 @@ def _show_opt_results(candidates):
 
     _all_candidates = list(candidates)
 
+    # Cache presets once — calling get_prop_firm_presets() inside _apply_filters
+    # (which fires on every keystroke) reads JSON files from disk each time.
+    try:
+        from project2_backtesting.strategy_refiner import get_prop_firm_presets as _gpfp
+        _cached_presets = _gpfp()
+    except Exception:
+        _cached_presets = {}
+
     def _apply_filters(*_):
         """Re-filter and re-render cards in real time."""
         # Parse filter values safely
@@ -1910,10 +2001,8 @@ def _show_opt_results(candidates):
         challenge_fee = 0
         profit_split = 80
         try:
-            from project2_backtesting.strategy_refiner import get_prop_firm_presets
-            presets = get_prop_firm_presets()
             firm = _opt_target_var.get() if _opt_target_var else ""
-            preset = presets.get(firm, {})
+            preset = _cached_presets.get(firm, {})
             firm_data = preset.get('firm_data')
             if firm_data:
                 costs = firm_data['challenges'][0].get('costs', {})
@@ -1947,10 +2036,17 @@ def _show_opt_results(candidates):
         except Exception:
             pass
 
-    # Bind real-time filtering — update on every keystroke
+    # Debounce filter traces — without this every keystroke triggers a full
+    # card rebuild (destroy + recreate all widgets in cards_frame).
+    _filter_debounce_id = [None]
+    def _apply_filters_debounced(*_):
+        if _filter_debounce_id[0]:
+            cards_frame.after_cancel(_filter_debounce_id[0])
+        _filter_debounce_id[0] = cards_frame.after(150, _apply_filters)
+
     for var in [wr_var, trades_var, pf_var, tpd_var]:
-        var.trace_add("write", _apply_filters)
-    sort_var.trace_add("write", _apply_filters)
+        var.trace_add("write", _apply_filters_debounced)
+    sort_var.trace_add("write", _apply_filters_debounced)
 
     # Initial render
     _apply_filters()
@@ -2294,7 +2390,7 @@ def build_panel(parent):
                          bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
                          relief=tk.FLAT, cursor="hand2", padx=14, pady=4,
                          state=tk.DISABLED)  # Disabled until loading completes
-    load_btn.pack(side=tk.LEFT, padx=(10, 0))
+    load_btn.pack(side=tk.RIGHT, padx=(10, 0))
 
     # ── Star/favorite button (created after loading) ──────────────────────
     star_btn_container = [None]  # Placeholder for star button
@@ -2581,9 +2677,15 @@ def build_panel(parent):
     _monthly_chart_canvas.create_text(200, 100, text="Load a strategy to see monthly P&L chart",
                                        font=("Arial", 11), fill="#888")
 
-    # Redraw chart on canvas resize
-    _monthly_chart_canvas.bind("<Configure>",
-                                lambda e: _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, _filtered_trades))
+    # Debounce chart resize — fires on every pixel change without this
+    _chart_resize_id = [None]
+    def _on_chart_resize(event):
+        if _chart_resize_id[0]:
+            _monthly_chart_canvas.after_cancel(_chart_resize_id[0])
+        _chart_resize_id[0] = _monthly_chart_canvas.after(
+            200, lambda: _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, _filtered_trades)
+        )
+    _monthly_chart_canvas.bind("<Configure>", _on_chart_resize)
 
     # ── Drawdown Analysis ─────────────────────────────────────────────────────
     dd_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
