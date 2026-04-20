@@ -720,11 +720,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                              'energies': 5, 'crypto': 1}
                         _cfg_leverage = _conservative_map.get(_inst_type, 30)
                     _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
+                    # WHY: Show leverage prominently — users need to confirm
+                    #      that lot sizes are margin-capped for their firm.
+                    # CHANGED: April 2026 — prominent leverage display
+                    _firm_display = _bt_cfg.get('firm_name', 'No firm selected')
                     output_text.insert(tk.END,
-                        f"Config: spread={_cfg_spread}, commission={_cfg_commission}, "
-                        f"account=${_cfg_account:,.0f}, risk={_cfg_risk_pct}%, "
-                        f"pip_value=${_cfg_pip_value}/lot, pip_size={_cfg_pip_size}, "
-                        f"leverage=1:{_cfg_leverage} ({_inst_type})\n\n"
+                        f"📊 Config: {_firm_display}\n"
+                        f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}%  |  "
+                        f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
+                        f"   Spread: {_cfg_spread}  |  Commission: {_cfg_commission}  |  "
+                        f"Pip value: ${_cfg_pip_value}/lot\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")

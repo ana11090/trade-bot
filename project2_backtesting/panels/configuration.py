@@ -15,6 +15,13 @@ _rules_status_label = None
 _price_status_label = None
 _output_text = None
 
+# WHY: save_config needs firm/stage vars created in build_panel.
+#      Declaring them here lets save_config access them as module globals.
+# CHANGED: April 2026 — persist firm selection
+_config_firm_var  = None
+_config_stage_var = None
+_config_acct_var  = None
+
 # Config file location
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), '..', 'backtest_config.json')
 
@@ -104,6 +111,7 @@ def load_config():
 
 def save_config(entries, output_text):
     """Validate entries and write backtest_config.json."""
+    global _config_firm_var, _config_stage_var
     values = {k: var.get().strip() for k, var in entries.items()}
 
     # Basic validation
@@ -142,6 +150,31 @@ def save_config(entries, output_text):
     if values['lot_size_calc'].strip().upper() not in ('DYNAMIC', 'FIXED'):
         messagebox.showerror("Invalid Value", f"'lot_size_calc' must be DYNAMIC or FIXED.\nGot: {values['lot_size_calc']}")
         return
+
+    # WHY: Resolve firm_name → firm_id from JSON files so run_backtest_panel
+    #      can look up firm-specific leverage (e.g., Get Leveraged metals=10).
+    #      firm_id is not in the entries dict (it's a dropdown, not a text
+    #      field), so resolve and inject it here before writing.
+    # CHANGED: April 2026 — persist firm selection (save firm_id)
+    if _config_firm_var:
+        _firm_name = _config_firm_var.get()
+        if _firm_name and _firm_name != "None — manual settings":
+            _pdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prop_firms')
+            for _fp in glob.glob(os.path.join(_pdir, '*.json')):
+                try:
+                    with open(_fp, encoding='utf-8') as _ff:
+                        _fd = json.load(_ff)
+                    if _fd.get('firm_name') == _firm_name:
+                        values['firm_id']   = _fd.get('firm_id', '')
+                        values['firm_name'] = _firm_name
+                        break
+                except Exception:
+                    pass
+        else:
+            values['firm_id']   = ''
+            values['firm_name'] = ''
+    if _config_stage_var:
+        values['stage'] = _config_stage_var.get()
 
     path = os.path.normpath(_CONFIG_FILE)
     try:
@@ -368,6 +401,7 @@ def _recalculate_lot_size(entries):
 def build_panel(parent):
     """Build the configuration panel"""
     global _rules_status_label, _price_status_label, _output_text
+    global _config_firm_var, _config_stage_var, _config_acct_var
 
     # Outer frame
     panel = tk.Frame(parent, bg="#ffffff")
@@ -634,18 +668,20 @@ def build_panel(parent):
                         if entries.get('risk_pct'):
                             entries['risk_pct'].set("0.5")
 
-                # Leverage info
-                # WHY (Phase 39 Fix 3): Old fallback was
-                #      list(leverage.values())[0] — first dict value in
-                #      insertion order. Users whose account size wasn't
-                #      in the firm's leverage map saw a leverage number
-                #      for a DIFFERENT size with no warning. Fall back
-                #      to '—' so unknown-size users see "not listed"
-                #      instead of a misleading value.
-                # CHANGED: April 2026 — Phase 39 Fix 3 — explicit fallback
-                #          (audit Part C MED #95)
-                leverage = fd.get('leverage_by_size', {})
-                lev = leverage.get(_config_acct_var.get(), '—')
+                # Leverage info — per instrument, not per size
+                # WHY: leverage_by_size shows the same number regardless of
+                #      instrument (it's just a max forex leverage). Show the
+                #      actual per-instrument leverage for the configured symbol
+                #      so the user sees e.g. "1:10 (metals)" for XAUUSD.
+                # CHANGED: April 2026 — instrument-aware leverage display
+                try:
+                    from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+                    _cur_sym  = entries['symbol'].get().strip().upper() if entries.get('symbol') else 'XAUUSD'
+                    _cur_inst = get_instrument_type(_cur_sym)
+                    _cur_lev  = get_leverage_for_symbol(fd, _cur_sym)
+                    lev = f"1:{_cur_lev} ({_cur_inst})"
+                except Exception:
+                    lev = fd.get('leverage', '—')
 
                 # DD info
                 if stage == "evaluation":
@@ -677,6 +713,16 @@ def build_panel(parent):
     _config_firm_var.trace_add("write", _on_firm_stage_change)
     _config_stage_var.trace_add("write", _on_firm_stage_change)
     _config_acct_var.trace_add("write", _on_acct_change)
+
+    # WHY: Restore firm/stage selection from previously saved config so the
+    #      user doesn't have to re-select their firm every time the panel opens.
+    # CHANGED: April 2026 — persist firm selection (Change 4)
+    _saved_firm = cfg.get('firm_name', '')
+    if _saved_firm and _saved_firm in firm_names:
+        _config_firm_var.set(_saved_firm)   # triggers _on_firm_stage_change
+    _saved_stage = cfg.get('stage', '')
+    if _saved_stage and _saved_stage in ("Evaluation", "Funded"):
+        _config_stage_var.set(_saved_stage)
 
     # Capital & Risk
     risk_frame = tk.LabelFrame(config_frame, text="💰 Capital & Risk",
