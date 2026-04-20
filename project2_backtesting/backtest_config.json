@@ -10,13 +10,15 @@
   "risk_pct": "1.0",
   "lot_size_calc": "DYNAMIC",
   "fixed_lot_size": "0.07",
-  "commission": "0.4",
+  "commission": "4.0",
   "spread": "25",
-  "max_one_trade": "True",
-  "same_candle_sl_rule": "LOSS",
   "hard_close_hour": "23",
   "warmup_candles": "200",
+  "max_one_trade": "True",
+  "same_candle_sl_rule": "LOSS",
   "firm_id": "",
   "firm_name": "",
-  "stage": "Evaluation"
+  "stage": "Evaluation",
+  "backtest_start": "",
+  "backtest_end": ""
 }
