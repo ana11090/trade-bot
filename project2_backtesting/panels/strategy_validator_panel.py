@@ -3051,6 +3051,30 @@ def _run(mode, override_idx=None, done_event=None):
                 _save_validation(idx, result)
                 state.window.after(0, _update_strat_info)
 
+                # WHY: Update status of saved rules to 'validated' with grade and score
+                # CHANGED: April 2026 — lifecycle status tracking
+                try:
+                    from shared.saved_rules import update_rule_field
+                    _grade = combined.get('grade', '?')
+                    _score = combined.get('confidence_score', 0)
+                    _updated_count = 0
+                    for rule in rules:
+                        _entry_id = rule.get('_saved_entry_id')
+                        _rule_id = rule.get('_saved_rule_id')
+                        if _entry_id or _rule_id:
+                            _id_to_update = _rule_id if _rule_id else _entry_id
+                            try:
+                                update_rule_field(_id_to_update, 'status', 'validated')
+                                update_rule_field(_id_to_update, 'grade', _grade)
+                                update_rule_field(_id_to_update, 'score', _score)
+                                _updated_count += 1
+                            except Exception as _ue:
+                                print(f"[STATUS] Could not update status for rule {_id_to_update}: {_ue}")
+                    if _updated_count > 0:
+                        print(f"[STATUS] Updated {_updated_count} saved rules to 'validated' status (grade {_grade}, score {_score})")
+                except Exception as _se:
+                    print(f"[STATUS] Could not update rule statuses: {_se}")
+
                 # WHY: Store for the Copy Results button
                 # CHANGED: April 2026
                 global _last_validation_result

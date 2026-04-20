@@ -1,0 +1,2065 @@
+[
+  {
+    "id": 1,
+    "saved_at": "2026-04-19T11:56:22.085913",
+    "source": "Step3:outputs:BUY:conf100",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": ">",
+          "value": -152.2146
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": "<=",
+          "value": 0.5943
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 1.0,
+      "coverage": 48,
+      "coverage_pct": 17.2,
+      "win_rate": 1.0,
+      "avg_pips": 590.9,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 1 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": ">",
+              "value": -152.2146
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": "<=",
+              "value": 0.5943
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "saved_at": "2026-04-19T11:56:22.095693",
+    "source": "Step3:outputs:BUY:conf92",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": "<=",
+          "value": 0.5782
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": "<=",
+          "value": 28.1507
+        },
+        {
+          "feature": "M5_ema_9_distance",
+          "operator": ">",
+          "value": -0.1359
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.919,
+      "coverage": 37,
+      "coverage_pct": 13.3,
+      "win_rate": 0.919,
+      "avg_pips": 487.8,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 2 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": "<=",
+              "value": 0.5782
+            },
+            {
+              "feature": "M15_adx_21",
+              "operator": "<=",
+              "value": 28.1507
+            },
+            {
+              "feature": "M5_ema_9_distance",
+              "operator": ">",
+              "value": -0.1359
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "saved_at": "2026-04-19T11:56:22.102732",
+    "source": "Step3:outputs:BUY:conf67",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": ">",
+          "value": 0.5782
+        },
+        {
+          "feature": "H4_macd_fast_diff",
+          "operator": ">",
+          "value": 1.5637
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 39,
+      "coverage_pct": 14.0,
+      "win_rate": 0.667,
+      "avg_pips": 198.9,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": ">",
+              "value": 0.5782
+            },
+            {
+              "feature": "H4_macd_fast_diff",
+              "operator": ">",
+              "value": 1.5637
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "saved_at": "2026-04-19T11:56:22.110923",
+    "source": "Step3:outputs:BUY:conf79",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": ">",
+          "value": 0.5782
+        },
+        {
+          "feature": "H4_macd_fast_diff",
+          "operator": "<=",
+          "value": 1.5637
+        }
+      ],
+      "prediction": "LOSS",
+      "confidence": 0.788,
+      "coverage": 33,
+      "coverage_pct": 11.8,
+      "win_rate": 0.212,
+      "avg_pips": 10.0,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "LOSS",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": ">",
+              "value": 0.5782
+            },
+            {
+              "feature": "H4_macd_fast_diff",
+              "operator": "<=",
+              "value": 1.5637
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "saved_at": "2026-04-19T11:56:22.119100",
+    "source": "Step3:outputs:BUY:conf83",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": ">",
+          "value": -152.2146
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.5943
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.833,
+      "coverage": 24,
+      "coverage_pct": 8.6,
+      "win_rate": 0.833,
+      "avg_pips": 293.9,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": ">",
+              "value": -152.2146
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.5943
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "saved_at": "2026-04-19T11:56:22.126457",
+    "source": "Step3:outputs:BUY:conf67",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": "<=",
+          "value": 0.5782
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": "<=",
+          "value": 28.1507
+        },
+        {
+          "feature": "M5_ema_9_distance",
+          "operator": "<=",
+          "value": -0.1359
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 24,
+      "coverage_pct": 8.6,
+      "win_rate": 0.667,
+      "avg_pips": 239.2,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 6 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": "<=",
+              "value": 0.5782
+            },
+            {
+              "feature": "M15_adx_21",
+              "operator": "<=",
+              "value": 28.1507
+            },
+            {
+              "feature": "M5_ema_9_distance",
+              "operator": "<=",
+              "value": -0.1359
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "saved_at": "2026-04-19T11:56:22.134661",
+    "source": "Step3:outputs:BUY:conf67",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": "<=",
+          "value": -152.2146
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 21,
+      "coverage_pct": 7.5,
+      "win_rate": 0.667,
+      "avg_pips": 418.1,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 7 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": "<=",
+              "value": -152.2146
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "saved_at": "2026-04-19T11:57:32.077900",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H4_distance_from_high",
+          "operator": ">",
+          "value": 0.4115
+        },
+        {
+          "feature": "H4_candle_range",
+          "operator": ">",
+          "value": 17.925
+        },
+        {
+          "feature": "H4_candle_range",
+          "operator": ">",
+          "value": 40.645
+        },
+        {
+          "feature": "D1_roc_50",
+          "operator": ">",
+          "value": 10.6946
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.634,
+      "win_rate": 0.634,
+      "coverage": 145,
+      "coverage_pct": 11.4,
+      "train_win_rate": 0.652,
+      "train_coverage": 23,
+      "overfit_gap": 0.018,
+      "is_overfit": false,
+      "avg_pips": 342.1,
+      "source": "bot_entry",
+      "entry_timeframe": "H4",
+      "action": "BUY",
+      "n_real_trades_in_rule": 190,
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "saved_at": "2026-04-19T11:57:32.147375",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.6844
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 46.235
+        },
+        {
+          "feature": "H4_keltner_width",
+          "operator": ">",
+          "value": 1.1275
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.767,
+      "win_rate": 0.767,
+      "coverage": 103,
+      "coverage_pct": 23.8,
+      "train_win_rate": 1.0,
+      "train_coverage": 30,
+      "overfit_gap": 0.233,
+      "is_overfit": true,
+      "avg_pips": 259.7,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 373,
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "saved_at": "2026-04-19T11:57:32.157457",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_distance_from_high",
+          "operator": ">",
+          "value": 0.2802
+        },
+        {
+          "feature": "H1_cci_14",
+          "operator": ">",
+          "value": -210.9958
+        },
+        {
+          "feature": "H1_distance_from_high",
+          "operator": ">",
+          "value": 0.4204
+        },
+        {
+          "feature": "D1_dpo",
+          "operator": "<=",
+          "value": 40.1905
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.559,
+      "win_rate": 0.559,
+      "coverage": 127,
+      "coverage_pct": 11.0,
+      "train_win_rate": 0.716,
+      "train_coverage": 201,
+      "overfit_gap": 0.157,
+      "is_overfit": true,
+      "avg_pips": 220.4,
+      "source": "bot_entry",
+      "entry_timeframe": "H1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 253,
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "saved_at": "2026-04-19T11:57:32.165964",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_ema_20_distance",
+          "operator": "<=",
+          "value": -0.1127
+        },
+        {
+          "feature": "M5_ema_9_distance",
+          "operator": ">",
+          "value": -0.1509
+        },
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.1505
+        },
+        {
+          "feature": "M5_plus_di",
+          "operator": "<=",
+          "value": 14.1529
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.6,
+      "win_rate": 0.6,
+      "coverage": 5,
+      "coverage_pct": 0.4,
+      "train_win_rate": 0.758,
+      "train_coverage": 91,
+      "overfit_gap": 0.158,
+      "is_overfit": true,
+      "avg_pips": 47.0,
+      "source": "bot_entry",
+      "entry_timeframe": "M15",
+      "action": "BUY",
+      "n_real_trades_in_rule": 76,
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "saved_at": "2026-04-19T12:14:01.166315",
+    "source": "Mode A (manual)",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        },
+        {
+          "feature": "D1_upper_shadow",
+          "operator": "<",
+          "value": 62.648
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "value": 19.53
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "value": 147.912935
+        },
+        {
+          "feature": "D1_dpo",
+          "operator": ">",
+          "value": -172.1145
+        }
+      ],
+      "prediction": "BUY",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 955,
+      "confidence": 0.8635,
+      "tightness_product": 0.00041
+    }
+  },
+  {
+    "id": 13,
+    "saved_at": "2026-04-19T12:21:34.083264",
+    "source": "Step3:outputs:BUY:conf99",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": ">",
+          "value": 0.7913
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.986,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.986,
+      "avg_pips": 480.6,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 1 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": ">",
+              "value": 30.3743
+            },
+            {
+              "feature": "M15_mass_index",
+              "operator": "<=",
+              "value": 26.0426
+            },
+            {
+              "feature": "M15_macd_std_diff",
+              "operator": "<=",
+              "value": 2.5631
+            },
+            {
+              "feature": "M5_bb_50_2_width",
+              "operator": ">",
+              "value": 0.7913
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 14,
+    "saved_at": "2026-04-19T12:21:34.091689",
+    "source": "Step3:outputs:BUY:conf89",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": "<=",
+          "value": 0.6051
+        },
+        {
+          "feature": "H1_stoch_14_d",
+          "operator": ">",
+          "value": 18.6137
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": ">",
+          "value": 21.7328
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.889,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.889,
+      "avg_pips": 301.4,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 2 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": "<=",
+              "value": 0.6051
+            },
+            {
+              "feature": "H1_stoch_14_d",
+              "operator": ">",
+              "value": 18.6137
+            },
+            {
+              "feature": "M15_adx_21",
+              "operator": ">",
+              "value": 21.7328
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 15,
+    "saved_at": "2026-04-19T12:21:34.100103",
+    "source": "Step3:outputs:BUY:conf78",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": "<=",
+          "value": 21.9115
+        }
+      ],
+      "prediction": "LOSS",
+      "confidence": 0.78,
+      "coverage": 41,
+      "coverage_pct": 4.6,
+      "win_rate": 0.22,
+      "avg_pips": 27.5,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "LOSS",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.6051
+            },
+            {
+              "feature": "H4_cci_14",
+              "operator": "<=",
+              "value": 71.4269
+            },
+            {
+              "feature": "M15_adx_28",
+              "operator": "<=",
+              "value": 21.9115
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 16,
+    "saved_at": "2026-04-19T12:21:34.109814",
+    "source": "Step3:outputs:BUY:conf88",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
+          "operator": ">",
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": ">",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_diff",
+          "operator": ">",
+          "value": -0.5668
+        },
+        {
+          "feature": "D1_day_of_month",
+          "operator": "<=",
+          "value": 6.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.875,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.875,
+      "avg_pips": 261.4,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": "<=",
+              "value": 5.5525
+            },
+            {
+              "feature": "M5_volume_ratio_20",
+              "operator": ">",
+              "value": 1.0015
+            },
+            {
+              "feature": "H1_adx_28",
+              "operator": ">",
+              "value": 13.2362
+            },
+            {
+              "feature": "H1_macd_fast_diff",
+              "operator": ">",
+              "value": -0.5668
+            },
+            {
+              "feature": "D1_day_of_month",
+              "operator": "<=",
+              "value": 6.5
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 17,
+    "saved_at": "2026-04-19T12:21:34.118085",
+    "source": "Step3:outputs:BUY:conf87",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": ">",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_roc_20",
+          "operator": "<=",
+          "value": -0.3725
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.871,
+      "coverage": 31,
+      "coverage_pct": 3.5,
+      "win_rate": 0.871,
+      "avg_pips": 390.6,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": ">",
+              "value": 30.3743
+            },
+            {
+              "feature": "M15_mass_index",
+              "operator": ">",
+              "value": 26.0426
+            },
+            {
+              "feature": "M15_roc_20",
+              "operator": "<=",
+              "value": -0.3725
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 18,
+    "saved_at": "2026-04-19T12:21:34.128169",
+    "source": "Step3:outputs:BUY:conf90",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": ">",
+          "value": 71.4269
+        },
+        {
+          "feature": "M5_atr_100",
+          "operator": "<=",
+          "value": 5.2248
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.905,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.905,
+      "avg_pips": 276.2,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 6 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.6051
+            },
+            {
+              "feature": "H4_cci_14",
+              "operator": ">",
+              "value": 71.4269
+            },
+            {
+              "feature": "M5_atr_100",
+              "operator": "<=",
+              "value": 5.2248
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 19,
+    "saved_at": "2026-04-19T12:21:34.136659",
+    "source": "Step3:outputs:BUY:conf76",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": "<=",
+          "value": 0.7913
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.76,
+      "coverage": 25,
+      "coverage_pct": 2.8,
+      "win_rate": 0.76,
+      "avg_pips": 239.4,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 7 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": ">",
+              "value": 30.3743
+            },
+            {
+              "feature": "M15_mass_index",
+              "operator": "<=",
+              "value": 26.0426
+            },
+            {
+              "feature": "M15_macd_std_diff",
+              "operator": "<=",
+              "value": 2.5631
+            },
+            {
+              "feature": "M5_bb_50_2_width",
+              "operator": "<=",
+              "value": 0.7913
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 20,
+    "saved_at": "2026-04-19T12:21:34.146687",
+    "source": "Step3:outputs:BUY:conf65",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": ">",
+          "value": 21.9115
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.654,
+      "coverage": 26,
+      "coverage_pct": 2.9,
+      "win_rate": 0.654,
+      "avg_pips": 142.8,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 8 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.6051
+            },
+            {
+              "feature": "H4_cci_14",
+              "operator": "<=",
+              "value": 71.4269
+            },
+            {
+              "feature": "M15_adx_28",
+              "operator": ">",
+              "value": 21.9115
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 21,
+    "saved_at": "2026-04-19T12:21:34.155708",
+    "source": "Step3:outputs:BUY:conf67",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
+          "operator": ">",
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": "<=",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_signal",
+          "operator": "<=",
+          "value": -1.0984
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.667,
+      "avg_pips": 93.5,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 9 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": "<=",
+              "value": 5.5525
+            },
+            {
+              "feature": "M5_volume_ratio_20",
+              "operator": ">",
+              "value": 1.0015
+            },
+            {
+              "feature": "H1_adx_28",
+              "operator": "<=",
+              "value": 13.2362
+            },
+            {
+              "feature": "H1_macd_fast_signal",
+              "operator": "<=",
+              "value": -1.0984
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 22,
+    "saved_at": "2026-04-19T12:21:34.164722",
+    "source": "Step3:outputs:BUY:conf65",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": ">",
+          "value": 2.5631
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.65,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.65,
+      "avg_pips": 380.8,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 10 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": ">",
+              "value": 30.3743
+            },
+            {
+              "feature": "M15_mass_index",
+              "operator": "<=",
+              "value": 26.0426
+            },
+            {
+              "feature": "M15_macd_std_diff",
+              "operator": ">",
+              "value": 2.5631
+            }
+          ]
+        }
+      ],
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 23,
+    "saved_at": "2026-04-19T12:21:37.337298",
+    "source": "ModeA:cov78%:tight0.000:winner=tightness",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        },
+        {
+          "feature": "M15_lower_shadow",
+          "operator": "<",
+          "value": 8.704
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "value": 19.53
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "value": 147.912935
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": "<",
+          "value": 73.67
+        },
+        {
+          "feature": "M5_lower_shadow",
+          "operator": "<",
+          "value": 4.766
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": "<",
+          "value": 4.494
+        }
+      ],
+      "prediction": "BUY",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 865,
+      "confidence": 0.7821,
+      "tightness_product": 0.0,
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 24,
+    "saved_at": "2026-04-19T12:30:11.168140",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        }
+      ],
+      "prediction": "BUY",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 975,
+      "confidence": 0.8816,
+      "tightness_product": 0.003479,
+      "regime_filter": null
+    }
+  },
+  {
+    "id": 25,
+    "saved_at": "2026-04-19T19:39:01.062010",
+    "source": "Backtest Result",
+    "notes": "31",
+    "rule": {
+      "rule_combo": "Rule 1 (BUY)",
+      "exit_strategy": "SL 150 pips, close after 12 candles",
+      "exit_name": "Time-Based",
+      "exit_class": "TimeBased",
+      "exit_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "exit_strategy_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "prediction": "WIN",
+      "win_rate": 59.2,
+      "net_total_pips": 2200352.0,
+      "net_profit_factor": 3.8,
+      "total_trades": 11458,
+      "max_dd_pips": 9423.0,
+      "entry_tf": "M5",
+      "entry_timeframe": "M5",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": ">",
+              "value": 0.5782
+            },
+            {
+              "feature": "H4_macd_fast_diff",
+              "operator": ">",
+              "value": 1.5637
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 0.667,
+          "coverage": 39,
+          "coverage_pct": 14.0,
+          "win_rate": 0.667,
+          "avg_pips": 198.9,
+          "action": "BUY",
+          "direction": "BUY",
+          "entry_timeframe": "H1",
+          "entry_tf": "H1",
+          "rule_combo": "Rule 3 (BUY)",
+          "scenario": "outputs",
+          "spread_pips": 2.5,
+          "commission_pips": 0.0,
+          "discovery_settings": {
+            "regime_filter_enabled": true,
+            "regime_at_discovery": true,
+            "regime_strictness": "conservative",
+            "regime_mode": "automatic"
+          },
+          "rules": [
+            {
+              "prediction": "WIN",
+              "action": "BUY",
+              "conditions": [
+                {
+                  "feature": "H1_candle_body",
+                  "operator": "<=",
+                  "value": 14.94
+                },
+                {
+                  "feature": "H1_close_position_in_range",
+                  "operator": ">",
+                  "value": 0.5782
+                },
+                {
+                  "feature": "H4_macd_fast_diff",
+                  "operator": ">",
+                  "value": 1.5637
+                }
+              ]
+            }
+          ],
+          "regime_filter": [
+            {
+              "feature": "H1_std_dev_20",
+              "direction": ">",
+              "threshold": 17.741695
+            }
+          ]
+        }
+      ],
+      "rule_indices": [
+        0
+      ],
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": ">",
+          "value": 0.5782
+        },
+        {
+          "feature": "H4_macd_fast_diff",
+          "operator": ">",
+          "value": 1.5637
+        }
+      ],
+      "spread_pips": 0.3,
+      "commission_pips": 4.0,
+      "direction": "",
+      "run_settings": {
+        "rule_source": "Saved/Bookmarked Rules (24 rules)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": false,
+        "regime_filter_conditions": [],
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 1.0,
+        "starting_capital": 10000.0
+      },
+      "signals_before_regime_filter": 103486,
+      "signals_after_regime_filter": 103486
+    }
+  },
+  {
+    "id": 26,
+    "saved_at": "2026-04-19T21:35:48.752983",
+    "source": "Backtest Result",
+    "notes": "26",
+    "rule": {
+      "rule_combo": "Rule 1 (BUY)",
+      "exit_strategy": "SL 150 pips, close after 12 candles",
+      "exit_name": "Time-Based",
+      "exit_class": "TimeBased",
+      "exit_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "exit_strategy_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "prediction": "WIN",
+      "win_rate": 59.2,
+      "net_total_pips": 2200352.0,
+      "net_profit_factor": 3.8,
+      "total_trades": 11458,
+      "max_dd_pips": 9423.0,
+      "entry_tf": "M5",
+      "entry_timeframe": "M5",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": "<=",
+              "value": 14.94
+            },
+            {
+              "feature": "H1_close_position_in_range",
+              "operator": ">",
+              "value": 0.5782
+            },
+            {
+              "feature": "H4_macd_fast_diff",
+              "operator": ">",
+              "value": 1.5637
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 0.667,
+          "coverage": 39,
+          "coverage_pct": 14.0,
+          "win_rate": 0.667,
+          "avg_pips": 198.9,
+          "action": "BUY",
+          "direction": "BUY",
+          "entry_timeframe": "H1",
+          "entry_tf": "H1",
+          "rule_combo": "Rule 3 (BUY)",
+          "scenario": "outputs",
+          "spread_pips": 2.5,
+          "commission_pips": 0.0,
+          "discovery_settings": {
+            "regime_filter_enabled": true,
+            "regime_at_discovery": true,
+            "regime_strictness": "conservative",
+            "regime_mode": "automatic"
+          },
+          "rules": [
+            {
+              "prediction": "WIN",
+              "action": "BUY",
+              "conditions": [
+                {
+                  "feature": "H1_candle_body",
+                  "operator": "<=",
+                  "value": 14.94
+                },
+                {
+                  "feature": "H1_close_position_in_range",
+                  "operator": ">",
+                  "value": 0.5782
+                },
+                {
+                  "feature": "H4_macd_fast_diff",
+                  "operator": ">",
+                  "value": 1.5637
+                }
+              ]
+            }
+          ],
+          "regime_filter": [
+            {
+              "feature": "H1_std_dev_20",
+              "direction": ">",
+              "threshold": 17.741695
+            }
+          ]
+        }
+      ],
+      "rule_indices": [
+        0
+      ],
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": "<=",
+          "value": 14.94
+        },
+        {
+          "feature": "H1_close_position_in_range",
+          "operator": ">",
+          "value": 0.5782
+        },
+        {
+          "feature": "H4_macd_fast_diff",
+          "operator": ">",
+          "value": 1.5637
+        }
+      ],
+      "spread_pips": 0.3,
+      "commission_pips": 4.0,
+      "direction": "",
+      "run_settings": {
+        "rule_source": "Saved/Bookmarked Rules (24 rules)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": false,
+        "regime_filter_conditions": [],
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 1.0,
+        "starting_capital": 10000.0
+      },
+      "signals_before_regime_filter": 103486,
+      "signals_after_regime_filter": 103486
+    }
+  }
+]

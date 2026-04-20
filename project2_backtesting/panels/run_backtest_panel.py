@@ -1025,6 +1025,27 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
                 output_text.see(tk.END)
 
+                # WHY: Update status of saved rules to 'backtested' after successful backtest
+                # CHANGED: April 2026 — lifecycle status tracking
+                try:
+                    from shared.saved_rules import update_rule_field
+                    _updated_count = 0
+                    for rule in selected_rules:
+                        _entry_id = rule.get('_saved_entry_id')
+                        _rule_id = rule.get('_saved_rule_id')
+                        if _entry_id or _rule_id:
+                            # Use rule_id if available (descriptive), fall back to numeric id
+                            _id_to_update = _rule_id if _rule_id else _entry_id
+                            try:
+                                update_rule_field(_id_to_update, 'status', 'backtested')
+                                _updated_count += 1
+                            except Exception as _ue:
+                                print(f"[STATUS] Could not update status for rule {_id_to_update}: {_ue}")
+                    if _updated_count > 0:
+                        print(f"[STATUS] Updated {_updated_count} saved rules to 'backtested' status")
+                except Exception as _se:
+                    print(f"[STATUS] Could not update rule statuses: {_se}")
+
                 output_text.after(0, lambda: messagebox.showinfo(
                     "Backtest Complete",
                     "Backtest completed successfully!\n\n"
@@ -2505,7 +2526,17 @@ def build_panel(parent):
                 return
 
             if isinstance(data, list):
-                rules = [entry.get('rule', entry) for entry in data]
+                # WHY: Preserve entry IDs from saved_rules.json so we can
+                #      update status after backtest. Attach both numeric id
+                #      and descriptive rule_id to the rule dict.
+                # CHANGED: April 2026 — status tracking
+                rules = []
+                for entry in data:
+                    rule = entry.get('rule', entry)
+                    if isinstance(rule, dict):
+                        rule['_saved_entry_id'] = entry.get('id')
+                        rule['_saved_rule_id'] = entry.get('rule_id', '')
+                    rules.append(rule)
             else:
                 rules = data.get('rules', [])
 

@@ -147,314 +147,275 @@ def _refresh_list(inner, canvas, window_id):
             pass
 
     from shared.saved_rules import load_all
-    rules = load_all()
+    all_entries = load_all()
 
-    if not rules:
+    if not all_entries:
         tk.Label(_content_frame, text="No saved rules yet.\n\nLook for the 💾 Save button next to any rule in the app.",
                  font=("Arial", 11), bg=BG, fg="#888888").pack(pady=20)
         return
 
-    tk.Label(_content_frame, text=f"{len(rules)} saved rules",
+    tk.Label(_content_frame, text=f"{len(all_entries)} saved rules",
              font=("Arial", 10, "bold"), bg=BG, fg=FG).pack(anchor="w", pady=(0, 10))
 
-    for entry in rules:
-        rule = entry.get("rule", {})
-        card = tk.Frame(_content_frame, bg="#f8f9fa", bd=1, relief=tk.SOLID, padx=10, pady=8)
-        card.pack(fill="x", pady=3)
+    # WHY: Group rules by firm so user can see all rules for a prop firm together
+    # CHANGED: April 2026 — firm grouping
+    groups = {}
+    for entry in all_entries:
+        rule = entry.get('rule', {})
+        firm = rule.get('prop_firm_name', '') or rule.get('firm_name', '') or 'No Firm'
+        if firm not in groups:
+            groups[firm] = []
+        groups[firm].append(entry)
 
-        # Header row: ID, source, date, delete button
-        header = tk.Frame(card, bg="#f8f9fa")
-        header.pack(fill="x")
+    # Sort: firms with rules first, "No Firm" last
+    sorted_firms = sorted(groups.keys(), key=lambda f: (f == 'No Firm', -len(groups[f])))
 
-        tk.Label(header, text=f"#{entry.get('id', '?')}",
-                 font=("Arial", 10, "bold"), bg="#f8f9fa", fg="#667eea").pack(side=tk.LEFT)
-        # WHY: show date + time (HH:MM:SS) so users can distinguish
-        #      multiple discovery runs on the same day. ISO format
-        #      "YYYY-MM-DDTHH:MM:SS.ffffff" — slice to 19 chars to drop
-        #      microseconds, swap 'T' for a space for readability.
-        _saved_at_raw = entry.get('saved_at', '?')
-        _saved_at_disp = _saved_at_raw[:19].replace('T', ' ') if _saved_at_raw else '?'
-        tk.Label(header, text=f"  from {entry.get('source', '?')}  •  {_saved_at_disp}",
-                 font=("Arial", 9), bg="#f8f9fa", fg="#888888").pack(side=tk.LEFT)
+    for firm_name in sorted_firms:
+        entries = groups[firm_name]
 
-        # TF badge — show entry_tf, infer from conditions if missing
-        # WHY: Old auto-saved rules have no entry_tf. But conditions contain
-        #      TF prefixes (M5_, H4_, etc.). Infer entry TF from conditions
-        #      so ALL rules show a TF badge.
-        # CHANGED: April 2026 — infer entry_tf from conditions
-        rule_tf = rule.get('entry_tf', rule.get('entry_timeframe', ''))
-        if not rule_tf:
-            _tf_order = ['M1', 'M5', 'M15', 'H1', 'H4', 'D1']
-            _found_tfs = set()
-            for _c in rule.get('conditions', []):
-                _feat = _c.get('feature', '') if isinstance(_c, dict) else str(_c)
-                for _tf in _tf_order:
-                    if _feat.startswith(_tf + '_'):
-                        _found_tfs.add(_tf)
-                        break
-            if _found_tfs:
-                for _tf in _tf_order:
-                    if _tf in _found_tfs:
-                        rule_tf = _tf
-                        break
-        if rule_tf:
-            _tf_color = '#667eea' if (rule.get('entry_tf') or rule.get('entry_timeframe')) else '#999999'
-            tk.Label(header, text=f"[{rule_tf}]", bg=_tf_color, fg="white",
-                     font=("Arial", 8, "bold"), padx=4, pady=1).pack(side=tk.LEFT, padx=(6, 0))
+        # Sort within group: deployed/validated first, then backtested, then discovered
+        status_order = {'deployed': 0, 'validated': 1, 'backtested': 2, 'discovered': 3}
+        entries.sort(key=lambda e: status_order.get(
+            e.get('rule', {}).get('status', 'discovered'), 3))
 
-        # Discovery context badges
-        # WHY: User needs to see at a glance what mode produced this rule.
-        # CHANGED: April 2026 — discovery context badges
-        _src = entry.get('source', '')
-        _ds_badge = rule.get('discovery_settings', {})
-        _ctx_badges = []
-        _rf = rule.get('regime_filter')
-        if _rf and isinstance(_rf, list) and len(_rf) > 0:
-            _ctx_badges.append(('REGIME', '#9b59b6'))
-        if _ds_badge.get('single_rule_mode_enabled') or 'ModeA' in _src:
-            _variant = _ds_badge.get('single_rule_mode_variant', 'A').upper()
-            _ctx_badges.append((f'SINGLE {_variant}', '#e67e22'))
-        if 'Step3' in _src:
-            _ctx_badges.append(('STEP 3', '#3498db'))
-        elif 'Step4' in _src:
-            _ctx_badges.append(('STEP 4', '#16a085'))
-        elif 'Backtest' in _src:
-            _ctx_badges.append(('BACKTEST', '#27ae60'))
-        elif 'Optimizer' in _src:
-            _ctx_badges.append(('OPTIMIZER', '#2c3e50'))
-        _dir = rule.get('direction', rule.get('action', ''))
-        if _dir:
-            _ctx_badges.append((_dir, '#28a745' if _dir == 'BUY' else '#dc3545'))
-        for _bt, _bc in _ctx_badges:
-            tk.Label(header, text=_bt, bg=_bc, fg="white",
-                     font=("Arial", 7, "bold"), padx=3, pady=0
-                     ).pack(side=tk.LEFT, padx=(3, 0))
+        # Firm header (collapsible)
+        _render_firm_header(_content_frame, firm_name, entries)
 
-        # Leverage badge — shows margin constraint active during backtest
-        # WHY: User needs to see at a glance what leverage constraint was
-        #      used when this rule was found, so they know lot sizes are
-        #      comparable to their live account settings.
-        # CHANGED: April 2026 — leverage badge in saved rules
-        _lev = rule.get('leverage', 0)
-        _firm = rule.get('firm_name', rule.get('firm_id', ''))
-        if _lev > 0:
-            _lev_text = f"1:{_lev}"
-            if _firm:
-                _lev_text += f" ({_firm})"
-            tk.Label(header, text=_lev_text, font=("Arial", 7, "bold"),
-                     bg="#e0e0e0", fg="#333333", padx=4, pady=1
-                     ).pack(side=tk.LEFT, padx=(3, 0))
+        # Rule cards
+        for entry in entries:
+            _render_clean_card(_content_frame, entry, inner, canvas, window_id)
 
-        rid = entry.get('id')
-        tk.Button(header, text="🗑️", font=("Arial", 8),
-                  bg="#dc3545", fg="white", relief=tk.FLAT, padx=4,
-                  command=lambda r=rid: _delete_one(r, inner, canvas, window_id)).pack(side=tk.RIGHT)
 
-        # WHY (Phase A.40b): One-click "▶ Backtest" button per saved
-        #      rule. Sets state.pending_backtest_rule_id to this entry's
-        #      id, navigates to the Run Backtest panel (lazy-builds if
-        #      first access), then schedules a 200ms callback to the
-        #      run_backtest_panel's apply_pending_rule_selection helper
-        #      which picks up the pending id, switches the source to
-        #      "Saved/Bookmarked Rules", and checks ONLY this rule.
-        #      User then clicks "Run Backtest" to start.
-        #
-        #      200ms delay is enough for lazy-build + first paint on
-        #      typical hardware. If a panel-not-ready warning fires in
-        #      practice, increase to 500ms. We don't block/poll because
-        #      that hangs the UI thread.
-        # CHANGED: April 2026 — Phase A.40b
-        def _a40b_backtest_this_rule(r=rid):
+def _render_firm_header(parent, firm_name, entries):
+    """Render a firm group header with summary."""
+    frame = tk.Frame(parent, bg='#dfe6e9', padx=10, pady=6)
+    frame.pack(fill='x', padx=5, pady=(10, 2))
+
+    # Count by status
+    statuses = [e.get('rule', {}).get('status', 'discovered') for e in entries]
+    summary_parts = []
+    for s in ['deployed', 'validated', 'backtested', 'discovered']:
+        count = statuses.count(s)
+        if count > 0:
+            summary_parts.append(f"{count} {s}")
+
+    # Get leverage/account from first rule that has it
+    sample = entries[0].get('rule', {})
+    lev = sample.get('leverage', 0)
+    acct = sample.get('account_size', 0)
+    stage = sample.get('prop_firm_stage', '')
+
+    header_text = firm_name
+    if lev:
+        header_text += f"  (1:{lev}"
+        if acct:
             try:
-                import state as _a40b_state
-                import sidebar as _a40b_sidebar
-                from project2_backtesting.panels import run_backtest_panel as _a40b_rbp
-
-                _a40b_state.pending_backtest_rule_id[0] = r
-                _a40b_state.pending_backtest_auto_run[0] = False
-
-                # Navigate to the backtest panel (lazy-builds on first show).
-                _a40b_sidebar.show_panel("p2_run")
-
-                # Schedule apply after the panel has had a chance to paint.
-                # Using the tk `after` mechanism so we don't block. The
-                # card widget is still alive here so card.after is safe.
-                card.after(200, _a40b_rbp.apply_pending_rule_selection)
-            except Exception as e:
-                try:
-                    from tkinter import messagebox as _a40b_mb
-                    _a40b_mb.showerror(
-                        "Backtest error",
-                        f"Could not start backtest: {e}\n\n"
-                        f"You can still switch manually: Project 2 → Run "
-                        f"Backtest → source = 'Saved/Bookmarked Rules'."
-                    )
-                except Exception:
-                    pass
-
-        tk.Button(header, text="▶ Backtest", font=("Arial", 8, "bold"),
-                  bg="#28a745", fg="white", relief=tk.FLAT, padx=8,
-                  command=_a40b_backtest_this_rule).pack(side=tk.RIGHT, padx=(0, 4))
-
-        # Conditions
-        # WHY (Phase A.40a hotfix): Mode A discovery doesn't compute a
-        #      win-rate (it's a coverage/tightness optimisation, not a
-        #      WR-maximiser), so its auto-saved entries arrive with
-        #      win_rate=None. The old `wr <= 1.0` comparison raises
-        #      TypeError on None and crashes _refresh_list, blocking
-        #      the whole Saved Rules panel from rendering. Coerce None
-        #      to 0 here so the entry still displays (just with WR=0%).
-        # CHANGED: April 2026 — Phase A.40a hotfix
-        wr = rule.get('win_rate') or 0
-        pips = rule.get('avg_pips') or 0
-        cov = rule.get('coverage') or 0
-
-        # WHY (Phase 68 Fix 41): `:.0%` multiplies by 100. A rule with
-        #      win_rate=65 (already percent) displayed as '6500%'. Guard
-        #      for the fraction range first.
-        # CHANGED: April 2026 — Phase 68 Fix 41 — fraction-safe WR format
-        #          (audit Part E HIGH #41)
-        _wr_display = wr * 100 if wr <= 1.0 else wr
-        stats = f"WR: {_wr_display:.0f}%  |  Avg pips: {pips:+.0f}  |  Coverage: {cov}"
-        tk.Label(card, text=stats, font=("Arial", 9, "bold"), bg="#f8f9fa",
-                 fg="#28a745" if wr > 0.6 else "#e67e22").pack(anchor="w")
-
-        for cond in rule.get('conditions', []):
-            # WHY (Phase 68 Fix 43): Direct dict access crashes if conditions
-            #      are in string format. normalize_condition was added for this
-            #      exact case but saved_rules_panel never used it.
-            # CHANGED: April 2026 — Phase 68 Fix 43 — normalize before access
-            #          (audit Part E HIGH #43)
-            try:
-                from helpers import normalize_condition as _nc
-                _cond = _nc(cond) if not isinstance(cond, dict) else cond
-                if isinstance(_cond, dict) and _cond:
-                    txt = f"  {_cond.get('feature','?')} {_cond.get('operator','>')} {_cond.get('value',0)}"
-                elif isinstance(_cond, list):
-                    txt = '  ' + ' AND '.join(
-                        f"{c.get('feature','?')} {c.get('operator','>')} {c.get('value',0)}"
-                        for c in _cond if isinstance(c, dict)
-                    )
-                else:
-                    txt = f"  {str(cond)}"
+                header_text += f", ${float(acct):,.0f}"
             except Exception:
-                txt = f"  {str(cond)}"
-            tk.Label(card, text=txt, font=("Courier", 9), bg="#f8f9fa", fg=FG).pack(anchor="w")
+                header_text += f", ${acct}"
+        if stage: header_text += f", {stage}"
+        header_text += ")"
 
-        # Regime filter conditions
-        _rf = rule.get('regime_filter')
-        if _rf and isinstance(_rf, list) and len(_rf) > 0:
-            tk.Label(card, text="  🔀 Regime filter:",
-                     font=("Arial", 8, "bold"), bg="#f8f9fa", fg="#9b59b6"
-                     ).pack(anchor="w", pady=(4, 0))
-            for _rc in _rf:
-                if isinstance(_rc, dict):
-                    _feat = _rc.get('feature', '?')
-                    _op = _rc.get('direction', _rc.get('operator', '>'))
-                    _val = _rc.get('threshold', _rc.get('value', '?'))
-                    try: _val = f"{float(_val):.4f}"
-                    except Exception: _val = str(_val)
-                    tk.Label(card, text=f"    {_feat} {_op} {_val}",
-                             font=("Courier", 8), bg="#f8f9fa", fg="#7b2d8e"
-                             ).pack(anchor="w")
+    tk.Label(frame, text=header_text,
+             font=("Segoe UI", 11, "bold"), bg='#dfe6e9', fg='#2d3436'
+             ).pack(side=tk.LEFT)
 
-        # Scenario name
-        _scenario = rule.get('scenario', '')
-        if _scenario:
-            tk.Label(card, text=f"  📁 Scenario: {_scenario}",
-                     font=("Arial", 8), bg="#f8f9fa", fg="#888"
-                     ).pack(anchor="w", pady=(2, 0))
+    tk.Label(frame, text=f"{len(entries)} rules  •  {', '.join(summary_parts) if summary_parts else 'all discovered'}",
+             font=("Segoe UI", 9), bg='#dfe6e9', fg='#636e72'
+             ).pack(side=tk.RIGHT)
 
-        # Exit strategy (if saved from backtest/optimizer)
-        _exit = rule.get('exit_name', rule.get('exit_class', ''))
-        if _exit:
-            _ep = rule.get('exit_params', rule.get('exit_strategy_params', {}))
-            _exit_text = f"  ⚙️ Exit: {_exit}"
-            if _ep:
-                _ep_parts = [f"{k}={v}" for k, v in _ep.items() if k != 'pip_size']
-                if _ep_parts:
-                    _exit_text += f"  ({', '.join(_ep_parts[:4])})"
-            tk.Label(card, text=_exit_text,
-                     font=("Arial", 8), bg="#f8f9fa", fg="#555"
-                     ).pack(anchor="w", pady=(1, 0))
 
-        # Run settings summary (if saved)
-        _rs = rule.get('run_settings', {})
-        if _rs:
-            _rs_parts = []
-            if _rs.get('regime_filter_enabled'): _rs_parts.append("Regime ON")
-            if _rs.get('multi_tf'): _rs_parts.append("Multi-TF")
-            if _rs.get('combine_all_rules'): _rs_parts.append("All combos")
-            if _rs.get('use_config'): _rs_parts.append("Config")
-            if _rs_parts:
-                tk.Label(card, text=f"  🔧 Settings: {', '.join(_rs_parts)}",
-                         font=("Arial", 8), bg="#f8f9fa", fg="#888"
-                         ).pack(anchor="w", pady=(1, 0))
+def _render_clean_card(parent, entry, inner, canvas, window_id):
+    """Render a clean, modern rule card with essential info only."""
+    rule = entry.get("rule", {})
 
-        # Discovery settings — checkbox/radio state at discovery time
-        _ds = rule.get('discovery_settings', {})
-        if _ds:
-            # Regime settings
-            _ds_parts = []
-            if _ds.get('regime_filter_enabled'):
-                _ds_parts.append("Regime: ON")
-                if _ds.get('regime_at_discovery'):
-                    _ds_parts.append("At discovery: ✅")
-                else:
-                    _ds_parts.append("At discovery: ❌")
-                if _ds.get('regime_strictness'):
-                    _ds_parts.append(f"Strictness: {_ds['regime_strictness'].title()}")
+    card = tk.Frame(parent, bg="#ffffff", bd=1, relief=tk.RIDGE, padx=12, pady=10)
+    card.pack(fill="x", pady=4, padx=5)
+
+    # ── LINE 1: Identity ──
+    # Format: {rule_id}  {direction}  {timeframe}  {exit_name}({params})  ⬤ {status}
+    header = tk.Frame(card, bg="#ffffff")
+    header.pack(fill="x", pady=(0, 6))
+
+    # Rule ID (descriptive or fallback to numeric)
+    _display_id = entry.get('rule_id', f"#{entry.get('id')}")
+    tk.Label(header, text=_display_id,
+             font=("Segoe UI", 10, "bold"), bg="#ffffff", fg="#667eea"
+             ).pack(side=tk.LEFT, padx=(0, 8))
+
+    # Direction
+    _dir = rule.get('direction', rule.get('action', ''))
+    if _dir:
+        _dir_color = '#28a745' if _dir == 'BUY' else '#dc3545'
+        tk.Label(header, text=_dir, bg=_dir_color, fg="white",
+                 font=("Segoe UI", 8, "bold"), padx=5, pady=2
+                 ).pack(side=tk.LEFT, padx=(0, 4))
+
+    # Timeframe
+    rule_tf = rule.get('entry_timeframe', rule.get('entry_tf', ''))
+    if not rule_tf:
+        # Infer from conditions
+        _tf_order = ['M1', 'M5', 'M15', 'H1', 'H4', 'D1']
+        _found_tfs = set()
+        for _c in rule.get('conditions', []):
+            _feat = _c.get('feature', '') if isinstance(_c, dict) else str(_c)
+            for _tf in _tf_order:
+                if _feat.startswith(_tf + '_'):
+                    _found_tfs.add(_tf)
+                    break
+        if _found_tfs:
+            for _tf in _tf_order:
+                if _tf in _found_tfs:
+                    rule_tf = _tf
+                    break
+    if rule_tf:
+        tk.Label(header, text=rule_tf, bg="#667eea", fg="white",
+                 font=("Segoe UI", 8, "bold"), padx=5, pady=2
+                 ).pack(side=tk.LEFT, padx=(0, 4))
+
+    # Exit strategy (compact)
+    _exit = rule.get('exit_name', rule.get('exit_class', ''))
+    if _exit:
+        _ep = rule.get('exit_params', rule.get('exit_strategy_params', {}))
+        _exit_short = _exit.replace('Based', '').replace('-', '')
+        _exit_text = _exit_short
+        if _ep:
+            _sl = _ep.get('sl_pips', '')
+            _tp = _ep.get('tp_pips', '')
+            _mc = _ep.get('max_candles', '')
+            _params = []
+            if _sl: _params.append(f"SL={_sl}")
+            if _tp: _params.append(f"TP={_tp}")
+            if _mc: _params.append(f"{_mc}c")
+            if _params:
+                _exit_text += f"({', '.join(_params[:2])})"
+        tk.Label(header, text=_exit_text,
+                 font=("Segoe UI", 8), bg="#ffffff", fg="#555"
+                 ).pack(side=tk.LEFT, padx=(4, 8))
+
+    # Status indicator (colored dot + text)
+    status = rule.get('status', 'discovered')
+    grade = rule.get('grade', '')
+    score = rule.get('score', 0)
+
+    _status_colors = {
+        'discovered': ('#3498db', '🔵'),
+        'backtested': ('#f39c12', '🟡'),
+        'validated': ('#27ae60', '🟢'),
+        'deployed': ('#9b59b6', '⚡')
+    }
+    _color, _dot = _status_colors.get(status, ('#95a5a6', '⚪'))
+
+    _status_text = status.title()
+    if status == 'validated' and grade:
+        _status_text = f"Grade {grade} ({score})"
+
+    tk.Label(header, text=f"{_dot} {_status_text}",
+             font=("Segoe UI", 9, "bold"), bg="#ffffff", fg=_color
+             ).pack(side=tk.LEFT, padx=(8, 0))
+
+    # Delete button (far right)
+    rid = entry.get('id')
+    tk.Button(header, text="🗑️", font=("Arial", 8),
+              bg="#dc3545", fg="white", relief=tk.FLAT, padx=4,
+              command=lambda r=rid: _delete_one(r, inner, canvas, window_id)
+              ).pack(side=tk.RIGHT)
+
+    # ── LINE 2: Stats ──
+    # Format: WR: {wr}%  |  PF: {pf}  |  Avg: {pips} pips  |  {n} trades
+    stats_frame = tk.Frame(card, bg="#ffffff")
+    stats_frame.pack(fill="x", pady=(0, 6))
+
+    wr = rule.get('win_rate') or 0
+    pf = rule.get('net_profit_factor', rule.get('profit_factor', 0)) or 0
+    pips = rule.get('avg_pips') or 0
+    trades = rule.get('total_trades', rule.get('coverage', 0)) or 0
+
+    # WR display (handle both fraction and percentage)
+    _wr_display = wr * 100 if wr <= 1.0 else wr
+
+    # Color based on performance
+    if _wr_display > 55 and pf > 1.5:
+        _stats_color = '#28a745'  # green
+    elif _wr_display > 50 or pf > 1.0:
+        _stats_color = '#f39c12'  # orange
+    else:
+        _stats_color = '#dc3545'  # red
+
+    stats_text = f"WR: {_wr_display:.0f}%  |  PF: {pf:.2f}  |  Avg: {pips:+.0f} pips  |  {int(trades)} trades"
+    tk.Label(stats_frame, text=stats_text,
+             font=("Segoe UI", 9, "bold"), bg="#ffffff", fg=_stats_color
+             ).pack(side=tk.LEFT)
+
+    # ── LINES 3+: Conditions (compact, one per line) ──
+    for cond in rule.get('conditions', []):
+        try:
+            from helpers import normalize_condition as _nc
+            _cond = _nc(cond) if not isinstance(cond, dict) else cond
+            if isinstance(_cond, dict) and _cond:
+                _feat = _cond.get('feature', '?')
+                _op = _cond.get('operator', '>')
+                _val = _cond.get('value', 0)
+                # Compact operator display
+                _op_display = {'<=': '≤', '>=': '≥', '==': '=', '!=': '≠'}.get(_op, _op)
+                # Truncate value to 2 decimals
+                try:
+                    _val_display = f"{float(_val):.2f}"
+                except Exception:
+                    _val_display = str(_val)
+                txt = f"{_feat} {_op_display} {_val_display}"
             else:
-                _ds_parts.append("Regime: OFF")
-            if _ds_parts:
-                tk.Label(card, text=f"  🎛️ Regime: {' | '.join(_ds_parts)}",
-                         font=("Arial", 8), bg="#f8f9fa", fg="#666"
-                         ).pack(anchor="w", pady=(1, 0))
+                txt = str(cond)
+        except Exception:
+            txt = str(cond)
 
-            # Single rule mode settings
-            _srm_parts = []
-            if _ds.get('single_rule_mode_enabled'):
-                _variant = _ds.get('single_rule_mode_variant', 'a').upper()
-                _variant_names = {'A': 'Mode A (single feature)',
-                                  'B': 'Mode B (crossover)',
-                                  'C': 'Mode C (two-feature)',
-                                  'D': 'Mode D (regime-gated)'}
-                _srm_parts.append(f"Single Rule: ON — {_variant_names.get(_variant, f'Mode {_variant}')}")
-                if _variant == 'A':
-                    _dedup = "✅" if _ds.get('srm_dedup_correlated') else "❌"
-                    _winner = _ds.get('srm_winner_selection', 'tightness').title()
-                    _srm_parts.append(f"Dedup: {_dedup}")
-                    _srm_parts.append(f"Winner: {_winner}")
-            else:
-                _srm_parts.append("Single Rule: OFF")
-            if _srm_parts:
-                tk.Label(card, text=f"  🧪 {' | '.join(_srm_parts)}",
-                         font=("Arial", 8), bg="#f8f9fa", fg="#666"
-                         ).pack(anchor="w", pady=(1, 0))
+        tk.Label(card, text=txt,
+                 font=("Courier New", 9), bg="#ffffff", fg="#2d3436"
+                 ).pack(anchor="w", padx=(0, 0))
 
-            # Prop firm info from discovery_settings or top-level rule fields
-            _pf_name = _ds.get('prop_firm_name', '') or rule.get('prop_firm_name', '')
-            _pf_stage = _ds.get('prop_firm_stage', '') or ''
-            _pf_account = _ds.get('prop_firm_account', '') or ''
-            _pf_lev = rule.get('leverage', 0)
-            if _pf_name:
-                _pf_parts = [_pf_name]
-                if _pf_stage:
-                    _pf_parts.append(_pf_stage)
-                if _pf_account:
-                    try:
-                        _pf_parts.append(f"${float(_pf_account):,.0f}")
-                    except Exception:
-                        _pf_parts.append(f"${_pf_account}")
-                if _pf_lev:
-                    _pf_parts.append(f"Leverage: 1:{_pf_lev}")
-                tk.Label(card, text=f"  \U0001f3e2 {' | '.join(_pf_parts)}",
-                         font=("Arial", 8, "bold"), bg="#f8f9fa", fg="#4a6fa5"
-                         ).pack(anchor="w", pady=(2, 0))
+    # ── BOTTOM: Action Buttons ──
+    # Show only relevant next actions based on status
+    actions_frame = tk.Frame(card, bg="#ffffff")
+    actions_frame.pack(fill="x", pady=(6, 0))
 
-        if entry.get('notes'):
-            tk.Label(card, text=f"📝 {entry['notes']}", font=("Arial", 8, "italic"),
-                     bg="#f8f9fa", fg="#888888").pack(anchor="w", pady=(2, 0))
+    if status == 'discovered':
+        # Show backtest button
+        def _backtest_this_rule(r=rid):
+            try:
+                import state
+                import sidebar
+                from project2_backtesting.panels import run_backtest_panel
+                state.pending_backtest_rule_id[0] = r
+                state.pending_backtest_auto_run[0] = False
+                sidebar.show_panel("p2_run")
+                card.after(200, run_backtest_panel.apply_pending_rule_selection)
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not start backtest: {e}")
+
+        tk.Button(actions_frame, text="▶ Backtest", font=("Segoe UI", 9, "bold"),
+                  bg="#28a745", fg="white", relief=tk.FLAT, padx=10, pady=4,
+                  command=_backtest_this_rule
+                  ).pack(side=tk.LEFT, padx=(0, 4))
+
+    elif status == 'backtested':
+        # Show validate button
+        tk.Button(actions_frame, text="✓ Validate", font=("Segoe UI", 9, "bold"),
+                  bg="#27ae60", fg="white", relief=tk.FLAT, padx=10, pady=4,
+                  command=lambda: messagebox.showinfo("Validate", "Open Strategy Validator panel to validate this rule")
+                  ).pack(side=tk.LEFT, padx=(0, 4))
+
+    elif status == 'validated':
+        # Show generate EA button
+        tk.Button(actions_frame, text="⚡ Generate EA", font=("Segoe UI", 9, "bold"),
+                  bg="#9b59b6", fg="white", relief=tk.FLAT, padx=10, pady=4,
+                  command=lambda: messagebox.showinfo("Generate EA", "Open EA Generator panel to generate code for this rule")
+                  ).pack(side=tk.LEFT, padx=(0, 4))
+
+    # Notes (if any)
+    if entry.get('notes'):
+        tk.Label(card, text=f"📝 {entry['notes']}",
+                 font=("Segoe UI", 8, "italic"), bg="#ffffff", fg="#7f8c8d"
+                 ).pack(anchor="w", pady=(4, 0))
 
 
 def _delete_one(rule_id, inner, canvas, window_id):

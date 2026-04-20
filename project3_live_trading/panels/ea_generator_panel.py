@@ -995,6 +995,26 @@ def _generate():
             text=f"Generated {platform.upper()} {'MQL5' if platform=='mt5' else 'Python'} bot ({len(code)} chars)",
             fg=GREEN)
 
+    # WHY: Update status of saved rules to 'deployed' after EA generation
+    # CHANGED: April 2026 — lifecycle status tracking
+    try:
+        from shared.saved_rules import update_rule_field
+        _updated_count = 0
+        for rule in strategy.get('rules', []):
+            _entry_id = rule.get('_saved_entry_id')
+            _rule_id = rule.get('_saved_rule_id')
+            if _entry_id or _rule_id:
+                _id_to_update = _rule_id if _rule_id else _entry_id
+                try:
+                    update_rule_field(_id_to_update, 'status', 'deployed')
+                    _updated_count += 1
+                except Exception as _ue:
+                    print(f"[STATUS] Could not update status for rule {_id_to_update}: {_ue}")
+        if _updated_count > 0:
+            print(f"[STATUS] Updated {_updated_count} saved rules to 'deployed' status")
+    except Exception as _se:
+        print(f"[STATUS] Could not update rule statuses: {_se}")
+
     # Check for custom indicators
     rules_all = strat_data.get('rules', [])
     try:
