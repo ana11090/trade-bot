@@ -69,7 +69,48 @@ def load_rules_from_report(report_path=None):
     with open(report_path, 'r', encoding='utf-8') as f:
         report = json.load(f)
     rules = report.get('rules', [])
-    entry_rules = [r for r in rules if r.get('prediction') == 'WIN']
+
+    # WHY: Some rules have prediction=BUY/SELL instead of WIN + direction.
+    #      Normalize before filtering so we don't exclude valid entry rules.
+    # CHANGED: April 2026 — normalize prediction/direction before filtering
+    entry_rules = []
+    for r in rules:
+        pred = r.get('prediction', '')
+        direction = r.get('direction', r.get('action', ''))
+        _rid = r.get('_saved_rule_id', r.get('_saved_entry_id', '?'))
+        # DEBUG: show what each rule looks like
+        print(f"[RULE FILTER] #{_rid} pred={repr(pred)} dir={repr(direction)} conds={len(r.get('conditions',[]))}")
+
+        # WHY: If user selected it, run it. Even LOSS rules — user may
+        #      want to verify they still lose, or use them as inverse signals.
+        # CHANGED: April 2026 — allow all selected rules to backtest
+
+        # Normalize prediction → direction
+        if pred in ('BUY', 'SELL'):
+            r['direction'] = pred
+            r['prediction'] = 'WIN'
+        elif pred == 'LOSS':
+            # LOSS rules: keep prediction but ensure direction exists
+            if not direction:
+                r['direction'] = 'BUY'
+            # Treat as testable — user wants to see the results
+            r['_original_prediction'] = 'LOSS'  # remember it was LOSS for display
+            r['prediction'] = 'WIN'
+            print(f"[RULE FILTER] #{_rid} was LOSS — running as WIN to test (will show if it actually loses)")
+
+        # Handle missing prediction
+        if not r.get('prediction') and r.get('conditions'):
+            r['prediction'] = 'WIN'
+
+        # Default direction
+        if r.get('prediction') == 'WIN' and not r.get('direction'):
+            r['direction'] = 'BUY'
+
+        if r.get('prediction') == 'WIN':
+            entry_rules.append(r)
+
+    log.info(f"Loaded {len(entry_rules)} entry rules from {len(rules)} total rules")
+
     log.info(f"Loaded {len(entry_rules)} entry rules (WIN prediction) from {len(rules)} total rules")
     return entry_rules
 
@@ -111,6 +152,7 @@ def _extract_required_indicators(rules, exit_strategies=None):
     has_regime = False
 
     for rule in rules:
+        # All rules normalized to WIN in load_rules_from_report
         if rule.get('prediction') != 'WIN':
             continue
         for cond in rule.get('conditions', []):
@@ -1406,6 +1448,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
         ind = ind.loc[:, ~ind.columns.duplicated()]
 
     for rule_idx, rule in enumerate(rules):
+        # All rules normalized to WIN in load_rules_from_report
         if rule.get('prediction') != 'WIN':
             continue
         rule_mask_np = np.ones(_ind_n, dtype=bool)
@@ -2259,8 +2302,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     # ── Individual rules (always present) ──
     for i, r in enumerate(rules):
         for _dir in _a30_rule_directions(r):
+            _rule_label = r.get('_saved_rule_id', f"#{r.get('_saved_entry_id', i+1)}")
             rule_combos.append({
-                "name":      f"Rule {i+1} ({_dir})",
+                "name":      f"{_rule_label} ({_dir})",
                 "rules":     [r],
                 "indices":   [i],
                 "direction": _dir,

@@ -417,6 +417,37 @@ def _render_clean_card(parent, entry, inner, canvas, window_id):
                  font=("Segoe UI", 8, "italic"), bg="#ffffff", fg="#7f8c8d"
                  ).pack(anchor="w", pady=(4, 0))
 
+    # ── FOOTER: Source + Date ──
+    # WHY: User needs to see when and where the rule came from.
+    #      This was shown before the redesign — must not be removed.
+    # CHANGED: April 2026 — restore date/source display
+    _source = entry.get('source', '')
+    _saved_at = entry.get('saved_at', '')
+    # DEBUG: Print what we got
+    print(f"[DEBUG] Entry source={repr(_source)}, saved_at={repr(_saved_at)}, entry keys={list(entry.keys())}")
+    _date_str = ''
+    if _saved_at:
+        try:
+            from datetime import datetime as _dt_parse
+            _parsed = _dt_parse.fromisoformat(_saved_at.replace('Z', '+00:00'))
+            _date_str = _parsed.strftime('%Y-%m-%d %H:%M')
+        except Exception as e:
+            _date_str = str(_saved_at)[:16]
+
+    _footer_parts = []
+    if _source:
+        _footer_parts.append(f"from {_source}")
+    if _date_str:
+        _footer_parts.append(f"• {_date_str}")
+
+    # Always show footer if there's any info
+    if _footer_parts:
+        _footer = tk.Frame(card, bg="#ffffff")
+        _footer.pack(fill="x", pady=(4, 0))
+        tk.Label(_footer, text='  '.join(_footer_parts),
+                 font=("Segoe UI", 8), bg="#ffffff", fg="#95a5a6"
+                 ).pack(side=tk.LEFT)
+
 
 def _delete_one(rule_id, inner, canvas, window_id):
     from shared.saved_rules import delete_rule

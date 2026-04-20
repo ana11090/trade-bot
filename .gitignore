@@ -28,5 +28,10 @@ project1_reverse_engineering/outputs/strategy_search_results.json
 # Phase A: Exclude large candle CSV files (keep metadata only)
 datasets/*/candles/*.csv
 project1_reverse_engineering/outputs/smart_feature_matrix.csv
+
+# Exclude large historical data CSV files
+data/sources/original/*.csv
+data/sources/xauusd_levereged_data/*.csv
+xauusd/Files xauusd levereged/*.csv
 # Large output files
 project2_backtesting/outputs/backtest_trades_*.json

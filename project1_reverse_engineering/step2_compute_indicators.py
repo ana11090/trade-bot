@@ -21,7 +21,24 @@ from shared.logging_setup import get_logger
 log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-PRICE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data')
+# WHY: Data source from P1 config, not hardcoded.
+# CHANGED: April 2026 — read data path from P1 config
+def _get_price_data_folder():
+    try:
+        import importlib.util
+        _cl_path = os.path.join(PROJECT_ROOT, 'project1_reverse_engineering', 'config_loader.py')
+        _spec = importlib.util.spec_from_file_location('_cl', _cl_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _cfg = _mod.load()
+        _path = _cfg.get('data_source_path', '')
+        if _path and os.path.isdir(_path):
+            return _path
+    except Exception:
+        pass
+    return os.path.join(PROJECT_ROOT, 'data')
+
+PRICE_DATA_FOLDER = _get_price_data_folder()
 OUTPUT_FOLDER     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -183,7 +200,12 @@ def compute_features(aligned_trades_path=None, output_dir=None):
                 continue
 
             # Load candle data
+            # WHY: MT5 exports uppercase (XAUUSD_M5.csv), old data uses
+            #      lowercase (xauusd_M5.csv). Try both.
+            # CHANGED: April 2026 — case-insensitive candle file lookup
             candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.lower()}_{tf}.csv')
+            if not os.path.exists(candle_file):
+                candle_file = os.path.join(PRICE_DATA_FOLDER, f'{SYMBOL.upper()}_{tf}.csv')
 
             if not os.path.exists(candle_file):
                 log.info(f"    Skipped (candle file not found)")

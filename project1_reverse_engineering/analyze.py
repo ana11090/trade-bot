@@ -1677,6 +1677,11 @@ def run_analysis(feature_matrix_path=None):
                 _enriched['pip_value_per_lot'] = float(_a40a_cfg.get('pip_value_per_lot', 1.0)) if _a40a_cfg else 1.0
                 _enriched['prop_firm_id'] = _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else ''
                 _enriched['prop_firm_name'] = _a40a_cfg.get('prop_firm_name', '') if _a40a_cfg else ''
+                # WHY: Data source travels with the rule so backtests use the
+                #      correct candle data (same broker/timezone as discovery).
+                # CHANGED: April 2026 — data source in rules
+                _enriched['data_source_id'] = _a40a_cfg.get('data_source_id', 'original') if _a40a_cfg else 'original'
+                _enriched['data_source_path'] = _a40a_cfg.get('data_source_path', '') if _a40a_cfg else ''
                 if _enriched.get('prop_firm_name'):
                     print(f"[A.40a] Rule {_ri}: firm={_enriched['prop_firm_name']}, "
                           f"leverage={_enriched.get('leverage', 0)}, "

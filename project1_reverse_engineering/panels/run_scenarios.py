@@ -335,6 +335,124 @@ def build_panel(parent):
     _pf_acct_var.trace_add("write", _pf_on_change)
     _pf_on_change()
 
+    # ── Data Source Selector ──────────────────────────────────────────
+    # WHY: Different brokers have different data. Rules must be trained
+    #      on the SAME data they'll trade on.
+    # CHANGED: April 2026 — data source selector
+    data_frame = tk.LabelFrame(left_frame, text="📊 Historical Data Source",
+                                font=("Segoe UI", 11, "bold"),
+                                bg="#ffffff", fg="#333", padx=15, pady=10)
+    data_frame.pack(fill="x", pady=(0, 10))
+
+    from shared.data_sources import list_sources, import_data_source
+
+    _sources = list_sources()
+    _source_names = [s['name'] for s in _sources] or ['No data sources found']
+    _source_map = {s['name']: s for s in _sources}
+
+    _data_source_var = tk.StringVar()
+    # Set from P1 config
+    _p1_data_source = _cfg.get('data_source_id', 'original')
+    for s in _sources:
+        if s['id'] == _p1_data_source:
+            _data_source_var.set(s['name'])
+            break
+    if not _data_source_var.get() and _source_names:
+        _data_source_var.set(_source_names[0])
+
+    _ds_row = tk.Frame(data_frame, bg="#ffffff")
+    _ds_row.pack(fill="x")
+    tk.Label(_ds_row, text="Source:", font=("Segoe UI", 10, "bold"),
+             bg="#ffffff", fg="#333", width=8, anchor="w").pack(side=tk.LEFT)
+    _ds_dropdown = tk.OptionMenu(_ds_row, _data_source_var, *_source_names)
+    _ds_dropdown.config(font=("Segoe UI", 10), width=30, bg="#ffffff")
+    _ds_dropdown.pack(side=tk.LEFT, padx=5)
+
+    _ds_info_label = tk.Label(data_frame, text="", font=("Segoe UI", 9),
+                               bg="#ffffff", fg="#666", justify=tk.LEFT)
+    _ds_info_label.pack(anchor="w", pady=(5, 0))
+
+    def _on_data_source_changed(*_):
+        name = _data_source_var.get()
+        src = _source_map.get(name, {})
+        if src:
+            info = f"  Symbol: {src['symbol']}  |  TFs: {', '.join(src['timeframes'])}"
+            info += f"\n  Range: {src['date_range']}  |  Candles: {src['candle_count']:,}"
+            if src.get('broker'):
+                info += f"\n  Broker: {src['broker']}"
+            if src.get('timezone_offset'):
+                info += f"  |  Timezone: {src['timezone_offset']}"
+            _ds_info_label.config(text=info)
+            # Save to P1 config
+            try:
+                _cfg['data_source_id'] = src['id']
+                _cfg['data_source_path'] = src['path']
+                _cl.save(_cfg)
+
+                # WHY: Old indicator cache was built from different data.
+                #      Must delete so step2 recomputes from new source.
+                # CHANGED: April 2026 — clear cache on source change
+                import glob
+                _cache_dir = src.get('path', '')
+                if _cache_dir:
+                    for _cache in glob.glob(os.path.join(_cache_dir, '.cache_*')):
+                        try:
+                            os.remove(_cache)
+                        except Exception:
+                            pass
+                # Also clear cache in legacy data/ folder
+                _legacy_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'data')
+                for _cache in glob.glob(os.path.join(_legacy_dir, '.cache_*')):
+                    try:
+                        os.remove(_cache)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    _data_source_var.trace_add("write", _on_data_source_changed)
+    _on_data_source_changed()  # show info for initial selection
+
+    # Import button
+    def _import_new_source():
+        from tkinter import filedialog, simpledialog, messagebox
+        folder = filedialog.askdirectory(title="Select folder with CSV candle files")
+        if not folder:
+            return
+        name = simpledialog.askstring("Data Source Name",
+            "Name for this data source (e.g. 'Get Leveraged'):",
+            parent=panel)
+        if not name:
+            return
+        source_id = name.lower().replace(' ', '_').replace('-', '_')
+        broker = simpledialog.askstring("Broker Name",
+            "Which broker is this data from? (optional):",
+            parent=panel) or ''
+
+        result = import_data_source(folder, source_id, display_name=name, broker=broker)
+        messagebox.showinfo("Imported",
+            f"Imported {result['files_copied']} CSV files as '{name}'.\n\n"
+            f"Saved to: {result['path']}")
+
+        # Refresh dropdown
+        _sources.clear()
+        _sources.extend(list_sources())
+        _source_map.clear()
+        for s in _sources:
+            _source_map[s['name']] = s
+        menu = _ds_dropdown['menu']
+        menu.delete(0, 'end')
+        for s in _sources:
+            menu.add_command(label=s['name'],
+                           command=lambda v=s['name']: _data_source_var.set(v))
+        _data_source_var.set(name)
+
+    tk.Button(data_frame, text="📥 Import New Data Source",
+              command=_import_new_source,
+              bg="#17a2b8", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(anchor="w", pady=(8, 0))
+
     try:
         from shared.tooltip import add_tooltip as _a40a_tooltip
         _a40a_tooltip(
@@ -2300,6 +2418,9 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 if step1_already_run[0]:
                     print(f"  (Step 1 already run for previous scenario — skipping)")
                     return True
+                # WHY: Print which data source is being used so user can verify.
+                # CHANGED: April 2026 — data source confirmation
+                print(f"[P1] Using data source: {step1_align_price.PRICE_DATA_FOLDER}")
                 result = step1_align_price.align_all_timeframes()
                 step1_already_run[0] = (result is not None)
                 if step1_already_run[0]:

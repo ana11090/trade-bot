@@ -423,9 +423,44 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
             output_text.insert(tk.END, f"Entry timeframe: {entry_tf}\n")
 
+            # WHY: Data source comes from rule first, then config, then default.
+            # CHANGED: April 2026 — rule-driven data source
+            _data_source_path = ''
+            _data_source_id = ''
+            if selected_rules:
+                _data_source_path = selected_rules[0].get('data_source_path', '')
+                _data_source_id = selected_rules[0].get('data_source_id', '')
+                if _data_source_id and not _data_source_path:
+                    try:
+                        from shared.data_sources import get_source_path
+                        _data_source_path = get_source_path(_data_source_id)
+                    except Exception:
+                        pass
+            if not _data_source_path:
+                try:
+                    from project2_backtesting.panels.configuration import load_config as _ds_lc
+                    _ds_cfg = _ds_lc()
+                    _data_source_path = _ds_cfg.get('data_source_path', '')
+                    if not _data_source_path:
+                        _ds_id = _ds_cfg.get('data_source_id', 'original')
+                        try:
+                            from shared.data_sources import get_source_path
+                            _data_source_path = get_source_path(_ds_id)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            if not _data_source_path:
+                _data_source_path = os.path.join(project_root, 'data')
+
             # Find candle data for the selected (base) timeframe
             candle_path = None
             candidates = [
+                os.path.join(_data_source_path, f'{symbol}_{entry_tf}.csv'),
+                os.path.join(_data_source_path, f'{symbol.upper()}_{entry_tf}.csv'),
+                os.path.join(_data_source_path, f'{symbol.lower()}_{entry_tf}.csv'),
+                os.path.join(_data_source_path, symbol, f'{entry_tf}.csv'),
+                # Legacy fallback
                 os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                 os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
             ]
@@ -696,172 +731,86 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      When unchecked, use function defaults (pre-A.48 behavior).
             # CHANGED: April 2026 — Phase A.48
             _a48_use_cfg = _a48_use_config_var.get() if _a48_use_config_var is not None else False
+
+            # WHY: All _cfg_* variables must exist before the try block.
+            #      Python marks them as local when it sees assignment inside try,
+            #      so if try fails, we get "referenced before assignment".
+            # CHANGED: April 2026 — prevent referenced-before-assignment
+            _cfg_spread = 25.0
+            _cfg_commission = 0.0
+            _cfg_account = 10000.0
+            _cfg_risk_pct = 1.0
+            _cfg_pip_value = 1.0
+            _cfg_pip_size = 0.01
+            _cfg_leverage = 0
+            _cfg_contract = 100.0
+            _cfg_slippage = 0.0
+            _cfg_bt_start = None
+            _cfg_bt_end = None
+            _cfg_firm_data = {}
+            _firm_display = 'No firm selected'
+            _selected_firm_name = ''
+            _bt_cfg = {}
+            _inst_type = 'metals'
+            _cfg_symbol = 'XAUUSD'
+
             if _a48_use_cfg:
                 try:
+                    # ── Read ALL backtest params from rule first ──────────
+                    # WHY: The rule is the single source of truth. It carries
+                    #      pip_value, spread, commission, leverage, firm, account.
+                    #      Config is ONLY a fallback for old rules without these.
+                    # CHANGED: April 2026 — rule-driven backtest params
                     from project2_backtesting.panels.configuration import load_config as _cfg_load
                     from project2_backtesting.panels.configuration import INSTRUMENT_SPECS as _cfg_specs
                     _bt_cfg = _cfg_load()
-                    _cfg_spread      = float(_bt_cfg.get('spread', 25.0))
-                    _cfg_commission  = float(_bt_cfg.get('commission', 0.0))
-                    _cfg_account     = float(_bt_cfg.get('starting_capital', 100000))
+
+                    # Get the first selected rule for config
+                    _first_rule = selected_rules[0] if selected_rules else {}
+
+                    # Read from rule first, then config, then defaults
+                    _cfg_pip_value   = float(_first_rule.get('pip_value_per_lot', 0)) or float(_bt_cfg.get('pip_value_per_lot', 1.0))
+                    _cfg_spread      = float(_first_rule.get('spread_pips', 0)) or float(_bt_cfg.get('spread', 25.0))
+                    _cfg_commission  = float(_first_rule.get('commission_pips', -1))
+                    if _cfg_commission < 0:
+                        # Commission not in rule — read from config (dollars) and convert
+                        _cfg_commission_dollars = float(_bt_cfg.get('commission', 4.0))
+                        _cfg_commission = _cfg_commission_dollars / _cfg_pip_value if _cfg_pip_value > 0 else 0
+                    _cfg_account     = float(_first_rule.get('account_size', 0)) or float(_bt_cfg.get('starting_capital', 10000))
                     _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
-                    _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 1.0))
-                    _cfg_slippage    = 1.0  # 1 pip slippage — realistic for XAUUSD
-                    # WHY: Commission conversion moved AFTER rule overrides (BUG 2 fix).
-                    #      Rule's pip_value must be applied before converting commission.
-                    # CHANGED: April 2026 — commission conversion happens after overrides
-                    _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
-                    _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
-                    # pip_size from instrument specs based on symbol
+                    _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or 1.0
+                    _cfg_leverage    = int(_first_rule.get('leverage', 0))
+                    _cfg_contract    = float(_first_rule.get('contract_size', 0))
+
                     _cfg_symbol = _bt_cfg.get('symbol', 'XAUUSD')
                     _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
-                    # WHY (leverage): Derive leverage and contract_size from
-                    #      instrument type so margin-infeasible lots are capped.
-                    #      Uses conservative defaults by instrument class.
-                    # CHANGED: April 2026 — margin-aware lot sizing
-                    from shared.prop_firm_engine import (
-                        get_instrument_type as _get_inst,
-                        get_leverage_for_symbol as _get_lev,
-                        load_all_firms as _load_firms_bt,
-                    )
-                    _inst_type = _get_inst(_cfg_symbol)
-                    # WHY: Read leverage from firm profile rather than a
-                    #      hardcoded map — ensures Get Leveraged 1:10 metals
-                    #      (or any firm's actual value) is used.
-                    # CHANGED: April 2026 — firm-specific leverage (Bug 3 fix)
-                    # Source 1: P1 config (single source of truth for firm selection)
-                    # Source 2: panel's _bt_firm_var (set from P1 at build time)
-                    # Source 3: P2 saved config fallback
-                    # WHY: P1 Run Scenarios is where the user selects their firm.
-                    # CHANGED: April 2026 — P1 firm flows to P2 backtest
+                    _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
+                    _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
 
-                    # WHY: PRIORITY 1 — Use firm embedded in saved rule
-                    #      PRIORITY 2 — Refresh from P1 config if no rule firm
-                    # CHANGED: April 2026 — prioritize rule's firm over P1
-                    _cfg_firm_data = {}
-                    _selected_firm_name = ''
+                    # Instrument type for leverage fallback
+                    try:
+                        from shared.prop_firm_engine import get_instrument_type
+                        _inst_type = get_instrument_type(_cfg_symbol)
+                    except Exception:
+                        _inst_type = 'metals'
 
-                    # Priority 1: Check if rules have embedded firm data
-                    if _rule_firm_override and _rule_firm_name:
-                        _selected_firm_name = _rule_firm_name
-                        print(f"[BACKTEST] Using firm from saved rule: {_selected_firm_name}")
-                    else:
-                        # Priority 2: Refresh from P1 config if no rule firm
-                        # WHY: Firm dropdown was set at panel build time. If user
-                        #      changed firm in P1, the dropdown is stale. Re-read
-                        #      P1 config and update the dropdown before using it.
-                        # CHANGED: April 2026 — refresh firm from P1 at run time
-                        try:
-                            _p1_refresh_path = os.path.join(
-                                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                'project1_reverse_engineering', 'config_loader.py')
-                            import importlib.util as _ilu_refresh
-                            _spec_refresh = _ilu_refresh.spec_from_file_location('_p1_refresh', _p1_refresh_path)
-                            _p1_mod_refresh = _ilu_refresh.module_from_spec(_spec_refresh)
-                            _spec_refresh.loader.exec_module(_p1_mod_refresh)
-                            _p1_cfg_refresh = _p1_mod_refresh.load()
-                            _p1_firm_refresh = _p1_cfg_refresh.get('prop_firm_name', '')
-                            if _p1_firm_refresh and _bt_firm_var:
-                                _bt_firm_var.set(_p1_firm_refresh)
-                                print(f"[BACKTEST] Refreshed firm from P1: {_p1_firm_refresh}")
-                        except Exception as _e_refresh:
-                            print(f"[BACKTEST] Could not refresh firm from P1: {_e_refresh}")
-
-                        _selected_firm_name = _bt_firm_var.get() if _bt_firm_var else ''
-                    if _selected_firm_name and _selected_firm_name not in ('', 'None'):
-                        _cfg_firm_data = _bt_firm_map.get(_selected_firm_name, {})
-                    if not _cfg_firm_data:
-                        try:
-                            _p1_bt_path = os.path.join(
-                                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                'project1_reverse_engineering', 'config_loader.py')
-                            import importlib.util as _ilu_bt
-                            _spec_bt = _ilu_bt.spec_from_file_location('_p1_cl_bt', _p1_bt_path)
-                            _p1_mod_bt = _ilu_bt.module_from_spec(_spec_bt)
-                            _spec_bt.loader.exec_module(_p1_mod_bt)
-                            _p1_cfg_bt = _p1_mod_bt.load()
-                            _p1_firm_id_bt = _p1_cfg_bt.get('prop_firm_id', '')
-                            if _p1_firm_id_bt:
-                                _all_bt_firms = _load_firms_bt()
-                                if _p1_firm_id_bt in _all_bt_firms:
-                                    _cfg_firm_data = _all_bt_firms[_p1_firm_id_bt].config
-                        except Exception:
-                            pass
-                    if not _cfg_firm_data:
-                        try:
-                            _all_bt_firms = _load_firms_bt()
-                            _cfg_firm_id = _bt_cfg.get('firm_id', _bt_cfg.get('firm', ''))
-                            if _cfg_firm_id and _cfg_firm_id in _all_bt_firms:
-                                _cfg_firm_data = _all_bt_firms[_cfg_firm_id].config
-                        except Exception:
-                            pass
-                    _cfg_leverage = _get_lev(_cfg_firm_data, _cfg_symbol)
-                    # WHY: When no firm is configured, get_leverage_for_symbol
-                    #      falls back to parsing the "leverage" string (default
-                    #      "1:30"), returning 30 for all instruments including
-                    #      metals. Use conservative instrument defaults instead.
-                    # CHANGED: April 2026 — fallback to conservative defaults
-                    if not _cfg_firm_data:
-                        _conservative_map = {'forex': 30, 'metals': 10, 'indices': 10,
-                                             'energies': 5, 'crypto': 1}
+                    # Leverage fallback — conservative defaults by instrument
+                    if _cfg_leverage <= 0:
+                        _conservative_map = {'forex': 30, 'metals': 10, 'indices': 10, 'energies': 5, 'crypto': 1}
                         _cfg_leverage = _conservative_map.get(_inst_type, 30)
-                    _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
 
-                    # WHY: Saved rules have embedded leverage, pip_value, spread
-                    #      from when they were saved. Override config values with
-                    #      rule values so backtest uses exact same settings.
-                    # CHANGED: April 2026 — use rule's embedded backtest params
-                    if selected_rules:
-                        first_rule = selected_rules[0]
-                        if first_rule.get('leverage'):
-                            _cfg_leverage = int(first_rule['leverage'])
-                            print(f"[BACKTEST] Using leverage from rule: 1:{_cfg_leverage}")
-                        if first_rule.get('pip_value_per_lot'):
-                            _cfg_pip_value = float(first_rule['pip_value_per_lot'])
-                            print(f"[BACKTEST] Using pip value from rule: ${_cfg_pip_value}/lot")
-                        if first_rule.get('spread_pips'):
-                            _cfg_spread = float(first_rule['spread_pips'])
-                            print(f"[BACKTEST] Using spread from rule: {_cfg_spread} pips")
-                        # WHY: Commission, account, contract_size, slippage, firm
-                        #      must also come from rule (single source of truth).
-                        # CHANGED: April 2026 — all broker specs from rule
-                        if first_rule.get('commission_pips') is not None:
-                            _cfg_commission = float(first_rule['commission_pips'])
-                            print(f"[BACKTEST] Using commission from rule: {_cfg_commission} pips")
-                        if first_rule.get('account_size'):
-                            _cfg_account = float(first_rule['account_size'])
-                            print(f"[BACKTEST] Using account from rule: ${_cfg_account:,.0f}")
-                        if first_rule.get('contract_size'):
-                            _cfg_contract = float(first_rule['contract_size'])
-                        if first_rule.get('slippage_pips') is not None:
-                            _cfg_slippage = float(first_rule['slippage_pips'])
-                            print(f"[BACKTEST] Using slippage from rule: {_cfg_slippage} pips")
-                        if first_rule.get('prop_firm_name'):
-                            _firm_display = first_rule['prop_firm_name']
-                            _stage = first_rule.get('prop_firm_stage', '')
-                            if _stage:
-                                _firm_display += f" ({_stage})"
-                            print(f"[BACKTEST] Using firm from rule: {_firm_display}")
+                    if _cfg_contract <= 0:
+                        _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
 
-                    # WHY: Commission conversion must happen AFTER rule overrides
-                    #      pip_value, otherwise it divides by the wrong value.
-                    #      Only convert if commission came from config (in dollars).
-                    #      If commission came from rule, it's already in pips.
-                    # CHANGED: April 2026 — fix commission conversion order (BUG 2)
-                    _commission_from_rule = (selected_rules and
-                        selected_rules[0].get('commission_pips') is not None)
-                    if not _commission_from_rule and _cfg_pip_value > 0:
-                        _cfg_commission = _cfg_commission / _cfg_pip_value
-                        print(f"[BACKTEST] Converted commission from config: {_cfg_commission:.2f} pips")
+                    # Firm display from rule
+                    _firm_display = _first_rule.get('prop_firm_name', '')
+                    if not _firm_display:
+                        _firm_display = _bt_cfg.get('firm_name', 'No firm')
+                    _firm_stage = _first_rule.get('prop_firm_stage', '')
+                    if _firm_stage:
+                        _firm_display += f" ({_firm_stage})"
 
-                    # WHY: Show leverage prominently — users need to confirm
-                    #      that lot sizes are margin-capped for their firm.
-                    # CHANGED: April 2026 — prominent leverage display
-                    _firm_display = (
-                        _selected_firm_name
-                        if _selected_firm_name and _selected_firm_name not in ('', 'None')
-                        else _bt_cfg.get('firm_name', 'No firm selected')
-                    )
+                    # Build period display text
                     if _cfg_bt_start and _cfg_bt_end:
                         _period_text = f"   Period: {_cfg_bt_start} → {_cfg_bt_end}\n"
                     elif _cfg_bt_start:
@@ -876,24 +825,18 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
                         + _period_text +
                         f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.2f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
-                        f"Pip value: ${_cfg_pip_value}/lot\n\n"
+                        f"Pip value: ${_cfg_pip_value}/lot\n"
+                    )
+                    # Show data source
+                    output_text.insert(tk.END,
+                        f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")
                     _a48_use_cfg = False
 
-            if not _a48_use_cfg:
-                _cfg_spread = 25.0
-                _cfg_commission = 0.0
-                _cfg_account = None
-                _cfg_risk_pct = 1.0
-                _cfg_pip_value = 1.0
-                _cfg_pip_size = 0.01
-                _cfg_leverage = 0
-                _cfg_contract = 100.0
-                _cfg_slippage = 0.0
-                _cfg_bt_start = None
-                _cfg_bt_end = None
+            # WHY: Defaults already set before if block. This block is now redundant.
+            # CHANGED: April 2026 — removed duplicate defaults
 
             # Update run settings with config details
             _run_settings['use_config'] = _a48_use_cfg
@@ -949,6 +892,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # Resolve candle file for this TF
                     tf_candle_path = None
                     for cand in [
+                        os.path.join(_data_source_path, f'{symbol}_{tf}.csv'),
+                        os.path.join(_data_source_path, f'{symbol.upper()}_{tf}.csv'),
+                        os.path.join(_data_source_path, f'{symbol.lower()}_{tf}.csv'),
+                        os.path.join(_data_source_path, symbol, f'{tf}.csv'),
+                        # Legacy fallback
                         os.path.join(project_root, 'data', f'{symbol}_{tf}.csv'),
                         os.path.join(project_root, 'data', symbol, f'{tf}.csv'),
                     ]:
@@ -2705,8 +2653,11 @@ def build_panel(parent):
             _a46_tag = rule.get('_a46_source_tag', '')
             _a46_prefix = f"[{_a46_tag}] " if _a46_tag else ""
 
+            _rid = rule.get('_saved_rule_id', f"#{rule.get('_saved_entry_id', i+1)}")
+            _dir = rule.get('direction', rule.get('action', rule.get('prediction', '')))
+            _pred_tag = " (LOSS)" if rule.get('prediction') == 'LOSS' or rule.get('_original_prediction') == 'LOSS' else ""
             color = "#28a745" if wr >= 0.65 else "#e67e22" if wr >= 0.55 else "#dc3545"
-            info = f"{_a46_prefix}Rule {i+1}: WR {wr:.0%} | {pips:+.0f} pips | {feat_str}"
+            info = f"{_a46_prefix}{_rid} [{_dir}] WR {wr:.0%} | {pips:+.0f} pips{_pred_tag} | {feat_str}"
             tk.Label(row, text=info, font=("Courier", 8), bg=row['bg'],
                      fg=color, anchor="w").pack(side=tk.LEFT, fill="x", expand=True)
 
@@ -2944,95 +2895,14 @@ def build_panel(parent):
     #      and know lot sizes are margin-capped for their specific account.
     #      Old flow required going to Configuration panel first.
     # CHANGED: April 2026 — prop firm selector in Run Backtest
-    # ── Prop Firm Info (from P1 Run Scenarios) ──────────────────────────────
-    # WHY: Firm is selected in P1 Run Scenarios — single source of truth.
-    #      Run Backtest reads and displays it; no duplicate selector needed.
-    # CHANGED: April 2026 — firm from P1 flows to P2
+    # WHY: Removed static firm section. Firm info comes from each RULE.
+    #      The backtest output shows firm info per-rule, not as a static header.
+    # CHANGED: April 2026 — firm info from rule, not static UI
     global _bt_firm_var, _bt_firm_info_lbl, _bt_firm_map
-
-    import glob as _bt_glob
-    _bt_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-    _bt_prop_dir = os.path.join(_bt_project_root, 'prop_firms')
-    _bt_firm_map = {}
-    for _fp in sorted(_bt_glob.glob(os.path.join(_bt_prop_dir, '*.json'))):
-        try:
-            with open(_fp, encoding='utf-8') as _ff:
-                _fd = json.load(_ff)
-            _bt_firm_map[_fd.get('firm_name', '?')] = _fd
-        except Exception:
-            pass
-
-    # Read firm from P1 config
-    _p1_firm_name = ''
-    _p1_stage = 'Evaluation'
-    _p1_account = '10000'
-    try:
-        import importlib.util as _ilu
-        _p1_cl_path = os.path.join(_bt_project_root, 'project1_reverse_engineering', 'config_loader.py')
-        _spec = _ilu.spec_from_file_location('_p1_cl', _p1_cl_path)
-        _p1_cl_mod = _ilu.module_from_spec(_spec)
-        _spec.loader.exec_module(_p1_cl_mod)
-        _p1_cfg = _p1_cl_mod.load()
-        _p1_firm_name = _p1_cfg.get('prop_firm_name', '')
-        _p1_stage = _p1_cfg.get('prop_firm_stage', 'Evaluation')
-        _p1_account = _p1_cfg.get('prop_firm_account', '10000')
-    except Exception:
-        pass
-
-    # Also read P2 config for symbol
-    _bt_saved_cfg_panel = {}
-    try:
-        from project2_backtesting.panels.configuration import load_config as _bt_lc
-        _bt_saved_cfg_panel = _bt_lc()
-    except Exception:
-        pass
-
-    firm_frame = tk.LabelFrame(panel, text="Prop Firm (from P1 Run Scenarios)",
-                               font=("Arial", 11, "bold"), bg="#ffffff", fg="#333",
-                               padx=15, pady=10)
-    firm_frame.pack(fill="x", padx=20, pady=(10, 5))
-
-    if _p1_firm_name and _p1_firm_name in _bt_firm_map:
-        _bt_firm_var = tk.StringVar(value=_p1_firm_name)
-        try:
-            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-            _fd = _bt_firm_map[_p1_firm_name]
-            _sym = _bt_saved_cfg_panel.get('symbol', 'XAUUSD') or 'XAUUSD'
-            _lev = get_leverage_for_symbol(_fd, _sym)
-            _inst = get_instrument_type(_sym)
-            challenge = _fd.get('challenges', [{}])[0]
-            if _p1_stage.lower() == 'evaluation':
-                phase = challenge.get('phases', [{}])[0]
-                _dd_d = phase.get('max_daily_drawdown_pct', '?')
-                _dd_t = phase.get('max_total_drawdown_pct', '?')
-                _tgt = phase.get('profit_target_pct', '?')
-            else:
-                funded = challenge.get('funded', {})
-                _dd_d = funded.get('max_daily_drawdown_pct', '?')
-                _dd_t = funded.get('max_total_drawdown_pct', '?')
-                _tgt = None
-            row1 = tk.Frame(firm_frame, bg="#ffffff")
-            row1.pack(fill="x")
-            tk.Label(row1,
-                     text=f"{_p1_firm_name}  |  {_p1_stage}  |  ${float(_p1_account):,.0f}",
-                     font=("Segoe UI", 11, "bold"), bg="#ffffff", fg="#333").pack(side=tk.LEFT)
-            row2 = tk.Frame(firm_frame, bg="#ffffff")
-            row2.pack(fill="x", pady=(4, 0))
-            _lev_text = f"Leverage: 1:{_lev} ({_inst})  |  DD: {_dd_d}%/{_dd_t}%"
-            if _tgt:
-                _lev_text += f"  |  Target: {_tgt}%"
-            tk.Label(row2, text=_lev_text, font=("Segoe UI", 10),
-                     bg="#ffffff", fg="#e65100").pack(side=tk.LEFT)
-        except Exception as _e:
-            tk.Label(firm_frame, text=f"Error: {_e}",
-                     font=("Segoe UI", 9), bg="#ffffff", fg="#e65100").pack(anchor="w")
-    else:
-        _bt_firm_var = tk.StringVar(value="")
-        tk.Label(firm_frame,
-                 text="No firm selected \u2014 go to P1 Run Scenarios to select a prop firm",
-                 font=("Segoe UI", 10, "italic"), bg="#ffffff", fg="#999999").pack(anchor="w")
-
+    _bt_firm_var = tk.StringVar(value="")  # kept for backward compat
     _bt_firm_info_lbl = None
+    _bt_firm_map = {}  # kept for backward compat
+
 
     # ── Safety stops toggle ───────────────────────────────────────────────────
     # WHY: Lets user compare with/without safety stops enabled. Default ON

@@ -191,7 +191,15 @@ def _generate_rule_id(rule):
     n_conds = len(conditions) if isinstance(conditions, list) else 0
 
     # Date (MMDD)
+    # Use saved_at date if available (for backfill accuracy)
     mmdd = datetime.now().strftime('%m%d')
+    saved_at = rule.get('saved_at', '')
+    if saved_at:
+        try:
+            _parsed = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+            mmdd = _parsed.strftime('%m%d')
+        except Exception:
+            pass
 
     # Short hash from conditions (4 hex chars)
     # Makes ID unique even for rules with same direction/tf/date
@@ -271,19 +279,27 @@ def save_rule(rule, source="unknown", notes=""):
                 rule[k] = v
 
         # WHY: Rules without direction produce 0 trades in backtester.
-        #      Infer from prediction, action, or conditions if missing.
-        # CHANGED: April 2026 — ensure direction is always set
-        if not rule.get('direction'):
-            # Try action field (old format)
-            if rule.get('action') in ('BUY', 'SELL'):
-                rule['direction'] = rule['action']
-            # Try inferring from prediction
-            elif rule.get('prediction') == 'WIN':
-                # Default to BUY if we can't determine
-                # (most strategies are long-only on gold)
-                rule['direction'] = 'BUY'
-                print(f"[SAVED RULES] Rule saved without direction — defaulted to BUY. "
-                      f"Set explicitly if this is a SELL rule.")
+        #      Also, some rules have prediction=BUY/SELL instead of WIN.
+        #      Normalize to WIN + direction format.
+        # CHANGED: April 2026 — normalize prediction/direction at save time
+        pred = rule.get('prediction', '')
+
+        # If prediction is BUY or SELL, convert to WIN + direction
+        if pred in ('BUY', 'SELL'):
+            rule['direction'] = pred
+            rule['prediction'] = 'WIN'
+        # If prediction is WIN, ensure direction is set
+        elif pred == 'WIN':
+            if not rule.get('direction'):
+                # Try action field (old format)
+                if rule.get('action') in ('BUY', 'SELL'):
+                    rule['direction'] = rule['action']
+                else:
+                    # Default to BUY if we can't determine
+                    # (most strategies are long-only on gold)
+                    rule['direction'] = 'BUY'
+                    print(f"[SAVED RULES] Rule saved without direction — defaulted to BUY. "
+                          f"Set explicitly if this is a SELL rule.")
 
         entry = {
             "id": new_id,           # numeric (backward compat for delete, etc.)
@@ -307,6 +323,72 @@ def save_rule(rule, source="unknown", notes=""):
     _notify_change('save', {'id': entry["id"]})
 
     return entry["id"]
+
+
+def fix_legacy_rules():
+    """One-time fix: normalize prediction/direction for all existing saved rules.
+
+    WHY: Rules saved before April 2026 may have prediction=BUY/SELL or
+         missing direction. Normalize them to WIN + direction format.
+    CHANGED: April 2026 — one-time legacy rule fix
+
+    Returns: (fixed_count, total_count)
+    """
+    with _save_lock:
+        all_rules = load_all()
+        fixed_count = 0
+
+        for entry in all_rules:
+            rule = entry.get('rule', {})
+            pred = rule.get('prediction', '')
+            original_pred = pred
+            original_dir = rule.get('direction', '')
+
+            # If prediction is BUY or SELL, convert to WIN + direction
+            if pred in ('BUY', 'SELL'):
+                rule['direction'] = pred
+                rule['prediction'] = 'WIN'
+                fixed_count += 1
+            # If prediction is WIN, ensure direction is set
+            elif pred == 'WIN':
+                if not rule.get('direction'):
+                    # Try action field (old format)
+                    if rule.get('action') in ('BUY', 'SELL'):
+                        rule['direction'] = rule['action']
+                    else:
+                        # Default to BUY
+                        rule['direction'] = 'BUY'
+                    fixed_count += 1
+
+        if fixed_count > 0:
+            _atomic_write_json(all_rules, _SAVE_PATH)
+            print(f"[SAVED RULES] Fixed {fixed_count} legacy rules (normalized prediction/direction)")
+
+    return (fixed_count, len(all_rules))
+
+
+def backfill_descriptive_ids():
+    """Generate descriptive rule_ids for rules that don't have them.
+
+    WHY: Rules saved before the descriptive ID feature only have
+         numeric IDs. This generates descriptive IDs for all of them.
+    CHANGED: April 2026 — backfill descriptive IDs
+
+    Returns: number of rules updated
+    """
+    with _save_lock:
+        all_rules = load_all()
+        updated = 0
+        for entry in all_rules:
+            if not entry.get('rule_id'):
+                rule = entry.get('rule', {})
+                # Pass saved_at so the ID date matches original save date
+                rule['saved_at'] = entry.get('saved_at', '')
+                entry['rule_id'] = _generate_rule_id(rule)
+                updated += 1
+        if updated > 0:
+            _atomic_write_json(all_rules, _SAVE_PATH)
+    return updated
 
 
 def delete_rule(rule_id):

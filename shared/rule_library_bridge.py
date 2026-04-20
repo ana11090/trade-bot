@@ -274,6 +274,11 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
                     _broker_specs[_bs_key] = float(_bs_val)
                 except (TypeError, ValueError):
                     pass
+        # WHY: Data source ID/path travel with the rule so backtests
+        #      use the correct candle data (same broker/timezone).
+        # CHANGED: April 2026 — data source in rules
+        _broker_specs['data_source_id'] = _bs_cfg.get('data_source_id', 'original')
+        _broker_specs['data_source_path'] = _bs_cfg.get('data_source_path', '')
     except Exception as _bs_e:
         log.debug(f"[BrokerSpecs] could not read broker specs for rule save: {_bs_e}")
 

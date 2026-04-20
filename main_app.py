@@ -286,6 +286,15 @@ window.bind_all("<Button-5>", _route_scroll_down)
 # ─────────────────────────────────────────────────────────────────────────────
 # START
 # ─────────────────────────────────────────────────────────────────────────────
+# Backfill descriptive IDs for existing rules (one-time upgrade)
+try:
+    from shared.saved_rules import backfill_descriptive_ids
+    n = backfill_descriptive_ids()
+    if n > 0:
+        print(f"[STARTUP] Backfilled {n} rules with descriptive IDs")
+except Exception as e:
+    print(f"[STARTUP] Backfill warning: {e}")
+
 show_panel("pipeline")
 
 window.mainloop()
