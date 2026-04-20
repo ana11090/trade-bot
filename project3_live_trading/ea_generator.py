@@ -205,6 +205,42 @@ def generate_ea(
         sl_pips = exit_params.get('sl_pips', 150)
         tp_pips = exit_params.get('tp_pips', 0 if exit_class in ('TimeBased', 'IndicatorExit') else 300)
         max_candles = exit_params.get('max_candles', 12)
+
+        # WHY: Cap RiskPercent so generated lot size fits within margin at
+        #      this leverage. Without cap, RiskPercent=1% on $10K 1:10
+        #      leverage tries 0.66 lots but margin allows ~0.27 → broker reject.
+        # CHANGED: April 2026 — leverage-aware risk cap in EA
+        _ea_leverage = 0
+        _ea_contract = 100.0
+        _ea_inst = 'metals'
+        _max_risk_pct = None
+        _old_risk = None
+        try:
+            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+            _ea_leverage = get_leverage_for_symbol(prop_firm or {}, symbol)
+            _ea_inst = get_instrument_type(symbol)
+            _ea_contract = 100.0 if _ea_inst == 'metals' else (1.0 if _ea_inst == 'indices' else 100000.0)
+        except Exception:
+            pass
+
+        if _ea_leverage > 0 and account_size > 0 and sl_pips > 0:
+            _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
+                              'US30': 40000, 'NAS100': 18000, 'DAX': 18000}
+            _price = _approx_prices.get(symbol.upper(), 3300 if _ea_inst == 'metals' else
+                                        40000 if _ea_inst == 'indices' else 1.1)
+            _pip_value = 10.0
+            _margin_per_lot = (_ea_contract * _price) / _ea_leverage
+            _max_lots = (account_size * 0.90) / _margin_per_lot
+            _max_risk_pct = (_max_lots * sl_pips * _pip_value) / account_size * 100.0
+            if risk_per_trade_pct > _max_risk_pct:
+                _old_risk = risk_per_trade_pct
+                risk_per_trade_pct = round(max(0.1, _max_risk_pct), 1)
+                print(f"[EA GEN] ⚠ Risk capped: {_old_risk}% → {risk_per_trade_pct}% "
+                      f"(leverage 1:{_ea_leverage}, max lots {_max_lots:.2f}, "
+                      f"margin/lot ${_margin_per_lot:,.0f})")
+            else:
+                print(f"[EA GEN] Risk {risk_per_trade_pct}% OK for leverage 1:{_ea_leverage} "
+                      f"(max {_max_risk_pct:.1f}%)")
         trail_activation_pips = exit_params.get('trail_activation_pips', exit_params.get('activation_pips', 50))
         trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
         sl_atr_mult = exit_params.get('sl_atr_mult', 2.0)
@@ -1534,23 +1570,12 @@ bool IsMinHoldMet()
     elif exit_class == 'HybridExit':
         _vr.append(f"  Breakeven: +{breakeven_pips}, Trail: {trail_distance_pips}, Max: {max_candles} candles")
     _vr.append("")
-    # WHY: Include leverage so the verification report shows what margin
-    #      constraint was active during the backtest that produced this EA.
-    # CHANGED: April 2026 — leverage in verification report
-    _ea_gen_leverage = (prop_firm or {}).get('leverage', 0)
-    if not _ea_gen_leverage:
-        try:
-            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-            _firm_d = (prop_firm or {}).get('firm_data', {})
-            _ea_gen_leverage = get_leverage_for_symbol(_firm_d, symbol)
-            _ea_gen_inst = get_instrument_type(symbol)
-            _ea_gen_contract = 100.0 if _ea_gen_inst == 'metals' else 100000.0
-            _vr.append(f"LEVERAGE: 1:{_ea_gen_leverage} ({_ea_gen_inst})  |  Contract size: {_ea_gen_contract}")
-            _vr.append("")
-        except Exception:
-            pass
-    elif _ea_gen_leverage > 0:
-        _vr.append(f"LEVERAGE: 1:{_ea_gen_leverage}")
+    if _ea_leverage > 0:
+        _vr.append(f"LEVERAGE: 1:{_ea_leverage} ({_ea_inst})  |  Contract size: {_ea_contract}")
+        if _max_risk_pct is not None:
+            _vr.append(f"  Max safe risk for this account: {_max_risk_pct:.1f}%")
+        if _old_risk is not None:
+            _vr.append(f"  ⚠ Risk was capped from {_old_risk}% → {risk_per_trade_pct}% to fit margin")
         _vr.append("")
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
@@ -1621,7 +1646,8 @@ bool IsMinHoldMet()
 #include <Trade\\PositionInfo.mqh>
 
 //--- Input parameters
-input double RiskPercent        = {risk_per_trade_pct};     // Risk per trade %
+input double RiskPercent        = {risk_per_trade_pct};     // Risk per trade % (capped for leverage)
+input int    Leverage           = {_ea_leverage};            // Account leverage for this instrument (0=not set)
 input int    MaxTradesPerDay    = {max_trades_per_day};      // Max trades per day
 input int    MagicNumber        = {magic_number};            // Magic number
 input double MaxSpreadPips      = {max_spread_pips};         // Max spread to allow entry
