@@ -935,6 +935,7 @@ def simulate_challenge(
     # CHANGED: April 2026 — fix dead leverage code
     leverage: int = 0,
     contract_size: float = 100.0,
+    symbol: str = 'XAUUSD',
 ) -> Optional[SimulationSummary]:
     """
     Simulate the full prop firm challenge lifecycle.
@@ -976,9 +977,22 @@ def simulate_challenge(
     # CHANGED: April 2026 — auto-detect leverage from firm profile
     if leverage == 0:
         try:
-            _lev_map = firm.config.get('leverage_by_instrument', {})
-            if _lev_map:
-                leverage = int(_lev_map.get('metals', _lev_map.get('forex', 0)))
+            from shared.prop_firm_engine import get_leverage_for_symbol
+            leverage = get_leverage_for_symbol(firm.config, symbol)
+            if leverage > 0:
+                print(f"[SIMULATOR] Auto-detected leverage 1:{leverage} for {symbol}")
+        except Exception:
+            pass
+    # Auto-detect contract_size from instrument type when left at default
+    if contract_size == 100.0:
+        try:
+            from shared.prop_firm_engine import get_instrument_type
+            _inst = get_instrument_type(symbol)
+            if _inst == 'forex':
+                contract_size = 100000.0
+            elif _inst == 'indices':
+                contract_size = 1.0
+            # metals stays at 100.0 (default)
         except Exception:
             pass
 

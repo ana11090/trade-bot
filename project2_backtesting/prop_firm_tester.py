@@ -259,6 +259,7 @@ def run_prop_test(
         default_sl_pips=default_sl_pips,
         pip_value_per_lot=_resolved_pip_value,
         daily_dd_safety_pct=daily_dd_safety_pct,
+        symbol=symbol,
     )
 
     return summary

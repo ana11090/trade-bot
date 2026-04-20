@@ -710,6 +710,15 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     except Exception:
                         pass
                     _cfg_leverage = _get_lev(_cfg_firm_data, _cfg_symbol)
+                    # WHY: When no firm is configured, get_leverage_for_symbol
+                    #      falls back to parsing the "leverage" string (default
+                    #      "1:30"), returning 30 for all instruments including
+                    #      metals. Use conservative instrument defaults instead.
+                    # CHANGED: April 2026 — fallback to conservative defaults
+                    if not _cfg_firm_data:
+                        _conservative_map = {'forex': 30, 'metals': 10, 'indices': 10,
+                                             'energies': 5, 'crypto': 1}
+                        _cfg_leverage = _conservative_map.get(_inst_type, 30)
                     _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
                     output_text.insert(tk.END,
                         f"Config: spread={_cfg_spread}, commission={_cfg_commission}, "
