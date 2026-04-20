@@ -976,10 +976,11 @@ def _get_strategy_meta(idx):
         return _empty
 
 
-def _get_candles_path(entry_tf_hint=None):
+def _get_candles_path(entry_tf_hint=None, rule_data=None):
     """Get candle CSV path for the entry TF the rules were discovered on.
 
     Priority:
+      -1. rule_data → data_source_id (if provided, look up path from data source registry)
       0. entry_tf_hint — per-strategy TF from a multi-TF backtest row (highest)
       1. backtest_matrix.json → entry_timeframe (what the backtest ran on)
       2. analysis_report.json → entry_timeframe (what P4 discovery used)
@@ -989,7 +990,19 @@ def _get_candles_path(entry_tf_hint=None):
     WHY: Rules found on M15 must be validated on M15 candles.
          With multi-TF backtest each row has its own entry_tf — use it first.
     CHANGED: April 2026 — multi-TF support (entry_tf_hint parameter)
+    CHANGED: April 2026 — data_source support (rule_data parameter)
     """
+    # -1. Try data_source from rule first
+    if rule_data and rule_data.get('data_source_id'):
+        try:
+            from shared.data_sources import get_source_path
+            _ds_path = get_source_path(rule_data['data_source_id'])
+            if _ds_path and os.path.exists(_ds_path):
+                print(f"[validator] Using data source: {rule_data['data_source_id']} → {_ds_path}")
+                return _ds_path
+        except Exception as e:
+            print(f"[validator] Warning: data_source lookup failed: {e}")
+
     # 0. Use per-row entry TF if provided (multi-TF backtest)
     entry_tf = entry_tf_hint or None
 
@@ -2734,7 +2747,9 @@ def _run(mode, override_idx=None, done_event=None):
     except Exception:
         pass
 
-    candles_path = _get_candles_path(entry_tf_hint=_row_entry_tf)
+    # WHY: data_source_id from the rule/row tells us which data to validate against
+    # CHANGED: April 2026 — data_source support in validator
+    candles_path = _get_candles_path(entry_tf_hint=_row_entry_tf, rule_data=_row if '_row' in locals() else None)
     if not candles_path and mode in ('wf', 'full', 'slip'):
         messagebox.showerror("No Candle Data",
                              "H1 candle CSV not found in data/ folder.\n"

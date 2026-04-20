@@ -810,6 +810,23 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     if _firm_stage:
                         _firm_display += f" ({_firm_stage})"
 
+                    # Final fallback: read from P1 config if still blank
+                    if not _firm_display or _firm_display in ('No firm selected', 'No firm'):
+                        try:
+                            import importlib.util as _fd_ilu
+                            _fd_path = os.path.join(
+                                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                'project1_reverse_engineering', 'config_loader.py')
+                            _fd_spec = _fd_ilu.spec_from_file_location('_fd_p1', _fd_path)
+                            _fd_mod = _fd_ilu.module_from_spec(_fd_spec)
+                            _fd_spec.loader.exec_module(_fd_mod)
+                            _fd_p1 = _fd_mod.load()
+                            _fd_name = _fd_p1.get('prop_firm_name', '')
+                            if _fd_name:
+                                _firm_display = _fd_name
+                        except Exception:
+                            pass
+
                     # Build period display text
                     if _cfg_bt_start and _cfg_bt_end:
                         _period_text = f"   Period: {_cfg_bt_start} → {_cfg_bt_end}\n"

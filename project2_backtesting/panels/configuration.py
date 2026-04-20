@@ -121,6 +121,41 @@ def load_config():
             cfg.update({k: str(v) for k, v in saved.items() if k in DEFAULTS})
         except Exception:
             pass
+
+    # WHY: Commission was saved as 0.4 when pip_value was 10.0 ($4/10).
+    #      With pip_value=1.0, it should be 4.0 ($4/1). Auto-fix if
+    #      commission < 1.0 and looks like old conversion artifact.
+    # CHANGED: April 2026 — auto-fix commission migration
+    _comm = float(cfg.get('commission', 0))
+    _pv = float(cfg.get('pip_value_per_lot', 1.0))
+    if 0 < _comm < 1.0 and _pv == 1.0:
+        # Likely old value from pip_value=10 era. Multiply by 10 to restore dollars.
+        cfg['commission'] = str(_comm * 10)
+        try:
+            with open(path, 'w') as f:
+                json.dump({k: cfg[k] for k in DEFAULTS.keys()}, f, indent=2)
+            print(f"[CONFIG] Auto-fixed commission: {_comm} → {_comm * 10} (pip_value migration)")
+        except Exception:
+            pass
+
+    # WHY: P2 config doesn't store firm info. Read from P1 so
+    #      backtest display shows correct firm name.
+    # CHANGED: April 2026 — firm info from P1 config
+    if not cfg.get('firm_name'):
+        try:
+            import importlib.util as _ilu
+            _p1_path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))),
+                'project1_reverse_engineering', 'config_loader.py')
+            _spec = _ilu.spec_from_file_location('_p1cl', _p1_path)
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            _p1 = _mod.load()
+            cfg['firm_name'] = _p1.get('prop_firm_name', '')
+            cfg['firm_id'] = _p1.get('prop_firm_id', '')
+        except Exception:
+            pass
+
     return cfg
 
 

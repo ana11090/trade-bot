@@ -1029,17 +1029,31 @@ def _start_optimization():
 
                 print(f"[OPTIMIZER] Using entry timeframe: {entry_tf}")
 
-                # Probe candidate paths; also try plain H1 as last resort
+                # WHY: data_source_id from the strategy tells us which data to optimize against
+                # CHANGED: April 2026 — data_source support in optimizer
                 candles_path = None
-                for p in [
-                    os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
-                    os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
-                    os.path.join(project_root, 'data', f'{symbol}_H1.csv'),
-                    os.path.join(project_root, 'data', 'xauusd_H1.csv'),
-                ]:
-                    if os.path.exists(p):
-                        candles_path = p
-                        break
+                _ds_id = (selected_strategy_row or {}).get('data_source_id', '')
+                if _ds_id:
+                    try:
+                        from shared.data_sources import get_source_path
+                        _ds_path = get_source_path(_ds_id)
+                        if _ds_path and os.path.exists(_ds_path):
+                            candles_path = _ds_path
+                            print(f"[OPTIMIZER] Using data source: {_ds_id} → {candles_path}")
+                    except Exception as e:
+                        print(f"[OPTIMIZER] Warning: data_source lookup failed: {e}")
+
+                # Probe candidate paths if data_source not found; also try plain H1 as last resort
+                if not candles_path:
+                    for p in [
+                        os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
+                        os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
+                        os.path.join(project_root, 'data', f'{symbol}_H1.csv'),
+                        os.path.join(project_root, 'data', 'xauusd_H1.csv'),
+                    ]:
+                        if os.path.exists(p):
+                            candles_path = p
+                            break
 
                 if not candles_path:
                     print(f"[OPTIMIZER] ERROR: No candle CSV found for {symbol}_{entry_tf}")
