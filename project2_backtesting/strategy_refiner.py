@@ -1450,6 +1450,8 @@ def deep_optimize(
     exit_params=None,
     exit_name='',
     exit_strategy_desc='',
+    leverage=0,
+    contract_size=100.0,
 ):
     """
     Deep optimization starting from existing trades.
@@ -1790,6 +1792,8 @@ def deep_optimize_generate(
     progress_callback=None,
     feature_matrix_path=None,
     direction='BUY',  # NEW: pass strategy direction; was hardcoded BUY
+    leverage=0,
+    contract_size=100.0,
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -2090,6 +2094,8 @@ def deep_optimize_generate(
                 spread_pips=spread_pips,
                 commission_pips=commission_pips,
                 account_size=account_size,
+                leverage=leverage,
+                contract_size=contract_size,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,

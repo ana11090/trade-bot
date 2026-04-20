@@ -797,6 +797,21 @@ def _start_optimization():
             else:
                 print(f"[OPTIMIZER] WARNING: No base rules found — optimizer results won't be validatable")
 
+            # ── Leverage / contract size for margin-aware optimization ──
+            _opt_leverage = 0
+            _opt_contract = 100.0
+            try:
+                from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+                _opt_sym = selected_strategy_row.get('symbol', 'XAUUSD') if selected_strategy_row else 'XAUUSD'
+                _opt_leverage = get_leverage_for_symbol(target_data, _opt_sym)
+                _inst_type = get_instrument_type(_opt_sym)
+                if _inst_type == 'forex':
+                    _opt_contract = 100000.0
+                elif _inst_type == 'indices':
+                    _opt_contract = 1.0
+            except Exception:
+                pass
+
             # ── Quick optimize (filter existing trades) ──
             if opt_mode == "quick":
                 print("[OPTIMIZER] Running Quick Optimize mode...")
@@ -837,6 +852,8 @@ def _start_optimization():
                     exit_params=_sel_exit_params,
                     exit_name=_sel_exit_name,
                     exit_strategy_desc=_sel_exit_desc,
+                    leverage=_opt_leverage,
+                    contract_size=_opt_contract,
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -963,6 +980,8 @@ def _start_optimization():
                     progress_callback=_cb,
                     feature_matrix_path=feature_matrix_path,
                     direction=_strategy_direction,
+                    leverage=_opt_leverage,
+                    contract_size=_opt_contract,
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
@@ -2981,8 +3000,14 @@ def build_panel(parent):
                 daily = funded.get('max_daily_drawdown_pct', 5)
                 total = funded.get('max_total_drawdown_pct', 10)
                 dd_type = funded.get('drawdown_type', 'static')
-                leverage = firm_data.get('leverage_by_size', {})
-                lev = leverage.get(_acct_var.get(), list(leverage.values())[0] if leverage else '—')
+                try:
+                    from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+                    _opt_sym = selected_strategy_row.get('symbol', 'XAUUSD') if selected_strategy_row else 'XAUUSD'
+                    _opt_lev_val = get_leverage_for_symbol(firm_data, _opt_sym)
+                    _opt_inst = get_instrument_type(_opt_sym)
+                    lev = f"1:{_opt_lev_val} ({_opt_inst})"
+                except Exception:
+                    lev = firm_data.get('leverage', '—')
                 _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
             except (KeyError, IndexError, TypeError):
                 # Firm data structure unexpected — use defaults

@@ -2736,6 +2736,30 @@ def _run(mode, override_idx=None, done_event=None):
     rules, exit_class, exit_params, trades, spread_meta, comm_meta, strategy_filters, strategy_direction = _get_strategy_meta(idx)
     print(f"[VALIDATOR] Strategy direction: {strategy_direction}")
 
+    # ── Read run_settings from strategy for leverage auto-detection ──
+    _val_run_settings = {}
+    try:
+        if isinstance(idx, (int, str)) and not str(idx).startswith('saved_') and str(idx) != 'optimizer_latest':
+            _val_bp = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
+            import json as _vj
+            with open(_val_bp, 'r', encoding='utf-8') as _vf:
+                _val_data = _vj.load(_vf)
+            _val_results = _val_data.get('results', []) or _val_data.get('matrix', [])
+            _val_ridx = int(idx) if str(idx).isdigit() else idx
+            if isinstance(_val_ridx, int) and 0 <= _val_ridx < len(_val_results):
+                _val_run_settings = _val_results[_val_ridx].get('run_settings', {})
+        elif str(idx).startswith('saved_'):
+            _val_sp = os.path.join(project_root, 'project2_backtesting', 'outputs', 'saved_rules.json')
+            if os.path.exists(_val_sp):
+                import json as _vj2
+                with open(_val_sp, 'r', encoding='utf-8') as _vsf:
+                    _val_saved = _vj2.load(_vsf)
+                _val_ridx2 = int(idx.split('_', 1)[1])
+                if 0 <= _val_ridx2 < len(_val_saved):
+                    _val_run_settings = _val_saved[_val_ridx2].get('run_settings', {})
+    except Exception as _vex:
+        print(f"[VALIDATOR] Could not read run_settings for leverage: {_vex}")
+
     # ── Loud diagnostics — print everything the validator will use ──
     # WHY: 0-trade walks are silent. Without diagnostics you can't tell
     #      if rules didn't load, indicators are missing, or candle data
@@ -2808,6 +2832,37 @@ def _run(mode, override_idx=None, done_event=None):
     except ValueError:
         messagebox.showerror("Invalid Settings", "Check that all settings are valid numbers.")
         return
+
+    # ── Leverage detection for margin-aware validation ──
+    _val_leverage = _val_run_settings.get('leverage', 0)
+    _val_contract = _val_run_settings.get('contract_size', 100.0)
+    _val_sym = _val_run_settings.get('symbol', '') or (trades[0].get('symbol', '') if trades else '')
+    if not _val_sym:
+        try:
+            from project2_backtesting.panels.configuration import load_config as _vc
+            _val_sym = _vc().get('symbol', 'XAUUSD')
+        except Exception:
+            _val_sym = 'XAUUSD'
+    if _val_leverage == 0:
+        try:
+            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type, load_all_firms
+            _val_firm_id = _val_run_settings.get('firm_id', '')
+            if _val_firm_id:
+                _val_firms = load_all_firms()
+                if _val_firm_id in _val_firms:
+                    _val_leverage = get_leverage_for_symbol(_val_firms[_val_firm_id].config, _val_sym)
+            if _val_leverage == 0:
+                _val_inst = get_instrument_type(_val_sym)
+                _val_leverage = {'forex': 30, 'metals': 10, 'indices': 10, 'energies': 5, 'crypto': 1}.get(_val_inst, 30)
+            if _val_contract == 100.0:
+                _val_inst2 = get_instrument_type(_val_sym)
+                if _val_inst2 == 'forex':
+                    _val_contract = 100000.0
+                elif _val_inst2 == 'indices':
+                    _val_contract = 1.0
+        except Exception:
+            pass
+    print(f"[VALIDATOR] Leverage: 1:{_val_leverage}, contract_size={_val_contract}, symbol={_val_sym!r}")
 
     if not _batch_mode:
         _set_buttons(True)
@@ -2887,6 +2942,8 @@ def _run(mode, override_idx=None, done_event=None):
                     # CHANGED: April 2026 — Validator Fix
                     filters=strategy_filters,
                     direction=strategy_direction,
+                    leverage=_val_leverage,
+                    contract_size=_val_contract,
                 )
                 state.window.after(0, lambda r=wf_result: _display_wf_results(r))
 
@@ -2918,6 +2975,7 @@ def _run(mode, override_idx=None, done_event=None):
                     default_sl_pips=sl_pips,
                     pip_value_per_lot=pip_val,
                     progress_callback=_make_progress_cb("Monte Carlo"),
+                    symbol=_val_sym,
                 )
                 print(f"[validator] MC result: verdict={mc_result.get('verdict', '?')}, "
                       f"pass_rate={mc_result.get('mean_pass_rate', '?')}, "
@@ -2947,6 +3005,8 @@ def _run(mode, override_idx=None, done_event=None):
                     # WHY (Validator Fix): Pass actual optimizer filters.
                     # CHANGED: April 2026 — Validator Fix
                     filters=strategy_filters,
+                    leverage=_val_leverage,
+                    contract_size=_val_contract,
                 )
                 state.window.after(0, lambda r=slip_result: _display_slip_results(r))
 

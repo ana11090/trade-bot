@@ -1033,6 +1033,7 @@ def monte_carlo_test(
     # CHANGED: April 2026 — Phase 37 Fix 2 — seed parameter
     #          (audit Part C MED #42)
     shuffle_seed=None,
+    symbol='XAUUSD',
 ):
     """
     Shuffle trade PnL values and re-run prop firm simulation to test
@@ -1121,6 +1122,7 @@ def monte_carlo_test(
             risk_per_trade_pct=risk_per_trade_pct,
             default_sl_pips=default_sl_pips,
             pip_value_per_lot=pip_value_per_lot,
+            symbol=symbol,
         )
         baseline_pass_rate = float(baseline_summary.eval_pass_rate) if baseline_summary else 0.0
     except Exception as e:
@@ -1184,6 +1186,7 @@ def monte_carlo_test(
                 risk_per_trade_pct=risk_per_trade_pct,
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
+                symbol=symbol,
             )
             rate = float(sim_summary.eval_pass_rate) if sim_summary else 0.0
         except Exception:
