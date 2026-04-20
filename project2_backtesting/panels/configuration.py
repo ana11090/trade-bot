@@ -48,7 +48,11 @@ TF_MQL5_PERIOD = {
 # CHANGED: April 2026 — Phase 32 Fix 5 — XAGUSD pip fix + JPY note
 #          (audit Part C HIGH #93)
 INSTRUMENT_SPECS = {
-    'XAUUSD': {'pip_value': 10.0, 'pip_size': 0.01, 'typical_spread': 2.5, 'name': 'Gold'},
+    # WHY: Confirmed from prop firm broker diagnostic (April 2026).
+    #      tickValue=$1.00, not $10.00. Spread 20-30 pips during
+    #      London/NY sessions (37 off-hours). pip_size=0.01 confirmed.
+    # CHANGED: April 2026 — match Get Leveraged broker specs
+    'XAUUSD': {'pip_value': 1.0, 'pip_size': 0.01, 'typical_spread': 25, 'name': 'Gold'},
     'EURUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 0.8, 'name': 'EUR/USD'},
     'GBPUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'GBP/USD'},
     # USDJPY / GBPJPY pip_value drifts with the USD/JPY rate:
@@ -62,8 +66,10 @@ INSTRUMENT_SPECS = {
     'USDCAD': {'pip_value': 7.3,  'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CAD'},
     'USDCHF': {'pip_value': 11.0, 'pip_size': 0.0001, 'typical_spread': 1.0, 'name': 'USD/CHF'},
     'NZDUSD': {'pip_value': 10.0, 'pip_size': 0.0001, 'typical_spread': 1.2, 'name': 'NZD/USD'},
-    # XAGUSD: 5000 oz × 0.001 pip_size = $5 per pip per 1 lot (not 50)
-    'XAGUSD': {'pip_value': 5.0,  'pip_size': 0.001, 'typical_spread': 2.0, 'name': 'Silver'},
+    # XAGUSD: 5000 oz × 0.001 pip_size = $5 per pip per 1 lot.
+    # WHY: Scaling proportionally to XAUUSD broker correction (April 2026).
+    #      tickValue for silver confirmed ~$0.50/tick at Get Leveraged.
+    'XAGUSD': {'pip_value': 0.5,  'pip_size': 0.001, 'typical_spread': 2.0, 'name': 'Silver'},
     'US30':   {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 2.0, 'name': 'Dow Jones'},
     'NAS100': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 1.5, 'name': 'Nasdaq'},
     'BTCUSD': {'pip_value': 1.0,  'pip_size': 1.0, 'typical_spread': 30.0, 'name': 'Bitcoin'},
@@ -73,7 +79,7 @@ DEFAULTS = {
     # Instrument
     'symbol':              'XAUUSD',
     'winning_scenario':    'H1',  # Entry timeframe: M5, M15, H1, H4
-    'pip_value_per_lot':   '10.0',
+    'pip_value_per_lot':   '1.0',
     # Date periods
     'insample_start':      '2022-01-01',
     'insample_end':        '2023-12-31',
@@ -86,7 +92,7 @@ DEFAULTS = {
     'fixed_lot_size':      '0.66',
     # Costs
     'commission':          '4.0',
-    'spread':              '2.5',
+    'spread':              '25',
     # Engine
     'hard_close_hour':     '21',
     'warmup_candles':      '200',

@@ -12,6 +12,30 @@
     "crypto": 1
   },
 
+  "instrument_specs": {
+    "XAUUSD": {
+      "pip_value_per_lot": 1.0,
+      "pip_size": 0.01,
+      "typical_spread": 25,
+      "commission_per_lot": 4.0,
+      "contract_size": 100
+    },
+    "XAGUSD": {
+      "pip_value_per_lot": 5.0,
+      "pip_size": 0.001,
+      "typical_spread": 3.0,
+      "commission_per_lot": 4.0,
+      "contract_size": 5000
+    },
+    "EURUSD": {
+      "pip_value_per_lot": 10.0,
+      "pip_size": 0.0001,
+      "typical_spread": 1.5,
+      "commission_per_lot": 4.0,
+      "contract_size": 100000
+    }
+  },
+
   "drawdown_mechanics": {
     "_comment": "Leveraged-specific DD rules. Other firms will have their own structure.",
 

@@ -15,7 +15,7 @@ try:
     _rb_account = float(_rb_cfg.get('account_size', 100000))
     _rb_risk_pct = float(_rb_cfg.get('risk_per_trade', 1.0))
     _rb_sl_pips = float(_rb_cfg.get('default_sl_pips', 150))
-    _rb_pip_value = float(_rb_cfg.get('pip_value', 10.0))
+    _rb_pip_value = float(_rb_cfg.get('pip_value', 1.0))
     _rb_dollar_per_pip = (_rb_account * _rb_risk_pct / 100) / (_rb_sl_pips * _rb_pip_value)
 except Exception:
     _rb_dollar_per_pip = 6.67  # fallback to XAUUSD default
@@ -687,6 +687,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_account     = float(_bt_cfg.get('starting_capital', 100000))
                     _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
                     _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 10.0))
+                    _cfg_slippage    = 1.0  # 1 pip slippage — realistic for XAUUSD
                     # WHY: Config stores commission in dollars per lot (e.g. $4).
                     #      Backtester expects pips. Convert: pips = dollars / pip_value.
                     #      Without this, $4 commission was treated as 4.0 pips = $40/lot.
@@ -778,7 +779,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}%  |  "
                         f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
                         + _period_text +
-                        f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.0f}/lot)  |  "
+                        f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.0f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n\n"
                     )
                 except Exception as _cfg_e:
@@ -786,14 +787,15 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _a48_use_cfg = False
 
             if not _a48_use_cfg:
-                _cfg_spread = 2.5
+                _cfg_spread = 25.0
                 _cfg_commission = 0.0
                 _cfg_account = None
                 _cfg_risk_pct = 1.0
-                _cfg_pip_value = 10.0
+                _cfg_pip_value = 1.0
                 _cfg_pip_size = 0.01
                 _cfg_leverage = 0
                 _cfg_contract = 100.0
+                _cfg_slippage = 0.0
                 _cfg_bt_start = None
                 _cfg_bt_end = None
 
@@ -880,6 +882,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         account_size=_cfg_account,
                         risk_per_trade_pct=_cfg_risk_pct,
                         pip_value_per_lot=_cfg_pip_value,
+                        slippage_pips=_cfg_slippage if _a48_use_cfg else 0.0,
                         # WHY (leverage): Cap lots to margin capacity when
                         #      config is loaded (0 = no cap otherwise).
                         # CHANGED: April 2026 — margin-aware lot sizing

@@ -8,6 +8,7 @@ from tkinter import ttk, messagebox, filedialog
 import os
 import sys
 import json
+import shutil
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
@@ -343,12 +344,14 @@ def _update_strat_info():
         _inst = get_instrument_type(_sym)
         if _inst == 'metals':
             _contract = 100.0
-            _pip_val  = 10.0
             _approx_price = 3300.0
         else:
             _contract = 100000.0
-            _pip_val  = 10.0
             _approx_price = 1.10
+        # WHY: Read pip_value from strategy data, not hardcoded.
+        # CHANGED: April 2026 — strategy-driven pip_value
+        _pip_val = float(strat_data.get('pip_value_per_lot',
+                  strat_data.get('run_settings', {}).get('pip_value_per_lot', 1.0)))
 
         _margin_per_lot = (_contract * _approx_price) / _leverage
         _risk_dollars   = _acct * _risk_pct / 100.0
@@ -810,6 +813,10 @@ def _generate():
         return
 
     session_filter = [s for s, var in _session_vars.items() if var.get()]
+    # WHY: All sessions checked = no filter (same as none checked).
+    # CHANGED: April 2026 — all-checked means no filter
+    if len(session_filter) >= 3:
+        session_filter = []
     day_filter     = [i + 1 for i, (d, var) in enumerate(_day_vars.items()) if var.get()]
 
     try:
@@ -1350,10 +1357,12 @@ def build_panel(parent):
     #      found them profitable.
     # CHANGED: April 2026 — default no session filter (matches backtest)
     for sess in ["Asian", "London", "New York"]:
-        var = tk.BooleanVar(value=False)
+        var = tk.BooleanVar(value=True)
         _session_vars[sess] = var
         tk.Checkbutton(sess_row, text=sess, variable=var, bg=WHITE,
                        font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=4)
+    tk.Label(sess_row, text="(all = no filter)",
+             font=("Segoe UI", 8), bg=WHITE, fg="#aaa").pack(side=tk.LEFT, padx=(8, 0))
 
     day_row = tk.Frame(tr_frame, bg=WHITE)
     day_row.pack(fill="x", pady=3)
@@ -1369,7 +1378,7 @@ def build_panel(parent):
     news_row.pack(fill="x", pady=3)
     tk.Label(news_row, text="News filter:", font=("Segoe UI", 9), bg=WHITE, fg=DARK,
              width=24, anchor="w").pack(side=tk.LEFT)
-    _news_cb_var  = tk.BooleanVar(value=True)
+    _news_cb_var  = tk.BooleanVar(value=False)
     tk.Checkbutton(news_row, variable=_news_cb_var, bg=WHITE).pack(side=tk.LEFT)
     # WHY: News filter was 5 min by default but the backtest doesn't
     #      skip candles around news. Adding it in the EA = missed trades
@@ -1377,6 +1386,13 @@ def build_panel(parent):
     # CHANGED: April 2026 — match backtest defaults
     _news_min_var = tk.StringVar(value="0")
     tk.Entry(news_row, textvariable=_news_min_var, width=4).pack(side=tk.LEFT, padx=2)
+
+    def _sync_news_cb(*_):
+        try:
+            _news_cb_var.set(int(_news_min_var.get()) > 0)
+        except ValueError:
+            pass
+    _news_min_var.trace_add("write", _sync_news_cb)
     tk.Label(news_row, text="min before/after HIGH impact", font=("Segoe UI", 8),
              bg=WHITE, fg=GREY).pack(side=tk.LEFT)
 
@@ -1411,6 +1427,36 @@ def build_panel(parent):
     tk.Button(step1_btn_row, text="Save Test Script",
               command=_save_test_script,
               bg=MIDGREY, fg="white", font=("Segoe UI", 9, "bold"),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=(0, 8))
+
+    # WHY: User needs to verify pip_value, spread, leverage on each new
+    #      broker before backtesting. This script prints all values.
+    # CHANGED: April 2026 — downloadable diagnostic script
+    def _download_diagnostic():
+        _diag_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 'templates', 'diagnostic_compare.mq5')
+        if not os.path.exists(_diag_src):
+            messagebox.showerror("Not Found", f"diagnostic_compare.mq5 not found at:\n{_diag_src}")
+            return
+        _dst = filedialog.asksaveasfilename(
+            title="Save Broker Diagnostic Script",
+            defaultextension=".mq5",
+            filetypes=[("MQL5 Script", "*.mq5"), ("All files", "*.*")],
+            initialfile="diagnostic_compare.mq5",
+        )
+        if _dst:
+            shutil.copy2(_diag_src, _dst)
+            messagebox.showinfo("Saved",
+                f"Diagnostic script saved to:\n{_dst}\n\n"
+                "How to use:\n"
+                "1. Copy to MT5 \u2192 MQL5/Scripts/\n"
+                "2. Compile (F7)\n"
+                "3. Drag onto chart\n"
+                "4. Read Experts tab (Ctrl+E)")
+
+    tk.Button(step1_btn_row, text="\U0001f50d Download Broker Diagnostic",
+              command=_download_diagnostic,
+              bg="#6c757d", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT)
 
     _test_script_text = tk.Text(step1_section, height=10, font=("Consolas", 7),

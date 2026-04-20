@@ -1515,6 +1515,43 @@ def get_mql_code(feature_name, platform='mt5'):
         if result is not None:
             return result
 
+    # ── volume_ratio ──────────────────────────────────────────────────────────
+    # WHY: iMA does NOT support VOLUME_TICK — it only takes ENUM_APPLIED_PRICE.
+    #      Must compute volume MA manually using iVolume() and a loop.
+    # CHANGED: April 2026 — manual volume ratio calculation
+    if ind.startswith('volume_ratio'):
+        period = params[0] if params else '20'
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',  # No handle needed — computed inline
+            'handle_init':     '',
+            'read_code':       (
+                f'double val_{var_name} = 1.0;\n'
+                f'      {{\n'
+                f'         double _vol_sum = 0;\n'
+                f'         for(int _vi = 1; _vi <= {period}; _vi++) _vol_sum += (double)iVolume(_Symbol, {mt5_tf}, _vi);\n'
+                f'         double _vol_avg = _vol_sum / {period}.0;\n'
+                f'         double _cur_vol = (double)iVolume(_Symbol, {mt5_tf}, 1);\n'
+                f'         val_{var_name} = (_vol_avg > 0) ? _cur_vol / _vol_avg : 1.0;\n'
+                f'      }}'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} Volume Ratio {period}',
+        }
+
+    # ── day_of_month ──────────────────────────────────────────────────────────
+    # WHY: Calendar feature — no indicator handle needed, computed from time.
+    # CHANGED: April 2026 — add day_of_month mapping
+    if ind == 'day_of_month':
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       f'MqlDateTime _dt_{var_name}; TimeToStruct(TimeCurrent(), _dt_{var_name}); double val_{var_name} = (double)_dt_{var_name}.day;',
+            'custom_indicator': False,
+            'description':     f'{tf} Day of Month',
+        }
+
     if template is None:
         # Unknown indicator — generate FAIL-LOUD placeholder
         # WHY: Old version emitted `double val = 0.0` and a TODO comment.

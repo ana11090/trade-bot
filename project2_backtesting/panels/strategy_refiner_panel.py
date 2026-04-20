@@ -12,12 +12,14 @@ Mode 2: Deep optimizer that searches filter combinations and scores them.
 #      so non-XAUUSD users see correct dollar projections in optimizer.
 # CHANGED: April 2026 — Phase 33 Fix 10 — config-driven optimizer dollars
 #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #90 pg.31)
-_srp_pip_value = 10.0
+# WHY: Read pip_value from P2 config. Old hardcoded 10.0 was wrong for XAUUSD.
+# CHANGED: April 2026 — read from config
+_srp_pip_value = 1.0
 _srp_sl_pips = 150.0
 try:
     from project2_backtesting.panels.configuration import load_config as _srp_load_config
     _srp_cfg = _srp_load_config()
-    _srp_pip_value = float(_srp_cfg.get('pip_value', 10.0))
+    _srp_pip_value = float(_srp_cfg.get('pip_value_per_lot', _srp_cfg.get('pip_value', 1.0)))
     _srp_sl_pips = float(_srp_cfg.get('default_sl_pips', 150.0))
 except Exception:
     pass  # fallback to XAUUSD defaults
@@ -75,6 +77,7 @@ _opt_live_labels    = {}
 _opt_status_lbl     = None
 _opt_start_btn      = None
 _opt_stop_btn       = None
+_opt_worker_running = False   # guard against double-start
 _scroll_canvas      = None
 
 _update_pending = False   # debounce flag
@@ -656,7 +659,12 @@ def _update_status(msg, error=False):
 
 
 def _start_optimization():
-    global _opt_start_btn, _opt_stop_btn, _opt_status_lbl
+    global _opt_start_btn, _opt_stop_btn, _opt_status_lbl, _opt_worker_running
+
+    # Guard: reject if a worker is already running (e.g. user clicked Stop but
+    # the old thread hasn't exited yet and then immediately clicked Start again).
+    if _opt_worker_running:
+        return
 
     # Disable button FIRST — before any checks that might fail
     try:
@@ -666,6 +674,8 @@ def _start_optimization():
             _opt_stop_btn.configure(state="normal")
     except Exception:
         pass
+
+    _opt_worker_running = True
 
     if not _base_trades:
         messagebox.showerror("No Data", "Load a strategy first.")
@@ -776,7 +786,14 @@ def _start_optimization():
             current_filters = _get_current_filters()
             print(f"[OPTIMIZER] Base trades: {len(current_trades)}, filters: {current_filters}")
 
-            spread_pips = 2.5
+            # WHY: Read spread from config. Old hardcoded 2.5 was wrong for XAUUSD.
+            # CHANGED: April 2026 — config-driven spread default
+            spread_pips = 25.0
+            try:
+                from project2_backtesting.panels.configuration import load_config as _opt_lc
+                spread_pips = float(_opt_lc().get('spread', 25.0))
+            except Exception:
+                pass
             commission_pips = 0.0
             idx = _get_selected_index()
             selected_strategy_row = None
@@ -1082,9 +1099,11 @@ def _start_optimization():
             traceback.print_exc()
             _update_status(f"Error: {e}", error=True)
         finally:
+            global _opt_worker_running
+            _opt_worker_running = False
             try:
-                state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
-                state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled"))
+                state.window.after(0, lambda: _opt_start_btn.configure(state="normal") if _opt_start_btn else None)
+                state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled") if _opt_stop_btn else None)
                 print("[OPTIMIZER] Worker thread finished")
             except Exception:
                 pass
@@ -1093,10 +1112,20 @@ def _start_optimization():
 
 
 def _stop_optimization():
+    global _opt_worker_running
     from project2_backtesting.strategy_refiner import stop_optimization
     stop_optimization()
+    # WHY: Re-enable Start immediately — the worker's current fast_backtest call
+    #      may run for 30+ seconds after the flag is set. Without this the button
+    #      stays disabled until the inner backtest finishes, making it look broken.
+    # CHANGED: April 2026 — immediate Start re-enable on stop
+    _opt_worker_running = False
+    if _opt_start_btn:
+        _opt_start_btn.configure(state="normal")
+    if _opt_stop_btn:
+        _opt_stop_btn.configure(state="disabled")
     if _opt_status_lbl:
-        _opt_status_lbl.configure(text="Stopped by user", fg=AMBER)
+        _opt_status_lbl.configure(text="Stopped — click Start to run again", fg=AMBER)
 
 
 def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,

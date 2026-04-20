@@ -1599,7 +1599,7 @@ def run_analysis(feature_matrix_path=None):
 
             # Read config for entry_tf and spread/commission
             _a40a_entry_tf = 'H1'
-            _a40a_spread = 2.5
+            _a40a_spread = 25.0
             _a40a_commission = 0.0
             _a40a_regime_enabled = False
             _a40a_regime_at_discovery = False
@@ -1609,12 +1609,12 @@ def run_analysis(feature_matrix_path=None):
                 import config_loader as _a40a_cl
                 _a40a_cfg = _a40a_cl.load()
                 _a40a_entry_tf = _a40a_cfg.get('winning_scenario', 'H1')
-                _a40a_spread = float(_a40a_cfg.get('spread', 2.5))
+                _a40a_spread = float(_a40a_cfg.get('spread', 25.0))
                 _a40a_commission = float(_a40a_cfg.get('commission', 0.0))
                 # WHY: Config stores commission in dollars per lot.
                 #      Convert to pips for the backtester.
                 # CHANGED: April 2026 — commission dollars-to-pips
-                _a40a_pip_value = float(_a40a_cfg.get('pip_value_per_lot', 10.0))
+                _a40a_pip_value = float(_a40a_cfg.get('pip_value_per_lot', 1.0))
                 if _a40a_pip_value > 0:
                     _a40a_commission = _a40a_commission / _a40a_pip_value
                 # Regime filter settings — checkbox + radio
@@ -1671,6 +1671,10 @@ def run_analysis(feature_matrix_path=None):
                 _enriched['commission_pips'] = _a40a_commission
                 _enriched['leverage'] = _a40a_leverage
                 _enriched['contract_size'] = _a40a_contract
+                # WHY: pip_value travels with the rule so all downstream
+                #      panels use broker-confirmed values, not hardcoded 10.0.
+                # CHANGED: April 2026 — pip_value from firm JSON → config → rule
+                _enriched['pip_value_per_lot'] = float(_a40a_cfg.get('pip_value_per_lot', 1.0)) if _a40a_cfg else 1.0
                 _enriched['prop_firm_id'] = _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else ''
                 _enriched['prop_firm_name'] = _a40a_cfg.get('prop_firm_name', '') if _a40a_cfg else ''
                 if _enriched.get('prop_firm_name'):

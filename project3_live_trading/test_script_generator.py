@@ -187,6 +187,7 @@ void OnStart()
    int total  = 0;
    int passed = 0;
    int failed = 0;
+   bool indicatorFailed = false;  // Used by unknown indicator handlers
 
    Print("=========================================");
    Print("INDICATOR TEST — Starting...");

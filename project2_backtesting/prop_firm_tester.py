@@ -55,28 +55,69 @@ def load_strategy_list():
 
 def load_strategy_trades(index):
     """
-    Load the individual trades for a specific strategy from backtest_matrix.json.
-    Returns list of trade dicts or None.
+    Load trades for a strategy from per-TF trade files or backtest_matrix.json.
 
-    WHY: With saved rules support, index can be a string like 'saved_21'.
-         Only backtest matrix indices (int) have trades in the matrix file.
-    CHANGED: April 2026 — handle non-int indices
+    WHY: Saved rules have string indices ('saved_21'). Match them to the
+         backtest matrix by rule_combo + exit_name, then load from per-TF files.
+         Per-TF files are the A.48 format — trades no longer live in the main matrix.
+    CHANGED: April 2026 — handle saved rules + per-TF trade files
     """
-    # Only backtest matrix indices (int) have trades
+    # For saved rules, match to a backtest result first
+    if isinstance(index, str) and index.startswith('saved_'):
+        try:
+            from project2_backtesting.strategy_refiner import load_trades_from_matrix
+            strat_list = load_strategy_list()
+            for s in strat_list:
+                if s.get('index') == index:
+                    rule_combo = s.get('rule_combo', '')
+                    exit_name = s.get('exit_name', '')
+                    # Try exact rule_combo + exit_name match
+                    for s2 in strat_list:
+                        if s2.get('source') != 'backtest':
+                            continue
+                        if s2.get('rule_combo', '') == rule_combo:
+                            if exit_name and exit_name == s2.get('exit_name', ''):
+                                return load_trades_from_matrix(s2['index'], entry_tf=s2.get('entry_tf', ''))
+                    # Fallback: rule_combo only
+                    for s2 in strat_list:
+                        if s2.get('source') != 'backtest':
+                            continue
+                        if s2.get('rule_combo', '') == rule_combo:
+                            return load_trades_from_matrix(s2['index'], entry_tf=s2.get('entry_tf', ''))
+                    break
+        except Exception as e:
+            print(f"[prop_firm_test] Could not match saved rule: {e}")
+        return None
+
     if not isinstance(index, int):
         return None
 
     if not os.path.exists(BACKTEST_MATRIX_PATH):
         return None
 
-    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
-    results = data.get('results', [])
-    if index >= len(results):
-        return None
-
-    return results[index].get('trades', None)
+    # Try per-TF trade file first (A.48 format)
+    try:
+        with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        results = data.get('results', []) or data.get('matrix', [])
+        if 0 <= index < len(results):
+            entry_tf = results[index].get('entry_tf', '')
+            if entry_tf:
+                trades_path = os.path.join(
+                    os.path.dirname(BACKTEST_MATRIX_PATH),
+                    f'backtest_trades_{entry_tf}.json'
+                )
+                if os.path.exists(trades_path):
+                    with open(trades_path, 'r', encoding='utf-8') as f:
+                        trades_data = json.load(f)
+                    str_idx = str(index)
+                    if str_idx in trades_data:
+                        return trades_data[str_idx]
+            # Fallback: trades embedded in main matrix
+            return results[index].get('trades', None)
+    except Exception:
+        pass
+    return None
 
 
 def convert_trades_for_prop_sim(trades):

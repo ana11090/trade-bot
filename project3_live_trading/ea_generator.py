@@ -121,6 +121,47 @@ def generate_ea(
     # Read regime filter conditions from strategy
     _regime_conds = strategy.get('regime_filter_conditions', [])
 
+    # Leverage calculation — must happen BEFORE _generate_mt5 call
+    _ea_leverage = 0
+    _ea_contract = 100.0
+    _ea_inst = 'metals'
+    _max_risk_pct = None
+    _old_risk = None
+    _max_lots = 0
+    try:
+        from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+        # WHY: prop_firm is a wrapper dict. The actual firm JSON with
+        #      leverage_by_instrument is inside 'firm_data' key.
+        # CHANGED: April 2026 — pass inner firm_data for correct leverage
+        _firm_json = (prop_firm or {}).get('firm_data', prop_firm or {})
+        _ea_leverage = get_leverage_for_symbol(_firm_json, symbol)
+        _ea_inst = get_instrument_type(symbol)
+        _ea_contract = 100.0 if _ea_inst == 'metals' else (1.0 if _ea_inst == 'indices' else 100000.0)
+    except Exception:
+        pass
+
+    sl_pips = exit_params.get('sl_pips', 150)
+    if _ea_leverage > 0 and account_size > 0 and sl_pips > 0:
+        _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
+                          'US30': 40000, 'NAS100': 18000, 'DAX': 18000}
+        _price = _approx_prices.get(symbol.upper(), 3300 if _ea_inst == 'metals' else
+                                    40000 if _ea_inst == 'indices' else 1.1)
+        # WHY: Read pip_value from strategy data, not hardcoded.
+        # CHANGED: April 2026 — strategy-driven pip_value
+        _pip_value = float(strategy.get('pip_value_per_lot', 1.0))
+        _margin_per_lot = (_ea_contract * _price) / _ea_leverage
+        _max_lots = (account_size * 0.90) / _margin_per_lot
+        _max_risk_pct = (_max_lots * sl_pips * _pip_value) / account_size * 100.0
+        if risk_per_trade_pct > _max_risk_pct:
+            _old_risk = risk_per_trade_pct
+            risk_per_trade_pct = round(max(0.1, _max_risk_pct), 1)
+            print(f"[EA GEN] ⚠ Risk capped: {_old_risk}% → {risk_per_trade_pct}% "
+                  f"(leverage 1:{_ea_leverage}, max lots {_max_lots:.2f}, "
+                  f"margin/lot ${_margin_per_lot:,.0f})")
+        else:
+            print(f"[EA GEN] Risk {risk_per_trade_pct}% OK for leverage 1:{_ea_leverage} "
+                  f"(max {_max_risk_pct:.1f}%)")
+
     if platform == 'mt5':
         code = _generate_mt5(
             win_rules=win_rules,
@@ -153,6 +194,7 @@ def generate_ea(
             challenge=challenge,
             direction=_dir,  # NEW: pass strategy direction (using _dir from FIX 1A)
             regime_conditions=_regime_conds,
+            leverage=_ea_leverage,
         )
     else:
         code = _generate_tradovate(
@@ -206,41 +248,6 @@ def generate_ea(
         tp_pips = exit_params.get('tp_pips', 0 if exit_class in ('TimeBased', 'IndicatorExit') else 300)
         max_candles = exit_params.get('max_candles', 12)
 
-        # WHY: Cap RiskPercent so generated lot size fits within margin at
-        #      this leverage. Without cap, RiskPercent=1% on $10K 1:10
-        #      leverage tries 0.66 lots but margin allows ~0.27 → broker reject.
-        # CHANGED: April 2026 — leverage-aware risk cap in EA
-        _ea_leverage = 0
-        _ea_contract = 100.0
-        _ea_inst = 'metals'
-        _max_risk_pct = None
-        _old_risk = None
-        try:
-            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-            _ea_leverage = get_leverage_for_symbol(prop_firm or {}, symbol)
-            _ea_inst = get_instrument_type(symbol)
-            _ea_contract = 100.0 if _ea_inst == 'metals' else (1.0 if _ea_inst == 'indices' else 100000.0)
-        except Exception:
-            pass
-
-        if _ea_leverage > 0 and account_size > 0 and sl_pips > 0:
-            _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
-                              'US30': 40000, 'NAS100': 18000, 'DAX': 18000}
-            _price = _approx_prices.get(symbol.upper(), 3300 if _ea_inst == 'metals' else
-                                        40000 if _ea_inst == 'indices' else 1.1)
-            _pip_value = 10.0
-            _margin_per_lot = (_ea_contract * _price) / _ea_leverage
-            _max_lots = (account_size * 0.90) / _margin_per_lot
-            _max_risk_pct = (_max_lots * sl_pips * _pip_value) / account_size * 100.0
-            if risk_per_trade_pct > _max_risk_pct:
-                _old_risk = risk_per_trade_pct
-                risk_per_trade_pct = round(max(0.1, _max_risk_pct), 1)
-                print(f"[EA GEN] ⚠ Risk capped: {_old_risk}% → {risk_per_trade_pct}% "
-                      f"(leverage 1:{_ea_leverage}, max lots {_max_lots:.2f}, "
-                      f"margin/lot ${_margin_per_lot:,.0f})")
-            else:
-                print(f"[EA GEN] Risk {risk_per_trade_pct}% OK for leverage 1:{_ea_leverage} "
-                      f"(max {_max_risk_pct:.1f}%)")
         trail_activation_pips = exit_params.get('trail_activation_pips', exit_params.get('activation_pips', 50))
         trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
         sl_atr_mult = exit_params.get('sl_atr_mult', 2.0)
@@ -388,7 +395,8 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   restrictions=None, challenge=None,
                   entry_timeframe='H1',
                   direction='BUY',
-                  regime_conditions=None):
+                  regime_conditions=None,
+                  leverage=0):
     """Generate MQL5 EA code. direction must be 'BUY' or 'SELL'."""
     if direction not in ('BUY', 'SELL'):
         raise ValueError(f"_generate_mt5: direction must be BUY or SELL, got {direction!r}")
@@ -1570,12 +1578,14 @@ bool IsMinHoldMet()
     elif exit_class == 'HybridExit':
         _vr.append(f"  Breakeven: +{breakeven_pips}, Trail: {trail_distance_pips}, Max: {max_candles} candles")
     _vr.append("")
-    if _ea_leverage > 0:
-        _vr.append(f"LEVERAGE: 1:{_ea_leverage} ({_ea_inst})  |  Contract size: {_ea_contract}")
-        if _max_risk_pct is not None:
-            _vr.append(f"  Max safe risk for this account: {_max_risk_pct:.1f}%")
-        if _old_risk is not None:
-            _vr.append(f"  ⚠ Risk was capped from {_old_risk}% → {risk_per_trade_pct}% to fit margin")
+    if leverage > 0:
+        try:
+            from shared.prop_firm_engine import get_instrument_type as _vr_git
+            _vr_inst = _vr_git(symbol)
+        except Exception:
+            _vr_inst = 'metals'
+        _vr_contract = 100.0 if _vr_inst == 'metals' else (1.0 if _vr_inst == 'indices' else 100000.0)
+        _vr.append(f"LEVERAGE: 1:{leverage} ({_vr_inst})  |  Contract size: {_vr_contract}")
         _vr.append("")
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
@@ -1647,7 +1657,7 @@ bool IsMinHoldMet()
 
 //--- Input parameters
 input double RiskPercent        = {risk_per_trade_pct};     // Risk per trade % (capped for leverage)
-input int    Leverage           = {_ea_leverage};            // Account leverage for this instrument (0=not set)
+input int    Leverage           = {leverage};                // Account leverage for this instrument (0=not set)
 input int    MaxTradesPerDay    = {max_trades_per_day};      // Max trades per day
 input int    MagicNumber        = {magic_number};            // Magic number
 input double MaxSpreadPips      = {max_spread_pips};         // Max spread to allow entry
@@ -2000,6 +2010,36 @@ double CalculateLots(double slDistance)
       Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
             " lots but maxLot=", maxLot, " — risking LESS than configured.");
       lots = maxLot;
+   }}
+
+   //--- Margin check: ask broker if account can hold this position
+   // WHY: Risk-based sizing can exceed account margin. A $10K account
+   //      at 1:10 leverage on XAUUSD can hold ~0.18 lots. Without this,
+   //      trade.Buy() fails with "not enough money" every signal.
+   //      OrderCalcMargin asks the broker directly — not a guess.
+   // CHANGED: April 2026 — margin-aware lot sizing
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double marginNeeded = 0.0;
+   if(OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, lots,
+                       SymbolInfoDouble(_Symbol, SYMBOL_ASK), marginNeeded))
+   {{
+      if(marginNeeded > freeMargin * 0.90)
+      {{
+         double maxByMargin = lots * (freeMargin * 0.90) / marginNeeded;
+         maxByMargin = MathFloor(maxByMargin / lotStep) * lotStep;
+         if(maxByMargin < minLot)
+         {{
+            Print("[LOTS] MARGIN BLOCK: need $", DoubleToString(marginNeeded, 0),
+                  " but only $", DoubleToString(freeMargin, 0),
+                  " free. Even minLot exceeds margin. Skipping trade.");
+            return 0.0;
+         }}
+         Print("[LOTS] Margin cap: ", DoubleToString(lots, 2), " -> ",
+               DoubleToString(maxByMargin, 2), " lots (free=$",
+               DoubleToString(freeMargin, 0), ", need=$",
+               DoubleToString(marginNeeded, 0), ")");
+         lots = maxByMargin;
+      }}
    }}
 
    //--- Auto-detect decimal places from lotStep

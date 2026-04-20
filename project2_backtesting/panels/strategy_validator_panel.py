@@ -713,7 +713,7 @@ def _get_strategy_meta(idx):
                 _exit_class  = rule.get('exit_class', 'FixedSLTP')
                 _exit_params = rule.get('exit_params', {'sl_pips': 150, 'tp_pips': 300})
                 _trades      = rule.get('trades', [])
-                _spread      = rule.get('spread_pips', 2.5)
+                _spread      = rule.get('spread_pips', 25.0)
                 _comm        = rule.get('commission_pips', 0.0)
                 if not _trades:
                     print(f"[validator] WARNING: saved rule {idx} has no trades — "
@@ -782,7 +782,7 @@ def _get_strategy_meta(idx):
                 _exit_params = opt.get('exit_params', {'sl_pips': 150, 'tp_pips': 300})
                 # Spread / commission are not stored in _validator_optimized.json
                 # — fall back to the standard defaults the optimizer used.
-                _spread      = opt.get('spread_pips', 2.5)
+                _spread      = opt.get('spread_pips', 25.0)
                 _comm        = opt.get('commission_pips', 0.0)
                 if not _trades:
                     print(f"[validator] _validator_optimized.json exists but contains no trades. "
@@ -954,7 +954,7 @@ def _get_strategy_meta(idx):
                                     break
             except Exception as _te:
                 print(f"[validator] Could not load trades from per-TF file: {_te}")
-        spread     = r.get('spread_pips', 2.5)
+        spread     = r.get('spread_pips', 25.0)
         commission = r.get('commission_pips', 0.0)
         # WHY (Validator Fix): Include filters from the result row.
         #      Optimizer results store filters; backtest results don't.
@@ -1802,11 +1802,11 @@ def _show_estimation(trades, parent_frame):
     # Read settings from the panel (not hardcoded)
     try:
         risk = float(_risk_var.get()) if _risk_var else 1.0
-        pip_value = float(_pipval_var.get()) if _pipval_var else 10.0
+        pip_value = float(_pipval_var.get()) if _pipval_var else 1.0
         sl_pips = float(_sl_var.get()) if _sl_var else 150.0
     except:
         risk = 1.0
-        pip_value = 10.0
+        pip_value = 1.0
         sl_pips = 150.0
 
     lot_size = (acct * risk / 100) / (sl_pips * pip_value)

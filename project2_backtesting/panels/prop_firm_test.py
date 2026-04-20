@@ -13,15 +13,17 @@ Also shows the full trade history for the selected strategy with export.
 #          (Ref: trade_bot_audit_round2_partC.pdf HIGH item #85 pg.30)
 _pft_account_size = 100000
 _pft_sl_pips = 150.0
-_pft_pip_value = 10.0
-_pft_spread_pips = 2.5
+# WHY: Old defaults were wrong for XAUUSD. Read from P2 config.
+# CHANGED: April 2026 — config-driven defaults
+_pft_pip_value = 1.0
+_pft_spread_pips = 25.0
 try:
     from project2_backtesting.panels.configuration import load_config as _pft_load_config
-    _pft_cfg = _pft_load_config()
-    _pft_account_size = int(_pft_cfg.get('account_size', 100000))
-    _pft_sl_pips = float(_pft_cfg.get('default_sl_pips', 150.0))
-    _pft_pip_value = float(_pft_cfg.get('pip_value', 10.0))
-    _pft_spread_pips = float(_pft_cfg.get('spread_pips', 2.5))
+    _pft_c = _pft_load_config()
+    _pft_account_size = int(_pft_c.get('account_size', 100000))
+    _pft_sl_pips = float(_pft_c.get('default_sl_pips', 150.0))
+    _pft_pip_value = float(_pft_c.get('pip_value_per_lot', 1.0))
+    _pft_spread_pips = float(_pft_c.get('spread', 25.0))
 except Exception:
     pass  # fallback to XAUUSD defaults
 
@@ -174,6 +176,31 @@ def _on_strategy_select(event=None):
 
     has_trades = s.get('has_trades', False)
 
+    # WHY: Auto-fill settings from the rule's saved data so the prop firm
+    #      test uses the same values the rule was tested with.
+    # CHANGED: April 2026 — auto-fill from rule
+    _rs = s.get('run_settings', {})
+    _ds = s.get('discovery_settings', {})
+    _saved = s.get('saved_rule', {})
+
+    _rule_acct = _rs.get('starting_capital', 0) or _ds.get('prop_firm_account', 0)
+    if _rule_acct and float(_rule_acct) > 0 and _account_size_var:
+        _account_size_var.set(str(int(float(_rule_acct))))
+
+    _rule_risk = _rs.get('risk_pct', 0) or _ds.get('prop_firm_risk_pct', 0)
+    if _rule_risk and float(_rule_risk) > 0 and _risk_var:
+        _risk_var.set(str(float(_rule_risk)))
+
+    _exit_params = s.get('exit_params', _saved.get('exit_params', {}))
+    _rule_sl = _exit_params.get('sl_pips', 0)
+    if _rule_sl and float(_rule_sl) > 0 and _sl_pips_var:
+        _sl_pips_var.set(str(int(float(_rule_sl))))
+
+    _rule_lev = s.get('leverage', 0) or _rs.get('leverage', 0)
+    _rule_firm = _ds.get('prop_firm_name', '') or s.get('prop_firm_name', '')
+    _lev_text = f"  |  Leverage: 1:{_rule_lev}" if _rule_lev else ""
+    _firm_text = f"  |  Firm: {_rule_firm}" if _rule_firm else ""
+
     # Update spread/commission from backtest data (only for backtest matrix indices)
     if isinstance(idx, int):
         try:
@@ -190,9 +217,29 @@ def _on_strategy_select(event=None):
         except Exception:
             pass
 
+    # WHY: Saved rules don't set has_trades=True, but trades CAN be loaded
+    #      by matching to the backtest matrix. Try loading them.
+    # CHANGED: April 2026 — attempt trade loading for saved rules
+    if not has_trades and isinstance(idx, str) and idx.startswith('saved_'):
+        try:
+            from project2_backtesting.prop_firm_tester import load_strategy_trades
+            _saved_trades = load_strategy_trades(idx)
+            if _saved_trades:
+                has_trades = True
+                _net = [t.get('net_pips', 0) for t in _saved_trades]
+                s['total_trades'] = len(_saved_trades)
+                s['win_rate'] = sum(1 for p in _net if p > 0) / max(len(_net), 1) * 100
+                s['net_total_pips'] = sum(_net)
+                _gross_win = sum(p for p in _net if p > 0)
+                _gross_loss = abs(sum(p for p in _net if p < 0))
+                s['net_profit_factor'] = _gross_win / max(_gross_loss, 0.01)
+        except Exception as _e:
+            print(f"[prop_firm_test] Could not load saved rule trades: {_e}")
+
     if has_trades:
         text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
-                f"net {s['net_total_pips']:+.0f} pips  |  PF {s['net_profit_factor']:.2f}")
+                f"net {s['net_total_pips']:+.0f} pips  |  PF {s['net_profit_factor']:.2f}"
+                f"{_lev_text}{_firm_text}")
         _strat_info_label.configure(text=text, fg=MIDGREY)
         # Load trades and display trade history
         try:
@@ -735,6 +782,11 @@ def build_panel(parent):
     _daily_dd_var  = _field(row2, "Daily DD safety (%):", "80", 5)
     _spread_var    = _field(row2, "Spread (pips):", str(_pft_spread_pips), 5)
     _commission_var = _field(row2, "Commission (pips):", "0.0", 5)
+
+    lev_row = tk.Frame(settings_frame, bg=WHITE)
+    lev_row.pack(fill="x", pady=(4, 0))
+    tk.Label(lev_row, text="Leverage: auto-detected from firm profile (shown in strategy info above)",
+             font=("Segoe UI", 8), bg=WHITE, fg=GREY).pack(anchor="w")
 
     # ── Firm / Challenge selection ─────────────────────────────────────────────
     firms_outer = tk.Frame(content, bg=WHITE, padx=20, pady=12)

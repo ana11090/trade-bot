@@ -270,6 +270,21 @@ def build_panel(parent):
             _inst = get_instrument_type(_sym)
         except Exception:
             pass
+        # WHY: Read pip_value, spread, commission from firm JSON's
+        #      instrument_specs. These are broker-confirmed values
+        #      from diagnostic_compare.mq5.
+        # CHANGED: April 2026 — broker specs from firm JSON
+        try:
+            _inst_specs = fd.get('instrument_specs', {}).get(_sym, {})
+            if _inst_specs:
+                _cl.save({
+                    'pip_value_per_lot': str(_inst_specs.get('pip_value_per_lot', 1.0)),
+                    'spread': str(_inst_specs.get('typical_spread', 25.0)),
+                    'commission': str(_inst_specs.get('commission_per_lot', 0.0)),
+                    'contract_size': str(_inst_specs.get('contract_size', 100.0)),
+                })
+        except Exception:
+            pass
         # Get DD limits and target
         _dd_daily, _dd_total, _target = '?', '?', '?'
         try:
