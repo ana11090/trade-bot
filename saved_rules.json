@@ -1,6 +1,481 @@
-{
-  "rules": [
-    {
+[
+  {
+    "id": 1,
+    "rule_id": "BUY_XX_4c_0420_2dca",
+    "saved_at": "2026-04-20T17:02:54.082778",
+    "source": "\ud83d\udce6 All Sources Combined (4 sources)",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "H1_keltner_width",
+          "operator": ">",
+          "value": 0.4545
+        },
+        {
+          "feature": "M15_volume_change",
+          "operator": "<=",
+          "value": -0.1547
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 25.015
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": ">",
+          "value": 1.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.739,
+      "win_rate": 0.739,
+      "coverage": 46,
+      "coverage_pct": 20.7,
+      "train_win_rate": 0.645,
+      "train_coverage": 76,
+      "overfit_gap": -0.094,
+      "is_overfit": false,
+      "avg_pips": 0.0,
+      "source": "xgboost",
+      "_a46_source_tag": "XGB",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 2,
+    "rule_id": "BUY_H1_5c_0420_68dd",
+    "saved_at": "2026-04-20T17:10:25.083041",
+    "source": "Step3:outputs:BUY:conf99",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": ">",
+          "value": 0.7913
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.986,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.986,
+      "avg_pips": 480.6,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 1 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 0.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": ">",
+              "value": 30.3743
+            },
+            {
+              "feature": "M15_mass_index",
+              "operator": "<=",
+              "value": 26.0426
+            },
+            {
+              "feature": "M15_macd_std_diff",
+              "operator": "<=",
+              "value": 2.5631
+            },
+            {
+              "feature": "M5_bb_50_2_width",
+              "operator": ">",
+              "value": 0.7913
+            }
+          ]
+        }
+      ],
+      "pip_size": 0.01,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 3,
+    "rule_id": "BUY_H1_5c_0420_488e",
+    "saved_at": "2026-04-20T17:10:25.091558",
+    "source": "Step3:outputs:BUY:conf89",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": "<=",
+          "value": 0.6051
+        },
+        {
+          "feature": "H1_stoch_14_d",
+          "operator": ">",
+          "value": 18.6137
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": ">",
+          "value": 21.7328
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.889,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.889,
+      "avg_pips": 301.4,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 2 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 0.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": "<=",
+              "value": 0.6051
+            },
+            {
+              "feature": "H1_stoch_14_d",
+              "operator": ">",
+              "value": 18.6137
+            },
+            {
+              "feature": "M15_adx_21",
+              "operator": ">",
+              "value": 21.7328
+            }
+          ]
+        }
+      ],
+      "pip_size": 0.01,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 4,
+    "rule_id": "BUY_H1_5c_0420_1ea2",
+    "saved_at": "2026-04-20T17:10:25.101928",
+    "source": "Step3:outputs:BUY:conf78",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": "<=",
+          "value": 21.9115
+        }
+      ],
+      "prediction": "LOSS",
+      "confidence": 0.78,
+      "coverage": 41,
+      "coverage_pct": 4.6,
+      "win_rate": 0.22,
+      "avg_pips": 27.5,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 0.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "LOSS",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.6051
+            },
+            {
+              "feature": "H4_cci_14",
+              "operator": "<=",
+              "value": 71.4269
+            },
+            {
+              "feature": "M15_adx_28",
+              "operator": "<=",
+              "value": 21.9115
+            }
+          ]
+        }
+      ],
+      "pip_size": 0.01,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 5,
+    "rule_id": "BUY_H1_5c_0420_4c19",
+    "saved_at": "2026-04-20T17:10:25.119889",
+    "source": "Step3:outputs:BUY:conf88",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
+          "operator": ">",
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": ">",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_diff",
+          "operator": ">",
+          "value": -0.5668
+        },
+        {
+          "feature": "D1_day_of_month",
+          "operator": "<=",
+          "value": 6.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.875,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.875,
+      "avg_pips": 261.4,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 0.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": "<=",
+              "value": 5.5525
+            },
+            {
+              "feature": "M5_volume_ratio_20",
+              "operator": ">",
+              "value": 1.0015
+            },
+            {
+              "feature": "H1_adx_28",
+              "operator": ">",
+              "value": 13.2362
+            },
+            {
+              "feature": "H1_macd_fast_diff",
+              "operator": ">",
+              "value": -0.5668
+            },
+            {
+              "feature": "D1_day_of_month",
+              "operator": "<=",
+              "value": 6.5
+            }
+          ]
+        }
+      ],
+      "pip_size": 0.01,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 6,
+    "rule_id": "BUY_H1_4c_0420_72eb",
+    "saved_at": "2026-04-20T17:10:25.143545",
+    "source": "Step3:outputs:BUY:conf87",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -29,10 +504,8 @@
       "coverage_pct": 3.5,
       "win_rate": 0.871,
       "avg_pips": 390.6,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 5 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -40,8 +513,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -51,8 +524,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -85,9 +558,19 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 7,
+    "rule_id": "BUY_H1_5c_0420_96cb",
+    "saved_at": "2026-04-20T17:10:25.162878",
+    "source": "Step3:outputs:BUY:conf90",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -121,10 +604,8 @@
       "coverage_pct": 2.4,
       "win_rate": 0.905,
       "avg_pips": 276.2,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 6 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -132,8 +613,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -143,8 +624,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -182,9 +663,19 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 8,
+    "rule_id": "BUY_H1_5c_0420_c4fa",
+    "saved_at": "2026-04-20T17:10:25.180647",
+    "source": "Step3:outputs:BUY:conf76",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -218,10 +709,8 @@
       "coverage_pct": 2.8,
       "win_rate": 0.76,
       "avg_pips": 239.4,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 7 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -229,8 +718,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -240,8 +729,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -279,9 +768,19 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 9,
+    "rule_id": "BUY_H1_5c_0420_d38a",
+    "saved_at": "2026-04-20T17:10:25.211024",
+    "source": "Step3:outputs:BUY:conf65",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -315,10 +814,8 @@
       "coverage_pct": 2.9,
       "win_rate": 0.654,
       "avg_pips": 142.8,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 8 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -326,8 +823,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -337,8 +834,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -376,9 +873,19 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 10,
+    "rule_id": "BUY_H1_4c_0420_e753",
+    "saved_at": "2026-04-20T17:10:25.238298",
+    "source": "Step3:outputs:BUY:conf67",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -407,10 +914,8 @@
       "coverage_pct": 2.4,
       "win_rate": 0.667,
       "avg_pips": 93.5,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 9 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -418,8 +923,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -429,8 +934,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -463,9 +968,19 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 11,
+    "rule_id": "BUY_H1_4c_0420_558c",
+    "saved_at": "2026-04-20T17:10:25.265321",
+    "source": "Step3:outputs:BUY:conf65",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_std_dev_50",
@@ -494,10 +1009,8 @@
       "coverage_pct": 2.3,
       "win_rate": 0.65,
       "avg_pips": 380.8,
-      "action": "BUY",
       "direction": "BUY",
       "entry_timeframe": "H1",
-      "entry_tf": "H1",
       "rule_combo": "Rule 10 (BUY)",
       "scenario": "outputs",
       "spread_pips": 25.0,
@@ -505,8 +1018,8 @@
       "leverage": 10,
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "the5ers",
+      "prop_firm_name": "The 5%ers",
       "discovery_settings": {
         "regime_filter_enabled": false,
         "regime_at_discovery": true,
@@ -516,8 +1029,8 @@
         "single_rule_mode_variant": "a",
         "srm_dedup_correlated": true,
         "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
+        "prop_firm_id": "the5ers",
+        "prop_firm_name": "The 5%ers",
         "prop_firm_stage": "Evaluation",
         "prop_firm_account": "10000"
       },
@@ -550,9 +1063,55 @@
         }
       ],
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 12,
+    "rule_id": "BUY_XX_2c_0420_4bff",
+    "saved_at": "2026-04-20T17:10:29.091582",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        }
+      ],
+      "prediction": "BUY",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 975,
+      "confidence": 0.8816,
+      "tightness_product": 0.003479,
+      "pip_size": 0.01,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 13,
+    "rule_id": "BUY_H4_4c_0420_973d",
+    "saved_at": "2026-04-20T17:11:46.828688",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "H4_distance_from_high",
@@ -587,12 +1146,26 @@
       "avg_pips": 342.1,
       "source": "bot_entry",
       "entry_timeframe": "H4",
-      "action": "BUY",
       "n_real_trades_in_rule": 190,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 14,
+    "rule_id": "BUY_D1_3c_0420_602d",
+    "saved_at": "2026-04-20T17:11:46.858166",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -622,12 +1195,26 @@
       "avg_pips": 259.7,
       "source": "bot_entry",
       "entry_timeframe": "D1",
-      "action": "BUY",
       "n_real_trades_in_rule": 373,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 15,
+    "rule_id": "BUY_H1_6c_0420_b9c6",
+    "saved_at": "2026-04-20T17:11:46.926828",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "H1_distance_from_high",
@@ -672,12 +1259,26 @@
       "avg_pips": 319.0,
       "source": "bot_entry",
       "entry_timeframe": "H1",
-      "action": "BUY",
       "n_real_trades_in_rule": 46,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 16,
+    "rule_id": "BUY_H4_8c_0420_4cc8",
+    "saved_at": "2026-04-20T17:11:47.013291",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "H4_distance_from_high",
@@ -732,12 +1333,26 @@
       "avg_pips": 16.8,
       "source": "bot_entry",
       "entry_timeframe": "H4",
-      "action": "BUY",
       "n_real_trades_in_rule": 40,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 17,
+    "rule_id": "BUY_H1_8c_0420_3b80",
+    "saved_at": "2026-04-20T17:11:47.081185",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "H1_distance_from_high",
@@ -792,12 +1407,26 @@
       "avg_pips": 127.4,
       "source": "bot_entry",
       "entry_timeframe": "H1",
-      "action": "BUY",
       "n_real_trades_in_rule": 58,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 18,
+    "rule_id": "BUY_M15_7c_0420_e95e",
+    "saved_at": "2026-04-20T17:11:47.153092",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_ema_20_distance",
@@ -847,12 +1476,26 @@
       "avg_pips": 275.8,
       "source": "bot_entry",
       "entry_timeframe": "M15",
-      "action": "BUY",
       "n_real_trades_in_rule": 40,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 19,
+    "rule_id": "BUY_D1_5c_0420_d3a0",
+    "saved_at": "2026-04-20T17:11:47.226572",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -892,12 +1535,26 @@
       "avg_pips": 144.3,
       "source": "bot_entry",
       "entry_timeframe": "D1",
-      "action": "BUY",
       "n_real_trades_in_rule": 39,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 20,
+    "rule_id": "BUY_D1_5c_0420_0cf9",
+    "saved_at": "2026-04-20T17:11:47.311275",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -937,12 +1594,26 @@
       "avg_pips": 128.9,
       "source": "bot_entry",
       "entry_timeframe": "D1",
-      "action": "BUY",
       "n_real_trades_in_rule": 45,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 21,
+    "rule_id": "BUY_H1_7c_0420_3c02",
+    "saved_at": "2026-04-20T17:11:47.382463",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "H1_distance_from_high",
@@ -992,12 +1663,26 @@
       "avg_pips": 131.8,
       "source": "bot_entry",
       "entry_timeframe": "H1",
-      "action": "BUY",
       "n_real_trades_in_rule": 34,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 22,
+    "rule_id": "BUY_D1_6c_0420_2827",
+    "saved_at": "2026-04-20T17:11:47.474348",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -1042,12 +1727,26 @@
       "avg_pips": 128.4,
       "source": "bot_entry",
       "entry_timeframe": "D1",
-      "action": "BUY",
       "n_real_trades_in_rule": 23,
       "pip_size": 0.01,
-      "regime_filter": null
-    },
-    {
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
+    }
+  },
+  {
+    "id": 23,
+    "rule_id": "BUY_M15_6c_0420_e285",
+    "saved_at": "2026-04-20T17:11:47.547227",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
       "conditions": [
         {
           "feature": "M5_ema_20_distance",
@@ -1092,11 +1791,17 @@
       "avg_pips": 76.3,
       "source": "bot_entry",
       "entry_timeframe": "M15",
-      "action": "BUY",
       "n_real_trades_in_rule": 44,
       "pip_size": 0.01,
-      "regime_filter": null
+      "regime_filter": null,
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5
     }
-  ],
-  "discovery_method": "selected_subset"
-}
+  }
+]
