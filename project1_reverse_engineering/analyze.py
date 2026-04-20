@@ -1637,6 +1637,11 @@ def run_analysis(feature_matrix_path=None):
                         _a40a_contract = 100.0 if _a40a_inst_type == 'metals' else (1.0 if _a40a_inst_type == 'indices' else 100000.0)
             except Exception:
                 pass
+            if _a40a_leverage > 0:
+                print(f"[ANALYZE] Firm: {(_a40a_cfg or {}).get('prop_firm_name', '?')} | "
+                      f"Leverage: 1:{_a40a_leverage} | Contract: {_a40a_contract}")
+            else:
+                print(f"[ANALYZE] No prop firm configured \u2014 leverage=0 (no margin cap)")
 
             for _ri, _r in enumerate(rules, 1):
                 _pred = str(_r.get('prediction', 'BUY'))
@@ -1662,6 +1667,10 @@ def run_analysis(feature_matrix_path=None):
                 _enriched['contract_size'] = _a40a_contract
                 _enriched['prop_firm_id'] = _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else ''
                 _enriched['prop_firm_name'] = _a40a_cfg.get('prop_firm_name', '') if _a40a_cfg else ''
+                if _enriched.get('prop_firm_name'):
+                    print(f"[A.40a] Rule {_ri}: firm={_enriched['prop_firm_name']}, "
+                          f"leverage={_enriched.get('leverage', 0)}, "
+                          f"contract={_enriched.get('contract_size', 100.0)}")
                 # Discovery settings — what checkboxes/radio buttons were active
                 _enriched['discovery_settings'] = {
                     'regime_filter_enabled': _a40a_regime_enabled,

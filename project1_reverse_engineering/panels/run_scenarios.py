@@ -312,6 +312,8 @@ def build_panel(parent):
             })
         except Exception:
             pass
+        print(f"[FIRM] Selected: {fname} | Stage: {_pf_stage_var.get()} | "
+              f"Account: ${_pf_acct_var.get()} | Risk: {_risk}% | Leverage: 1:{_lev}")
 
     _pf_firm_var.trace_add("write", _pf_on_change)
     _pf_stage_var.trace_add("write", _pf_on_change)
