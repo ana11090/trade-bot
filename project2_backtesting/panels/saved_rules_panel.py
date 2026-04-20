@@ -432,6 +432,26 @@ def _refresh_list(inner, canvas, window_id):
                          font=("Arial", 8), bg="#f8f9fa", fg="#666"
                          ).pack(anchor="w", pady=(1, 0))
 
+            # Prop firm info from discovery_settings or top-level rule fields
+            _pf_name = _ds.get('prop_firm_name', '') or rule.get('prop_firm_name', '')
+            _pf_stage = _ds.get('prop_firm_stage', '') or ''
+            _pf_account = _ds.get('prop_firm_account', '') or ''
+            _pf_lev = rule.get('leverage', 0)
+            if _pf_name:
+                _pf_parts = [_pf_name]
+                if _pf_stage:
+                    _pf_parts.append(_pf_stage)
+                if _pf_account:
+                    try:
+                        _pf_parts.append(f"${float(_pf_account):,.0f}")
+                    except Exception:
+                        _pf_parts.append(f"${_pf_account}")
+                if _pf_lev:
+                    _pf_parts.append(f"Leverage: 1:{_pf_lev}")
+                tk.Label(card, text=f"  \U0001f3e2 {' | '.join(_pf_parts)}",
+                         font=("Arial", 8, "bold"), bg="#f8f9fa", fg="#4a6fa5"
+                         ).pack(anchor="w", pady=(2, 0))
+
         if entry.get('notes'):
             tk.Label(card, text=f"📝 {entry['notes']}", font=("Arial", 8, "italic"),
                      bg="#f8f9fa", fg="#888888").pack(anchor="w", pady=(2, 0))
