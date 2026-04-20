@@ -6,6 +6,13 @@
   "dd_reset_timezone": "CET",
   "typical_swap_xauusd_per_lot_per_night": 30.0,
   "leverage_by_size": {"10000": "1:100", "25000": "1:100", "50000": "1:100", "100000": "1:100", "200000": "1:100"},
+  "leverage_by_instrument": {
+    "forex": 100,
+    "metals": 20,
+    "indices": 20,
+    "energies": 10,
+    "crypto": 2
+  },
   "challenges": [
     {
       "challenge_id": "ftmo_2step_standard",

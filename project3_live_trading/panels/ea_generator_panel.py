@@ -326,6 +326,47 @@ def _update_strat_info():
     # Update condition threshold vars
     _refresh_condition_vars(idx)
 
+    # WHY (leverage): Warn the user when the current risk%/SL/account
+    #      combination exceeds what the prop firm's leverage allows for
+    #      this instrument — before they generate and deploy the EA.
+    # CHANGED: April 2026 — margin awareness in EA panel
+    try:
+        from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+        _firm_name = _firm_var.get() if _firm_var else ''
+        _firm_d    = _FIRMS.get(_firm_name, {})
+        _sym       = _symbol_var.get() if _symbol_var else 'XAUUSD'
+        _leverage  = get_leverage_for_symbol(_firm_d, _sym)
+        _acct      = float(_ea_account_var.get()) if _ea_account_var else 10000
+        _risk_pct  = float(_risk_var.get()) if _risk_var else 1.0
+
+        # Approximate contract size and pip_value from instrument type
+        _inst = get_instrument_type(_sym)
+        if _inst == 'metals':
+            _contract = 100.0
+            _pip_val  = 10.0
+            _approx_price = 3300.0
+        else:
+            _contract = 100000.0
+            _pip_val  = 10.0
+            _approx_price = 1.10
+
+        _margin_per_lot = (_contract * _approx_price) / _leverage
+        _risk_dollars   = _acct * _risk_pct / 100.0
+        _default_sl     = 150.0
+        _lot_estimate   = _risk_dollars / (_default_sl * _pip_val) if _default_sl > 0 else 0
+        _margin_needed  = _lot_estimate * _margin_per_lot
+
+        if _margin_needed > _acct * 0.95 and _strat_info_lbl:
+            _max_risk = (_acct * 0.95 / _margin_per_lot) * _default_sl * _pip_val / _acct * 100
+            _warn = (f"  ⚠ Margin: {_risk_pct}% risk ≈ {_lot_estimate:.2f} lots needs "
+                     f"${_margin_needed:,.0f} margin (1:{_leverage} {_inst}). "
+                     f"Max safe risk: {_max_risk:.1f}%")
+            _current = _strat_info_lbl.cget('text')
+            if '⚠ Margin:' not in _current:
+                _strat_info_lbl.configure(text=_current + f"\n{_warn}", fg=MIDGREY)
+    except Exception:
+        pass
+
 
 def _auto_fill_risk(strat_data):
     """Auto-fill risk management fields from strategy's saved risk_settings.

@@ -6,6 +6,13 @@
   "dd_reset_timezone": "CT",
   "typical_swap_xauusd_per_lot_per_night": 0.0,
   "leverage_by_size": {"50000": "N/A (futures)"},
+  "leverage_by_instrument": {
+    "forex": 30,
+    "metals": 10,
+    "indices": 10,
+    "energies": 5,
+    "crypto": 1
+  },
   "challenges": [
     {
       "challenge_id": "topstep_50k",

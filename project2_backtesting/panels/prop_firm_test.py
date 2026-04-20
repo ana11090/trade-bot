@@ -368,6 +368,40 @@ def _display_results(results, strategy_label):
     tk.Label(banner, text=f"Strategy: {strategy_label}",
              font=("Segoe UI", 9, "bold"), bg="#e8f5e9", fg="#2e7d32").pack(anchor="w")
 
+    # Leverage info line — show per-instrument leverage for each distinct firm
+    # WHY: Users need to know if tested lot sizes are margin-feasible.
+    # CHANGED: April 2026 — margin awareness in prop firm test
+    try:
+        from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+        import json, os
+        _pf_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'prop_firms'))
+        _seen_firms = set()
+        _lev_parts = []
+        for r in results:
+            _fid = r.get('firm_id') or r.get('firm_name', '')
+            if _fid in _seen_firms:
+                continue
+            _seen_firms.add(_fid)
+            _fname = r.get('firm_name', _fid)
+            _fpath = os.path.join(_pf_dir, f"{_fid}.json") if _fid else None
+            _fd = {}
+            if _fpath and os.path.isfile(_fpath):
+                try:
+                    with open(_fpath, encoding='utf-8') as _f:
+                        _fd = json.load(_f)
+                except Exception:
+                    pass
+            # Use XAUUSD as default instrument (most common backtest instrument)
+            _sym = 'XAUUSD'
+            _lev = get_leverage_for_symbol(_fd, _sym)
+            _inst = get_instrument_type(_sym)
+            _lev_parts.append(f"{_fname}: 1:{_lev} ({_inst})")
+        if _lev_parts:
+            tk.Label(banner, text="Leverage: " + "  |  ".join(_lev_parts),
+                     font=("Segoe UI", 8), bg="#e8f5e9", fg="#555555").pack(anchor="w")
+    except Exception:
+        pass
+
     # Table header
     header_frame = tk.Frame(_results_frame, bg="#f5f5f5", padx=10, pady=5)
     header_frame.pack(fill="x", padx=5)

@@ -4,6 +4,13 @@
   "website": "https://getleveraged.com",
   "market_type": "forex_cfd",
   "leverage": "1:30",
+  "leverage_by_instrument": {
+    "forex": 30,
+    "metals": 10,
+    "indices": 10,
+    "energies": 5,
+    "crypto": 1
+  },
 
   "drawdown_mechanics": {
     "_comment": "Leveraged-specific DD rules. Other firms will have their own structure.",

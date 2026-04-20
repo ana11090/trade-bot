@@ -708,6 +708,16 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         if account_size and risk_per_trade_pct > 0 and sl_pips > 0:
             risk_dollars = account_size * (risk_per_trade_pct / 100)
             lot_size = max(0.01, round(risk_dollars / (sl_pips * pip_value_per_lot), 2))
+            # WHY (leverage): Cap lot_size to what the account can margin.
+            #      A $10K account at 1:10 on XAUUSD (~$3300/oz, 100 oz/lot)
+            #      can hold max ~0.30 lots. Without this cap the backtest
+            #      counts trades the broker would physically reject.
+            # CHANGED: April 2026 — margin-aware lot sizing
+            if leverage > 0 and entry_price > 0:
+                margin_per_lot = (contract_size * entry_price) / leverage
+                max_lots_by_margin = (account_size * 0.95) / margin_per_lot
+                if lot_size > max_lots_by_margin:
+                    lot_size = max(0.01, round(max_lots_by_margin, 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -761,7 +771,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # WHY (Phase A.42): 0 = no limit; positive int = max trades
                  #      per calendar day, matching live EA's MaxTradesPerDay.
                  # CHANGED: April 2026 — Phase A.42
-                 max_trades_per_day=0):
+                 max_trades_per_day=0,
+                 # WHY (leverage): 0 = no margin check (backward compat).
+                 #      When > 0, lot size is capped so margin ≤ 95% of equity.
+                 #      contract_size is the number of base units per lot
+                 #      (100 oz for XAUUSD, 100000 for FX pairs).
+                 # CHANGED: April 2026 — margin-aware lot sizing
+                 leverage=0, contract_size=100.0):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1262,7 +1278,15 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if lot_size > 100.0:
                 log.warning(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
                             f"check account_size / risk_pct / sl_pips settings")
-            lot_size   = max(0.01, lot_size)
+            lot_size = max(0.01, lot_size)
+            # WHY (leverage): Same margin cap as vectorized path — see comment
+            #      above. Uses entry_price from this trade's fill.
+            # CHANGED: April 2026 — margin-aware lot sizing
+            if leverage > 0 and entry_price > 0:
+                _margin_per_lot = (contract_size * entry_price) / leverage
+                _max_lots = (account_size * 0.95) / _margin_per_lot
+                if lot_size > _max_lots:
+                    lot_size = max(0.01, round(_max_lots, 2))
             dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
         else:
             lot_size   = None
@@ -1321,7 +1345,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY (Phase A.42): 0 = no limit; positive int = max trades
                   #      per calendar day, matching live EA's MaxTradesPerDay.
                   # CHANGED: April 2026 — Phase A.42
-                  max_trades_per_day=0):
+                  max_trades_per_day=0,
+                  # WHY (leverage): 0 = no margin check (backward compat).
+                  # CHANGED: April 2026 — margin-aware lot sizing
+                  leverage=0, contract_size=100.0):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -1785,6 +1812,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
             risk_dollars = account_size * (risk_per_trade_pct / 100)
             lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot) if _sl_for_sizing > 0 else 0.01
             lot_size = max(0.01, round(lot_size, 2))
+            # WHY (leverage): Same margin cap as run_backtest.
+            # CHANGED: April 2026 — margin-aware lot sizing
+            if leverage > 0 and entry_price > 0:
+                _margin_per_lot = (contract_size * entry_price) / leverage
+                _max_lots = (account_size * 0.95) / _margin_per_lot
+                if lot_size > _max_lots:
+                    lot_size = max(0.01, round(_max_lots, 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -1996,7 +2030,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      selected rules instead of the legacy All+Top3+Top5
                           #      combos. Default False = pre-A.45 behavior.
                           # CHANGED: April 2026 — Phase A.45
-                          combine_all_rules=False):
+                          combine_all_rules=False,
+                          # WHY (leverage): Passed through to fast_backtest.
+                          #      0 = no margin check (backward compat).
+                          # CHANGED: April 2026 — margin-aware lot sizing
+                          leverage=0, contract_size=100.0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2386,6 +2424,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # WHY (Phase A.42): Enforce daily trade limit per user setting.
                 # CHANGED: April 2026 — Phase A.42
                 max_trades_per_day=max_trades_per_day,
+                # WHY (leverage): Pass margin constraints through.
+                # CHANGED: April 2026 — margin-aware lot sizing
+                leverage=leverage, contract_size=contract_size,
             )
             stats = compute_stats(trades)
 

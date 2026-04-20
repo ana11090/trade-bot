@@ -19,6 +19,44 @@ _PROJECT_ROOT = os.path.dirname(_SHARED_DIR)
 _PROP_FIRMS_DIR = os.path.join(_PROJECT_ROOT, "prop_firms")
 
 
+# ── Instrument-type and leverage utilities ────────────────────────────────────
+
+def get_instrument_type(symbol):
+    """Detect instrument type from symbol name.
+
+    WHY: Leverage varies by instrument type (metals 1:10, FX 1:30, etc.).
+         Need to look up the correct leverage for the traded symbol.
+    CHANGED: April 2026 — instrument-aware leverage
+    """
+    s = (symbol or '').upper()
+    if any(m in s for m in ('XAU', 'XAG', 'GOLD', 'SILVER', 'PLATINUM', 'PALLADIUM')):
+        return 'metals'
+    if any(i in s for i in ('US30', 'US500', 'NAS100', 'DAX', 'FTSE', 'NKY', 'SPX', 'NDX', 'DJ30')):
+        return 'indices'
+    if any(e in s for e in ('USOIL', 'UKOIL', 'BRENT', 'WTI', 'NGAS', 'XNGUSD')):
+        return 'energies'
+    if any(c in s for c in ('BTC', 'ETH', 'LTC', 'XRP', 'DOGE', 'SOL', 'ADA')):
+        return 'crypto'
+    return 'forex'
+
+
+def get_leverage_for_symbol(firm_data, symbol):
+    """Get leverage ratio for a specific symbol from a firm data dict.
+
+    Returns integer leverage (e.g. 10 for 1:10, 30 for 1:30).
+    CHANGED: April 2026 — instrument-aware leverage
+    """
+    inst_type = get_instrument_type(symbol)
+    leverage_map = firm_data.get('leverage_by_instrument', {}) if firm_data else {}
+    if leverage_map:
+        return int(leverage_map.get(inst_type, 30))
+    lev_str = (firm_data or {}).get('leverage', '1:30')
+    try:
+        return int(str(lev_str).split(':')[1])
+    except (IndexError, ValueError):
+        return 30
+
+
 # ── Data classes ──────────────────────────────────────────────────────────────
 
 @dataclass

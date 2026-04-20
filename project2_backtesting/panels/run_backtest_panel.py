@@ -687,10 +687,20 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # pip_size from instrument specs based on symbol
                     _cfg_symbol = _bt_cfg.get('symbol', 'XAUUSD')
                     _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
+                    # WHY (leverage): Derive leverage and contract_size from
+                    #      instrument type so margin-infeasible lots are capped.
+                    #      Uses conservative defaults by instrument class.
+                    # CHANGED: April 2026 — margin-aware lot sizing
+                    from shared.prop_firm_engine import get_instrument_type as _get_inst
+                    _inst_type = _get_inst(_cfg_symbol)
+                    _inst_lev_map = {'forex': 30, 'metals': 10, 'indices': 10, 'energies': 5, 'crypto': 1}
+                    _cfg_leverage = _inst_lev_map.get(_inst_type, 30)
+                    _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
                     output_text.insert(tk.END,
                         f"Config: spread={_cfg_spread}, commission={_cfg_commission}, "
                         f"account=${_cfg_account:,.0f}, risk={_cfg_risk_pct}%, "
-                        f"pip_value=${_cfg_pip_value}/lot, pip_size={_cfg_pip_size}\n\n"
+                        f"pip_value=${_cfg_pip_value}/lot, pip_size={_cfg_pip_size}, "
+                        f"leverage=1:{_cfg_leverage} ({_inst_type})\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")
@@ -703,6 +713,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _cfg_risk_pct = 1.0
                 _cfg_pip_value = 10.0
                 _cfg_pip_size = 0.01
+                _cfg_leverage = 0
+                _cfg_contract = 100.0
 
             # Update run settings with config details
             _run_settings['use_config'] = _a48_use_cfg
@@ -780,6 +792,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         account_size=_cfg_account,
                         risk_per_trade_pct=_cfg_risk_pct,
                         pip_value_per_lot=_cfg_pip_value,
+                        # WHY (leverage): Cap lots to margin capacity when
+                        #      config is loaded (0 = no cap otherwise).
+                        # CHANGED: April 2026 — margin-aware lot sizing
+                        leverage=_cfg_leverage,
+                        contract_size=_cfg_contract,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

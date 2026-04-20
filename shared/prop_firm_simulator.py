@@ -104,7 +104,8 @@ class SimulationSummary:
 # ── Profit rescaling ──────────────────────────────────────────────────────────
 
 def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
-                    default_sl_pips: float, pip_value_per_lot: float):
+                    default_sl_pips: float, pip_value_per_lot: float,
+                    leverage: int = 0, contract_size: float = 100.0):
     """
     Rescale trade profits using Pips column with fixed lot sizing.
     Daily DD management happens during simulation, not here.
@@ -115,6 +116,23 @@ def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
     risk_dollars = account_size * (risk_per_trade_pct / 100.0)
     lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
     lot_size = max(0.01, min(lot_size, 100.0))
+
+    # WHY (leverage): Cap lot size to margin capacity so the simulator
+    #      doesn't count trades that would be rejected by the broker.
+    #      avg_price is estimated from the trades DataFrame when available.
+    # CHANGED: April 2026 — margin-aware simulator
+    if leverage > 0:
+        _price_col = next((c for c in df.columns
+                           if c.lower() in ('entry_price', 'open', 'price')), None)
+        avg_price = float(df[_price_col].mean()) if _price_col else 0.0
+        if avg_price > 0:
+            margin_per_lot = (contract_size * avg_price) / leverage
+            max_lots = (account_size * 0.95) / margin_per_lot
+            if lot_size > max_lots:
+                old_lot = lot_size
+                lot_size = max(0.01, round(max_lots, 2))
+                print(f"[PROP SIM] Margin cap: {old_lot:.2f} → {lot_size:.2f} lots "
+                      f"(leverage 1:{leverage}, margin/lot ${margin_per_lot:,.0f})")
 
     # WHY (Phase 71 Fix 12): "Pips" check is case-sensitive. Brokers that
     #      export lowercase 'pips' silently fell through to the lot-scaling
