@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-20T11:33:53.100093",
+  "generated_at": "2026-04-20T15:43:55.890666",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-20 11:33:53",
+  "activated_at": "2026-04-20 15:43:55",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 4.4,
+  "analysis_time_s": 7.5,
   "trade_count": 1106,
   "feature_count": 629,
   "profile": {

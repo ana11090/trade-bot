@@ -670,7 +670,14 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             exit_pos = start + len(future_highs) - 1
             if exit_pos >= len(df):
                 exit_pos = len(df) - 1
-            exit_price = all_closes[exit_pos]
+            # WHY: MT5 TimeBased exit fires on the first tick of candle N+1,
+            #      which is effectively the OPEN of the next bar. Python was
+            #      using CLOSE of candle N. Use OPEN of N+1 to match MT5.
+            # CHANGED: April 2026 — match MT5 TimeBased exit convention
+            if exit_pos + 1 < len(all_opens):
+                exit_price = all_opens[exit_pos + 1]
+            else:
+                exit_price = all_closes[exit_pos]  # end of data fallback
             exit_time  = all_times[exit_pos]
             if _a282_max_candles is not None and (exit_pos - start + 1) >= _a282_max_candles:
                 exit_reason = "FIXED_MAX_CANDLES"

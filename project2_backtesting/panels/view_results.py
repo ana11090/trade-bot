@@ -139,11 +139,11 @@ def display_summary(output_text, summary_frame):
         cfg = load_config()
         account_size = float(cfg.get('starting_capital', '100000'))
         risk_pct = float(cfg.get('risk_pct', '1.0'))
-        pip_value = float(cfg.get('pip_value_per_lot', '10.0'))
+        pip_value = float(cfg.get('pip_value_per_lot', '1.0'))
     except Exception:
         account_size = 100000
         risk_pct = 1.0
-        pip_value = 10.0
+        pip_value = 1.0
 
     # WHY: Each strategy can have a different SL distance. Hardcoding 150 made
     #      the dollar display wrong for any strategy with SL ≠ 150.
@@ -636,7 +636,7 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     # CHANGED: April 2026 — save all rules' conditions
                     'conditions':        [c for _rule in r.get('rules', [])
                                          for c in _rule.get('conditions', [])],
-                    'spread_pips':       r.get('spread_pips', 2.5),
+                    'spread_pips':       r.get('spread_pips', 25.0),
                     'commission_pips':   r.get('commission_pips', 0.0),
                     'direction':         r.get('direction', ''),
                     'run_settings':      r.get('run_settings', {}),

@@ -211,7 +211,7 @@ def _on_strategy_select(event=None):
                 data = json.load(f)
             r = data['results'][idx]
             if _spread_var:
-                _spread_var.set(str(r.get('spread_pips', 2.5)))
+                _spread_var.set(str(r.get('spread_pips', 25.0)))
             if _commission_var:
                 _commission_var.set(str(r.get('commission_pips', 0.0)))
         except Exception:

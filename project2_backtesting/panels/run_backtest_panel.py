@@ -682,11 +682,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     from project2_backtesting.panels.configuration import load_config as _cfg_load
                     from project2_backtesting.panels.configuration import INSTRUMENT_SPECS as _cfg_specs
                     _bt_cfg = _cfg_load()
-                    _cfg_spread      = float(_bt_cfg.get('spread', 2.5))
+                    _cfg_spread      = float(_bt_cfg.get('spread', 25.0))
                     _cfg_commission  = float(_bt_cfg.get('commission', 0.0))
                     _cfg_account     = float(_bt_cfg.get('starting_capital', 100000))
                     _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
-                    _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 10.0))
+                    _cfg_pip_value   = float(_bt_cfg.get('pip_value_per_lot', 1.0))
                     _cfg_slippage    = 1.0  # 1 pip slippage — realistic for XAUUSD
                     # WHY: Config stores commission in dollars per lot (e.g. $4).
                     #      Backtester expects pips. Convert: pips = dollars / pip_value.
@@ -2629,13 +2629,20 @@ def build_panel(parent):
                 data = json.load(f)
 
             if isinstance(data, list):
-                if rule_index < len(data):
-                    data.pop(rule_index)
+                # List format (saved_rules.json): entries are {"id":..., "rule":{...}}
+                # Build win_indices matching the display filter (WIN + LOSS)
+                inner_rules = [entry.get('rule', entry) for entry in data]
+                win_indices = [i for i, r in enumerate(inner_rules)
+                               if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
+                if rule_index < len(win_indices):
+                    data.pop(win_indices[rule_index])
             else:
                 rules = data.get('rules', [])
                 # Rebuild win_indices fresh from current file contents
+                # WHY: Use same filter as display (WIN + LOSS) so index matches.
+                # CHANGED: April 2026 — match display filter for correct index
                 win_indices = [i for i, r in enumerate(rules)
-                               if r.get('prediction', 'WIN') == 'WIN']
+                               if r.get('prediction', 'WIN') in ('WIN', 'LOSS')]
                 if rule_index < len(win_indices):
                     actual_idx = win_indices[rule_index]
                     rules.pop(actual_idx)

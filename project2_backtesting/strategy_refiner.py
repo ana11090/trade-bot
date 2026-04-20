@@ -663,7 +663,7 @@ def load_strategy_list():
                             'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
                             'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
                             'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
-                            'spread_pips':       r.get('spread_pips', 2.5),
+                            'spread_pips':       r.get('spread_pips', 25.0),
                             'commission_pips':   r.get('commission_pips', 0.0),
                             'entry_tf':          r.get('entry_tf', ''),
                             # WHY (Phase A.48 fix): Trades are stripped from
@@ -739,7 +739,7 @@ def load_strategy_list():
                 'net_avg_pips':      net / len(opt_trades) if opt_trades else 0,
                 'net_profit_factor': 0,
                 'max_dd_pips':       0,
-                'spread_pips':       2.5,
+                'spread_pips':       25.0,
                 'commission_pips':   0.0,
                 'has_trades':        True,
                 'optimizer_trades':  opt_trades,
@@ -828,7 +828,7 @@ def load_strategy_list():
                         'net_avg_pips':      rule.get('avg_pips', 0),
                         'net_profit_factor': rule.get('net_profit_factor', 0),
                         'max_dd_pips':       rule.get('max_dd_pips', 0),
-                        'spread_pips':       2.5,
+                        'spread_pips':       25.0,
                         'commission_pips':   0.0,
                         'has_trades':        False,
                         'saved_rule':        rule,  # keep the original rule for loading
@@ -1350,11 +1350,11 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
             from project2_backtesting.panels.configuration import load_config
             _cfg = load_config()
             _sl_pips_eval = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
-            pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
+            pip_value     = float(_cfg.get('pip_value_per_lot', 1.0))
             risk_pct_cfg  = float(risk_pct) if risk_pct is not None else float(_cfg.get('risk_pct', 1.0))
         except Exception:
             _sl_pips_eval = float(sl_pips) if sl_pips is not None else 150.0
-            pip_value    = 10.0
+            pip_value    = 1.0
             risk_pct_cfg = float(risk_pct) if risk_pct is not None else 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
         lot_size      = max(0.01, risk_dollars / (_sl_pips_eval * pip_value)) if (_sl_pips_eval * pip_value) > 0 else 0.01
@@ -1407,11 +1407,11 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
             from project2_backtesting.panels.configuration import load_config
             _cfg = load_config()
             _sl_pips_fund = float(sl_pips) if sl_pips is not None else float(_cfg.get('default_sl_pips', 150))
-            pip_value     = float(_cfg.get('pip_value_per_lot', 10.0))
+            pip_value     = float(_cfg.get('pip_value_per_lot', 1.0))
             risk_pct_cfg  = float(risk_pct) if risk_pct is not None else float(_cfg.get('risk_pct', 1.0))
         except Exception:
             _sl_pips_fund = float(sl_pips) if sl_pips is not None else 150.0
-            pip_value    = 10.0
+            pip_value    = 1.0
             risk_pct_cfg = float(risk_pct) if risk_pct is not None else 1.0
         risk_dollars  = account_size * (risk_pct_cfg / 100)
         lot_size      = max(0.01, risk_dollars / (_sl_pips_fund * pip_value)) if (_sl_pips_fund * pip_value) > 0 else 0.01
@@ -1458,7 +1458,7 @@ def deep_optimize(
     base_rules,
     exit_strategies,
     pip_size=0.01,
-    spread_pips=2.5,
+    spread_pips=25.0,
     commission_pips=0.0,
     target_firm=None,
     account_size=100000,
@@ -1809,7 +1809,7 @@ def deep_optimize_generate(
     candles_path,
     timeframe=None,  # WHY: None = read from config. Don't default to H1.
     pip_size=0.01,
-    spread_pips=2.5,
+    spread_pips=25.0,
     commission_pips=0.0,
     target_firm=None,
     account_size=100000,

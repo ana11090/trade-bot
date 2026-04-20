@@ -258,6 +258,25 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
     except Exception as _a43_e:
         log.debug(f"[A.43] could not read regime filter for rule save: {_a43_e}")
 
+    # WHY: Bake broker specs (pip_value, spread, commission, contract_size) into
+    #      each rule at save time so all panels get consistent numbers regardless
+    #      of which config file is active when the rule is later loaded.
+    #      Only inject fields not already present in the rule (caller-set values win).
+    # CHANGED: April 2026 — Broker Specs Injection
+    _broker_specs: dict = {}
+    try:
+        _bs_cfg = _load_p1_config()
+        for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                        'contract_size', 'pip_size'):
+            _bs_val = _bs_cfg.get(_bs_key)
+            if _bs_val is not None:
+                try:
+                    _broker_specs[_bs_key] = float(_bs_val)
+                except (TypeError, ValueError):
+                    pass
+    except Exception as _bs_e:
+        log.debug(f"[BrokerSpecs] could not read broker specs for rule save: {_bs_e}")
+
     for r in rules:
         ok, _why, _sample = _why_invalid(r)
         if not ok:
@@ -273,7 +292,8 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
             #      the backtester can distinguish "old rule, no key →
             #      fall back to global config" from "new rule, key=None
             #      → filter was OFF at discovery, suppress filtering".
-            _r_to_save = {**r, 'regime_filter': _a43_conditions}
+            _bs_inject = {k: v for k, v in _broker_specs.items() if k not in r}
+            _r_to_save = {**r, **_bs_inject, 'regime_filter': _a43_conditions}
             _sr.save_rule(_r_to_save, source=source, notes=notes)
             seen_hashes.add(h)
             saved += 1

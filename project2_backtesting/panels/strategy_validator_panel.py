@@ -3533,7 +3533,7 @@ def build_panel(parent):
     tk.Label(com_row, text="Common:", font=("Segoe UI", 9, "bold"),
              bg=WHITE, fg=DARK, width=16, anchor="w").pack(side=tk.LEFT)
     _account_var = _field(com_row, "Account size ($):", "100000", 9)
-    _spread_var  = _field(com_row, "Spread:", "2.5", 5)
+    _spread_var  = _field(com_row, "Spread:", "25", 5)
     _comm_var    = _field(com_row, "Commission:", "0.0", 5)
 
     # Auto-update settings when firm/stage changes

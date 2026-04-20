@@ -800,7 +800,7 @@ def _start_optimization():
             if idx is not None:
                 for s in _strategies:
                     if s['index'] == idx:
-                        spread_pips = s.get('spread_pips', 2.5)
+                        spread_pips = s.get('spread_pips', 25.0)
                         commission_pips = s.get('commission_pips', 0.0)
                         selected_strategy_row = s
                         break
@@ -1237,7 +1237,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 trades,
                 account_size=acct,
                 risk_pct=risk,
-                pip_value=10.0,
+                pip_value=float(cand.get('pip_value_per_lot', _srp_pip_value)),
                 daily_dd_limit_pct=daily_limit,
                 total_dd_limit_pct=total_limit
             )
@@ -1742,6 +1742,25 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             except Exception as _rfe:
                 print(f"[OPTIMIZER SAVE] Could not embed regime conditions: {_rfe}")
 
+            # Inject broker specs into saved data (fields not already present win)
+            try:
+                import sys as _bs_sys
+                _bs_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                if _bs_p1_dir not in _bs_sys.path:
+                    _bs_sys.path.insert(0, _bs_p1_dir)
+                import config_loader as _bs_cl
+                _bs_cfg = _bs_cl.load()
+                for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                                'contract_size', 'pip_size'):
+                    _bs_val = _bs_cfg.get(_bs_key)
+                    if _bs_val is not None and _bs_key not in data:
+                        try:
+                            data[_bs_key] = float(_bs_val)
+                        except (TypeError, ValueError):
+                            pass
+            except Exception as _bse:
+                print(f"[OPTIMIZER SAVE] Could not embed broker specs: {_bse}")
+
             rid = save_rule(data, source=f"Optimizer: {n}", notes=str(f))
             messagebox.showinfo("Saved", f"Saved as #{rid}!")
         except Exception as e:
@@ -2003,6 +2022,24 @@ def _show_opt_results(candidates):
                     for rule in c.get('rules', []):
                         if rule.get('prediction') == 'WIN':
                             save_data['conditions'].extend(rule.get('conditions', []))
+                    # Inject broker specs (fields not already present)
+                    try:
+                        import sys as _bs2_sys
+                        _bs2_p1 = os.path.join(project_root, 'project1_reverse_engineering')
+                        if _bs2_p1 not in _bs2_sys.path:
+                            _bs2_sys.path.insert(0, _bs2_p1)
+                        import config_loader as _bs2_cl
+                        _bs2_cfg = _bs2_cl.load()
+                        for _bs2_k in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                                       'contract_size', 'pip_size'):
+                            _bs2_v = _bs2_cfg.get(_bs2_k)
+                            if _bs2_v is not None and _bs2_k not in save_data:
+                                try:
+                                    save_data[_bs2_k] = float(_bs2_v)
+                                except (TypeError, ValueError):
+                                    pass
+                    except Exception:
+                        pass
                     save_rule(save_data, source=f"Optimizer: {c.get('name', '?')}")
                     saved += 1
                 except Exception:
@@ -2102,11 +2139,11 @@ def _draw_monthly_chart(canvas, tooltip, trades):
         cfg = load_config()
         _acct_size = float(cfg.get('starting_capital', '100000'))
         _risk_pct = float(cfg.get('risk_pct', '1.0'))
-        _pip_value = float(cfg.get('pip_value_per_lot', '10.0'))
+        _pip_value = float(cfg.get('pip_value_per_lot', '1.0'))
     except Exception:
         _acct_size = 100000
         _risk_pct = 1.0
-        _pip_value = 10.0
+        _pip_value = 1.0
 
     canvas.delete("all")
     monthly = compute_monthly_pnl(trades, account_size=_acct_size,
@@ -2229,12 +2266,12 @@ def _update_drawdown_display(trades):
         _symbol   = (_cfg.get('symbol') or 'XAUUSD').upper()
         _spec     = INSTRUMENT_SPECS.get(_symbol, INSTRUMENT_SPECS.get('XAUUSD', {}))
         _pip_size = float(_spec.get('pip_size', 0.01))
-        _pip_val  = float(_cfg.get('pip_value_per_lot', _spec.get('pip_value', 10.0)))
+        _pip_val  = float(_cfg.get('pip_value_per_lot', _spec.get('pip_value', 1.0)))
         _risk_pct = float(_cfg.get('risk_pct', 1.0))
         _acct     = float(_cfg.get('starting_capital', 100000))
     except Exception:
         _pip_size = 0.01
-        _pip_val  = 10.0
+        _pip_val  = 1.0
         _risk_pct = 1.0
         _acct     = 100000
 
