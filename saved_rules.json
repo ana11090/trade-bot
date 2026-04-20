@@ -1107,5 +1107,74 @@
       "spread_pips": 2.5,
       "direction": "BUY"
     }
+  },
+  {
+    "id": 12,
+    "rule_id": "BUY_XX_8c_0420_d063_2",
+    "saved_at": "2026-04-20T23:53:25.042709",
+    "source": "ModeA:cov78%:tight0.000:winner=tightness",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "value": -116.272441
+        },
+        {
+          "feature": "M15_lower_shadow",
+          "operator": "<",
+          "value": 8.704
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "value": 19.53
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "value": 147.912935
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": "<",
+          "value": 73.67
+        },
+        {
+          "feature": "M5_lower_shadow",
+          "operator": "<",
+          "value": 4.766
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": "<",
+          "value": 4.494
+        }
+      ],
+      "prediction": "WIN",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 865,
+      "confidence": 0.7821,
+      "tightness_product": 0.0,
+      "pip_size": 0.01,
+      "data_source_id": "original",
+      "data_source_path": "",
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "prop_firm_name": "",
+      "leverage": 0,
+      "pip_value_per_lot": 1.0,
+      "spread_pips": 2.5,
+      "direction": "BUY"
+    }
   }
 ]
