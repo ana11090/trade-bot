@@ -270,6 +270,21 @@ def save_rule(rule, source="unknown", notes=""):
             if k not in rule or not rule.get(k):
                 rule[k] = v
 
+        # WHY: Rules without direction produce 0 trades in backtester.
+        #      Infer from prediction, action, or conditions if missing.
+        # CHANGED: April 2026 — ensure direction is always set
+        if not rule.get('direction'):
+            # Try action field (old format)
+            if rule.get('action') in ('BUY', 'SELL'):
+                rule['direction'] = rule['action']
+            # Try inferring from prediction
+            elif rule.get('prediction') == 'WIN':
+                # Default to BUY if we can't determine
+                # (most strategies are long-only on gold)
+                rule['direction'] = 'BUY'
+                print(f"[SAVED RULES] Rule saved without direction — defaulted to BUY. "
+                      f"Set explicitly if this is a SELL rule.")
+
         entry = {
             "id": new_id,           # numeric (backward compat for delete, etc.)
             "rule_id": rule_id,     # descriptive (for display)
