@@ -577,6 +577,25 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 progress_label.config(text="Error: no rules selected", fg="#dc3545")
                 return
 
+            # WHY: Saved rules have embedded firm data (prop_firm_name, leverage, etc.)
+            #      that was captured when the rule was saved. Use that firm data
+            #      instead of the dropdown or P1 config.
+            # CHANGED: April 2026 — use rule's embedded firm data for backtest
+            _rule_firm_name = None
+            _rule_firm_override = False
+            if selected_rules:
+                # Check first rule for embedded firm data
+                first_rule = selected_rules[0]
+                if first_rule.get('prop_firm_name'):
+                    _rule_firm_name = first_rule['prop_firm_name']
+                    _rule_firm_override = True
+                    output_text.insert(tk.END,
+                        f"📊 Using firm from saved rule: {_rule_firm_name}\n")
+                    output_text.see(tk.END)
+                    # Update dropdown to match (for display purposes)
+                    if _bt_firm_var:
+                        _bt_firm_var.set(_rule_firm_name)
+
             output_text.insert(tk.END, f"Testing {len(selected_rules)} selected rules x exit strategies\n\n")
             output_text.see(tk.END)
 
@@ -719,28 +738,39 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # WHY: P1 Run Scenarios is where the user selects their firm.
                     # CHANGED: April 2026 — P1 firm flows to P2 backtest
 
-                    # WHY: Firm dropdown was set at panel build time. If user
-                    #      changed firm in P1, the dropdown is stale. Re-read
-                    #      P1 config and update the dropdown before using it.
-                    # CHANGED: April 2026 — refresh firm from P1 at run time
-                    try:
-                        _p1_refresh_path = os.path.join(
-                            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                            'project1_reverse_engineering', 'config_loader.py')
-                        import importlib.util as _ilu_refresh
-                        _spec_refresh = _ilu_refresh.spec_from_file_location('_p1_refresh', _p1_refresh_path)
-                        _p1_mod_refresh = _ilu_refresh.module_from_spec(_spec_refresh)
-                        _spec_refresh.loader.exec_module(_p1_mod_refresh)
-                        _p1_cfg_refresh = _p1_mod_refresh.load()
-                        _p1_firm_refresh = _p1_cfg_refresh.get('prop_firm_name', '')
-                        if _p1_firm_refresh and _bt_firm_var:
-                            _bt_firm_var.set(_p1_firm_refresh)
-                            print(f"[BACKTEST] Refreshed firm from P1: {_p1_firm_refresh}")
-                    except Exception as _e_refresh:
-                        print(f"[BACKTEST] Could not refresh firm from P1: {_e_refresh}")
-
+                    # WHY: PRIORITY 1 — Use firm embedded in saved rule
+                    #      PRIORITY 2 — Refresh from P1 config if no rule firm
+                    # CHANGED: April 2026 — prioritize rule's firm over P1
                     _cfg_firm_data = {}
-                    _selected_firm_name = _bt_firm_var.get() if _bt_firm_var else ''
+                    _selected_firm_name = ''
+
+                    # Priority 1: Check if rules have embedded firm data
+                    if _rule_firm_override and _rule_firm_name:
+                        _selected_firm_name = _rule_firm_name
+                        print(f"[BACKTEST] Using firm from saved rule: {_selected_firm_name}")
+                    else:
+                        # Priority 2: Refresh from P1 config if no rule firm
+                        # WHY: Firm dropdown was set at panel build time. If user
+                        #      changed firm in P1, the dropdown is stale. Re-read
+                        #      P1 config and update the dropdown before using it.
+                        # CHANGED: April 2026 — refresh firm from P1 at run time
+                        try:
+                            _p1_refresh_path = os.path.join(
+                                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                'project1_reverse_engineering', 'config_loader.py')
+                            import importlib.util as _ilu_refresh
+                            _spec_refresh = _ilu_refresh.spec_from_file_location('_p1_refresh', _p1_refresh_path)
+                            _p1_mod_refresh = _ilu_refresh.module_from_spec(_spec_refresh)
+                            _spec_refresh.loader.exec_module(_p1_mod_refresh)
+                            _p1_cfg_refresh = _p1_mod_refresh.load()
+                            _p1_firm_refresh = _p1_cfg_refresh.get('prop_firm_name', '')
+                            if _p1_firm_refresh and _bt_firm_var:
+                                _bt_firm_var.set(_p1_firm_refresh)
+                                print(f"[BACKTEST] Refreshed firm from P1: {_p1_firm_refresh}")
+                        except Exception as _e_refresh:
+                            print(f"[BACKTEST] Could not refresh firm from P1: {_e_refresh}")
+
+                        _selected_firm_name = _bt_firm_var.get() if _bt_firm_var else ''
                     if _selected_firm_name and _selected_firm_name not in ('', 'None'):
                         _cfg_firm_data = _bt_firm_map.get(_selected_firm_name, {})
                     if not _cfg_firm_data:
@@ -779,6 +809,22 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                              'energies': 5, 'crypto': 1}
                         _cfg_leverage = _conservative_map.get(_inst_type, 30)
                     _cfg_contract = 100.0 if _inst_type == 'metals' else 100000.0
+
+                    # WHY: Saved rules have embedded leverage, pip_value, spread
+                    #      from when they were saved. Override config values with
+                    #      rule values so backtest uses exact same settings.
+                    # CHANGED: April 2026 — use rule's embedded backtest params
+                    if selected_rules:
+                        first_rule = selected_rules[0]
+                        if first_rule.get('leverage'):
+                            _cfg_leverage = int(first_rule['leverage'])
+                            print(f"[BACKTEST] Using leverage from rule: 1:{_cfg_leverage}")
+                        if first_rule.get('pip_value_per_lot'):
+                            _cfg_pip_value = float(first_rule['pip_value_per_lot'])
+                            print(f"[BACKTEST] Using pip value from rule: ${_cfg_pip_value}/lot")
+                        if first_rule.get('spread_pips'):
+                            _cfg_spread = float(first_rule['spread_pips'])
+                            print(f"[BACKTEST] Using spread from rule: {_cfg_spread} pips")
                     # WHY: Show leverage prominently — users need to confirm
                     #      that lot sizes are margin-capped for their firm.
                     # CHANGED: April 2026 — prominent leverage display
