@@ -1,0 +1,185 @@
+{
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": "<=",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_macd_std_diff",
+          "operator": "<=",
+          "value": 2.5631
+        },
+        {
+          "feature": "M5_bb_50_2_width",
+          "operator": ">",
+          "value": 0.7913
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.986,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.986,
+      "avg_pips": 480.6,
+      "action": "BUY",
+      "regime_filter": null
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": "<=",
+          "value": 0.6051
+        },
+        {
+          "feature": "H1_stoch_14_d",
+          "operator": ">",
+          "value": 18.6137
+        },
+        {
+          "feature": "M15_adx_21",
+          "operator": ">",
+          "value": 21.7328
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.889,
+      "coverage": 72,
+      "coverage_pct": 8.1,
+      "win_rate": 0.889,
+      "avg_pips": 301.4,
+      "action": "BUY",
+      "regime_filter": null
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5525
+        },
+        {
+          "feature": "M5_volume_ratio_20",
+          "operator": ">",
+          "value": 1.0015
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": ">",
+          "value": 13.2362
+        },
+        {
+          "feature": "H1_macd_fast_diff",
+          "operator": ">",
+          "value": -0.5668
+        },
+        {
+          "feature": "D1_day_of_month",
+          "operator": "<=",
+          "value": 6.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.875,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.875,
+      "avg_pips": 261.4,
+      "action": "BUY",
+      "regime_filter": null
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": ">",
+          "value": 30.3743
+        },
+        {
+          "feature": "M15_mass_index",
+          "operator": ">",
+          "value": 26.0426
+        },
+        {
+          "feature": "M15_roc_20",
+          "operator": "<=",
+          "value": -0.3725
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.871,
+      "coverage": 31,
+      "coverage_pct": 3.5,
+      "win_rate": 0.871,
+      "avg_pips": 390.6,
+      "action": "BUY",
+      "regime_filter": null
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": ">",
+          "value": 71.4269
+        },
+        {
+          "feature": "M5_atr_100",
+          "operator": "<=",
+          "value": 5.2248
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.905,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.905,
+      "avg_pips": 276.2,
+      "action": "BUY",
+      "regime_filter": null
+    }
+  ],
+  "discovery_method": "selected_subset"
+}
