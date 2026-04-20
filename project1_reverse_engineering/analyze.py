@@ -1619,6 +1619,25 @@ def run_analysis(feature_matrix_path=None):
             except Exception:
                 pass
 
+            # Read firm leverage for margin-aware lot sizing
+            # WHY: Firm info travels with each rule so P2 backtest and
+            #      EA generator know the leverage/risk/DD limits.
+            # CHANGED: April 2026 — firm info in discovery_settings
+            _a40a_leverage = 0
+            _a40a_contract = 100.0
+            try:
+                _a40a_firm_id = _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else ''
+                if _a40a_firm_id:
+                    from shared.prop_firm_engine import load_all_firms, get_leverage_for_symbol, get_instrument_type
+                    _a40a_firms = load_all_firms()
+                    if _a40a_firm_id in _a40a_firms:
+                        _a40a_sym = _a40a_cfg.get('symbol', 'XAUUSD') if _a40a_cfg else 'XAUUSD'
+                        _a40a_leverage = get_leverage_for_symbol(_a40a_firms[_a40a_firm_id].config, _a40a_sym)
+                        _a40a_inst_type = get_instrument_type(_a40a_sym)
+                        _a40a_contract = 100.0 if _a40a_inst_type == 'metals' else (1.0 if _a40a_inst_type == 'indices' else 100000.0)
+            except Exception:
+                pass
+
             for _ri, _r in enumerate(rules, 1):
                 _pred = str(_r.get('prediction', 'BUY'))
                 _action = str(_r.get('action', 'BUY'))
@@ -1639,6 +1658,10 @@ def run_analysis(feature_matrix_path=None):
                 _enriched['scenario'] = _a40a_scenario
                 _enriched['spread_pips'] = _a40a_spread
                 _enriched['commission_pips'] = _a40a_commission
+                _enriched['leverage'] = _a40a_leverage
+                _enriched['contract_size'] = _a40a_contract
+                _enriched['prop_firm_id'] = _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else ''
+                _enriched['prop_firm_name'] = _a40a_cfg.get('prop_firm_name', '') if _a40a_cfg else ''
                 # Discovery settings — what checkboxes/radio buttons were active
                 _enriched['discovery_settings'] = {
                     'regime_filter_enabled': _a40a_regime_enabled,
@@ -1649,6 +1672,10 @@ def run_analysis(feature_matrix_path=None):
                     'single_rule_mode_variant': str(_a40a_cfg.get('single_rule_mode_variant', 'a')) if _a40a_cfg else '',
                     'srm_dedup_correlated': str(_a40a_cfg.get('srm_a_dedup_correlated', 'false')).lower() == 'true' if _a40a_cfg else False,
                     'srm_winner_selection': str(_a40a_cfg.get('srm_a_winner_selection', 'tightness')) if _a40a_cfg else '',
+                    'prop_firm_id': _a40a_cfg.get('prop_firm_id', '') if _a40a_cfg else '',
+                    'prop_firm_name': _a40a_cfg.get('prop_firm_name', '') if _a40a_cfg else '',
+                    'prop_firm_stage': _a40a_cfg.get('prop_firm_stage', 'Evaluation') if _a40a_cfg else 'Evaluation',
+                    'prop_firm_account': _a40a_cfg.get('prop_firm_account', '10000') if _a40a_cfg else '10000',
                 }
                 # Wrap conditions as a 'rules' list (format downstream tools expect)
                 if not _enriched.get('rules'):

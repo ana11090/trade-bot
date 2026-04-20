@@ -704,13 +704,32 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     #      hardcoded map — ensures Get Leveraged 1:10 metals
                     #      (or any firm's actual value) is used.
                     # CHANGED: April 2026 — firm-specific leverage (Bug 3 fix)
-                    # WHY: Read firm from the panel's dropdown, not only from saved
-                    #      config — lets user change firm without opening Configuration.
-                    # CHANGED: April 2026 — firm from Run Backtest panel
+                    # Source 1: P1 config (single source of truth for firm selection)
+                    # Source 2: panel's _bt_firm_var (set from P1 at build time)
+                    # Source 3: P2 saved config fallback
+                    # WHY: P1 Run Scenarios is where the user selects their firm.
+                    # CHANGED: April 2026 — P1 firm flows to P2 backtest
                     _cfg_firm_data = {}
                     _selected_firm_name = _bt_firm_var.get() if _bt_firm_var else ''
-                    if _selected_firm_name and _selected_firm_name != "None \u2014 no margin cap":
+                    if _selected_firm_name and _selected_firm_name not in ('', 'None'):
                         _cfg_firm_data = _bt_firm_map.get(_selected_firm_name, {})
+                    if not _cfg_firm_data:
+                        try:
+                            _p1_bt_path = os.path.join(
+                                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                'project1_reverse_engineering', 'config_loader.py')
+                            import importlib.util as _ilu_bt
+                            _spec_bt = _ilu_bt.spec_from_file_location('_p1_cl_bt', _p1_bt_path)
+                            _p1_mod_bt = _ilu_bt.module_from_spec(_spec_bt)
+                            _spec_bt.loader.exec_module(_p1_mod_bt)
+                            _p1_cfg_bt = _p1_mod_bt.load()
+                            _p1_firm_id_bt = _p1_cfg_bt.get('prop_firm_id', '')
+                            if _p1_firm_id_bt:
+                                _all_bt_firms = _load_firms_bt()
+                                if _p1_firm_id_bt in _all_bt_firms:
+                                    _cfg_firm_data = _all_bt_firms[_p1_firm_id_bt].config
+                        except Exception:
+                            pass
                     if not _cfg_firm_data:
                         try:
                             _all_bt_firms = _load_firms_bt()
@@ -735,7 +754,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # CHANGED: April 2026 — prominent leverage display
                     _firm_display = (
                         _selected_firm_name
-                        if _selected_firm_name and _selected_firm_name != "None \u2014 no margin cap"
+                        if _selected_firm_name and _selected_firm_name not in ('', 'None')
                         else _bt_cfg.get('firm_name', 'No firm selected')
                     )
                     output_text.insert(tk.END,
@@ -2745,91 +2764,95 @@ def build_panel(parent):
     #      and know lot sizes are margin-capped for their specific account.
     #      Old flow required going to Configuration panel first.
     # CHANGED: April 2026 — prop firm selector in Run Backtest
+    # ── Prop Firm Info (from P1 Run Scenarios) ──────────────────────────────
+    # WHY: Firm is selected in P1 Run Scenarios — single source of truth.
+    #      Run Backtest reads and displays it; no duplicate selector needed.
+    # CHANGED: April 2026 — firm from P1 flows to P2
     global _bt_firm_var, _bt_firm_info_lbl, _bt_firm_map
 
     import glob as _bt_glob
     _bt_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     _bt_prop_dir = os.path.join(_bt_project_root, 'prop_firms')
-    _bt_firm_names = ["None \u2014 no margin cap"]
     _bt_firm_map = {}
     for _fp in sorted(_bt_glob.glob(os.path.join(_bt_prop_dir, '*.json'))):
         try:
             with open(_fp, encoding='utf-8') as _ff:
                 _fd = json.load(_ff)
-            _fname = _fd.get('firm_name', '?')
-            _bt_firm_names.append(_fname)
-            _bt_firm_map[_fname] = _fd
+            _bt_firm_map[_fd.get('firm_name', '?')] = _fd
         except Exception:
             pass
 
-    _bt_saved_firm = ''
+    # Read firm from P1 config
+    _p1_firm_name = ''
+    _p1_stage = 'Evaluation'
+    _p1_account = '10000'
+    try:
+        import importlib.util as _ilu
+        _p1_cl_path = os.path.join(_bt_project_root, 'project1_reverse_engineering', 'config_loader.py')
+        _spec = _ilu.spec_from_file_location('_p1_cl', _p1_cl_path)
+        _p1_cl_mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_p1_cl_mod)
+        _p1_cfg = _p1_cl_mod.load()
+        _p1_firm_name = _p1_cfg.get('prop_firm_name', '')
+        _p1_stage = _p1_cfg.get('prop_firm_stage', 'Evaluation')
+        _p1_account = _p1_cfg.get('prop_firm_account', '10000')
+    except Exception:
+        pass
+
+    # Also read P2 config for symbol
     _bt_saved_cfg_panel = {}
     try:
         from project2_backtesting.panels.configuration import load_config as _bt_lc
         _bt_saved_cfg_panel = _bt_lc()
-        _bt_saved_firm = _bt_saved_cfg_panel.get('firm_name', '')
     except Exception:
         pass
 
-    _bt_firm_var = tk.StringVar(
-        value=_bt_saved_firm if _bt_saved_firm in _bt_firm_names else "None \u2014 no margin cap")
-
-    firm_frame = tk.LabelFrame(panel, text="Prop Firm  (sets leverage for lot sizing)",
+    firm_frame = tk.LabelFrame(panel, text="Prop Firm (from P1 Run Scenarios)",
                                font=("Arial", 11, "bold"), bg="#ffffff", fg="#333",
                                padx=15, pady=10)
     firm_frame.pack(fill="x", padx=20, pady=(10, 5))
 
-    firm_row = tk.Frame(firm_frame, bg="#ffffff")
-    firm_row.pack(fill="x")
-    tk.Label(firm_row, text="Firm:", font=("Arial", 10, "bold"),
-             bg="#ffffff", fg="#333", width=8, anchor="w").pack(side=tk.LEFT)
-    _bt_firm_combo = ttk.Combobox(firm_row, textvariable=_bt_firm_var,
-                                  values=_bt_firm_names, state="readonly", width=28)
-    _bt_firm_combo.pack(side=tk.LEFT, padx=5)
-
-    _bt_firm_info_lbl = tk.Label(firm_frame, text="", font=("Segoe UI", 9),
-                                  bg="#ffffff", fg="#555555")
-    _bt_firm_info_lbl.pack(anchor="w", pady=(4, 0))
-
-    def _on_bt_firm_change(*_):
-        fname = _bt_firm_var.get()
-        if fname == "None \u2014 no margin cap" or fname not in _bt_firm_map:
-            _bt_firm_info_lbl.config(text="No margin cap \u2014 lot sizes from risk% only", fg="#999999")
-            return
-        _fd = _bt_firm_map[fname]
+    if _p1_firm_name and _p1_firm_name in _bt_firm_map:
+        _bt_firm_var = tk.StringVar(value=_p1_firm_name)
         try:
             from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+            _fd = _bt_firm_map[_p1_firm_name]
             _sym = _bt_saved_cfg_panel.get('symbol', 'XAUUSD') or 'XAUUSD'
             _lev = get_leverage_for_symbol(_fd, _sym)
             _inst = get_instrument_type(_sym)
-            _contract = 100.0 if _inst == 'metals' else (1.0 if _inst == 'indices' else 100000.0)
-            _acct = float(_bt_saved_cfg_panel.get('starting_capital', 10000) or 10000)
-            _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
-                              'US30': 40000, 'NAS100': 18000}
-            _price = _approx_prices.get(_sym.upper(), 3300 if _inst == 'metals' else 1.1)
-            _margin_per_lot = (_contract * _price) / _lev
-            _max_lots = (_acct * 0.90) / _margin_per_lot
-            _risk_pct = float(_bt_saved_cfg_panel.get('risk_pct', 1.0) or 1.0)
-            _sl = 150.0
-            _pip_val = 10.0
-            _risk_lots = (_acct * _risk_pct / 100) / (_sl * _pip_val)
-            if _risk_lots > _max_lots:
-                _max_safe = (_max_lots * _sl * _pip_val) / _acct * 100
-                _bt_firm_info_lbl.config(
-                    text=(f"Leverage: 1:{_lev} ({_inst})  |  Max lots: {_max_lots:.2f}  |  "
-                          f"Risk {_risk_pct}% = {_risk_lots:.2f} lots \u2192 CAPPED to {_max_lots:.2f}  |  "
-                          f"Max safe risk: {_max_safe:.1f}%"),
-                    fg="#e65100")
+            challenge = _fd.get('challenges', [{}])[0]
+            if _p1_stage.lower() == 'evaluation':
+                phase = challenge.get('phases', [{}])[0]
+                _dd_d = phase.get('max_daily_drawdown_pct', '?')
+                _dd_t = phase.get('max_total_drawdown_pct', '?')
+                _tgt = phase.get('profit_target_pct', '?')
             else:
-                _bt_firm_info_lbl.config(
-                    text=(f"Leverage: 1:{_lev} ({_inst})  |  Max lots: {_max_lots:.2f}  |  "
-                          f"Risk {_risk_pct}% = {_risk_lots:.2f} lots \u2014 OK"),
-                    fg="#2e7d32")
-        except Exception as _ei:
-            _bt_firm_info_lbl.config(text=f"Leverage: ? (error: {_ei})", fg="#e65100")
+                funded = challenge.get('funded', {})
+                _dd_d = funded.get('max_daily_drawdown_pct', '?')
+                _dd_t = funded.get('max_total_drawdown_pct', '?')
+                _tgt = None
+            row1 = tk.Frame(firm_frame, bg="#ffffff")
+            row1.pack(fill="x")
+            tk.Label(row1,
+                     text=f"{_p1_firm_name}  |  {_p1_stage}  |  ${float(_p1_account):,.0f}",
+                     font=("Segoe UI", 11, "bold"), bg="#ffffff", fg="#333").pack(side=tk.LEFT)
+            row2 = tk.Frame(firm_frame, bg="#ffffff")
+            row2.pack(fill="x", pady=(4, 0))
+            _lev_text = f"Leverage: 1:{_lev} ({_inst})  |  DD: {_dd_d}%/{_dd_t}%"
+            if _tgt:
+                _lev_text += f"  |  Target: {_tgt}%"
+            tk.Label(row2, text=_lev_text, font=("Segoe UI", 10),
+                     bg="#ffffff", fg="#e65100").pack(side=tk.LEFT)
+        except Exception as _e:
+            tk.Label(firm_frame, text=f"Error: {_e}",
+                     font=("Segoe UI", 9), bg="#ffffff", fg="#e65100").pack(anchor="w")
+    else:
+        _bt_firm_var = tk.StringVar(value="")
+        tk.Label(firm_frame,
+                 text="No firm selected \u2014 go to P1 Run Scenarios to select a prop firm",
+                 font=("Segoe UI", 10, "italic"), bg="#ffffff", fg="#999999").pack(anchor="w")
 
-    _bt_firm_var.trace_add("write", _on_bt_firm_change)
-    _on_bt_firm_change()
+    _bt_firm_info_lbl = None
 
     # ── Safety stops toggle ───────────────────────────────────────────────────
     # WHY: Lets user compare with/without safety stops enabled. Default ON

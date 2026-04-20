@@ -186,6 +186,138 @@ def build_panel(parent):
 
     _a40a_var.trace_add('write', _a40a_on_toggle)
 
+    # ── Prop Firm Target ────────────────────────────────────────────────────
+    # WHY: Firm determines leverage (for lot sizing), risk%, DD limits, and
+    #      account size. Saved in discovery_settings so every rule carries
+    #      the firm info to P2 backtest and EA generator.
+    # CHANGED: April 2026 — prop firm in P1 Run Scenarios
+    import json as _pf_json
+    import glob as _pf_glob
+    _pf_prop_dir = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', 'prop_firms'))
+    _pf_firm_names = ["None"]
+    _pf_firm_map = {}
+    for _pf_fp in sorted(_pf_glob.glob(os.path.join(_pf_prop_dir, '*.json'))):
+        try:
+            with open(_pf_fp, encoding='utf-8') as _pf_ff:
+                _pf_fd = _pf_json.load(_pf_ff)
+            _pf_name = _pf_fd.get('firm_name', '?')
+            _pf_firm_names.append(_pf_name)
+            _pf_firm_map[_pf_name] = _pf_fd
+        except Exception:
+            pass
+
+    _pf_frame = tk.LabelFrame(left_frame, text="Prop Firm Target",
+                              font=("Segoe UI", 11, "bold"), bg="#ffffff", fg="#333",
+                              padx=15, pady=10)
+    _pf_frame.pack(fill="x", pady=(0, 10))
+
+    _pf_row1 = tk.Frame(_pf_frame, bg="#ffffff")
+    _pf_row1.pack(fill="x")
+    tk.Label(_pf_row1, text="Firm:", font=("Segoe UI", 10, "bold"),
+             bg="#ffffff", fg="#333", width=8, anchor="w").pack(side=tk.LEFT)
+    _pf_firm_var = tk.StringVar(value=_cfg.get('prop_firm_name', '') or "None")
+    _pf_firm_combo = ttk.Combobox(_pf_row1, textvariable=_pf_firm_var,
+                                  values=_pf_firm_names, state="readonly", width=22)
+    _pf_firm_combo.pack(side=tk.LEFT, padx=5)
+    tk.Label(_pf_row1, text="Stage:", font=("Segoe UI", 10, "bold"),
+             bg="#ffffff", fg="#333").pack(side=tk.LEFT, padx=(10, 0))
+    _pf_stage_var = tk.StringVar(value=_cfg.get('prop_firm_stage', 'Evaluation'))
+    ttk.Combobox(_pf_row1, textvariable=_pf_stage_var,
+                 values=["Evaluation", "Funded"], state="readonly", width=12).pack(side=tk.LEFT, padx=5)
+
+    _pf_row2 = tk.Frame(_pf_frame, bg="#ffffff")
+    _pf_row2.pack(fill="x", pady=(4, 0))
+    tk.Label(_pf_row2, text="Account:", font=("Segoe UI", 10, "bold"),
+             bg="#ffffff", fg="#333", width=8, anchor="w").pack(side=tk.LEFT)
+    _pf_acct_var = tk.StringVar(value=_cfg.get('prop_firm_account', '10000'))
+    _pf_acct_combo = ttk.Combobox(_pf_row2, textvariable=_pf_acct_var,
+                                  values=["10000"], state="readonly", width=10)
+    _pf_acct_combo.pack(side=tk.LEFT, padx=5)
+
+    _pf_info_lbl = tk.Label(_pf_frame, text="", font=("Segoe UI", 9),
+                            bg="#ffffff", fg="#555", justify="left")
+    _pf_info_lbl.pack(anchor="w", pady=(6, 0))
+
+    def _pf_on_change(*_):
+        fname = _pf_firm_var.get()
+        stage = _pf_stage_var.get().lower()
+        if fname == "None" or fname not in _pf_firm_map:
+            _pf_info_lbl.config(text="No firm \u2014 backtest uses conservative margin defaults", fg="#999")
+            try:
+                _cl.save({'prop_firm_id': '', 'prop_firm_name': '',
+                          'prop_firm_stage': _pf_stage_var.get(),
+                          'prop_firm_account': _pf_acct_var.get()})
+            except Exception:
+                pass
+            return
+        fd = _pf_firm_map[fname]
+        # Update account sizes
+        try:
+            challenge = fd.get('challenges', [{}])[0]
+            sizes = challenge.get('account_sizes', [10000])
+            _pf_acct_combo['values'] = [str(s) for s in sizes]
+            if _pf_acct_var.get() not in [str(s) for s in sizes]:
+                _pf_acct_var.set(str(sizes[0]))
+        except Exception:
+            pass
+        # Get leverage
+        _lev, _inst = '?', '?'
+        try:
+            from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
+            _sym = _cfg.get('symbol', 'XAUUSD')
+            _lev = get_leverage_for_symbol(fd, _sym)
+            _inst = get_instrument_type(_sym)
+        except Exception:
+            pass
+        # Get DD limits and target
+        _dd_daily, _dd_total, _target = '?', '?', '?'
+        try:
+            challenge = fd.get('challenges', [{}])[0]
+            if stage == 'evaluation':
+                phase = challenge.get('phases', [{}])[0]
+                _dd_daily = phase.get('max_daily_drawdown_pct', '?')
+                _dd_total = phase.get('max_total_drawdown_pct', '?')
+                _target = phase.get('profit_target_pct', '?')
+            else:
+                funded = challenge.get('funded', {})
+                _dd_daily = funded.get('max_daily_drawdown_pct', '?')
+                _dd_total = funded.get('max_total_drawdown_pct', '?')
+                _target = None
+        except Exception:
+            pass
+        # Get risk from trading rules
+        _risk = 1.0
+        for rule in fd.get('trading_rules', []):
+            if rule.get('stage') not in (stage, 'both'):
+                continue
+            params = rule.get('parameters', {})
+            if rule.get('type') in ('eval_settings', 'eval_strategy'):
+                _risk = params.get('risk_pct_range', [0.8, 1.5])[0]
+                break
+            elif rule.get('type') == 'funded_accumulate':
+                _risk = params.get('risk_pct', params.get('risk_pct_range', [0.3, 0.5])[1])
+                break
+        parts = [f"Leverage: 1:{_lev} ({_inst})", f"Risk: {_risk}%"]
+        if _target:
+            parts.append(f"Target: {_target}%")
+        parts.append(f"DD: {_dd_daily}%/{_dd_total}%")
+        _pf_info_lbl.config(text="  |  ".join(parts), fg="#333")
+        try:
+            _cl.save({
+                'prop_firm_id': fd.get('firm_id', ''),
+                'prop_firm_name': fname,
+                'prop_firm_stage': _pf_stage_var.get(),
+                'prop_firm_account': _pf_acct_var.get(),
+            })
+        except Exception:
+            pass
+
+    _pf_firm_var.trace_add("write", _pf_on_change)
+    _pf_stage_var.trace_add("write", _pf_on_change)
+    _pf_acct_var.trace_add("write", _pf_on_change)
+    _pf_on_change()
+
     try:
         from shared.tooltip import add_tooltip as _a40a_tooltip
         _a40a_tooltip(

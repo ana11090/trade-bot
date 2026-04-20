@@ -182,6 +182,15 @@ DEFAULTS = {
     #      checkbox at the top of the Run Scenarios panel.
     # CHANGED: April 2026 — Phase A.40a
     'auto_save_discovered_rules':       'true',
+
+    # ── Prop Firm Target ──────────────────────────────────────────────────────
+    # WHY: Firm determines leverage (for lot sizing), risk%, DD limits, and
+    #      account size. Without these in DEFAULTS, load_config drops them.
+    # CHANGED: April 2026 — prop firm in P1 discovery
+    'prop_firm_id':         '',
+    'prop_firm_name':       '',
+    'prop_firm_stage':      'Evaluation',
+    'prop_firm_account':    '10000',
 }
 
 
