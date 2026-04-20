@@ -7,6 +7,7 @@ import os
 import json
 import tempfile
 import threading
+import hashlib
 from datetime import datetime
 
 _SAVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -113,6 +114,93 @@ def load_all():
     return []
 
 
+def _normalize_rule(rule):
+    """Consolidate duplicate keys in rule dict.
+
+    WHY: Rules from different sources use different key names for
+         the same data (exit_class vs exit_name, entry_tf vs
+         entry_timeframe, etc.). Normalize to canonical names.
+    CHANGED: April 2026 — duplicate key consolidation
+    """
+    # Canonical key names
+    if 'exit_class' in rule and 'exit_name' not in rule:
+        rule['exit_name'] = rule.pop('exit_class')
+    elif 'exit_class' in rule:
+        del rule['exit_class']
+
+    if 'exit_strategy_params' in rule and 'exit_params' not in rule:
+        rule['exit_params'] = rule.pop('exit_strategy_params')
+    elif 'exit_strategy_params' in rule:
+        del rule['exit_strategy_params']
+
+    if 'entry_tf' in rule and 'entry_timeframe' not in rule:
+        rule['entry_timeframe'] = rule.pop('entry_tf')
+    elif 'entry_tf' in rule:
+        del rule['entry_tf']
+
+    if 'action' in rule and 'direction' not in rule:
+        rule['direction'] = rule.pop('action')
+    elif 'action' in rule:
+        del rule['action']
+
+    return rule
+
+
+def update_rule_field(rule_id, field, value):
+    """Update a single field in a saved rule's rule dict.
+
+    WHY: Status/grade/score updates need atomic read-modify-write.
+         Used to track lifecycle: discovered → backtested → validated → deployed
+    CHANGED: April 2026 — lifecycle status tracking
+    """
+    with _save_lock:
+        all_rules = load_all()
+        for entry in all_rules:
+            # Support both numeric and string IDs
+            if entry.get('id') == rule_id or entry.get('rule_id') == rule_id:
+                entry['rule'][field] = value
+                break
+        _atomic_write_json(all_rules, _SAVE_PATH)
+
+    # Notify listeners after successful update
+    _notify_change('update', {'id': rule_id, 'field': field})
+
+
+def _generate_rule_id(rule):
+    """Generate a descriptive, unique rule ID.
+
+    Format: {direction}_{timeframe}_{N}c_{MMDD}_{hash4}
+    Example: BUY_M5_5c_0420_a7f3
+
+    WHY: Sequential IDs (#24) tell you nothing. This format
+         shows direction, timeframe, complexity, date, and
+         a unique hash — all at a glance.
+    CHANGED: April 2026 — descriptive rule IDs
+    """
+    # Direction
+    direction = rule.get('direction', rule.get('action', rule.get('prediction', 'UNK')))
+    if direction == 'WIN':
+        direction = 'BUY'  # legacy format
+    direction = direction.upper()[:4]
+
+    # Timeframe
+    tf = rule.get('entry_timeframe', rule.get('entry_tf', 'XX'))
+
+    # Number of conditions
+    conditions = rule.get('conditions', [])
+    n_conds = len(conditions) if isinstance(conditions, list) else 0
+
+    # Date (MMDD)
+    mmdd = datetime.now().strftime('%m%d')
+
+    # Short hash from conditions (4 hex chars)
+    # Makes ID unique even for rules with same direction/tf/date
+    cond_str = str(sorted(str(c) for c in conditions)) if conditions else str(rule)
+    hash4 = hashlib.md5(cond_str.encode()).hexdigest()[:4]
+
+    return f"{direction}_{tf}_{n_conds}c_{mmdd}_{hash4}"
+
+
 def save_rule(rule, source="unknown", notes=""):
     """
     Save a rule for later.
@@ -138,8 +226,53 @@ def save_rule(rule, source="unknown", notes=""):
         existing_ids = [r.get("id", 0) for r in all_rules if isinstance(r.get("id"), int)]
         new_id       = max(existing_ids, default=0) + 1
 
+        # WHY: Descriptive IDs like BUY_M5_5c_0420_a7f3 are more useful
+        #      than sequential numbers. Keep numeric id for backward compat
+        #      but add descriptive rule_id as the display name.
+        # CHANGED: April 2026 — descriptive rule IDs
+        rule_id = _generate_rule_id(rule)
+        # Handle duplicates (same rule saved twice in same day)
+        existing_rule_ids = [r.get("rule_id", "") for r in all_rules]
+        if rule_id in existing_rule_ids:
+            # Append counter: BUY_M5_5c_0420_a7f3_2
+            counter = 2
+            while f"{rule_id}_{counter}" in existing_rule_ids:
+                counter += 1
+            rule_id = f"{rule_id}_{counter}"
+
+        # WHY: Every rule must carry firm info and lifecycle status.
+        #      Fill missing fields from P1 config at save time.
+        # CHANGED: April 2026 — auto-enrich rules at save
+        _defaults = {
+            'status': 'discovered',  # discovered → backtested → validated → deployed
+            'grade': '',
+            'score': 0,
+            'prop_firm_name': '',
+            'leverage': 0,
+            'pip_value_per_lot': 1.0,
+            'spread_pips': 2.5,
+        }
+        try:
+            from project1_reverse_engineering.config_loader import ConfigLoader
+            _p1 = ConfigLoader('p1_config').load()
+            _defaults['prop_firm_name'] = _p1.get('prop_firm_name', '')
+            _defaults['leverage'] = int(_p1.get('prop_firm_leverage', 0))
+            _defaults['pip_value_per_lot'] = float(_p1.get('pip_value_per_lot', 1.0))
+            _defaults['spread_pips'] = float(_p1.get('spread', 2.5))
+        except Exception:
+            pass
+
+        # Normalize duplicate keys first
+        rule = _normalize_rule(rule)
+
+        # Apply defaults only if missing
+        for k, v in _defaults.items():
+            if k not in rule or not rule.get(k):
+                rule[k] = v
+
         entry = {
-            "id": new_id,
+            "id": new_id,           # numeric (backward compat for delete, etc.)
+            "rule_id": rule_id,     # descriptive (for display)
             "saved_at": datetime.now().isoformat(),
             "source": source,
             "notes": notes,
@@ -162,11 +295,18 @@ def save_rule(rule, source="unknown", notes=""):
 
 
 def delete_rule(rule_id):
-    """Delete a saved rule by ID."""
+    """Delete a saved rule by numeric ID or descriptive rule_id.
+
+    WHY: Support both old numeric IDs and new descriptive rule_ids
+         for backward compatibility.
+    CHANGED: April 2026 — support both ID types
+    """
     # Phase 73 Fix 40: Wrap load-modify-save in lock
     with _save_lock:
         all_rules = load_all()
-        all_rules = [r for r in all_rules if r.get("id") != rule_id]
+        # Support both numeric and string IDs
+        all_rules = [r for r in all_rules
+                     if r.get("id") != rule_id and r.get("rule_id") != rule_id]
 
         # CHANGED: April 2026 — atomic write (audit MED #67)
         _atomic_write_json(all_rules, _SAVE_PATH)
