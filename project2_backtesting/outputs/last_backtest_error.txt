@@ -1,15 +1,21 @@
-=== TK CALLBACK EXCEPTION ===
-Time:  2026-04-18T17:14:47.509263
+=== WORKER THREAD EXCEPTION ===
+Time:  2026-04-20T11:04:43.053338
 Type:  NameError
-Error: NameError("free variable 'e' referenced before assignment in enclosing scope")
+Error: NameError("name 'leverage' is not defined")
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1892, in __call__
-    return self.func(*args)
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 814, in callit
-    func(*args)
-  File "d:\traiding data\trade-bot\project2_backtesting\panels\strategy_validator_panel.py", line 2493, in <lambda>
-    text=f"Error: {e}", fg=RED))
-NameError: free variable 'e' referenced before assignment in enclosing scope
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 850, in run_in_thread
+    tf_results = run_comparison_matrix(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 2413, in run_comparison_matrix
+    trades = fast_backtest(
+             ^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 1536, in fast_backtest
+    return _vectorized_fixed_sltp_exits(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 716, in _vectorized_fixed_sltp_exits
+    if leverage > 0 and entry_price > 0:
+       ^^^^^^^^
+NameError: name 'leverage' is not defined
 
