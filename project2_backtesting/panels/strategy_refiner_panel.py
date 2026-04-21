@@ -3105,10 +3105,10 @@ def build_panel(parent):
         return text
 
     # Apply tooltips
-    add_tooltip(quick_rb, _build_quick_tooltip(), wraplength=450)
-    add_tooltip(quick_desc, _build_quick_tooltip(), wraplength=450)
-    add_tooltip(deep_rb, _build_deep_tooltip(), wraplength=450)
-    add_tooltip(deep_desc, _build_deep_tooltip(), wraplength=450)
+    add_tooltip(quick_rb, _build_quick_tooltip, wraplength=450)
+    add_tooltip(quick_desc, _build_quick_tooltip, wraplength=450)
+    add_tooltip(deep_rb, _build_deep_tooltip, wraplength=450)
+    add_tooltip(deep_desc, _build_deep_tooltip, wraplength=450)
 
     # ── Lock & protect mode ───────────────────────────────────────────────────
     # WHY: Sometimes you want to optimize ONLY the filters and leave the entry

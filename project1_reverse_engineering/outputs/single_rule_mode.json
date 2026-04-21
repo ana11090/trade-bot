@@ -17,9 +17,9 @@
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
-    "winner_selection": "tightness"
+    "winner_selection": "coverage"
   },
   "reason": "No usable feature columns produced candidate conditions.",
-  "generated_at": "2026-04-21T10:27:52.753849",
+  "generated_at": "2026-04-21T13:18:29.837206",
   "scenario": null
 }

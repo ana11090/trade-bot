@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-21T10:27:52.753849",
+  "generated_at": "2026-04-21T13:18:29.848618",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-21 10:27:52",
+  "activated_at": "2026-04-21 13:18:29",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 6.9,
+  "analysis_time_s": 6.3,
   "trade_count": 1106,
   "feature_count": 629,
   "profile": {
@@ -251,7 +251,9 @@
       "coverage_pct": 14.1,
       "win_rate": 0.784,
       "avg_pips": 239.1,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -287,7 +289,9 @@
       "coverage_pct": 5.2,
       "win_rate": 1.0,
       "avg_pips": 563.9,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -323,7 +327,9 @@
       "coverage_pct": 4.1,
       "win_rate": 0.917,
       "avg_pips": 282.8,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -354,7 +360,9 @@
       "coverage_pct": 3.2,
       "win_rate": 0.214,
       "avg_pips": 53.1,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -390,7 +398,9 @@
       "coverage_pct": 2.3,
       "win_rate": 1.0,
       "avg_pips": 199.6,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -426,7 +436,9 @@
       "coverage_pct": 2.8,
       "win_rate": 0.8,
       "avg_pips": 143.5,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -462,7 +474,9 @@
       "coverage_pct": 2.3,
       "win_rate": 0.9,
       "avg_pips": 441.4,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -498,7 +512,9 @@
       "coverage_pct": 2.8,
       "win_rate": 0.68,
       "avg_pips": 299.8,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -529,7 +545,9 @@
       "coverage_pct": 2.3,
       "win_rate": 0.8,
       "avg_pips": 156.4,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -560,7 +578,9 @@
       "coverage_pct": 2.4,
       "win_rate": 0.714,
       "avg_pips": 311.5,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -596,7 +616,9 @@
       "coverage_pct": 2.3,
       "win_rate": 0.7,
       "avg_pips": 85.2,
-      "action": "BUY"
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
   ],
   "clusters": [

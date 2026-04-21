@@ -886,6 +886,22 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _run_settings['starting_capital'] = float(_run_cfg.get('starting_capital', 10000))
             except Exception:
                 pass
+            # WHY: P1 config has firm-derived risk. Use if P2 not set.
+            # CHANGED: April 2026 — P1 risk fallback
+            if not _run_settings.get('risk_pct') or _run_settings['risk_pct'] == 1.0:
+                try:
+                    import importlib.util as _rp_ilu
+                    _rp_cl_path = os.path.join(project_root,
+                        'project1_reverse_engineering', 'config_loader.py')
+                    _rp_spec = _rp_ilu.spec_from_file_location('_rp_cl', _rp_cl_path)
+                    _rp_mod = _rp_ilu.module_from_spec(_rp_spec)
+                    _rp_spec.loader.exec_module(_rp_mod)
+                    _rp_p1 = _rp_mod.load()
+                    _p1_risk = float(_rp_p1.get('risk_pct', 0))
+                    if _p1_risk > 0:
+                        _run_settings['risk_pct'] = _p1_risk
+                except Exception:
+                    pass
             # WHY: Save leverage/firm in run_settings so View Results can
             #      include them in save_data → saved_rules.json → EA generator.
             # CHANGED: April 2026 — leverage flows through the pipeline

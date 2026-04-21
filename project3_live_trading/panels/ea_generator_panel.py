@@ -382,23 +382,82 @@ def _auto_fill_risk(strat_data):
     """
     rs = strat_data.get('risk_settings', {})
     if not rs:
-        # Fall back to backtest config for strategies without risk_settings
+        # WHY: P1 config has firm-derived risk. P2 config has user-set risk.
+        #      Try P1 first (firm-derived), then P2 (user-set).
+        # CHANGED: April 2026 — P1 config fallback for risk
         try:
-            cfg_path = os.path.join(project_root, 'project2_backtesting', 'backtest_config.json')
-            if os.path.exists(cfg_path):
-                with open(cfg_path, 'r', encoding='utf-8') as f:
-                    cfg = json.load(f)
+            import importlib.util as _rf_ilu
+            _rf_cl_path = os.path.join(project_root,
+                'project1_reverse_engineering', 'config_loader.py')
+            _rf_spec = _rf_ilu.spec_from_file_location('_rf_cl', _rf_cl_path)
+            _rf_mod = _rf_ilu.module_from_spec(_rf_spec)
+            _rf_spec.loader.exec_module(_rf_mod)
+            _rf_p1 = _rf_mod.load()
+            _p1_risk = float(_rf_p1.get('risk_pct', 0))
+            _p1_acct = int(float(_rf_p1.get('prop_firm_account', 0)))
+            _p1_firm = _rf_p1.get('prop_firm_name', '')
+            _p1_stage = _rf_p1.get('prop_firm_stage', '')
+            if _p1_risk > 0:
                 rs = {
-                    'risk_pct': float(cfg.get('risk_pct', 1.0)),
-                    'account_size': int(float(cfg.get('starting_capital', 10000))),
-                    'firm': '',
-                    'stage': '',
+                    'risk_pct': _p1_risk,
+                    'account_size': _p1_acct if _p1_acct > 0 else 10000,
+                    'firm': _p1_firm,
+                    'stage': _p1_stage,
                 }
         except Exception:
-            return
+            pass
+
+        if not rs:
+            try:
+                cfg_path = os.path.join(project_root, 'project2_backtesting', 'backtest_config.json')
+                if os.path.exists(cfg_path):
+                    with open(cfg_path, 'r', encoding='utf-8') as f:
+                        cfg = json.load(f)
+                    rs = {
+                        'risk_pct': float(cfg.get('risk_pct', 1.0)),
+                        'account_size': int(float(cfg.get('starting_capital', 10000))),
+                        'firm': '',
+                        'stage': '',
+                    }
+            except Exception:
+                return
 
     # Risk %
     risk = rs.get('risk_pct')
+
+    # WHY: If no risk in strategy or config, derive from prop firm trading rules.
+    #      Firm says risk_pct_range: [0.8, 1.5] for eval — use 0.8 (conservative).
+    # CHANGED: April 2026 — auto-fill risk from firm
+    if not risk:
+        try:
+            import sys as _rf_sys
+            _rf_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+            if _rf_p1_dir not in _rf_sys.path:
+                _rf_sys.path.insert(0, _rf_p1_dir)
+            import config_loader as _rf_cl
+            _rf_cfg = _rf_cl.load()
+            _rf_firm_id = _rf_cfg.get('prop_firm_id', '')
+            _rf_stage = _rf_cfg.get('prop_firm_stage', 'Evaluation').lower()
+            if _rf_firm_id:
+                from shared.prop_firm_engine import load_all_firms
+                _rf_firms = load_all_firms()
+                if _rf_firm_id in _rf_firms:
+                    _rf_data = _rf_firms[_rf_firm_id].config
+                    for _tr in _rf_data.get('trading_rules', []):
+                        if _tr.get('stage') not in (_rf_stage, 'both'):
+                            continue
+                        _params = _tr.get('parameters', {})
+                        if _tr.get('type') in ('eval_settings', 'eval_strategy'):
+                            risk = _params.get('risk_pct_range', [1.0])[0]
+                            print(f"[EA PANEL] Risk from firm rules ({_rf_stage}): {risk}%")
+                            break
+                        elif _tr.get('type') == 'funded_accumulate':
+                            risk = _params.get('risk_pct', 0.5)
+                            print(f"[EA PANEL] Risk from firm rules (funded): {risk}%")
+                            break
+        except Exception as _rfe:
+            print(f"[EA PANEL] Could not read firm risk: {_rfe}")
+
     if risk and _risk_var:
         _risk_var.set(str(risk))
 

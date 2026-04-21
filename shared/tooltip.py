@@ -13,7 +13,7 @@ class ToolTip:
 
     def __init__(self, widget, text, delay=400, wraplength=400):
         self.widget = widget
-        self.text = text
+        self._text_src = text  # str or callable() -> str for lazy evaluation
         self.delay = delay
         self.wraplength = wraplength
         self._tipwindow = None
@@ -68,7 +68,7 @@ class ToolTip:
             cursor="arrow",
             borderwidth=0,
         )
-        text_widget.insert("1.0", self.text)
+        text_widget.insert("1.0", self._text_src() if callable(self._text_src) else self._text_src)
         text_widget.config(state=tk.DISABLED)  # read-only
 
         # Calculate how tall the content would be

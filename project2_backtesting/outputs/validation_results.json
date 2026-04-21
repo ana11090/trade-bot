@@ -1,0 +1,34 @@
+{
+  "0": {
+    "strategy_index": 0,
+    "validated_at": "2026-04-21T13:50:39.904693",
+    "walk_forward": {
+      "windows": [],
+      "summary": {
+        "verdict": "INSUFFICIENT_DATA",
+        "windows_completed": 0,
+        "avg_out_wr": 0.0,
+        "avg_degradation": 0.0,
+        "edge_held_count": 0,
+        "edge_held_ratio": 0.0
+      }
+    },
+    "monte_carlo": null,
+    "slippage": null,
+    "live_firm_results": null,
+    "combined": {
+      "confidence_score": 40,
+      "grade": "D",
+      "verdicts": {
+        "walk_forward": "INSUFFICIENT_DATA",
+        "monte_carlo": "N/A",
+        "slippage": "N/A",
+        "live_firm": "N/A"
+      },
+      "recommendation": "Significant uncertainty. Consider refining strategy before prop firm testing.",
+      "warnings": [],
+      "avg_degradation": 0.0,
+      "edge_held_ratio": 0.0
+    }
+  }
+}

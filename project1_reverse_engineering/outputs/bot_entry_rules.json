@@ -8,299 +8,326 @@
         {
           "feature": "D1_distance_from_high",
           "operator": ">",
-          "value": 0.6427
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_cci_50",
+          "operator": "<=",
+          "value": 53.6611
+        },
+        {
+          "feature": "D1_cci_50",
+          "operator": ">",
+          "value": -117.7154
         },
         {
           "feature": "D1_candle_range",
           "operator": ">",
-          "value": 40.71
-        },
-        {
-          "feature": "M15_cmf",
-          "operator": ">",
-          "value": -0.0505
-        },
-        {
-          "feature": "D1_volume_ratio_20",
-          "operator": "<=",
-          "value": 1.3265
+          "value": 34.41
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.75,
-      "win_rate": 0.75,
-      "coverage": 60,
-      "coverage_pct": 13.8,
-      "train_win_rate": 0.85,
-      "train_coverage": 20,
-      "overfit_gap": 0.1,
+      "confidence": 0.787,
+      "win_rate": 0.787,
+      "coverage": 75,
+      "coverage_pct": 21.2,
+      "train_win_rate": 0.765,
+      "train_coverage": 34,
+      "overfit_gap": -0.022,
       "is_overfit": false,
-      "avg_pips": 160.2,
+      "avg_pips": 210.3,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 163
+      "n_real_trades_in_rule": 247,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
           "operator": ">",
-          "value": 0.6427
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_cci_50",
+          "operator": ">",
+          "value": 53.6611
         },
         {
           "feature": "D1_candle_range",
           "operator": ">",
-          "value": 40.71
+          "value": 25.04
         },
         {
-          "feature": "M15_cmf",
+          "feature": "D1_roc_50",
           "operator": ">",
-          "value": -0.0505
-        },
-        {
-          "feature": "D1_volume_ratio_20",
-          "operator": ">",
-          "value": 1.3265
+          "value": 5.6526
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.854,
-      "win_rate": 0.854,
-      "coverage": 41,
-      "coverage_pct": 9.4,
-      "train_win_rate": 1.0,
-      "train_coverage": 33,
-      "overfit_gap": 0.146,
+      "confidence": 0.78,
+      "win_rate": 0.78,
+      "coverage": 50,
+      "coverage_pct": 14.2,
+      "train_win_rate": 0.73,
+      "train_coverage": 37,
+      "overfit_gap": -0.05,
       "is_overfit": false,
-      "avg_pips": 271.4,
+      "avg_pips": 230.0,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 247
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_distance_from_high",
-          "operator": "<=",
-          "value": 0.6427
-        },
-        {
-          "feature": "D1_lower_shadow",
-          "operator": ">",
-          "value": 11.335
-        },
-        {
-          "feature": "H4_ema_100_distance",
-          "operator": ">",
-          "value": -0.6691
-        },
-        {
-          "feature": "M15_body_to_range_ratio",
-          "operator": "<=",
-          "value": 0.6908
-        },
-        {
-          "feature": "H4_cci_14",
-          "operator": "<=",
-          "value": 40.9962
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.706,
-      "win_rate": 0.706,
-      "coverage": 34,
-      "coverage_pct": 7.8,
-      "train_win_rate": 1.0,
-      "train_coverage": 26,
-      "overfit_gap": 0.294,
-      "is_overfit": true,
-      "avg_pips": 107.0,
-      "source": "bot_entry",
-      "entry_timeframe": "D1",
-      "action": "BUY",
-      "n_real_trades_in_rule": 84
+      "n_real_trades_in_rule": 205,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
         {
           "feature": "H4_distance_from_high",
           "operator": ">",
-          "value": 0.4175
+          "value": 0.3922
+        },
+        {
+          "feature": "H4_distance_from_high",
+          "operator": ">",
+          "value": 0.7194
+        },
+        {
+          "feature": "H1_volume_ratio_20",
+          "operator": ">",
+          "value": 0.7632
+        },
+        {
+          "feature": "M15_adx_14",
+          "operator": "<=",
+          "value": 37.0934
         },
         {
           "feature": "H4_candle_range",
           "operator": ">",
-          "value": 17.865
+          "value": 19.425
         },
         {
-          "feature": "H4_volume_ratio_20",
-          "operator": ">",
-          "value": 0.9475
-        },
-        {
-          "feature": "H4_upper_shadow",
+          "feature": "H1_cci_20",
           "operator": "<=",
-          "value": 2.82
+          "value": 34.6753
         },
         {
-          "feature": "H4_ichimoku_b",
+          "feature": "H4_ultimate_oscillator",
           "operator": ">",
-          "value": 1995.41
+          "value": 42.8988
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.6,
-      "win_rate": 0.6,
-      "coverage": 40,
-      "coverage_pct": 3.1,
-      "train_win_rate": 0.649,
-      "train_coverage": 37,
-      "overfit_gap": 0.049,
+      "confidence": 0.636,
+      "win_rate": 0.636,
+      "coverage": 55,
+      "coverage_pct": 5.0,
+      "train_win_rate": 0.556,
+      "train_coverage": 36,
+      "overfit_gap": -0.081,
       "is_overfit": false,
-      "avg_pips": 202.8,
+      "avg_pips": 262.9,
       "source": "bot_entry",
       "entry_timeframe": "H4",
       "action": "BUY",
-      "n_real_trades_in_rule": 76
+      "n_real_trades_in_rule": 92,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
         {
-          "feature": "M5_roc_20",
+          "feature": "D1_distance_from_high",
           "operator": "<=",
-          "value": -0.209
+          "value": 0.5875
         },
         {
-          "feature": "M15_mass_index",
-          "operator": "<=",
-          "value": 26.5297
-        },
-        {
-          "feature": "M5_rsi_7",
+          "feature": "D1_lower_shadow",
           "operator": ">",
-          "value": 14.0595
+          "value": 10.895
         },
         {
-          "feature": "M5_cci_14",
-          "operator": "<=",
-          "value": -17.5116
+          "feature": "H4_rsi_50",
+          "operator": ">",
+          "value": 45.5882
         },
         {
-          "feature": "M5_distance_to_rolling_level_786",
+          "feature": "H4_williams_r_28",
           "operator": "<=",
-          "value": -0.7137
+          "value": -31.3358
         },
         {
-          "feature": "M5_distance_to_swing_low",
+          "feature": "D1_mfi",
+          "operator": ">",
+          "value": 58.0161
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.682,
+      "win_rate": 0.682,
+      "coverage": 22,
+      "coverage_pct": 6.2,
+      "train_win_rate": 0.739,
+      "train_coverage": 23,
+      "overfit_gap": 0.057,
+      "is_overfit": false,
+      "avg_pips": 97.4,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 62,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_cci_50",
+          "operator": ">",
+          "value": 53.6611
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 25.04
+        },
+        {
+          "feature": "D1_roc_50",
           "operator": "<=",
-          "value": 0.1442
+          "value": 5.6526
+        },
+        {
+          "feature": "D1_distance_to_swing_high",
+          "operator": "<=",
+          "value": 3.8608
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.833,
+      "win_rate": 0.833,
+      "coverage": 12,
+      "coverage_pct": 3.4,
+      "train_win_rate": 1.0,
+      "train_coverage": 32,
+      "overfit_gap": 0.167,
+      "is_overfit": true,
+      "avg_pips": 68.4,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 69,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "H1_distance_from_high",
+          "operator": ">",
+          "value": 0.2156
+        },
+        {
+          "feature": "H1_distance_from_high",
+          "operator": ">",
+          "value": 0.3239
+        },
+        {
+          "feature": "M5_adx_14",
+          "operator": "<=",
+          "value": 14.0964
+        },
+        {
+          "feature": "H1_candle_range",
+          "operator": ">",
+          "value": 10.1
+        },
+        {
+          "feature": "D1_vwap_distance",
+          "operator": "<=",
+          "value": 0.2837
+        },
+        {
+          "feature": "H1_upper_shadow",
+          "operator": "<=",
+          "value": 5.775
+        },
+        {
+          "feature": "H4_keltner_width",
+          "operator": ">",
+          "value": 1.1922
+        },
+        {
+          "feature": "D1_dpo",
+          "operator": ">",
+          "value": -5.7775
         }
       ],
       "prediction": "WIN",
       "confidence": 0.625,
       "win_rate": 0.625,
-      "coverage": 24,
-      "coverage_pct": 1.9,
-      "train_win_rate": 0.871,
-      "train_coverage": 31,
-      "overfit_gap": 0.246,
-      "is_overfit": true,
-      "avg_pips": 181.0,
-      "source": "bot_entry",
-      "entry_timeframe": "M5",
-      "action": "BUY",
-      "n_real_trades_in_rule": 44
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M5_roc_20",
-          "operator": "<=",
-          "value": -0.209
-        },
-        {
-          "feature": "M15_mass_index",
-          "operator": ">",
-          "value": 26.5297
-        },
-        {
-          "feature": "M5_atr_100",
-          "operator": "<=",
-          "value": 4.2688
-        },
-        {
-          "feature": "M5_distance_to_swing_high",
-          "operator": ">",
-          "value": 0.48
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "operator": ">",
-          "value": 0.985
-        },
-        {
-          "feature": "D1_ema_200_distance",
-          "operator": ">",
-          "value": 11.4124
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.667,
-      "win_rate": 0.667,
-      "coverage": 6,
-      "coverage_pct": 0.5,
-      "train_win_rate": 0.7,
-      "train_coverage": 20,
-      "overfit_gap": 0.033,
+      "coverage": 8,
+      "coverage_pct": 0.8,
+      "train_win_rate": 0.708,
+      "train_coverage": 24,
+      "overfit_gap": 0.083,
       "is_overfit": false,
-      "avg_pips": 99.4,
+      "avg_pips": 86.1,
       "source": "bot_entry",
-      "entry_timeframe": "M5",
+      "entry_timeframe": "H1",
       "action": "BUY",
-      "n_real_trades_in_rule": 19
+      "n_real_trades_in_rule": 25,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
   ],
   "per_tf_summary": [
     {
       "tf": "M5",
       "status": "ok",
-      "n_rules": 2,
-      "n_train": 2937,
-      "n_test": 1259,
+      "n_rules": 0,
+      "n_train": 1554,
+      "n_test": 666,
       "n_features": 620
     },
     {
       "tf": "M15",
       "status": "ok",
       "n_rules": 0,
-      "n_train": 2833,
-      "n_test": 1215,
+      "n_train": 2329,
+      "n_test": 999,
       "n_features": 620
     },
     {
       "tf": "H1",
       "status": "ok",
-      "n_rules": 0,
-      "n_train": 2699,
-      "n_test": 1157,
+      "n_rules": 1,
+      "n_train": 2413,
+      "n_test": 1035,
       "n_features": 620
     },
     {
       "tf": "H4",
       "status": "ok",
       "n_rules": 1,
-      "n_train": 2965,
-      "n_test": 1272,
+      "n_train": 2583,
+      "n_test": 1108,
       "n_features": 620
     },
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 3,
-      "n_train": 1010,
-      "n_test": 434,
+      "n_rules": 4,
+      "n_train": 822,
+      "n_test": 353,
       "n_features": 620
     }
   ],

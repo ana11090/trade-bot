@@ -7,15 +7,15 @@
   "single_rule_mode_discovered": "{\"status\": \"no_candidates\", \"variant\": \"a\", \"reason\": \"No usable feature columns produced candidate conditions.\"}",
   "srm_a_target_coverage": "0.75",
   "srm_a_dedup_correlated": "true",
-  "srm_a_winner_selection": "tightness",
+  "srm_a_winner_selection": "coverage",
   "regime_filter_at_discovery": "true",
   "regime_filter_strictness": "strict",
   "srm_a_per_condition_coverage": "0.85",
   "srm_a_max_cardinality": "8",
   "bot_entry_max_rules": "28",
   "bot_entry_max_depth": "8",
-  "prop_firm_id": "the5ers",
-  "prop_firm_name": "The 5%ers",
+  "prop_firm_id": "leveraged",
+  "prop_firm_name": "Get Leveraged",
   "prop_firm_stage": "Evaluation",
   "prop_firm_account": "10000",
   "symbol": "XAUUSD",
@@ -58,6 +58,6 @@
   "pip_value_per_lot": "1.0",
   "spread": "25",
   "commission": "4.0",
-  "contract_size": "100.0",
-  "prop_firm_leverage": "0"
+  "contract_size": "100",
+  "prop_firm_leverage": "10"
 }

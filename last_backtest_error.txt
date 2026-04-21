@@ -1,11 +1,10 @@
 === WORKER THREAD EXCEPTION ===
-Time:  2026-04-20T18:25:44.691668
+Time:  2026-04-21T11:22:12.593040
 Type:  UnboundLocalError
-Error: UnboundLocalError("local variable '_cfg_firm_data' referenced before assignment")
+Error: UnboundLocalError("cannot access local variable 'selected_rules' where it is not associated with a value")
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "d:\traiding data\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 814, in run_in_thread
-    _run_settings['firm_id']       = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', '')) if _a48_use_cfg else ''
-UnboundLocalError: local variable '_cfg_firm_data' referenced before assignment
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 430, in run_in_thread
+UnboundLocalError: cannot access local variable 'selected_rules' where it is not associated with a value
 

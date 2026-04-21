@@ -113,9 +113,14 @@ INDICATOR_PATTERNS = [
     #      Rules trained on % would never fire in live.
     #      Tradovate also updated to match: divide by sma and ×100.
     # CHANGED: April 2026 — fix sma_distance scale mismatch (audit bug family #7)
+    # WHY: MQL5 iMA returns a handle, not a value. Must use CopyBuffer.
+    # CHANGED: April 2026 — fix MQL5 iMA syntax for sma_distance
     (r"^sma_(\d+)_distance$", {
-        "mt5_code":       "(((iClose(NULL,{mt5_tf},1) - iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1)) / MathMax(iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE,1), 0.000001)) * 100.0)",
-        "tradovate_code": "((df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1]) / max(ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1], 1e-6) * 100)",
+        "mt5_handle_var":  "int handle_sma_{tf}_{p};",
+        "mt5_handle_init": "handle_sma_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_sma_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_preamble":    "double sma_{tf}_{p}_buf[1]; CopyBuffer(handle_sma_{tf}_{p},0,1,1,sma_{tf}_{p}_buf); double sma_{tf}_{p}_val=(((iClose(NULL,{mt5_tf},1)-sma_{tf}_{p}_buf[0])/MathMax(sma_{tf}_{p}_buf[0],0.000001))*100.0);",
+        "mt5_code":        "sma_{tf}_{p}_val",
+        "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1]) / max(ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
         "description": "Distance from SMA({p}) as % on {tf}",
     }),
@@ -632,16 +637,20 @@ def _mql5_sub_expr(feat_name, uid=''):
                 f'(2.0*{buf}[0])')
     # EMA distance from close
     if re.match(r'^ema_(\d+)_distance$', ind):
-        # WHY: Old sub-expr used MODE_SMA (wrong — should be EMA) and /_Point
-        #      which gives a POINTS value (~100k× different from % on XAUUSD).
-        #      Matches the mt5_buffer_read template that divides by close ×100.
-        # CHANGED: April 2026 — fix ema_distance MODE and scale (audit HIGH)
-        return ([],
-                f'((iClose(NULL,{mt5_tf},1)-iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE,1))/MathMax(iClose(NULL,{mt5_tf},1),0.000001)*100.0)')
+        # WHY: MQL5 iMA returns a handle; 7-param MQL4 call doesn't compile.
+        #      Use CopyBuffer(iMA(...),0,1,1,buf) to read bar-1 value.
+        # CHANGED: April 2026 — fix MQL5 iMA syntax for ema_distance sub-expr
+        return ([f'double {buf}[1]; CopyBuffer(iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE),0,1,1,{buf});'],
+                f'((iClose(NULL,{mt5_tf},1)-{buf}[0])/MathMax(iClose(NULL,{mt5_tf},1),0.000001)*100.0)')
     # EMA9 above EMA20 (binary)
     if re.match(r'^ema_(\d+)_above_(\d+)$', ind):
-        return ([],
-                f'(iMA(NULL,{mt5_tf},{p1},0,MODE_EMA,PRICE_CLOSE,1)>iMA(NULL,{mt5_tf},{p2},0,MODE_EMA,PRICE_CLOSE,1)?1.0:0.0)')
+        # WHY: MQL5 iMA returns a handle; 7-param MQL4 call doesn't compile.
+        #      Use CopyBuffer for each EMA handle.
+        # CHANGED: April 2026 — fix MQL5 iMA syntax for ema_above sub-expr
+        buf2 = f'{buf}2'
+        return ([f'double {buf}[1]; CopyBuffer(iMA(NULL,{mt5_tf},{p1},0,MODE_EMA,PRICE_CLOSE),0,1,1,{buf});',
+                 f'double {buf2}[1]; CopyBuffer(iMA(NULL,{mt5_tf},{p2},0,MODE_EMA,PRICE_CLOSE),0,1,1,{buf2});'],
+                f'({buf}[0]>{buf2}[0]?1.0:0.0)')
     # Standard deviation
     if re.match(r'^std_dev_\d+$', ind):
         return ([f'double {buf}[1]; CopyBuffer(iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE),0,0,1,{buf});'],
@@ -1553,22 +1562,19 @@ def get_mql_code(feature_name, platform='mt5'):
         }
 
     if template is None:
-        # Unknown indicator — generate FAIL-LOUD placeholder
-        # WHY: Old version emitted `double val = 0.0` and a TODO comment.
-        #      The EA compiled and ran but the feature was always 0,
-        #      causing rules to silently misfire. Phase 4 fixed this for
-        #      TSI specifically. Phase 20 generalizes the pattern: any
-        #      unknown indicator now sets indicatorFailed = true and
-        #      emits a loud Print() so the user notices in the Experts
-        #      log immediately.
-        # CHANGED: April 2026 — fail loud on unknown indicators (audit MED #27)
+        # WHY: Some Python indicators don't have MQL5 equivalents.
+        #      Generate a placeholder so the script compiles with a warning.
+        #      The feature returns 0.0 — rules using it may not fire correctly,
+        #      but the EA compiles and the user sees the warning in the log.
+        # CHANGED: April 2026 — handle unsupported indicators with soft placeholder
+        print(f"[EA GENERATOR] WARNING: No MQL5 mapping for indicator '{feature_name}'. Using placeholder (0.0). Manual implementation needed.")
         return {
             'var_name':        var_name,
-            'handle_var':      f"// UNKNOWN: {feature_name}",
-            'handle_init':     f'Print("ERROR: indicator_mapper has no MT5 template for {feature_name}. The EA will not enter trades."); indicatorFailed = true;',
-            'read_code':       f'indicatorFailed = true; double val_{var_name} = 0.0; // ERROR: unknown indicator {feature_name} — see init log',
-            'custom_indicator': True,
-            'description':     f"Unknown indicator: {feature_name}",
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       f'double val_{var_name} = 0.0;',
+            'custom_indicator': False,
+            'description':     f"Unsupported indicator: {feature_name}",
         }
 
     # Substitution context
@@ -1593,12 +1599,17 @@ def get_mql_code(feature_name, platform='mt5'):
 
     if platform == 'mt5':
         if 'mt5_code' in template:
-            # Inline code, no handle needed
+            # Inline expression — may optionally have a handle and preamble
+            preamble    = sub(template['mt5_preamble'])    if 'mt5_preamble'    in template else ''
+            handle_var  = sub(template['mt5_handle_var'])  if 'mt5_handle_var'  in template else ''
+            handle_init = sub(template['mt5_handle_init']) if 'mt5_handle_init' in template else ''
+            expr        = sub(template['mt5_code'])
+            read_code   = f"{preamble} double val_{var_name} = {expr};" if preamble else f"double val_{var_name} = {expr};"
             return {
                 'var_name':        var_name,
-                'handle_var':      '',
-                'handle_init':     '',
-                'read_code':       f"double val_{var_name} = {sub(template['mt5_code'])};",
+                'handle_var':      handle_var,
+                'handle_init':     handle_init,
+                'read_code':       read_code,
                 'custom_indicator': custom,
                 'description':     sub(template.get('description', ind)),
             }

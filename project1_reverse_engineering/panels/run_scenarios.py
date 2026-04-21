@@ -336,6 +336,12 @@ def build_panel(parent):
                 'prop_firm_stage': _pf_stage_var.get(),
                 'prop_firm_account': _pf_acct_var.get(),
                 'prop_firm_leverage': str(_lev) if _lev != '?' else '0',
+                # WHY: Risk % from firm rules must be saved so backtest,
+                #      optimizer, and EA generator all use the same value.
+                # CHANGED: April 2026 — save risk to config
+                'risk_pct': str(_risk),
+                'dd_daily_pct': str(_dd_daily),
+                'dd_total_pct': str(_dd_total),
             }
             _cl.save(_save_data)
             _verify = _cl.load()

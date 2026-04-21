@@ -2502,7 +2502,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
             result = {
                 "rules":        combo["rules"],        # actual rule conditions for validator
-                "rule_combo":   combo["name"],
+                "rule_combo":   combo["name"] + '_' + hashlib.md5((exit_strat.name + str(exit_strat.params)).encode()).hexdigest()[:4],
                 "rule_indices": combo["indices"],
                 # WHY: Direction was only embedded in rule_combo name string
                 #      like "(BUY)". Downstream tools parsed the name to guess
