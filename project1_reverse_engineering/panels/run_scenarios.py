@@ -41,6 +41,17 @@ _stdout_lock = _threading.Lock()
 #          (audit Part D HIGH #90)
 _step1_run_cache = {}
 
+# WHY: run_in_background() is module-level (not a closure over build_run_scenarios_panel).
+#      Store live StringVar + map references here so the background thread can read
+#      the UI dropdowns' current values and force-save them before discovery begins.
+# CHANGED: April 2026 — force-save firm/data-source before run
+_ui_firm_var = None        # tk.StringVar — current firm name
+_ui_stage_var = None       # tk.StringVar — current stage
+_ui_acct_var = None        # tk.StringVar — current account size
+_ui_data_source_var = None # tk.StringVar — current data source display name
+_ui_firm_map = {}          # firm_name → firm dict
+_ui_source_map = {}        # source display name → {id, path}
+
 
 def build_panel(parent):
     global _data_status_frame
@@ -423,6 +434,18 @@ def build_panel(parent):
 
     _data_source_var.trace_add("write", _on_data_source_changed)
     _on_data_source_changed()  # show info for initial selection
+
+    # WHY: Expose live StringVars at module level so run_in_background()
+    #      (module-level, not a closure here) can read & force-save them.
+    # CHANGED: April 2026 — force-save firm/data-source before run
+    global _ui_firm_var, _ui_stage_var, _ui_acct_var, _ui_data_source_var
+    global _ui_firm_map, _ui_source_map
+    _ui_firm_var = _pf_firm_var
+    _ui_stage_var = _pf_stage_var
+    _ui_acct_var = _pf_acct_var
+    _ui_data_source_var = _data_source_var
+    _ui_firm_map = _pf_firm_map
+    _ui_source_map = _source_map
 
     # Import button
     def _import_new_source():
@@ -2610,6 +2633,50 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
         global _running
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+            # WHY: Force-save firm + data source from UI dropdowns before any
+            #      discovery step reads the config. _ui_* vars are module-level
+            #      references set by build_run_scenarios_panel so they survive
+            #      the scope boundary between build-time and run-time.
+            # CHANGED: April 2026 — force-save firm/data-source before run
+            try:
+                import config_loader as _pre_cl
+                _pre_save = {}
+
+                if _ui_firm_var is not None:
+                    _fname = _ui_firm_var.get()
+                    if _fname and _fname != "None" and _fname in _ui_firm_map:
+                        _fd = _ui_firm_map[_fname]
+                        _lev_pre = 0
+                        try:
+                            from shared.prop_firm_engine import get_leverage_for_symbol
+                            _lev_pre = get_leverage_for_symbol(_fd, 'XAUUSD')
+                        except Exception:
+                            pass
+                        _stage_pre = _ui_stage_var.get() if _ui_stage_var else 'Evaluation'
+                        _acct_pre  = _ui_acct_var.get()  if _ui_acct_var  else '10000'
+                        _pre_save.update({
+                            'prop_firm_id':      _fd.get('firm_id', ''),
+                            'prop_firm_name':    _fname,
+                            'prop_firm_stage':   _stage_pre,
+                            'prop_firm_account': _acct_pre,
+                            'prop_firm_leverage': str(_lev_pre) if _lev_pre else '0',
+                        })
+
+                if _ui_data_source_var is not None:
+                    _ds_name_pre = _ui_data_source_var.get()
+                    _ds_src_pre  = _ui_source_map.get(_ds_name_pre, {})
+                    if _ds_src_pre:
+                        _pre_save['data_source_id']   = _ds_src_pre['id']
+                        _pre_save['data_source_path'] = _ds_src_pre['path']
+
+                if _pre_save:
+                    _pre_cl.save(_pre_save)
+                    _verify_pre = _pre_cl.load()
+                    print(f"[RUN] Firm: {_verify_pre.get('prop_firm_name','?')} | "
+                          f"Data: {_verify_pre.get('data_source_id','?')}")
+            except Exception as _pre_e:
+                print(f"[RUN] Force-save warning: {_pre_e}")
 
             # WHY (Phase 56 Fix 2): Old code imported and ran legacy steps
             #      3-7 (label_trades, train_model, shap, extract_rules,
