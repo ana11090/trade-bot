@@ -577,7 +577,15 @@ def _display_results_inner(output_text, summary_frame, data, results,
             header_row = tk.Frame(card, bg=bg_color)
             header_row.pack(fill="x")
 
-            header_text = f"#{_global_idx+1}  {r.get('rule_combo', '?')}  ×  {r.get('exit_strategy', '?')}"
+            # WHY: Show descriptive rule ID instead of generic #N.
+            # CHANGED: April 2026 — descriptive rule ID in View Results
+            _vr_combo = r.get('rule_combo', '?')
+            if _vr_combo.startswith('#') and r.get('rules'):
+                _vr_first = r['rules'][0] if isinstance(r['rules'], list) and r['rules'] else {}
+                _vr_rid = _vr_first.get('_saved_rule_id', _vr_first.get('rule_id', ''))
+                if _vr_rid:
+                    _vr_combo = _vr_combo.replace(_vr_combo.split(' ')[0], _vr_rid, 1)
+            header_text = f"#{_global_idx+1}  {_vr_combo}  ×  {r.get('exit_strategy', '?')}"
             tk.Label(header_row, text=header_text, bg=bg_color, fg="#333",
                      font=("Arial", 10, "bold")).pack(side=tk.LEFT)
 
@@ -615,6 +623,16 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     tk.Label(header_row, text=_bt, bg=_bc, fg="white",
                              font=("Arial", 7, "bold"), padx=3, pady=0
                              ).pack(side=tk.LEFT, padx=(3, 0))
+
+            # Data source badge
+            # WHY: User needs to see which data was used for this result.
+            # CHANGED: April 2026 — data source badge
+            _vr_ds = (r.get('run_settings', {}).get('data_source_id', '') or
+                      r.get('data_source_id', ''))
+            if _vr_ds and _vr_ds != 'original':
+                tk.Label(header_row, text=f"📊 {_vr_ds}", bg="#17a2b8", fg="white",
+                         font=("Arial", 7, "bold"), padx=3, pady=0
+                         ).pack(side=tk.LEFT, padx=(3, 0))
 
             # Save button
             try:
@@ -655,6 +673,8 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     'commission_pips':   r.get('commission_pips', 0.0),
                     'direction':         r.get('direction', ''),
                     'run_settings':      r.get('run_settings', {}),
+                    'data_source_id':    r.get('run_settings', {}).get('data_source_id', '') or r.get('data_source_id', ''),
+                    'data_source_path':  r.get('run_settings', {}).get('data_source_path', '') or r.get('data_source_path', ''),
                     'signals_before_regime_filter': r.get('signals_before_regime_filter', 0),
                     'signals_after_regime_filter':  r.get('signals_after_regime_filter', 0),
                 }
@@ -663,10 +683,13 @@ def _display_results_inner(output_text, summary_frame, data, results,
                 #      Rules panel can read them without digging into run_settings.
                 # CHANGED: April 2026 — leverage in save_data
                 _sv_run = r.get('run_settings', {})
-                save_data['leverage']      = _sv_run.get('leverage', 0)
-                save_data['contract_size'] = _sv_run.get('contract_size', 100.0)
-                save_data['firm_id']       = _sv_run.get('firm_id', '')
-                save_data['firm_name']     = _sv_run.get('firm_name', '')
+                save_data['leverage']        = _sv_run.get('leverage', 0)
+                save_data['contract_size']   = _sv_run.get('contract_size', 100.0)
+                save_data['firm_id']         = _sv_run.get('firm_id', '')
+                save_data['firm_name']       = _sv_run.get('firm_name', '')
+                save_data['data_source_id']  = _sv_run.get('data_source_id', '') or r.get('data_source_id', '')
+                save_data['data_source_path'] = _sv_run.get('data_source_path', '') or r.get('data_source_path', '')
+                save_data['prop_firm_name']  = _sv_run.get('firm_name', '')
 
                 # Embed regime filter conditions into each rule (Phase A.43)
                 # WHY: Per-rule regime_filter key enables the backtester's
