@@ -543,17 +543,57 @@ def build_panel(parent):
         source_names = [s['name'] for s in sources]
         source_map = {s['name']: s for s in sources}
 
-        from tkinter import simpledialog
-        src1_name = simpledialog.askstring("Source 1",
-            f"Compare which source?\nAvailable: {', '.join(source_names)}",
-            initialvalue=source_names[0], parent=data_frame)
-        if not src1_name or src1_name not in source_map:
+        # WHY: Dropdowns instead of text boxes — user can't mistype.
+        # CHANGED: April 2026 — dropdown selection dialog
+        _pick_win = Toplevel()
+        _pick_win.title("Compare Data Sources")
+        _pick_win.geometry("400x180")
+        _pick_win.resizable(False, False)
+        _pick_win.grab_set()
+
+        tk.Label(_pick_win, text="Select two data sources to compare:",
+                 font=("Segoe UI", 11, "bold"), pady=10).pack()
+
+        _row1 = tk.Frame(_pick_win)
+        _row1.pack(fill="x", padx=20, pady=5)
+        tk.Label(_row1, text="Source A:", font=("Segoe UI", 10), width=10, anchor="w").pack(side=tk.LEFT)
+        _src1_var = tk.StringVar(value=source_names[0])
+        ttk.Combobox(_row1, textvariable=_src1_var, values=source_names,
+                     state="readonly", width=30).pack(side=tk.LEFT, padx=5)
+
+        _row2 = tk.Frame(_pick_win)
+        _row2.pack(fill="x", padx=20, pady=5)
+        tk.Label(_row2, text="Source B:", font=("Segoe UI", 10), width=10, anchor="w").pack(side=tk.LEFT)
+        _src2_var = tk.StringVar(value=source_names[1] if len(source_names) > 1 else source_names[0])
+        ttk.Combobox(_row2, textvariable=_src2_var, values=source_names,
+                     state="readonly", width=30).pack(side=tk.LEFT, padx=5)
+
+        _result = [None, None]
+
+        def _ok():
+            _result[0] = _src1_var.get()
+            _result[1] = _src2_var.get()
+            _pick_win.destroy()
+
+        def _cancel():
+            _pick_win.destroy()
+
+        _btn_row = tk.Frame(_pick_win)
+        _btn_row.pack(pady=15)
+        tk.Button(_btn_row, text="Compare", command=_ok,
+                  bg="#6f42c1", fg="white", font=("Segoe UI", 10, "bold"),
+                  padx=20, pady=5).pack(side=tk.LEFT, padx=5)
+        tk.Button(_btn_row, text="Cancel", command=_cancel,
+                  font=("Segoe UI", 10), padx=20, pady=5).pack(side=tk.LEFT, padx=5)
+
+        _pick_win.wait_window()
+
+        src1_name = _result[0]
+        src2_name = _result[1]
+        if not src1_name or not src2_name or src1_name not in source_map or src2_name not in source_map:
             return
-        remaining = [n for n in source_names if n != src1_name]
-        src2_name = simpledialog.askstring("Source 2",
-            f"Against which source?\nAvailable: {', '.join(remaining)}",
-            initialvalue=remaining[0] if remaining else '', parent=data_frame)
-        if not src2_name or src2_name not in source_map:
+        if src1_name == src2_name:
+            messagebox.showwarning("Same Source", "Please select two different data sources.")
             return
 
         src1 = source_map[src1_name]
