@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-21T13:18:29.848618",
+  "generated_at": "2026-04-21T15:11:26.748875",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-21 13:18:29",
+  "activated_at": "2026-04-21 15:11:26",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 6.3,
+  "analysis_time_s": 5.8,
   "trade_count": 1106,
   "feature_count": 629,
   "profile": {
@@ -220,75 +220,27 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
-          "operator": ">",
-          "value": 5.4025
-        },
-        {
-          "feature": "M5_sma_50_distance",
-          "operator": ">",
-          "value": -0.3194
-        },
-        {
-          "feature": "D1_adx_21",
-          "operator": ">",
-          "value": 21.8789
-        },
-        {
-          "feature": "M5_distance_to_rolling_level_786",
-          "operator": ">",
-          "value": -0.4726
-        },
-        {
-          "feature": "M5_atr_14",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": "<=",
-          "value": 6.0751
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.784,
-      "coverage": 125,
-      "coverage_pct": 14.1,
-      "win_rate": 0.784,
-      "avg_pips": 239.1,
-      "action": "BUY",
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
+          "value": -0.4549
+        },
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M15_cmf",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.0748
         },
         {
-          "feature": "M5_sma_50_distance",
-          "operator": "<=",
-          "value": -0.3194
-        },
-        {
-          "feature": "M5_candle_range",
+          "feature": "H4_lower_shadow",
           "operator": ">",
-          "value": 9.615
-        },
-        {
-          "feature": "M5_kst_signal",
-          "operator": ">",
-          "value": -8.3731
-        },
-        {
-          "feature": "H4_ema_100_distance",
-          "operator": "<=",
-          "value": 3.467
+          "value": 7.83
         }
       ],
       "prediction": "WIN",
       "confidence": 1.0,
-      "coverage": 46,
-      "coverage_pct": 5.2,
+      "coverage": 44,
+      "coverage_pct": 12.5,
       "win_rate": 1.0,
-      "avg_pips": 563.9,
+      "avg_pips": 529.8,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -296,37 +248,22 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": "<=",
-          "value": 5.4025
+          "value": -0.4549
         },
         {
-          "feature": "H1_lower_shadow",
-          "operator": ">",
-          "value": 1.365
-        },
-        {
-          "feature": "H1_adx_28",
-          "operator": ">",
-          "value": 14.3995
-        },
-        {
-          "feature": "H4_vwap_distance",
+          "feature": "M15_cmf",
           "operator": "<=",
-          "value": 0.1416
-        },
-        {
-          "feature": "H4_upper_shadow",
-          "operator": "<=",
-          "value": 3.125
+          "value": -0.0748
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.917,
-      "coverage": 36,
-      "coverage_pct": 4.1,
-      "win_rate": 0.917,
-      "avg_pips": 282.8,
+      "confidence": 0.743,
+      "coverage": 35,
+      "coverage_pct": 9.9,
+      "win_rate": 0.743,
+      "avg_pips": 332.4,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -334,70 +271,27 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.4549
         },
         {
-          "feature": "M5_sma_50_distance",
+          "feature": "M5_williams_r_28",
           "operator": ">",
-          "value": -0.3194
+          "value": -15.1196
         },
         {
-          "feature": "D1_adx_21",
+          "feature": "M15_aroon_up",
           "operator": "<=",
-          "value": 21.8789
-        },
-        {
-          "feature": "M5_cmf",
-          "operator": ">",
-          "value": 0.0372
-        }
-      ],
-      "prediction": "LOSS",
-      "confidence": 0.786,
-      "coverage": 28,
-      "coverage_pct": 3.2,
-      "win_rate": 0.214,
-      "avg_pips": 53.1,
-      "action": "BUY",
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M15_std_dev_20",
-          "operator": ">",
-          "value": 5.4025
-        },
-        {
-          "feature": "M5_sma_50_distance",
-          "operator": "<=",
-          "value": -0.3194
-        },
-        {
-          "feature": "M5_candle_range",
-          "operator": "<=",
-          "value": 9.615
-        },
-        {
-          "feature": "M15_ultimate_oscillator",
-          "operator": "<=",
-          "value": 42.939
-        },
-        {
-          "feature": "D1_adx_21",
-          "operator": "<=",
-          "value": 29.4516
+          "value": 90.0
         }
       ],
       "prediction": "WIN",
       "confidence": 1.0,
-      "coverage": 20,
-      "coverage_pct": 2.3,
+      "coverage": 22,
+      "coverage_pct": 6.2,
       "win_rate": 1.0,
-      "avg_pips": 199.6,
+      "avg_pips": 457.9,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -405,37 +299,37 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.4549
         },
         {
-          "feature": "M5_sma_50_distance",
-          "operator": ">",
-          "value": -0.3194
-        },
-        {
-          "feature": "D1_adx_21",
+          "feature": "M5_williams_r_28",
           "operator": "<=",
-          "value": 21.8789
+          "value": -15.1196
         },
         {
-          "feature": "M5_cmf",
+          "feature": "M5_stoch_21_d",
           "operator": "<=",
-          "value": 0.0372
+          "value": 40.952
         },
         {
-          "feature": "H4_candle_body",
+          "feature": "D1_bb_20_2_upper",
           "operator": ">",
-          "value": 16.545
+          "value": 4349.2173
+        },
+        {
+          "feature": "M5_roc_50",
+          "operator": ">",
+          "value": -0.0232
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.8,
-      "coverage": 25,
-      "coverage_pct": 2.8,
-      "win_rate": 0.8,
-      "avg_pips": 143.5,
+      "confidence": 1.0,
+      "coverage": 21,
+      "coverage_pct": 6.0,
+      "win_rate": 1.0,
+      "avg_pips": 289.4,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -443,37 +337,37 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.4549
         },
         {
-          "feature": "M5_sma_50_distance",
+          "feature": "M5_williams_r_28",
           "operator": "<=",
-          "value": -0.3194
+          "value": -15.1196
         },
         {
-          "feature": "M5_candle_range",
+          "feature": "M5_stoch_21_d",
           "operator": ">",
-          "value": 9.615
+          "value": 40.952
         },
         {
-          "feature": "M5_kst_signal",
-          "operator": ">",
-          "value": -8.3731
+          "feature": "H4_dpo",
+          "operator": "<=",
+          "value": -25.1493
         },
         {
-          "feature": "H4_ema_100_distance",
-          "operator": ">",
-          "value": 3.467
+          "feature": "H1_close_position_in_range",
+          "operator": "<=",
+          "value": 0.5743
         }
       ],
       "prediction": "WIN",
       "confidence": 0.9,
       "coverage": 20,
-      "coverage_pct": 2.3,
+      "coverage_pct": 5.7,
       "win_rate": 0.9,
-      "avg_pips": 441.4,
+      "avg_pips": 431.1,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -481,70 +375,27 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": "<=",
+          "value": -0.4549
+        },
+        {
+          "feature": "M15_cmf",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.0748
         },
         {
-          "feature": "M5_sma_50_distance",
+          "feature": "H4_lower_shadow",
           "operator": "<=",
-          "value": -0.3194
-        },
-        {
-          "feature": "M5_candle_range",
-          "operator": "<=",
-          "value": 9.615
-        },
-        {
-          "feature": "M15_ultimate_oscillator",
-          "operator": "<=",
-          "value": 42.939
-        },
-        {
-          "feature": "D1_adx_21",
-          "operator": ">",
-          "value": 29.4516
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.68,
-      "coverage": 25,
-      "coverage_pct": 2.8,
-      "win_rate": 0.68,
-      "avg_pips": 299.8,
-      "action": "BUY",
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M15_std_dev_20",
-          "operator": "<=",
-          "value": 5.4025
-        },
-        {
-          "feature": "H1_lower_shadow",
-          "operator": "<=",
-          "value": 1.365
-        },
-        {
-          "feature": "H4_distance_from_high",
-          "operator": "<=",
-          "value": 0.1015
-        },
-        {
-          "feature": "M15_bb_20_3_width",
-          "operator": "<=",
-          "value": 0.6779
+          "value": 7.83
         }
       ],
       "prediction": "WIN",
       "confidence": 0.8,
       "coverage": 20,
-      "coverage_pct": 2.3,
+      "coverage_pct": 5.7,
       "win_rate": 0.8,
-      "avg_pips": 156.4,
+      "avg_pips": 374.7,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -552,70 +403,65 @@
     {
       "conditions": [
         {
-          "feature": "M15_std_dev_20",
+          "feature": "M5_distance_to_rolling_level_618",
           "operator": ">",
-          "value": 5.4025
+          "value": -0.4549
         },
         {
-          "feature": "M5_sma_50_distance",
+          "feature": "M5_williams_r_28",
           "operator": "<=",
-          "value": -0.3194
+          "value": -15.1196
         },
         {
-          "feature": "M5_candle_range",
+          "feature": "M5_stoch_21_d",
+          "operator": "<=",
+          "value": 40.952
+        },
+        {
+          "feature": "D1_bb_20_2_upper",
           "operator": ">",
-          "value": 9.615
+          "value": 4349.2173
         },
         {
-          "feature": "M5_kst_signal",
+          "feature": "M5_roc_50",
           "operator": "<=",
-          "value": -8.3731
+          "value": -0.0232
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.714,
-      "coverage": 21,
-      "coverage_pct": 2.4,
-      "win_rate": 0.714,
-      "avg_pips": 311.5,
-      "action": "BUY",
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M15_std_dev_20",
-          "operator": "<=",
-          "value": 5.4025
-        },
-        {
-          "feature": "H1_lower_shadow",
-          "operator": ">",
-          "value": 1.365
-        },
-        {
-          "feature": "H1_adx_28",
-          "operator": ">",
-          "value": 14.3995
-        },
-        {
-          "feature": "H4_vwap_distance",
-          "operator": ">",
-          "value": 0.1416
-        },
-        {
-          "feature": "M15_macd_std_diff",
-          "operator": "<=",
-          "value": -0.5977
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.7,
+      "confidence": 0.8,
       "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.7,
-      "avg_pips": 85.2,
+      "coverage_pct": 5.7,
+      "win_rate": 0.8,
+      "avg_pips": 343.9,
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": ">",
+          "value": -0.4549
+        },
+        {
+          "feature": "M5_williams_r_28",
+          "operator": ">",
+          "value": -15.1196
+        },
+        {
+          "feature": "M15_aroon_up",
+          "operator": ">",
+          "value": 90.0
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 21,
+      "coverage_pct": 6.0,
+      "win_rate": 0.667,
+      "avg_pips": 394.5,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
@@ -967,5 +813,148 @@
       "pct_filtered": 56.0
     }
   ],
-  "regime_filter_discovery": null
+  "regime_filter_discovery": {
+    "status": "ok",
+    "message": "1 filter(s) discovered (strictness=strict); survival 10.6%.",
+    "strictness": "strict",
+    "strictness_floors": {
+      "survival_fraction": 0.1,
+      "survival_floor": 50,
+      "wr_lift": 0.05,
+      "expectancy_lift": 1.2
+    },
+    "baseline": {
+      "count": 1106,
+      "win_rate": 0.5840867992766727,
+      "expectancy": 146.17088607594937
+    },
+    "candidates_scanned": [
+      "M15_std_dev_20",
+      "H1_lower_shadow",
+      "M5_distance_to_rolling_level_786",
+      "H1_atr_50",
+      "D1_upper_shadow",
+      "M5_bear_power",
+      "H4_adx_14",
+      "H4_ema_200_distance"
+    ],
+    "per_feature": [
+      {
+        "feature": "M5_bear_power",
+        "direction": "<",
+        "threshold": -11.519258,
+        "survival": 0.1058,
+        "count": 117,
+        "win_rate": 0.7863,
+        "expectancy": 392.444,
+        "wr_lift": 0.2022,
+        "exp_lift_rel": 1.6848,
+        "train_wr": 0.7849,
+        "test_wr": 0.7917,
+        "score": 3.4908
+      },
+      {
+        "feature": "M5_distance_to_rolling_level_786",
+        "direction": "<",
+        "threshold": -0.78279,
+        "survival": 0.1058,
+        "count": 117,
+        "win_rate": 0.8034,
+        "expectancy": 372.077,
+        "wr_lift": 0.2193,
+        "exp_lift_rel": 1.5455,
+        "train_wr": 0.7957,
+        "test_wr": 0.8333,
+        "score": 3.2021
+      },
+      {
+        "feature": "M15_std_dev_20",
+        "direction": ">",
+        "threshold": 14.34962,
+        "survival": 0.1627,
+        "count": 180,
+        "win_rate": 0.7,
+        "expectancy": 327.633,
+        "wr_lift": 0.1159,
+        "exp_lift_rel": 1.2414,
+        "train_wr": 0.7153,
+        "test_wr": 0.6389,
+        "score": 2.8028
+      },
+      {
+        "feature": "H1_lower_shadow",
+        "direction": ">",
+        "threshold": 6.696,
+        "survival": 0.1763,
+        "count": 195,
+        "win_rate": 0.6615,
+        "expectancy": 277.123,
+        "wr_lift": 0.0775,
+        "exp_lift_rel": 0.8959,
+        "train_wr": 0.6731,
+        "test_wr": 0.6154,
+        "score": 2.0536
+      },
+      {
+        "feature": "H1_atr_50",
+        "direction": ">",
+        "threshold": 12.548525,
+        "survival": 0.3987,
+        "count": 441,
+        "win_rate": 0.6735,
+        "expectancy": 252.104,
+        "wr_lift": 0.0894,
+        "exp_lift_rel": 0.7247,
+        "train_wr": 0.6875,
+        "test_wr": 0.618,
+        "score": 1.9172
+      },
+      {
+        "feature": "H4_ema_200_distance",
+        "direction": ">",
+        "threshold": 4.993368,
+        "survival": 0.2098,
+        "count": 232,
+        "win_rate": 0.6767,
+        "expectancy": 264.203,
+        "wr_lift": 0.0926,
+        "exp_lift_rel": 0.8075,
+        "train_wr": 0.6865,
+        "test_wr": 0.6383,
+        "score": 1.9116
+      },
+      {
+        "feature": "D1_upper_shadow",
+        "direction": ">",
+        "threshold": 19.718211,
+        "survival": 0.2197,
+        "count": 243,
+        "win_rate": 0.6708,
+        "expectancy": 260.901,
+        "wr_lift": 0.0867,
+        "exp_lift_rel": 0.7849,
+        "train_wr": 0.6907,
+        "test_wr": 0.5918,
+        "score": 1.8739
+      }
+    ],
+    "best_subset": [
+      {
+        "feature": "M5_bear_power",
+        "direction": "<",
+        "threshold": -11.519258
+      }
+    ],
+    "best_subset_metrics": {
+      "count": 117,
+      "survival": 0.1058,
+      "win_rate": 0.7863,
+      "expectancy": 392.444,
+      "wr_lift": 0.2022,
+      "exp_lift_rel": 1.6848,
+      "train_wr": 0.7849,
+      "test_wr": 0.7917,
+      "score": 3.4908
+    }
+  }
 }

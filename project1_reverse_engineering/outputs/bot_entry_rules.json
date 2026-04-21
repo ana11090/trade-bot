@@ -86,106 +86,6 @@
     {
       "conditions": [
         {
-          "feature": "H4_distance_from_high",
-          "operator": ">",
-          "value": 0.3922
-        },
-        {
-          "feature": "H4_distance_from_high",
-          "operator": ">",
-          "value": 0.7194
-        },
-        {
-          "feature": "H1_volume_ratio_20",
-          "operator": ">",
-          "value": 0.7632
-        },
-        {
-          "feature": "M15_adx_14",
-          "operator": "<=",
-          "value": 37.0934
-        },
-        {
-          "feature": "H4_candle_range",
-          "operator": ">",
-          "value": 19.425
-        },
-        {
-          "feature": "H1_cci_20",
-          "operator": "<=",
-          "value": 34.6753
-        },
-        {
-          "feature": "H4_ultimate_oscillator",
-          "operator": ">",
-          "value": 42.8988
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.636,
-      "win_rate": 0.636,
-      "coverage": 55,
-      "coverage_pct": 5.0,
-      "train_win_rate": 0.556,
-      "train_coverage": 36,
-      "overfit_gap": -0.081,
-      "is_overfit": false,
-      "avg_pips": 262.9,
-      "source": "bot_entry",
-      "entry_timeframe": "H4",
-      "action": "BUY",
-      "n_real_trades_in_rule": 92,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_distance_from_high",
-          "operator": "<=",
-          "value": 0.5875
-        },
-        {
-          "feature": "D1_lower_shadow",
-          "operator": ">",
-          "value": 10.895
-        },
-        {
-          "feature": "H4_rsi_50",
-          "operator": ">",
-          "value": 45.5882
-        },
-        {
-          "feature": "H4_williams_r_28",
-          "operator": "<=",
-          "value": -31.3358
-        },
-        {
-          "feature": "D1_mfi",
-          "operator": ">",
-          "value": 58.0161
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.682,
-      "win_rate": 0.682,
-      "coverage": 22,
-      "coverage_pct": 6.2,
-      "train_win_rate": 0.739,
-      "train_coverage": 23,
-      "overfit_gap": 0.057,
-      "is_overfit": false,
-      "avg_pips": 97.4,
-      "source": "bot_entry",
-      "entry_timeframe": "D1",
-      "action": "BUY",
-      "n_real_trades_in_rule": 62,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
           "feature": "D1_distance_from_high",
           "operator": ">",
           "value": 0.5875
@@ -204,11 +104,6 @@
           "feature": "D1_roc_50",
           "operator": "<=",
           "value": 5.6526
-        },
-        {
-          "feature": "D1_distance_to_swing_high",
-          "operator": "<=",
-          "value": 3.8608
         }
       ],
       "prediction": "WIN",
@@ -216,15 +111,15 @@
       "win_rate": 0.833,
       "coverage": 12,
       "coverage_pct": 3.4,
-      "train_win_rate": 1.0,
-      "train_coverage": 32,
-      "overfit_gap": 0.167,
-      "is_overfit": true,
-      "avg_pips": 68.4,
+      "train_win_rate": 0.942,
+      "train_coverage": 52,
+      "overfit_gap": 0.109,
+      "is_overfit": false,
+      "avg_pips": 49.1,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 69,
+      "n_real_trades_in_rule": 96,
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
@@ -232,59 +127,39 @@
       "conditions": [
         {
           "feature": "H1_distance_from_high",
-          "operator": ">",
+          "operator": "<=",
           "value": 0.2156
         },
         {
-          "feature": "H1_distance_from_high",
-          "operator": ">",
-          "value": 0.3239
-        },
-        {
-          "feature": "M5_adx_14",
+          "feature": "M15_ema_9_distance",
           "operator": "<=",
-          "value": 14.0964
+          "value": -0.1215
         },
         {
-          "feature": "H1_candle_range",
+          "feature": "M15_ultimate_oscillator",
           "operator": ">",
-          "value": 10.1
+          "value": 36.0567
         },
         {
-          "feature": "D1_vwap_distance",
+          "feature": "H1_bb_20_3_width",
           "operator": "<=",
-          "value": 0.2837
-        },
-        {
-          "feature": "H1_upper_shadow",
-          "operator": "<=",
-          "value": 5.775
-        },
-        {
-          "feature": "H4_keltner_width",
-          "operator": ">",
-          "value": 1.1922
-        },
-        {
-          "feature": "D1_dpo",
-          "operator": ">",
-          "value": -5.7775
+          "value": 1.3536
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.625,
-      "win_rate": 0.625,
-      "coverage": 8,
-      "coverage_pct": 0.8,
-      "train_win_rate": 0.708,
-      "train_coverage": 24,
-      "overfit_gap": 0.083,
+      "confidence": 0.571,
+      "win_rate": 0.571,
+      "coverage": 7,
+      "coverage_pct": 0.7,
+      "train_win_rate": 0.612,
+      "train_coverage": 49,
+      "overfit_gap": 0.041,
       "is_overfit": false,
-      "avg_pips": 86.1,
+      "avg_pips": 63.3,
       "source": "bot_entry",
       "entry_timeframe": "H1",
       "action": "BUY",
-      "n_real_trades_in_rule": 25,
+      "n_real_trades_in_rule": 39,
       "data_source_id": "unlimited_leveraged_data",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
@@ -317,7 +192,7 @@
     {
       "tf": "H4",
       "status": "ok",
-      "n_rules": 1,
+      "n_rules": 0,
       "n_train": 2583,
       "n_test": 1108,
       "n_features": 620
@@ -325,15 +200,15 @@
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 4,
+      "n_rules": 3,
       "n_train": 822,
       "n_test": 353,
       "n_features": 620
     }
   ],
   "params": {
-    "max_rules": 28,
-    "max_depth": 8,
+    "max_rules": 26,
+    "max_depth": 4,
     "n_estimators": 200,
     "min_coverage": 20,
     "min_win_rate": 0.55,

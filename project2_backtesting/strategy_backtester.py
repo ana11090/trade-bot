@@ -2456,7 +2456,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         pass
 
     _was_stopped = False
-    for combo in rule_combos:
+    for combo_idx, combo in enumerate(rule_combos, start=1):
         if _stop_requested.is_set():
             log.info(f"[BACKTESTER] Stop requested — saving {len(matrix)} results computed so far")
             _was_stopped = True
@@ -2500,9 +2500,22 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             )
             stats = compute_stats(trades)
 
+            # WHY: combo["name"] is "BUY_D1_4c_a670 (BUY)" — same prefix repeats
+            #      for every exit strategy on the same rule, which looks like
+            #      non-unique IDs. Extract just the short rule hash (a670) and
+            #      combine with the exit name so each combo reads "a670_Fixed_SLTP_c296".
+            # CHANGED: April 2026 — short unique ID per rule×exit combo
+            _exit_tag = (exit_strat.name
+                .replace(' ', '_').replace('/', '').replace('-', '_')
+                .replace('+', '_').replace('(', '').replace(')', ''))[:12]
+            _exit_hash = hashlib.md5(
+                (exit_strat.name + str(exit_strat.params)).encode()
+            ).hexdigest()[:4]
+            _rule_combo_id = f'#{combo_idx}_' + combo["name"].split(' ')[0] + '_' + _exit_tag + '_' + _exit_hash
+
             result = {
                 "rules":        combo["rules"],        # actual rule conditions for validator
-                "rule_combo":   combo["name"] + '_' + hashlib.md5((exit_strat.name + str(exit_strat.params)).encode()).hexdigest()[:4],
+                "rule_combo":   _rule_combo_id,
                 "rule_indices": combo["indices"],
                 # WHY: Direction was only embedded in rule_combo name string
                 #      like "(BUY)". Downstream tools parsed the name to guess
@@ -2544,12 +2557,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _a38b_sig_after  = getattr(fast_backtest, '_last_sig_after',  0)
                 _progress_payload = {
                     **stats,
-                    # WHY: Append short hash of exit params so each result
-                    #      has a unique rule_combo in View Results.
-                    # CHANGED: April 2026 — unique rule_combo per exit
-                    'rule_combo': combo['name'] + '_' + hashlib.md5(
-                        (exit_strat.name + str(getattr(exit_strat, 'params', {}))).encode()
-                    ).hexdigest()[:4],
+                    'rule_combo': _rule_combo_id,
                     'exit_name':  exit_strat.name,
                     'exit_class': type(exit_strat).__name__,
                     'signals_before_regime_filter': _a38b_sig_before,
