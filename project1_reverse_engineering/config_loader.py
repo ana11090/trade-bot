@@ -191,6 +191,17 @@ DEFAULTS = {
     'prop_firm_name':       '',
     'prop_firm_stage':      'Evaluation',
     'prop_firm_account':    '10000',
+
+    # ── Data Source ───────────────────────────────────────────────────────────
+    # WHY: Without these in DEFAULTS, save() silently drops them (line 264).
+    # CHANGED: April 2026 — data source keys
+    'data_source_id':       'original',
+    'data_source_path':     '',
+    'pip_value_per_lot':    '1.0',
+    'spread':               '25',
+    'commission':           '4.0',
+    'contract_size':        '100.0',
+    'prop_firm_leverage':   '0',
 }
 
 

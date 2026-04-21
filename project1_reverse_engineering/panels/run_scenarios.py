@@ -447,11 +447,52 @@ def build_panel(parent):
                            command=lambda v=s['name']: _data_source_var.set(v))
         _data_source_var.set(name)
 
-    tk.Button(data_frame, text="📥 Import New Data Source",
+    # WHY: User needs the MT5 export script to get candle data from
+    #      any broker. Put download next to import so workflow is clear:
+    #      download script → run on MT5 → import the CSVs
+    # CHANGED: April 2026 — MT5 script download button
+    def _download_mt5_export():
+        import shutil
+        _script_src = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            'project3_live_trading', 'templates', 'export_candles.mq5')
+        if not os.path.exists(_script_src):
+            messagebox.showerror("Not Found",
+                f"export_candles.mq5 not found at:\n{_script_src}")
+            return
+        from tkinter import filedialog
+        _dst = filedialog.asksaveasfilename(
+            title="Save MT5 Export Script",
+            defaultextension=".mq5",
+            filetypes=[("MQL5 Script", "*.mq5"), ("All files", "*.*")],
+            initialfile="export_candles.mq5",
+        )
+        if _dst:
+            shutil.copy2(_script_src, _dst)
+            messagebox.showinfo("Saved",
+                f"Script saved to:\n{_dst}\n\n"
+                "How to use:\n"
+                "1. Copy to MT5 → MQL5/Scripts/\n"
+                "2. Compile in MetaEditor (F7)\n"
+                "3. Open chart for your symbol (e.g. XAUUSD)\n"
+                "4. Drag script onto the chart\n"
+                "5. CSVs saved in MT5 → MQL5/Files/\n"
+                "6. Come back here → Import Data Source")
+
+    _btn_row = tk.Frame(data_frame, bg="#ffffff")
+    _btn_row.pack(anchor="w", pady=(8, 0))
+
+    tk.Button(_btn_row, text="📥 Import Data Source",
               command=_import_new_source,
               bg="#17a2b8", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
-              ).pack(anchor="w", pady=(8, 0))
+              ).pack(side=tk.LEFT)
+
+    tk.Button(_btn_row, text="📤 MT5 Historical Data Export Script",
+              command=_download_mt5_export,
+              bg="#6c757d", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(side=tk.LEFT, padx=(8, 0))
 
     try:
         from shared.tooltip import add_tooltip as _a40a_tooltip
@@ -2137,9 +2178,35 @@ def build_panel(parent):
     except Exception as _e:
         print(f"[A.39b] initial discovery-state sync failed: {_e}")
 
-    # Right column - Execution controls
-    right_frame = tk.Frame(content_frame, bg="white", padx=20, pady=20)
-    right_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
+    # Right column - scrollable execution controls + console
+    _right_outer = tk.Frame(content_frame, bg="white")
+    _right_outer.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+    _right_canvas = tk.Canvas(_right_outer, bg="white", highlightthickness=0)
+    _right_scroll = tk.Scrollbar(_right_outer, orient="vertical", command=_right_canvas.yview)
+    _right_canvas.configure(yscrollcommand=_right_scroll.set)
+    _right_scroll.pack(side="right", fill="y")
+    _right_canvas.pack(side="left", fill="both", expand=True)
+
+    right_frame = tk.Frame(_right_canvas, bg="white", padx=20, pady=20)
+    _right_window = _right_canvas.create_window((0, 0), window=right_frame, anchor="nw")
+
+    def _right_on_configure(event):
+        _right_canvas.configure(scrollregion=_right_canvas.bbox("all"))
+    def _right_on_canvas_resize(event):
+        _right_canvas.itemconfig(_right_window, width=event.width)
+
+    right_frame.bind("<Configure>", _right_on_configure)
+    _right_canvas.bind("<Configure>", _right_on_canvas_resize)
+
+    def _right_mousewheel(event):
+        _right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    def _bind_mousewheel(widget):
+        widget.bind("<MouseWheel>", _right_mousewheel)
+        for child in widget.winfo_children():
+            _bind_mousewheel(child)
+
+    right_frame.bind("<Map>", lambda e: _bind_mousewheel(right_frame))
 
     tk.Label(right_frame, text="▶️ Execute",
              bg="white", fg="#16213e",
@@ -2191,11 +2258,7 @@ def build_panel(parent):
         justify="left",
     ).pack(anchor="w", pady=(0, 6))
 
-    # Four bot-entry-specific spinboxes — independent of the legacy
-    # Discovery Settings card (which controls the analyze.py decision tree).
-    # We piggyback on the existing _make_spinbox helper since it is already
-    # imported at module level via the build_panel closure. The config keys
-    # are NEW — added below in Edit 3.
+    # Four bot-entry-specific spinboxes
     _make_spinbox(
         bot_entry_frame, "Max rules:", "bot_entry_max_rules",
         5, 100, 1,
@@ -2227,16 +2290,6 @@ def build_panel(parent):
          "entries. Default: 0.55."),
     )
 
-    # WHY (Phase A.31.1): the standalone button was removed. Bot Entry
-    #      Discovery now runs as Step 4 inside the main pipeline that
-    #      "🚀 Run Selected Scenarios" already executes. The user
-    #      tunes the four spinboxes above, then clicks the green
-    #      button — every selected scenario runs Step 1 (align price),
-    #      Step 2 (compute indicators), Step 3 (analyze + win-condition
-    #      rules), Step 4 (bot entry discovery). Both
-    #      analysis_report.json AND bot_entry_rules.json are produced
-    #      by the same run.
-    # CHANGED: April 2026 — Phase A.31.1
     tk.Label(
         bot_entry_frame,
         text="↑ Tunables. Discovery runs as Step 4 of '🚀 Run Selected Scenarios'.",
@@ -2275,8 +2328,8 @@ def build_panel(parent):
              font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 5))
 
     output_text = scrolledtext.ScrolledText(right_frame,
-                                           height=20,
-                                           font=("Consolas", 9),
+                                           height=50,
+                                           font=("Consolas", 10),
                                            bg="#2c3e50", fg="#ecf0f1",
                                            insertbackground="white")
     output_text.pack(fill="both", expand=True)
