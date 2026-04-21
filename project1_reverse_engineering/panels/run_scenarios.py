@@ -246,6 +246,18 @@ def build_panel(parent):
                                   values=["10000"], state="readonly", width=10)
     _pf_acct_combo.pack(side=tk.LEFT, padx=5)
 
+    # WHY: Firm's theoretical risk (0.8%) may exceed what margin allows.
+    #      When checked, auto-calculates the real achievable risk using
+    #      latest price from data source, leverage, account, and contract size.
+    #      When unchecked, old behavior preserved (firm's theoretical risk).
+    # CHANGED: April 2026 — margin-capped risk checkbox
+    _margin_cap_var = tk.BooleanVar(value=True)
+    _margin_cap_cb = tk.Checkbutton(_pf_row2, text="Margin-Cap Risk",
+        variable=_margin_cap_var, font=("Segoe UI", 9, "bold"),
+        bg="#ffffff", fg="#333", selectcolor="#ffffff",
+        command=lambda: _pf_on_change())
+    _margin_cap_cb.pack(side=tk.LEFT, padx=(10, 0))
+
     _pf_info_lbl = tk.Label(_pf_frame, text="", font=("Segoe UI", 9),
                             bg="#ffffff", fg="#555", justify="left")
     _pf_info_lbl.pack(anchor="w", pady=(6, 0))
@@ -324,7 +336,83 @@ def build_panel(parent):
             elif rule.get('type') == 'funded_accumulate':
                 _risk = params.get('risk_pct', params.get('risk_pct_range', [0.3, 0.5])[1])
                 break
-        parts = [f"Leverage: 1:{_lev} ({_inst})", f"Risk: {_risk}%"]
+        # WHY: When margin-cap checkbox is ON, calculate the real
+        #      achievable risk from leverage, account, latest price,
+        #      contract size, and a reference SL. Save the effective
+        #      value so backtest/validator/EA all use the same number.
+        #      When OFF, save the firm's theoretical risk (old behavior).
+        # CHANGED: April 2026 — margin-capped risk
+        _effective_risk = _risk
+        _margin_note = ""
+        if _margin_cap_var.get():
+            try:
+                _mc_account = float(_pf_acct_var.get())
+                _mc_leverage = float(_lev) if _lev != '?' else 0
+                _mc_contract = float(_inst_specs.get('contract_size', 100.0)) if _inst_specs else 100.0
+                _mc_pip_value = float(_inst_specs.get('pip_value_per_lot', 1.0)) if _inst_specs else 1.0
+                _mc_default_sl = 150.0
+                _mc_price = 0.0
+
+                # Read latest price from selected data source
+                try:
+                    _mc_ds_name = _data_source_var.get() if '_data_source_var' in dir() else ''
+                    _mc_ds_path = ''
+                    if _mc_ds_name:
+                        from shared.data_sources import list_sources
+                        for _src in list_sources():
+                            if _src['name'] == _mc_ds_name:
+                                _mc_ds_path = _src['path']
+                                break
+                    if not _mc_ds_path:
+                        _mc_ds_path = _cl.load().get('data_source_path', '')
+                    if _mc_ds_path:
+                        import glob, csv
+                        _mc_h1_files = glob.glob(os.path.join(_mc_ds_path, '*H1*'))
+                        if not _mc_h1_files:
+                            _mc_h1_files = glob.glob(os.path.join(_mc_ds_path, '*h1*'))
+                        if _mc_h1_files:
+                            with open(_mc_h1_files[0], 'r') as _mcf:
+                                _reader = csv.reader(_mcf)
+                                _header = next(_reader)
+                                _close_idx = None
+                                for _ci, _ch in enumerate(_header):
+                                    if _ch.strip().lower() in ('close', 'close_price'):
+                                        _close_idx = _ci
+                                        break
+                                if _close_idx is not None:
+                                    _last_row = None
+                                    for _last_row in _reader:
+                                        pass
+                                    if _last_row:
+                                        _mc_price = float(_last_row[_close_idx])
+                except Exception as _price_e:
+                    print(f"[MARGIN-CAP] Could not read price: {_price_e}")
+
+                if _mc_price <= 0:
+                    _mc_price = 2500.0  # Safe fallback for XAUUSD
+
+                if _mc_leverage > 0 and _mc_account > 0:
+                    _mc_margin_per_lot = (_mc_price * _mc_contract) / _mc_leverage
+                    _mc_max_lots = (_mc_account * 0.95) / _mc_margin_per_lot
+                    _mc_max_risk_dollars = _mc_max_lots * _mc_default_sl * _mc_pip_value
+                    _mc_max_risk_pct = _mc_max_risk_dollars / _mc_account * 100.0
+                    _mc_max_risk_pct = round(max(0.1, _mc_max_risk_pct), 1)
+
+                    if _mc_max_risk_pct < _risk:
+                        _effective_risk = _mc_max_risk_pct
+                        _margin_note = (f" (margin-capped from {_risk}% → "
+                                       f"{_effective_risk}% | price=${_mc_price:,.0f} "
+                                       f"SL={int(_mc_default_sl)}pip)")
+                        print(f"[MARGIN-CAP] {_risk}% → {_effective_risk}% "
+                              f"(price=${_mc_price:,.0f}, margin/lot=${_mc_margin_per_lot:,.0f}, "
+                              f"max_lots={_mc_max_lots:.3f})")
+                    else:
+                        _margin_note = " (margin OK)"
+                        print(f"[MARGIN-CAP] {_risk}% fits within margin (max {_mc_max_risk_pct}%)")
+            except Exception as _mc_e:
+                print(f"[MARGIN-CAP] Error: {_mc_e}")
+
+        parts = [f"Leverage: 1:{_lev} ({_inst})", f"Risk: {_effective_risk}%{_margin_note}"]
         if _target:
             parts.append(f"Target: {_target}%")
         parts.append(f"DD: {_dd_daily}%/{_dd_total}%")
@@ -336,12 +424,14 @@ def build_panel(parent):
                 'prop_firm_stage': _pf_stage_var.get(),
                 'prop_firm_account': _pf_acct_var.get(),
                 'prop_firm_leverage': str(_lev) if _lev != '?' else '0',
-                # WHY: Risk % from firm rules must be saved so backtest,
-                #      optimizer, and EA generator all use the same value.
+                # WHY: Save both firm risk and effective risk. All downstream
+                #      components (backtest, validator, EA) read risk_pct.
                 # CHANGED: April 2026 — save risk to config
-                'risk_pct': str(_risk),
+                'risk_pct': str(_effective_risk),
+                'risk_pct_firm': str(_risk),
                 'dd_daily_pct': str(_dd_daily),
                 'dd_total_pct': str(_dd_total),
+                'margin_cap_enabled': '1' if _margin_cap_var.get() else '0',
             }
             _cl.save(_save_data)
             _verify = _cl.load()
@@ -437,6 +527,12 @@ def build_panel(parent):
                         pass
             except Exception:
                 pass
+        # WHY: Data source change affects latest price → margin cap recalc.
+        # CHANGED: April 2026 — recalc margin on data source change
+        try:
+            _pf_on_change()
+        except Exception:
+            pass
 
     _data_source_var.trace_add("write", _on_data_source_changed)
     _on_data_source_changed()  # show info for initial selection
