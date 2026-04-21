@@ -2051,6 +2051,21 @@ def run_analysis(feature_matrix_path=None):
     elif 'BUY' in _actions and 'SELL' in _actions:
         _report_direction = 'BOTH'
 
+    # WHY: Rules must carry data_source_id so the backtester uses the
+    #      correct candle data. Inject from P1 config before report build.
+    # CHANGED: April 2026 — data source in report rules
+    try:
+        import config_loader as _rpt_cl
+        _rpt_cfg = _rpt_cl.load()
+        _rpt_ds_id = _rpt_cfg.get('data_source_id', 'original')
+        _rpt_ds_path = _rpt_cfg.get('data_source_path', '')
+        for _rpt_r in rules:
+            if 'data_source_id' not in _rpt_r:
+                _rpt_r['data_source_id'] = _rpt_ds_id
+                _rpt_r['data_source_path'] = _rpt_ds_path
+    except Exception:
+        pass
+
     # Assemble report
     report = {
         'generated_at':    datetime.now().isoformat(),

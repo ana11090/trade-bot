@@ -539,6 +539,25 @@ def discover_bot_entry_rules(
         },
     }
 
+    # WHY: Rules must carry data_source_id for the backtester.
+    # CHANGED: April 2026 — data source in bot entry rules
+    try:
+        import importlib.util as _be_ilu
+        _be_cl_path = os.path.join(project_root,
+            'project1_reverse_engineering', 'config_loader.py')
+        _be_spec = _be_ilu.spec_from_file_location('_be_cl', _be_cl_path)
+        _be_mod = _be_ilu.module_from_spec(_be_spec)
+        _be_spec.loader.exec_module(_be_mod)
+        _be_cfg = _be_mod.load()
+        _be_ds_id = _be_cfg.get('data_source_id', 'original')
+        _be_ds_path = _be_cfg.get('data_source_path', '')
+        for _be_r in result.get('rules', []):
+            if 'data_source_id' not in _be_r:
+                _be_r['data_source_id'] = _be_ds_id
+                _be_r['data_source_path'] = _be_ds_path
+    except Exception:
+        pass
+
     with open(BOT_RULES_PATH, 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=2, default=str)
     _log(f"Saved: {BOT_RULES_PATH}", cb)
