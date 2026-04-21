@@ -753,6 +753,67 @@ def _display_results_inner(output_text, summary_frame, data, results,
             except Exception:
                 pass
 
+            # ── Delete button ──────────────────────────────────────────────
+            # WHY: Allow users to remove unwanted strategies from View Results.
+            # CHANGED: April 2026 — delete button for result rows
+            try:
+                def _make_delete_fn(global_index, output_txt, summary_frm):
+                    def _delete():
+                        # Confirm deletion
+                        if not messagebox.askyesno(
+                            "Delete Result",
+                            f"Delete result #{global_index+1}?\n\n"
+                            f"{r.get('rule_combo', '?')} × {r.get('exit_strategy', '?')}\n\n"
+                            "This cannot be undone."
+                        ):
+                            return
+
+                        try:
+                            import json
+                            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+                            matrix_file = os.path.join(project_root, 'project2_backtesting/outputs/backtest_matrix.json')
+
+                            # Load matrix
+                            with open(matrix_file, 'r', encoding='utf-8') as f:
+                                matrix_data = json.load(f)
+
+                            # Delete the result
+                            results_key = 'results' if 'results' in matrix_data else 'matrix'
+                            results_list = matrix_data.get(results_key, [])
+
+                            if 0 <= global_index < len(results_list):
+                                deleted_item = results_list.pop(global_index)
+
+                                # Save updated matrix
+                                with open(matrix_file, 'w', encoding='utf-8') as f:
+                                    json.dump(matrix_data, f, indent=2)
+
+                                messagebox.showinfo(
+                                    "Deleted",
+                                    f"Result #{global_index+1} deleted successfully."
+                                )
+
+                                # Refresh the display
+                                display_summary(output_txt, summary_frm)
+                            else:
+                                messagebox.showerror("Error", "Invalid result index.")
+                        except Exception as e:
+                            messagebox.showerror("Delete Failed", f"Could not delete result:\n{e}")
+
+                    return _delete
+
+                delete_btn = tk.Button(
+                    header_row,
+                    text="🗑",
+                    command=_make_delete_fn(_global_idx, output_text, summary_frame),
+                    bg="#dc3545",
+                    fg="white",
+                    font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",
+                )
+                delete_btn.pack(side=tk.RIGHT, padx=3)
+            except Exception:
+                pass
+
             # ── Phase A.47 + A.48: Export Trades button ──────────────────
             # WHY (Phase A.48): Trades are no longer stored in
             #      backtest_matrix.json (too large). They're saved in
