@@ -845,6 +845,12 @@ def load_strategy_list():
                         'commission_pips':   0.0,
                         'has_trades':        False,
                         'saved_rule':        rule,  # keep the original rule for loading
+                        'prop_firm_name':    rule.get('prop_firm_name', ''),
+                        'prop_firm_stage':   rule.get('prop_firm_stage', ''),
+                        'account_size':      rule.get('account_size', 0),
+                        'leverage':          rule.get('leverage', 0),
+                        'data_source_id':    rule.get('data_source_id', ''),
+                        'data_source_path':  rule.get('data_source_path', ''),
                         'is_stale':          is_stale,
                         'stale_issues':      stale_issues,
                     })

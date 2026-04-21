@@ -364,27 +364,70 @@ def _update_strat_info():
                 break
 
         if _loaded_row:
+            # WHY: Rule data lives in different places depending on source:
+            #      - Backtest results: run_settings, discovery_settings
+            #      - Saved rules: saved_rule dict, top-level fields
+            #      Check all sources with priority: saved_rule > run_settings > top-level.
+            # CHANGED: April 2026 — check all data sources for auto-fill
             _rs = _loaded_row.get('run_settings', {})
             _ds = _loaded_row.get('discovery_settings', {})
+            _sr = _loaded_row.get('saved_rule', {})
+            _rsk = _sr.get('risk_settings', {})
 
-            _rule_acct = _rs.get('starting_capital', 0)
+            # Account
+            _rule_acct = (
+                _rs.get('starting_capital', 0) or
+                _sr.get('account_size', 0) or
+                _rsk.get('account_size', 0) or
+                _loaded_row.get('account_size', 0)
+            )
             if _rule_acct and float(_rule_acct) > 0 and _acct_var:
                 _acct_var.set(str(int(float(_rule_acct))))
 
-            _rule_risk = _rs.get('risk_pct', 0) or _ds.get('prop_firm_risk_pct', 0)
+            # Risk
+            _rule_risk = (
+                _rs.get('risk_pct', 0) or
+                _rsk.get('risk_pct', 0) or
+                _ds.get('prop_firm_risk_pct', 0) or
+                _sr.get('risk_pct', 0)
+            )
             if _rule_risk and float(_rule_risk) > 0 and _risk_var:
                 _risk_var.set(str(float(_rule_risk)))
 
-            _rule_stage = _ds.get('prop_firm_stage', '')
+            # Stage
+            _rule_stage = (
+                _sr.get('prop_firm_stage', '') or
+                _ds.get('prop_firm_stage', '') or
+                _rsk.get('stage', '') or
+                _loaded_row.get('prop_firm_stage', '')
+            )
             if _rule_stage and _stage_var:
                 _stage_var.set(_rule_stage)
 
-            _rule_firm = _ds.get('prop_firm_name', '') or _loaded_row.get('prop_firm_name', '')
+            # Firm
+            _rule_firm = (
+                _sr.get('prop_firm_name', '') or
+                _ds.get('prop_firm_name', '') or
+                _loaded_row.get('prop_firm_name', '') or
+                _loaded_row.get('firm_name', '') or
+                _rsk.get('firm', '')
+            )
             if _rule_firm and _opt_target_var:
-                for _fv in list(_opt_target_var.cget('values') if hasattr(_opt_target_var, 'cget') else []):
-                    if _rule_firm.lower() in str(_fv).lower():
+                _matched = False
+                try:
+                    _firm_values = list(_opt_target_var.cget('values')) if hasattr(_opt_target_var, 'cget') else []
+                except Exception:
+                    _firm_values = []
+                for _fv in _firm_values:
+                    if str(_fv).strip() == _rule_firm.strip():
                         _opt_target_var.set(str(_fv))
+                        _matched = True
                         break
+                if not _matched:
+                    for _fv in _firm_values:
+                        if _rule_firm.lower() in str(_fv).lower():
+                            _opt_target_var.set(str(_fv))
+                            break
 
             print(f"[REFINER] Auto-filled from rule: account=${_rule_acct}, "
                   f"risk={_rule_risk}%, stage={_rule_stage}, firm={_rule_firm}")
