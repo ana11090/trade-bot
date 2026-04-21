@@ -2559,12 +2559,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # Try new signature with result_dict parameter
                     progress_callback(
                         count, total,
-                        f"{combo['name']} x {exit_strat.name}",
+                        f"{combo['name']} x {exit_strat.describe()}",
                         _progress_payload,
                     )
                 except TypeError:
                     # Fall back to old 3-parameter signature
-                    progress_callback(count, total, f"{combo['name']} x {exit_strat.name}")
+                    progress_callback(count, total, f"{combo['name']} x {exit_strat.describe()}")
             elif count % 10 == 0 or count == total:
                 log.info(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
 
