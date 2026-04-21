@@ -448,15 +448,26 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     except Exception:
                         pass
             if not _data_source_path:
+                # WHY: Rule was saved before broker specs injection — no embedded
+                #      data_source_id. Fall back to P1 config (authoritative
+                #      data source) then P2 config, then hard default.
+                #      Must also set _data_source_id so the display shows
+                #      the real source name, not "default".
+                # CHANGED: April 2026 — fix missing _data_source_id in fallback
                 try:
-                    from project2_backtesting.panels.configuration import load_config as _ds_lc
-                    _ds_cfg = _ds_lc()
-                    _data_source_path = _ds_cfg.get('data_source_path', '')
-                    if not _data_source_path:
-                        _ds_id = _ds_cfg.get('data_source_id', 'original')
+                    import importlib.util as _ds_ilu
+                    _p1_cl_path = os.path.normpath(os.path.join(
+                        project_root, 'project1_reverse_engineering', 'config_loader.py'))
+                    _ds_spec = _ds_ilu.spec_from_file_location('_p1_cl', _p1_cl_path)
+                    _ds_mod = _ds_ilu.module_from_spec(_ds_spec)
+                    _ds_spec.loader.exec_module(_ds_mod)
+                    _p1_cfg = _ds_mod.load()
+                    _data_source_id   = _p1_cfg.get('data_source_id', '') or ''
+                    _data_source_path = _p1_cfg.get('data_source_path', '') or ''
+                    if _data_source_id and not _data_source_path:
                         try:
                             from shared.data_sources import get_source_path
-                            _data_source_path = get_source_path(_ds_id)
+                            _data_source_path = get_source_path(_data_source_id)
                         except Exception:
                             pass
                 except Exception:
