@@ -1,12 +1,1469 @@
 {
-  "status": "no_candidates",
+  "status": "ok",
   "variant": "a",
   "target_coverage": 0.75,
   "trade_count": 1106,
-  "candidate_pool": [],
-  "chosen": [],
-  "chosen_stats": null,
-  "top_10_conjunctions": [],
+  "candidate_pool": [
+    {
+      "feature": "D1_volume_change",
+      "operator": "<",
+      "threshold": 31.238346,
+      "value": 31.238346,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.0183
+    },
+    {
+      "feature": "H4_bear_power",
+      "operator": ">",
+      "threshold": -116.272441,
+      "value": -116.272441,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1901
+    },
+    {
+      "feature": "D1_upper_shadow",
+      "operator": "<",
+      "threshold": 62.648,
+      "value": 62.648,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1927
+    },
+    {
+      "feature": "M15_lower_shadow",
+      "operator": "<",
+      "threshold": 8.704,
+      "value": 8.704,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.203
+    },
+    {
+      "feature": "H4_lower_shadow",
+      "operator": "<",
+      "threshold": 36.23,
+      "value": 36.23,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2048
+    },
+    {
+      "feature": "H1_lower_shadow",
+      "operator": "<",
+      "threshold": 19.53,
+      "value": 19.53,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2058
+    },
+    {
+      "feature": "M5_std_dev_20",
+      "operator": "<",
+      "threshold": 20.153277,
+      "value": 20.153277,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2078
+    },
+    {
+      "feature": "H4_std_dev_20",
+      "operator": "<",
+      "threshold": 147.912935,
+      "value": 147.912935,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2144
+    },
+    {
+      "feature": "D1_lower_shadow",
+      "operator": "<",
+      "threshold": 73.67,
+      "value": 73.67,
+      "trade_coverage": 0.9465,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2137
+    },
+    {
+      "feature": "M5_lower_shadow",
+      "operator": "<",
+      "threshold": 4.766,
+      "value": 4.766,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2245
+    },
+    {
+      "feature": "M5_upper_shadow",
+      "operator": "<",
+      "threshold": 4.494,
+      "value": 4.494,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2332
+    },
+    {
+      "feature": "H4_upper_shadow",
+      "operator": "<",
+      "threshold": 25.9175,
+      "value": 25.9175,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2338
+    },
+    {
+      "feature": "D1_candle_body",
+      "operator": "<",
+      "threshold": 127.492,
+      "value": 127.492,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2356
+    },
+    {
+      "feature": "H1_macd_std_diff",
+      "operator": ">",
+      "threshold": -9.310188,
+      "value": -9.310188,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2362
+    },
+    {
+      "feature": "H1_dpo",
+      "operator": "<",
+      "threshold": 33.8845,
+      "value": 33.8845,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2376
+    },
+    {
+      "feature": "H1_upper_shadow",
+      "operator": "<",
+      "threshold": 15.298,
+      "value": 15.298,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2397
+    },
+    {
+      "feature": "M15_bear_power",
+      "operator": ">",
+      "threshold": -31.461631,
+      "value": -31.461631,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2469
+    },
+    {
+      "feature": "D1_dpo",
+      "operator": ">",
+      "threshold": -172.1145,
+      "value": -172.1145,
+      "trade_coverage": 0.9456,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2538
+    },
+    {
+      "feature": "H4_candle_body",
+      "operator": "<",
+      "threshold": 50.46,
+      "value": 50.46,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2555
+    },
+    {
+      "feature": "H4_bull_power",
+      "operator": "<",
+      "threshold": 93.922162,
+      "value": 93.922162,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2588
+    },
+    {
+      "feature": "H4_volume_change",
+      "operator": "<",
+      "threshold": 2.720577,
+      "value": 2.720577,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2658
+    },
+    {
+      "feature": "M5_bull_power",
+      "operator": "<",
+      "threshold": 14.02282,
+      "value": 14.02282,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2655
+    },
+    {
+      "feature": "H1_macd_fast_diff",
+      "operator": ">",
+      "threshold": -6.719562,
+      "value": -6.719562,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2672
+    },
+    {
+      "feature": "H1_distance_from_high",
+      "operator": "<",
+      "threshold": 0.924421,
+      "value": 0.924421,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2686
+    },
+    {
+      "feature": "M15_upper_shadow",
+      "operator": "<",
+      "threshold": 7.732,
+      "value": 7.732,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2696
+    },
+    {
+      "feature": "D1_macd_fast_diff",
+      "operator": ">",
+      "threshold": -32.527263,
+      "value": -32.527263,
+      "trade_coverage": 0.9438,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2698
+    },
+    {
+      "feature": "M15_dpo",
+      "operator": ">",
+      "threshold": -14.2668,
+      "value": -14.2668,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2721
+    },
+    {
+      "feature": "M15_candle_body",
+      "operator": "<",
+      "threshold": 17.712,
+      "value": 17.712,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2782
+    },
+    {
+      "feature": "H4_distance_to_swing_high",
+      "operator": "<",
+      "threshold": 10.63185,
+      "value": 10.63185,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2795
+    },
+    {
+      "feature": "D1_keltner_width",
+      "operator": "<",
+      "threshold": 7.960155,
+      "value": 7.960155,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2808
+    },
+    {
+      "feature": "M15_dpo",
+      "operator": "<",
+      "threshold": 14.3903,
+      "value": 14.3903,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2816
+    },
+    {
+      "feature": "D1_bull_power",
+      "operator": "<",
+      "threshold": 239.143908,
+      "value": 239.143908,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2823
+    },
+    {
+      "feature": "M5_dpo",
+      "operator": "<",
+      "threshold": 9.8039,
+      "value": 9.8039,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2835
+    },
+    {
+      "feature": "M5_distance_to_swing_low",
+      "operator": "<",
+      "threshold": 1.636737,
+      "value": 1.636737,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.283
+    },
+    {
+      "feature": "H1_macd_fast_diff",
+      "operator": "<",
+      "threshold": 5.400325,
+      "value": 5.400325,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2864
+    },
+    {
+      "feature": "M15_vwap_distance",
+      "operator": ">",
+      "threshold": -1.449041,
+      "value": -1.449041,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2933
+    },
+    {
+      "feature": "H4_dpo",
+      "operator": ">",
+      "threshold": -52.64225,
+      "value": -52.64225,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2979
+    },
+    {
+      "feature": "D1_distance_from_high",
+      "operator": "<",
+      "threshold": 2.489116,
+      "value": 2.489116,
+      "trade_coverage": 0.9484,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2982
+    },
+    {
+      "feature": "M15_volume_change",
+      "operator": "<",
+      "threshold": 1.183954,
+      "value": 1.183954,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2993
+    },
+    {
+      "feature": "M5_dpo",
+      "operator": ">",
+      "threshold": -7.9197,
+      "value": -7.9197,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.3005
+    }
+  ],
+  "chosen": [
+    {
+      "feature": "D1_volume_change",
+      "operator": "<",
+      "threshold": 31.238346,
+      "value": 31.238346,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.0183
+    },
+    {
+      "feature": "H4_bear_power",
+      "operator": ">",
+      "threshold": -116.272441,
+      "value": -116.272441,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1901
+    },
+    {
+      "feature": "M15_lower_shadow",
+      "operator": "<",
+      "threshold": 8.704,
+      "value": 8.704,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.203
+    },
+    {
+      "feature": "H1_lower_shadow",
+      "operator": "<",
+      "threshold": 19.53,
+      "value": 19.53,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2058
+    },
+    {
+      "feature": "H4_std_dev_20",
+      "operator": "<",
+      "threshold": 147.912935,
+      "value": 147.912935,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2144
+    },
+    {
+      "feature": "D1_lower_shadow",
+      "operator": "<",
+      "threshold": 73.67,
+      "value": 73.67,
+      "trade_coverage": 0.9465,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2137
+    },
+    {
+      "feature": "M5_lower_shadow",
+      "operator": "<",
+      "threshold": 4.766,
+      "value": 4.766,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2245
+    },
+    {
+      "feature": "M5_upper_shadow",
+      "operator": "<",
+      "threshold": 4.494,
+      "value": 4.494,
+      "trade_coverage": 0.9493,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2332
+    }
+  ],
+  "chosen_stats": {
+    "joint_coverage": 0.7821,
+    "tightness_product": 0.0,
+    "cardinality": 8
+  },
+  "top_10_conjunctions": [
+    {
+      "features": [
+        "D1_volume_change",
+        "H4_bear_power",
+        "M15_lower_shadow",
+        "H1_lower_shadow",
+        "H4_std_dev_20",
+        "D1_lower_shadow",
+        "M5_lower_shadow",
+        "M5_upper_shadow"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "threshold": -116.272441,
+          "value": -116.272441,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1901
+        },
+        {
+          "feature": "M15_lower_shadow",
+          "operator": "<",
+          "threshold": 8.704,
+          "value": 8.704,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.203
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "threshold": 19.53,
+          "value": 19.53,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2058
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "threshold": 147.912935,
+          "value": 147.912935,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2144
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": "<",
+          "threshold": 73.67,
+          "value": 73.67,
+          "trade_coverage": 0.9465,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2137
+        },
+        {
+          "feature": "M5_lower_shadow",
+          "operator": "<",
+          "threshold": 4.766,
+          "value": 4.766,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2245
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": "<",
+          "threshold": 4.494,
+          "value": 4.494,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2332
+        }
+      ],
+      "joint_coverage": 0.7821,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "H4_bear_power",
+        "D1_upper_shadow",
+        "H4_lower_shadow",
+        "M5_std_dev_20",
+        "H4_std_dev_20",
+        "M15_bear_power",
+        "H4_dpo"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "threshold": -116.272441,
+          "value": -116.272441,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1901
+        },
+        {
+          "feature": "D1_upper_shadow",
+          "operator": "<",
+          "threshold": 62.648,
+          "value": 62.648,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1927
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "threshold": 36.23,
+          "value": 36.23,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2048
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "threshold": 147.912935,
+          "value": 147.912935,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2144
+        },
+        {
+          "feature": "M15_bear_power",
+          "operator": ">",
+          "threshold": -31.461631,
+          "value": -31.461631,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2469
+        },
+        {
+          "feature": "H4_dpo",
+          "operator": ">",
+          "threshold": -52.64225,
+          "value": -52.64225,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2979
+        }
+      ],
+      "joint_coverage": 0.7821,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "D1_upper_shadow",
+        "H4_lower_shadow",
+        "H1_lower_shadow",
+        "D1_lower_shadow",
+        "D1_candle_body",
+        "H1_macd_std_diff",
+        "D1_bull_power"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "D1_upper_shadow",
+          "operator": "<",
+          "threshold": 62.648,
+          "value": 62.648,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1927
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "threshold": 36.23,
+          "value": 36.23,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2048
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "threshold": 19.53,
+          "value": 19.53,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2058
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": "<",
+          "threshold": 73.67,
+          "value": 73.67,
+          "trade_coverage": 0.9465,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2137
+        },
+        {
+          "feature": "D1_candle_body",
+          "operator": "<",
+          "threshold": 127.492,
+          "value": 127.492,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2356
+        },
+        {
+          "feature": "H1_macd_std_diff",
+          "operator": ">",
+          "threshold": -9.310188,
+          "value": -9.310188,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2362
+        },
+        {
+          "feature": "D1_bull_power",
+          "operator": "<",
+          "threshold": 239.143908,
+          "value": 239.143908,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2823
+        }
+      ],
+      "joint_coverage": 0.7884,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "D1_upper_shadow",
+        "H4_lower_shadow",
+        "H1_lower_shadow",
+        "M5_std_dev_20",
+        "H4_upper_shadow",
+        "H1_dpo",
+        "D1_macd_fast_diff"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "D1_upper_shadow",
+          "operator": "<",
+          "threshold": 62.648,
+          "value": 62.648,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1927
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "threshold": 36.23,
+          "value": 36.23,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2048
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "threshold": 19.53,
+          "value": 19.53,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2058
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "H4_upper_shadow",
+          "operator": "<",
+          "threshold": 25.9175,
+          "value": 25.9175,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2338
+        },
+        {
+          "feature": "H1_dpo",
+          "operator": "<",
+          "threshold": 33.8845,
+          "value": 33.8845,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2376
+        },
+        {
+          "feature": "D1_macd_fast_diff",
+          "operator": ">",
+          "threshold": -32.527263,
+          "value": -32.527263,
+          "trade_coverage": 0.9438,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2698
+        }
+      ],
+      "joint_coverage": 0.7568,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "H4_bear_power",
+        "M15_lower_shadow",
+        "H4_lower_shadow",
+        "M5_std_dev_20",
+        "H4_std_dev_20",
+        "M5_upper_shadow",
+        "H4_bull_power"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "threshold": -116.272441,
+          "value": -116.272441,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1901
+        },
+        {
+          "feature": "M15_lower_shadow",
+          "operator": "<",
+          "threshold": 8.704,
+          "value": 8.704,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.203
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "threshold": 36.23,
+          "value": 36.23,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2048
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "threshold": 147.912935,
+          "value": 147.912935,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2144
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": "<",
+          "threshold": 4.494,
+          "value": 4.494,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2332
+        },
+        {
+          "feature": "H4_bull_power",
+          "operator": "<",
+          "threshold": 93.922162,
+          "value": 93.922162,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2588
+        }
+      ],
+      "joint_coverage": 0.7767,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "H4_bear_power",
+        "H4_lower_shadow",
+        "H1_lower_shadow",
+        "M5_std_dev_20",
+        "D1_lower_shadow",
+        "M15_upper_shadow",
+        "M5_dpo"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "H4_bear_power",
+          "operator": ">",
+          "threshold": -116.272441,
+          "value": -116.272441,
+          "trade_coverage": 0.9494,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.1901
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "threshold": 36.23,
+          "value": 36.23,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2048
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "threshold": 19.53,
+          "value": 19.53,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2058
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": "<",
+          "threshold": 73.67,
+          "value": 73.67,
+          "trade_coverage": 0.9465,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2137
+        },
+        {
+          "feature": "M15_upper_shadow",
+          "operator": "<",
+          "threshold": 7.732,
+          "value": 7.732,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2696
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": "<",
+          "threshold": 9.8039,
+          "value": 9.8039,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2835
+        }
+      ],
+      "joint_coverage": 0.7848,
+      "tightness_product": 0.0,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "M5_std_dev_20",
+        "D1_candle_body",
+        "H1_dpo",
+        "D1_dpo",
+        "M5_bull_power",
+        "M15_candle_body",
+        "M5_dpo"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "D1_candle_body",
+          "operator": "<",
+          "threshold": 127.492,
+          "value": 127.492,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2356
+        },
+        {
+          "feature": "H1_dpo",
+          "operator": "<",
+          "threshold": 33.8845,
+          "value": 33.8845,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2376
+        },
+        {
+          "feature": "D1_dpo",
+          "operator": ">",
+          "threshold": -172.1145,
+          "value": -172.1145,
+          "trade_coverage": 0.9456,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2538
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": "<",
+          "threshold": 14.02282,
+          "value": 14.02282,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2655
+        },
+        {
+          "feature": "M15_candle_body",
+          "operator": "<",
+          "threshold": 17.712,
+          "value": 17.712,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2782
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": ">",
+          "threshold": -7.9197,
+          "value": -7.9197,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.3005
+        }
+      ],
+      "joint_coverage": 0.7532,
+      "tightness_product": 1e-06,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "M5_std_dev_20",
+        "H4_std_dev_20",
+        "M5_upper_shadow",
+        "H1_upper_shadow",
+        "D1_dpo",
+        "H4_candle_body",
+        "M15_upper_shadow"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "threshold": 147.912935,
+          "value": 147.912935,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2144
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": "<",
+          "threshold": 4.494,
+          "value": 4.494,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2332
+        },
+        {
+          "feature": "H1_upper_shadow",
+          "operator": "<",
+          "threshold": 15.298,
+          "value": 15.298,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2397
+        },
+        {
+          "feature": "D1_dpo",
+          "operator": ">",
+          "threshold": -172.1145,
+          "value": -172.1145,
+          "trade_coverage": 0.9456,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2538
+        },
+        {
+          "feature": "H4_candle_body",
+          "operator": "<",
+          "threshold": 50.46,
+          "value": 50.46,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2555
+        },
+        {
+          "feature": "M15_upper_shadow",
+          "operator": "<",
+          "threshold": 7.732,
+          "value": 7.732,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2696
+        }
+      ],
+      "joint_coverage": 0.7722,
+      "tightness_product": 1e-06,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "M5_std_dev_20",
+        "H1_upper_shadow",
+        "M5_bull_power",
+        "H1_distance_from_high",
+        "D1_macd_fast_diff",
+        "M15_candle_body",
+        "M5_dpo"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "M5_std_dev_20",
+          "operator": "<",
+          "threshold": 20.153277,
+          "value": 20.153277,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2078
+        },
+        {
+          "feature": "H1_upper_shadow",
+          "operator": "<",
+          "threshold": 15.298,
+          "value": 15.298,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2397
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": "<",
+          "threshold": 14.02282,
+          "value": 14.02282,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2655
+        },
+        {
+          "feature": "H1_distance_from_high",
+          "operator": "<",
+          "threshold": 0.924421,
+          "value": 0.924421,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2686
+        },
+        {
+          "feature": "D1_macd_fast_diff",
+          "operator": ">",
+          "threshold": -32.527263,
+          "value": -32.527263,
+          "trade_coverage": 0.9438,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2698
+        },
+        {
+          "feature": "M15_candle_body",
+          "operator": "<",
+          "threshold": 17.712,
+          "value": 17.712,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2782
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": "<",
+          "threshold": 9.8039,
+          "value": 9.8039,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2835
+        }
+      ],
+      "joint_coverage": 0.7649,
+      "tightness_product": 1e-06,
+      "cardinality": 8
+    },
+    {
+      "features": [
+        "D1_volume_change",
+        "H1_lower_shadow",
+        "H4_std_dev_20",
+        "H1_macd_std_diff",
+        "H4_candle_body",
+        "H4_bull_power",
+        "H1_distance_from_high",
+        "M15_dpo"
+      ],
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "threshold": 31.238346,
+          "value": 31.238346,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.0183
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<",
+          "threshold": 19.53,
+          "value": 19.53,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2058
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": "<",
+          "threshold": 147.912935,
+          "value": 147.912935,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2144
+        },
+        {
+          "feature": "H1_macd_std_diff",
+          "operator": ">",
+          "threshold": -9.310188,
+          "value": -9.310188,
+          "trade_coverage": 0.9484,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2362
+        },
+        {
+          "feature": "H4_candle_body",
+          "operator": "<",
+          "threshold": 50.46,
+          "value": 50.46,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2555
+        },
+        {
+          "feature": "H4_bull_power",
+          "operator": "<",
+          "threshold": 93.922162,
+          "value": 93.922162,
+          "trade_coverage": 0.9475,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2588
+        },
+        {
+          "feature": "H1_distance_from_high",
+          "operator": "<",
+          "threshold": 0.924421,
+          "value": 0.924421,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2686
+        },
+        {
+          "feature": "M15_dpo",
+          "operator": "<",
+          "threshold": 14.3903,
+          "value": 14.3903,
+          "trade_coverage": 0.9493,
+          "background_coverage": null,
+          "background_coverage_valid": false,
+          "tightness": 0.2816
+        }
+      ],
+      "joint_coverage": 0.774,
+      "tightness_product": 1e-06,
+      "cardinality": 8
+    }
+  ],
   "params": {
     "target_coverage": 0.75,
     "per_condition_coverage": 0.85,
@@ -17,9 +1474,8 @@
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
-    "winner_selection": "coverage"
+    "winner_selection": "tightness"
   },
-  "reason": "No usable feature columns produced candidate conditions.",
-  "generated_at": "2026-04-21T15:07:58.609227",
+  "generated_at": "2026-04-20T23:53:25.066777",
   "scenario": null
 }
