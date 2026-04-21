@@ -471,6 +471,10 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         'months_blown': months_blown,
         'worst_daily_pct': round(worst_daily_pct, 1),
         'worst_total_pct': round(worst_total_pct, 1),
+        # WHY: Display needs to show the actual limits used, not hardcoded 5%/10%.
+        # CHANGED: April 2026 — include limits in breach results
+        'daily_dd_limit_pct': daily_dd_limit_pct,
+        'total_dd_limit_pct': total_dd_limit_pct,
     }
 
 

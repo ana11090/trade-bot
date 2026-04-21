@@ -996,6 +996,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         contract_size=_cfg_contract,
                         start_date=_cfg_bt_start,
                         end_date=_cfg_bt_end,
+                        # WHY: Firm-specific DD limits from rule, not defaults.
+                        # CHANGED: April 2026 — firm DD limits in backtest
+                        breach_account_size=_cfg_account,
+                        breach_daily_dd_limit_pct=float(_first_rule.get('dd_daily_pct', 0)) or 5.0,
+                        breach_total_dd_limit_pct=float(_first_rule.get('dd_total_pct', 0)) or 10.0,
+                        breach_daily_safety_pct=float(_first_rule.get('dd_daily_pct', 0)) * 0.9 if float(_first_rule.get('dd_daily_pct', 0)) > 0 else 4.0,
+                        breach_total_safety_pct=float(_first_rule.get('dd_total_pct', 0)) * 0.95 if float(_first_rule.get('dd_total_pct', 0)) > 0 else 8.0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

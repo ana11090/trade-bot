@@ -1152,18 +1152,22 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                 dates_text += f"  • {bm}\n"
 
                         color = "#dc3545" if blown > 3 else "#e67e22"
+                        # WHY: Read actual limits from breaches dict, not hardcoded.
+                        # CHANGED: April 2026 — firm-specific DD limits in display
+                        _dd_d_lim = breaches.get('daily_dd_limit_pct', 5.0)
+                        _dd_t_lim = breaches.get('total_dd_limit_pct', 10.0)
                         breach_lbl = tk.Label(breach_row,
                                               text=f"💀 {blown} blows (daily:{daily_b} total:{total_b}) — "
-                                                   f"worst daily:{wd:.1f}%/5% total:{wt:.1f}%/10% — survival {surv}%/mo",
+                                                   f"worst daily:{wd:.1f}%/{_dd_d_lim}% total:{wt:.1f}%/{_dd_t_lim}% — survival {surv}%/mo",
                                               bg=bg_color, fg=color, font=("Arial", 8, "bold"))
                         breach_lbl.pack(side=tk.LEFT)
                         add_tooltip(breach_lbl,
                                     f"💀 {blown} blows = account blown {blown} times\n"
                                     f"  Each blow = 1 failed challenge = 1 fee lost\n\n"
-                                    f"daily:{daily_b} = {daily_b} times lost ≥5% in a single day\n"
-                                    f"total:{total_b} = {total_b} times equity dropped ≥10% from peak\n\n"
-                                    f"worst daily: {wd:.1f}% (limit: 5%)\n"
-                                    f"worst total: {wt:.1f}% (limit: 10%)\n\n"
+                                    f"daily:{daily_b} = {daily_b} times lost ≥{_dd_d_lim}% in a single day\n"
+                                    f"total:{total_b} = {total_b} times equity dropped ≥{_dd_t_lim}% from peak\n\n"
+                                    f"worst daily: {wd:.1f}% (limit: {_dd_d_lim}%)\n"
+                                    f"worst total: {wt:.1f}% (limit: {_dd_t_lim}%)\n\n"
                                     f"survival {surv}%/mo = {surv}% of months had no blowup"
                                     f"{dates_text}")
 

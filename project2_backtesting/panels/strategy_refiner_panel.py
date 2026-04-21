@@ -2394,13 +2394,31 @@ def _update_breach_display(trades):
         _breach_label.config(text="No trade data", fg="#888")
         return
 
-    breaches = count_dd_breaches(trades, account_size=100000,
-                                  daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0,
-                                  daily_dd_safety_pct=4.0, total_dd_safety_pct=8.0)
+    # WHY: Use firm-specific DD limits from rule/config, not generic 5%/10%.
+    # CHANGED: April 2026 — firm DD limits in refiner summary
+    _sum_daily_lim = 5.0
+    _sum_total_lim = 10.0
+    _sum_acct = 100000
+    try:
+        import sys as _sum_sys
+        _sum_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+        if _sum_p1_dir not in _sum_sys.path:
+            _sum_sys.path.insert(0, _sum_p1_dir)
+        import config_loader as _sum_cl
+        _sum_cfg = _sum_cl.load()
+        _sum_daily_lim = float(_sum_cfg.get('dd_daily_pct', 0)) or 5.0
+        _sum_total_lim = float(_sum_cfg.get('dd_total_pct', 0)) or 10.0
+        _sum_acct = float(_sum_cfg.get('prop_firm_account', 0)) or 100000
+    except Exception:
+        pass
+    breaches = count_dd_breaches(trades, account_size=_sum_acct,
+                                  daily_dd_limit_pct=_sum_daily_lim, total_dd_limit_pct=_sum_total_lim,
+                                  daily_dd_safety_pct=_sum_daily_lim * 0.9,
+                                  total_dd_safety_pct=_sum_total_lim * 0.95)
 
     blown = breaches['blown_count']
-    daily_dd_limit = 5.0
-    total_dd_limit = 10.0
+    daily_dd_limit = breaches.get('daily_dd_limit_pct', _sum_daily_lim)
+    total_dd_limit = breaches.get('total_dd_limit_pct', _sum_total_lim)
 
     if blown == 0:
         breach_text = (
