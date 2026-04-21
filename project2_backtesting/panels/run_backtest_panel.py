@@ -423,6 +423,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
             output_text.insert(tk.END, f"Entry timeframe: {entry_tf}\n")
 
+            # WHY: selected_rules is populated later (~line 608) but the
+            #      data source block below references it. Init empty here.
+            # CHANGED: April 2026 — prevent UnboundLocalError
+            selected_rules = []
+
             # WHY: Data source comes from rule first, then config, then default.
             # CHANGED: April 2026 — rule-driven data source
             _data_source_path = ''
