@@ -501,6 +501,171 @@ def build_panel(parent):
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
               ).pack(side=tk.LEFT, padx=(8, 0))
 
+    def _compare_sources():
+        """Compare two data sources side by side."""
+        from shared.data_sources import list_sources
+        import pandas as pd
+        from tkinter import Toplevel, scrolledtext
+
+        sources = list_sources()
+        if len(sources) < 2:
+            messagebox.showerror("Need 2 Sources",
+                "Import at least 2 data sources to compare.")
+            return
+
+        source_names = [s['name'] for s in sources]
+        source_map = {s['name']: s for s in sources}
+
+        from tkinter import simpledialog
+        src1_name = simpledialog.askstring("Source 1",
+            f"Compare which source?\nAvailable: {', '.join(source_names)}",
+            initialvalue=source_names[0], parent=data_frame)
+        if not src1_name or src1_name not in source_map:
+            return
+        remaining = [n for n in source_names if n != src1_name]
+        src2_name = simpledialog.askstring("Source 2",
+            f"Against which source?\nAvailable: {', '.join(remaining)}",
+            initialvalue=remaining[0] if remaining else '', parent=data_frame)
+        if not src2_name or src2_name not in source_map:
+            return
+
+        src1 = source_map[src1_name]
+        src2 = source_map[src2_name]
+
+        win = Toplevel()
+        win.title(f"Compare: {src1_name} vs {src2_name}")
+        win.geometry("900x700")
+        txt = scrolledtext.ScrolledText(win, font=("Courier", 10), wrap="word")
+        txt.pack(fill="both", expand=True)
+
+        def log(s):
+            txt.insert("end", s + "\n")
+            txt.see("end")
+            win.update()
+
+        log(f"{'='*70}")
+        log(f"DATA SOURCE COMPARISON")
+        log(f"  Source A: {src1_name} ({src1['path']})")
+        log(f"  Source B: {src2_name} ({src2['path']})")
+        log(f"{'='*70}\n")
+
+        symbol = _cfg.get('symbol', 'XAUUSD').upper()
+
+        for tf in ['M5', 'M15', 'H1', 'H4', 'D1']:
+            file_a = None
+            file_b = None
+            for fname in [f'{symbol}_{tf}.csv', f'{symbol.lower()}_{tf}.csv']:
+                pa = os.path.join(src1['path'], fname)
+                pb = os.path.join(src2['path'], fname)
+                if os.path.exists(pa): file_a = pa
+                if os.path.exists(pb): file_b = pb
+
+            if not file_a:
+                log(f"── {tf}: Source A has no {symbol} file — SKIPPED")
+                continue
+            if not file_b:
+                log(f"── {tf}: Source B has no {symbol} file — SKIPPED")
+                continue
+
+            log(f"── {tf} {'─'*55}")
+
+            try:
+                df_a = pd.read_csv(file_a, parse_dates=['timestamp'])
+                df_b = pd.read_csv(file_b, parse_dates=['timestamp'])
+            except Exception as e:
+                log(f"  ERROR loading: {e}")
+                continue
+
+            log(f"  Source A: {len(df_a):,} candles  ({df_a['timestamp'].min()} to {df_a['timestamp'].max()})")
+            log(f"  Source B: {len(df_b):,} candles  ({df_b['timestamp'].min()} to {df_b['timestamp'].max()})")
+
+            start = max(df_a['timestamp'].min(), df_b['timestamp'].min())
+            end   = min(df_a['timestamp'].max(), df_b['timestamp'].max())
+            log(f"  Overlap:  {start} to {end}")
+
+            df_a_overlap = df_a[(df_a['timestamp'] >= start) & (df_a['timestamp'] <= end)].copy()
+            df_b_overlap = df_b[(df_b['timestamp'] >= start) & (df_b['timestamp'] <= end)].copy()
+            log(f"  A in overlap: {len(df_a_overlap):,} candles")
+            log(f"  B in overlap: {len(df_b_overlap):,} candles")
+
+            if len(df_a_overlap) == 0 or len(df_b_overlap) == 0:
+                log(f"  No overlapping data — SKIPPED\n")
+                continue
+
+            merged = pd.merge(df_a_overlap, df_b_overlap, on='timestamp',
+                              suffixes=('_A', '_B'), how='inner')
+            log(f"  Matched timestamps: {len(merged):,}")
+
+            if len(merged) == 0:
+                log(f"  ⚠ Zero matches — checking timezone offset...")
+                for offset_h in range(-5, 6):
+                    df_b_shifted = df_b_overlap.copy()
+                    df_b_shifted['timestamp'] = df_b_shifted['timestamp'] + pd.Timedelta(hours=offset_h)
+                    m = pd.merge(df_a_overlap, df_b_shifted, on='timestamp', how='inner')
+                    if len(m) > 10:
+                        log(f"    Offset {offset_h:+d}h: {len(m):,} matches")
+                        if len(m) > len(merged):
+                            merged = m
+                if len(merged) == 0:
+                    log(f"  No matches even with offset — SKIPPED\n")
+                    continue
+
+            for col in ['open', 'high', 'low', 'close']:
+                col_a = f'{col}_A'
+                col_b = f'{col}_B'
+                if col_a in merged.columns and col_b in merged.columns:
+                    diff = (merged[col_a] - merged[col_b]).abs()
+                    log(f"  {col.upper():>5} diff: mean={diff.mean():.4f}, "
+                        f"max={diff.max():.4f}, exact_match={int((diff < 0.001).sum()):,}/{len(merged):,} "
+                        f"({(diff < 0.001).mean()*100:.1f}%)")
+
+            if 'volume_A' in merged.columns and 'volume_B' in merged.columns:
+                vol_a = merged['volume_A'].astype(float)
+                vol_b = merged['volume_B'].astype(float)
+                vol_corr = vol_a.corr(vol_b)
+                vol_ratio = (vol_a / vol_b.replace(0, float('nan'))).median()
+                log(f"  VOLUME: correlation={vol_corr:.4f}, median_ratio={vol_ratio:.2f}")
+
+            if len(df_a_overlap) != len(df_b_overlap):
+                log(f"  ⚠ Different candle counts in overlap — possible timezone mismatch")
+                a_only = set(df_a_overlap['timestamp']) - set(df_b_overlap['timestamp'])
+                b_only = set(df_b_overlap['timestamp']) - set(df_a_overlap['timestamp'])
+                if a_only:
+                    sample = sorted(a_only)[:3]
+                    log(f"    A has {len(a_only)} extra candles, e.g.: {[str(s) for s in sample]}")
+                if b_only:
+                    sample = sorted(b_only)[:3]
+                    log(f"    B has {len(b_only)} extra candles, e.g.: {[str(s) for s in sample]}")
+
+            try:
+                close_a = merged['close_A']
+                close_b = merged['close_B']
+                sma_a = close_a.rolling(20).mean()
+                sma_b = close_b.rolling(20).mean()
+                sma_diff = (sma_a - sma_b).dropna().abs()
+                log(f"  SMA20 diff: mean={sma_diff.mean():.4f}, max={sma_diff.max():.4f}")
+                std_a = close_a.rolling(50).std()
+                std_b = close_b.rolling(50).std()
+                std_diff = (std_a - std_b).dropna().abs()
+                log(f"  STD50 diff: mean={std_diff.mean():.4f}, max={std_diff.max():.4f}")
+            except Exception:
+                pass
+
+            log("")
+
+        log(f"{'='*70}")
+        log(f"SUMMARY")
+        log(f"  If prices match closely → rules transfer well between sources")
+        log(f"  If volume differs a lot → volume_ratio rules won't transfer")
+        log(f"  If timezone differs → all indicator thresholds shift")
+        log(f"{'='*70}")
+
+    tk.Button(_btn_row, text="🔍 Compare Data Sources",
+              command=_compare_sources,
+              bg="#6f42c1", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(side=tk.LEFT, padx=(8, 0))
+
     try:
         from shared.tooltip import add_tooltip as _a40a_tooltip
         _a40a_tooltip(
