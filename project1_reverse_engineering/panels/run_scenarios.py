@@ -319,14 +319,21 @@ def build_panel(parent):
         parts.append(f"DD: {_dd_daily}%/{_dd_total}%")
         _pf_info_lbl.config(text="  |  ".join(parts), fg="#333")
         try:
-            _cl.save({
+            _save_data = {
                 'prop_firm_id': fd.get('firm_id', ''),
                 'prop_firm_name': fname,
                 'prop_firm_stage': _pf_stage_var.get(),
                 'prop_firm_account': _pf_acct_var.get(),
-            })
-        except Exception:
-            pass
+                'prop_firm_leverage': str(_lev) if _lev != '?' else '0',
+            }
+            _cl.save(_save_data)
+            _verify = _cl.load()
+            if _verify.get('prop_firm_name') != fname:
+                print(f"[FIRM] WARNING: Save failed! Wanted '{fname}' but config has '{_verify.get('prop_firm_name')}'")
+            else:
+                print(f"[FIRM] Saved: {fname} (verified on disk)")
+        except Exception as _e:
+            print(f"[FIRM] ERROR saving firm: {_e}")
         print(f"[FIRM] Selected: {fname} | Stage: {_pf_stage_var.get()} | "
               f"Account: ${_pf_acct_var.get()} | Risk: {_risk}% | Leverage: 1:{_lev}")
 

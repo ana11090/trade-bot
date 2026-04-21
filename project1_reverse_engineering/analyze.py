@@ -1608,6 +1608,23 @@ def run_analysis(feature_matrix_path=None):
             try:
                 import config_loader as _a40a_cl
                 _a40a_cfg = _a40a_cl.load()
+                # WHY: Force fresh read — the dropdown save may have happened
+                #      between when run_scenarios loaded config and now.
+                # CHANGED: April 2026 — force fresh config read
+                try:
+                    import json as _a40a_json
+                    _a40a_cfg_path = os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), 'p1_config.json')
+                    with open(_a40a_cfg_path) as _a40a_f:
+                        _a40a_disk = _a40a_json.load(_a40a_f)
+                    for _fk in ('prop_firm_id', 'prop_firm_name', 'prop_firm_stage',
+                                'prop_firm_account', 'prop_firm_leverage',
+                                'data_source_id', 'data_source_path',
+                                'pip_value_per_lot', 'spread', 'commission'):
+                        if _fk in _a40a_disk:
+                            _a40a_cfg[_fk] = _a40a_disk[_fk]
+                except Exception:
+                    pass
                 _a40a_entry_tf = _a40a_cfg.get('winning_scenario', 'H1')
                 _a40a_spread = float(_a40a_cfg.get('spread', 25.0))
                 _a40a_commission = float(_a40a_cfg.get('commission', 0.0))
