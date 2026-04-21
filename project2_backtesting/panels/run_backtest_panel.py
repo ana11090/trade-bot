@@ -423,10 +423,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
             output_text.insert(tk.END, f"Entry timeframe: {entry_tf}\n")
 
-            # WHY: selected_rules is populated later (~line 608) but the
-            #      data source block below references it. Init empty here.
-            # CHANGED: April 2026 — prevent UnboundLocalError
-            selected_rules = []
+            # WHY: selected_rules must be populated BEFORE the data source
+            #      block because it reads data_source_id from the first rule.
+            # CHANGED: April 2026 — move selected_rules population up
+            global _rule_vars
+            selected_rules = [rule for var, rule in _rule_vars if var.get()]
+
+            if not selected_rules:
+                output_text.insert(tk.END, "ERROR: No rules selected! Check at least one rule.\n")
+                progress_label.config(text="Error: no rules selected", fg="#dc3545")
+                return
 
             # WHY: Data source comes from rule first, then config, then default.
             # CHANGED: April 2026 — rule-driven data source
@@ -607,15 +613,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         )
                 except Exception as _e:
                     _a21_write_error("_update_best CALLBACK EXCEPTION", _e)
-
-            # Get only the checked rules
-            global _rule_vars
-            selected_rules = [rule for var, rule in _rule_vars if var.get()]
-
-            if not selected_rules:
-                output_text.insert(tk.END, "ERROR: No rules selected! Check at least one rule.\n")
-                progress_label.config(text="Error: no rules selected", fg="#dc3545")
-                return
 
             # WHY: Saved rules have embedded firm data (prop_firm_name, leverage, etc.)
             #      that was captured when the rule was saved. Use that firm data
@@ -878,6 +875,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _run_settings['contract_size'] = _cfg_contract
             _run_settings['firm_id']       = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', '')) if _a48_use_cfg else ''
             _run_settings['firm_name']     = _firm_display if _a48_use_cfg else ''
+            # WHY: Data source must be saved in results so saved rules
+            #      from backtest carry the correct data_source_id.
+            # CHANGED: April 2026 — data source in run settings
+            _run_settings['data_source_id']   = _data_source_id
+            _run_settings['data_source_path'] = _data_source_path
             print(f"[BACKTEST] Run settings: regime={_run_settings['regime_filter_enabled']}, "
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "
