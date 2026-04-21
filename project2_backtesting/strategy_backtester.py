@@ -2555,18 +2555,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     'signals_before_regime_filter': _a38b_sig_before,
                     'signals_after_regime_filter':  _a38b_sig_after,
                 }
+                _unique_name = _progress_payload['rule_combo']
                 try:
-                    # Try new signature with result_dict parameter
-                    progress_callback(
-                        count, total,
-                        f"{combo['name']} x {exit_strat.describe()}",
-                        _progress_payload,
-                    )
+                    progress_callback(count, total, _unique_name, _progress_payload)
                 except TypeError:
-                    # Fall back to old 3-parameter signature
-                    progress_callback(count, total, f"{combo['name']} x {exit_strat.describe()}")
+                    progress_callback(count, total, _unique_name)
             elif count % 10 == 0 or count == total:
-                log.info(f"  [{count}/{total}] {combo['name']} x {exit_strat.describe()}")
+                log.info(f"  [{count}/{total}] {_progress_payload['rule_combo']}")
 
     # Sort by net total pips descending (real profitability after costs)
     matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)
