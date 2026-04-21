@@ -201,10 +201,16 @@ def _generate_rule_id(rule):
         except Exception:
             pass
 
-    # Short hash from conditions (4 hex chars)
-    # Makes ID unique even for rules with same direction/tf/date
-    cond_str = str(sorted(str(c) for c in conditions)) if conditions else str(rule)
-    hash4 = hashlib.md5(cond_str.encode()).hexdigest()[:4]
+    # Short hash from conditions + exit strategy (4 hex chars)
+    # WHY: Same rule with different exit strategies must get different IDs.
+    # CHANGED: April 2026 — include exit strategy in hash
+    cond_str = str(sorted(str(c) for c in conditions)) if conditions else ''
+    exit_str = rule.get('exit_name', rule.get('exit_class', ''))
+    exit_params = rule.get('exit_params', rule.get('exit_strategy_params', {}))
+    if exit_params:
+        exit_str += str(sorted(exit_params.items()) if isinstance(exit_params, dict) else str(exit_params))
+    hash_input = cond_str + exit_str if (cond_str or exit_str) else str(rule)
+    hash4 = hashlib.md5(hash_input.encode()).hexdigest()[:4]
 
     return f"{direction}_{tf}_{n_conds}c_{mmdd}_{hash4}"
 
