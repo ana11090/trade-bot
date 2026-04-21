@@ -2507,18 +2507,84 @@ def build_panel(parent):
             tk.Label(sel_row, text="No backtest results. Run the backtest first.",
                      font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
         else:
-            # Create dropdown with loaded strategies
-            _strategy_var.set(_strategies[0]['label'])
-            labels = [s['label'] for s in _strategies]
-            dd = ttk.Combobox(sel_row, textvariable=_strategy_var,
-                              values=labels, state="readonly", width=95)
-            dd.pack(side=tk.LEFT)
-            dd_container[0] = dd  # Store reference
+            # WHY: Treeview shows rule ID, exit strategy, WR, PF, trades,
+            #      pips at a glance — much better than a truncated dropdown.
+            #      _strategy_var stays synced so _get_selected_index() and
+            #      all downstream code work unchanged.
+            # CHANGED: April 2026 — Treeview replaces Combobox
+            tree_frame = tk.Frame(sel_row, bg=WHITE)
+            tree_frame.pack(fill="x", expand=True)
+
+            columns = ("rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
+            _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
+                                       height=min(len(_strategies), 8),
+                                       selectmode="browse")
+
+            _strat_tree.heading("rule",     text="Rule")
+            _strat_tree.heading("exit",     text="Exit Strategy")
+            _strat_tree.heading("trades",   text="Trades")
+            _strat_tree.heading("wr",       text="Win Rate")
+            _strat_tree.heading("pf",       text="PF")
+            _strat_tree.heading("net_pips", text="Net Pips")
+            _strat_tree.heading("avg_pips", text="Avg Pips")
+
+            _strat_tree.column("rule",     width=180, anchor="w")
+            _strat_tree.column("exit",     width=130, anchor="w")
+            _strat_tree.column("trades",   width=60,  anchor="center")
+            _strat_tree.column("wr",       width=70,  anchor="center")
+            _strat_tree.column("pf",       width=60,  anchor="center")
+            _strat_tree.column("net_pips", width=90,  anchor="e")
+            _strat_tree.column("avg_pips", width=70,  anchor="e")
+
+            _strat_tree.tag_configure("profitable", foreground="#28a745")
+            _strat_tree.tag_configure("losing",     foreground="#dc3545")
+
+            tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
+                                       command=_strat_tree.yview)
+            _strat_tree.configure(yscrollcommand=tree_scroll.set)
+            tree_scroll.pack(side=tk.RIGHT, fill="y")
+            _strat_tree.pack(fill="x", expand=True)
+
+            for s in _strategies:
+                idx = str(s.get('index', 0))
+                rc       = s.get('rule_combo', '?')
+                exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
+                trades   = s.get('total_trades', s.get('trades', 0))
+                wr       = s.get('win_rate', 0)
+                wr_str   = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                pf       = s.get('net_profit_factor', s.get('profit_factor', 0))
+                net      = s.get('net_total_pips', s.get('total_pips', 0))
+                avg      = s.get('net_avg_pips', s.get('avg_pips', 0))
+                tag      = "profitable" if net > 0 else "losing"
+                _strat_tree.insert("", "end", iid=idx, values=(
+                    rc, exit_name, int(trades), wr_str,
+                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}"
+                ), tags=(tag,))
+
+            # Select first row and sync _strategy_var
+            _tree_children = _strat_tree.get_children()
+            if _tree_children:
+                _strat_tree.selection_set(_tree_children[0])
+                _strategy_var.set(_strategies[0]['label'])
+
+            dd_container[0] = _strat_tree
+
+            def _on_tree_select(event=None):
+                sel = _strat_tree.selection()
+                if not sel:
+                    return
+                sel_idx = sel[0]
+                for s in _strategies:
+                    if str(s.get('index', '')) == sel_idx:
+                        _strategy_var.set(s['label'])
+                        break
+
+            _strat_tree.bind("<<TreeviewSelect>>", _on_tree_select)
 
             # Enable load button
             load_btn.configure(state=tk.NORMAL)
 
-            # Create star button
+            # Star button
             def _toggle_star():
                 idx = _get_selected_index()
                 if idx is None:
@@ -2535,19 +2601,14 @@ def build_panel(parent):
                                 bg="#f39c12" if is_now_starred else "#95a5a6",
                             )
                             _load_strategies(force=True)
-                            if _strategies:
-                                new_labels = [s['label'] for s in _strategies]
-                                try:
-                                    dd['values'] = new_labels
-                                except (NameError, tk.TclError):
-                                    pass
-                                new_label = None
-                                for s2 in _strategies:
-                                    if s2.get('index') == idx:
-                                        new_label = s2.get('label')
-                                        break
-                                if new_label:
-                                    _strategy_var.set(new_label)
+                            # Re-sync label after star reload
+                            cur_label = None
+                            for s2 in _strategies:
+                                if s2.get('index') == idx:
+                                    cur_label = s2.get('label')
+                                    break
+                            if cur_label:
+                                _strategy_var.set(cur_label)
                         except ImportError:
                             pass
                         break
@@ -2572,7 +2633,7 @@ def build_panel(parent):
                         break
 
             _strategy_var.trace_add('write', _update_star_btn)
-            _update_star_btn()  # Initial update
+            _update_star_btn()
 
     def _load_in_background():
         """Background thread: load strategies, then schedule UI update."""
