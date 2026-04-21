@@ -2302,7 +2302,22 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     # ── Individual rules (always present) ──
     for i, r in enumerate(rules):
         for _dir in _a30_rule_directions(r):
-            _rule_label = r.get('_saved_rule_id', f"#{r.get('_saved_entry_id', i+1)}")
+            # WHY: Rules from analysis_report.json don't have _saved_rule_id.
+            #      Generate a descriptive label from conditions if missing.
+            # CHANGED: April 2026 — descriptive labels for all rules
+            _rule_label = r.get('_saved_rule_id', '')
+            if not _rule_label:
+                _rule_label = r.get('rule_id', '')
+            if not _rule_label:
+                # Build from conditions like BUY_H1_5c
+                _rl_dir = r.get('direction', r.get('action', 'BUY'))
+                _rl_tf = r.get('entry_timeframe', r.get('entry_tf', 'XX'))
+                _rl_nc = len(r.get('conditions', []))
+                import hashlib as _rl_hl
+                _rl_conds = str(sorted(str(c) for c in r.get('conditions', [])))
+                _rl_exit = r.get('exit_name', r.get('exit_class', ''))
+                _rl_hash = _rl_hl.md5((_rl_conds + _rl_exit).encode()).hexdigest()[:4]
+                _rule_label = f"{_rl_dir}_{_rl_tf}_{_rl_nc}c_{_rl_hash}"
             rule_combos.append({
                 "name":      f"{_rule_label} ({_dir})",
                 "rules":     [r],
