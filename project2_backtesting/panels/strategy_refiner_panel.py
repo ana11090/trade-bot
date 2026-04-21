@@ -2558,11 +2558,12 @@ def build_panel(parent):
             tree_frame = tk.Frame(sel_row, bg=WHITE)
             tree_frame.pack(fill="x", expand=True)
 
-            columns = ("rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
+            columns = ("#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
             _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                        height=min(len(_strategies), 8),
                                        selectmode="browse")
 
+            _strat_tree.heading("#",        text="#")
             _strat_tree.heading("rule",     text="Rule")
             _strat_tree.heading("exit",     text="Exit Strategy")
             _strat_tree.heading("trades",   text="Trades")
@@ -2571,6 +2572,7 @@ def build_panel(parent):
             _strat_tree.heading("net_pips", text="Net Pips")
             _strat_tree.heading("avg_pips", text="Avg Pips")
 
+            _strat_tree.column("#",        width=30,  anchor="center")
             _strat_tree.column("rule",     width=180, anchor="w")
             _strat_tree.column("exit",     width=130, anchor="w")
             _strat_tree.column("trades",   width=60,  anchor="center")
@@ -2588,7 +2590,7 @@ def build_panel(parent):
             tree_scroll.pack(side=tk.RIGHT, fill="y")
             _strat_tree.pack(fill="x", expand=True)
 
-            for s in _strategies:
+            for row_n, s in enumerate(_strategies, start=1):
                 idx = str(s.get('index', 0))
                 rc       = s.get('rule_combo', '?')
                 exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
@@ -2600,7 +2602,7 @@ def build_panel(parent):
                 avg      = s.get('net_avg_pips', s.get('avg_pips', 0))
                 tag      = "profitable" if net > 0 else "losing"
                 _strat_tree.insert("", "end", iid=idx, values=(
-                    rc, exit_name, int(trades), wr_str,
+                    row_n, rc, exit_name, int(trades), wr_str,
                     f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}"
                 ), tags=(tag,))
 
