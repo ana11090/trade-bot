@@ -1033,25 +1033,29 @@ def _start_optimization():
                 # CHANGED: April 2026 — data_source support in optimizer
                 candles_path = None
                 _ds_id = (selected_strategy_row or {}).get('data_source_id', '')
+                _opt_ds_dir = None
                 if _ds_id:
                     try:
                         from shared.data_sources import get_source_path
                         _ds_path = get_source_path(_ds_id)
-                        if _ds_path and os.path.exists(_ds_path):
-                            candles_path = _ds_path
-                            print(f"[OPTIMIZER] Using data source: {_ds_id} → {candles_path}")
+                        if _ds_path and os.path.isdir(_ds_path):
+                            _opt_ds_dir = _ds_path
+                            print(f"[OPTIMIZER] Using data source dir: {_ds_id} → {_opt_ds_dir}")
                     except Exception as e:
                         print(f"[OPTIMIZER] Warning: data_source lookup failed: {e}")
 
                 # Probe candidate paths if data_source not found; also try plain H1 as last resort
                 if not candles_path:
-                    # WHY: Try selected data source before hardcoded fallback.
+                    # WHY: Use data source dir from rule, then resolve, then fallback.
                     # CHANGED: April 2026 — data source in optimizer
-                    try:
-                        from shared.data_sources import resolve_data_dir
-                        _opt_dir = resolve_data_dir(selected_strategy_row)
-                    except Exception:
-                        _opt_dir = os.path.join(project_root, 'data')
+                    if _opt_ds_dir:
+                        _opt_dir = _opt_ds_dir
+                    else:
+                        try:
+                            from shared.data_sources import resolve_data_dir
+                            _opt_dir = resolve_data_dir(selected_strategy_row)
+                        except Exception:
+                            _opt_dir = os.path.join(project_root, 'data')
                     for p in [
                         os.path.join(_opt_dir, f'{symbol}_{entry_tf}.csv'),
                         os.path.join(_opt_dir, f'{symbol.upper()}_{entry_tf}.csv'),
@@ -1774,13 +1778,16 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 import config_loader as _bs_cl
                 _bs_cfg = _bs_cl.load()
                 for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
-                                'contract_size', 'pip_size'):
+                                'contract_size', 'pip_size',
+                                'data_source_id', 'data_source_path',
+                                'prop_firm_name', 'prop_firm_id',
+                                'prop_firm_leverage'):
                     _bs_val = _bs_cfg.get(_bs_key)
                     if _bs_val is not None and _bs_key not in data:
                         try:
                             data[_bs_key] = float(_bs_val)
                         except (TypeError, ValueError):
-                            pass
+                            data[_bs_key] = str(_bs_val)
             except Exception as _bse:
                 print(f"[OPTIMIZER SAVE] Could not embed broker specs: {_bse}")
 

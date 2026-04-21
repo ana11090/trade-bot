@@ -992,14 +992,15 @@ def _get_candles_path(entry_tf_hint=None, rule_data=None):
     CHANGED: April 2026 — multi-TF support (entry_tf_hint parameter)
     CHANGED: April 2026 — data_source support (rule_data parameter)
     """
-    # -1. Try data_source from rule first
+    # -1. Try data_source from rule first — sets search directory
+    _ds_dir_override = None
     if rule_data and rule_data.get('data_source_id'):
         try:
             from shared.data_sources import get_source_path
             _ds_path = get_source_path(rule_data['data_source_id'])
-            if _ds_path and os.path.exists(_ds_path):
-                print(f"[validator] Using data source: {rule_data['data_source_id']} → {_ds_path}")
-                return _ds_path
+            if _ds_path and os.path.isdir(_ds_path):
+                _ds_dir_override = _ds_path
+                print(f"[validator] Using data source dir: {rule_data['data_source_id']} → {_ds_path}")
         except Exception as e:
             print(f"[validator] Warning: data_source lookup failed: {e}")
 
@@ -1066,11 +1067,14 @@ def _get_candles_path(entry_tf_hint=None, rule_data=None):
         print("[strategy_validator_panel] No symbol found in config — falling back to XAUUSD.")
     # WHY: Try data source dir before hardcoded fallback.
     # CHANGED: April 2026 — data source in validator
-    try:
-        from shared.data_sources import resolve_data_dir
-        _val_dir = resolve_data_dir(rule_data)
-    except Exception:
-        _val_dir = os.path.join(project_root, 'data')
+    if _ds_dir_override:
+        _val_dir = _ds_dir_override
+    else:
+        try:
+            from shared.data_sources import resolve_data_dir
+            _val_dir = resolve_data_dir(rule_data)
+        except Exception:
+            _val_dir = os.path.join(project_root, 'data')
     for p in [
         os.path.join(_val_dir, f'{symbol}_{entry_tf}.csv'),
         os.path.join(_val_dir, f'{symbol.upper()}_{entry_tf}.csv'),
