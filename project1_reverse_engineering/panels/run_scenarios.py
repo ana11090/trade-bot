@@ -2079,7 +2079,7 @@ def build_panel(parent):
         frame = tk.Frame(left_frame, bg="white", pady=5)
         frame.pack(fill="x")
 
-        var = tk.BooleanVar(value=False)
+        var = tk.BooleanVar(value=True)
         scenario_vars[scenario_key] = var
 
         cb = tk.Checkbutton(frame, text=label,
