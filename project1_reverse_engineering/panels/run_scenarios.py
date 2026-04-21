@@ -394,7 +394,11 @@ def build_panel(parent):
             try:
                 _cfg['data_source_id'] = src['id']
                 _cfg['data_source_path'] = src['path']
-                _cl.save(_cfg)
+                # WHY: Must NOT save entire _cfg — it has stale firm name
+                #      from build time. Only save the keys that changed.
+                # CHANGED: April 2026 — fix firm overwrite bug
+                _cl.save({'data_source_id': src['id'],
+                          'data_source_path': src['path']})
 
                 # WHY: Old indicator cache was built from different data.
                 #      Must delete so step2 recomputes from new source.

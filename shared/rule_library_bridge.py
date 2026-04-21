@@ -279,6 +279,20 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
         # CHANGED: April 2026 — data source in rules
         _broker_specs['data_source_id'] = _bs_cfg.get('data_source_id', 'original')
         _broker_specs['data_source_path'] = _bs_cfg.get('data_source_path', '')
+        # WHY: Firm info must be injected for ALL save paths (Step3, Step4,
+        #      Mode A). Without this, Step4/ModeA rules get "No Firm".
+        # CHANGED: April 2026 — firm info in broker specs injection
+        _broker_specs['prop_firm_name'] = _bs_cfg.get('prop_firm_name', '')
+        _broker_specs['prop_firm_id'] = _bs_cfg.get('prop_firm_id', '')
+        _broker_specs['prop_firm_stage'] = _bs_cfg.get('prop_firm_stage', '')
+        try:
+            _broker_specs['leverage'] = int(float(_bs_cfg.get('prop_firm_leverage', 0)))
+        except (TypeError, ValueError):
+            _broker_specs['leverage'] = 0
+        try:
+            _broker_specs['account_size'] = float(_bs_cfg.get('prop_firm_account', 10000))
+        except (TypeError, ValueError):
+            _broker_specs['account_size'] = 10000
     except Exception as _bs_e:
         log.debug(f"[BrokerSpecs] could not read broker specs for rule save: {_bs_e}")
 
