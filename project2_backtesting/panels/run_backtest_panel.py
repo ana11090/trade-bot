@@ -397,6 +397,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         global _running
         _running = True
 
+        # WHY: Stop flag persists across runs — if a previous run was stopped
+        #      (by button or error), the flag stays set and the next run
+        #      exits after the first TF. Always clear before starting.
+        # CHANGED: April 2026 — clear stale stop flag on new run
+        from project2_backtesting.strategy_backtester import clear_backtest_stop
+        clear_backtest_stop()
+
         run_button.config(state=tk.DISABLED, text="Running...")
         # WHY: Enable Stop button so user can stop mid-run if needed.
         # CHANGED: April 2026 — Stop button enable on backtest start
