@@ -648,13 +648,26 @@ def load_strategy_list():
                         trades_count = stats.get('total_trades', r.get('total_trades', 0))
                         pf = stats.get('net_profit_factor', r.get('net_profit_factor', 0))
 
+                        # WHY: rule_combo from the matrix is '#1 (BUY)' for rules
+                        #      without _saved_rule_id. Resolve the descriptive ID
+                        #      from the embedded rules list so the Treeview and
+                        #      label show 'BUY_H1_5c_140e (BUY)' instead.
+                        # CHANGED: April 2026 — descriptive rule ID in strategy list
+                        _rc = r.get('rule_combo', '?')
+                        if _rc.startswith('#') and r.get('rules'):
+                            _first = (r['rules'][0] if isinstance(r['rules'], list)
+                                      and r['rules'] else {})
+                            _rid = _first.get('_saved_rule_id', _first.get('rule_id', ''))
+                            if _rid:
+                                _rc = _rc.replace(_rc.split(' ')[0], _rid, 1)
+
                         results.append({
                             'index':             i,
                             'source':            'backtest',
-                            'label':             (f"{r.get('rule_combo','?')} × {r.get('exit_strategy','?')}"
+                            'label':             (f"{_rc} × {r.get('exit_strategy','?')}"
                                                   f"{'  [' + r.get('entry_tf','') + ']' if r.get('entry_tf','') else ''}"
                                                   f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
-                            'rule_combo':        r.get('rule_combo', '?'),
+                            'rule_combo':        _rc,
                             'exit_strategy':     r.get('exit_strategy', '?'),
                             'exit_name':         r.get('exit_name', '?'),
                             'total_trades':      trades_count,
