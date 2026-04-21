@@ -2394,6 +2394,24 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             import step1_align_price
             import step2_compute_indicators
 
+            # WHY: PRICE_DATA_FOLDER is cached at module import time.
+            #      Force-update from config every time steps run.
+            #      Import config_loader inline — _cl/_cfg are not in scope here
+            #      (run_scenarios is a module-level function, not a closure).
+            # CHANGED: April 2026 — fix stale data source path
+            try:
+                import config_loader as _run_cl
+                _ds_cfg = _run_cl.load()
+                _ds_path = _ds_cfg.get('data_source_path', '')
+                if _ds_path and os.path.isdir(_ds_path):
+                    step1_align_price.PRICE_DATA_FOLDER = _ds_path
+                    step2_compute_indicators.PRICE_DATA_FOLDER = _ds_path
+                    print(f"[P1] Data source updated: {_ds_path}")
+                else:
+                    print(f"[P1] Using default data source: {step1_align_price.PRICE_DATA_FOLDER}")
+            except Exception as _ds_e:
+                print(f"[P1] Could not update data source: {_ds_e}")
+
             # WHY: align_all_timeframes runs once for ALL TFs together —
             #      it doesn't need to run per scenario. Only run it on the
             #      first iteration.
@@ -2408,6 +2426,10 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             # CHANGED: April 2026 — Phase 49 Fix 4b — persistent run flags
             #          (audit Part D HIGH #90)
             global _step1_run_cache
+            # Clear cache so step1 reruns if data source changed
+            if getattr(step1_align_price, 'PRICE_DATA_FOLDER', '') != getattr(step1_align_price, '_last_folder', ''):
+                _step1_run_cache.clear()
+                step1_align_price._last_folder = getattr(step1_align_price, 'PRICE_DATA_FOLDER', '')
             _outputs_dir = os.path.normpath(
                 os.path.join(os.path.dirname(__file__), '..', 'outputs')
             )
