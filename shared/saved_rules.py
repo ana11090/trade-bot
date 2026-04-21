@@ -475,3 +475,64 @@ def build_save_button(parent, rule, source="unknown", bg="#ffffff"):
     )
 
     return btn
+
+
+def update_all_rules_firm():
+    """Update all saved rules with the current firm from P1 config.
+
+    WHY: Rules saved when config had wrong firm name need to be
+         updated to the correct firm. Runs once on import.
+    CHANGED: April 2026 — batch firm update
+    """
+    try:
+        import importlib.util
+        _p1_path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))),
+            'project1_reverse_engineering', 'config_loader.py')
+        _spec = importlib.util.spec_from_file_location('_p1cl', _p1_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _cfg = _mod.load()
+
+        firm_name = _cfg.get('prop_firm_name', '')
+        if not firm_name:
+            return 0
+
+        firm_data = {
+            'prop_firm_name': firm_name,
+            'prop_firm_id': _cfg.get('prop_firm_id', ''),
+            'prop_firm_stage': _cfg.get('prop_firm_stage', ''),
+            'account_size': float(_cfg.get('prop_firm_account', 10000)),
+            'pip_value_per_lot': float(_cfg.get('pip_value_per_lot', 1.0)),
+            'spread_pips': float(_cfg.get('spread', 25.0)),
+            'leverage': int(float(_cfg.get('prop_firm_leverage', 0))),
+        }
+
+        with _save_lock:
+            all_rules = load_all()
+            updated = 0
+            for entry in all_rules:
+                rule = entry.get('rule', {})
+                changed = False
+                for k, v in firm_data.items():
+                    if k == 'prop_firm_name' or not rule.get(k):
+                        if rule.get(k) != v:
+                            rule[k] = v
+                            changed = True
+                if changed:
+                    updated += 1
+            if updated > 0:
+                _atomic_write_json(all_rules, _SAVE_PATH)
+        return updated
+    except Exception as _e:
+        print(f"[saved_rules] update_all_rules_firm error: {_e}")
+        return 0
+
+
+# Auto-update firm on import
+try:
+    _n_firm = update_all_rules_firm()
+    if _n_firm > 0:
+        print(f"[saved_rules] Updated {_n_firm} rules with current firm info")
+except Exception:
+    pass

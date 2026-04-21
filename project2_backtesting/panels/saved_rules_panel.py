@@ -314,6 +314,19 @@ def _render_clean_card(parent, entry, inner, canvas, window_id):
              font=("Segoe UI", 9, "bold"), bg="#ffffff", fg=_color
              ).pack(side=tk.LEFT, padx=(8, 0))
 
+    # Date — right-aligned in header
+    _saved_at_hdr = entry.get('saved_at', '')
+    if _saved_at_hdr:
+        try:
+            from datetime import datetime as _dt_parse
+            _parsed = _dt_parse.fromisoformat(_saved_at_hdr.replace('Z', '+00:00'))
+            _date_display = _parsed.strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            _date_display = str(_saved_at_hdr)[:16]
+        tk.Label(header, text=_date_display,
+                 font=("Segoe UI", 8), bg="#ffffff", fg="#999"
+                 ).pack(side=tk.RIGHT, padx=(0, 8))
+
     # Delete button (far right)
     rid = entry.get('id')
     tk.Button(header, text="🗑️", font=("Arial", 8),
@@ -372,6 +385,59 @@ def _render_clean_card(parent, entry, inner, canvas, window_id):
         tk.Label(card, text=txt,
                  font=("Courier New", 9), bg="#ffffff", fg="#2d3436"
                  ).pack(anchor="w", padx=(0, 0))
+
+    # ── Discovery Settings (regime, single rule mode, data source) ──
+    _ds = rule.get('discovery_settings', {})
+    if _ds:
+        _settings_frame = tk.Frame(card, bg="#f0f0f5", padx=6, pady=4)
+        _settings_frame.pack(fill="x", pady=(4, 0))
+        _setting_parts = []
+        if _ds.get('regime_filter_enabled'):
+            _rf_text = "Regime: ON"
+            if _ds.get('regime_at_discovery'):
+                _rf_text += " (at discovery)"
+            if _ds.get('regime_strictness'):
+                _rf_text += f" [{_ds['regime_strictness']}]"
+            _setting_parts.append(_rf_text)
+        else:
+            _setting_parts.append("Regime: OFF")
+        if _ds.get('single_rule_mode_enabled'):
+            _variant = _ds.get('single_rule_mode_variant', 'a').upper()
+            _variant_names = {'A': 'Mode A (tightest)', 'B': 'Mode B (crossover)',
+                              'C': 'Mode C (two-feature)', 'D': 'Mode D (regime-gated)'}
+            _srm_text = f"Single Rule: {_variant_names.get(_variant, f'Mode {_variant}')}"
+            if _variant == 'A':
+                _dedup = "dedup" if _ds.get('srm_dedup_correlated') else "no-dedup"
+                _winner = _ds.get('srm_winner_selection', 'tightness')
+                _srm_text += f" ({_dedup}, {_winner})"
+            _setting_parts.append(_srm_text)
+        _ds_id = rule.get('data_source_id', '')
+        if _ds_id and _ds_id != 'original':
+            _setting_parts.append(f"Data: {_ds_id}")
+        if _setting_parts:
+            tk.Label(_settings_frame, text="  •  ".join(_setting_parts),
+                     font=("Segoe UI", 8), bg="#f0f0f5", fg="#555",
+                     wraplength=600, justify=tk.LEFT
+                     ).pack(anchor="w")
+
+    # Regime filter conditions (if any)
+    _rf = rule.get('regime_filter')
+    if _rf and isinstance(_rf, list) and len(_rf) > 0:
+        _rf_frame = tk.Frame(card, bg="#f5f0fa", padx=6, pady=3)
+        _rf_frame.pack(fill="x", pady=(2, 0))
+        tk.Label(_rf_frame, text=f"🔀 Regime filter ({len(_rf)} conditions):",
+                 font=("Segoe UI", 8, "bold"), bg="#f5f0fa", fg="#9b59b6"
+                 ).pack(anchor="w")
+        for _rc in _rf:
+            if isinstance(_rc, dict):
+                _feat = _rc.get('feature', '?')
+                _op = _rc.get('direction', _rc.get('operator', '>'))
+                _val = _rc.get('threshold', _rc.get('value', '?'))
+                try: _val = f"{float(_val):.4f}"
+                except Exception: _val = str(_val)
+                tk.Label(_rf_frame, text=f"  {_feat} {_op} {_val}",
+                         font=("Courier New", 8), bg="#f5f0fa", fg="#7b2d8e"
+                         ).pack(anchor="w")
 
     # ── BOTTOM: Action Buttons ──
     # Show only relevant next actions based on status
