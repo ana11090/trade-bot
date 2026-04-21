@@ -815,7 +815,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #          (audit Part C MED #20)
                  slippage_seed=None,
                  account_size=None, risk_per_trade_pct=1.0,
-                 default_sl_pips=150.0, pip_value_per_lot=10.0,
+                 default_sl_pips=150.0, pip_value_per_lot=1.0,
                  swap_cost_per_lot_per_night=0.0,
                  news_blackout_minutes=0,
                  # WHY (Phase A.42): 0 = no limit; positive int = max trades
@@ -1392,7 +1392,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   spread_pips=2.5, commission_pips=0.0,
                   slippage_pips=0.0,
                   account_size=None, risk_per_trade_pct=1.0,
-                  default_sl_pips=150.0, pip_value_per_lot=10.0,
+                  default_sl_pips=150.0, pip_value_per_lot=1.0,
                   # WHY (Phase A.42): 0 = no limit; positive int = max trades
                   #      per calendar day, matching live EA's MaxTradesPerDay.
                   # CHANGED: April 2026 — Phase A.42
@@ -2063,7 +2063,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           slippage_pips=0.0,
                           pip_size=0.01,
                           account_size=None, risk_per_trade_pct=1.0,
-                          default_sl_pips=150.0, pip_value_per_lot=10.0,
+                          default_sl_pips=150.0, pip_value_per_lot=1.0,
                           progress_callback=None,
                           use_safety_stops=True,
                           # NEW: firm-specific breach thresholds (optional)
