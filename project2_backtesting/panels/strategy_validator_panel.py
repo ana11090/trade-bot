@@ -1064,10 +1064,20 @@ def _get_candles_path(entry_tf_hint=None, rule_data=None):
     if not symbol:
         symbol = 'xauusd'
         print("[strategy_validator_panel] No symbol found in config — falling back to XAUUSD.")
+    # WHY: Try data source dir before hardcoded fallback.
+    # CHANGED: April 2026 — data source in validator
+    try:
+        from shared.data_sources import resolve_data_dir
+        _val_dir = resolve_data_dir(rule_data)
+    except Exception:
+        _val_dir = os.path.join(project_root, 'data')
     for p in [
+        os.path.join(_val_dir, f'{symbol}_{entry_tf}.csv'),
+        os.path.join(_val_dir, f'{symbol.upper()}_{entry_tf}.csv'),
+        os.path.join(_val_dir, f'{symbol.lower()}_{entry_tf}.csv'),
+        os.path.join(_val_dir, f'{symbol}_H1.csv'),
         os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
         os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
-        os.path.join(project_root, 'data', f'{symbol}_H1.csv'),  # last resort
     ]:
         if os.path.exists(p):
             return p

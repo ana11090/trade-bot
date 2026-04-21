@@ -1045,11 +1045,20 @@ def _start_optimization():
 
                 # Probe candidate paths if data_source not found; also try plain H1 as last resort
                 if not candles_path:
+                    # WHY: Try selected data source before hardcoded fallback.
+                    # CHANGED: April 2026 — data source in optimizer
+                    try:
+                        from shared.data_sources import resolve_data_dir
+                        _opt_dir = resolve_data_dir(selected_strategy_row)
+                    except Exception:
+                        _opt_dir = os.path.join(project_root, 'data')
                     for p in [
+                        os.path.join(_opt_dir, f'{symbol}_{entry_tf}.csv'),
+                        os.path.join(_opt_dir, f'{symbol.upper()}_{entry_tf}.csv'),
+                        os.path.join(_opt_dir, f'{symbol.lower()}_{entry_tf}.csv'),
+                        os.path.join(_opt_dir, f'{symbol}_H1.csv'),
                         os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                         os.path.join(project_root, 'data', f'xauusd_{entry_tf}.csv'),
-                        os.path.join(project_root, 'data', f'{symbol}_H1.csv'),
-                        os.path.join(project_root, 'data', 'xauusd_H1.csv'),
                     ]:
                         if os.path.exists(p):
                             candles_path = p

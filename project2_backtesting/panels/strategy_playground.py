@@ -32,7 +32,13 @@ def _load_data_once():
     cfg = load_config()
     symbol = cfg.get('symbol', 'XAUUSD').lower()
     tf = cfg.get('winning_scenario', 'H1')
-    data_dir = os.path.join(project_root, 'data')
+    # WHY: Use selected data source, not hardcoded path.
+    # CHANGED: April 2026 — data source from config
+    try:
+        from shared.data_sources import resolve_data_dir
+        data_dir = resolve_data_dir()
+    except Exception:
+        data_dir = os.path.join(project_root, 'data')
     candle_path = os.path.join(data_dir, f'{symbol}_{tf}.csv')
 
     if not os.path.exists(candle_path):

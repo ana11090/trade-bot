@@ -1289,8 +1289,18 @@ def _a26_diagnose_rules(output_text):
     output_text.insert(tk.END, f"Symbol:                 {symbol}\n")
     output_text.see(tk.END)
 
+    # WHY: Diagnostic must use same data source as backtest.
+    # CHANGED: April 2026 — data source in diagnostic
+    try:
+        from shared.data_sources import resolve_data_dir
+        _diag_dir = resolve_data_dir()
+    except Exception:
+        _diag_dir = _a26_os.path.join(project_root, 'data')
     candle_path = None
     for cand in [
+        _a26_os.path.join(_diag_dir, f'{symbol}_{entry_tf}.csv'),
+        _a26_os.path.join(_diag_dir, f'{symbol.upper()}_{entry_tf}.csv'),
+        _a26_os.path.join(_diag_dir, f'{symbol.lower()}_{entry_tf}.csv'),
         _a26_os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
         _a26_os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
     ]:

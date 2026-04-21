@@ -2706,7 +2706,16 @@ if __name__ == "__main__":
         from shared.instrument_config import get_candle_path, get_active_symbol
         candles_path = get_candle_path(get_active_symbol(), entry_tf)
     except Exception:
-        candles_path = os.path.join(_here, '..', 'data', f'xauusd_{entry_tf}.csv')
+        # WHY: Use selected data source, not hardcoded path.
+        # CHANGED: April 2026 — data source from config
+        try:
+            from shared.data_sources import resolve_data_dir
+            _sb_dir = resolve_data_dir()
+        except Exception:
+            _sb_dir = os.path.join(_here, '..', 'data')
+        candles_path = os.path.join(_sb_dir, f'xauusd_{entry_tf}.csv')
+        if not os.path.exists(candles_path):
+            candles_path = os.path.join(_sb_dir, f'XAUUSD_{entry_tf}.csv')
 
     if not os.path.exists(candles_path):
         log.error(f"Candle data not found: {candles_path}")

@@ -269,7 +269,15 @@ def discover_bot_entry_rules(
 
     # Resolve candle data dir
     project_root = os.path.abspath(os.path.join(_HERE, '..'))
-    data_dir = os.path.join(project_root, 'data')
+    # WHY: Use selected data source, not hardcoded path.
+    # CHANGED: April 2026 — data source from config
+    try:
+        from shared.data_sources import resolve_data_dir
+        data_dir = resolve_data_dir()
+        print(f"[Step4] Using data source: {data_dir}")
+    except Exception:
+        data_dir = os.path.join(project_root, 'data')
+        print(f"[Step4] Fallback to default: {data_dir}")
 
     all_rules = []
     per_tf_summary = []

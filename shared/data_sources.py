@@ -110,6 +110,50 @@ def get_source_path(source_id):
     return _DATA_DIR
 
 
+def resolve_data_dir(rule=None):
+    """Resolve the candle data directory.
+
+    Priority: rule → P1 config → default data/ folder.
+
+    WHY: Single source of truth for data path resolution.
+         Every panel calls this instead of hardcoding paths.
+    CHANGED: April 2026 — centralized data dir resolution
+    """
+    # Priority 1: rule's embedded data source
+    if rule:
+        ds_path = rule.get('data_source_path', '')
+        ds_id = rule.get('data_source_id', '')
+        if ds_path and os.path.isdir(ds_path):
+            return ds_path
+        if ds_id:
+            resolved = get_source_path(ds_id)
+            if os.path.isdir(resolved):
+                return resolved
+
+    # Priority 2: P1 config
+    try:
+        import importlib.util
+        cl_path = os.path.join(os.path.dirname(_DATA_DIR),
+                               'project1_reverse_engineering', 'config_loader.py')
+        spec = importlib.util.spec_from_file_location('_cl_rdd', cl_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cfg = mod.load()
+        ds_path = cfg.get('data_source_path', '')
+        if ds_path and os.path.isdir(ds_path):
+            return ds_path
+        ds_id = cfg.get('data_source_id', '')
+        if ds_id:
+            resolved = get_source_path(ds_id)
+            if os.path.isdir(resolved):
+                return resolved
+    except Exception:
+        pass
+
+    # Priority 3: default
+    return _DATA_DIR
+
+
 def import_data_source(source_folder, source_id, display_name='', broker='', timezone_offset=''):
     """Import candle CSVs from a folder into data/sources/{source_id}/.
 
