@@ -535,10 +535,8 @@ def update_all_rules_firm():
         return 0
 
 
-# Auto-update firm on import
-try:
-    _n_firm = update_all_rules_firm()
-    if _n_firm > 0:
-        print(f"[saved_rules] Updated {_n_firm} rules with current firm info")
-except Exception:
-    pass
+# WHY: Removed auto-run of update_all_rules_firm() on import.
+#      It reads + rewrites saved_rules.json synchronously, blocking the
+#      main thread every time any panel imports this module.
+#      Callers that need firm data up-to-date can call it explicitly.
+# CHANGED: April 2026 — remove blocking import-time I/O

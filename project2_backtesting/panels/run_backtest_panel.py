@@ -2475,15 +2475,36 @@ def build_panel(parent):
                                "__ALL_SOURCES__"))
         return sources
 
-    available_sources = _get_available_sources()
-    source_labels = [s[0] for s in available_sources]
-    source_paths = {s[0]: s[1] for s in available_sources}
+    # WHY: _get_available_sources() reads 5 JSON files — running it on the
+    #      main thread during build_panel freezes the UI. Build the combo
+    #      with a placeholder first, then populate it from a background thread.
+    # CHANGED: April 2026 — async source loading to prevent UI freeze
+    source_labels = []
+    source_paths = {}
 
     source_combo = ttk.Combobox(source_row, textvariable=_source_var,
-                                 values=source_labels, width=45, state="readonly")
+                                 values=["⏳ Loading sources..."], width=45, state="readonly")
     source_combo.pack(side=tk.LEFT, padx=10)
-    if source_labels:
-        source_combo.set(source_labels[0])
+    source_combo.set("⏳ Loading sources...")
+
+    def _populate_sources():
+        available = _get_available_sources()
+        labels = [s[0] for s in available]
+        paths  = {s[0]: s[1] for s in available}
+        source_labels.clear(); source_labels.extend(labels)
+        source_paths.clear();  source_paths.update(paths)
+        def _update_ui():
+            source_combo['values'] = labels
+            if labels:
+                source_combo.set(labels[0])
+                _load_rules_from_source(source_paths)
+        try:
+            source_combo.after(0, _update_ui)
+        except Exception:
+            pass
+
+    import threading as _src_threading
+    _src_threading.Thread(target=_populate_sources, daemon=True).start()
 
     tk.Button(source_row, text="🔄", font=("Arial", 9),
               command=lambda: _refresh_sources(source_combo, source_paths, _get_available_sources),
