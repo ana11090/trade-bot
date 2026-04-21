@@ -109,9 +109,10 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     #      executed at other hours (e.g., overnight position
     #      management). Stratify by hour-of-day bin so every hour
     #      contributes proportionally.
-    # CHANGED: April 2026 — Phase 44 Fix 1 — stratified sampling
-    #          (audit Part D HIGH #25)
-    sample_size = min(200, len(trades_df))
+    # WHY: 200 trades gave weak confidence (64.5% vs 53.5% = 22 trade diff).
+    #      Using all trades gives definitive results.
+    # CHANGED: April 2026 — use all trades for timezone detection
+    sample_size = len(trades_df)
     if len(trades_df) > sample_size:
         try:
             _hours = pd.to_datetime(trades_df['open_time']).dt.hour
@@ -231,7 +232,7 @@ def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     # Print top 5 offsets
     results.sort(key=lambda x: x[1], reverse=True)
     log.info(f"    Top offsets (verified count out of {len(sample)}):")
-    for off, ver in results[:5]:
+    for off, ver in results[:10]:
         marker = " <- BEST" if off == best_offset else ""
         pct = ver / len(sample) * 100
         log.info(f"      Offset {off:+d}h: {ver:3d} ({pct:5.1f}%){marker}")
