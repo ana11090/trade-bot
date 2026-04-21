@@ -16,6 +16,7 @@ import os
 import time
 import json
 import random
+import hashlib
 
 import pandas as pd
 import numpy as np
@@ -2543,7 +2544,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _a38b_sig_after  = getattr(fast_backtest, '_last_sig_after',  0)
                 _progress_payload = {
                     **stats,
-                    'rule_combo': combo['name'],
+                    # WHY: Append short hash of exit params so each result
+                    #      has a unique rule_combo in View Results.
+                    # CHANGED: April 2026 — unique rule_combo per exit
+                    'rule_combo': combo['name'] + '_' + hashlib.md5(
+                        (exit_strat.name + str(getattr(exit_strat, 'params', {}))).encode()
+                    ).hexdigest()[:4],
                     'exit_name':  exit_strat.name,
                     'exit_class': type(exit_strat).__name__,
                     'signals_before_regime_filter': _a38b_sig_before,
