@@ -797,7 +797,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_commission_dollars = float(_bt_cfg.get('commission', 4.0))
                         _cfg_commission = _cfg_commission_dollars / _cfg_pip_value if _cfg_pip_value > 0 else 0
                     _cfg_account     = float(_first_rule.get('account_size', 0)) or float(_bt_cfg.get('starting_capital', 10000))
-                    _cfg_risk_pct    = float(_bt_cfg.get('risk_pct', 1.0))
+                    # WHY: Rule is single source of truth for risk.
+                    # CHANGED: April 2026 — risk from rule
+                    _cfg_risk_pct = float(_first_rule.get('risk_pct', 0))
+                    if _cfg_risk_pct <= 0:
+                        _cfg_risk_pct = float(_bt_cfg.get('risk_pct', 1.0))
                     _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or 1.0
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
@@ -882,7 +886,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _run_cfg = load_config()
                 _run_settings['max_one_trade'] = _run_cfg.get('max_one_trade', 'True') == 'True'
                 _run_settings['same_candle_sl'] = _run_cfg.get('same_candle_sl_rule', 'LOSS')
-                _run_settings['risk_pct'] = float(_run_cfg.get('risk_pct', 1.0))
+                _run_settings['risk_pct'] = _cfg_risk_pct
                 _run_settings['starting_capital'] = float(_run_cfg.get('starting_capital', 10000))
             except Exception:
                 pass

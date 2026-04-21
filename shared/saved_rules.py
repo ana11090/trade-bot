@@ -265,6 +265,11 @@ def save_rule(rule, source="unknown", notes=""):
             'leverage': 0,
             'pip_value_per_lot': 1.0,
             'spread_pips': 2.5,
+            'risk_pct': 0,
+            'risk_pct_firm': 0,
+            'dd_daily_pct': 0,
+            'dd_total_pct': 0,
+            'account_size': 10000,
         }
         try:
             from project1_reverse_engineering.config_loader import ConfigLoader
@@ -273,6 +278,26 @@ def save_rule(rule, source="unknown", notes=""):
             _defaults['leverage'] = int(_p1.get('prop_firm_leverage', 0))
             _defaults['pip_value_per_lot'] = float(_p1.get('pip_value_per_lot', 1.0))
             _defaults['spread_pips'] = float(_p1.get('spread', 2.5))
+            try:
+                _defaults['risk_pct'] = float(_p1.get('risk_pct', 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                _defaults['risk_pct_firm'] = float(_p1.get('risk_pct_firm', 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                _defaults['dd_daily_pct'] = float(_p1.get('dd_daily_pct', 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                _defaults['dd_total_pct'] = float(_p1.get('dd_total_pct', 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                _defaults['account_size'] = float(_p1.get('prop_firm_account', 10000))
+            except (TypeError, ValueError):
+                pass
         except Exception:
             pass
 

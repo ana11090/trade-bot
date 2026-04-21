@@ -384,12 +384,13 @@ def _update_strat_info():
             if _rule_acct and float(_rule_acct) > 0 and _acct_var:
                 _acct_var.set(str(int(float(_rule_acct))))
 
-            # Risk
+            # Risk — rule first (single source of truth)
             _rule_risk = (
+                _loaded_row.get('risk_pct', 0) or
+                _sr.get('risk_pct', 0) or
                 _rs.get('risk_pct', 0) or
                 _rsk.get('risk_pct', 0) or
-                _ds.get('prop_firm_risk_pct', 0) or
-                _sr.get('risk_pct', 0)
+                _ds.get('prop_firm_risk_pct', 0)
             )
             if _rule_risk and float(_rule_risk) > 0 and _risk_var:
                 _risk_var.set(str(float(_rule_risk)))

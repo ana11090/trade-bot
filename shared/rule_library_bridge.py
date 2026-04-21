@@ -285,6 +285,25 @@ def auto_save_discovered_rules(rules, source, dedup=True, notes=""):
         _broker_specs['prop_firm_name'] = _bs_cfg.get('prop_firm_name', '')
         _broker_specs['prop_firm_id'] = _bs_cfg.get('prop_firm_id', '')
         _broker_specs['prop_firm_stage'] = _bs_cfg.get('prop_firm_stage', '')
+        # WHY: Risk % must travel with the rule so backtest/validator/EA
+        #      all use the same value without re-deriving from config.
+        # CHANGED: April 2026 — risk in rule (single source of truth)
+        try:
+            _broker_specs['risk_pct'] = float(_bs_cfg.get('risk_pct', 0))
+        except (TypeError, ValueError):
+            _broker_specs['risk_pct'] = 0
+        try:
+            _broker_specs['risk_pct_firm'] = float(_bs_cfg.get('risk_pct_firm', 0))
+        except (TypeError, ValueError):
+            _broker_specs['risk_pct_firm'] = 0
+        try:
+            _broker_specs['dd_daily_pct'] = float(_bs_cfg.get('dd_daily_pct', 0))
+        except (TypeError, ValueError):
+            _broker_specs['dd_daily_pct'] = 0
+        try:
+            _broker_specs['dd_total_pct'] = float(_bs_cfg.get('dd_total_pct', 0))
+        except (TypeError, ValueError):
+            _broker_specs['dd_total_pct'] = 0
         try:
             _broker_specs['leverage'] = int(float(_bs_cfg.get('prop_firm_leverage', 0)))
         except (TypeError, ValueError):

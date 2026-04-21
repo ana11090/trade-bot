@@ -380,6 +380,20 @@ def _auto_fill_risk(strat_data):
          risking mismatches. Now auto-fills from saved settings.
     CHANGED: April 2026 — risk auto-fill
     """
+    # WHY: Rule carries risk_pct directly (margin-capped or firm value).
+    #      Check rule-level first before falling back to risk_settings or config.
+    # CHANGED: April 2026 — risk from rule
+    _direct_risk = 0
+    for _dr in strat_data.get('rules', []):
+        _drv = _dr.get('risk_pct', 0)
+        if _drv and float(_drv) > 0:
+            _direct_risk = float(_drv)
+            break
+    if not _direct_risk:
+        _direct_risk = float(strat_data.get('risk_pct', 0))
+    if _direct_risk > 0 and _risk_var:
+        _risk_var.set(str(_direct_risk))
+        print(f"[EA GEN] Risk from rule: {_direct_risk}%")
     rs = strat_data.get('risk_settings', {})
     if not rs:
         # WHY: P1 config has firm-derived risk. P2 config has user-set risk.
