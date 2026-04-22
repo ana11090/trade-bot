@@ -3318,11 +3318,12 @@ def build_panel(parent):
         tree_frame = tk.Frame(sel_frame, bg=WHITE)
         tree_frame.pack(fill="x", pady=5)
 
-        columns = ("select", "rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
+        columns = ("select", "id", "rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
         _tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                              height=min(len(_strategies), 10), selectmode="extended")
 
         _tree.heading("select",    text="✓")
+        _tree.heading("id",        text="ID")
         _tree.heading("rule",      text="Rule")
         _tree.heading("exit",      text="Exit Strategy")
         _tree.heading("trades",    text="Trades")
@@ -3333,6 +3334,7 @@ def build_panel(parent):
         _tree.heading("avg_pips",  text="Avg Pips")
 
         _tree.column("select",    width=30,  anchor="center")
+        _tree.column("id",        width=50,  anchor="center")
         _tree.column("rule",      width=100, anchor="w")
         _tree.column("exit",      width=130, anchor="w")
         _tree.column("trades",    width=60,  anchor="center")
@@ -3422,8 +3424,20 @@ def build_panel(parent):
                 checked = _check_vars.get(idx, False)
                 check_mark = "☑" if checked else "☐"
 
+                # WHY: Show ID so user can identify which strategy is which.
+                #      For saved rules, show saved ID. For backtest, show index.
+                # CHANGED: April 2026 — ID column in validator
+                _display_id = idx
+                if str(idx).startswith('saved_'):
+                    _display_id = f"💾{str(idx).replace('saved_', '#')}"
+                elif str(idx).startswith('opt_'):
+                    _display_id = f"🔧{str(idx).replace('opt_', '#')}"
+                else:
+                    _display_id = f"#{idx}"
+
                 _tree.insert("", "end", iid=idx, values=(
                     check_mark,
+                    _display_id,
                     s.get('rule_combo', '?'),
                     s.get('exit_name', '?'),
                     trades,
@@ -3506,8 +3520,8 @@ def build_panel(parent):
             _rebuild_tree()
             print(f"[VALIDATOR] Refreshed — {len(_strategies)} strategies loaded")
 
-        tk.Button(btn_frame, text="🔄 Refresh", font=("Segoe UI", 8),
-                  bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
+        tk.Button(btn_frame, text="🔄 Refresh List", font=("Segoe UI", 9, "bold"),
+                  bg="#3498db", fg="white", relief=tk.FLAT, padx=12, pady=3,
                   command=_refresh_list).pack(side=tk.LEFT, padx=(10, 0))
 
         # Selection info

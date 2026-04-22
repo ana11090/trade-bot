@@ -385,14 +385,43 @@ def _load_selected_strategy():
 
 def _update_strat_info():
     global _strat_info_lbl, _rule_info_lbl
-    if not _strat_info_lbl or not _base_trades:
+    if not _strat_info_lbl:
         return
-    from project2_backtesting.strategy_refiner import compute_stats_summary
-    s = compute_stats_summary(_base_trades)
-    text = (f"{s['count']} trades  |  WR {s['win_rate']*100:.1f}%  |  PF {s.get('profit_factor', 0):.2f}  |  "
-            f"avg {s['avg_pips']:+.1f} pips  |  {s['trades_per_day']:.1f}/day  |  "
-            f"hold {s['avg_hold_minutes']:.0f}m  |  max DD {s['max_dd_pips']:.0f} pips")
-    _strat_info_lbl.configure(text=text, fg=MIDGREY)
+
+    # WHY: When a saved rule loads standalone (no matrix match), _base_trades
+    #      is empty. Still show rule info from _loaded_row instead of returning.
+    # CHANGED: April 2026 — handle standalone saved rules
+    if not _base_trades:
+        # Show saved rule info if available
+        _loaded_idx = _get_selected_index()
+        _lr = None
+        for _s in _strategies:
+            if _s.get('index') == _loaded_idx:
+                _lr = _s
+                break
+        if _lr and _lr.get('source') == 'saved':
+            _sr = _lr.get('saved_rule', {})
+            _sr_wr = _sr.get('win_rate', 0)
+            _sr_pf = _sr.get('net_profit_factor', 0)
+            _sr_pips = _sr.get('net_total_pips', 0)
+            _sr_trades = _sr.get('total_trades', 0)
+            _sr_exit = _sr.get('exit_name', _sr.get('exit_class', '?'))
+            _sr_conds = _sr.get('conditions', [])
+            _sr_dir = _sr.get('direction', '?')
+            text = (f"💾 Saved rule: {_sr_dir} ({len(_sr_conds)}c) × {_sr_exit}  |  "
+                    f"{_sr_trades} trades  |  WR {_sr_wr:.1f}%  |  PF {_sr_pf:.2f}  |  "
+                    f"{_sr_pips:+,.0f} pips  |  ⚠ No backtest match — run backtest for trades")
+            _strat_info_lbl.configure(text=text, fg="#e67e22")
+        else:
+            _strat_info_lbl.configure(text="No trades loaded", fg=MIDGREY)
+        # Still auto-fill settings even without trades
+    else:
+        from project2_backtesting.strategy_refiner import compute_stats_summary
+        s = compute_stats_summary(_base_trades)
+        text = (f"{s['count']} trades  |  WR {s['win_rate']*100:.1f}%  |  PF {s.get('profit_factor', 0):.2f}  |  "
+                f"avg {s['avg_pips']:+.1f} pips  |  {s['trades_per_day']:.1f}/day  |  "
+                f"hold {s['avg_hold_minutes']:.0f}m  |  max DD {s['max_dd_pips']:.0f} pips")
+        _strat_info_lbl.configure(text=text, fg=MIDGREY)
 
     # WHY: Auto-fill account/risk/stage from the loaded rule's settings
     #      so the optimizer uses the same values the rule was tested with.
