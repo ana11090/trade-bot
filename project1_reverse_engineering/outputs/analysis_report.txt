@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-21T21:40:19.439579
+Generated: 2026-04-22T09:30:33.665707
 Trades analyzed: 1106 | Features: 629
 ======================================================================
 
@@ -33,17 +33,29 @@ Trades analyzed: 1106 | Features: 629
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 100%, 23 trades)
-    IF M5_distance_to_rolling_level_618 <= -0.4547 AND M5_stoch_21_d > 12.1806 AND M15_roc_5 > -0.6724
-    Win rate: 100% | Avg pips: +630
+  RULE 1 (WIN, conf: 100%, 40 trades)
+    IF M5_distance_to_swing_high > 0.7721 AND M5_bull_power <= -1.757 AND H4_roc_20 <= 2.5799 AND H4_aroon_indicator <= -22.0
+    Win rate: 100% | Avg pips: +454
 
-  RULE 2 (WIN, conf: 95%, 20 trades)
-    IF M5_distance_to_rolling_level_618 <= -0.4547 AND M5_stoch_21_d > 12.1806 AND M15_roc_5 <= -0.6724
-    Win rate: 95% | Avg pips: +385
+  RULE 2 (WIN, conf: 69%, 29 trades)
+    IF M5_distance_to_swing_high > 0.7721 AND M5_bull_power > -1.757
+    Win rate: 69% | Avg pips: +370
 
-  RULE 3 (WIN, conf: 75%, 24 trades)
-    IF M5_distance_to_rolling_level_618 <= -0.4547 AND M5_stoch_21_d <= 12.1806
-    Win rate: 75% | Avg pips: +438
+  RULE 3 (WIN, conf: 90%, 20 trades)
+    IF M5_distance_to_swing_high > 0.7721 AND M5_bull_power <= -1.757 AND H4_roc_20 <= 2.5799 AND H4_aroon_indicator > -22.0
+    Win rate: 90% | Avg pips: +340
+
+  RULE 4 (WIN, conf: 81%, 21 trades)
+    IF M5_distance_to_swing_high <= 0.7721 AND H4_roc_5 <= -0.0631
+    Win rate: 81% | Avg pips: +222
+
+  RULE 5 (WIN, conf: 67%, 24 trades)
+    IF M5_distance_to_swing_high <= 0.7721 AND H4_roc_5 > -0.0631 AND H4_close_position_in_range > 0.6515
+    Win rate: 67% | Avg pips: +254
+
+  RULE 6 (WIN, conf: 75%, 20 trades)
+    IF M5_distance_to_swing_high > 0.7721 AND M5_bull_power <= -1.757 AND H4_roc_20 > 2.5799
+    Win rate: 75% | Avg pips: +392
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 46 trades (4.2%), WR 89%, avg +558 pips, avg dur 0min

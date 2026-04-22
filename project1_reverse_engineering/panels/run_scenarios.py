@@ -51,6 +51,7 @@ _ui_acct_var = None        # tk.StringVar — current account size
 _ui_data_source_var = None # tk.StringVar — current data source display name
 _ui_firm_map = {}          # firm_name → firm dict
 _ui_source_map = {}        # source display name → {id, path}
+_ui_margin_cap_var = None  # tk.BooleanVar — margin cap checkbox
 
 
 def build_panel(parent):
@@ -541,13 +542,14 @@ def build_panel(parent):
     #      (module-level, not a closure here) can read & force-save them.
     # CHANGED: April 2026 — force-save firm/data-source before run
     global _ui_firm_var, _ui_stage_var, _ui_acct_var, _ui_data_source_var
-    global _ui_firm_map, _ui_source_map
+    global _ui_firm_map, _ui_source_map, _ui_margin_cap_var
     _ui_firm_var = _pf_firm_var
     _ui_stage_var = _pf_stage_var
     _ui_acct_var = _pf_acct_var
     _ui_data_source_var = _data_source_var
     _ui_firm_map = _pf_firm_map
     _ui_source_map = _source_map
+    _ui_margin_cap_var = _margin_cap_var
 
     # Import button
     def _import_new_source():
@@ -2797,12 +2799,107 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                             pass
                         _stage_pre = _ui_stage_var.get() if _ui_stage_var else 'Evaluation'
                         _acct_pre  = _ui_acct_var.get()  if _ui_acct_var  else '10000'
+                        # Get risk from firm trading rules
+                        _risk_pre = 1.0
+                        _dd_daily_pre = 5.0
+                        _dd_total_pre = 10.0
+                        try:
+                            for _tr in _fd.get('trading_rules', []):
+                                if _tr.get('stage') not in (_stage_pre.lower(), 'both'):
+                                    continue
+                                _tp = _tr.get('parameters', {})
+                                if _tr.get('type') in ('eval_settings', 'eval_strategy'):
+                                    _risk_pre = _tp.get('risk_pct_range', [0.8, 1.5])[0]
+                                    break
+                                elif _tr.get('type') == 'funded_accumulate':
+                                    _risk_pre = _tp.get('risk_pct', _tp.get('risk_pct_range', [0.3, 0.5])[1])
+                                    break
+                            # DD limits
+                            _ch = _fd.get('challenges', [{}])[0]
+                            if _stage_pre.lower() == 'evaluation':
+                                _ph = _ch.get('phases', [{}])[0]
+                                _dd_daily_pre = float(_ph.get('max_daily_drawdown_pct', 5.0))
+                                _dd_total_pre = float(_ph.get('max_total_drawdown_pct', 10.0))
+                            else:
+                                _funded = _ch.get('funded', {})
+                                _dd_daily_pre = float(_funded.get('max_daily_drawdown_pct', 5.0))
+                                _dd_total_pre = float(_funded.get('max_total_drawdown_pct', 10.0))
+                        except Exception:
+                            pass
+
+                        # WHY: Margin-cap — same math as _pf_on_change.
+                        # CHANGED: April 2026 — force-save risk before discovery
+                        _effective_pre = _risk_pre
+                        _do_cap = True
+                        try:
+                            _do_cap = _ui_margin_cap_var.get() if _ui_margin_cap_var else True
+                        except Exception:
+                            pass
+                        _mc_diag = ""
+                        if _do_cap and _lev_pre and float(_acct_pre) > 0:
+                            try:
+                                _inst_pre = _fd.get('instrument_specs', {}).get('XAUUSD', {})
+                                _contract_pre = float(_inst_pre.get('contract_size', 100.0))
+                                _pv_pre = float(_inst_pre.get('pip_value_per_lot', 1.0))
+                                _sl_pre = 150.0
+                                _price_pre = 2500.0
+                                try:
+                                    _ds_pre = _ui_source_map.get(
+                                        _ui_data_source_var.get() if _ui_data_source_var else '', {})
+                                    _ds_path_pre = _ds_pre.get('path', '')
+                                    if _ds_path_pre:
+                                        import glob, csv
+                                        _h1_files = glob.glob(os.path.join(_ds_path_pre, '*H1*'))
+                                        if not _h1_files:
+                                            _h1_files = glob.glob(os.path.join(_ds_path_pre, '*h1*'))
+                                        if _h1_files:
+                                            with open(_h1_files[0], 'r') as _pf:
+                                                _rdr = csv.reader(_pf)
+                                                _hdr = next(_rdr)
+                                                _ci = None
+                                                for _i, _h in enumerate(_hdr):
+                                                    if _h.strip().lower() in ('close', 'close_price'):
+                                                        _ci = _i
+                                                        break
+                                                if _ci is not None:
+                                                    _last = None
+                                                    for _last in _rdr:
+                                                        pass
+                                                    if _last:
+                                                        _price_pre = float(_last[_ci])
+                                except Exception:
+                                    pass
+                                _margin_lot = (_price_pre * _contract_pre) / float(_lev_pre)
+                                _max_lots = (float(_acct_pre) * 0.95) / _margin_lot
+                                _max_risk_d = _max_lots * _sl_pre * _pv_pre
+                                _max_risk_p = round(max(0.1, _max_risk_d / float(_acct_pre) * 100), 1)
+                                _mc_diag = (
+                                    f"  [MARGIN-CAP] price=${_price_pre:,.0f} | "
+                                    f"contract={_contract_pre} | leverage=1:{_lev_pre}\n"
+                                    f"  [MARGIN-CAP] margin/lot=${_margin_lot:,.0f} | "
+                                    f"max_lots={_max_lots:.3f} | SL={int(_sl_pre)}pip\n"
+                                    f"  [MARGIN-CAP] max_risk=${_max_risk_d:.2f} = {_max_risk_p}% | "
+                                    f"firm_risk={_risk_pre}%"
+                                )
+                                if _max_risk_p < _risk_pre:
+                                    _effective_pre = _max_risk_p
+                                    _mc_diag += f" → CAPPED to {_effective_pre}%"
+                                else:
+                                    _mc_diag += f" → OK (margin allows {_max_risk_p}%)"
+                            except Exception as _mc_e:
+                                _mc_diag = f"  [MARGIN-CAP] Error: {_mc_e}"
+
                         _pre_save.update({
                             'prop_firm_id':      _fd.get('firm_id', ''),
                             'prop_firm_name':    _fname,
                             'prop_firm_stage':   _stage_pre,
                             'prop_firm_account': _acct_pre,
                             'prop_firm_leverage': str(_lev_pre) if _lev_pre else '0',
+                            'risk_pct':          str(_effective_pre),
+                            'risk_pct_firm':     str(_risk_pre),
+                            'dd_daily_pct':      str(_dd_daily_pre),
+                            'dd_total_pct':      str(_dd_total_pre),
+                            'margin_cap_enabled': '1' if _do_cap else '0',
                         })
 
                 if _ui_data_source_var is not None:
@@ -2815,8 +2912,25 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 if _pre_save:
                     _pre_cl.save(_pre_save)
                     _verify_pre = _pre_cl.load()
-                    print(f"[RUN] Firm: {_verify_pre.get('prop_firm_name','?')} | "
-                          f"Data: {_verify_pre.get('data_source_id','?')}")
+                    # WHY: Show full diagnostic in run log so user sees
+                    #      exactly what risk/DD/margin values were calculated.
+                    # CHANGED: April 2026 — diagnostic output
+                    _diag_text = (
+                        f"  [P1] Firm: {_verify_pre.get('prop_firm_name','?')} | "
+                        f"Stage: {_verify_pre.get('prop_firm_stage','?')}\n"
+                        f"  [P1] Account: ${_verify_pre.get('prop_firm_account','?')} | "
+                        f"Leverage: 1:{_verify_pre.get('prop_firm_leverage','?')}\n"
+                        f"  [P1] Risk: {_verify_pre.get('risk_pct','?')}% "
+                        f"(firm says: {_verify_pre.get('risk_pct_firm','?')}%) | "
+                        f"Margin-cap: {'ON' if _verify_pre.get('margin_cap_enabled') == '1' else 'OFF'}\n"
+                        f"  [P1] DD limits: {_verify_pre.get('dd_daily_pct','?')}% daily / "
+                        f"{_verify_pre.get('dd_total_pct','?')}% total\n"
+                        f"  [P1] Data source: {_verify_pre.get('data_source_id','?')}"
+                    )
+                    if _mc_diag:
+                        _diag_text += f"\n{_mc_diag}"
+                    print(_diag_text)
+                    output_text.after(0, lambda m=_diag_text: output_text.insert(tk.END, m + "\n\n"))
             except Exception as _pre_e:
                 print(f"[RUN] Force-save warning: {_pre_e}")
 

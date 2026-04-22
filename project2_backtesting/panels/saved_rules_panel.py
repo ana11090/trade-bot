@@ -327,6 +327,33 @@ def _render_clean_card(parent, entry, inner, canvas, window_id):
                  font=("Segoe UI", 8), bg="#ffffff", fg="#999"
                  ).pack(side=tk.RIGHT, padx=(0, 8))
 
+    # WHY: Star best rules for quick access in Refiner/Validator dropdowns.
+    # CHANGED: April 2026 — star button on saved rule cards
+    try:
+        from shared.starred import toggle as _sr_toggle, is_starred as _sr_is_starred, make_key as _sr_make_key
+        _sr_rc = rule.get('rule_combo', entry.get('rule_id', ''))
+        _sr_exit = rule.get('exit_name', rule.get('exit_class', ''))
+        _sr_tf = rule.get('entry_timeframe', rule.get('entry_tf', ''))
+        _sr_starred = _sr_is_starred(_sr_rc, _sr_exit, _sr_tf)
+
+        _sr_btn_ref = [None]
+        def _sr_make_toggle(rc, es, tf, btn_ref):
+            def _toggle():
+                new_state = _sr_toggle(rc, es, tf)
+                btn_ref[0].configure(
+                    text="⭐" if new_state else "☆",
+                    bg="#f39c12" if new_state else "#95a5a6",
+                )
+            return _toggle
+
+        _sr_btn_ref[0] = tk.Button(header, text="⭐" if _sr_starred else "☆",
+            command=_sr_make_toggle(_sr_rc, _sr_exit, _sr_tf, _sr_btn_ref),
+            bg="#f39c12" if _sr_starred else "#95a5a6", fg="white",
+            font=("Segoe UI", 9), bd=0, padx=4, pady=1, cursor="hand2", relief=tk.FLAT)
+        _sr_btn_ref[0].pack(side=tk.RIGHT, padx=(0, 3))
+    except Exception as _sr_e:
+        print(f"[SAVED RULES] Star button error: {_sr_e}")
+
     # Delete button (far right)
     rid = entry.get('id')
     tk.Button(header, text="🗑️", font=("Arial", 8),
@@ -355,7 +382,13 @@ def _render_clean_card(parent, entry, inner, canvas, window_id):
     else:
         _stats_color = '#dc3545'  # red
 
-    stats_text = f"WR: {_wr_display:.0f}%  |  PF: {pf:.2f}  |  Avg: {pips:+.0f} pips  |  {int(trades)} trades"
+    # WHY: Risk % tells the user what lot sizing was used for this rule.
+    # CHANGED: April 2026 — risk in saved rules stats
+    _risk_display = float(rule.get('risk_pct', 0) or 0)
+    _risk_str = f"  |  Risk: {_risk_display}%" if _risk_display > 0 else ""
+    _acct_display = float(rule.get('account_size', 0) or 0)
+    _acct_str = f"  |  ${int(_acct_display):,}" if _acct_display > 0 else ""
+    stats_text = f"WR: {_wr_display:.0f}%  |  PF: {pf:.2f}  |  Avg: {pips:+.0f} pips  |  {int(trades)} trades{_risk_str}{_acct_str}"
     tk.Label(stats_frame, text=stats_text,
              font=("Segoe UI", 9, "bold"), bg="#ffffff", fg=_stats_color
              ).pack(side=tk.LEFT)

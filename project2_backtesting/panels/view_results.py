@@ -746,13 +746,13 @@ def _display_results_inner(output_text, summary_frame, data, results,
                     header_row,
                     text="⭐" if starred else "☆",
                     command=_make_star_toggle(rc, es, etf, star_btn_ref),
-                    bg="#f39c12" if starred else "#ddd",
-                    fg="white" if starred else "#666",
+                    bg="#f39c12" if starred else "#95a5a6",
+                    fg="white",
                     font=("Segoe UI", 10), bd=0, padx=6, pady=1, cursor="hand2",
                 )
                 star_btn_ref[0].pack(side=tk.RIGHT, padx=3)
-            except Exception:
-                pass
+            except Exception as _star_e:
+                print(f"[VIEW RESULTS] Star button error: {_star_e}")
 
             # ── Delete button ──────────────────────────────────────────────
             # WHY: Allow users to remove unwanted strategies from View Results.

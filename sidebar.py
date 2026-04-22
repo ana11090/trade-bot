@@ -118,6 +118,7 @@ def build_sidebar(window, canvas, refresh_map):
     # ── Separator ─────────────────────────────────────────────────────────────
     tk.Frame(inner_frame, bg="#2a3a5c", height=1).pack(fill="x", padx=10, pady=(4, 0))
 
+    project0_open = [False]
     stats_open    = [False]
     prob_open     = [False]
     project1_open = [False]
@@ -223,16 +224,16 @@ def build_sidebar(window, canvas, refresh_map):
             stats_btn.configure(bg=state.COL_PARENT, fg="white",
                                 activebackground=state.COL_PARENT, activeforeground="white")
         else:
-            stats_btn.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
-                                activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+            stats_btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                                activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
         # prob_btn
         if is_prob_sub:
             prob_btn.configure(bg=state.COL_PARENT, fg="white",
                                activebackground=state.COL_PARENT, activeforeground="white")
         else:
-            prob_btn.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
-                               activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+            prob_btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
         # stats sub-button colors
         for pname, btn in STATS_BUTTONS.items():
@@ -258,8 +259,8 @@ def build_sidebar(window, canvas, refresh_map):
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
                               activebackground=state.COL_ACTIVE, activeforeground=state.FG_ACTIVE)
             else:
-                btn.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
-                              activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
+                btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
+                              activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
 
         # project1 sub-button colors
         for pname, btn in PROJECT1_BUTTONS.items():
@@ -318,6 +319,7 @@ def build_sidebar(window, canvas, refresh_map):
             project4_open[0] = True
         if is_p0_extra and not project0_extras.winfo_ismapped():
             project0_extras.pack(fill="x", after=btn0)
+            project0_open[0] = True
 
         canvas.yview_moveto(0)
         state.active_panel[0] = name
@@ -341,10 +343,14 @@ def build_sidebar(window, canvas, refresh_map):
             prob_submenu.pack(fill="x", after=prob_btn)
             prob_open[0] = True
 
-    def _on_pipeline_click():
-        show_panel("pipeline")
-        if not project0_extras.winfo_ismapped():
+    def _toggle_project0():
+        if project0_open[0]:
+            project0_extras.pack_forget()
+            project0_open[0] = False
+        else:
             project0_extras.pack(fill="x", after=btn0)
+            project0_open[0] = True
+            show_panel("pipeline")
 
     def _toggle_project1():
         if project1_open[0]:
@@ -383,11 +389,11 @@ def build_sidebar(window, canvas, refresh_map):
             show_panel("p4_scratch")
 
     # ── Build buttons ─────────────────────────────────────────────────────────
-    btn0 = _sidebar_btn(inner_frame, "0 - Data Pipeline", _on_pipeline_click)
+    btn0 = _sidebar_btn(inner_frame, "0 - Data Pipeline", _toggle_project0)
     btn0.pack(fill="x")
 
     # project0_extras contents
-    stats_btn = _sidebar_btn(project0_extras, "Statistic transactions history", _toggle_stats)
+    stats_btn = _sub_btn(project0_extras, "Statistic transactions history", _toggle_stats)
     stats_btn.pack(fill="x")
 
     btn_p4 = _sub_btn(stats_submenu, "Performance",     lambda: show_panel("panel4"))
@@ -406,7 +412,7 @@ def build_sidebar(window, canvas, refresh_map):
         "panel7": btn_p7, "panel8": btn_p8,
     }
 
-    prob_btn = _sidebar_btn(project0_extras, "Probabilities", _toggle_prob)
+    prob_btn = _sub_btn(project0_extras, "Probabilities", _toggle_prob)
     prob_btn.pack(fill="x")
 
     btn_surv = _sub_btn(prob_submenu, "Account Survival",    lambda: show_panel("account_survival"))
@@ -429,16 +435,16 @@ def build_sidebar(window, canvas, refresh_map):
     }
 
     # New standalone Project 0 panels
-    explorer_btn = _sidebar_btn(project0_extras, "Prop Firm Explorer",
-                                lambda: show_panel("prop_explorer"))
+    explorer_btn = _sub_btn(project0_extras, "Prop Firm Explorer",
+                            lambda: show_panel("prop_explorer"))
     explorer_btn.pack(fill="x")
 
-    sim_btn = _sidebar_btn(project0_extras, "Lifecycle Simulator",
-                           lambda: show_panel("lifecycle_sim"))
+    sim_btn = _sub_btn(project0_extras, "Lifecycle Simulator",
+                       lambda: show_panel("lifecycle_sim"))
     sim_btn.pack(fill="x")
 
-    compare_btn = _sidebar_btn(project0_extras, "Compare Trade Histories",
-                               lambda: show_panel("compare_histories"))
+    compare_btn = _sub_btn(project0_extras, "Compare Trade Histories",
+                           lambda: show_panel("compare_histories"))
     compare_btn.pack(fill="x")
 
     PROJECT0_EXTRA_BUTTONS = {

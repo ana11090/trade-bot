@@ -1,0 +1,38 @@
+{
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_swing_high",
+          "operator": ">",
+          "value": 0.7721
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": "<=",
+          "value": -1.757
+        },
+        {
+          "feature": "H4_roc_20",
+          "operator": "<=",
+          "value": 2.5799
+        },
+        {
+          "feature": "H4_aroon_indicator",
+          "operator": "<=",
+          "value": -22.0
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 1.0,
+      "coverage": 40,
+      "coverage_pct": 22.3,
+      "win_rate": 1.0,
+      "avg_pips": 454.2,
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    }
+  ],
+  "discovery_method": "selected_subset"
+}

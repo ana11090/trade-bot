@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-21T21:40:19.439579",
+  "generated_at": "2026-04-22T09:30:33.665707",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-21 21:40:19",
+  "activated_at": "2026-04-22 09:30:33",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 11.6,
+  "analysis_time_s": 8.0,
   "trade_count": 1106,
   "feature_count": 629,
   "profile": {
@@ -220,81 +220,170 @@
     {
       "conditions": [
         {
-          "feature": "M5_distance_to_rolling_level_618",
+          "feature": "M5_distance_to_swing_high",
+          "operator": ">",
+          "value": 0.7721
+        },
+        {
+          "feature": "M5_bull_power",
           "operator": "<=",
-          "value": -0.4547
+          "value": -1.757
         },
         {
-          "feature": "M5_stoch_21_d",
-          "operator": ">",
-          "value": 12.1806
+          "feature": "H4_roc_20",
+          "operator": "<=",
+          "value": 2.5799
         },
         {
-          "feature": "M15_roc_5",
-          "operator": ">",
-          "value": -0.6724
+          "feature": "H4_aroon_indicator",
+          "operator": "<=",
+          "value": -22.0
         }
       ],
       "prediction": "WIN",
       "confidence": 1.0,
-      "coverage": 23,
-      "coverage_pct": 24.7,
+      "coverage": 40,
+      "coverage_pct": 22.3,
       "win_rate": 1.0,
-      "avg_pips": 630.1,
+      "avg_pips": 454.2,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
         {
-          "feature": "M5_distance_to_rolling_level_618",
-          "operator": "<=",
-          "value": -0.4547
-        },
-        {
-          "feature": "M5_stoch_21_d",
+          "feature": "M5_distance_to_swing_high",
           "operator": ">",
-          "value": 12.1806
+          "value": 0.7721
         },
         {
-          "feature": "M15_roc_5",
-          "operator": "<=",
-          "value": -0.6724
+          "feature": "M5_bull_power",
+          "operator": ">",
+          "value": -1.757
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.95,
-      "coverage": 20,
-      "coverage_pct": 21.5,
-      "win_rate": 0.95,
-      "avg_pips": 384.8,
+      "confidence": 0.69,
+      "coverage": 29,
+      "coverage_pct": 16.2,
+      "win_rate": 0.69,
+      "avg_pips": 369.8,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
         {
-          "feature": "M5_distance_to_rolling_level_618",
-          "operator": "<=",
-          "value": -0.4547
+          "feature": "M5_distance_to_swing_high",
+          "operator": ">",
+          "value": 0.7721
         },
         {
-          "feature": "M5_stoch_21_d",
+          "feature": "M5_bull_power",
           "operator": "<=",
-          "value": 12.1806
+          "value": -1.757
+        },
+        {
+          "feature": "H4_roc_20",
+          "operator": "<=",
+          "value": 2.5799
+        },
+        {
+          "feature": "H4_aroon_indicator",
+          "operator": ">",
+          "value": -22.0
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.9,
+      "coverage": 20,
+      "coverage_pct": 11.2,
+      "win_rate": 0.9,
+      "avg_pips": 340.1,
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_swing_high",
+          "operator": "<=",
+          "value": 0.7721
+        },
+        {
+          "feature": "H4_roc_5",
+          "operator": "<=",
+          "value": -0.0631
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.81,
+      "coverage": 21,
+      "coverage_pct": 11.7,
+      "win_rate": 0.81,
+      "avg_pips": 221.8,
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_swing_high",
+          "operator": "<=",
+          "value": 0.7721
+        },
+        {
+          "feature": "H4_roc_5",
+          "operator": ">",
+          "value": -0.0631
+        },
+        {
+          "feature": "H4_close_position_in_range",
+          "operator": ">",
+          "value": 0.6515
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 24,
+      "coverage_pct": 13.4,
+      "win_rate": 0.667,
+      "avg_pips": 254.5,
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_swing_high",
+          "operator": ">",
+          "value": 0.7721
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": "<=",
+          "value": -1.757
+        },
+        {
+          "feature": "H4_roc_20",
+          "operator": ">",
+          "value": 2.5799
         }
       ],
       "prediction": "WIN",
       "confidence": 0.75,
-      "coverage": 24,
-      "coverage_pct": 25.8,
+      "coverage": 20,
+      "coverage_pct": 11.2,
       "win_rate": 0.75,
-      "avg_pips": 438.0,
+      "avg_pips": 392.4,
       "action": "BUY",
       "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
   ],
   "clusters": [
