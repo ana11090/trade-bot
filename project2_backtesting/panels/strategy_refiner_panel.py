@@ -854,8 +854,71 @@ def _start_optimization():
             # Get stage and account size
             stage = _stage_var.get().lower() if _stage_var else "funded"
             account_size = float(_acct_var.get()) if _acct_var else 100000
-            risk_pct = float(_risk_var.get()) if _risk_var else 1.0
-            print(f"[OPTIMIZER] Stage: {stage}, Account: ${account_size:,.0f}, Risk: {risk_pct}%")
+            # WHY: Risk comes from the RULE (single source of truth).
+            #      Rule carries margin-capped risk_pct from P1 config.
+            #      UI is only a fallback for old rules without risk_pct.
+            # CHANGED: April 2026 — risk from rule, not UI
+            risk_pct = 0
+            _risk_dd_source = "default"
+            _cfg_dd_daily = 5.0
+            _cfg_dd_total = 10.0
+            if selected_strategy_row:
+                _sr = selected_strategy_row.get('saved_rule', {})
+                _r0 = {}
+                _rules_list = selected_strategy_row.get('rules', [])
+                if _rules_list and isinstance(_rules_list, list) and len(_rules_list) > 0:
+                    _r0 = _rules_list[0] if isinstance(_rules_list[0], dict) else {}
+                _rset = selected_strategy_row.get('run_settings', {})
+                risk_pct = (
+                    float(_sr.get('risk_pct', 0) or 0) or
+                    float(_r0.get('risk_pct', 0) or 0) or
+                    float(_rset.get('risk_pct', 0) or 0) or
+                    float(selected_strategy_row.get('risk_pct', 0) or 0)
+                )
+                _cfg_dd_daily = (
+                    float(_sr.get('dd_daily_pct', 0) or 0) or
+                    float(_r0.get('dd_daily_pct', 0) or 0) or
+                    float(_rset.get('dd_daily_pct', 0) or 0) or
+                    float(selected_strategy_row.get('dd_daily_pct', 0) or 0)
+                )
+                _cfg_dd_total = (
+                    float(_sr.get('dd_total_pct', 0) or 0) or
+                    float(_r0.get('dd_total_pct', 0) or 0) or
+                    float(_rset.get('dd_total_pct', 0) or 0) or
+                    float(selected_strategy_row.get('dd_total_pct', 0) or 0)
+                )
+                if risk_pct > 0:
+                    _risk_dd_source = "from rule"
+            if risk_pct <= 0:
+                try:
+                    import importlib.util as _opt_rsk_ilu
+                    _opt_rsk_path = os.path.join(project_root,
+                        'project1_reverse_engineering', 'config_loader.py')
+                    _opt_rsk_spec = _opt_rsk_ilu.spec_from_file_location('_opt_rsk', _opt_rsk_path)
+                    _opt_rsk_mod = _opt_rsk_ilu.module_from_spec(_opt_rsk_spec)
+                    _opt_rsk_spec.loader.exec_module(_opt_rsk_mod)
+                    _opt_p1 = _opt_rsk_mod.load()
+                    risk_pct = float(_opt_p1.get('risk_pct', 0))
+                    if risk_pct > 0:
+                        _risk_dd_source = "from P1 config"
+                    if _cfg_dd_daily <= 0:
+                        _cfg_dd_daily = float(_opt_p1.get('dd_daily_pct', 0))
+                    if _cfg_dd_total <= 0:
+                        _cfg_dd_total = float(_opt_p1.get('dd_total_pct', 0))
+                except Exception:
+                    pass
+            if risk_pct <= 0:
+                risk_pct = float(_risk_var.get()) if _risk_var else 1.0
+                _risk_dd_source = "from UI (rule has no risk)"
+            if _cfg_dd_daily <= 0:
+                _cfg_dd_daily = 5.0
+            if _cfg_dd_total <= 0:
+                _cfg_dd_total = 10.0
+            print(f"[OPTIMIZER] === DIAGNOSTIC ===")
+            print(f"[OPTIMIZER] Risk: {risk_pct}% | DD: {_cfg_dd_daily}%/{_cfg_dd_total}%")
+            print(f"[OPTIMIZER] Account: ${account_size:,.0f} | Leverage: 1:{_opt_leverage}")
+            print(f"[OPTIMIZER] Source: {_risk_dd_source}")
+            print(f"[OPTIMIZER] ==================")
             print(f"[OPTIMIZER] Spread: {spread_pips} pips, Commission: {commission_pips} pips")
 
             # Pass stage to presets for scoring
@@ -998,6 +1061,9 @@ def _start_optimization():
                     exit_strategy_desc=_sel_exit_desc,
                     leverage=_opt_leverage,
                     contract_size=_opt_contract,
+                    risk_per_trade_pct=risk_pct,
+                    dd_daily_limit=_cfg_dd_daily,
+                    dd_total_limit=_cfg_dd_total,
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -1153,6 +1219,9 @@ def _start_optimization():
                     direction=_strategy_direction,
                     leverage=_opt_leverage,
                     contract_size=_opt_contract,
+                    risk_per_trade_pct=risk_pct,
+                    dd_daily_limit=_cfg_dd_daily,
+                    dd_total_limit=_cfg_dd_total,
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
@@ -3232,14 +3301,26 @@ def build_panel(parent):
                         risk_range = params.get('risk_pct_range', [0.8, 1.5])
                         _eval_risk = float(risk_range[0])
                     if _risk_var:
-                        _risk_var.set(str(_eval_risk))
+                        # WHY: Don't override rule's margin-capped risk with firm's theoretical.
+                        # CHANGED: April 2026 — rule risk takes priority
+                        _loaded_risk = 0
+                        try:
+                            _sel_idx2 = _get_selected_index()
+                            if _sel_idx2 is not None:
+                                for _si2 in _strategies:
+                                    if _si2.get('index') == _sel_idx2:
+                                        _lsr2 = _si2.get('saved_rule', {})
+                                        _loaded_risk = float(_lsr2.get('risk_pct', 0) or 0)
+                                        break
+                        except Exception:
+                            pass
+                        if _loaded_risk > 0:
+                            _risk_var.set(str(_loaded_risk))
+                        else:
+                            _risk_var.set(str(_eval_risk))
                     break
             else:
                 # No firm-specific eval rules — conservative default
-                # WHY (Phase A.17): was 1.0 unconditionally; align with
-                #      the lower-bound policy above so unconfigured
-                #      firms also default conservatively.
-                # CHANGED: April 2026 — Phase A.17
                 if _risk_var:
                     _risk_var.set("0.5")
         else:
@@ -3268,7 +3349,23 @@ def build_panel(parent):
                     else:
                         _funded_risk = 0.5
                     if _risk_var:
-                        _risk_var.set(str(_funded_risk))
+                        # WHY: Don't override rule's margin-capped risk with firm's theoretical.
+                        # CHANGED: April 2026 — rule risk takes priority
+                        _loaded_risk_f = 0
+                        try:
+                            _sel_idx3 = _get_selected_index()
+                            if _sel_idx3 is not None:
+                                for _si3 in _strategies:
+                                    if _si3.get('index') == _sel_idx3:
+                                        _lsr3 = _si3.get('saved_rule', {})
+                                        _loaded_risk_f = float(_lsr3.get('risk_pct', 0) or 0)
+                                        break
+                        except Exception:
+                            pass
+                        if _loaded_risk_f > 0:
+                            _risk_var.set(str(_loaded_risk_f))
+                        else:
+                            _risk_var.set(str(_funded_risk))
                     break
             else:
                 # No firm-specific funded rules — conservative default
@@ -3276,6 +3373,7 @@ def build_panel(parent):
                     _risk_var.set("0.5")
 
     _stage_var.trace_add("write", _on_stage_change)
+    _stage_var.trace_add("write", _on_firm_change_acct)
     _on_stage_change()  # Initial update
 
     # ── Account size + risk row ──
@@ -3319,18 +3417,41 @@ def build_panel(parent):
                 if sizes and _acct_var.get() not in [str(s) for s in sizes]:
                     _acct_var.set(str(sizes[-1]))
 
-                funded = firm_data['challenges'][0].get('funded', {})
-                daily = funded.get('max_daily_drawdown_pct', 5)
-                total = funded.get('max_total_drawdown_pct', 10)
-                dd_type = funded.get('drawdown_type', 'static')
+                # WHY: DD limits depend on selected stage (eval vs funded).
+                #      Leverage from loaded rule first, then firm data.
+                # CHANGED: April 2026 — stage-aware DD + rule leverage
+                _cur_stage = _stage_var.get().lower() if _stage_var else 'funded'
+                _challenge = firm_data['challenges'][0]
+                if _cur_stage in ('evaluation', 'eval'):
+                    _phase = _challenge.get('phases', [{}])[0]
+                    daily = _phase.get('max_daily_drawdown_pct', 5)
+                    total = _phase.get('max_total_drawdown_pct', 10)
+                    dd_type = _phase.get('drawdown_type', 'static')
+                else:
+                    _funded = _challenge.get('funded', {})
+                    daily = _funded.get('max_daily_drawdown_pct', 5)
+                    total = _funded.get('max_total_drawdown_pct', 10)
+                    dd_type = _funded.get('drawdown_type', 'static')
+
+                _rule_lev = 0
+                try:
+                    _sel_idx = _get_selected_index()
+                    if _sel_idx is not None:
+                        for _si in _strategies:
+                            if _si.get('index') == _sel_idx:
+                                _lsr = _si.get('saved_rule', {})
+                                _rule_lev = int(_lsr.get('leverage', 0) or 0)
+                                break
+                except Exception:
+                    pass
                 try:
                     from shared.prop_firm_engine import get_leverage_for_symbol, get_instrument_type
-                    _opt_sym = selected_strategy_row.get('symbol', 'XAUUSD') if selected_strategy_row else 'XAUUSD'
-                    _opt_lev_val = get_leverage_for_symbol(firm_data, _opt_sym)
+                    _opt_sym = 'XAUUSD'
+                    _opt_lev_val = _rule_lev if _rule_lev > 0 else get_leverage_for_symbol(firm_data, _opt_sym)
                     _opt_inst = get_instrument_type(_opt_sym)
                     lev = f"1:{_opt_lev_val} ({_opt_inst})"
                 except Exception:
-                    lev = firm_data.get('leverage', '—')
+                    lev = f"1:{_rule_lev}" if _rule_lev > 0 else firm_data.get('leverage', '—')
                 _acct_info.config(text=f"DD: {daily}%/{total}% {dd_type} | Leverage: {lev}")
             except (KeyError, IndexError, TypeError):
                 # Firm data structure unexpected — use defaults

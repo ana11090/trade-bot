@@ -50,6 +50,11 @@ _a44_state = {
     'show_zero':  False,
 }
 
+# WHY: display_summary is called twice on first panel entry (build_panel + refresh).
+#      Cache the matrix file mtime so refresh() skips rebuild when nothing changed.
+# CHANGED: April 2026 — mtime cache to prevent freeze on re-entry
+_last_matrix_mtime = [0.0]
+
 
 # WHY: Used by both display_summary() and _display_results_inner().
 #      Was originally a nested function inside display_summary() but
@@ -133,6 +138,14 @@ def open_output_folder():
 
 def display_summary(output_text, summary_frame):
     """Display ALL backtest results as sortable cards."""
+    # Record mtime so refresh() can detect when data has changed
+    try:
+        _pr = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        _mf = os.path.join(_pr, 'project2_backtesting/outputs/backtest_matrix.json')
+        _last_matrix_mtime[0] = os.path.getmtime(_mf) if os.path.exists(_mf) else 0.0
+    except Exception:
+        pass
+
     # Read account size from config for % calculations
     try:
         from project2_backtesting.panels.configuration import load_config
@@ -1294,17 +1307,17 @@ def _display_results_inner(output_text, summary_frame, data, results,
             tk.Label(err_card, text=f"#{i+1} Error displaying result: {e}",
                      bg="#fff3cd", fg="#856404", font=("Arial", 9)).pack(anchor="w")
 
-    # ── Update detailed text output ──
-    output_text.delete(1.0, tk.END)
-    output_text.insert(tk.END, f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
-                                f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Profit%':>8} "
-                                f"{'Median':>8} {'Avg':>8} {'MaxDD':>8} {'Blows':>6}\n")
-    output_text.insert(tk.END, "-" * 135 + "\n")
-
+    # ── Update detailed text output (build as single string — faster than repeated insert) ──
+    import statistics as _stats
+    _lines = [
+        f"{'Rank':<5} {'Rule Combo':<22} {'Exit Strategy':<28} "
+        f"{'Trades':>6} {'WR':>7} {'PF':>6} {'Net Pips':>10} {'Profit%':>8} "
+        f"{'Median':>8} {'Avg':>8} {'MaxDD':>8} {'Blows':>6}",
+        "-" * 135,
+    ]
     for i, r in enumerate(sorted_results):
         trades = r.get('total_trades', 0)
         wr = r.get('win_rate', 0)
-        # CHANGED: April 2026 — Phase 33 Fix 3b — match Fix 3 boundary
         wr_str = f"{wr:.1f}%" if wr >= 1.0 else f"{wr*100:.1f}%"
         pf = r.get('net_profit_factor', 0)
         net = r.get('net_total_pips', 0)
@@ -1312,16 +1325,12 @@ def _display_results_inner(output_text, summary_frame, data, results,
         dd = r.get('max_dd_pips', 0)
         rule = r.get('rule_combo', '?')[:20]
         exit_s = r.get('exit_strategy', '?')[:26]
-
-        profit_dollars = net * dollar_per_pip
-        profit_pct = (profit_dollars / account_size) * 100
-
+        profit_pct = (net * dollar_per_pip / account_size) * 100
         trade_list = r.get('trades', [])
         try:
             if trade_list and isinstance(trade_list, list):
-                import statistics
                 pips_list = [t.get('net_pips', 0) for t in trade_list if isinstance(t, dict)]
-                med = statistics.median(pips_list) if pips_list else 0
+                med = _stats.median(pips_list) if pips_list else 0
                 avg_calc = sum(pips_list) / len(pips_list) if pips_list else avg
             else:
                 med = 0
@@ -1329,17 +1338,16 @@ def _display_results_inner(output_text, summary_frame, data, results,
         except Exception:
             med = 0
             avg_calc = avg
-
-        blown_str = "-"
         breaches = r.get('breaches', {})
-        if breaches:
-            blown_str = str(breaches.get('blown_count', 0))
-
-        output_text.insert(tk.END, f"#{i+1:<4} {rule:<22} {exit_s:<28} "
-                                    f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} "
-                                    f"{profit_pct:>+7.1f}% {med:>+7.1f} {avg_calc:>+7.1f} "
-                                    f"{dd:>8,.0f} {blown_str:>6}\n")
-
+        blown_str = str(breaches.get('blown_count', 0)) if breaches else "-"
+        _lines.append(
+            f"#{i+1:<4} {rule:<22} {exit_s:<28} "
+            f"{trades:>6} {wr_str:>7} {pf:>5.2f} {net:>+10,.0f} "
+            f"{profit_pct:>+7.1f}% {med:>+7.1f} {avg_calc:>+7.1f} "
+            f"{dd:>8,.0f} {blown_str:>6}"
+        )
+    output_text.delete(1.0, tk.END)
+    output_text.insert(tk.END, "\n".join(_lines))
     output_text.see("1.0")
 
 
@@ -1460,5 +1468,19 @@ def build_panel(parent):
 def refresh():
     """Refresh the panel (called when panel becomes active)"""
     global _output_text, _summary_frame
-    if _output_text is not None and _summary_frame is not None:
-        display_summary(_output_text, _summary_frame)
+    if _output_text is None or _summary_frame is None:
+        return
+    # WHY: Skip rebuild if the matrix file hasn't changed since last display.
+    #      display_summary is also called by build_panel, so on first entry
+    #      this prevents a double-build. On re-entry after sorting/filtering
+    #      the panel is already up-to-date.
+    # CHANGED: April 2026 — skip rebuild when data unchanged
+    try:
+        _pr = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        _mf = os.path.join(_pr, 'project2_backtesting/outputs/backtest_matrix.json')
+        _cur_mtime = os.path.getmtime(_mf) if os.path.exists(_mf) else 0.0
+    except Exception:
+        _cur_mtime = 0.0
+    if _cur_mtime == _last_matrix_mtime[0]:
+        return
+    display_summary(_output_text, _summary_frame)

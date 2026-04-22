@@ -797,11 +797,56 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_commission_dollars = float(_bt_cfg.get('commission', 4.0))
                         _cfg_commission = _cfg_commission_dollars / _cfg_pip_value if _cfg_pip_value > 0 else 0
                     _cfg_account     = float(_first_rule.get('account_size', 0)) or float(_bt_cfg.get('starting_capital', 10000))
-                    # WHY: Rule is single source of truth for risk.
-                    # CHANGED: April 2026 — risk from rule
+                    # WHY: Rule → P1 config → P2 config → default.
+                    #      Must update _cfg_risk_pct (not just _run_settings)
+                    #      because _cfg_risk_pct is passed to run_comparison_matrix.
+                    # CHANGED: April 2026 — complete risk fallback chain
                     _cfg_risk_pct = float(_first_rule.get('risk_pct', 0))
+                    _risk_source = "from rule" if _cfg_risk_pct > 0 else ""
+                    if _cfg_risk_pct <= 0:
+                        try:
+                            import importlib.util as _rsk_ilu
+                            _rsk_cl_path = os.path.join(project_root,
+                                'project1_reverse_engineering', 'config_loader.py')
+                            _rsk_spec = _rsk_ilu.spec_from_file_location('_rsk_cl', _rsk_cl_path)
+                            _rsk_mod = _rsk_ilu.module_from_spec(_rsk_spec)
+                            _rsk_spec.loader.exec_module(_rsk_mod)
+                            _rsk_p1 = _rsk_mod.load()
+                            _cfg_risk_pct = float(_rsk_p1.get('risk_pct', 0))
+                            if _cfg_risk_pct > 0:
+                                _risk_source = "from P1 config"
+                        except Exception:
+                            pass
                     if _cfg_risk_pct <= 0:
                         _cfg_risk_pct = float(_bt_cfg.get('risk_pct', 1.0))
+                        _risk_source = "from P2 config default"
+                    # WHY: DD limits: rule → P1 config → defaults.
+                    # CHANGED: April 2026 — DD fallback chain
+                    _cfg_dd_daily = float(_first_rule.get('dd_daily_pct', 0))
+                    _cfg_dd_total = float(_first_rule.get('dd_total_pct', 0))
+                    _dd_source = "from rule" if _cfg_dd_daily > 0 else ""
+                    if _cfg_dd_daily <= 0 or _cfg_dd_total <= 0:
+                        try:
+                            if '_rsk_p1' not in dir():
+                                import importlib.util as _rsk_ilu2
+                                _rsk_cl_path2 = os.path.join(project_root,
+                                    'project1_reverse_engineering', 'config_loader.py')
+                                _rsk_spec2 = _rsk_ilu2.spec_from_file_location('_rsk_cl2', _rsk_cl_path2)
+                                _rsk_mod2 = _rsk_ilu2.module_from_spec(_rsk_spec2)
+                                _rsk_spec2.loader.exec_module(_rsk_mod2)
+                                _rsk_p1 = _rsk_mod2.load()
+                            _p1_dd_d = float(_rsk_p1.get('dd_daily_pct', 0))
+                            _p1_dd_t = float(_rsk_p1.get('dd_total_pct', 0))
+                            if _p1_dd_d > 0:
+                                _cfg_dd_daily = _p1_dd_d
+                                _cfg_dd_total = _p1_dd_t
+                                _dd_source = "from P1 config"
+                        except Exception:
+                            pass
+                    if _cfg_dd_daily <= 0:
+                        _cfg_dd_daily = 5.0
+                        _cfg_dd_total = 10.0
+                        _dd_source = "defaults"
                     _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or 1.0
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
@@ -860,20 +905,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _period_text = f"   Period: all data → {_cfg_bt_end}\n"
                     else:
                         _period_text = "   Period: all time\n"
-                    # WHY: Show exactly where risk/DD came from so user
-                    #      can verify the pipeline is using the right values.
-                    # CHANGED: April 2026 — risk source diagnostic
-                    _rule_risk_raw = float(_first_rule.get('risk_pct', 0))
-                    _rule_dd_daily_raw = float(_first_rule.get('dd_daily_pct', 0))
-                    _rule_dd_total_raw = float(_first_rule.get('dd_total_pct', 0))
-                    if _rule_risk_raw > 0:
-                        _risk_source = f"from rule ({_rule_risk_raw}%)"
-                    else:
-                        _risk_source = f"from config default (rule has 0%)"
-                    if _rule_dd_daily_raw > 0:
-                        _dd_source = f"from rule ({_rule_dd_daily_raw}%/{_rule_dd_total_raw}%)"
-                    else:
-                        _dd_source = "defaults (rule has 0%/0%)"
                     output_text.insert(tk.END,
                         f"📊 Config: {_firm_display}\n"
                         f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}% ({_risk_source})  |  "
@@ -881,7 +912,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         + _period_text +
                         f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.2f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n"
-                        f"   DD limits: {_rule_dd_daily_raw or 5.0}% daily / {_rule_dd_total_raw or 10.0}% total ({_dd_source})\n"
+                        f"   DD limits: {_cfg_dd_daily}% daily / {_cfg_dd_total}% total ({_dd_source})\n"
                     )
                     # Show data source
                     output_text.insert(tk.END,
@@ -905,22 +936,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _run_settings['starting_capital'] = float(_run_cfg.get('starting_capital', 10000))
             except Exception:
                 pass
-            # WHY: P1 config has firm-derived risk. Use if P2 not set.
-            # CHANGED: April 2026 — P1 risk fallback
-            if not _run_settings.get('risk_pct') or _run_settings['risk_pct'] == 1.0:
-                try:
-                    import importlib.util as _rp_ilu
-                    _rp_cl_path = os.path.join(project_root,
-                        'project1_reverse_engineering', 'config_loader.py')
-                    _rp_spec = _rp_ilu.spec_from_file_location('_rp_cl', _rp_cl_path)
-                    _rp_mod = _rp_ilu.module_from_spec(_rp_spec)
-                    _rp_spec.loader.exec_module(_rp_mod)
-                    _rp_p1 = _rp_mod.load()
-                    _p1_risk = float(_rp_p1.get('risk_pct', 0))
-                    if _p1_risk > 0:
-                        _run_settings['risk_pct'] = _p1_risk
-                except Exception:
-                    pass
             # WHY: Save leverage/firm in run_settings so View Results can
             #      include them in save_data → saved_rules.json → EA generator.
             # CHANGED: April 2026 — leverage flows through the pipeline
@@ -1014,10 +1029,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # WHY: Firm-specific DD limits from rule, not defaults.
                         # CHANGED: April 2026 — firm DD limits in backtest
                         breach_account_size=_cfg_account,
-                        breach_daily_dd_limit_pct=float(_first_rule.get('dd_daily_pct', 0)) or 5.0,
-                        breach_total_dd_limit_pct=float(_first_rule.get('dd_total_pct', 0)) or 10.0,
-                        breach_daily_safety_pct=float(_first_rule.get('dd_daily_pct', 0)) * 0.9 if float(_first_rule.get('dd_daily_pct', 0)) > 0 else 4.0,
-                        breach_total_safety_pct=float(_first_rule.get('dd_total_pct', 0)) * 0.95 if float(_first_rule.get('dd_total_pct', 0)) > 0 else 8.0,
+                        breach_daily_dd_limit_pct=_cfg_dd_daily,
+                        breach_total_dd_limit_pct=_cfg_dd_total,
+                        breach_daily_safety_pct=_cfg_dd_daily * 0.9 if _cfg_dd_daily > 0 else 4.0,
+                        breach_total_safety_pct=_cfg_dd_total * 0.95 if _cfg_dd_total > 0 else 8.0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

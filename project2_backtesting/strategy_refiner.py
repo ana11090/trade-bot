@@ -1291,7 +1291,7 @@ def stop_optimization():
 
 
 def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
-                  sl_pips=None, risk_pct=None):
+                  sl_pips=None, risk_pct=None, dd_daily_limit=5.0, dd_total_limit=10.0):
     """
     Score trades for prop firm suitability.
 
@@ -1385,8 +1385,8 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
 
-        if dd_pct_approx > 6:
-            score -= (dd_pct_approx - 6) * 3
+        if dd_pct_approx > dd_total_limit:
+            score -= (dd_pct_approx - dd_total_limit) * 3
 
     else:
         # FUNDED: survive + consistency + steady payouts
@@ -1442,10 +1442,10 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
         dd_dollars = max_dd * dollar_per_pip
         dd_pct_approx = (dd_dollars / account_size) * 100
 
-        if dd_pct_approx > 10:
-            score -= (dd_pct_approx - 10) * 5
-        elif dd_pct_approx > 8:
-            score -= (dd_pct_approx - 8) * 2
+        if dd_pct_approx > dd_total_limit:
+            score -= (dd_pct_approx - dd_total_limit) * 5
+        elif dd_pct_approx > dd_total_limit * 0.8:
+            score -= (dd_pct_approx - dd_total_limit * 0.8) * 2
 
         # Trailing DD penalty
         if target_firm and isinstance(target_firm, dict):
@@ -1500,6 +1500,9 @@ def deep_optimize(
     exit_strategy_desc='',
     leverage=0,
     contract_size=100.0,
+    risk_per_trade_pct=1.0,
+    dd_daily_limit=5.0,
+    dd_total_limit=10.0,
 ):
     """
     Deep optimization starting from existing trades.
@@ -1549,7 +1552,8 @@ def deep_optimize(
 
     base_stats  = compute_stats_summary(trades)
     base_score  = _score_trades(trades, target_firm_data, stage, account_size,
-                                sl_pips=_base_sl_pips)
+                                sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
+                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
     best_so_far = {
         'name':           'Base (no changes)',
         'trades':         len(trades),
@@ -1586,7 +1590,8 @@ def deep_optimize(
         #      change the exit strategy will need separate handling.
         # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
         score = _score_trades(kept_trades, target_firm_data, stage, account_size,
-                              sl_pips=_base_sl_pips)
+                              sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
+                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
         candidate = {
             'name':             name,
             'rules':            base_rules,
@@ -1768,7 +1773,8 @@ def deep_optimize(
             _report(f"Risk test: {_rp}%", total_steps, _risk_base_step + _ri)
 
             _r_score = _score_trades(_risk_trades, target_firm_data, stage, account_size,
-                                     sl_pips=_base_sl_pips, risk_pct=_rp)
+                                     sl_pips=_base_sl_pips, risk_pct=_rp if _rp else risk_per_trade_pct,
+                                     dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
             if _r_score > -900:
                 _r_stats = compute_stats_summary(_risk_trades)
                 _r_candidate = {
@@ -1842,6 +1848,9 @@ def deep_optimize_generate(
     direction='BUY',  # NEW: pass strategy direction; was hardcoded BUY
     leverage=0,
     contract_size=100.0,
+    risk_per_trade_pct=1.0,
+    dd_daily_limit=5.0,
+    dd_total_limit=10.0,
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -2090,7 +2099,8 @@ def deep_optimize_generate(
 
     base_stats = compute_stats_summary(trades)
     base_score = _score_trades(trades, target_firm_data, stage, account_size,
-                                sl_pips=_base_sl_pips)
+                                sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
+                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
     best_so_far = {
         'name':           'Base (original)',
         'trades':         len(trades),
@@ -2144,6 +2154,7 @@ def deep_optimize_generate(
                 account_size=account_size,
                 leverage=leverage,
                 contract_size=contract_size,
+                risk_per_trade_pct=risk_per_trade_pct,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,
@@ -2190,7 +2201,8 @@ def deep_optimize_generate(
         except Exception:
             _exit_sl_pips = None
         score = _score_trades(final_trades, target_firm_data, stage, account_size,
-                              sl_pips=_exit_sl_pips)
+                              sl_pips=_exit_sl_pips, risk_pct=risk_per_trade_pct,
+                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
 
         exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
         exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name

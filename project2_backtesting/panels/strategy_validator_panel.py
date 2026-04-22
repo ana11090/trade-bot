@@ -2852,7 +2852,16 @@ def _run(mode, override_idx=None, done_event=None):
         account_size  = int(_account_var.get())
         spread_pips   = float(_spread_var.get())
         comm_pips     = float(_comm_var.get())
-        risk_pct      = float(_risk_var.get())
+        # WHY: Read risk from strategy's rule data first (single source of truth).
+        # CHANGED: April 2026 — risk from rule in validator
+        _val_rule_risk = float(_val_run_settings.get('risk_pct', 0) or 0)
+        if _val_rule_risk > 0:
+            risk_pct = _val_rule_risk
+            if _risk_var:
+                _risk_var.set(str(_val_rule_risk))
+            print(f"[VALIDATOR] Risk from rule: {_val_rule_risk}%")
+        else:
+            risk_pct = float(_risk_var.get())
         sl_pips       = float(_sl_var.get())
         # WHY: Read pip_value from strategy's run_settings first, then UI, then default.
         #      Strategy carries its own broker specs (single source of truth).
