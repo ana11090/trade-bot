@@ -202,6 +202,14 @@ DEFAULTS = {
     'commission':           '4.0',
     'contract_size':        '100.0',
     'prop_firm_leverage':   '0',
+    # WHY: Risk and DD limits must survive save/load cycle.
+    #      Without these in DEFAULTS, save() silently drops them.
+    # CHANGED: April 2026 — risk + DD in config
+    'risk_pct':             '0',
+    'risk_pct_firm':        '0',
+    'dd_daily_pct':         '0',
+    'dd_total_pct':         '0',
+    'margin_cap_enabled':   '1',
 }
 
 

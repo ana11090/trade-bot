@@ -537,6 +537,12 @@ def update_all_rules_firm():
             'pip_value_per_lot': float(_cfg.get('pip_value_per_lot', 1.0)),
             'spread_pips': float(_cfg.get('spread', 25.0)),
             'leverage': int(float(_cfg.get('prop_firm_leverage', 0))),
+            # WHY: Risk and DD must be backfilled into old rules that
+            #      were saved before the risk injection was added.
+            # CHANGED: April 2026 — risk/DD in backfill
+            'risk_pct': float(_cfg.get('risk_pct', 0)),
+            'dd_daily_pct': float(_cfg.get('dd_daily_pct', 0)),
+            'dd_total_pct': float(_cfg.get('dd_total_pct', 0)),
         }
 
         with _save_lock:

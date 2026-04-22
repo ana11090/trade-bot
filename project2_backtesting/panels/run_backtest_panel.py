@@ -860,13 +860,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _period_text = f"   Period: all data → {_cfg_bt_end}\n"
                     else:
                         _period_text = "   Period: all time\n"
+                    # WHY: Show exactly where risk/DD came from so user
+                    #      can verify the pipeline is using the right values.
+                    # CHANGED: April 2026 — risk source diagnostic
+                    _rule_risk_raw = float(_first_rule.get('risk_pct', 0))
+                    _rule_dd_daily_raw = float(_first_rule.get('dd_daily_pct', 0))
+                    _rule_dd_total_raw = float(_first_rule.get('dd_total_pct', 0))
+                    if _rule_risk_raw > 0:
+                        _risk_source = f"from rule ({_rule_risk_raw}%)"
+                    else:
+                        _risk_source = f"from config default (rule has 0%)"
+                    if _rule_dd_daily_raw > 0:
+                        _dd_source = f"from rule ({_rule_dd_daily_raw}%/{_rule_dd_total_raw}%)"
+                    else:
+                        _dd_source = "defaults (rule has 0%/0%)"
                     output_text.insert(tk.END,
                         f"📊 Config: {_firm_display}\n"
-                        f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}%  |  "
+                        f"   Account: ${_cfg_account:,.0f}  |  Risk: {_cfg_risk_pct}% ({_risk_source})  |  "
                         f"Leverage: 1:{_cfg_leverage} ({_inst_type})\n"
                         + _period_text +
                         f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.2f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n"
+                        f"   DD limits: {_rule_dd_daily_raw or 5.0}% daily / {_rule_dd_total_raw or 10.0}% total ({_dd_source})\n"
                     )
                     # Show data source
                     output_text.insert(tk.END,

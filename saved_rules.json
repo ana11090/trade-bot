@@ -2,7 +2,7 @@
   {
     "id": 1,
     "rule_id": "BUY_H1_4c_0422_fec8",
-    "saved_at": "2026-04-22T09:30:28.938777",
+    "saved_at": "2026-04-22T09:42:46.156168",
     "source": "Step3:outputs:BUY:conf100",
     "notes": "",
     "rule": {
@@ -92,10 +92,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -112,7 +112,7 @@
   {
     "id": 2,
     "rule_id": "BUY_H1_2c_0422_9b95",
-    "saved_at": "2026-04-22T09:30:28.948577",
+    "saved_at": "2026-04-22T09:42:46.173906",
     "source": "Step3:outputs:BUY:conf69",
     "notes": "",
     "rule": {
@@ -182,10 +182,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -202,7 +202,7 @@
   {
     "id": 3,
     "rule_id": "BUY_H1_4c_0422_21da",
-    "saved_at": "2026-04-22T09:30:28.956578",
+    "saved_at": "2026-04-22T09:42:46.178073",
     "source": "Step3:outputs:BUY:conf90",
     "notes": "",
     "rule": {
@@ -292,10 +292,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -312,7 +312,7 @@
   {
     "id": 4,
     "rule_id": "BUY_H1_2c_0422_1a6d",
-    "saved_at": "2026-04-22T09:30:28.964988",
+    "saved_at": "2026-04-22T09:42:46.189581",
     "source": "Step3:outputs:BUY:conf81",
     "notes": "",
     "rule": {
@@ -382,10 +382,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -402,7 +402,7 @@
   {
     "id": 5,
     "rule_id": "BUY_H1_3c_0422_712e",
-    "saved_at": "2026-04-22T09:30:28.973770",
+    "saved_at": "2026-04-22T09:42:46.189581",
     "source": "Step3:outputs:BUY:conf67",
     "notes": "",
     "rule": {
@@ -482,10 +482,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -502,7 +502,7 @@
   {
     "id": 6,
     "rule_id": "BUY_H1_3c_0422_47a5",
-    "saved_at": "2026-04-22T09:30:28.982528",
+    "saved_at": "2026-04-22T09:42:46.205607",
     "source": "Step3:outputs:BUY:conf75",
     "notes": "",
     "rule": {
@@ -582,10 +582,10 @@
       "spread": 25.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": [
         {
@@ -602,7 +602,7 @@
   {
     "id": 7,
     "rule_id": "BUY_D1_4c_0422_a670",
-    "saved_at": "2026-04-22T09:31:24.281614",
+    "saved_at": "2026-04-22T09:43:41.476584",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -650,10 +650,10 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "leverage": 10,
       "account_size": 10000.0,
       "regime_filter": [
@@ -673,7 +673,7 @@
   {
     "id": 8,
     "rule_id": "BUY_D1_4c_0422_fcb0",
-    "saved_at": "2026-04-22T09:31:24.291623",
+    "saved_at": "2026-04-22T09:43:41.491142",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -721,10 +721,10 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "leverage": 10,
       "account_size": 10000.0,
       "regime_filter": [
@@ -744,7 +744,7 @@
   {
     "id": 9,
     "rule_id": "BUY_D1_4c_0422_6299",
-    "saved_at": "2026-04-22T09:31:24.300144",
+    "saved_at": "2026-04-22T09:43:41.500361",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -792,10 +792,10 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "leverage": 10,
       "account_size": 10000.0,
       "regime_filter": [
@@ -815,7 +815,7 @@
   {
     "id": 10,
     "rule_id": "BUY_H1_4c_0422_d70a",
-    "saved_at": "2026-04-22T09:31:24.309407",
+    "saved_at": "2026-04-22T09:43:41.500726",
     "source": "Step4:?:BUY",
     "notes": "",
     "rule": {
@@ -863,10 +863,10 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0,
-      "risk_pct_firm": 0,
-      "dd_daily_pct": 0,
-      "dd_total_pct": 0,
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
       "leverage": 10,
       "account_size": 10000.0,
       "regime_filter": [

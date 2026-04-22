@@ -59,5 +59,10 @@
   "spread": "25",
   "commission": "4.0",
   "contract_size": "100",
-  "prop_firm_leverage": "10"
+  "prop_firm_leverage": "10",
+  "risk_pct": "0.3",
+  "risk_pct_firm": "0.8",
+  "dd_daily_pct": "3.0",
+  "dd_total_pct": "6.0",
+  "margin_cap_enabled": "1"
 }
