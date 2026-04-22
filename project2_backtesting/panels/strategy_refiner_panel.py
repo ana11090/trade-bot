@@ -2108,6 +2108,12 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
 
             rid = save_rule(data, source=f"Optimizer: {n}", notes=str(f))
             messagebox.showinfo("Saved", f"Saved as #{rid}!")
+            # WHY: Refresh the panel to show the newly saved rule in the dropdown
+            # CHANGED: April 2026 — auto-refresh after save
+            try:
+                refresh()
+            except Exception:
+                pass
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -2390,6 +2396,12 @@ def _show_opt_results(candidates):
                 except Exception:
                     pass
             messagebox.showinfo("Saved", f"Saved {saved} strategies to 💾 Saved Rules!")
+            # WHY: Refresh the panel to show newly saved rules in the dropdown
+            # CHANGED: April 2026 — auto-refresh after save all
+            try:
+                refresh()
+            except Exception:
+                pass
 
         tk.Button(cards_frame, text=f"💾 Save All {len(filtered)} Strategies",
                   command=_save_all,
