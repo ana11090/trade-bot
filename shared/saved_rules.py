@@ -254,6 +254,24 @@ def save_rule(rule, source="unknown", notes=""):
                 counter += 1
             rule_id = f"{rule_id}_{counter}"
 
+        # WHY: rule_combo is used for display in refiner dropdown.
+        #      If empty or generic ("?"), build a readable one from conditions.
+        # CHANGED: April 2026 — readable rule_combo
+        _existing_combo = rule.get('rule_combo', '')
+        if not _existing_combo or _existing_combo in ('?', '', 'Unknown'):
+            _combo_parts = []
+            _combo_dir = rule.get('direction', rule.get('action', 'BUY'))
+            _combo_exit = rule.get('exit_name', rule.get('exit_class', ''))
+            _combo_conds = rule.get('conditions', [])
+            _combo_parts.append(_combo_dir)
+            if _combo_conds:
+                # Show first 2 condition features
+                _combo_feats = [c.get('feature', '?').split('_', 1)[-1][:15] for c in _combo_conds[:2]]
+                _combo_parts.append('+'.join(_combo_feats))
+            if _combo_exit and _combo_exit not in ('?', 'Default', ''):
+                _combo_parts.append(_combo_exit)
+            rule['rule_combo'] = ' | '.join(_combo_parts)
+
         # WHY: Every rule must carry firm info and lifecycle status.
         #      Fill missing fields from P1 config at save time.
         # CHANGED: April 2026 — auto-enrich rules at save

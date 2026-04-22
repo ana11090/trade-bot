@@ -325,14 +325,21 @@ def _load_selected_strategy():
                 messagebox.showerror("Load Error", str(e))
                 return
         else:
-            # WHY: Can't find a matching strategy in the matrix.
-            #      Maybe the backtest was re-run with different rules.
-            messagebox.showinfo("Saved Rule — No Match",
-                f"Could not find a matching strategy in the backtest matrix.\n\n"
-                f"Rule: {rule_combo}\n"
-                f"Exit: {exit_name or exit_strategy or 'Unknown'}\n\n"
-                f"The backtest may have been re-run with different rules.\n"
-                f"Select the matching strategy from the backtest results above instead.")
+            # WHY: No matrix match — load the saved rule standalone.
+            #      It won't have trade history, but conditions/exit/params
+            #      are all in the saved rule data. User can still generate
+            #      an EA or re-run the backtest from here.
+            # CHANGED: April 2026 — standalone saved rule loading
+            print(f"[REFINER] No matrix match for '{rule_combo}' — loading standalone")
+            _base_trades = []
+            _filtered_trades = []
+            if state.window:
+                state.window.after(0, _update_strat_info)
+                state.window.after(50, _schedule_update)
+            messagebox.showinfo("Saved Rule — No Trades",
+                f"Loaded rule conditions and settings.\n\n"
+                f"No matching backtest found — run backtest to see trades.\n"
+                f"You can still optimize or generate an EA from this rule.")
             return
 
     # ── Normal strategy loading (backtest result or optimizer) ────────────

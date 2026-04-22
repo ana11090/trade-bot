@@ -840,13 +840,36 @@ def load_strategy_list():
                     notes = entry.get('notes', '')
                     rid = entry.get('id', '?')
 
-                    label_parts = [f"💾 Saved #{rid} — from {source}"]
+                    # WHY: Labels must show at a glance: direction, exit,
+                    #      conditions count, WR, pips, PF. The old label
+                    #      "Saved #12 from Robot Analysis" tells nothing.
+                    # CHANGED: April 2026 — descriptive saved rule labels
+                    _sr_dir = rule.get('direction', rule.get('action', ''))
+                    _sr_exit = rule.get('exit_name', rule.get('exit_class', ''))
+                    _sr_conds = rule.get('conditions', [])
+                    _sr_n = len(_sr_conds)
+                    _sr_pips = rule.get('net_total_pips', 0)
+                    _sr_trades = rule.get('total_trades', 0)
+
+                    # Build descriptive label
+                    _sr_header = f"💾 #{rid}"
+                    if _sr_dir:
+                        _sr_header += f" {_sr_dir}"
+                    _sr_header += f" ({_sr_n}c)"
+                    if _sr_exit and _sr_exit not in ('?', 'Default', ''):
+                        _sr_header += f" × {_sr_exit}"
+
+                    label_parts = [_sr_header]
+                    if _sr_trades > 0:
+                        label_parts.append(f"{_sr_trades}tr")
                     if wr > 0:
                         label_parts.append(f"WR {wr_str}")
                     if pf > 0:
                         label_parts.append(f"PF {pf:.1f}")
+                    if _sr_pips:
+                        label_parts.append(f"{_sr_pips:+,.0f}p")
                     if notes:
-                        label_parts.append(notes[:30])
+                        label_parts.append(notes[:20])
 
                     # ── Check if saved rule is stale ──────────────────────────────
                     # WHY: Old saved rules may be missing exit_class, filters, entry_timeframe.
