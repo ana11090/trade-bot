@@ -59,6 +59,66 @@ def is_backtest_stopped():
     return _stop_requested.is_set()
 
 
+# WHY: Lot sizing needs the *expected* SL distance the exit will use on this
+#      specific trade. For FixedSLTP/TrailingStop/Hybrid this is the fixed
+#      sl_pips attribute. For ATR-based exits the real SL is ATR×mult at
+#      entry time — orders of magnitude wider than the default 150. Sizing
+#      against the wrong number is the "profitable backtest, blown live
+#      account" bug (ATR stop-out = 20× intended risk).
+# CHANGED: April 2026 — SL-aware lot sizing
+def _expected_sl_pips_for_exit(exit_strategy, entry_candle, pip_size, default_sl_pips):
+    """Return the pip distance to SL the exit will use on this trade.
+
+    Lookup order:
+      1. exit_strategy.sl_pips attribute (FixedSLTP, TrailingStop, Hybrid)
+      2. ATR-based — read exit_strategy.atr_column from entry_candle, then
+         multiply by sl_atr_mult. If the ATR is missing/NaN, fall back to
+         default_sl_pips and the backtester's existing ATR_NO_DATA path will
+         close the trade cleanly.
+      3. default_sl_pips — for TimeBased / IndicatorExit where SL is not a
+         concept; we size defensively against the user-configured default.
+
+    All values returned in PIPS, never raw price.
+    """
+    # Path 1 — exits with a hard SL
+    sl_attr = getattr(exit_strategy, 'sl_pips', None)
+    if sl_attr:
+        try:
+            val = float(sl_attr)
+            if val > 0:
+                return val
+        except Exception:
+            pass
+
+    # Path 2 — ATR exits. ATRBased and ATRTrailing both set atr_column
+    # and sl_atr_mult on __init__.
+    atr_col = getattr(exit_strategy, 'atr_column', None)
+    atr_mult = getattr(exit_strategy, 'sl_atr_mult', None)
+    if atr_col and atr_mult:
+        try:
+            raw = None
+            if isinstance(entry_candle, dict):
+                raw = entry_candle.get(atr_col)
+            else:
+                try:
+                    raw = entry_candle[atr_col]
+                except Exception:
+                    raw = None
+            if raw is not None:
+                atr_val = float(raw)
+                # NaN guard: NaN != NaN
+                if atr_val == atr_val and atr_val > 0:
+                    sl_distance_price = atr_val * float(atr_mult)
+                    # Convert price distance to pips
+                    if pip_size > 0:
+                        return max(1.0, sl_distance_price / pip_size)
+        except Exception:
+            pass
+
+    # Path 3 — unknown exit shape
+    return float(default_sl_pips)
+
+
 def load_rules_from_report(report_path=None):
     """Load WIN-prediction rules from Project 1 analysis_report.json."""
     if report_path is None:
@@ -515,6 +575,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
       4. Determine if SL or TP hit first (when both trigger on same candle)
 
     CHANGED: April 2026 — replaces iterrows for 10-50x speedup
+
+    NOTE (T1b): SL-aware sizing is not needed here. This function is ONLY
+          called when isinstance(exit_strategy, FixedSLTP) is True, and
+          FixedSLTP always has sl_pips attribute. The lot sizing below
+          reads exit_strategy.sl_pips directly — no ATR fallback needed.
     """
     trades = []
 
@@ -1312,14 +1377,26 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
         # Position sizing and dollar P&L (optional, when account_size is provided)
         if account_size is not None:
-            # WHY: Old code used default_sl_pips (=150) for every strategy,
-            #      ignoring the exit strategy's actual SL. Prefer the exit
-            #      strategy's sl_pips attribute when present; fall back to
-            #      default_sl_pips otherwise (for exit strategies without a
-            #      fixed SL like trailing stops).
-            # CHANGED: April 2026 — use actual sl_pips when available (audit Family #2)
-            _actual_sl = getattr(exit_strategy, 'sl_pips', None)
-            _sl_for_sizing = float(_actual_sl) if _actual_sl else float(default_sl_pips)
+            # WHY (T1b): ATR exits have no sl_pips attribute — old fallback used
+            #      default_sl_pips=150, but the ATR SL is often 2000+ pips on XAUUSD.
+            #      Lots sized for 150 and stopped at 3000 = 20× intended risk per
+            #      losing trade → DD breach in one trade. Use the expected SL
+            #      distance for the specific exit instance.
+            # CHANGED: April 2026 — T1b SL-aware lot sizing
+            # Build the entry_candle dict the helper needs. entry_price is already
+            # computed above this block; the entry candle is available either as
+            # `next_candle` (fast_backtest) or reconstructable from ind.loc at
+            # entry_pos_int. We need the indicator columns to read ATR.
+            try:
+                _entry_for_sizing = {}
+                if 0 <= entry_pos_int + 1 < len(ind):
+                    _ind_idx_entry = ind.index[entry_pos_int + 1]
+                    _entry_for_sizing = dict(ind.loc[_ind_idx_entry])
+            except Exception:
+                _entry_for_sizing = {}
+            _sl_for_sizing = _expected_sl_pips_for_exit(
+                exit_strategy, _entry_for_sizing, pip_size, default_sl_pips
+            )
 
             risk_dollars = account_size * (risk_per_trade_pct / 100.0)
             lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot)
@@ -1331,6 +1408,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 log.warning(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
                             f"check account_size / risk_pct / sl_pips settings")
             lot_size = max(0.01, lot_size)
+
+            # WHY (T1b): Make SL-aware sizing visible in the backtest log so the user
+            #      can verify ATR exits are getting large _sl_for_sizing values.
+            # CHANGED: April 2026 — T1b sizing diagnostics
+            _exit_name = type(exit_strategy).__name__
+            if not hasattr(exit_strategy, '_t1b_sizing_logged'):
+                exit_strategy._t1b_sizing_logged = 0
+            if exit_strategy._t1b_sizing_logged < 3:
+                log.info(
+                    f"  [T1b] {_exit_name} trade {len(trades)+1}: "
+                    f"sl_for_sizing={_sl_for_sizing:.1f} pips → "
+                    f"risk ${risk_dollars:.2f} → lot {lot_size:.3f}"
+                )
+                exit_strategy._t1b_sizing_logged += 1
             # WHY (leverage): Same margin cap as vectorized path — see comment
             #      above. Uses entry_price from this trade's fill.
             # CHANGED: April 2026 — margin-aware lot sizing
