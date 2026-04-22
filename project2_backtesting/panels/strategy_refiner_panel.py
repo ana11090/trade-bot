@@ -226,83 +226,52 @@ def _load_selected_strategy():
                 break
 
         matched_idx = None
-        if rule_combo:
-            # WHY: Search for a backtest result with the same rule_combo + exit name.
-            #      Multiple strategies might have the same rule_combo but different exits.
+
+        # WHY: Match saved rules to backtest matrix STRICTLY.
+        #      Loose matching (combo name only) caused wrong trades to load.
+        #      Now requires BOTH conditions AND exit to match.
+        #      If no strict match, load standalone — better than wrong data.
+        # CHANGED: April 2026 — strict matching only
+
+        # Build saved rule's condition fingerprint
+        _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
+        _saved_exit = exit_name or exit_strategy or ''
+
+        for s in _strategies:
+            if s.get('source') != 'backtest':
+                continue
+
+            # Get matrix entry's conditions
+            _m_rules = s.get('rules', [])
+            _m_conds = set(c.get('feature', '')
+                           for _mr in _m_rules
+                           for c in _mr.get('conditions', []))
+            _m_exit = s.get('exit_name', s.get('exit_strategy', ''))
+
+            # STRICT match: conditions must be identical
+            if not _saved_conds or _m_conds != _saved_conds:
+                continue
+
+            # If saved rule has exit info, it must match too
+            if _saved_exit and _saved_exit not in ('?', 'Default', ''):
+                if _m_exit == _saved_exit:
+                    matched_idx = s.get('index')
+                    break
+            else:
+                # No exit info in saved rule — match by combo name + conditions
+                if rule_combo and s.get('rule_combo', '') == rule_combo:
+                    matched_idx = s.get('index')
+                    break
+
+        # Last resort: exact combo + exit name (for rules saved with proper data)
+        if matched_idx is None and rule_combo and _saved_exit:
             for s in _strategies:
                 if s.get('source') != 'backtest':
                     continue
-                if s.get('rule_combo', '') == rule_combo:
-                    # Check exit match
-                    if exit_strategy and exit_strategy in s.get('label', ''):
-                        matched_idx = s.get('index')
-                        break
-                    if exit_name and exit_name == s.get('exit_name', ''):
-                        matched_idx = s.get('index')
-                        break
-                    # WHY: Match by rule conditions, not just name. Two
-                    #      strategies can share a rule_combo name but have
-                    #      different conditions (e.g., after re-discovery).
-                    # CHANGED: April 2026 — match by conditions
-                    _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
-                    _matrix_rules = s.get('rules', [])
-                    _matrix_conds = set(c.get('feature', '')
-                                        for _mr in _matrix_rules
-                                        for c in _mr.get('conditions', []))
-                    if _saved_conds and _saved_conds == _matrix_conds:
-                        matched_idx = s.get('index')
-                        break
-
-            # If exact exit match failed, try just rule_combo
-            if matched_idx is None:
-                for s in _strategies:
-                    if s.get('source') != 'backtest':
-                        continue
-                    if s.get('rule_combo', '') == rule_combo:
-                        matched_idx = s.get('index')
-                        break
-
-        # WHY: If name matching failed (e.g., saved rule has generated ID like
-        #      "#19_BUY_D1_2c_0422_7447_Time_Based_1775"), try matching by
-        #      conditions instead. This allows saved rules from refiner/optimizer
-        #      to match their original backtest entries.
-        # CHANGED: April 2026 — conditions-based fallback matching
-        if matched_idx is None:
-            _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
-            if _saved_conds:
-                # Try conditions+exit match first (most specific)
-                for s in _strategies:
-                    if s.get('source') != 'backtest':
-                        continue
-                    _matrix_rules = s.get('rules', [])
-                    _matrix_conds = set(c.get('feature', '')
-                                        for _mr in _matrix_rules
-                                        for c in _mr.get('conditions', []))
-                    if _saved_conds == _matrix_conds:
-                        # Check exit match
-                        _matrix_exit = s.get('exit_name', s.get('exit_strategy', ''))
-                        if exit_strategy and exit_strategy in _matrix_exit:
-                            matched_idx = s.get('index')
-                            print(f"[REFINER] Matched by conditions+exit: {_saved_conds} × {exit_strategy}")
-                            break
-                        if exit_name and exit_name == _matrix_exit:
-                            matched_idx = s.get('index')
-                            print(f"[REFINER] Matched by conditions+exit: {_saved_conds} × {exit_name}")
-                            break
-
-                # If conditions+exit failed, try conditions-only match
-                if matched_idx is None:
-                    for s in _strategies:
-                        if s.get('source') != 'backtest':
-                            continue
-                        _matrix_rules = s.get('rules', [])
-                        _matrix_conds = set(c.get('feature', '')
-                                            for _mr in _matrix_rules
-                                            for c in _mr.get('conditions', []))
-                        if _saved_conds == _matrix_conds:
-                            matched_idx = s.get('index')
-                            print(f"[REFINER] Matched by conditions-only: {_saved_conds}")
-                            break
+                if (s.get('rule_combo', '') == rule_combo and
+                    s.get('exit_name', '') == _saved_exit):
+                    matched_idx = s.get('index')
+                    break
 
         # WHY: Diagnostic log so user can check which entry was matched.
         # CHANGED: April 2026 — match diagnostic
