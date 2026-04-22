@@ -571,3 +571,66 @@ def update_all_rules_firm():
 #      main thread every time any panel imports this module.
 #      Callers that need firm data up-to-date can call it explicitly.
 # CHANGED: April 2026 — remove blocking import-time I/O
+
+
+def add_rule_variant_no_rolling():
+    """Add a 3-condition variant of rule BUY_H1_4c_0422_568c.
+
+    WHY: The M5_distance_to_rolling_level_786 indicator was unsupported
+         in MQL5 and was always TRUE in the previous EA. The 3-condition
+         version matches what actually ran on MT5 and produced profits.
+    CHANGED: April 2026 — 3-condition variant
+    """
+    import copy
+    with _save_lock:
+        all_rules = load_all()
+
+        # Check if already exists
+        for e in all_rules:
+            if e.get('rule_id', '') == 'BUY_H1_3c_0422_568c_no_rolling':
+                print("[saved_rules] 3-condition variant already exists")
+                return
+
+        # Find source rule
+        source = None
+        for e in all_rules:
+            r = e.get('rule', {})
+            conds = r.get('conditions', [])
+            feats = [c.get('feature', '') for c in conds]
+            if ('M15_std_dev_20' in feats and 'D1_adx_21' in feats
+                    and 'M5_distance_to_rolling_level_786' in feats
+                    and float(r.get('risk_pct', 0)) > 0):
+                source = e
+                break
+
+        if not source:
+            print("[saved_rules] Source rule not found")
+            return
+
+        new_entry = copy.deepcopy(source)
+        rule = new_entry['rule']
+
+        # Remove rolling_level condition
+        rule['conditions'] = [c for c in rule.get('conditions', [])
+                               if 'rolling_level' not in c.get('feature', '')]
+
+        # Update IDs
+        new_id = max(e.get('id', 0) for e in all_rules) + 1
+        new_entry['id'] = new_id
+        new_entry['rule_id'] = 'BUY_H1_3c_0422_568c_no_rolling'
+        rule['rule_combo'] = 'BUY_H1_3c_0422_568c_no_rolling'
+        new_entry['source'] = 'Manual variant — removed unsupported indicator'
+
+        from datetime import datetime, timezone
+        new_entry['saved_at'] = datetime.now(timezone.utc).isoformat()
+
+        all_rules.append(new_entry)
+        _atomic_write_json(all_rules, _SAVE_PATH)
+        print(f"[saved_rules] Added 3-condition variant as id={new_id}")
+
+
+# Run on import
+try:
+    add_rule_variant_no_rolling()
+except Exception as _e:
+    print(f"[saved_rules] variant error: {_e}")

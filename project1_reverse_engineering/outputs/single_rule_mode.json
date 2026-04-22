@@ -1,25 +1,25 @@
 {
   "status": "no_candidates",
   "variant": "a",
-  "target_coverage": 0.75,
+  "target_coverage": 0.9,
   "trade_count": 1106,
   "candidate_pool": [],
   "chosen": [],
   "chosen_stats": null,
   "top_10_conjunctions": [],
   "params": {
-    "target_coverage": 0.75,
-    "per_condition_coverage": 0.85,
+    "target_coverage": 0.9,
+    "per_condition_coverage": 0.74,
     "min_non_nan_frac": 0.95,
-    "pool_size": 40,
+    "pool_size": 46,
     "min_cardinality": 2,
-    "max_cardinality": 8,
+    "max_cardinality": 10,
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
-    "winner_selection": "tightness"
+    "winner_selection": "coverage"
   },
   "reason": "No usable feature columns produced candidate conditions.",
-  "generated_at": "2026-04-22T10:13:26.017242",
+  "generated_at": "2026-04-22T15:51:12.534834",
   "scenario": null
 }

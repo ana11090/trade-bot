@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-22T10:13:26.027455
+Generated: 2026-04-22T15:56:58.899464
 Trades analyzed: 1106 | Features: 629
 ======================================================================
 
@@ -33,33 +33,29 @@ Trades analyzed: 1106 | Features: 629
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 71%, 225 trades)
-    IF M15_std_dev_20 > 5.4025 AND M5_sma_50_distance > -0.3194 AND D1_adx_21 > 21.8789 AND M5_distance_to_rolling_level_786 > -0.4726
-    Win rate: 71% | Avg pips: +240
+  RULE 1 (WIN, conf: 100%, 44 trades)
+    IF M5_distance_to_rolling_level_618 <= -0.4549 AND M15_cmf > -0.0748 AND H4_lower_shadow > 7.83
+    Win rate: 100% | Avg pips: +530
 
-  RULE 2 (WIN, conf: 97%, 66 trades)
-    IF M15_std_dev_20 > 5.4025 AND M5_sma_50_distance <= -0.3194 AND M5_candle_range > 9.615 AND M5_kst_signal > -8.3731
-    Win rate: 97% | Avg pips: +527
+  RULE 2 (WIN, conf: 90%, 41 trades)
+    IF M5_distance_to_rolling_level_618 > -0.4549 AND M5_williams_r_28 <= -15.1196 AND M5_stoch_21_d <= 40.952 AND D1_bb_20_2_upper > 4349.2173
+    Win rate: 90% | Avg pips: +316
 
-  RULE 3 (WIN, conf: 75%, 81 trades)
-    IF M15_std_dev_20 <= 5.4025 AND H1_lower_shadow > 1.365 AND H1_adx_28 > 14.3995 AND H4_vwap_distance <= 0.1416
-    Win rate: 75% | Avg pips: +179
+  RULE 3 (WIN, conf: 84%, 43 trades)
+    IF M5_distance_to_rolling_level_618 > -0.4549 AND M5_williams_r_28 > -15.1196
+    Win rate: 84% | Avg pips: +427
 
-  RULE 4 (WIN, conf: 82%, 45 trades)
-    IF M15_std_dev_20 > 5.4025 AND M5_sma_50_distance <= -0.3194 AND M5_candle_range <= 9.615 AND M15_ultimate_oscillator <= 42.939
-    Win rate: 82% | Avg pips: +255
+  RULE 4 (WIN, conf: 67%, 43 trades)
+    IF M5_distance_to_rolling_level_618 > -0.4549 AND M5_williams_r_28 <= -15.1196 AND M5_stoch_21_d > 40.952 AND H4_dpo <= -25.1493
+    Win rate: 67% | Avg pips: +304
 
-  RULE 5 (LOSS, conf: 79%, 28 trades)
-    IF M15_std_dev_20 > 5.4025 AND M5_sma_50_distance > -0.3194 AND D1_adx_21 <= 21.8789 AND M5_cmf > 0.0372
-    Win rate: 21% | Avg pips: +53
+  RULE 5 (WIN, conf: 74%, 35 trades)
+    IF M5_distance_to_rolling_level_618 <= -0.4549 AND M15_cmf <= -0.0748
+    Win rate: 74% | Avg pips: +332
 
   RULE 6 (WIN, conf: 80%, 20 trades)
-    IF M15_std_dev_20 <= 5.4025 AND H1_lower_shadow <= 1.365 AND H4_distance_from_high <= 0.1015 AND M15_bb_20_3_width <= 0.6779
-    Win rate: 80% | Avg pips: +156
-
-  RULE 7 (WIN, conf: 71%, 21 trades)
-    IF M15_std_dev_20 > 5.4025 AND M5_sma_50_distance <= -0.3194 AND M5_candle_range > 9.615 AND M5_kst_signal <= -8.3731
-    Win rate: 71% | Avg pips: +312
+    IF M5_distance_to_rolling_level_618 <= -0.4549 AND M15_cmf > -0.0748 AND H4_lower_shadow <= 7.83
+    Win rate: 80% | Avg pips: +375
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 46 trades (4.2%), WR 89%, avg +558 pips, avg dur 0min

@@ -2033,6 +2033,7 @@ def compute_stats(trades):
         "winners":           n_winners,
         "losers":            n_losers,
         "breakeven":         n_breakeven,
+        "min_hold_violations": sum(1 for t in trades if t.get('candles_held', 999) <= 0),
     }
 
     # Dollar P&L equity tracking — only run_backtest sets dollar_pnl.

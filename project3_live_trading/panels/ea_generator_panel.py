@@ -701,6 +701,16 @@ def _auto_fill_filters(idx, strat_data):
         applied.append(f"min hold {min_hold}min")
     else:
         _auto_min_hold[0] = 0
+        # Fall back to firm JSON restriction if available
+        try:
+            _fd = _FIRMS.get(_firm_var.get() if _firm_var else '', {})
+            if _fd:
+                _restrictions = _fd.get('challenges', [{}])[0].get('restrictions', {})
+                _min_sec = int(_restrictions.get('min_trade_duration_seconds', 0))
+                if _min_sec > 0:
+                    _auto_min_hold[0] = max(1, _min_sec // 60)
+        except Exception:
+            pass
 
     sessions = filters.get('sessions', [])
     if sessions and _session_vars:
@@ -1052,10 +1062,15 @@ def _generate():
             # WHY: Leverage from strategy rule, not firm dropdown.
             #      Rule was backtested at this leverage — EA must match.
             # CHANGED: April 2026 — leverage from strategy
-            # WHY: Read leverage from strategy data inline — _strat_lev
-            #      is in a different function scope.
-            # CHANGED: April 2026 — fix scope error
-            leverage=int(strat_data.get('leverage', 0) or strat_data.get('run_settings', {}).get('leverage', 0) or 0),
+            # WHY: Check top-level, run_settings, AND rules[0] for leverage.
+            #      Rules carry leverage=10 from the backfill. strat_data may not.
+            # CHANGED: April 2026 — check rules for leverage
+            leverage=int(
+                strat_data.get('leverage', 0) or
+                strat_data.get('run_settings', {}).get('leverage', 0) or
+                (strat_data.get('rules', [{}])[0].get('leverage', 0) if strat_data.get('rules') else 0) or
+                0
+            ),
         )
     except Exception as e:
         import traceback; traceback.print_exc()

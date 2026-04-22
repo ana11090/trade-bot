@@ -281,7 +281,7 @@ class TrailingStop(ExitStrategy):
 
 class ATRBased(ExitStrategy):
     """SL and TP based on ATR (adapts to volatility)."""
-    name = "ATR-Based"
+    name = "ATR Only"
 
     # WHY (Phase 31 Fix 8): Old code had a silent 5.0 fallback when the
     #      ATR column was missing or NaN. 5.0 is in raw price units —
@@ -392,6 +392,110 @@ class ATRBased(ExitStrategy):
 
     def describe(self):
         return (f"SL {self.sl_atr_mult}xATR, TP {self.tp_atr_mult}xATR, "
+                f"max {self.max_candles} candles")
+
+
+class ATRTrailing(ExitStrategy):
+    """ATR-based SL/TP with trailing stop — matches what EA generator produces.
+
+    WHY: The EA generator always adds trailing stop to ATR exits. The
+         backtester's ATRBased class has NO trailing. This causes backtester
+         results to differ from live EA results. ATRTrailing matches the EA.
+    CHANGED: April 2026 — sync backtester with EA behavior
+    """
+    name = "ATR + Trailing"
+
+    def __init__(self, sl_atr_mult=2.0, tp_atr_mult=4.0, atr_column="H1_atr_14",
+                 activation_pips=50, trail_distance_pips=100,
+                 max_candles=1000, pip_size=0.01):
+        super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
+                         activation_pips=activation_pips,
+                         trail_distance_pips=trail_distance_pips,
+                         max_candles=max_candles, pip_size=pip_size)
+        self.sl_atr_mult = sl_atr_mult
+        self.tp_atr_mult = tp_atr_mult
+        self.atr_column = atr_column
+        self.activation_pips = activation_pips
+        self.trail_distance_pips = trail_distance_pips
+        self.max_candles = max_candles
+        self.pip_size = pip_size
+        self._entry_atr = None
+
+    def on_entry(self, candle):
+        raw = candle.get(self.atr_column, None)
+        if raw is None:
+            self._entry_atr = None
+        else:
+            try:
+                atr_val = float(raw)
+                if atr_val != atr_val or atr_val <= 0:
+                    self._entry_atr = None
+                else:
+                    self._entry_atr = atr_val
+            except (TypeError, ValueError):
+                self._entry_atr = None
+
+    def on_new_candle(self, candle, pos):
+        entry = pos["entry_price"]
+        direction = pos["direction"]
+        highest = pos["highest_since_entry"]
+        lowest = pos["lowest_since_entry"]
+
+        if pos.get("candles_held", 0) >= self.max_candles:
+            return {"exit_price": float(candle["close"]),
+                    "reason": "ATR_TRAIL_MAX_CANDLES"}
+
+        if self._entry_atr is None:
+            return None
+
+        atr = self._entry_atr
+        sl_distance = atr * self.sl_atr_mult
+        tp_distance = atr * self.tp_atr_mult
+
+        if direction == "BUY":
+            sl_price = entry - sl_distance
+            tp_price = entry + tp_distance
+
+            profit_pips = (highest - entry) / self.pip_size
+            if profit_pips >= self.activation_pips:
+                trail_sl = highest - self.trail_distance_pips * self.pip_size
+                if trail_sl > sl_price:
+                    sl_price = trail_sl
+
+            if candle["high"] >= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
+            if candle["low"] <= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                return {"exit_price": fill, "reason": "ATR_TRAIL_SL"}
+        else:
+            sl_price = entry + sl_distance
+            tp_price = entry - tp_distance
+
+            profit_pips = (entry - lowest) / self.pip_size
+            if profit_pips >= self.activation_pips:
+                trail_sl = lowest + self.trail_distance_pips * self.pip_size
+                if trail_sl < sl_price:
+                    sl_price = trail_sl
+
+            if candle["low"] <= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
+            if candle["high"] >= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                return {"exit_price": fill, "reason": "ATR_TRAIL_SL"}
+
+        return None
+
+    @property
+    def sl_pips(self):
+        if self._entry_atr:
+            return (self._entry_atr * self.sl_atr_mult) / self.pip_size
+        return 150
+
+    def describe(self):
+        return (f"SL {self.sl_atr_mult}xATR, TP {self.tp_atr_mult}xATR, "
+                f"trail after +{self.activation_pips} pips ({self.trail_distance_pips} dist), "
                 f"max {self.max_candles} candles")
 
 
@@ -583,6 +687,8 @@ def get_default_exit_strategies(pip_size=0.01):
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
         ATRBased(sl_atr_mult=1.5, tp_atr_mult=3.0),
         ATRBased(sl_atr_mult=2.0, tp_atr_mult=4.0),
+        ATRTrailing(sl_atr_mult=2.0, tp_atr_mult=4.0, activation_pips=50,
+                    trail_distance_pips=100, pip_size=pip_size),
         TimeBased(sl_pips=150, max_candles=6,  pip_size=pip_size),
         TimeBased(sl_pips=150, max_candles=12, pip_size=pip_size),
         IndicatorExit(sl_pips=150, exit_indicator="H1_rsi_14",

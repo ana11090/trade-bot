@@ -2863,6 +2863,26 @@ def _run(mode, override_idx=None, done_event=None):
         else:
             risk_pct = float(_risk_var.get())
         sl_pips       = float(_sl_var.get())
+        # WHY: Read min hold from firm restrictions.
+        # CHANGED: April 2026 — min hold in validator
+        _val_min_hold = 0
+        try:
+            _val_firm = _val_run_settings.get('firm_name', '')
+            if _val_firm:
+                import glob as _vh_glob
+                _vh_dir = os.path.join(project_root, 'prop_firms')
+                for _vh_fp in _vh_glob.glob(os.path.join(_vh_dir, '*.json')):
+                    with open(_vh_fp, encoding='utf-8') as _vh_f:
+                        _vh_fd = json.load(_vh_f)
+                    if _vh_fd.get('firm_name') == _val_firm:
+                        _vh_sec = int(_vh_fd.get('challenges', [{}])[0].get('restrictions', {}).get('min_trade_duration_seconds', 0))
+                        if _vh_sec > 0:
+                            _val_min_hold = max(1, _vh_sec // 60)
+                        break
+        except Exception:
+            pass
+        if _val_min_hold > 0:
+            print(f"[VALIDATOR] Min hold from firm: {_val_min_hold}min")
         # WHY: Read pip_value from strategy's run_settings first, then UI, then default.
         #      Strategy carries its own broker specs (single source of truth).
         # CHANGED: April 2026 — rule-driven pip_value (BUG 5 fix)

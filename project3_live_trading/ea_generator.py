@@ -116,6 +116,22 @@ def generate_ea(
     trading_rules = prop_firm.get('trading_rules', []) if prop_firm else []
     dd_mechanics  = prop_firm.get('drawdown_mechanics', {}) if prop_firm else {}
     account_size  = prop_firm.get('account_size', 10000) if prop_firm else 10000
+
+    # WHY: Read min hold from firm restrictions if not explicitly set.
+    # CHANGED: April 2026 — min hold from firm
+    if min_hold_minutes == 0 and prop_firm:
+        try:
+            _restrictions = prop_firm.get('restrictions', {})
+            if not _restrictions:
+                _firm_d = prop_firm.get('firm_data', {})
+                _ch = _firm_d.get('challenges', [{}])[0]
+                _restrictions = _ch.get('restrictions', {})
+            _min_sec = int(_restrictions.get('min_trade_duration_seconds', 0))
+            if _min_sec > 0:
+                min_hold_minutes = max(1, _min_sec // 60)
+                print(f"[EA GEN] Min hold from firm: {_min_sec}s = {min_hold_minutes}min")
+        except Exception:
+            pass
     restrictions  = prop_firm.get('restrictions', {}) if prop_firm else {}
     challenge     = prop_firm.get('challenge', {}) if prop_firm else {}
 
@@ -239,6 +255,8 @@ def generate_ea(
             'Fixed SL/TP': 'FixedSLTP', 'FixedSLTP': 'FixedSLTP',
             'Trailing Stop': 'TrailingStop', 'TrailingStop': 'TrailingStop',
             'ATR-Based': 'ATRBased', 'ATRBased': 'ATRBased',
+            'ATR Only': 'ATROnly', 'ATROnly': 'ATROnly',
+            'ATR + Trailing': 'ATRTrailing', 'ATRTrailing': 'ATRTrailing',
             'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
             'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
             'Hybrid Exit': 'HybridExit', 'HybridExit': 'HybridExit',
@@ -286,7 +304,7 @@ def generate_ea(
                 _act = trail_activation_pips
                 _rl.append(f"{'Trail activation':<30} {_act:<20} {_act:<20}")
                 _rl.append(f"{'Trail distance':<30} {trail_distance_pips:<20} {trail_distance_pips:<20}")
-            elif exit_class == 'ATRBased':
+            elif exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
                 _rl.append(f"{'SL ATR mult':<30} {sl_atr_mult:<20} {sl_atr_mult:<20}")
                 _rl.append(f"{'TP ATR mult':<30} {tp_atr_mult:<20} {tp_atr_mult:<20}")
             elif exit_class == 'TimeBased':
@@ -479,6 +497,8 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         'Fixed SL/TP': 'FixedSLTP', 'FixedSLTP': 'FixedSLTP',
         'Trailing Stop': 'TrailingStop', 'TrailingStop': 'TrailingStop',
         'ATR-Based': 'ATRBased', 'ATRBased': 'ATRBased',
+        'ATR Only': 'ATROnly', 'ATROnly': 'ATROnly',
+        'ATR + Trailing': 'ATRTrailing', 'ATRTrailing': 'ATRTrailing',
         'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
         'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
         'Hybrid': 'HybridExit', 'HybridExit': 'HybridExit',
@@ -496,7 +516,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      Non-zero defaults activate ManageTrailingStop which closes trades
     #      early — untested behavior not in the backtest.
     # CHANGED: April 2026 — disable trailing for non-trailing exits
-    if exit_class in ('TimeBased', 'IndicatorExit', 'FixedSLTP'):
+    if exit_class in ('TimeBased', 'IndicatorExit', 'FixedSLTP', 'ATROnly'):
         trail_activation_pips = 0
         trail_distance_pips = 0
 
@@ -1317,7 +1337,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     exit_on_entry = ''
     exit_management = ''
 
-    if exit_class == 'ATRBased':
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
         # WHY: ATR-Based reads ATR at entry and computes SL/TP as multiples.
         #      Adapts to current volatility — wide SL in volatile markets,
         #      tight SL in quiet markets.
@@ -1607,7 +1627,7 @@ bool IsMinHoldMet()
     _vr.append(f"EXIT: {exit_class}  SL={sl_pips}  TP={tp_pips}")
     if exit_class == 'TrailingStop':
         _vr.append(f"  Activation: +{trail_activation_pips} pips, Trail: {trail_distance_pips} pips")
-    elif exit_class == 'ATRBased':
+    elif exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
         _vr.append(f"  SL: {sl_atr_mult}x ATR, TP: {tp_atr_mult}x ATR")
     elif exit_class == 'TimeBased':
         _vr.append(f"  Max hold: {max_candles} candles")
@@ -1690,6 +1710,30 @@ bool IsMinHoldMet()
                     pass
 
     _indicator_release_block = '\n'.join(_release_lines) if _release_lines else '   // No indicator handles to release'
+
+    # WHY: ATR-based exit uses ATR × mult for SL, not fixed SLPips.
+    #      Lot sizing must match the ACTUAL SL, not the configured one.
+    #      Without this, lots are 20× too big and one loss = 6% DD.
+    # CHANGED: April 2026 — ATR-aware lot sizing
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
+        _lot_sizing_code = (
+            '   double pipSize = GetPipSize();\n'
+            '   // ATR-aware: size lots for ACTUAL ATR SL, not fixed SLPips\n'
+            '   double _atrSizeBuf[1];\n'
+            '   CopyBuffer(handle_exit_atr, 0, 0, 1, _atrSizeBuf);\n'
+            '   double sl = _atrSizeBuf[0] * SL_ATR_Mult;  // ATR SL in price units\n'
+            '   double tp = _atrSizeBuf[0] * TP_ATR_Mult;\n'
+            '   double lots = CalculateLots(sl);\n'
+            '   if(lots <= 0.0) return;\n'
+        )
+    else:
+        _lot_sizing_code = (
+            '   double pipSize = GetPipSize();\n'
+            '   double sl = SLPips * pipSize;\n'
+            '   double tp = TPPips * pipSize;\n'
+            '   double lots = CalculateLots(sl);\n'
+            '   if(lots <= 0.0) return;\n'
+        )
 
     code = f"""\
 {_vr_header}\
@@ -1942,11 +1986,7 @@ void OnTick()
    // WHY: GetPipSize() detects instrument-specific pip size (5-digit forex vs
    //      4-digit vs metals etc.) rather than hardcoding _Point * 10.
    // CHANGED: April 2026 — proper pip size + atomic SL/TP
-   double pipSize = GetPipSize();
-   double sl = SLPips * pipSize;
-   double tp = TPPips * pipSize;
-   double lots = CalculateLots(sl);
-   if(lots <= 0.0) return;
+{_lot_sizing_code}
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);

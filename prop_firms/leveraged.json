@@ -119,7 +119,7 @@
         "weekend_holding_allowed": true,
         "hedging_allowed": true,
         "ea_allowed": true,
-        "min_trade_duration_seconds": 0,
+        "min_trade_duration_seconds": 120,
         "max_lots": null
       }
     }

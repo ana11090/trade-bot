@@ -215,6 +215,16 @@ def _load_selected_strategy():
         exit_strategy = saved_rule.get('exit_strategy', '')
         exit_name = saved_rule.get('exit_name', '')
 
+        # WHY: ALWAYS use saved rule's conditions for display, not the
+        #      matched matrix entry. The matrix match is only for loading
+        #      trades. Without this, a fuzzy match shows wrong conditions.
+        # CHANGED: April 2026 — saved rule is source of truth
+        for _sr_s in _strategies:
+            if _sr_s.get('index') == idx:
+                global _loaded_row
+                _loaded_row = _sr_s
+                break
+
         matched_idx = None
         if rule_combo:
             # WHY: Search for a backtest result with the same rule_combo + exit name.
@@ -230,6 +240,18 @@ def _load_selected_strategy():
                     if exit_name and exit_name == s.get('exit_name', ''):
                         matched_idx = s.get('index')
                         break
+                    # WHY: Match by rule conditions, not just name. Two
+                    #      strategies can share a rule_combo name but have
+                    #      different conditions (e.g., after re-discovery).
+                    # CHANGED: April 2026 — match by conditions
+                    _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
+                    _matrix_rules = s.get('rules', [])
+                    _matrix_conds = set(c.get('feature', '')
+                                        for _mr in _matrix_rules
+                                        for c in _mr.get('conditions', []))
+                    if _saved_conds and _saved_conds == _matrix_conds:
+                        matched_idx = s.get('index')
+                        break
 
             # If exact exit match failed, try just rule_combo
             if matched_idx is None:
@@ -240,9 +262,20 @@ def _load_selected_strategy():
                         matched_idx = s.get('index')
                         break
 
+        # WHY: Diagnostic log so user can check which entry was matched.
+        # CHANGED: April 2026 — match diagnostic
+        if matched_idx is not None:
+            _matched_combo = ''
+            for _ms in _strategies:
+                if _ms.get('index') == matched_idx:
+                    _matched_combo = _ms.get('rule_combo', '?')
+                    break
+            print(f"[REFINER] Saved rule '{rule_combo}' → matched matrix entry '{_matched_combo}' (idx={matched_idx})")
+        else:
+            print(f"[REFINER] Saved rule '{rule_combo}' → NO MATCH in matrix")
+
         if matched_idx is not None:
             # WHY: Found the matching backtest result — load its trades
-            print(f"[REFINER] Saved rule matched to matrix index {matched_idx}")
             try:
                 from project2_backtesting.strategy_refiner import (
                     load_trades_from_matrix, enrich_trades
@@ -477,6 +510,25 @@ def _update_strat_info():
                 _r_acct = float(_rule_acct) if _rule_acct else 0
                 if _r_acct > 0:
                     _info_parts.append(f"Account: ${int(_r_acct):,}")
+                _r_min_hold = 0
+                try:
+                    _mh_firm2 = _sr.get('prop_firm_name', '') or _loaded_row.get('prop_firm_name', '')
+                    if _mh_firm2:
+                        import glob as _mh2_glob
+                        _mh2_dir = os.path.join(project_root, 'prop_firms')
+                        for _mh2_fp in _mh2_glob.glob(os.path.join(_mh2_dir, '*.json')):
+                            import json as _mh2_json
+                            with open(_mh2_fp, encoding='utf-8') as _mh2_f:
+                                _mh2_fd = _mh2_json.load(_mh2_f)
+                            if _mh2_fd.get('firm_name') == _mh_firm2:
+                                _mh2_sec = int(_mh2_fd.get('challenges', [{}])[0].get('restrictions', {}).get('min_trade_duration_seconds', 0))
+                                if _mh2_sec > 0:
+                                    _r_min_hold = max(1, _mh2_sec // 60)
+                                break
+                except Exception:
+                    pass
+                if _r_min_hold > 0:
+                    _info_parts.append(f"Min hold: {_r_min_hold}min")
                 if _rule_info_lbl:
                     if _info_parts:
                         _rule_info_lbl.config(text="  |  ".join(_info_parts), fg="#333")

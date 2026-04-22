@@ -848,6 +848,25 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_dd_daily = 5.0
                         _cfg_dd_total = 10.0
                         _dd_source = "defaults"
+                    # WHY: Min hold from firm restrictions via rule.
+                    # CHANGED: April 2026 — min hold from firm
+                    _cfg_min_hold = 0
+                    try:
+                        _mh_firm = _first_rule.get('prop_firm_name', '')
+                        if _mh_firm:
+                            import glob as _mh_glob
+                            _mh_dir = os.path.join(project_root, 'prop_firms')
+                            for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
+                                import json as _mh_json
+                                with open(_mh_fp, encoding='utf-8') as _mh_f:
+                                    _mh_fd = _mh_json.load(_mh_f)
+                                if _mh_fd.get('firm_name') == _mh_firm:
+                                    _mh_sec = int(_mh_fd.get('challenges', [{}])[0].get('restrictions', {}).get('min_trade_duration_seconds', 0))
+                                    if _mh_sec > 0:
+                                        _cfg_min_hold = max(1, _mh_sec // 60)
+                                    break
+                    except Exception:
+                        pass
                     _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or 1.0
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
@@ -914,6 +933,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"   Spread: {_cfg_spread} pips  |  Commission: {_cfg_commission:.2f} pips (${_cfg_commission * _cfg_pip_value:.2f}/lot)  |  Slippage: {_cfg_slippage} pips  |  "
                         f"Pip value: ${_cfg_pip_value}/lot\n"
                         f"   DD limits: {_cfg_dd_daily}% daily / {_cfg_dd_total}% total ({_dd_source})\n"
+                        + (f"   Min hold: {_cfg_min_hold}min (firm rule)\n" if _cfg_min_hold > 0 else "")
                     )
                     # Show data source
                     output_text.insert(tk.END,
