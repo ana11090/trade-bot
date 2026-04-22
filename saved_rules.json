@@ -7071,5 +7071,143 @@
       "grade": "",
       "score": 0
     }
+  },
+  {
+    "id": 33,
+    "rule_id": "_M5_2c_0422_1cba",
+    "saved_at": "2026-04-22T19:59:25.622865",
+    "source": "Backtest Result",
+    "notes": "s",
+    "rule": {
+      "rule_combo": "#19_BUY_D1_2c_0422_7447_Time_Based_1775",
+      "exit_strategy": "SL 150 pips, close after 6 candles",
+      "exit_name": "Time-Based",
+      "exit_params": {
+        "sl_pips": 150,
+        "max_candles": 6
+      },
+      "prediction": "WIN",
+      "win_rate": 27.4,
+      "net_total_pips": 111269.0,
+      "net_profit_factor": 1.12,
+      "total_trades": 5701,
+      "max_dd_pips": 31019.0,
+      "entry_timeframe": "M5",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "D1_distance_from_high",
+              "operator": "<=",
+              "value": 0.5875
+            },
+            {
+              "feature": "D1_lower_shadow",
+              "operator": ">",
+              "value": 10.895
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 0.606,
+          "win_rate": 0.606,
+          "coverage": 94,
+          "coverage_pct": 26.6,
+          "train_win_rate": 0.57,
+          "train_coverage": 86,
+          "overfit_gap": -0.037,
+          "is_overfit": false,
+          "avg_pips": 112.8,
+          "source": "bot_entry",
+          "entry_timeframe": "D1",
+          "n_real_trades_in_rule": 189,
+          "data_source_id": "unlimited_leveraged_data",
+          "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+          "pip_value_per_lot": 1.0,
+          "spread": 25.0,
+          "contract_size": 100.0,
+          "pip_size": 0.01,
+          "prop_firm_name": "Get Leveraged",
+          "prop_firm_id": "leveraged",
+          "prop_firm_stage": "Evaluation",
+          "risk_pct": 0.3,
+          "risk_pct_firm": 0.8,
+          "dd_daily_pct": 3.0,
+          "dd_total_pct": 6.0,
+          "leverage": 10,
+          "account_size": 10000.0,
+          "regime_filter": null,
+          "direction": "BUY",
+          "status": "discovered",
+          "grade": "",
+          "score": 0,
+          "spread_pips": 2.5,
+          "_saved_entry_id": 19,
+          "_saved_rule_id": "BUY_D1_2c_0422_7447"
+        }
+      ],
+      "rule_indices": [
+        18
+      ],
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.895
+        }
+      ],
+      "spread_pips": 25.0,
+      "commission_pips": 4.0,
+      "direction": "BUY",
+      "run_settings": {
+        "rule_source": "Saved/Bookmarked Rules (32 rules)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": true,
+        "regime_filter_conditions": [
+          {
+            "feature": "H1_atr_50",
+            "direction": ">",
+            "threshold": 12.548525
+          }
+        ],
+        "regime_filter_mode": "manual",
+        "regime_filter_strictness": "conservative",
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 0.3,
+        "starting_capital": 10000.0,
+        "leverage": 10,
+        "contract_size": 100.0,
+        "firm_id": "leveraged",
+        "firm_name": "Get Leveraged (Evaluation)",
+        "data_source_id": "unlimited_leveraged_data",
+        "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      },
+      "risk_pct": 0.3,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "signals_before_regime_filter": 0,
+      "signals_after_regime_filter": 0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "firm_id": "leveraged",
+      "firm_name": "Get Leveraged (Evaluation)",
+      "prop_firm_name": "Get Leveraged (Evaluation)",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "pip_value_per_lot": 1.0,
+      "risk_pct_firm": 0,
+      "dd_daily_pct": 0,
+      "dd_total_pct": 0,
+      "account_size": 10000
+    }
   }
 ]
