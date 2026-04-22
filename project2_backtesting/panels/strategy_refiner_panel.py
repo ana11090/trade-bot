@@ -262,6 +262,48 @@ def _load_selected_strategy():
                         matched_idx = s.get('index')
                         break
 
+        # WHY: If name matching failed (e.g., saved rule has generated ID like
+        #      "#19_BUY_D1_2c_0422_7447_Time_Based_1775"), try matching by
+        #      conditions instead. This allows saved rules from refiner/optimizer
+        #      to match their original backtest entries.
+        # CHANGED: April 2026 — conditions-based fallback matching
+        if matched_idx is None:
+            _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
+            if _saved_conds:
+                # Try conditions+exit match first (most specific)
+                for s in _strategies:
+                    if s.get('source') != 'backtest':
+                        continue
+                    _matrix_rules = s.get('rules', [])
+                    _matrix_conds = set(c.get('feature', '')
+                                        for _mr in _matrix_rules
+                                        for c in _mr.get('conditions', []))
+                    if _saved_conds == _matrix_conds:
+                        # Check exit match
+                        _matrix_exit = s.get('exit_name', s.get('exit_strategy', ''))
+                        if exit_strategy and exit_strategy in _matrix_exit:
+                            matched_idx = s.get('index')
+                            print(f"[REFINER] Matched by conditions+exit: {_saved_conds} × {exit_strategy}")
+                            break
+                        if exit_name and exit_name == _matrix_exit:
+                            matched_idx = s.get('index')
+                            print(f"[REFINER] Matched by conditions+exit: {_saved_conds} × {exit_name}")
+                            break
+
+                # If conditions+exit failed, try conditions-only match
+                if matched_idx is None:
+                    for s in _strategies:
+                        if s.get('source') != 'backtest':
+                            continue
+                        _matrix_rules = s.get('rules', [])
+                        _matrix_conds = set(c.get('feature', '')
+                                            for _mr in _matrix_rules
+                                            for c in _mr.get('conditions', []))
+                        if _saved_conds == _matrix_conds:
+                            matched_idx = s.get('index')
+                            print(f"[REFINER] Matched by conditions-only: {_saved_conds}")
+                            break
+
         # WHY: Diagnostic log so user can check which entry was matched.
         # CHANGED: April 2026 — match diagnostic
         if matched_idx is not None:
@@ -2908,11 +2950,12 @@ def build_panel(parent):
             tree_frame = tk.Frame(sel_row, bg=WHITE)
             tree_frame.pack(fill="x", expand=True)
 
-            columns = ("#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
+            columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
             _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                        height=min(len(_strategies), 8),
                                        selectmode="browse")
 
+            _strat_tree.heading("star",     text="⭐")
             _strat_tree.heading("#",        text="#")
             _strat_tree.heading("rule",     text="Rule")
             _strat_tree.heading("exit",     text="Exit Strategy")
@@ -2922,9 +2965,10 @@ def build_panel(parent):
             _strat_tree.heading("net_pips", text="Net Pips")
             _strat_tree.heading("avg_pips", text="Avg Pips")
 
-            _strat_tree.column("#",        width=30,  anchor="center")
-            _strat_tree.column("rule",     width=180, anchor="w")
-            _strat_tree.column("exit",     width=130, anchor="w")
+            _strat_tree.column("star",     width=30,  anchor="center")
+            _strat_tree.column("#",        width=70,  anchor="center")
+            _strat_tree.column("rule",     width=160, anchor="w")
+            _strat_tree.column("exit",     width=120, anchor="w")
             _strat_tree.column("trades",   width=60,  anchor="center")
             _strat_tree.column("wr",       width=70,  anchor="center")
             _strat_tree.column("pf",       width=60,  anchor="center")
@@ -2933,6 +2977,8 @@ def build_panel(parent):
 
             _strat_tree.tag_configure("profitable", foreground="#28a745")
             _strat_tree.tag_configure("losing",     foreground="#dc3545")
+            _strat_tree.tag_configure("saved",      foreground="#9b59b6")
+            _strat_tree.tag_configure("starred",    foreground="#f39c12")
 
             tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
                                        command=_strat_tree.yview)
@@ -2950,9 +2996,27 @@ def build_panel(parent):
                 pf       = s.get('net_profit_factor', s.get('profit_factor', 0))
                 net      = s.get('net_total_pips', s.get('total_pips', 0))
                 avg      = s.get('net_avg_pips', s.get('avg_pips', 0))
-                tag      = "profitable" if net > 0 else "losing"
+
+                # Star status and source-aware ID formatting
+                is_starred = s.get('is_starred', False)
+                source = s.get('source', 'backtest')
+                star_display = "⭐" if is_starred else ""
+
+                if source == 'saved':
+                    id_display = f"💾#{idx}"
+                    tag = "saved" if not is_starred else "starred"
+                elif source == 'optimizer':
+                    id_display = f"🔧#{idx}"
+                    tag = "profitable" if net > 0 else "losing"
+                else:
+                    id_display = f"#{row_n}"
+                    tag = "profitable" if net > 0 else "losing"
+
+                if is_starred and tag not in ("saved", "starred"):
+                    tag = "starred"
+
                 _strat_tree.insert("", "end", iid=idx, values=(
-                    row_n, rc, exit_name, int(trades), wr_str,
+                    star_display, id_display, rc, exit_name, int(trades), wr_str,
                     f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}"
                 ), tags=(tag,))
 
@@ -3029,6 +3093,23 @@ def build_panel(parent):
 
             _strategy_var.trace_add('write', _update_star_btn)
             _update_star_btn()
+
+            # Refresh button to reload strategies and rebuild tree
+            def _do_refresh():
+                try:
+                    _load_strategies(force=True)
+                    # Rebuild tree by calling _on_strategies_loaded
+                    _on_strategies_loaded()
+                    messagebox.showinfo("Refreshed", "Strategy list reloaded from disk.")
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    messagebox.showerror("Refresh Error", str(e))
+
+            refresh_btn = tk.Button(sel_row, text="🔄 Refresh", command=_do_refresh,
+                                    bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
+                                    relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
 
     def _load_in_background():
         """Background thread: load strategies, then schedule UI update."""
