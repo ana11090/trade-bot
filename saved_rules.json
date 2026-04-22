@@ -3533,5 +3533,423 @@
       "score": 0,
       "spread_pips": 2.5
     }
+  },
+  {
+    "id": 35,
+    "rule_id": "_M5_3c_0421_7e61",
+    "saved_at": "2026-04-21T18:05:29.505969",
+    "source": "Backtest Result",
+    "notes": "let s see",
+    "rule": {
+      "rule_combo": "BUY_XX_3c_2d64 (BUY)_2f57",
+      "exit_strategy": "SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles",
+      "exit_name": "Trailing Stop",
+      "exit_params": {
+        "sl_pips": 150,
+        "activation_pips": 50,
+        "trail_distance_pips": 100,
+        "tp_pips": 750,
+        "max_candles": 1000
+      },
+      "prediction": "WIN",
+      "win_rate": 60.5,
+      "net_total_pips": 150644.0,
+      "net_profit_factor": 1.46,
+      "total_trades": 1164,
+      "max_dd_pips": 22190.0,
+      "entry_timeframe": "M5",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "M5_distance_to_rolling_level_618",
+              "operator": "<=",
+              "value": -0.4549
+            },
+            {
+              "feature": "M15_cmf",
+              "operator": ">",
+              "value": -0.0748
+            },
+            {
+              "feature": "H4_lower_shadow",
+              "operator": ">",
+              "value": 7.83
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 1.0,
+          "coverage": 44,
+          "coverage_pct": 12.5,
+          "win_rate": 1.0,
+          "avg_pips": 529.8,
+          "action": "BUY",
+          "data_source_id": "unlimited_leveraged_data",
+          "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+          "_a46_source_tag": "Step3",
+          "direction": "BUY",
+          "regime_filter": [
+            {
+              "feature": "M5_bear_power",
+              "direction": "<",
+              "threshold": -11.519258
+            }
+          ]
+        }
+      ],
+      "rule_indices": [
+        0
+      ],
+      "conditions": [
+        {
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": "<=",
+          "value": -0.4549
+        },
+        {
+          "feature": "M15_cmf",
+          "operator": ">",
+          "value": -0.0748
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": ">",
+          "value": 7.83
+        }
+      ],
+      "spread_pips": 25.0,
+      "commission_pips": 4.0,
+      "direction": "BUY",
+      "run_settings": {
+        "rule_source": "\ud83d\udce6 All Sources Combined (5 sources)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": true,
+        "regime_filter_conditions": [
+          {
+            "feature": "M5_bear_power",
+            "direction": "<",
+            "threshold": -11.519258
+          }
+        ],
+        "regime_filter_mode": "automatic",
+        "regime_filter_strictness": "strict",
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 1.0,
+        "starting_capital": 10000.0,
+        "leverage": 10,
+        "contract_size": 100.0,
+        "firm_id": "leveraged",
+        "firm_name": "Get Leveraged",
+        "data_source_id": "unlimited_leveraged_data",
+        "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      },
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "signals_before_regime_filter": 2863,
+      "signals_after_regime_filter": 2863,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "firm_id": "leveraged",
+      "firm_name": "Get Leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "pip_value_per_lot": 1.0
+    }
+  },
+  {
+    "id": 36,
+    "rule_id": "BUY_H1_3c_0421_7757",
+    "saved_at": "2026-04-21T21:40:15.940159",
+    "source": "Step3:outputs:BUY:conf100",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": "<=",
+          "value": -0.4547
+        },
+        {
+          "feature": "M5_stoch_21_d",
+          "operator": ">",
+          "value": 12.1806
+        },
+        {
+          "feature": "M15_roc_5",
+          "operator": ">",
+          "value": -0.6724
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 1.0,
+      "coverage": 23,
+      "coverage_pct": 24.7,
+      "win_rate": 1.0,
+      "avg_pips": 630.1,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 1 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "balanced",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": false,
+        "single_rule_mode_variant": "b",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_distance_to_rolling_level_618",
+              "operator": "<=",
+              "value": -0.4547
+            },
+            {
+              "feature": "M5_stoch_21_d",
+              "operator": ">",
+              "value": 12.1806
+            },
+            {
+              "feature": "M15_roc_5",
+              "operator": ">",
+              "value": -0.6724
+            }
+          ]
+        }
+      ],
+      "spread": 25.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0,
+      "risk_pct_firm": 0,
+      "dd_daily_pct": 0,
+      "dd_total_pct": 0,
+      "account_size": 10000.0,
+      "regime_filter": [
+        {
+          "feature": "M5_bear_power",
+          "direction": "<",
+          "threshold": -11.519258
+        }
+      ],
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 37,
+    "rule_id": "BUY_H1_3c_0421_16c4",
+    "saved_at": "2026-04-21T21:40:15.957307",
+    "source": "Step3:outputs:BUY:conf95",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": "<=",
+          "value": -0.4547
+        },
+        {
+          "feature": "M5_stoch_21_d",
+          "operator": ">",
+          "value": 12.1806
+        },
+        {
+          "feature": "M15_roc_5",
+          "operator": "<=",
+          "value": -0.6724
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.95,
+      "coverage": 20,
+      "coverage_pct": 21.5,
+      "win_rate": 0.95,
+      "avg_pips": 384.8,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 2 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "balanced",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": false,
+        "single_rule_mode_variant": "b",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_distance_to_rolling_level_618",
+              "operator": "<=",
+              "value": -0.4547
+            },
+            {
+              "feature": "M5_stoch_21_d",
+              "operator": ">",
+              "value": 12.1806
+            },
+            {
+              "feature": "M15_roc_5",
+              "operator": "<=",
+              "value": -0.6724
+            }
+          ]
+        }
+      ],
+      "spread": 25.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0,
+      "risk_pct_firm": 0,
+      "dd_daily_pct": 0,
+      "dd_total_pct": 0,
+      "account_size": 10000.0,
+      "regime_filter": [
+        {
+          "feature": "M5_bear_power",
+          "direction": "<",
+          "threshold": -11.519258
+        }
+      ],
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
+  },
+  {
+    "id": 38,
+    "rule_id": "BUY_H1_2c_0421_41ac",
+    "saved_at": "2026-04-21T21:40:15.971736",
+    "source": "Step3:outputs:BUY:conf75",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_rolling_level_618",
+          "operator": "<=",
+          "value": -0.4547
+        },
+        {
+          "feature": "M5_stoch_21_d",
+          "operator": "<=",
+          "value": 12.1806
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.75,
+      "coverage": 24,
+      "coverage_pct": 25.8,
+      "win_rate": 0.75,
+      "avg_pips": 438.0,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 25.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "balanced",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": false,
+        "single_rule_mode_variant": "b",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_distance_to_rolling_level_618",
+              "operator": "<=",
+              "value": -0.4547
+            },
+            {
+              "feature": "M5_stoch_21_d",
+              "operator": "<=",
+              "value": 12.1806
+            }
+          ]
+        }
+      ],
+      "spread": 25.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0,
+      "risk_pct_firm": 0,
+      "dd_daily_pct": 0,
+      "dd_total_pct": 0,
+      "account_size": 10000.0,
+      "regime_filter": [
+        {
+          "feature": "M5_bear_power",
+          "direction": "<",
+          "threshold": -11.519258
+        }
+      ],
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    }
   }
 ]
