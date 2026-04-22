@@ -1,13 +1,1 @@
-[
-  "test1|EXIT1",
-  "test2|EXIT2",
-  "Rule 1 (BUY)|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|H1",
-  "All rules combined (BUY)|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|H1",
-  "Rules 2+3 (BUY)|SL 150 pips, close after 12 candles|M5",
-  "Rule 1 (BUY)|SL 150 pips, close after 12 candles|M5",
-  "Rule 3 (BUY)|SL 150 pips, close after 12 candles|M5",
-  "Rule 3 (BUY)|SL 150 pips, close after 6 candles|M5",
-  "#1_BUY_D1_4c_a670_Trailing_Sto_2f57|SL 150 pips, trail after +50 pips, trail distance 100 pips, TP 750 pips, max 1000 candles|M5",
-  "#19_BUY_D1_2c_0422_7447_Time_Based_1775|SL 150 pips, close after 6 candles|M5",
-  "#25_BUY_H1_3c_0422_712e_ATR_Based_c296|SL 2.0xATR, TP 4.0xATR, max 1000 candles|M5"
-]
+{}
