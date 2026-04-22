@@ -2242,8 +2242,18 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      so _extract_required_indicators always received None and missed
     #      ATR/RSI columns needed by exit strategies (e.g. ATRBased).
     #      Moved here so the extraction sees the real exit strategy list.
+    # WHY (T1c): Pass entry TF so ATR exits size SL/TP from matching-TF ATR.
+    # CHANGED: April 2026 — T1c
     if exit_strategies is None:
-        exit_strategies = get_default_exit_strategies(pip_size=pip_size)
+        exit_strategies = get_default_exit_strategies(pip_size=pip_size, entry_tf=timeframe)
+
+    # WHY (T1c): Make ATR column resolution visible. A run on M5 entries
+    #      should see atr_column='M5_atr_14' flow into every ATRBased and
+    #      ATRTrailing instance. This one log line makes misconfiguration
+    #      obvious when user runs multi-TF backtests.
+    # CHANGED: April 2026 — T1c diagnostic
+    log.info(f"[T1c] entry_tf={timeframe} → ATR exits will use "
+             f"{timeframe}_atr_14 for SL/TP sizing")
 
     # Extract which indicators each TF actually needs — skips the other ~575
     # WHY (Phase A.42.1): Pass exit strategies so their indicator

@@ -667,7 +667,14 @@ class HybridExit(ExitStrategy):
 
 # ── Factory ────────────────────────────────────────────────────────────────────
 
-def get_default_exit_strategies(pip_size=0.01):
+# WHY (T1c): ATR exits default atr_column='H1_atr_14'. Backtesting M5 or
+#      M15 entries then uses H1 volatility for SL/TP sizing — 10×+ too
+#      wide on XAUUSD. Propagating the entry_tf here aligns the ATR
+#      column to the entry TF so sizing matches the signal frequency.
+#      entry_tf=None preserves old H1 default for any caller that
+#      doesn't know the entry TF (backward compat).
+# CHANGED: April 2026 — T1c — entry_tf-aware ATR exit defaults
+def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
     """Return a list of exit strategies with default parameters for testing."""
     # WHY (Phase A.28.2): Pass max_candles=1000 to every FixedSLTP so a
     #      trade can not drift for the entire test window. On M5 that
@@ -677,6 +684,7 @@ def get_default_exit_strategies(pip_size=0.01):
     #      subsequent signal in the backtest via the END_OF_DATA
     #      lockout in fast_backtest.
     # CHANGED: April 2026 — Phase A.28.2
+    _atr_col = f"{entry_tf}_atr_14" if entry_tf else "H1_atr_14"
     return [
         FixedSLTP(sl_pips=150, tp_pips=200,  max_candles=1000, pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=300,  max_candles=1000, pip_size=pip_size),
@@ -685,10 +693,10 @@ def get_default_exit_strategies(pip_size=0.01):
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150,
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
-        ATRBased(sl_atr_mult=1.5, tp_atr_mult=3.0),
-        ATRBased(sl_atr_mult=2.0, tp_atr_mult=4.0),
+        ATRBased(sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column=_atr_col),
+        ATRBased(sl_atr_mult=2.0, tp_atr_mult=4.0, atr_column=_atr_col),
         ATRTrailing(sl_atr_mult=2.0, tp_atr_mult=4.0, activation_pips=50,
-                    trail_distance_pips=100, pip_size=pip_size),
+                    trail_distance_pips=100, pip_size=pip_size, atr_column=_atr_col),
         TimeBased(sl_pips=150, max_candles=6,  pip_size=pip_size),
         TimeBased(sl_pips=150, max_candles=12, pip_size=pip_size),
         IndicatorExit(sl_pips=150, exit_indicator="H1_rsi_14",
