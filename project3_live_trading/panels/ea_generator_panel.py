@@ -1052,7 +1052,10 @@ def _generate():
             # WHY: Leverage from strategy rule, not firm dropdown.
             #      Rule was backtested at this leverage — EA must match.
             # CHANGED: April 2026 — leverage from strategy
-            leverage=_strat_lev,
+            # WHY: Read leverage from strategy data inline — _strat_lev
+            #      is in a different function scope.
+            # CHANGED: April 2026 — fix scope error
+            leverage=int(strat_data.get('leverage', 0) or strat_data.get('run_settings', {}).get('leverage', 0) or 0),
         )
     except Exception as e:
         import traceback; traceback.print_exc()

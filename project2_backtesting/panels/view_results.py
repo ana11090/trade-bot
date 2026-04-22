@@ -170,6 +170,15 @@ def display_summary(output_text, summary_frame):
                               first_result.get('run_settings', {}).get('pip_value_per_lot', 0))
                 if _vr_rule_pv and float(_vr_rule_pv) > 0:
                     pip_value = float(_vr_rule_pv)
+                # WHY: Risk from run_settings (single source of truth).
+                #      P2 config has 1.0% default which inflates dollars 3x.
+                # CHANGED: April 2026 — risk from rule
+                _vr_rule_risk = (first_result.get('run_settings', {}).get('risk_pct', 0))
+                if _vr_rule_risk and float(_vr_rule_risk) > 0:
+                    risk_pct = float(_vr_rule_risk)
+                _vr_rule_acct = (first_result.get('run_settings', {}).get('starting_capital', 0))
+                if _vr_rule_acct and float(_vr_rule_acct) > 0:
+                    account_size = float(_vr_rule_acct)
     except Exception:
         pass  # Use config pip_value as fallback
 

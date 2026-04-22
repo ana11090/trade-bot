@@ -392,6 +392,37 @@ INDICATOR_PATTERNS = [
         "description": "Distance from 20-bar swing high as % on {tf}",
     }),
 
+    # ── Distance to rolling Fibonacci-like level ──────────────────────────
+    # WHY: distance_to_rolling_level_* uses 50-bar rolling high/low
+    #      (same swing_high/swing_low as distance_to_swing_*) with
+    #      Fibonacci-like retracement levels. These are NOT real Fibonacci
+    #      levels — they're distances to percentage levels of the recent range.
+    #      MQL5: iHighest/iLowest for 50-bar extremes, then math.
+    #      Level encoded in name: 786 → 0.786. {p}.0/1000.0 at compile time.
+    # CHANGED: April 2026 — support rolling level indicators
+    (r"^distance_to_rolling_level_(\d+)$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": (
+            "int _rl_hi_idx_{var} = iHighest(NULL,{mt5_tf},MODE_HIGH,50,1); "
+            "int _rl_lo_idx_{var} = iLowest(NULL,{mt5_tf},MODE_LOW,50,1); "
+            "double _rl_hi_{var} = iHigh(NULL,{mt5_tf},_rl_hi_idx_{var}); "
+            "double _rl_lo_{var} = iLow(NULL,{mt5_tf},_rl_lo_idx_{var}); "
+            "double _rl_range_{var} = _rl_hi_{var} - _rl_lo_{var}; "
+            "double _rl_level_{var} = _rl_lo_{var} + {p}.0/1000.0 * _rl_range_{var}; "
+            "double _rl_close_{var} = iClose(NULL,{mt5_tf},1); "
+            "double val_{var} = (_rl_close_{var} - _rl_level_{var}) / MathMax(_rl_close_{var}, 0.000001) * 100.0;"
+        ),
+        "tradovate_code": (
+            "(lambda _hi=df_m{tv_tf}['high'].rolling(50).max().iloc[-1], "
+            "_lo=df_m{tv_tf}['low'].rolling(50).min().iloc[-1], "
+            "_cl=df_m{tv_tf}['close'].iloc[-1]: "
+            "(_cl - (_lo + {p}/1000.0 * (_hi - _lo))) / max(_cl, 0.000001) * 100)()"
+        ),
+        "custom_indicator_mt5": False,
+        "description": "Distance to {p}/1000 rolling level (50-bar range) on {tf}",
+    }),
+
     # ── Position in swing range ───────────────────────────────────────────
     # WHY: 0.0 = at swing low, 1.0 = at swing high.
     (r"^position_in_swing_range$", {
