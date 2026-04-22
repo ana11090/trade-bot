@@ -42,6 +42,7 @@ def generate_ea(
     trailing_stop=None,
     output_path=None,
     direction=None,  # NEW: 'BUY' or 'SELL' — if None, read from strategy dict
+    leverage=0,
 ):
     """
     Generate complete EA code for MT5 or Tradovate.
@@ -122,7 +123,10 @@ def generate_ea(
     _regime_conds = strategy.get('regime_filter_conditions', [])
 
     # Leverage calculation — must happen BEFORE _generate_mt5 call
-    _ea_leverage = 0
+    # WHY: Prefer explicitly passed leverage (from rule).
+    #      Fall back to firm lookup only if not provided.
+    # CHANGED: April 2026 — leverage from rule first
+    _ea_leverage = leverage if leverage and int(leverage) > 0 else 0
     _ea_contract = 100.0
     _ea_inst = 'metals'
     _max_risk_pct = None
@@ -134,7 +138,8 @@ def generate_ea(
         #      leverage_by_instrument is inside 'firm_data' key.
         # CHANGED: April 2026 — pass inner firm_data for correct leverage
         _firm_json = (prop_firm or {}).get('firm_data', prop_firm or {})
-        _ea_leverage = get_leverage_for_symbol(_firm_json, symbol)
+        if _ea_leverage == 0:
+            _ea_leverage = get_leverage_for_symbol(_firm_json, symbol)
         _ea_inst = get_instrument_type(symbol)
         _ea_contract = 100.0 if _ea_inst == 'metals' else (1.0 if _ea_inst == 'indices' else 100000.0)
     except Exception:
@@ -1102,8 +1107,20 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      balance for HWM tracking, but the floor stays anchored.
     # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
     payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
-    payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
-    payout_reset_items.append('g_hwm                 = g_startingBalance;')
+    # Read dd_reset_on_payout from firm data
+    _dd_reset = True  # default: reset on payout
+    try:
+        _firm_d = (prop_firm or {}).get('firm_data', {})
+        _challenge = _firm_d.get('challenges', [{}])[0]
+        _dd_reset = _challenge.get('funded', {}).get('dd_reset_on_payout', True)
+    except Exception:
+        pass
+    if _dd_reset:
+        payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
+        payout_reset_items.append('g_hwm                 = g_startingBalance;')
+    else:
+        payout_reset_items.append('// DD does NOT reset on payout (firm rule: dd_reset_on_payout=false)')
+        payout_reset_items.append('// g_ddFloor and g_hwm are preserved -- trailing DD continues')
     # WHY: Firms with permanent post-payout lock (e.g. FTMO where trailing
     #      DD locks to initial balance after first withdrawal) need
     #      g_ddLocked to STAY true across payout cycles. Old code
@@ -1501,6 +1518,25 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         _regime_lines.append('')
         regime_check_block = '\n'.join(_regime_lines)
 
+    # WHY: Daily DD enforcement — firm blows account at daily limit.
+    #      Must check every tick, not just on bar close.
+    # CHANGED: April 2026 — add daily DD check
+    extra_tick_checks.append(
+        f'   // ── Daily DD check (firm blows at {dd_daily_pct}%) ──\n'
+        f'   if(UsePropFirmMode && !g_stopForDay)\n'
+        f'   {{\n'
+        f'      double _dailyLoss = g_dailyReference - equity;\n'
+        f'      double _dailyLossPct = (_dailyLoss / g_dailyReference) * 100.0;\n'
+        f'      if(_dailyLossPct >= DailyDDLimitPct)\n'
+        f'      {{\n'
+        f'         CloseAllPositions("DailyDDBreach");\n'
+        f'         g_stopForDay = true;\n'
+        f'         Print("[DD] Daily DD breach: ", DoubleToString(_dailyLossPct, 1), "% >= ", DailyDDLimitPct, "%");\n'
+        f'         SendNotification("[DD] " + _Symbol + " — Daily DD limit hit. Stopped for day.");\n'
+        f'      }}\n'
+        f'   }}'
+    )
+
     # ── Build injection strings ───────────────────────────────────────────
     extra_inputs_block      = '\n'.join(extra_inputs)      if extra_inputs      else ''
     extra_globals_block     = '\n'.join(extra_globals)     if extra_globals     else ''
@@ -1593,6 +1629,15 @@ bool IsMinHoldMet()
     _vr.append("")
     _vr.append(f"SETTINGS: {symbol}, Risk {risk_per_trade_pct}%, Account ${account_size:,.0f}, Magic {magic_number}")
     _vr.append(f"  Firm: {prop_firm_name} ({stage}), DD: {dd_daily_pct}%/{dd_total_pct}%")
+    if stage == 'evaluation':
+        _vr.append("")
+        _vr.append("EVAL RULES (IMPORTANT):")
+        _vr.append("  * Hit profit target -> STOP IMMEDIATELY (don't overtrade)")
+        _vr.append("  * Trailing DD floor RISES with equity -- profits tighten the rope")
+        _vr.append("  * No payout cycle in eval -- trade once, pass, done")
+        _vr.append("  * Daily DD alert: stop BEFORE limit (save the account)")
+        _vr.append("  * dd_reset_on_payout: check firm rules before enabling")
+        _vr.append("")
     _vr.append(f"  Validation: Grade {grade} ({score}/100)")
     _vr.append(f"  Backtest: WR {base_stats.get('win_rate',0)*100:.1f}%, PF {base_stats.get('profit_factor',0):.2f}, {base_stats.get('total_pips',0):+,.0f} pips")
     # Warnings

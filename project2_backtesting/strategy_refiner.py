@@ -297,7 +297,9 @@ def compute_three_drawdowns(trades, account_size=100000, risk_pct=1.0, pip_value
 def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
                        daily_dd_limit_pct=5.0, total_dd_limit_pct=10.0,
                        daily_dd_safety_pct=None, total_dd_safety_pct=None,
-                       default_sl_pips=150.0):
+                       default_sl_pips=150.0,
+                       funded_protect=False, payout_period_days=14,
+                       total_dd_alert_pct=None):
     """
     Simulate equity curve, count prop firm DD breaches and safety stops.
 
@@ -350,6 +352,14 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     daily_dd_limit = account_size * (daily_dd_limit_pct / 100)
     total_dd_limit = account_size * (total_dd_limit_pct / 100)
 
+    # Funded protection state
+    _protect_skip_until = None
+    _protect_alert = None
+    if funded_protect:
+        _protect_alert = total_dd_alert_pct if total_dd_alert_pct else (total_dd_limit_pct * 0.92)
+        _protect_alert_dollars = account_size * (_protect_alert / 100)
+    _payout_trades_stopped = 0
+
     # Safety limits (bot stops before firm limits)
     daily_dd_safety = account_size * (daily_dd_safety_pct / 100) if daily_dd_safety_pct else None
     total_dd_safety = account_size * (total_dd_safety_pct / 100) if total_dd_safety_pct else None
@@ -367,6 +377,16 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     worst_total_pct = 0.0
 
     for day in days:
+        # WHY: Funded protection — when total trailing DD hits alert level,
+        #      stop trading for the rest of the payout period.
+        # CHANGED: April 2026 — funded_protect simulation
+        if funded_protect and _protect_skip_until:
+            try:
+                if pd.to_datetime(day) < _protect_skip_until:
+                    continue  # skip this day — bot is stopped
+            except Exception:
+                pass
+
         day_pnl = daily_pnls[day]
 
         # ── Apply daily safety stop (bot stops trading when threshold hit) ──
@@ -407,6 +427,16 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         total_dd = high_water - balance
         total_dd_pct = total_dd / account_size * 100
         worst_total_pct = max(worst_total_pct, total_dd_pct)
+
+        # Funded protection — stop trading when approaching total DD limit
+        if funded_protect and _protect_alert and total_dd >= _protect_alert_dollars:
+            try:
+                _current_day = pd.to_datetime(day)
+                _period_end = _current_day + pd.Timedelta(days=payout_period_days)
+                _protect_skip_until = _period_end
+                _payout_trades_stopped += 1
+            except Exception:
+                pass
 
         # ── Apply total safety stop (cap total DD at safety threshold) ───────
         # WHY: The old code restored balance to (high_water - total_dd_safety)
@@ -475,6 +505,7 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         # CHANGED: April 2026 — include limits in breach results
         'daily_dd_limit_pct': daily_dd_limit_pct,
         'total_dd_limit_pct': total_dd_limit_pct,
+        'funded_protect_stops': _payout_trades_stopped if funded_protect else 0,
     }
 
 
@@ -689,6 +720,17 @@ def load_strategy_list():
                             # CHANGED: April 2026 — Phase A.48 fix
                             'has_trades':        (r.get('trade_count', 0) > 0 or
                                                   stats.get('total_trades', r.get('total_trades', 0)) > 0),
+                            'run_settings':      r.get('run_settings', {}),
+                            'rules':             r.get('rules', []),
+                            'rule_indices':      r.get('rule_indices'),
+                            'leverage':          r.get('leverage', r.get('run_settings', {}).get('leverage', 0)),
+                            'risk_pct':          r.get('risk_pct', r.get('run_settings', {}).get('risk_pct', 0)),
+                            'dd_daily_pct':      r.get('dd_daily_pct', r.get('run_settings', {}).get('dd_daily_pct', 0)),
+                            'dd_total_pct':      r.get('dd_total_pct', r.get('run_settings', {}).get('dd_total_pct', 0)),
+                            'account_size':      r.get('account_size', r.get('run_settings', {}).get('starting_capital', 0)),
+                            'prop_firm_name':    r.get('prop_firm_name', r.get('run_settings', {}).get('prop_firm_name', '')),
+                            'prop_firm_stage':   r.get('prop_firm_stage', r.get('run_settings', {}).get('prop_firm_stage', '')),
+                            'data_source_id':    r.get('data_source_id', r.get('run_settings', {}).get('data_source_id', '')),
                         })
     except Exception as e:
         # WHY: Don't let matrix errors prevent saved rules from loading.
@@ -2328,13 +2370,14 @@ def deep_optimize_generate(
                         continue
                     modified_rules[rule_idx]['conditions'][cond_idx]['value'] = new_val
                     change = f"R{rule_idx+1} {feat}: {original_val:.4f} → {new_val:.4f}"
-                    # WHY: Old code only tested exit_strategies[0] — if user
-                    #      provided multiple exits, all but the first were
-                    #      ignored in step 1. Test all of them per shift.
-                    # CHANGED: April 2026 — test all exits per shift
-                    for _es_idx, _es in enumerate(exit_strategies):
-                        _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
-                        _test_rules(f"Threshold shift: {change} ({_es_name})", modified_rules, _es, change)
+                    # WHY: Testing all 5 exits per threshold shift causes
+                    #      1,200+ backtests in Step 1 alone (8+ hours).
+                    #      Only test the first exit here. Step 4 handles
+                    #      exit strategy variations separately.
+                    # CHANGED: April 2026 — fix Step 1 performance
+                    _es = exit_strategies[0] if exit_strategies else None
+                    if _es:
+                        _test_rules(f"Threshold shift: {change}", modified_rules, _es, change)
                     _report(1, f"Threshold shifts: R{rule_idx+1} {feat} = {new_val:.4f}")
             except Exception as e:
                 log.info(f"[OPTIMIZER] Step 1 error at rule {rule_idx}, cond {cond_idx}: {e}")
@@ -2394,12 +2437,14 @@ def deep_optimize_generate(
                             'value':    float(threshold),
                         })
                         change = f"Added {ind_name} {operator} {threshold:.4f} to Rule {rule_idx + 1}"
-                        # WHY: Same fix as step 1 — test ALL provided exits.
-                        # CHANGED: April 2026 — test all exits per indicator add
-                        for _es_idx, _es in enumerate(exit_strategies):
-                            _es_name = _es.name if hasattr(_es, 'name') else f"exit{_es_idx}"
+                        # WHY: Testing all exits per indicator add mirrors the
+                        #      Step 1 performance problem. Only test the first
+                        #      exit here; Step 4 handles exit variations.
+                        # CHANGED: April 2026 — fix Step 2 performance
+                        _es = exit_strategies[0] if exit_strategies else None
+                        if _es:
                             _test_rules(
-                                f"+ {ind_name} {operator} {threshold:.2f} to R{rule_idx + 1} ({_es_name})",
+                                f"+ {ind_name} {operator} {threshold:.2f} to R{rule_idx + 1}",
                                 modified_rules, _es, change,
                             )
             _report(2, f"Testing indicator: {ind_name}")

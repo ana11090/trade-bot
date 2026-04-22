@@ -63,7 +63,9 @@ _custom_filters  = []        # list of {feature, operator, value}
 
 # Widgets
 _strat_info_lbl   = None
+_rule_info_lbl    = None
 _base_stats_frame = None
+_eval_info_lbl    = None
 _impact_labels    = {}       # filter_name -> tk.Label for impact text
 _results_card     = None
 _trade_list_frame = None
@@ -342,7 +344,7 @@ def _load_selected_strategy():
 
 
 def _update_strat_info():
-    global _strat_info_lbl
+    global _strat_info_lbl, _rule_info_lbl
     if not _strat_info_lbl or not _base_trades:
         return
     from project2_backtesting.strategy_refiner import compute_stats_summary
@@ -373,11 +375,15 @@ def _update_strat_info():
             _ds = _loaded_row.get('discovery_settings', {})
             _sr = _loaded_row.get('saved_rule', {})
             _rsk = _sr.get('risk_settings', {})
+            _rules_l = _loaded_row.get('rules', [])
+            _r0 = (_rules_l[0] if isinstance(_rules_l, list) and _rules_l
+                   and isinstance(_rules_l[0], dict) else {})
 
             # Account
             _rule_acct = (
                 _rs.get('starting_capital', 0) or
                 _sr.get('account_size', 0) or
+                _r0.get('account_size', 0) or
                 _rsk.get('account_size', 0) or
                 _loaded_row.get('account_size', 0)
             )
@@ -388,6 +394,7 @@ def _update_strat_info():
             _rule_risk = (
                 _loaded_row.get('risk_pct', 0) or
                 _sr.get('risk_pct', 0) or
+                _r0.get('risk_pct', 0) or
                 _rs.get('risk_pct', 0) or
                 _rsk.get('risk_pct', 0) or
                 _ds.get('prop_firm_risk_pct', 0)
@@ -432,8 +439,147 @@ def _update_strat_info():
 
             print(f"[REFINER] Auto-filled from rule: account=${_rule_acct}, "
                   f"risk={_rule_risk}%, stage={_rule_stage}, firm={_rule_firm}")
+
+            # WHY: Update the rule info label with values from the loaded rule.
+            # CHANGED: April 2026 — rule info display
+            try:
+                _info_parts = []
+                if _rule_firm:
+                    _info_parts.append(f"Firm: {_rule_firm}")
+                    for _fv in firm_options:
+                        if _rule_firm.lower() in str(_fv).lower():
+                            _opt_target_var.set(str(_fv))
+                            break
+                if _rule_stage:
+                    _info_parts.append(f"Stage: {_rule_stage}")
+                    _stage_var.set(_rule_stage)
+                _r_risk = float(_rule_risk) if _rule_risk else 0
+                if _r_risk > 0:
+                    _info_parts.append(f"Risk: {_r_risk}%")
+                _r_dd_d = (float(_sr.get('dd_daily_pct', 0) or 0) or
+                           float(_r0.get('dd_daily_pct', 0) or 0) or
+                           float(_rs.get('dd_daily_pct', 0) or 0) or
+                           float(_rsk.get('dd_daily_pct', 0) or 0) or
+                           float(_loaded_row.get('dd_daily_pct', 0) or 0))
+                _r_dd_t = (float(_sr.get('dd_total_pct', 0) or 0) or
+                           float(_r0.get('dd_total_pct', 0) or 0) or
+                           float(_rs.get('dd_total_pct', 0) or 0) or
+                           float(_rsk.get('dd_total_pct', 0) or 0) or
+                           float(_loaded_row.get('dd_total_pct', 0) or 0))
+                _r_lev = int(float(_sr.get('leverage', 0) or 0) or
+                             float(_r0.get('leverage', 0) or 0) or
+                             float(_rs.get('leverage', 0) or 0) or
+                             float(_loaded_row.get('leverage', 0) or 0))
+                if _r_dd_d > 0:
+                    _info_parts.append(f"DD: {_r_dd_d}%/{_r_dd_t}%")
+                if _r_lev > 0:
+                    _info_parts.append(f"Leverage: 1:{_r_lev}")
+                _r_acct = float(_rule_acct) if _rule_acct else 0
+                if _r_acct > 0:
+                    _info_parts.append(f"Account: ${int(_r_acct):,}")
+                if _rule_info_lbl:
+                    if _info_parts:
+                        _rule_info_lbl.config(text="  |  ".join(_info_parts), fg="#333")
+                    else:
+                        _rule_info_lbl.config(text="No firm info in rule", fg="#999")
+            except Exception as _ri_e:
+                print(f"[REFINER] Rule info label error: {_ri_e}")
     except Exception as _e:
         print(f"[REFINER] Could not auto-fill from rule: {_e}")
+
+    # WHY: Show eval pass rate for the loaded strategy so user knows
+    #      how likely it is to pass an evaluation before optimizing.
+    # CHANGED: April 2026 — eval simulation on load
+    global _eval_info_lbl
+    if _eval_info_lbl and _base_trades and len(_base_trades) > 10:
+        try:
+            import pandas as _eval_pd
+            # Get firm DD/target from rule or P1 config
+            _eval_acct = 10000
+            _eval_dd_total = 6.0
+            _eval_target_pct = 6.0
+            _eval_risk = 1.0
+            _eval_pip_val = 1.0
+            _eval_sl = 150.0
+            try:
+                _loaded_idx2 = _get_selected_index()
+                for _s2 in _strategies:
+                    if _s2.get('index') == _loaded_idx2:
+                        _sr2 = _s2.get('saved_rule', {})
+                        _rs2 = _s2.get('run_settings', {})
+                        _eval_acct = float(_sr2.get('account_size', 0) or _rs2.get('starting_capital', 0) or _s2.get('account_size', 0) or 10000)
+                        _eval_dd_total = float(_sr2.get('dd_total_pct', 0) or _rs2.get('dd_total_pct', 0) or _s2.get('dd_total_pct', 0) or 6.0)
+                        _eval_risk = float(_sr2.get('risk_pct', 0) or _rs2.get('risk_pct', 0) or _s2.get('risk_pct', 0) or 1.0)
+                        _eval_pip_val = float(_sr2.get('pip_value_per_lot', 0) or _rs2.get('pip_value_per_lot', 0) or 1.0)
+                        _eval_sl = float(_sr2.get('sl_pips', 0) or 150.0)
+                        # Try to get target from firm
+                        _eval_firm_name = _sr2.get('prop_firm_name', '') or _rs2.get('firm_name', '')
+                        if _eval_firm_name:
+                            import glob
+                            _prop_dir = os.path.join(project_root, 'prop_firms')
+                            for _fp in glob.glob(os.path.join(_prop_dir, '*.json')):
+                                import json as _eval_json
+                                with open(_fp, encoding='utf-8') as _ff:
+                                    _fd = _eval_json.load(_ff)
+                                if _fd.get('firm_name') == _eval_firm_name:
+                                    _ph = _fd.get('challenges', [{}])[0].get('phases', [{}])[0]
+                                    _eval_target_pct = float(_ph.get('profit_target_pct', 6.0))
+                                    _eval_dd_total = float(_ph.get('max_total_drawdown_pct', _eval_dd_total))
+                                    break
+                        break
+            except Exception:
+                pass
+
+            # Compute lot size and dollar per pip
+            _eval_risk_dollars = _eval_acct * (_eval_risk / 100)
+            _eval_lot = max(0.01, _eval_risk_dollars / (_eval_sl * _eval_pip_val)) if _eval_sl > 0 else 0.01
+            _eval_dpp = _eval_pip_val * _eval_lot
+            _eval_target_dollars = _eval_acct * (_eval_target_pct / 100)
+            _eval_dd_dollars = _eval_acct * (_eval_dd_total / 100)
+
+            # Build daily PnL
+            _eval_daily = {}
+            for _t in _base_trades:
+                try:
+                    _day = str(_eval_pd.to_datetime(_t.get('entry_time', '')).date())
+                    _pnl = (_t.get('net_pips', 0) or 0) * _eval_dpp
+                    _eval_daily[_day] = _eval_daily.get(_day, 0) + _pnl
+                except Exception:
+                    continue
+
+            # Simulate eval windows
+            _eval_days_list = sorted(_eval_daily.keys())
+            _eval_days_to_target = []
+            for _si in range(0, max(1, len(_eval_days_list) - 5), 7):
+                _running = 0
+                _dc = 0
+                for _d in _eval_days_list[_si:]:
+                    _running += _eval_daily[_d]
+                    _dc += 1
+                    if _running >= _eval_target_dollars:
+                        _eval_days_to_target.append(_dc)
+                        break
+                    if _running < -_eval_dd_dollars:
+                        break
+
+            if _eval_days_to_target:
+                _eval_avg = sum(_eval_days_to_target) / len(_eval_days_to_target)
+                _eval_min = min(_eval_days_to_target)
+                _eval_max = max(_eval_days_to_target)
+                _eval_windows = max(len(list(range(0, max(1, len(_eval_days_list) - 5), 7))), 1)
+                _eval_pr = len(_eval_days_to_target) / _eval_windows * 100
+                _eval_text = (f"Eval: {_eval_pr:.0f}% pass rate | "
+                              f"Avg: {_eval_avg:.0f} days | "
+                              f"Min: {_eval_min} days | Max: {_eval_max} days | "
+                              f"Target: {_eval_target_pct}% (${_eval_target_dollars:,.0f})")
+                _eval_info_lbl.configure(text=_eval_text, fg="#e65100")
+            else:
+                _eval_info_lbl.configure(
+                    text=f"Eval: 0% — never reaches {_eval_target_pct}% target (${_eval_target_dollars:,.0f})",
+                    fg="#dc3545")
+        except Exception as _eval_e:
+            print(f"[REFINER] Eval simulation error: {_eval_e}")
+            _eval_info_lbl.configure(text="", fg="#999")
 
 
 def _get_current_filters():
@@ -833,12 +979,14 @@ def _start_optimization():
             # WHY: Read spread from config. Old hardcoded 2.5 was wrong for XAUUSD.
             # CHANGED: April 2026 — config-driven spread default
             spread_pips = 25.0
+            commission_pips = 0.0
             try:
                 from project2_backtesting.panels.configuration import load_config as _opt_lc
-                spread_pips = float(_opt_lc().get('spread', 25.0))
+                _opt_cfg = _opt_lc()
+                spread_pips = float(_opt_cfg.get('spread', 25.0))
+                commission_pips = float(_opt_cfg.get('commission', 0.0))
             except Exception:
                 pass
-            commission_pips = 0.0
             idx = _get_selected_index()
             selected_strategy_row = None
             if idx is not None:
@@ -914,12 +1062,6 @@ def _start_optimization():
                 _cfg_dd_daily = 5.0
             if _cfg_dd_total <= 0:
                 _cfg_dd_total = 10.0
-            print(f"[OPTIMIZER] === DIAGNOSTIC ===")
-            print(f"[OPTIMIZER] Risk: {risk_pct}% | DD: {_cfg_dd_daily}%/{_cfg_dd_total}%")
-            print(f"[OPTIMIZER] Account: ${account_size:,.0f} | Leverage: 1:{_opt_leverage}")
-            print(f"[OPTIMIZER] Source: {_risk_dd_source}")
-            print(f"[OPTIMIZER] ==================")
-            print(f"[OPTIMIZER] Spread: {spread_pips} pips, Commission: {commission_pips} pips")
 
             # Pass stage to presets for scoring
             from project2_backtesting.strategy_refiner import get_prop_firm_presets
@@ -1017,7 +1159,11 @@ def _start_optimization():
                 except Exception:
                     pass
 
-            print(f"[OPTIMIZER] Leverage: 1:{_opt_leverage}, contract: {_opt_contract}")
+            print(f"[OPTIMIZER] === DIAGNOSTIC ===")
+            print(f"[OPTIMIZER] Risk: {risk_pct}% | DD: {_cfg_dd_daily}%/{_cfg_dd_total}%")
+            print(f"[OPTIMIZER] Account: ${account_size:,.0f} | Leverage: 1:{_opt_leverage}, contract: {_opt_contract}")
+            print(f"[OPTIMIZER] Source: {_risk_dd_source}")
+            print(f"[OPTIMIZER] ==================")
 
             # ── Quick optimize (filter existing trades) ──
             if opt_mode == "quick":
@@ -1379,7 +1525,8 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 risk_pct=risk,
                 pip_value=float(cand.get('pip_value_per_lot', _srp_pip_value)),
                 daily_dd_limit_pct=daily_limit,
-                total_dd_limit_pct=total_limit
+                total_dd_limit_pct=total_limit,
+                funded_protect=False,
             )
 
             blown = breach_data.get('blown_count', 0)
@@ -1847,9 +1994,12 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 # WHY: Risk optimization step finds the optimal risk_pct. Save it
                 #      from the candidate if present, else from UI.
                 # CHANGED: April 2026 — risk optimization
+                # WHY: c.get('risk_pct') can return None (key present, value None).
+                #      float(None) crashes. Use 'or' to fall through to default.
+                # CHANGED: April 2026 — safe float conversion
                 'risk_settings': {
-                    'risk_pct': float(c.get('risk_pct', _risk_var.get() if _risk_var else 1.0)),
-                    'account_size': int(float(_acct_var.get())) if _acct_var else 100000,
+                    'risk_pct': float(c.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
+                    'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
                     'firm': _opt_target_var.get() if _opt_target_var else '',
                     'stage': _stage_var.get() if _stage_var else 'Funded',
                 },
@@ -2032,7 +2182,7 @@ def _show_opt_results(candidates):
 
     # Row 1: WR + Trades + PF
     tk.Label(filter_row1, text="Min WR:", font=("Segoe UI", 8), bg=BG, fg="#555").pack(side=tk.LEFT)
-    wr_var = tk.StringVar(value="50")
+    wr_var = tk.StringVar(value="0")
     tk.Entry(filter_row1, textvariable=wr_var, width=4, font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 8))
     tk.Label(filter_row1, text="%", font=("Segoe UI", 8), bg=BG, fg="#555").pack(side=tk.LEFT, padx=(0, 10))
 
@@ -2041,7 +2191,7 @@ def _show_opt_results(candidates):
     tk.Entry(filter_row1, textvariable=trades_var, width=5, font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 10))
 
     tk.Label(filter_row1, text="Min PF:", font=("Segoe UI", 8), bg=BG, fg="#555").pack(side=tk.LEFT)
-    pf_var = tk.StringVar(value="1.0")
+    pf_var = tk.StringVar(value="0")
     tk.Entry(filter_row1, textvariable=pf_var, width=4, font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 10))
 
     # Row 2: Max trades/day + sort
@@ -2156,8 +2306,8 @@ def _show_opt_results(candidates):
                         'exit_name': c.get('exit_name', ''),
                         'entry_timeframe': c.get('entry_timeframe', 'H1'),
                         'risk_settings': {
-                            'risk_pct': float(c.get('risk_pct', _risk_var.get() if _risk_var else 1.0)),
-                            'account_size': int(float(_acct_var.get())) if _acct_var else 100000,
+                            'risk_pct': float(c.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
+                            'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
                             'firm': _opt_target_var.get() if _opt_target_var else '',
                             'stage': _stage_var.get() if _stage_var else 'Funded',
                         },
@@ -2195,9 +2345,20 @@ def _show_opt_results(candidates):
                   relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(pady=(0, 6))
 
         # Dollar conversion
+        # WHY: Risk must come from the candidate/rule, not UI.
+        #      UI shows 0.8% or 1.0% but rule has 0.3% (margin-capped).
+        #      Wrong risk inflates DD by 3x.
+        # CHANGED: April 2026 — risk from candidate, not UI
         try:
             acct = float(_acct_var.get()) if _acct_var else 100000
-            risk = float(_risk_var.get()) if _risk_var else 1.0
+            # Read risk from candidates (they carry risk_pct from optimizer)
+            _first_cand_risk = 0
+            if filtered:
+                _first_cand_risk = float(filtered[0][0].get('risk_pct', 0) or 0)
+            if _first_cand_risk > 0:
+                risk = _first_cand_risk
+            else:
+                risk = float(_risk_var.get()) if _risk_var else 1.0
         except Exception:
             acct = 100000
             risk = 1.0
@@ -2483,7 +2644,8 @@ def _update_breach_display(trades):
     breaches = count_dd_breaches(trades, account_size=_sum_acct,
                                   daily_dd_limit_pct=_sum_daily_lim, total_dd_limit_pct=_sum_total_lim,
                                   daily_dd_safety_pct=_sum_daily_lim * 0.9,
-                                  total_dd_safety_pct=_sum_total_lim * 0.95)
+                                  total_dd_safety_pct=_sum_total_lim * 0.95,
+                                  funded_protect=False)
 
     blown = breaches['blown_count']
     daily_dd_limit = breaches.get('daily_dd_limit_pct', _sum_daily_lim)
@@ -2572,7 +2734,7 @@ def _update_breach_display(trades):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_panel(parent):
-    global _strategy_var, _strat_info_lbl, _base_stats_frame
+    global _strategy_var, _strat_info_lbl, _base_stats_frame, _eval_info_lbl, _rule_info_lbl
     global _min_hold_var, _max_hold_var, _max_per_day_var, _cooldown_var
     global _session_vars, _day_vars, _results_card, _trade_list_frame
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
@@ -2780,6 +2942,9 @@ def build_panel(parent):
     _strat_info_lbl = tk.Label(sel_frame, text="Click Load to load a strategy.",
                                 font=("Segoe UI", 9), bg=WHITE, fg=GREY)
     _strat_info_lbl.pack(anchor="w", pady=(5, 0))
+    _eval_info_lbl = tk.Label(sel_frame, text="",
+                               font=("Segoe UI", 8, "bold"), bg=WHITE, fg="#e65100")
+    _eval_info_lbl.pack(anchor="w", pady=(2, 0))
 
     # ── Scrollable area ───────────────────────────────────────────────────────
     _scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
@@ -3242,27 +3407,19 @@ def build_panel(parent):
     ctrl_row = tk.Frame(opt_controls, bg=WHITE)
     ctrl_row.pack(fill="x", pady=(0, 8))
 
-    # Firm selector
-    tk.Label(ctrl_row, text="Target firm:", font=("Segoe UI", 9), bg=WHITE, fg=DARK).pack(side=tk.LEFT, padx=(0, 8))
-
-    # WHY: Hardcoded firm list required manual updates when adding new firms.
-    #      Now dynamically loaded from prop_firms/*.json files.
-    # CHANGED: April 2026 — dynamic firm dropdown population
+    # WHY: Firm, stage, risk, DD all come from the rule now.
+    #      No dropdowns needed — show as read-only label.
+    #      Keep the StringVars so other code that reads them still works.
+    # CHANGED: April 2026 — remove firm/stage dropdowns
     from project2_backtesting.strategy_refiner import get_prop_firm_presets
     presets = get_prop_firm_presets()
     firm_options = ["None — maximize pips"] + [name for name in sorted(presets.keys()) if name != "Custom"]
     _opt_target_var = tk.StringVar(value=firm_options[0])
-    ttk.Combobox(ctrl_row, textvariable=_opt_target_var,
-                 values=firm_options, state="readonly", width=25).pack(side=tk.LEFT, padx=(0, 15))
+    _stage_var = tk.StringVar(value="Evaluation")
 
-    # Stage selector
-    tk.Label(ctrl_row, text="Stage:", font=("Segoe UI", 9, "bold"),
-             bg=WHITE, fg="#333").pack(side=tk.LEFT, padx=(15, 5))
-
-    _stage_var = tk.StringVar(value="Funded")
-    stage_combo = ttk.Combobox(ctrl_row, textvariable=_stage_var,
-                                values=["Evaluation", "Funded"], width=12, state="readonly")
-    stage_combo.pack(side=tk.LEFT, padx=(0, 10))
+    _rule_info_lbl = tk.Label(ctrl_row, text="Load a strategy to see rule info",
+                               font=("Segoe UI", 9), bg=WHITE, fg="#888")
+    _rule_info_lbl.pack(side=tk.LEFT, padx=(0, 15))
 
     stage_info = tk.Label(ctrl_row, text="", font=("Segoe UI", 8), bg=WHITE, fg="#888")
     stage_info.pack(side=tk.LEFT, padx=(0, 10))
@@ -3372,9 +3529,7 @@ def build_panel(parent):
                 if _risk_var:
                     _risk_var.set("0.5")
 
-    _stage_var.trace_add("write", _on_stage_change)
-    _stage_var.trace_add("write", _on_firm_change_acct)
-    _on_stage_change()  # Initial update
+    # Traces removed — firm/stage/risk now come from loaded rule, not dropdowns
 
     # ── Account size + risk row ──
     acct_row = tk.Frame(sf, bg=WHITE)
@@ -3462,8 +3617,7 @@ def build_panel(parent):
         # Also update risk based on stage + firm
         _on_stage_change()
 
-    _opt_target_var.trace_add("write", _on_firm_change_acct)
-    _acct_var.trace_add("write", lambda *_: _on_firm_change_acct())
+    # Traces removed — values come from loaded rule, not dropdowns
 
     _opt_start_btn = tk.Button(ctrl_row, text="Start Deep Optimization",
                                command=_start_optimization,

@@ -190,7 +190,8 @@ def apply_pending_rule_selection():
 _source_var    = None
 _rule_canvas   = None
 _rule_inner    = None
-_use_safety_var  = None  # BooleanVar for safety stops toggle
+_use_safety_var      = None  # BooleanVar for safety stops toggle
+_funded_protect_var  = None  # BooleanVar for funded protection simulation
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -1033,6 +1034,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         breach_total_dd_limit_pct=_cfg_dd_total,
                         breach_daily_safety_pct=_cfg_dd_daily * 0.9 if _cfg_dd_daily > 0 else 4.0,
                         breach_total_safety_pct=_cfg_dd_total * 0.95 if _cfg_dd_total > 0 else 8.0,
+                        funded_protect=_funded_protect_var.get() if _funded_protect_var else False,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -3041,13 +3043,25 @@ def build_panel(parent):
     safety_frame = tk.Frame(panel, bg="white", pady=6)
     safety_frame.pack(fill="x", padx=20)
 
-    global _use_safety_var
+    global _use_safety_var, _funded_protect_var
     use_safety_var = tk.BooleanVar(value=True)
     _use_safety_var = use_safety_var
     tk.Checkbutton(
         safety_frame,
         text="🛡️ Use safety stops (bot pauses before firm DD limits)",
         variable=use_safety_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    # WHY: Funded protection simulates stop-trading-at-alert behavior.
+    # CHANGED: April 2026 — funded protect checkbox
+    funded_protect_var = tk.BooleanVar(value=False)
+    _funded_protect_var = funded_protect_var
+    tk.Checkbutton(
+        safety_frame,
+        text="🏦 Funded Protection (stop at DD alert, wait for payout period)",
+        variable=funded_protect_var,
         font=("Segoe UI", 10),
         bg="white",
     ).pack(anchor="w")

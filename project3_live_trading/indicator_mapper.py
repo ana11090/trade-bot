@@ -1566,13 +1566,16 @@ def get_mql_code(feature_name, platform='mt5'):
         #      Generate a placeholder so the script compiles with a warning.
         #      The feature returns 0.0 — rules using it may not fire correctly,
         #      but the EA compiles and the user sees the warning in the log.
-        # CHANGED: April 2026 — handle unsupported indicators with soft placeholder
-        print(f"[EA GENERATOR] WARNING: No MQL5 mapping for indicator '{feature_name}'. Using placeholder (0.0). Manual implementation needed.")
+        # WHY: Unsupported indicators must SKIP the signal, not pass silently.
+        #      Setting val=0.0 makes conditions like "> -0.47" always TRUE,
+        #      which weakens the rule without the user knowing.
+        # CHANGED: April 2026 — unsupported indicator blocks signal
+        print(f"[EA GENERATOR] WARNING: No MQL5 mapping for indicator '{feature_name}'. Signal will be blocked. Manual implementation needed.")
         return {
             'var_name':        var_name,
             'handle_var':      '',
             'handle_init':     '',
-            'read_code':       f'double val_{var_name} = 0.0;',
+            'read_code':       f'double val_{var_name} = 0.0; // UNSUPPORTED — blocks signal\n   indicatorFailed = true;',
             'custom_indicator': False,
             'description':     f"Unsupported indicator: {feature_name}",
         }

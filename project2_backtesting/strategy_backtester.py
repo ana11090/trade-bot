@@ -2088,7 +2088,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # WHY (leverage): Passed through to fast_backtest.
                           #      0 = no margin check (backward compat).
                           # CHANGED: April 2026 — margin-aware lot sizing
-                          leverage=0, contract_size=100.0):
+                          leverage=0, contract_size=100.0,
+                          funded_protect=False):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2613,6 +2614,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             total_dd_limit_pct=breach_total_dd_limit_pct,
             daily_dd_safety_pct=_safety_daily,
             total_dd_safety_pct=_safety_total,
+            funded_protect=funded_protect,
         )
 
         result = {

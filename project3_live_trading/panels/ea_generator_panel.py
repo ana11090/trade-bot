@@ -1049,6 +1049,10 @@ def _generate():
             news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 0,
             max_spread_pips=float(_spread_var.get()) if _spread_var else 5.0,
             direction=_strat_direction,
+            # WHY: Leverage from strategy rule, not firm dropdown.
+            #      Rule was backtested at this leverage — EA must match.
+            # CHANGED: April 2026 — leverage from strategy
+            leverage=_strat_lev,
         )
     except Exception as e:
         import traceback; traceback.print_exc()
