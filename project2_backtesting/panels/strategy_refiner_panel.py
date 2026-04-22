@@ -99,6 +99,360 @@ _lock_filters_var = None
 _strategies_cache = []
 _cache_mtime = 0
 
+
+# WHY: Diagnose "No Trades" lookup failures by simulating the refiner's
+#      trade lookup for every matrix row and reporting which keys are missing.
+# CHANGED: April 2026 — lookup diagnostic tool
+def _run_lookup_diagnostic():
+    """Generate a comprehensive diagnostic report for refiner trade lookup failures."""
+    global _strat_info_lbl
+
+    # WHY: Import BACKTEST_MATRIX_PATH to locate output directory and trades files
+    # CHANGED: April 2026 — diagnostic imports
+    try:
+        from project2_backtesting.strategy_refiner import BACKTEST_MATRIX_PATH
+    except ImportError:
+        messagebox.showerror("Import Error", "Cannot import BACKTEST_MATRIX_PATH")
+        return
+
+    import json
+    import glob
+    from datetime import datetime
+
+    matrix_dir = os.path.dirname(BACKTEST_MATRIX_PATH)
+    output_path = os.path.join(matrix_dir, 'refiner_lookup_diagnostic.txt')
+
+    # WHY: Run heavy diagnostic work on background thread to prevent UI freeze
+    # CHANGED: April 2026 — threaded diagnostic
+    def _do_diagnostic():
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 79 + "\n")
+                f.write("REFINER LOOKUP DIAGNOSTIC\n")
+                f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 79 + "\n\n")
+
+                # [1] MATRIX FILE
+                f.write("[1] MATRIX FILE\n")
+                try:
+                    f.write(f"    Path:          {BACKTEST_MATRIX_PATH}\n")
+                    f.write(f"    Exists:        {os.path.exists(BACKTEST_MATRIX_PATH)}\n")
+
+                    if not os.path.exists(BACKTEST_MATRIX_PATH):
+                        f.write("    ERROR: Matrix file does not exist\n\n")
+                        if state.window:
+                            state.window.after(0, lambda: messagebox.showwarning(
+                                "Diagnostic Complete", "Matrix file not found.\n\nSee report for details."))
+                        return
+
+                    file_size = os.path.getsize(BACKTEST_MATRIX_PATH)
+                    f.write(f"    Size:          {file_size} bytes\n")
+
+                    if file_size == 0:
+                        f.write("    ERROR: Matrix file is empty\n\n")
+                        if state.window:
+                            state.window.after(0, lambda: messagebox.showwarning(
+                                "Diagnostic Complete", "Matrix file is empty.\n\nSee report for details."))
+                        return
+
+                    mtime = datetime.fromtimestamp(os.path.getmtime(BACKTEST_MATRIX_PATH))
+                    f.write(f"    Modified:      {mtime.strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+                    # Check for LFS pointer
+                    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as mf:
+                        first_line = mf.readline()
+                        is_lfs = first_line.startswith('version https://git-lfs.github.com/spec/v1')
+                        f.write(f"    Is LFS ptr:    {is_lfs}\n")
+
+                        if is_lfs:
+                            f.write("\n    ERROR: Matrix is an LFS pointer. Run 'git lfs pull'\n\n")
+                            if state.window:
+                                state.window.after(0, lambda: messagebox.showwarning(
+                                    "Diagnostic Complete",
+                                    "Matrix is an LFS pointer.\n\nRun: git lfs pull\n\nSee report for details."))
+                            return
+
+                    # Load matrix
+                    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as mf:
+                        matrix_data = json.load(mf)
+
+                    # Determine top-level key
+                    if 'results' in matrix_data:
+                        top_key = 'results'
+                        all_results = matrix_data['results']
+                    elif 'matrix' in matrix_data:
+                        top_key = 'matrix'
+                        all_results = matrix_data['matrix']
+                    else:
+                        f.write("    ERROR: No 'results' or 'matrix' key found\n\n")
+                        return
+
+                    f.write(f"    Top-level key: '{top_key}'\n")
+                    f.write(f"    Row count:     {len(all_results)}\n")
+                    f.write(f"    entry_timeframe field: {matrix_data.get('entry_timeframe', '<not set>')}\n")
+                    f.write(f"    tested_timeframes:     {matrix_data.get('tested_timeframes', '<not set>')}\n")
+
+                    # TF distribution
+                    tf_counts = {}
+                    rows_with_tt_gt_0 = 0
+                    rows_with_tc_gt_0 = 0
+                    rows_with_either_gt_0 = 0
+
+                    for row in all_results:
+                        try:
+                            etf = row.get('entry_tf', row.get('entry_timeframe', ''))
+                            if not etf:
+                                etf = '<blank>'
+                            tf_counts[etf] = tf_counts.get(etf, 0) + 1
+
+                            tt = row.get('total_trades', 0)
+                            tc = row.get('trade_count', 0)
+                            if tt > 0:
+                                rows_with_tt_gt_0 += 1
+                            if tc > 0:
+                                rows_with_tc_gt_0 += 1
+                            if tt > 0 or tc > 0:
+                                rows_with_either_gt_0 += 1
+                        except Exception as e:
+                            f.write(f"    ERROR processing row: {e}\n")
+
+                    f.write("    entry_tf distribution in rows:\n")
+                    for etf in sorted(tf_counts.keys()):
+                        f.write(f"        {etf:12} : {tf_counts[etf]}\n")
+
+                    f.write(f"    Rows with total_trades>0: {rows_with_tt_gt_0}\n")
+                    f.write(f"    Rows with trade_count>0:  {rows_with_tc_gt_0}\n")
+                    f.write(f"    Rows with EITHER > 0:     {rows_with_either_gt_0}\n\n")
+
+                except Exception as e:
+                    f.write(f"    ERROR: {e}\n\n")
+                    import traceback
+                    traceback.print_exc()
+
+                # [2] TRADES FILES
+                f.write("[2] TRADES FILES\n")
+                f.write(f"    Directory: {matrix_dir}\n")
+                f.write("    Files matching backtest_trades_*.json:\n")
+
+                trades_files = {}
+                try:
+                    for tf_file in glob.glob(os.path.join(matrix_dir, 'backtest_trades_*.json')):
+                        try:
+                            fname = os.path.basename(tf_file)
+                            fsize = os.path.getsize(tf_file)
+                            fmtime = datetime.fromtimestamp(os.path.getmtime(tf_file))
+
+                            with open(tf_file, 'r', encoding='utf-8') as tf:
+                                trades_data = json.load(tf)
+
+                            key_list = list(trades_data.keys())
+                            key_count = len(key_list)
+
+                            # Determine key range
+                            numeric_keys = []
+                            for k in key_list:
+                                try:
+                                    numeric_keys.append(int(k))
+                                except ValueError:
+                                    pass
+
+                            if numeric_keys:
+                                key_range = f"{min(numeric_keys)}..{max(numeric_keys)}"
+                            else:
+                                key_range = "non-numeric"
+
+                            f.write(f"        {fname:40} size={fsize:8}  keys={key_count:4}  "
+                                   f"key_range={key_range:12}  mtime={fmtime.strftime('%Y-%m-%d %H:%M')}\n")
+
+                            # Extract TF from filename
+                            tf_name = fname.replace('backtest_trades_', '').replace('.json', '')
+                            trades_files[tf_name] = trades_data
+                        except Exception as e:
+                            f.write(f"        ERROR reading {tf_file}: {e}\n")
+                except Exception as e:
+                    f.write(f"    ERROR: {e}\n")
+
+                f.write("\n")
+
+                # [3] PER-ROW LOOKUP SIMULATION
+                f.write("[3] PER-ROW LOOKUP SIMULATION\n")
+                f.write("    Columns (tab-separated):\n")
+                f.write("    gidx\tentry_tf\trule_combo\texit_strategy\ttt\ttc\ttf_local_idx\t"
+                       "primary_key_hit\tfb_direct_hit\tfb_rule_combo_hit\tfinal\n")
+
+                loadable_count = 0
+                not_loadable_count = 0
+                bug_set = []  # rows with tt>0 or tc>0 but lookup returns NONE
+
+                try:
+                    for gidx, row in enumerate(all_results):
+                        try:
+                            etf = row.get('entry_tf', row.get('entry_timeframe', ''))
+                            rc = row.get('rule_combo', '?')
+                            es = row.get('exit_strategy', row.get('exit_name', '?'))
+                            tt = row.get('total_trades', 0)
+                            tc = row.get('trade_count', 0)
+
+                            # Calculate tf_local_idx
+                            tf_local_idx = sum(1 for i in range(gidx)
+                                             if all_results[i].get('entry_tf', all_results[i].get('entry_timeframe', '')) == etf)
+
+                            # Simulate lookup
+                            primary_hit = "-"
+                            fb_direct_hit = "-"
+                            fb_rule_combo_hit = "-"
+                            final = "NONE"
+
+                            if etf in trades_files:
+                                tdata = trades_files[etf]
+
+                                # Primary key: tf_local_idx
+                                if str(tf_local_idx) in tdata:
+                                    primary_hit = "YES"
+                                    trades_found = tdata[str(tf_local_idx)]
+                                    if trades_found:
+                                        final = f"OK({len(trades_found)} trades)"
+                                        loadable_count += 1
+                                    else:
+                                        final = "NONE"
+                                        not_loadable_count += 1
+                                else:
+                                    primary_hit = "NO"
+
+                                    # Fallback 1: direct gidx
+                                    if str(gidx) in tdata:
+                                        fb_direct_hit = "YES"
+                                        trades_found = tdata[str(gidx)]
+                                        if trades_found:
+                                            final = f"OK({len(trades_found)} trades)"
+                                            loadable_count += 1
+                                        else:
+                                            final = "NONE"
+                                            not_loadable_count += 1
+                                    else:
+                                        fb_direct_hit = "NO"
+                                        fb_rule_combo_hit = "NO"
+                                        not_loadable_count += 1
+                            else:
+                                primary_hit = "NO(file missing)"
+                                not_loadable_count += 1
+
+                            # Track bug set
+                            if (tt > 0 or tc > 0) and final == "NONE":
+                                bug_set.append({
+                                    'gidx': gidx, 'etf': etf, 'rc': rc, 'es': es,
+                                    'tt': tt, 'tc': tc, 'tf_local_idx': tf_local_idx,
+                                    'primary_hit': primary_hit, 'row': row
+                                })
+
+                            f.write(f"    {gidx}\t{etf}\t{rc[:30]}\t{es[:20]}\t{tt}\t{tc}\t{tf_local_idx}\t"
+                                   f"{primary_hit}\t{fb_direct_hit}\t{fb_rule_combo_hit}\t{final}\n")
+
+                        except Exception as e:
+                            f.write(f"    {gidx}\tERROR\t{e}\n")
+                except Exception as e:
+                    f.write(f"    ERROR: {e}\n")
+
+                f.write("\n")
+
+                # [4] SUMMARY
+                f.write("[4] SUMMARY\n")
+                f.write(f"    Rows the refiner CAN load:    {loadable_count}\n")
+                f.write(f"    Rows the refiner CANNOT load: {not_loadable_count}\n")
+                bug_count = len(bug_set)
+                expected_none = not_loadable_count - bug_count
+                f.write(f"      ...of which have tt>0 or tc>0 (THE BUG SET): {bug_count}\n")
+                f.write(f"      ...of which truly have no trades (expected NONE): {expected_none}\n\n")
+
+                # [5] BUG SET
+                f.write("[5] BUG SET — first 20 rows where we expect trades but lookup returns NONE\n")
+                f.write("    gidx\tentry_tf\trule_combo\texit_strategy\ttt\ttc\ttf_local_idx\twhy_primary_failed\n")
+
+                for bug in bug_set[:20]:
+                    why = ""
+                    if 'file missing' in bug['primary_hit']:
+                        why = "trades_file_missing"
+                    elif bug['etf'] == '<blank>':
+                        why = "entry_tf_blank"
+                    elif bug['primary_hit'] == "NO":
+                        why = "key_missing"
+                    else:
+                        why = "unknown"
+
+                    f.write(f"    {bug['gidx']}\t{bug['etf']}\t{bug['rc'][:30]}\t{bug['es'][:20]}\t"
+                           f"{bug['tt']}\t{bug['tc']}\t{bug['tf_local_idx']}\t{why}\n")
+
+                f.write("\n")
+
+                # [6] REPRODUCIBLE SAMPLE
+                f.write("[6] REPRODUCIBLE SAMPLE\n")
+                if bug_set:
+                    first_bug = bug_set[0]
+                    f.write("    For the FIRST bug-set row:\n")
+                    f.write(f"    gidx: {first_bug['gidx']}\n")
+                    f.write(f"    entry_tf: {first_bug['etf']}\n")
+                    f.write(f"    tf_local_idx: {first_bug['tf_local_idx']}\n")
+                    f.write(f"    rule_combo: {first_bug['rc']}\n")
+                    f.write(f"    exit_strategy: {first_bug['es']}\n")
+                    f.write(f"    total_trades: {first_bug['tt']}\n")
+                    f.write(f"    Matrix row keys (first 30, sorted):\n")
+                    row_keys = sorted(list(first_bug['row'].keys()))[:30]
+                    f.write(f"        {', '.join(row_keys)}\n")
+
+                    if first_bug['etf'] in trades_files:
+                        tdata = trades_files[first_bug['etf']]
+                        numeric_keys = sorted([int(k) for k in tdata.keys() if k.isdigit()])
+                        f.write(f"    Trades file keys (numeric, first 10 + last 10):\n")
+                        if len(numeric_keys) > 20:
+                            f.write(f"        First 10: {numeric_keys[:10]}\n")
+                            f.write(f"        Last 10:  {numeric_keys[-10:]}\n")
+                        else:
+                            f.write(f"        All: {numeric_keys}\n")
+
+                        f.write(f"    Trades at keys around tf_local_idx={first_bug['tf_local_idx']}:\n")
+                        for offset in [-1, 0, 1]:
+                            check_idx = first_bug['tf_local_idx'] + offset
+                            if str(check_idx) in tdata:
+                                f.write(f"        [{check_idx}]: {len(tdata[str(check_idx)])} trades\n")
+                            else:
+                                f.write(f"        [{check_idx}]: MISSING\n")
+
+                        f.write(f"    Matrix rows at positions around tf_local_idx={first_bug['tf_local_idx']}:\n")
+                        for offset in [-1, 0, 1]:
+                            check_gidx = first_bug['tf_local_idx'] + offset
+                            if 0 <= check_gidx < len(all_results):
+                                r = all_results[check_gidx]
+                                f.write(f"        [{check_gidx}]: rc={r.get('rule_combo', '?')[:30]} "
+                                       f"es={r.get('exit_strategy', '?')[:20]} "
+                                       f"etf={r.get('entry_tf', '?')} tt={r.get('total_trades', 0)}\n")
+                else:
+                    f.write("    No bug-set rows found.\n")
+
+                f.write("\n" + "=" * 79 + "\n")
+
+            # Show summary dialog
+            if state.window:
+                summary = (f"Matrix rows: {len(all_results)}\n"
+                          f"Expected-has-trades rows: {rows_with_either_gt_0}\n"
+                          f"Refiner CAN load: {loadable_count}\n"
+                          f"Refiner CANNOT load (BUG): {len(bug_set)}\n\n"
+                          f"Full report written to:\n{output_path}\n\n"
+                          f"Paste the contents into your Claude chat to continue the fix.")
+                state.window.after(0, lambda: messagebox.showinfo("Diagnostic Complete", summary))
+                state.window.after(0, lambda: _strat_info_lbl.configure(text="✓ Diagnostic complete", fg=GREEN))
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            if state.window:
+                state.window.after(0, lambda: messagebox.showerror("Diagnostic Error", str(e)))
+
+    # Update UI and start background thread
+    if _strat_info_lbl:
+        _strat_info_lbl.configure(text="⏳ Running diagnostic...", fg=AMBER)
+    threading.Thread(target=_do_diagnostic, daemon=True).start()
+
+
 def _load_strategies(force=False):
     """Load strategy list from backtest matrix + saved rules.
 
@@ -3079,6 +3433,13 @@ def build_panel(parent):
                                     bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
                                     relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
             refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            # WHY: Diagnostic button to generate detailed report about "No Trades" lookup failures
+            # CHANGED: April 2026 — diagnostic button
+            diagnose_btn = tk.Button(sel_row, text="🔍 Diagnose", command=_run_lookup_diagnostic,
+                                     bg="#8e44ad", fg="white", font=("Segoe UI", 9, "bold"),
+                                     relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            diagnose_btn.pack(side=tk.LEFT, padx=(6, 0))
 
     def _load_in_background():
         """Background thread: load strategies, then schedule UI update."""
