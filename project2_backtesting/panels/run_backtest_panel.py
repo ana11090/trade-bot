@@ -1088,14 +1088,17 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         output_text.see(tk.END)
                         break
 
-                # Sort combined results by net pips descending
-                # WHY: Same as view_results.py fix — backtest matrix flattens stats
-                #      to top level, so r.get('stats', {}) returns empty dict.
-                # CHANGED: April 2026 — read flattened stats from r top level
-                all_matrix.sort(
-                    key=lambda r: (r.get('stats') or r).get('net_total_pips', 0),
-                    reverse=True,
-                )
+                # WHY: Same rationale as the per-TF sort in strategy_backtester.py —
+                #      risk-adjusted instead of volume.
+                # CHANGED: April 2026 — risk-adjusted combined-matrix ranking
+                try:
+                    from shared.ranking import risk_adjusted_score
+                    all_matrix.sort(key=risk_adjusted_score, reverse=True)
+                except Exception:
+                    all_matrix.sort(
+                        key=lambda r: (r.get('stats') or r).get('net_total_pips', 0),
+                        reverse=True,
+                    )
 
                 results = {
                     'matrix':  all_matrix,

@@ -2674,8 +2674,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             elif count % 10 == 0 or count == total:
                 log.info(f"  [{count}/{total}] {_progress_payload['rule_combo']}")
 
-    # Sort by net total pips descending (real profitability after costs)
-    matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)
+    # WHY: Old sort by net_total_pips alone ranks a 10k-trade marginal-edge
+    #      strategy above a 100-trade high-expectancy one. Users aiming at
+    #      prop-firm DD limits need an ordering that punishes strategies
+    #      whose max_dd_pips is large relative to their typical losers.
+    # CHANGED: April 2026 — risk-adjusted matrix ranking
+    try:
+        from shared.ranking import risk_adjusted_score
+        matrix.sort(key=risk_adjusted_score, reverse=True)
+    except Exception:
+        matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)
 
     elapsed = time.time() - start_time
 

@@ -678,7 +678,20 @@ def extract_rules(df, model_result, direction=None):
                 conditions + [{'feature': feature, 'operator': '>',  'value': threshold}])
 
     recurse(0, [])
-    rules.sort(key=lambda r: r['confidence'] * r['coverage'], reverse=True)
+    # WHY: Old sort ranked by confidence × coverage — pure volume. That
+    #      selects rules that fire often and usually win but ignores payoff
+    #      size and small-sample overconfidence. The Wilson-lower-bound score
+    #      shrinks small leaves toward 50% and multiplies by a coverage cap
+    #      and an avg-pips signum so rules with defensible win rates AND
+    #      profitable in-sample trades bubble up.
+    # CHANGED: April 2026 — risk-adjusted rule ranking
+    try:
+        from shared.ranking import rule_discovery_score
+        rules.sort(key=rule_discovery_score, reverse=True)
+    except Exception:
+        # Defensive: if the shared module fails to import, fall back to the
+        # old ordering rather than leave `rules` unsorted.
+        rules.sort(key=lambda r: r['confidence'] * r['coverage'], reverse=True)
     return rules
 
 
