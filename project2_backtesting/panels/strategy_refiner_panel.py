@@ -3254,14 +3254,21 @@ def build_panel(parent):
         """Called on main thread after strategies finish loading."""
         nonlocal dd_container, star_btn_container
 
-        # Remove loading message
-        try:
-            loading_lbl.destroy()
-        except:
-            pass
+        # WHY (per-row-delete v3 fix): Instead of destroying and recreating
+        #      the Treeview (which causes "invalid command name" errors when
+        #      called from a click handler), reuse the existing Treeview if
+        #      it exists. Only destroy widgets if we're switching between
+        #      "no strategies" and "has strategies" states.
+        # CHANGED: April 2026 — per-row-delete v3 bugfix
+        existing_tree = dd_container[0] if dd_container else None
+        has_existing_tree = existing_tree and hasattr(existing_tree, 'get_children')
 
         if not _strategies:
-            # No strategies found
+            # No strategies found - destroy everything and show message
+            if has_existing_tree:
+                for widget in sel_row.winfo_children():
+                    widget.destroy()
+                dd_container[0] = None
             tk.Label(sel_row, text="No backtest results. Run the backtest first.",
                      font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
         else:
@@ -3270,51 +3277,69 @@ def build_panel(parent):
             #      _strategy_var stays synced so _get_selected_index() and
             #      all downstream code work unchanged.
             # CHANGED: April 2026 — Treeview replaces Combobox
-            tree_frame = tk.Frame(sel_row, bg=WHITE)
-            tree_frame.pack(fill="x", expand=True)
 
-            # WHY (per-row-delete): "del" column hosts a clickable 🗑 for
-            #      saved rules. A single delete button per row replaces
-            #      the old single-row "🗑 Delete" button in sel_row.
-            # CHANGED: April 2026 — per-row-delete
-            columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
-            _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
-                                       height=min(len(_strategies), 8),
-                                       selectmode="browse")
+            # WHY (per-row-delete v3 fix): Reuse existing Treeview if it
+            #      exists to avoid "invalid command name" errors when
+            #      refreshing from a click handler.
+            # CHANGED: April 2026 — per-row-delete v3 bugfix
+            if has_existing_tree:
+                # Reuse existing tree - just clear items
+                _strat_tree = existing_tree
+                for item in _strat_tree.get_children():
+                    _strat_tree.delete(item)
+            else:
+                # Create new tree
+                tree_frame = tk.Frame(sel_row, bg=WHITE)
+                tree_frame.pack(fill="x", expand=True)
 
-            _strat_tree.heading("star",     text="⭐")
-            _strat_tree.heading("#",        text="#")
-            _strat_tree.heading("rule",     text="Rule")
-            _strat_tree.heading("exit",     text="Exit Strategy")
-            _strat_tree.heading("trades",   text="Trades")
-            _strat_tree.heading("wr",       text="Win Rate")
-            _strat_tree.heading("pf",       text="PF")
-            _strat_tree.heading("net_pips", text="Net Pips")
-            _strat_tree.heading("avg_pips", text="Avg Pips")
-            _strat_tree.heading("del",      text="🗑")
+                # WHY (per-row-delete): "del" column hosts a clickable 🗑 for
+                #      saved rules. A single delete button per row replaces
+                #      the old single-row "🗑 Delete" button in sel_row.
+                # CHANGED: April 2026 — per-row-delete
+                columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
+                _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
+                                           height=min(len(_strategies), 8),
+                                           selectmode="browse")
 
-            _strat_tree.column("star",     width=30,  anchor="center")
-            _strat_tree.column("#",        width=70,  anchor="center")
-            _strat_tree.column("rule",     width=160, anchor="w")
-            _strat_tree.column("exit",     width=120, anchor="w")
-            _strat_tree.column("trades",   width=60,  anchor="center")
-            _strat_tree.column("wr",       width=70,  anchor="center")
-            _strat_tree.column("pf",       width=60,  anchor="center")
-            _strat_tree.column("net_pips", width=90,  anchor="e")
-            _strat_tree.column("avg_pips", width=70,  anchor="e")
-            _strat_tree.column("del",      width=40,  anchor="center")
+                _strat_tree.heading("star",     text="⭐")
+                _strat_tree.heading("#",        text="#")
+                _strat_tree.heading("rule",     text="Rule")
+                _strat_tree.heading("exit",     text="Exit Strategy")
+                _strat_tree.heading("trades",   text="Trades")
+                _strat_tree.heading("wr",       text="Win Rate")
+                _strat_tree.heading("pf",       text="PF")
+                _strat_tree.heading("net_pips", text="Net Pips")
+                _strat_tree.heading("avg_pips", text="Avg Pips")
+                _strat_tree.heading("del",      text="🗑")
 
-            _strat_tree.tag_configure("profitable", foreground="#28a745")
-            _strat_tree.tag_configure("losing",     foreground="#dc3545")
-            _strat_tree.tag_configure("saved",      foreground="#9b59b6")
-            _strat_tree.tag_configure("starred",    foreground="#f39c12")
+                _strat_tree.column("star",     width=30,  anchor="center")
+                _strat_tree.column("#",        width=70,  anchor="center")
+                _strat_tree.column("rule",     width=160, anchor="w")
+                _strat_tree.column("exit",     width=120, anchor="w")
+                _strat_tree.column("trades",   width=60,  anchor="center")
+                _strat_tree.column("wr",       width=70,  anchor="center")
+                _strat_tree.column("pf",       width=60,  anchor="center")
+                _strat_tree.column("net_pips", width=90,  anchor="e")
+                _strat_tree.column("avg_pips", width=70,  anchor="e")
+                _strat_tree.column("del",      width=40,  anchor="center")
 
-            tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
-                                       command=_strat_tree.yview)
-            _strat_tree.configure(yscrollcommand=tree_scroll.set)
-            tree_scroll.pack(side=tk.RIGHT, fill="y")
-            _strat_tree.pack(fill="x", expand=True)
+                _strat_tree.tag_configure("profitable", foreground="#28a745")
+                _strat_tree.tag_configure("losing",     foreground="#dc3545")
+                _strat_tree.tag_configure("saved",      foreground="#9b59b6")
+                _strat_tree.tag_configure("starred",    foreground="#f39c12")
 
+                tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
+                                           command=_strat_tree.yview)
+                _strat_tree.configure(yscrollcommand=tree_scroll.set)
+                tree_scroll.pack(side=tk.RIGHT, fill="y")
+                _strat_tree.pack(fill="x", expand=True)
+
+                # WHY (per-row-delete v3 fix): Bind event handlers only once
+                #      when creating the tree, not on every refresh.
+                # CHANGED: April 2026 — per-row-delete v3 bugfix
+                dd_container[0] = _strat_tree
+
+            # Populate tree items (happens on both create and refresh)
             for row_n, s in enumerate(_strategies, start=1):
                 idx = str(s.get('index', 0))
                 rc       = s.get('rule_combo', '?')
@@ -3344,12 +3369,13 @@ def build_panel(parent):
                 if is_starred and tag not in ("saved", "starred"):
                     tag = "starred"
 
-                # WHY (per-row-delete): 🗑 rendered only for saved rules.
-                #      Backtest matrix rows and optimizer rows are
-                #      regenerated from their source outputs; deleting
-                #      them in place would be overwritten on next run.
-                # CHANGED: April 2026 — per-row-delete
-                del_display = "🗑" if source == 'saved' else ""
+                # WHY (per-row-delete v3): 🗑 rendered on everything EXCEPT
+                #      separators (which exist only as visual dividers
+                #      between backtest/optimizer/saved sections).
+                #      Clicking a separator's del cell is a no-op anyway,
+                #      but showing 🗑 on them would be visually wrong.
+                # CHANGED: April 2026 — per-row-delete v3
+                del_display = "" if source == 'separator' else "🗑"
 
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, rc, exit_name, int(trades), wr_str,
@@ -3362,7 +3388,12 @@ def build_panel(parent):
                 _strat_tree.selection_set(_tree_children[0])
                 _strategy_var.set(_strategies[0]['label'])
 
-            dd_container[0] = _strat_tree
+            # WHY (per-row-delete v3 fix): Set dd_container only when creating
+            #      new tree. Event handlers defined below are bound only on
+            #      first creation to avoid duplicate bindings.
+            # CHANGED: April 2026 — per-row-delete v3 bugfix
+            if not has_existing_tree:
+                dd_container[0] = _strat_tree
 
             def _on_tree_select(event=None):
                 sel = _strat_tree.selection()
@@ -3374,16 +3405,24 @@ def build_panel(parent):
                         _strategy_var.set(s['label'])
                         break
 
-            _strat_tree.bind("<<TreeviewSelect>>", _on_tree_select)
-
-            # WHY (per-row-delete): clicks on the del column's cell
-            #      trigger the delete flow for that specific row. Only
-            #      saved rules (source='saved') have 🗑; clicks on empty
-            #      del cells do nothing. The delete flow asks for
-            #      confirmation and calls shared.saved_rules.delete_rule,
-            #      which atomically rewrites saved_rules.json and
-            #      notifies listeners.
-            # CHANGED: April 2026 — per-row-delete
+            # WHY (per-row-delete v3): Source-dispatched delete with the
+            #      bugs from v1/v2 fixed:
+            #      - 'saved'     → delete from saved_rules.json. Rule ID
+            #                      is now exposed at strategy['id'] by
+            #                      the loader (v3 patch); fall back to
+            #                      parsing 'saved_N' from strategy['index']
+            #                      for legacy safety.
+            #      - 'backtest'  → delete from backtest_matrix.json by
+            #                      array index (strategy['index'] is the
+            #                      array position set at loader:700).
+            #                      v3 delete_matrix_row validates with
+            #                      rule_combo/exit/tf sanity checks.
+            #      - 'optimizer' → show informational message; optimizer
+            #                      results live in _validator_optimized.json,
+            #                      not the matrix, and rerunning is the
+            #                      right way to change them.
+            #      - 'separator' → no-op (del cell is empty anyway).
+            # CHANGED: April 2026 — per-row-delete v3
             def _on_tree_click(event):
                 # Only cell clicks, not headings or separators
                 region = _strat_tree.identify_region(event.x, event.y)
@@ -3411,40 +3450,144 @@ def build_panel(parent):
                         break
                 if target_strategy is None:
                     return
-                if target_strategy.get('source') != 'saved':
-                    # Non-saved rows should have empty del cells; this
-                    # branch is a safety net.
+
+                src = target_strategy.get('source', 'backtest')
+                rule_label = target_strategy.get('label', str(item_id))
+
+                # ── Separator: no-op ──────────────────────────────────
+                if src == 'separator':
                     return
 
-                rule_id = (
-                    target_strategy.get('saved_rule', {}).get('id')
-                    or target_strategy.get('rule_id')
-                )
-                if not rule_id:
-                    messagebox.showerror(
+                # ── Saved rule: delete_rule from saved_rules.json ─────
+                if src == 'saved':
+                    # Prefer the top-level 'id' added by the v3 loader
+                    # patch; fall back to parsing the 'saved_N' index
+                    # format; last resort is the old saved_rule['id']
+                    # lookup (still None, but try anyway).
+                    rule_id = (
+                        target_strategy.get('id')
+                        or target_strategy.get('rule_id')
+                    )
+                    if not rule_id:
+                        _idx_val = str(target_strategy.get('index', ''))
+                        if _idx_val.startswith('saved_'):
+                            rule_id = _idx_val[len('saved_'):]
+                    if not rule_id:
+                        rule_id = target_strategy.get('saved_rule', {}).get('id')
+                    if not rule_id:
+                        messagebox.showerror(
+                            "Delete Rule",
+                            f"Could not resolve rule ID for this saved rule.\n\n"
+                            f"Strategy dict keys: "
+                            f"{sorted(target_strategy.keys())[:15]}..."
+                        )
+                        return
+                    if not messagebox.askyesno(
                         "Delete Rule",
-                        "Could not determine the rule_id for this row."
+                        f"Delete saved rule:\n\n{rule_label}\n\n"
+                        f"This rewrites saved_rules.json and cannot be undone."
+                    ):
+                        return
+                    try:
+                        from shared.saved_rules import delete_rule as _del_rule
+                        _del_rule(rule_id)
+                        # WHY (per-row-delete v3 fix): Reload to refresh the list.
+                        #      Use longer delay to avoid widget errors.
+                        # CHANGED: April 2026 — per-row-delete v3 bugfix
+                        def _reload():
+                            _load_strategies(force=True)
+                            _on_strategies_loaded()
+                        sel_row.after(100, _reload)
+                    except Exception as _de:
+                        import traceback as _tb
+                        _tb.print_exc()
+                        messagebox.showerror("Delete Error", str(_de))
+                    return
+
+                # ── Optimizer row: not deletable from here ────────────
+                if src == 'optimizer':
+                    messagebox.showinfo(
+                        "Optimizer Result",
+                        "Optimizer results live in _validator_optimized.json, "
+                        "not in backtest_matrix.json. To change or remove "
+                        "them, re-run the optimizer (it overwrites this file "
+                        "on each run)."
                     )
                     return
 
-                rule_label = target_strategy.get('label', str(item_id))
+                # ── Backtest row: delete_matrix_row by array index ────
+                # strategy['index'] for backtest rows is the array
+                # position in backtest_matrix.json (set at
+                # strategy_refiner.py:700 'index': i).
+                array_index = target_strategy.get('index')
+                if not isinstance(array_index, int):
+                    # Refuse to delete if index is unexpectedly a string.
+                    messagebox.showerror(
+                        "Delete Backtest Row",
+                        f"Cannot resolve array index for this row "
+                        f"(got {type(array_index).__name__}={array_index!r})."
+                    )
+                    return
+
+                exp_rc = target_strategy.get('rule_combo', '')
+                exp_ex = (target_strategy.get('exit_strategy', '')
+                          or target_strategy.get('exit_name', ''))
+                exp_tf = target_strategy.get('entry_tf', '') or ''
+
                 if not messagebox.askyesno(
-                    "Delete Rule",
-                    f"Delete saved rule:\n\n{rule_label}\n\nThis cannot be undone."
+                    "Delete Backtest Row",
+                    f"Delete this row from backtest_matrix.json:\n\n"
+                    f"{rule_label}\n\n"
+                    f"This will be regenerated if you re-run the backtest. "
+                    f"Continue?"
                 ):
                     return
 
                 try:
-                    from shared.saved_rules import delete_rule as _del_rule
-                    _del_rule(rule_id)
-                    _load_strategies(force=True)
-                    _on_strategies_loaded()
+                    from project2_backtesting.strategy_refiner import delete_matrix_row as _del_mx
+                    print(f"[DEBUG] Deleting: array_index={array_index}, rc={exp_rc}, exit={exp_ex}, tf={exp_tf}")
+                    result = _del_mx(
+                        array_index=array_index,
+                        expected_rule_combo=exp_rc or None,
+                        expected_exit_strategy=exp_ex or None,
+                        expected_entry_tf=exp_tf if exp_tf else None,
+                    )
+                    print(f"[DEBUG] Delete result: {result}")
+                    if result.get('removed'):
+                        # WHY (per-row-delete v3 fix): Reload strategies to fix
+                        #      index mismatches. After deleting row 79, what was
+                        #      row 80 becomes row 79, etc. We must reload to get
+                        #      correct indices. Use deferred call with longer delay.
+                        # CHANGED: April 2026 — per-row-delete v3 bugfix
+                        print(f"[DEBUG] Delete succeeded, reloading strategies...")
+                        def _reload():
+                            _load_strategies(force=True)
+                            _on_strategies_loaded()
+                        # Use 100ms delay to ensure event completes
+                        sel_row.after(100, _reload)
+                    else:
+                        messagebox.showwarning(
+                            "Delete Backtest Row",
+                            f"Row was not removed.\n\n"
+                            f"Reason: {result.get('reason')}"
+                        )
+                except ValueError as _ve:
+                    # Sanity-check failures or structural errors land here.
+                    messagebox.showwarning(
+                        "Delete Backtest Row",
+                        f"Could not delete row safely:\n\n{_ve}"
+                    )
                 except Exception as _de:
                     import traceback as _tb
                     _tb.print_exc()
                     messagebox.showerror("Delete Error", str(_de))
 
-            _strat_tree.bind("<Button-1>", _on_tree_click, add="+")
+            # WHY (per-row-delete v3 fix): Bind event handlers only when
+            #      creating a new tree to avoid duplicate bindings.
+            # CHANGED: April 2026 — per-row-delete v3 bugfix
+            if not has_existing_tree:
+                _strat_tree.bind("<<TreeviewSelect>>", _on_tree_select)
+                _strat_tree.bind("<Button-1>", _on_tree_click, add="+")
 
             # Enable load button
             load_btn.configure(state=tk.NORMAL)

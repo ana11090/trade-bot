@@ -906,6 +906,15 @@ def load_strategy_list():
                     results.append({
                         'index':             f"saved_{rid}",
                         'source':            'saved',
+                        # WHY (per-row-delete v3): Expose the saved-rule
+                        #      entry ID at the top level so the refiner
+                        #      panel's delete handler can find it. Without
+                        #      this, the panel tried strategy['saved_rule']
+                        #      ['id'] which is None (id lives at entry
+                        #      level, not inside rule).
+                        # CHANGED: April 2026 — per-row-delete v3
+                        'id':                rid,
+                        'rule_id':           rid,
                         'label':             '  '.join(label_parts),
                         'rule_combo':        f"Saved #{rid}",
                         # WHY (Hotfix): Old code hardcoded 'Default' for saved rules.
@@ -2566,3 +2575,192 @@ def deep_optimize_generate(
         )
 
     return candidates
+
+
+# WHY (per-row-delete v3): Index-keyed row removal. The strategy dicts
+#      the refiner panel renders carry the array position in their
+#      'index' field (set at loader line 700: 'index': i). Using it
+#      directly as the key eliminates the fuzzy (rule_combo,exit,tf)
+#      matching that failed in v2 because the loader rewrites
+#      rule_combo before the panel sees it. Sanity check verifies the
+#      row at that index still matches the expected shape before
+#      deletion — catches the case where another process modified the
+#      file between render and click.
+# CHANGED: April 2026 — per-row-delete v3
+def delete_matrix_row(array_index, expected_rule_combo=None,
+                      expected_exit_strategy=None, expected_entry_tf=None):
+    """Remove row at `array_index` from backtest_matrix.json.
+
+    Parameters
+    ----------
+    array_index : int
+        Position in the results/matrix array of the row to remove.
+    expected_rule_combo, expected_exit_strategy, expected_entry_tf :
+        Optional sanity-check values. If any are provided and the row
+        at `array_index` doesn't match, raises ValueError (caller can
+        decide to refresh and retry). A None value skips that check.
+
+    Returns
+    -------
+    dict with keys:
+        'removed':    bool — whether a row was removed
+        'reason':     str  — human-readable status
+        'row_count_before': int
+        'row_count_after':  int
+        'row_snapshot': dict | None — the deleted row's key fields
+                        for logging/verification
+
+    Raises
+    ------
+    FileNotFoundError  — backtest_matrix.json doesn't exist
+    ValueError         — JSON structure is unrecognized, is an LFS
+                         pointer, or sanity check failed
+    """
+    import json as _json
+    import os as _os
+    import tempfile as _tempfile
+
+    if not _os.path.exists(BACKTEST_MATRIX_PATH):
+        raise FileNotFoundError(
+            f"backtest_matrix.json not found at {BACKTEST_MATRIX_PATH}"
+        )
+
+    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
+        _first = f.readline()
+        if _first.startswith('version https://git-lfs.github.com/spec/v1'):
+            raise ValueError(
+                "backtest_matrix.json is a Git LFS pointer — run "
+                "'git lfs pull' first."
+            )
+        f.seek(0)
+        data = _json.load(f)
+
+    # Support both {'results': [...]} and {'matrix': [...]} layouts
+    # (same duality the loader handles at line 671).
+    if 'results' in data and isinstance(data.get('results'), list):
+        rows_key = 'results'
+    elif 'matrix' in data and isinstance(data.get('matrix'), list):
+        rows_key = 'matrix'
+    else:
+        raise ValueError(
+            "backtest_matrix.json has neither 'results' nor 'matrix' "
+            "array — unknown structure, refusing to rewrite."
+        )
+
+    rows = data[rows_key]
+    n_before = len(rows)
+
+    # Coerce array_index to int; reject nonsense up front.
+    try:
+        idx = int(array_index)
+    except (TypeError, ValueError) as _ce:
+        raise ValueError(
+            f"array_index must be an integer, got "
+            f"{type(array_index).__name__}={array_index!r}"
+        ) from _ce
+
+    if idx < 0 or idx >= n_before:
+        return {
+            'removed': False,
+            'reason': f"index {idx} out of range (have {n_before} rows)",
+            'row_count_before': n_before,
+            'row_count_after':  n_before,
+            'row_snapshot':     None,
+        }
+
+    row = rows[idx]
+
+    # Sanity check: verify the row at this index still matches what
+    # the caller expected. If not, the file was modified between
+    # render and click — abort rather than delete the wrong thing.
+    raw_rc = str(row.get('rule_combo', ''))
+    raw_ex = str(row.get('exit_strategy', ''))
+    raw_tf = str(row.get('entry_tf', '') or '')
+
+    # For rule_combo the panel has the rewritten descriptive form.
+    # Accept a match if the expected value either equals the raw form
+    # OR starts with the row's descriptive form (the first word after
+    # the # gets swapped per loader:690-697). If caller wants strict
+    # match, they can pass None for this field to skip.
+    if expected_rule_combo is not None:
+        rc_match = False
+        if str(expected_rule_combo) == raw_rc:
+            rc_match = True
+        else:
+            # Try: raw is like '#1 (BUY)', expected is like
+            # 'BUY_H1_4c_0423_6c21 (BUY)'. Strip leading token.
+            raw_rest = ' '.join(raw_rc.split(' ')[1:]) if ' ' in raw_rc else ''
+            exp_rest = ' '.join(str(expected_rule_combo).split(' ')[1:]) \
+                       if ' ' in str(expected_rule_combo) else ''
+            if raw_rest and raw_rest == exp_rest:
+                # Same trailing token (e.g., '(BUY)'), assume same row
+                rc_match = True
+            # Also try substring — the loader's descriptive ID may be
+            # embedded via the rules[0]._saved_rule_id path.
+            _first = (row.get('rules', [{}])[0]
+                      if isinstance(row.get('rules'), list) and row.get('rules')
+                      else {})
+            _rid = _first.get('_saved_rule_id', _first.get('rule_id', ''))
+            if _rid and _rid in str(expected_rule_combo):
+                rc_match = True
+        if not rc_match:
+            raise ValueError(
+                f"Row at index {idx} has rule_combo {raw_rc!r}, but "
+                f"caller expected {expected_rule_combo!r}. File may "
+                f"have been modified since render — refresh and retry."
+            )
+
+    if expected_exit_strategy is not None:
+        if str(expected_exit_strategy) != raw_ex:
+            raise ValueError(
+                f"Row at index {idx} has exit_strategy {raw_ex!r}, "
+                f"but caller expected {expected_exit_strategy!r}. "
+                f"File may have been modified since render."
+            )
+
+    if expected_entry_tf is not None:
+        if str(expected_entry_tf) != raw_tf:
+            raise ValueError(
+                f"Row at index {idx} has entry_tf {raw_tf!r}, "
+                f"but caller expected {expected_entry_tf!r}. "
+                f"File may have been modified since render."
+            )
+
+    snapshot = {
+        'rule_combo':    raw_rc,
+        'exit_strategy': raw_ex,
+        'entry_tf':      raw_tf,
+        'index':         idx,
+    }
+
+    del rows[idx]
+    data[rows_key] = rows
+
+    # Atomic write: tempfile in SAME directory so os.replace is atomic.
+    _dir = _os.path.dirname(BACKTEST_MATRIX_PATH) or '.'
+    _fd, _tmp = _tempfile.mkstemp(prefix='.backtest_matrix.',
+                                  suffix='.tmp', dir=_dir)
+    try:
+        with _os.fdopen(_fd, 'w', encoding='utf-8') as f:
+            _json.dump(data, f, indent=2, default=str)
+        _os.replace(_tmp, BACKTEST_MATRIX_PATH)
+    except Exception:
+        try:
+            _os.remove(_tmp)
+        except Exception:
+            pass
+        raise
+
+    log.info(
+        f"[REFINER] delete_matrix_row: removed idx={idx} "
+        f"rule_combo={raw_rc!r} exit={raw_ex!r} entry_tf={raw_tf!r} "
+        f"(now {len(rows)} rows, was {n_before})"
+    )
+
+    return {
+        'removed': True,
+        'reason':  'ok',
+        'row_count_before': n_before,
+        'row_count_after':  len(rows),
+        'row_snapshot':     snapshot,
+    }
