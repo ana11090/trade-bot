@@ -2447,6 +2447,76 @@ def build_panel(parent):
 
         return spinbox
 
+    # WHY (T3a): Target-mode radio. Default is 'regression' (trains the
+    #      Step 3 tree on raw pips instead of pips>0 classification).
+    #      Users who want the pre-T3a behavior pick 'binary'. Auto-saves
+    #      on every click via trace_add('write', ...) — same pattern as
+    #      _a36_save_mode. Bound here (after _a291_flash_saved is defined).
+    # CHANGED: April 2026 — T3a
+    _t3a_target_frame = tk.Frame(discovery_frame, bg="#fff9e6")
+    _t3a_target_frame.pack(fill="x", pady=(0, 10))
+
+    tk.Label(
+        _t3a_target_frame,
+        text="Tree target:",
+        bg="#fff9e6", fg="#333",
+        font=("Segoe UI", 9, "bold"),
+    ).pack(anchor="w")
+
+    _t3a_target_var = tk.StringVar(
+        value=str(_cfg.get('rule_target_mode', 'regression')).lower()
+    )
+    if _t3a_target_var.get() not in ('regression', 'binary'):
+        _t3a_target_var.set('regression')
+
+    _t3a_radio_row = tk.Frame(_t3a_target_frame, bg="#fff9e6")
+    _t3a_radio_row.pack(anchor="w", pady=(2, 0))
+
+    _t3a_rb_regression = tk.Radiobutton(
+        _t3a_radio_row,
+        text="🎯 Profit magnitude (regression on pips)",
+        variable=_t3a_target_var,
+        value='regression',
+        bg="#fff9e6", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#fff9e6",
+        anchor="w",
+    )
+    _t3a_rb_regression.pack(anchor="w")
+
+    _t3a_rb_binary = tk.Radiobutton(
+        _t3a_radio_row,
+        text="🔢 Win / Loss (classification on pips>0)",
+        variable=_t3a_target_var,
+        value='binary',
+        bg="#fff9e6", fg="#16213e",
+        font=("Segoe UI", 9),
+        activebackground="#fff9e6",
+        anchor="w",
+    )
+    _t3a_rb_binary.pack(anchor="w")
+
+    tk.Label(
+        _t3a_target_frame,
+        text=("Regression picks leaves with high mean-pips (preferred).\n"
+              "Binary = pre-T3a behavior, picks leaves with high win rate."),
+        bg="#fff9e6", fg="#666",
+        font=("Segoe UI", 8, "italic"),
+        justify="left",
+    ).pack(anchor="w", pady=(2, 0))
+
+    def _t3a_save_target(*_args, _v=_t3a_target_var):
+        try:
+            _cl.save({'rule_target_mode': str(_v.get())})
+            _a291_flash_saved('rule_target_mode')
+        except Exception as _e:
+            print(f"[T3a] Could not save rule_target_mode: {_e}")
+    _t3a_target_var.trace_add('write', _t3a_save_target)
+
+    # Add both radiobuttons to the disable-on-SRM list
+    _a39b_discovery_spinboxes.append(_t3a_rb_regression)
+    _a39b_discovery_spinboxes.append(_t3a_rb_binary)
+
     # Six tunables with tooltips
     _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
                  1, 20, 1,
