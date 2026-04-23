@@ -633,18 +633,15 @@ def extract_rules(df, model_result, direction=None):
         if tree_.feature[node_id] == -2:          # leaf
             samples = tree_.n_node_samples[node_id]
 
-            # WHY (T3a): Classifier and regressor return different value
-            #      shapes. Classifier value[node][0] is [loss_count,
-            #      win_count]. Regressor value[node] is [[mean_target]]
-            #      shape (1,1). win_rate and confidence are computed
-            #      below from matching_pips for regression mode so
-            #      downstream consumers keep working identically.
-            # CHANGED: April 2026 — T3a
+            # WHY (T3a-fix): Compute leaf stats FROM THE TREE (mode-aware).
+            #      Binary mode reads class counts; regression reads mean.
+            # CHANGED: April 2026 — T3a-fix — provisional leaf stats
             if _t3a_target_mode == 'regression':
                 try:
                     leaf_mean_pips = float(tree_.value[node_id][0][0])
                 except Exception:
                     leaf_mean_pips = 0.0
+                # Provisional — real values computed from matching_pips below
                 prediction = 'WIN' if leaf_mean_pips > 0 else 'LOSS'
                 confidence = 0.0
                 win_rate   = 0.0
@@ -660,112 +657,85 @@ def extract_rules(df, model_result, direction=None):
                 confidence = max(win_count, loss_count) / total if total > 0 else 0
                 win_rate   = win_count / total if total > 0 else 0
 
-            # WHY (Phase 57 Fix 3): Old code hardcoded 0.55, which is LOWER
-            #      than the configured default (rule_min_confidence=0.65).
-            #      Users who raised their threshold in the panel still got
-            #      low-confidence rules. Read from config_loader; fall back
-            #      to 0.55 only if config cannot be loaded (safe default).
-            # WHY (Phase A.29): Two changes — (1) the hardcoded `samples
-            #      >= 15` check now reads from `_a29_leaf_filter`, which
-            #      defaults to 15 but is exposed in the panel. (2) Add
-            #      a separate avg_pips check AFTER the matching_pips
-            #      computation below, so a leaf with low confidence
-            #      can still survive if its average pips is at or above
-            #      `_a29_min_avg_pips`. The user explicitly wants
-            #      mixed-confidence leaves welcome as long as they are
-            #      profitable. Both filters are ANDed — the leaf must
-            #      pass BOTH the confidence floor AND the avg-pips
-            #      floor. Setting either to a permissive value
-            #      (confidence=0, avg_pips=-1000) effectively disables
-            #      it.
-            # CHANGED: April 2026 — Phase A.29 — config-driven filters
-            # WHY (T3a): In regression mode, 'confidence' is fraction of
-            #      matching trades with pips>0. The existing _min_confidence
-            #      gate therefore still excludes leaves dominated by one
-            #      big outlier. Users who want pure-mean ranking can set
-            #      rule_min_confidence=0 in the panel.
-            # CHANGED: April 2026 — T3a (documenting interaction)
-            if samples >= _a29_leaf_filter and confidence >= _min_confidence:
-                mask = pd.Series(True, index=X.index)
-                for cond in conditions:
-                    col_vals = X[cond['feature']]
-                    if cond['operator'] == '<=':
-                        mask &= col_vals <= cond['value']
-                    else:
-                        mask &= col_vals > cond['value']
+            # WHY (T3a-fix): Build mask + matching_pips BEFORE the gate so
+            #      regression mode can compute real confidence from trade
+            #      outcomes (not the tree's leaf_mean_pips). Previously this
+            #      ran INSIDE the gate block, so regression leaves with the
+            #      placeholder confidence=0.0 were always rejected at the
+            #      gate and the real-confidence path never executed.
+            #      Binary mode is unaffected — its confidence was already
+            #      correct before the gate.
+            # CHANGED: April 2026 — T3a-fix — gate ordering
+            if samples < _a29_leaf_filter:
+                return
 
-                # WHY (Phase A.2 hotfix): Phase 41 Fix 1b changed X to
-                #      X_train (884 rows = train slice of 1106). mask is
-                #      built from X.index so it is also 884 rows long.
-                #      The old code passed mask.values (a bare 884-length
-                #      bool array) into df.loc where df is the FULL 1106-
-                #      row feature matrix, raising
-                #          IndexError: Boolean index has wrong length:
-                #                      884 instead of 1106
-                #      Fix: use label-based indexing — mask[mask].index
-                #      gives the actual row labels where mask is True, and
-                #      df.loc[labels, 'pips'] selects them correctly from
-                #      df regardless of how X_train relates to df (works
-                #      even if the split were non-chronological in future).
-                # CHANGED: April 2026 — Phase A.2 — label-based indexing
-                if 'pips' in df.columns:
-                    _matching_labels = mask[mask].index
-                    matching_pips = df.loc[_matching_labels, 'pips']
+            mask = pd.Series(True, index=X.index)
+            for cond in conditions:
+                col_vals = X[cond['feature']]
+                if cond['operator'] == '<=':
+                    mask &= col_vals <= cond['value']
                 else:
-                    matching_pips = pd.Series([0])
+                    mask &= col_vals > cond['value']
 
-                # WHY (Phase A.29): Compute avg_pips first so we can filter
-                #      before appending. Reject leaves where
-                #      avg_pips < _a29_min_avg_pips — this is the second
-                #      filter leg (confidence is the first). Both must pass.
-                # CHANGED: April 2026 — Phase A.29 — avg_pips filter
-                avg_pips = round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0
-                if avg_pips < _a29_min_avg_pips:
-                    return  # Reject leaf: avg pips below threshold
+            # WHY (Phase A.2 hotfix): Use label-based indexing (mask[mask].index)
+            #      so X_train rows map correctly to df rows after the 80/20 split.
+            # CHANGED: April 2026 — Phase A.2 — label-based indexing
+            if 'pips' in df.columns:
+                _matching_labels = mask[mask].index
+                matching_pips = df.loc[_matching_labels, 'pips']
+            else:
+                matching_pips = pd.Series([0])
 
-                # WHY (T3a): In regression mode, win_rate and confidence
-                #      weren't set by the tree (no binary label). Compute
-                #      them here from matching_pips so rule_discovery_score
-                #      and all downstream consumers keep working identically.
-                #      In binary mode these were already set above — skip.
-                # CHANGED: April 2026 — T3a
-                if _t3a_target_mode == 'regression' and len(matching_pips) > 0:
-                    _wins      = int((matching_pips > 0).sum())
-                    _n         = int(len(matching_pips))
-                    win_rate   = _wins / _n if _n > 0 else 0.0
+            avg_pips = round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0
+
+            # WHY (T3a-fix): In regression mode, compute real win_rate/
+            #      confidence from the matching pips BEFORE the confidence
+            #      gate runs. Binary mode skips this — its confidence is
+            #      already set from tree value counts.
+            # CHANGED: April 2026 — T3a-fix — compute confidence before gate
+            if _t3a_target_mode == 'regression' and len(matching_pips) > 0:
+                _wins      = int((matching_pips > 0).sum())
+                _n         = int(len(matching_pips))
+                if _n > 0:
+                    win_rate   = _wins / _n
                     confidence = win_rate
                     win_count  = _wins
                     loss_count = _n - _wins
                     total      = _n
-                    prediction = 'WIN' if avg_pips > 0 else 'LOSS'
+                prediction = 'WIN' if avg_pips > 0 else 'LOSS'
 
-                # WHY (Phase A.27): Add the 'action' field so P2 backtester
-                #      and EA generator stop getting None when they read
-                #      rule['action']. Direction is bot-level (derived by
-                #      run_analysis from the action column of the trade
-                #      history) — a single decision-tree run sees only
-                #      win/loss labels and cannot distinguish long from
-                #      short on its own, so every rule from one analysis
-                #      run gets the same direction. This matches what
-                #      step6_extract_rules.py already does on line ~376.
-                # CHANGED: April 2026 — Phase A.27
-                _rule_record = {
-                    'conditions':   conditions.copy(),
-                    'prediction':   prediction,
-                    'confidence':   round(float(confidence), 3),
-                    'coverage':     int(samples),
-                    'coverage_pct': round(samples / len(X) * 100, 1),
-                    'win_rate':     round(float(win_rate), 3),
-                    'avg_pips':     avg_pips,
-                    # WHY (T3a): diagnostic only — shows the tree type that
-                    #      produced this rule. Downstream readers ignore
-                    #      unknown keys.
-                    # CHANGED: April 2026 — T3a
-                    '_target_mode': _t3a_target_mode,
-                }
-                if direction is not None:
-                    _rule_record['action'] = direction
-                rules.append(_rule_record)
+            # WHY (Phase A.29): Gate: leaf must pass confidence floor AND
+            #      sample floor. In regression mode, confidence = win_rate
+            #      from matching_pips so this gate excludes outlier-dominated
+            #      leaves. Users can set rule_min_confidence=0 to disable.
+            # CHANGED: April 2026 — Phase A.29 / T3a-fix
+            if confidence < _min_confidence:
+                return
+
+            # WHY (Phase A.29): Avg-pips filter — second filter leg.
+            # CHANGED: April 2026 — Phase A.29
+            if avg_pips < _a29_min_avg_pips:
+                return
+
+            # WHY (Phase A.27): Add 'action' so P2 backtester and EA
+            #      generator get the direction instead of None.
+            # CHANGED: April 2026 — Phase A.27
+            _rule_record = {
+                'conditions':   conditions.copy(),
+                'prediction':   prediction,
+                'confidence':   round(float(confidence), 3),
+                'coverage':     int(samples),
+                'coverage_pct': round(samples / len(X) * 100, 1),
+                'win_rate':     round(float(win_rate), 3),
+                'avg_pips':     avg_pips,
+                # WHY (T3a): diagnostic only — shows the tree type that
+                #      produced this rule. Downstream readers ignore unknown keys.
+                # CHANGED: April 2026 — T3a
+                '_target_mode': _t3a_target_mode,
+            }
+            if direction is not None:
+                _rule_record['action'] = direction
+            rules.append(_rule_record)
             return
 
         feature   = feature_cols[tree_.feature[node_id]]
