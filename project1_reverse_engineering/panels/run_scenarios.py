@@ -2428,6 +2428,13 @@ def build_panel(parent):
 
         _a291_add_tooltip(spinbox, tooltip_text, wraplength=380)
 
+        # WHY (T3b-addendum): Expose label on the spinbox so the
+        #      radio-change handler can rewrite hint text when target
+        #      mode changes. No existing caller reads this attribute.
+        # CHANGED: April 2026 — T3b-addendum
+        spinbox._t3b_label = label
+        spinbox._t3b_base_text = label_text
+
         # WHY (Phase A.29.1): Closure-safe via default-arg binding —
         #      `_var=var` and `_key=config_key` are evaluated at
         #      function-definition time, not at call time, so each
@@ -2447,12 +2454,15 @@ def build_panel(parent):
 
         return spinbox
 
-    # WHY (T3a): Target-mode radio. Default is 'regression' (trains the
-    #      Step 3 tree on raw pips instead of pips>0 classification).
-    #      Users who want the pre-T3a behavior pick 'binary'. Auto-saves
-    #      on every click via trace_add('write', ...) — same pattern as
-    #      _a36_save_mode. Bound here (after _a291_flash_saved is defined).
-    # CHANGED: April 2026 — T3a
+    # WHY (T3b): Four-way Tree Target radio. Replaces the T3a 2-radio block.
+    #      'regression_weighted' (default) trains a regressor on raw pips
+    #      with per-trade sample weights that equalize month influence, so
+    #      the tree can't over-fit to a high-trade-density period (e.g. the
+    #      2025-2026 gold bull run). 'regression_raw' = T3a current (no
+    #      weights). 'binary' = T3a-fix classifier. 'legacy' = frozen pre-T3a
+    #      classifier with old gate ordering (for A/B comparison only).
+    #      Auto-saves on every click via trace_add('write', ...).
+    # CHANGED: April 2026 — T3b
     _t3a_target_frame = tk.Frame(discovery_frame, bg="#fff9e6")
     _t3a_target_frame.pack(fill="x", pady=(0, 10))
 
@@ -2463,59 +2473,123 @@ def build_panel(parent):
         font=("Segoe UI", 9, "bold"),
     ).pack(anchor="w")
 
-    _t3a_target_var = tk.StringVar(
-        value=str(_cfg.get('rule_target_mode', 'regression')).lower()
-    )
-    if _t3a_target_var.get() not in ('regression', 'binary'):
-        _t3a_target_var.set('regression')
+    _t3b_valid_modes = ('regression_weighted', 'regression_raw', 'binary', 'legacy')
+    _raw_mode = str(_cfg.get('rule_target_mode', 'regression_weighted')).lower()
+    # Migrate old 'regression' value from T3a config
+    if _raw_mode == 'regression':
+        _raw_mode = 'regression_weighted'
+    if _raw_mode not in _t3b_valid_modes:
+        _raw_mode = 'regression_weighted'
+    _t3a_target_var = tk.StringVar(value=_raw_mode)
 
     _t3a_radio_row = tk.Frame(_t3a_target_frame, bg="#fff9e6")
     _t3a_radio_row.pack(anchor="w", pady=(2, 0))
 
-    _t3a_rb_regression = tk.Radiobutton(
-        _t3a_radio_row,
-        text="🎯 Profit magnitude (regression on pips)",
-        variable=_t3a_target_var,
-        value='regression',
-        bg="#fff9e6", fg="#16213e",
-        font=("Segoe UI", 9),
-        activebackground="#fff9e6",
-        anchor="w",
-    )
-    _t3a_rb_regression.pack(anchor="w")
+    _t3b_options = [
+        (
+            'regression_weighted',
+            "Regression weighted  (recommended)",
+            "Trains a regression tree on raw pips. Each trade is weighted\n"
+            "by 1 / trades_in_its_month, so all calendar months contribute\n"
+            "equally regardless of how many trades fell in that period.\n"
+            "Suppresses rules locked to a single high-activity regime\n"
+            "(e.g. price-level conditions valid only during a bull run).",
+        ),
+        (
+            'regression_raw',
+            "Regression raw  (T3a, no weights)",
+            "Same regressor as above but all trades weighted equally.\n"
+            "Months with more trades dominate splits. Picks high mean-pip\n"
+            "leaves but may over-fit to the most active period in the data.",
+        ),
+        (
+            'binary',
+            "Binary  (T3a-fix classifier)",
+            "Trains a classifier on is_winner = pips > 0.\n"
+            "Picks leaves with high win rate. Gate ordering matches T3a-fix:\n"
+            "matching_pips are computed before the confidence gate runs.\n"
+            "Use this to compare win-rate-based vs magnitude-based rules.",
+        ),
+        (
+            'legacy',
+            "Legacy  (pre-T3a, frozen)",
+            "Frozen pre-T3a classifier with the original gate ordering\n"
+            "(confidence placeholder 0.0 evaluated before matching_pips).\n"
+            "Included only for A/B comparison. In practice produces fewer\n"
+            "rules than Binary because regression leaves fail the gate.\n"
+            "Do not use for production rule discovery.",
+        ),
+    ]
 
-    _t3a_rb_binary = tk.Radiobutton(
-        _t3a_radio_row,
-        text="🔢 Win / Loss (classification on pips>0)",
-        variable=_t3a_target_var,
-        value='binary',
-        bg="#fff9e6", fg="#16213e",
-        font=("Segoe UI", 9),
-        activebackground="#fff9e6",
-        anchor="w",
-    )
-    _t3a_rb_binary.pack(anchor="w")
-
-    tk.Label(
-        _t3a_target_frame,
-        text=("Regression picks leaves with high mean-pips (preferred).\n"
-              "Binary = pre-T3a behavior, picks leaves with high win rate."),
-        bg="#fff9e6", fg="#666",
-        font=("Segoe UI", 8, "italic"),
-        justify="left",
-    ).pack(anchor="w", pady=(2, 0))
+    _t3b_radiobuttons = []
+    for _t3b_val, _t3b_label, _t3b_tip in _t3b_options:
+        _rb = tk.Radiobutton(
+            _t3a_radio_row,
+            text=_t3b_label,
+            variable=_t3a_target_var,
+            value=_t3b_val,
+            bg="#fff9e6", fg="#16213e",
+            font=("Segoe UI", 9),
+            activebackground="#fff9e6",
+            anchor="w",
+        )
+        _rb.pack(anchor="w")
+        try:
+            from shared.tooltip import ToolTip
+            ToolTip(_rb, _t3b_tip)
+        except Exception:
+            pass
+        _t3b_radiobuttons.append(_rb)
 
     def _t3a_save_target(*_args, _v=_t3a_target_var):
         try:
             _cl.save({'rule_target_mode': str(_v.get())})
             _a291_flash_saved('rule_target_mode')
         except Exception as _e:
-            print(f"[T3a] Could not save rule_target_mode: {_e}")
+            print(f"[T3b] Could not save rule_target_mode: {_e}")
     _t3a_target_var.trace_add('write', _t3a_save_target)
 
-    # Add both radiobuttons to the disable-on-SRM list
-    _a39b_discovery_spinboxes.append(_t3a_rb_regression)
-    _a39b_discovery_spinboxes.append(_t3a_rb_binary)
+    # WHY (T3b-addendum): When the radio changes, rewrite the two
+    #      mode-sensitive spinbox labels so the user sees what
+    #      'confidence' and 'avg_pips' mean in the current mode.
+    #      Classifier modes: confidence = tree leaf purity.
+    #      Regression modes: confidence = fraction-profitable from matching_pips.
+    # CHANGED: April 2026 — T3b-addendum
+    def _t3b_update_mode_hints(*_args, _v=_t3a_target_var):
+        _mode = (_v.get() or '').lower()
+        _is_regression = _mode in ('regression_raw', 'regression_weighted')
+        try:
+            if _is_regression:
+                _t3b_min_conf_sb._t3b_label.configure(
+                    text="Min Confidence:   (fraction of matching trades profitable)"
+                )
+            else:
+                _t3b_min_conf_sb._t3b_label.configure(
+                    text="Min Confidence:   (leaf purity: max(wins,losses)/total)"
+                )
+        except Exception:
+            pass
+        try:
+            if _is_regression:
+                _t3b_min_avgpips_sb._t3b_label.configure(
+                    text="Min Avg Pips:     (gate: leaves below this rejected)"
+                )
+            else:
+                _t3b_min_avgpips_sb._t3b_label.configure(
+                    text="Min Avg Pips:     (post-filter after classifier gate)"
+                )
+        except Exception:
+            pass
+
+    _t3a_target_var.trace_add('write', _t3b_update_mode_hints)
+    try:
+        _t3b_update_mode_hints()
+    except Exception as _e:
+        print(f"[T3b-addendum] initial hint update failed: {_e}")
+
+    # Add all four radiobuttons to the disable-on-SRM list
+    for _t3b_rb in _t3b_radiobuttons:
+        _a39b_discovery_spinboxes.append(_t3b_rb)
 
     # Six tunables with tooltips
     _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Tree Max Depth:", "rule_tree_max_depth",
@@ -2549,23 +2623,29 @@ def build_panel(parent):
                  "construction). This is a second sanity check. Lower = more "
                  "rules survive. Safe range 5-50. Default: 15."))
 
-    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
+    # WHY (T3b-addendum): Capture the two mode-sensitive spinboxes so the
+    #      radio-change handler can update their label text. Other four
+    #      spinboxes have mode-independent meaning and need no update.
+    # CHANGED: April 2026 — T3b-addendum
+    _t3b_min_conf_sb = _make_spinbox(discovery_frame, "Min Confidence:", "rule_min_confidence",
                  0.0, 1.0, 0.05,
                  "Minimum win rate (0.0-1.0) a rule must have on training "
                  "trades to be kept. 0.65 = at least 65% wins. 0.55 = at "
                  "least 55%. Set to 0 to disable this filter entirely (then "
                  "use Min Avg Pips below to keep only profitable rules "
                  "regardless of win rate). Default: 0.65. Drop to 0.55 for "
-                 "many more rules."))
+                 "many more rules.")
+    _a39b_discovery_spinboxes.append(_t3b_min_conf_sb)
 
-    _a39b_discovery_spinboxes.append(_make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
+    _t3b_min_avgpips_sb = _make_spinbox(discovery_frame, "Min Avg Pips:", "rule_min_avg_pips",
                  -1000, 1000, 1,
                  "Minimum average pips per trade a rule must earn on training "
                  "trades to be kept. Lets you accept rules with mixed wins/"
                  "losses as long as they're profitable on average. Set to 0 "
                  "to require any positive expectancy. Set to a positive number "
                  "to demand minimum profit per trade. Set to -1000 to disable. "
-                 "Default: 0."))
+                 "Default: 0.")
+    _a39b_discovery_spinboxes.append(_t3b_min_avgpips_sb)
 
     # WHY (Phase A.29.1): Replaces the static "Changes save automatically"
     #      label with a live indicator that flashes green for ~2.5s

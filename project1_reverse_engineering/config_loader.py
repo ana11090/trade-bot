@@ -65,13 +65,14 @@ DEFAULTS = {
     'rule_tree_min_samples_split':'40',
     'rule_min_leaf_samples':     '15',
     'rule_min_avg_pips':         '0',
-    # WHY (T3a): Rule-extraction target mode. 'regression' trains the Step 3
-    #      tree on raw pip values (DecisionTreeRegressor) so leaves rank
-    #      by mean pips, not win rate. 'binary' is the pre-T3a behavior
-    #      (DecisionTreeClassifier on is_winner). Default = regression;
-    #      user can switch back via Run Scenarios → Discovery Settings radio.
-    # CHANGED: April 2026 — T3a
-    'rule_target_mode':          'regression',
+    # WHY (T3b): Four modes. 'regression_weighted' (default) applies
+    #      time-density sample weights so the regressor can't over-fit
+    #      to a trade-heavy period (e.g. the 2025-2026 gold bull run).
+    #      'regression_raw' = T3a-current (no weights).
+    #      'binary' = classifier via T3a-fix code path.
+    #      'legacy' = pre-T3a classifier code, frozen.
+    # CHANGED: April 2026 — T3b
+    'rule_target_mode':          'regression_weighted',
 
     # ── Bot Entry Discovery (Phase A.31) ──────────────────────────────────────
     # WHY: Separate hyperparameters for the candle-level entry discoverer.

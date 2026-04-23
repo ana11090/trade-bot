@@ -500,6 +500,43 @@ def compute_feature_importance(df):
 
 # ── Section 3: Rule Extraction ────────────────────────────────────────────────
 
+def _compute_time_weights(df, X_index):
+    """Return a sample-weight array aligned to X_index for regression_weighted mode.
+
+    WHY (T3b): A trade-heavy month dominates regression splits when all
+         trades are weighted equally. Dividing by trades_in_its_month
+         makes every calendar month contribute the same total weight
+         regardless of how many trades fell in that period. Rules that
+         only work during a high-activity regime (e.g. a price-level
+         condition valid only during a bull run) score lower than rules
+         that hold across many months.
+
+    Returns a float array of length len(X_index). Falls back to uniform
+    weights on any error so the caller never crashes.
+    CHANGED: April 2026 — T3b
+    """
+    try:
+        weights = np.ones(len(X_index), dtype=float)
+        if 'open_time' not in df.columns:
+            return weights
+        times = pd.to_datetime(df.loc[X_index, 'open_time'], errors='coerce')
+        months = times.dt.to_period('M')
+        month_counts = months.value_counts()
+        for i, period in enumerate(months):
+            if pd.isna(period):
+                continue
+            n = month_counts.get(period, 1)
+            weights[i] = 1.0 / max(n, 1)
+        # Normalise so the sum equals len(X_index) — keeps scale comparable
+        # to uniform weights and avoids changing effective learning rate.
+        total = weights.sum()
+        if total > 0:
+            weights = weights * (len(X_index) / total)
+        return weights
+    except Exception:
+        return np.ones(len(X_index), dtype=float)
+
+
 def extract_rules(df, model_result, direction=None):
     """
     Extract human-readable IF/THEN rules from a shallow decision tree.
@@ -559,19 +596,20 @@ def extract_rules(df, model_result, direction=None):
         _a29_min_avg_pips = 0.0
         _a29_cfg          = {}
 
-    # WHY (T3a): Target-mode flag decides whether we fit a classifier
-    #      (pre-T3a behavior, byte-equivalent for 'binary') or a regressor
-    #      (new default, ranks leaves by mean pips). Read here so the
-    #      later tree construction can branch on it. Fallback to binary
-    #      if config read fails — safe pre-T3a behavior.
-    # CHANGED: April 2026 — T3a
+    # WHY (T3b): Four-way target-mode flag. Normalise old T3a 'regression'
+    #      value to 'regression_raw' for backward compat; unknown values
+    #      default to 'regression_weighted'. Fallback to 'regression_weighted'
+    #      on config read failure — best production behavior.
+    # CHANGED: April 2026 — T3b
     try:
-        _t3a_target_mode = str(_a29_cfg.get('rule_target_mode', 'regression')).lower()
+        _t3a_target_mode = str(_a29_cfg.get('rule_target_mode', 'regression_weighted')).lower()
     except Exception:
-        _t3a_target_mode = 'binary'
-    if _t3a_target_mode not in ('regression', 'binary'):
-        _t3a_target_mode = 'binary'
-    log.info(f"[T3a] rule_target_mode={_t3a_target_mode}")
+        _t3a_target_mode = 'regression_weighted'
+    if _t3a_target_mode == 'regression':          # T3a legacy value
+        _t3a_target_mode = 'regression_raw'
+    if _t3a_target_mode not in ('regression_weighted', 'regression_raw', 'binary', 'legacy'):
+        _t3a_target_mode = 'regression_weighted'
+    log.info(f"[T3b] rule_target_mode={_t3a_target_mode}")
 
     log.info(
         f"[ANALYZE] Discovery params: depth={_a29_max_depth} "
@@ -580,13 +618,15 @@ def extract_rules(df, model_result, direction=None):
         f"min_conf={_min_confidence:.2f} min_avg_pips={_a29_min_avg_pips:.1f}"
     )
 
-    # WHY (T3a): In regression mode, y must be pips aligned to X.index.
-    #      The classifier's y is 0/1 from is_winner, length matches X.
-    #      For regression we pull pips from df using X.index labels.
-    #      If pips column is absent, fall back to binary mode (no worse
-    #      than pre-T3a).
-    # CHANGED: April 2026 — T3a
-    if _t3a_target_mode == 'regression':
+    # WHY (T3b): Regression modes need pips aligned to X.index. Fall
+    #      back to regression_weighted if pips column is absent so the
+    #      caller doesn't hard-crash; actual fallback below demotes to
+    #      binary. Legacy mode doesn't need y_reg.
+    # CHANGED: April 2026 — T3b
+    _t3b_use_regressor = _t3a_target_mode in ('regression_weighted', 'regression_raw')
+    _t3b_use_weights   = _t3a_target_mode == 'regression_weighted'
+
+    if _t3b_use_regressor:
         if 'pips' in df.columns:
             try:
                 y_reg = df.loc[X.index, 'pips'].astype(float).values
@@ -594,21 +634,27 @@ def extract_rules(df, model_result, direction=None):
                 if _bad.any():
                     y_reg[_bad] = 0.0
             except Exception as _tg_e:
-                log.warning(f"[T3a] Could not extract pips for regression: {_tg_e} — falling back to binary")
+                log.warning(f"[T3b] Could not extract pips for regression: {_tg_e} — falling back to binary")
                 _t3a_target_mode = 'binary'
+                _t3b_use_regressor = False
+                _t3b_use_weights   = False
                 y_reg = None
         else:
-            log.warning("[T3a] 'pips' column missing — falling back to binary")
+            log.warning("[T3b] 'pips' column missing — falling back to binary")
             _t3a_target_mode = 'binary'
+            _t3b_use_regressor = False
+            _t3b_use_weights   = False
             y_reg = None
     else:
         y_reg = None
 
-    # WHY (T3a): Branch on target mode. Regressor trains on raw pips
-    #      and produces leaves whose mean-pips is maximized per split.
-    #      Classifier (pre-T3a) trains on is_winner. Same hyperparameters.
-    # CHANGED: April 2026 — T3a
-    if _t3a_target_mode == 'regression':
+    # WHY (T3b): Four-way tree construction dispatch.
+    #      regression_weighted — regressor + per-month equalising weights
+    #      regression_raw      — regressor, uniform weights (T3a current)
+    #      binary              — classifier, T3a-fix code path
+    #      legacy              — classifier, pre-T3a (frozen)
+    # CHANGED: April 2026 — T3b
+    if _t3b_use_regressor:
         from sklearn.tree import DecisionTreeRegressor
         tree = DecisionTreeRegressor(
             max_depth=_a29_max_depth,
@@ -616,7 +662,11 @@ def extract_rules(df, model_result, direction=None):
             min_samples_split=_a29_min_split,
             random_state=42,
         )
-        tree.fit(X, y_reg)
+        if _t3b_use_weights:
+            _t3b_weights = _compute_time_weights(df, X.index)
+            tree.fit(X, y_reg, sample_weight=_t3b_weights)
+        else:
+            tree.fit(X, y_reg)
     else:
         tree = DecisionTreeClassifier(
             max_depth=_a29_max_depth,
@@ -633,15 +683,72 @@ def extract_rules(df, model_result, direction=None):
         if tree_.feature[node_id] == -2:          # leaf
             samples = tree_.n_node_samples[node_id]
 
-            # WHY (T3a-fix): Compute leaf stats FROM THE TREE (mode-aware).
-            #      Binary mode reads class counts; regression reads mean.
-            # CHANGED: April 2026 — T3a-fix — provisional leaf stats
-            if _t3a_target_mode == 'regression':
+            if _t3a_target_mode == 'legacy':
+                # WHY (T3b): Legacy branch — frozen pre-T3a code verbatim.
+                #      Old gate ordering: confidence from class counts is
+                #      checked BEFORE matching_pips is built. Regression
+                #      leaves would always fail here (confidence=0), but
+                #      legacy always uses the classifier so that's moot.
+                #      Kept for A/B comparison only.
+                # CHANGED: April 2026 — T3b — legacy branch
+                values     = tree_.value[node_id][0]
+                total      = values.sum()
+                win_count  = values[1] if len(values) > 1 else 0
+                loss_count = values[0]
+                prediction = 'WIN' if win_count >= loss_count else 'LOSS'
+                confidence = max(win_count, loss_count) / total if total > 0 else 0
+                win_rate   = win_count / total if total > 0 else 0
+
+                if confidence < _min_confidence:
+                    return
+                if samples < _a29_leaf_filter:
+                    return
+
+                mask = pd.Series(True, index=X.index)
+                for cond in conditions:
+                    col_vals = X[cond['feature']]
+                    if cond['operator'] == '<=':
+                        mask &= col_vals <= cond['value']
+                    else:
+                        mask &= col_vals > cond['value']
+
+                if 'pips' in df.columns:
+                    _matching_labels = mask[mask].index
+                    matching_pips = df.loc[_matching_labels, 'pips']
+                else:
+                    matching_pips = pd.Series([0])
+
+                avg_pips = round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0
+
+                if avg_pips < _a29_min_avg_pips:
+                    return
+
+                _rule_record = {
+                    'conditions':   conditions.copy(),
+                    'prediction':   prediction,
+                    'confidence':   round(float(confidence), 3),
+                    'coverage':     int(samples),
+                    'coverage_pct': round(samples / len(X) * 100, 1),
+                    'win_rate':     round(float(win_rate), 3),
+                    'avg_pips':     avg_pips,
+                    '_target_mode': _t3a_target_mode,
+                }
+                if direction is not None:
+                    _rule_record['action'] = direction
+                rules.append(_rule_record)
+                return
+
+            # WHY (T3b): Unified T3a-fix branch for binary / regression_raw /
+            #      regression_weighted. Provisional leaf stats from tree;
+            #      mask + matching_pips built BEFORE confidence gate so
+            #      regression modes can compute real confidence from trade
+            #      outcomes (not the tree's leaf_mean_pips).
+            # CHANGED: April 2026 — T3b — T3a-fix unified branch
+            if _t3b_use_regressor:
                 try:
                     leaf_mean_pips = float(tree_.value[node_id][0][0])
                 except Exception:
                     leaf_mean_pips = 0.0
-                # Provisional — real values computed from matching_pips below
                 prediction = 'WIN' if leaf_mean_pips > 0 else 'LOSS'
                 confidence = 0.0
                 win_rate   = 0.0
@@ -657,15 +764,7 @@ def extract_rules(df, model_result, direction=None):
                 confidence = max(win_count, loss_count) / total if total > 0 else 0
                 win_rate   = win_count / total if total > 0 else 0
 
-            # WHY (T3a-fix): Build mask + matching_pips BEFORE the gate so
-            #      regression mode can compute real confidence from trade
-            #      outcomes (not the tree's leaf_mean_pips). Previously this
-            #      ran INSIDE the gate block, so regression leaves with the
-            #      placeholder confidence=0.0 were always rejected at the
-            #      gate and the real-confidence path never executed.
-            #      Binary mode is unaffected — its confidence was already
-            #      correct before the gate.
-            # CHANGED: April 2026 — T3a-fix — gate ordering
+            # Sample-count gate before building mask (cheap early exit)
             if samples < _a29_leaf_filter:
                 return
 
@@ -688,12 +787,9 @@ def extract_rules(df, model_result, direction=None):
 
             avg_pips = round(float(matching_pips.mean()), 1) if len(matching_pips) > 0 else 0
 
-            # WHY (T3a-fix): In regression mode, compute real win_rate/
-            #      confidence from the matching pips BEFORE the confidence
-            #      gate runs. Binary mode skips this — its confidence is
-            #      already set from tree value counts.
-            # CHANGED: April 2026 — T3a-fix — compute confidence before gate
-            if _t3a_target_mode == 'regression' and len(matching_pips) > 0:
+            # For regression modes: compute real win_rate / confidence from
+            # matching_pips BEFORE the confidence gate (T3a-fix gate ordering).
+            if _t3b_use_regressor and len(matching_pips) > 0:
                 _wins      = int((matching_pips > 0).sum())
                 _n         = int(len(matching_pips))
                 if _n > 0:
@@ -704,22 +800,12 @@ def extract_rules(df, model_result, direction=None):
                     total      = _n
                 prediction = 'WIN' if avg_pips > 0 else 'LOSS'
 
-            # WHY (Phase A.29): Gate: leaf must pass confidence floor AND
-            #      sample floor. In regression mode, confidence = win_rate
-            #      from matching_pips so this gate excludes outlier-dominated
-            #      leaves. Users can set rule_min_confidence=0 to disable.
-            # CHANGED: April 2026 — Phase A.29 / T3a-fix
             if confidence < _min_confidence:
                 return
 
-            # WHY (Phase A.29): Avg-pips filter — second filter leg.
-            # CHANGED: April 2026 — Phase A.29
             if avg_pips < _a29_min_avg_pips:
                 return
 
-            # WHY (Phase A.27): Add 'action' so P2 backtester and EA
-            #      generator get the direction instead of None.
-            # CHANGED: April 2026 — Phase A.27
             _rule_record = {
                 'conditions':   conditions.copy(),
                 'prediction':   prediction,
@@ -728,9 +814,8 @@ def extract_rules(df, model_result, direction=None):
                 'coverage_pct': round(samples / len(X) * 100, 1),
                 'win_rate':     round(float(win_rate), 3),
                 'avg_pips':     avg_pips,
-                # WHY (T3a): diagnostic only — shows the tree type that
-                #      produced this rule. Downstream readers ignore unknown keys.
-                # CHANGED: April 2026 — T3a
+                # WHY (T3b): diagnostic — shows tree type that produced rule.
+                # CHANGED: April 2026 — T3b
                 '_target_mode': _t3a_target_mode,
             }
             if direction is not None:
@@ -762,19 +847,19 @@ def extract_rules(df, model_result, direction=None):
         # old ordering rather than leave `rules` unsorted.
         rules.sort(key=lambda r: r['confidence'] * r['coverage'], reverse=True)
 
-    # WHY (T3a): Quick visibility in the log — which target mode ran,
+    # WHY (T3b): Quick visibility in the log — which target mode ran,
     #      how many rules, and a quick histogram of avg_pips.
-    # CHANGED: April 2026 — T3a
+    # CHANGED: April 2026 — T3b
     try:
         _avgs = [r.get('avg_pips', 0) for r in rules]
         if _avgs:
             log.info(
-                f"[T3a] mode={_t3a_target_mode} rules={len(rules)} "
+                f"[T3b] mode={_t3a_target_mode} rules={len(rules)} "
                 f"avg_pips min/median/max = {min(_avgs):.1f} / "
                 f"{sorted(_avgs)[len(_avgs)//2]:.1f} / {max(_avgs):.1f}"
             )
         else:
-            log.info(f"[T3a] mode={_t3a_target_mode} rules=0 (none passed filters)")
+            log.info(f"[T3b] mode={_t3a_target_mode} rules=0 (none passed filters)")
     except Exception:
         pass
 
