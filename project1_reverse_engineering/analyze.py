@@ -647,6 +647,14 @@ def extract_rules(df, model_result, direction=None):
     y            = model_result.get('y_train', model_result['y'])
     feature_cols = model_result['feature_cols']
 
+    # WHY (T2a): Expose test slice for out-of-sample validation inside the
+    #      leaf-accept logic. Fallbacks to None — callers from legacy
+    #      pipelines that don't ship X_test will skip OOS checks instead
+    #      of crashing.
+    # CHANGED: April 2026 — T2a — out-of-sample rule validation
+    X_test       = model_result.get('X_test', None)
+    y_test       = model_result.get('y_test', None)
+
     # WHY (Phase 57 Fix 3): read rule_min_confidence from config so the
     #      user's panel setting actually takes effect.
     # WHY (Phase A.29): also read the four hardcoded tree params and
@@ -800,6 +808,68 @@ def extract_rules(df, model_result, direction=None):
                 if avg_pips < _a29_min_avg_pips:
                     return
 
+                # WHY (T2a): Rebuild the same mask on the test slice and measure
+                #      avg_pips + win_rate there. This catches rules whose in-sample
+                #      edge doesn't generalize. Skipped cleanly if X_test is None or
+                #      if any conditioned feature is absent from X_test.
+                # CHANGED: April 2026 — T2a — out-of-sample validation
+                avg_pips_test = None
+                win_rate_test = None
+                test_samples  = 0
+                test_skip_reason = None
+                if X_test is not None and 'pips' in df.columns:
+                    try:
+                        test_mask = pd.Series(True, index=X_test.index)
+                        _feat_missing = False
+                        for cond in conditions:
+                            _feat = cond['feature']
+                            if _feat not in X_test.columns:
+                                _feat_missing = True
+                                break
+                            test_col_vals = X_test[_feat]
+                            if cond['operator'] == '<=':
+                                test_mask &= test_col_vals <= cond['value']
+                            else:
+                                test_mask &= test_col_vals > cond['value']
+                        if _feat_missing:
+                            test_skip_reason = 'feature_missing_in_test'
+                        else:
+                            _test_matching_labels = test_mask[test_mask].index
+                            _test_matching_pips = df.loc[_test_matching_labels, 'pips']
+                            test_samples = len(_test_matching_pips)
+                            if test_samples > 0:
+                                avg_pips_test = round(float(_test_matching_pips.mean()), 1)
+                                _test_wins = int((_test_matching_pips > 0).sum())
+                                win_rate_test = round(_test_wins / test_samples, 3)
+                            else:
+                                test_skip_reason = 'no_test_matches'
+                    except Exception as _t2a_e:
+                        test_skip_reason = f'error:{type(_t2a_e).__name__}'
+
+                # WHY (T2a): Reject rules whose in-sample edge collapses on the test
+                #      slice. Three failure modes — all reject:
+                #        1. Test slice had matches and avg_pips_test is negative
+                #           (rule was profitable in sample, unprofitable OOS)
+                #        2. Test matches present but win_rate_test < 0.40 while
+                #           train win_rate >= 0.60 (WR drop > 20 pts)
+                #        3. avg_pips_train > 10 but avg_pips_test < 0 (sign flip)
+                #      Rules with insufficient test data (test_samples < 5) are
+                #      ACCEPTED but flagged — we don't have enough evidence to reject.
+                #      Rules where X_test is None (legacy callers) are also accepted.
+                # CHANGED: April 2026 — T2a — OOS edge-check rejection
+                _t2a_rejected = False
+                if test_samples >= 5 and avg_pips_test is not None:
+                    if avg_pips_test < 0:
+                        _t2a_rejected = True
+                    elif (win_rate is not None and win_rate_test is not None
+                          and win_rate >= 0.60 and win_rate_test < 0.40):
+                        _t2a_rejected = True
+                    elif avg_pips > 10 and avg_pips_test < 0:
+                        _t2a_rejected = True
+
+                if _t2a_rejected:
+                    return
+
                 _rule_record = {
                     'conditions':   conditions.copy(),
                     'prediction':   prediction,
@@ -809,6 +879,17 @@ def extract_rules(df, model_result, direction=None):
                     'win_rate':     round(float(win_rate), 3),
                     'avg_pips':     avg_pips,
                     '_target_mode': _t3a_target_mode,
+                    # WHY (T2a): Expose OOS diagnostics on the rule so downstream code
+                    #      (Run Backtest, saved rules UI, EA generator) can display
+                    #      train-vs-test divergence. None values for any field mean
+                    #      the OOS check was skipped (no X_test, missing features,
+                    #      no test matches). Consumers should treat None as "unknown"
+                    #      rather than "good" or "bad".
+                    # CHANGED: April 2026 — T2a
+                    'avg_pips_test':  avg_pips_test,
+                    'win_rate_test':  win_rate_test,
+                    'test_samples':   test_samples,
+                    'test_skip_reason': test_skip_reason,
                 }
                 if direction is not None:
                     _rule_record['action'] = direction
@@ -883,6 +964,68 @@ def extract_rules(df, model_result, direction=None):
             if avg_pips < _a29_min_avg_pips:
                 return
 
+            # WHY (T2a): Rebuild the same mask on the test slice and measure
+            #      avg_pips + win_rate there. This catches rules whose in-sample
+            #      edge doesn't generalize. Skipped cleanly if X_test is None or
+            #      if any conditioned feature is absent from X_test.
+            # CHANGED: April 2026 — T2a — out-of-sample validation
+            avg_pips_test = None
+            win_rate_test = None
+            test_samples  = 0
+            test_skip_reason = None
+            if X_test is not None and 'pips' in df.columns:
+                try:
+                    test_mask = pd.Series(True, index=X_test.index)
+                    _feat_missing = False
+                    for cond in conditions:
+                        _feat = cond['feature']
+                        if _feat not in X_test.columns:
+                            _feat_missing = True
+                            break
+                        test_col_vals = X_test[_feat]
+                        if cond['operator'] == '<=':
+                            test_mask &= test_col_vals <= cond['value']
+                        else:
+                            test_mask &= test_col_vals > cond['value']
+                    if _feat_missing:
+                        test_skip_reason = 'feature_missing_in_test'
+                    else:
+                        _test_matching_labels = test_mask[test_mask].index
+                        _test_matching_pips = df.loc[_test_matching_labels, 'pips']
+                        test_samples = len(_test_matching_pips)
+                        if test_samples > 0:
+                            avg_pips_test = round(float(_test_matching_pips.mean()), 1)
+                            _test_wins = int((_test_matching_pips > 0).sum())
+                            win_rate_test = round(_test_wins / test_samples, 3)
+                        else:
+                            test_skip_reason = 'no_test_matches'
+                except Exception as _t2a_e:
+                    test_skip_reason = f'error:{type(_t2a_e).__name__}'
+
+            # WHY (T2a): Reject rules whose in-sample edge collapses on the test
+            #      slice. Three failure modes — all reject:
+            #        1. Test slice had matches and avg_pips_test is negative
+            #           (rule was profitable in sample, unprofitable OOS)
+            #        2. Test matches present but win_rate_test < 0.40 while
+            #           train win_rate >= 0.60 (WR drop > 20 pts)
+            #        3. avg_pips_train > 10 but avg_pips_test < 0 (sign flip)
+            #      Rules with insufficient test data (test_samples < 5) are
+            #      ACCEPTED but flagged — we don't have enough evidence to reject.
+            #      Rules where X_test is None (legacy callers) are also accepted.
+            # CHANGED: April 2026 — T2a — OOS edge-check rejection
+            _t2a_rejected = False
+            if test_samples >= 5 and avg_pips_test is not None:
+                if avg_pips_test < 0:
+                    _t2a_rejected = True
+                elif (win_rate is not None and win_rate_test is not None
+                      and win_rate >= 0.60 and win_rate_test < 0.40):
+                    _t2a_rejected = True
+                elif avg_pips > 10 and avg_pips_test < 0:
+                    _t2a_rejected = True
+
+            if _t2a_rejected:
+                return
+
             _rule_record = {
                 'conditions':   conditions.copy(),
                 'prediction':   prediction,
@@ -894,6 +1037,17 @@ def extract_rules(df, model_result, direction=None):
                 # WHY (T3b): diagnostic — shows tree type that produced rule.
                 # CHANGED: April 2026 — T3b
                 '_target_mode': _t3a_target_mode,
+                # WHY (T2a): Expose OOS diagnostics on the rule so downstream code
+                #      (Run Backtest, saved rules UI, EA generator) can display
+                #      train-vs-test divergence. None values for any field mean
+                #      the OOS check was skipped (no X_test, missing features,
+                #      no test matches). Consumers should treat None as "unknown"
+                #      rather than "good" or "bad".
+                # CHANGED: April 2026 — T2a
+                'avg_pips_test':  avg_pips_test,
+                'win_rate_test':  win_rate_test,
+                'test_samples':   test_samples,
+                'test_skip_reason': test_skip_reason,
             }
             if direction is not None:
                 _rule_record['action'] = direction
@@ -937,6 +1091,19 @@ def extract_rules(df, model_result, direction=None):
             )
         else:
             log.info(f"[T3b] mode={_t3a_target_mode} rules=0 (none passed filters)")
+    except Exception:
+        pass
+
+    # WHY (T2a): Visibility — log how many leaves were rejected by the
+    #      OOS check so the user knows overfit rules are being filtered.
+    # CHANGED: April 2026 — T2a diagnostic
+    try:
+        _t2a_with_oos = sum(1 for r in rules if r.get('avg_pips_test') is not None)
+        _t2a_skipped  = sum(1 for r in rules if r.get('test_skip_reason'))
+        log.info(
+            f"[T2a] {len(rules)} rules survived all filters "
+            f"({_t2a_with_oos} had OOS data, {_t2a_skipped} skipped OOS check)"
+        )
     except Exception:
         pass
 
