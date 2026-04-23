@@ -1,11 +1,11 @@
 {
-  "regime_filter_enabled": "true",
+  "regime_filter_enabled": "false",
   "regime_filter_mode": "manual",
   "regime_filter_discovered": "{\"status\": \"ok\", \"strictness\": \"conservative\", \"baseline\": {\"count\": 1106, \"win_rate\": 0.5840867992766727, \"expectancy\": 146.17088607594937}, \"subset\": [{\"feature\": \"H1_atr_50\", \"direction\": \">\", \"threshold\": 12.548525}], \"metrics\": {\"count\": 441, \"survival\": 0.3987, \"win_rate\": 0.6735, \"expectancy\": 252.104, \"wr_lift\": 0.0894, \"exp_lift_rel\": 0.7247, \"train_wr\": 0.6875, \"test_wr\": 0.618, \"score\": 1.9172}}",
   "single_rule_mode_enabled": "false",
   "single_rule_mode_variant": "a",
   "single_rule_mode_discovered": "{\"status\": \"no_candidates\", \"variant\": \"a\", \"reason\": \"No usable feature columns produced candidate conditions.\"}",
-  "srm_a_target_coverage": "0.90",
+  "srm_a_target_coverage": "0.85",
   "srm_a_dedup_correlated": "true",
   "srm_a_winner_selection": "coverage",
   "regime_filter_at_discovery": "true",
@@ -64,5 +64,6 @@
   "risk_pct_firm": "0.8",
   "dd_daily_pct": "3.0",
   "dd_total_pct": "6.0",
-  "margin_cap_enabled": "1"
+  "margin_cap_enabled": "1",
+  "rule_target_mode": "regression_weighted"
 }

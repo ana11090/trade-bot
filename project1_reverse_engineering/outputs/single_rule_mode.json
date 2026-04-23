@@ -1,14 +1,14 @@
 {
   "status": "no_candidates",
   "variant": "a",
-  "target_coverage": 0.9,
+  "target_coverage": 0.85,
   "trade_count": 1106,
   "candidate_pool": [],
   "chosen": [],
   "chosen_stats": null,
   "top_10_conjunctions": [],
   "params": {
-    "target_coverage": 0.9,
+    "target_coverage": 0.85,
     "per_condition_coverage": 0.74,
     "min_non_nan_frac": 0.95,
     "pool_size": 46,
@@ -20,6 +20,6 @@
     "winner_selection": "coverage"
   },
   "reason": "No usable feature columns produced candidate conditions.",
-  "generated_at": "2026-04-22T15:51:12.534834",
+  "generated_at": "2026-04-23T12:07:22.859842",
   "scenario": null
 }
