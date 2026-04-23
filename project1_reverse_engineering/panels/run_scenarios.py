@@ -1101,14 +1101,37 @@ def build_panel(parent):
     _a38b_disc_var.trace_add('write', _a38b_save_disc)
 
     def _a38b_update_disc_state(*_a):
+        # WHY (Priority-3): When the main regime filter turns OFF, the
+        #      child "Apply during Step 3" has no meaning — there's no
+        #      filter to apply. Previously we only greyed the widget; the
+        #      BooleanVar kept True and the config stayed 'true', causing
+        #      every Step 3 run to log a spurious "'Apply during Step 3'
+        #      is checked but the main regime filter is OFF — ignoring".
+        #      Fix: when the parent goes off, flip the child to False so
+        #      the config reflects reality. Turning the parent back ON
+        #      does NOT auto-re-check the child — that's an explicit
+        #      user opt-in action.
+        # CHANGED: April 2026 — Priority-3
         try:
-            _a38b_disc_cb.config(
-                state='normal' if _a36_enabled_var.get() else 'disabled'
-            )
-        except Exception:
-            pass
+            _parent_on = bool(_a36_enabled_var.get())
+            _a38b_disc_cb.config(state='normal' if _parent_on else 'disabled')
+            if not _parent_on and _a38b_disc_var.get():
+                # Parent went off while child was True. Flip child.
+                # _a38b_save_disc is already wired to the child's trace,
+                # so setting the var also persists the config.
+                _a38b_disc_var.set(False)
+        except Exception as _e:
+            print(f"[Priority-3] _a38b_update_disc_state failed: {_e}")
     _a36_enabled_var.trace_add('write', _a38b_update_disc_state)
-    _a38b_update_disc_state()
+
+    # WHY (Priority-3): Config may already be inconsistent from a prior
+    #      session (child True, parent False). Call once at construction
+    #      to auto-repair before any scenario runs.
+    # CHANGED: April 2026 — Priority-3
+    try:
+        _a38b_update_disc_state()
+    except Exception:
+        pass
 
     # ── Automatic-mode display area — dynamic, rebuilt from config ──────
     # WHY (Phase A.37): A.36 shipped a static placeholder here. A.37 now
