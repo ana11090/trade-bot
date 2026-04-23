@@ -203,6 +203,11 @@ _a45_combine_var          = None  # BooleanVar: test all rule combinations
 # CHANGED: April 2026 — T2b v3
 _t2b_td_filter_var        = None  # BooleanVar: demote regime-concentrated rules
 _t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
+# WHY (T2b-fix): Auto-stability gate adds up to 5 min of wall time per
+#      backtest. Default OFF so normal iteration is fast; users who want
+#      stability verdicts opt in per-run.
+# CHANGED: April 2026 — T2b-fix — opt-in stability gate
+_t2b_stability_var        = None  # BooleanVar: run walk-forward on top rows
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
@@ -759,10 +764,17 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                  if _t2b_td_weight_var is not None else True)
             _run_settings['td_filter_enabled'] = _t2b_td_filter_on
             _run_settings['td_weight_enabled'] = _t2b_td_weight_on
+            # WHY (T2b-fix): Stability gate is opt-in, default OFF. If the panel
+            #      wasn't built (CLI / test callers), default to False.
+            # CHANGED: April 2026 — T2b-fix
+            _t2b_stability_on = (_t2b_stability_var.get()
+                                 if _t2b_stability_var is not None else False)
+            _run_settings['stability_gate_enabled'] = _t2b_stability_on
             output_text.insert(
                 tk.END,
                 f"Time-distribution filter: {'ON' if _t2b_td_filter_on else 'OFF'}  |  "
-                f"TD weight: {'ON' if _t2b_td_weight_on else 'OFF'}\n"
+                f"TD weight: {'ON' if _t2b_td_weight_on else 'OFF'}  |  "
+                f"Stability gate: {'ON' if _t2b_stability_on else 'OFF'}\n"
             )
 
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n")
@@ -1206,7 +1218,17 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             _r.setdefault('stability_windows_tested', 0)
                             _r.setdefault('stability_verdict_reason', None)
 
-                        if _t2b_top_n > 0 and _flattened:
+                        if not _t2b_stability_on:
+                            output_text.insert(
+                                tk.END,
+                                "[T2b] Stability gate: OFF — skipped "
+                                "(check the box in Run Backtest panel to enable)\n"
+                            )
+                        # WHY (T2b-fix): Gate auto-stability on the opt-in checkbox.
+                        #      When False (default), rows keep None stability_* fields
+                        #      and View Results renders no badges — pre-T2b experience.
+                        # CHANGED: April 2026 — T2b-fix
+                        if _t2b_stability_on and _t2b_top_n > 0 and _flattened:
                             try:
                                 from project2_backtesting.strategy_validator import walk_forward_validate
                                 from project2_backtesting.exit_strategies import (
@@ -3465,7 +3487,7 @@ def build_panel(parent):
     #      opt-out checkboxes. Both default ON. If user unchecks both,
     #      ranking reverts to exactly T1a's pre-T2b behavior.
     # CHANGED: April 2026 — T2b v3
-    global _t2b_td_filter_var, _t2b_td_weight_var
+    global _t2b_td_filter_var, _t2b_td_weight_var, _t2b_stability_var
 
     _t2b_frame = tk.Frame(panel, bg="white", pady=6)
     _t2b_frame.pack(fill="x", padx=20)
@@ -3484,6 +3506,20 @@ def build_panel(parent):
         _t2b_frame,
         text="⚖️ Weight ranking by time distribution (multiply score by active_month_coverage)",
         variable=_t2b_td_weight_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    # WHY (T2b-fix): Opt-in stability gate. Running walk-forward on top 5
+    #      candidates costs up to 5 min per backtest. Most iterations
+    #      don't need it — user explicitly opts in when they want
+    #      regime-stability verdicts on the final candidate set.
+    # CHANGED: April 2026 — T2b-fix
+    _t2b_stability_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(
+        _t2b_frame,
+        text="🔬 Run stability gate on top 5 (walk-forward validation, adds up to 5 min)",
+        variable=_t2b_stability_var,
         font=("Segoe UI", 10),
         bg="white",
     ).pack(anchor="w")
