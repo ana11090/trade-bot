@@ -413,7 +413,24 @@ def compute_feature_importance(df):
     _TF_ORDER = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'H8', 'D1', 'W1']
 
     def _stage_a_tf_whitelist(scope_mode, scenario_key):
-        """Return set of TF prefixes to keep, or None for 'no filter'."""
+        """Return set of TF prefixes to keep, or None for 'no filter'.
+
+        Semantic for multi-TF scenario keys like 'H1_M15':
+          per_tf_only: keep exactly the named TFs → {H1, M15}
+          entry_plus_higher: entry TF = first segment. Keep entry +
+            strictly-higher TFs only. Named TFs LOWER than entry are
+            name-metadata and do NOT go in the feature pool (otherwise
+            the low TF dominates tree splits and the scenario becomes
+            a duplicate of the low-TF scenario).
+          all_tfs / unknown: no filtering
+        """
+        # WHY (Stage-A-bugfix): Old union-of-named-plus-higher caused H1_M15
+        #      to produce identical rules to M15 because M15 features
+        #      (lower TF = more data variance) dominated splits. New
+        #      semantic: in entry_plus_higher mode, drop any named TF that's
+        #      lower than the entry TF. Makes H1_M15 ≠ M15 (H1_M15 now
+        #      equals H1 in this mode — acknowledged trade-off).
+        # CHANGED: April 2026 — Stage-A-bugfix
         if not scope_mode or scope_mode == 'all_tfs':
             return None
         if not scenario_key:
@@ -421,17 +438,24 @@ def compute_feature_importance(df):
         _named_tfs = [p for p in scenario_key.split('_') if p in _TF_ORDER]
         if not _named_tfs:
             return None
-        _keep = set(_named_tfs)
+
+        if scope_mode == 'per_tf_only':
+            # Exactly the named TFs, no expansion. H1_M15 → {H1, M15}.
+            return set(_named_tfs)
+
         if scope_mode == 'entry_plus_higher':
+            # Entry TF = first named segment. Keep it and all higher only.
+            # Deliberately IGNORE lower named TFs — they dominate splits
+            # and collapse this scenario into a duplicate of the lower-TF one.
             _entry = _named_tfs[0]
             try:
                 _entry_idx = _TF_ORDER.index(_entry)
-                for _tf in _TF_ORDER[_entry_idx:]:
-                    _keep.add(_tf)
             except ValueError:
-                pass
-        # per_tf_only → _keep is exactly the named TFs (no expansion)
-        return _keep
+                return set(_named_tfs)
+            return set(_TF_ORDER[_entry_idx:])
+
+        # Unknown mode — no filtering (safe fallback).
+        return None
 
     try:
         _stage_a_keep = _stage_a_tf_whitelist(_stage_a_scope_mode, _stage_a_scenario_key)

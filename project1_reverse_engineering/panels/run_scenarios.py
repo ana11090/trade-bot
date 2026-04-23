@@ -2284,8 +2284,12 @@ def build_panel(parent):
         ('entry_plus_higher',
          "🔭 Entry + higher TFs  (recommended)",
          "Example: M5 scenario trains on M5_* + M15_* + H1_* + H4_* + D1_* "
-         "features. H1 scenario trains on H1_* + H4_* + D1_* (drops M5/M15). "
-         "Multi-TF scenarios (H1_M15) use both named TFs plus anything higher.\n\n"
+         "features. H1 scenario trains on H1_* + H4_* + D1_* (drops M5/M15).\n\n"
+         "Multi-TF scenarios like H1_M15: entry TF = FIRST segment (H1). "
+         "M15 is treated as name-metadata only — it's LOWER than H1, so it's "
+         "NOT in the feature pool. H1_M15 in this mode ends up equivalent to "
+         "the H1 scenario. To get a genuinely multi-TF feature pool with both "
+         "named TFs, use '🎯 Per-TF only' mode instead.\n\n"
          "Entry signal comes from the scenario TF; higher TFs act as regime "
          "context filters. Most realistic and usually produces the best rules.\n\n"
          "Default."),
