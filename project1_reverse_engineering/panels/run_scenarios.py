@@ -1895,8 +1895,12 @@ def build_panel(parent):
         _a39b_params_frame, "Min non-NaN fraction:", "srm_a_min_non_nan_frac",
         0.01, 1.00, 0.01,
         "A feature is usable only if >= this fraction of trade rows "
-        "have a non-NaN value for it. Default 0.95 excludes features "
-        "that fail to evaluate on many candles.",
+        "have a non-NaN value for it. Default 0.85 (lowered from 0.95 "
+        "in Priority-5). Your trade alignment rates determine how strict "
+        "you can set this — if Step 1 aligns only 80% of trades to M15 "
+        "candles, M15 features are ~80% non-NaN, so any value above 0.80 "
+        "will reject all M15 features. Check the [A.39b] scan summary log "
+        "if SRM keeps returning 'no_candidates'.",
         is_float=True,
     )
     _a39b_make_param_spinbox(

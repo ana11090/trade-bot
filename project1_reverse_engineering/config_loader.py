@@ -172,7 +172,13 @@ DEFAULTS = {
     # CHANGED: April 2026 — Phase A.39b — expose SRM-A params to UI
     'srm_a_target_coverage':            '0.95',  # joint conjunction must cover >= this fraction of trades
     'srm_a_per_condition_coverage':     '0.95',  # each single-sided condition covers >= this fraction
-    'srm_a_min_non_nan_frac':           '0.95',  # feature usable only if >= this fraction of trades non-NaN
+    # WHY (Priority-5): 0.95 was too strict for trade-aligned data where
+    #      Step 1 drops a significant fraction of trades per TF (M5 ~53%,
+    #      M15 ~81%, H1-D1 ~88%). At 0.95 even H1/H4/D1 features fail,
+    #      yielding "no_candidates". 0.85 lets all non-M5 TFs through.
+    #      Users can raise via the Min non-NaN fraction spinbox.
+    # CHANGED: April 2026 — Priority-5
+    'srm_a_min_non_nan_frac':           '0.85',  # feature usable only if >= this fraction of trades non-NaN
     'srm_a_pool_size':                  '40',    # keep top N tightest conditions
     'srm_a_min_cardinality':            '2',     # min conjunction size
     'srm_a_max_cardinality':            '5',     # max conjunction size

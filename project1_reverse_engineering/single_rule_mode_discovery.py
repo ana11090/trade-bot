@@ -228,32 +228,37 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
 
     bg_cols = set(background_df.columns) if background_df is not None else set()
 
-    # WHY (Phase A.39b.3): When the cross-TF background merge succeeds
-    #      but zero candidates end up with valid bg_cov, we need to
-    #      know WHERE the mismatch is. Log the column overlap by
-    #      prefix group so we can see at a glance whether specific
-    #      timeframes are missing, or whether it's a naming drift
-    #      between feature_matrix.csv and build_multi_tf_indicators().
-    # CHANGED: April 2026 — Phase A.39b.3
-    trade_cols_set = set(usable_cols)
-    both = trade_cols_set & bg_cols
-    trade_only = trade_cols_set - bg_cols
-    bg_only = bg_cols - trade_cols_set
-    log.info(
-        f"  [A.39b.3] column overlap trade vs background: "
-        f"both={len(both)} trade_only={len(trade_only)} bg_only={len(bg_only)}"
-    )
-    for _prefix in ('M5_', 'M15_', 'H1_', 'H4_', 'D1_'):
-        _t = sum(1 for c in trade_cols_set if c.startswith(_prefix))
-        _b_in_both = sum(1 for c in both if c.startswith(_prefix))
-        _t_only = sum(1 for c in trade_only if c.startswith(_prefix))
+    # WHY (Priority-5): Phase A.41 intentionally set background_df=None
+    #      because cross-TF bg comparisons were scale-mismatched. The old
+    #      "column overlap trade vs background: both=0 ..." log still fired
+    #      when bg was None, making SRM look broken when it's not. Print
+    #      the diagnostic only when bg is actually populated.
+    # CHANGED: April 2026 — Priority-5
+    if background_df is not None and len(bg_cols) > 0:
+        trade_cols_set = set(usable_cols)
+        both = trade_cols_set & bg_cols
+        trade_only = trade_cols_set - bg_cols
+        bg_only = bg_cols - trade_cols_set
         log.info(
-            f"  [A.39b.3]   {_prefix}* — trade has {_t}, overlap with bg={_b_in_both}, "
-            f"trade-only (not in bg)={_t_only}"
+            f"  [A.39b.3] column overlap trade vs background: "
+            f"both={len(both)} trade_only={len(trade_only)} bg_only={len(bg_only)}"
         )
-    if trade_only:
-        _sample = sorted(list(trade_only))[:5]
-        log.info(f"  [A.39b.3]   sample trade-only features: {_sample}")
+        for _prefix in ('M5_', 'M15_', 'H1_', 'H4_', 'D1_'):
+            _t = sum(1 for c in trade_cols_set if c.startswith(_prefix))
+            _b_in_both = sum(1 for c in both if c.startswith(_prefix))
+            _t_only = sum(1 for c in trade_only if c.startswith(_prefix))
+            log.info(
+                f"  [A.39b.3]   {_prefix}* — trade has {_t}, overlap with bg={_b_in_both}, "
+                f"trade-only (not in bg)={_t_only}"
+            )
+        if trade_only:
+            _sample = sorted(list(trade_only))[:5]
+            log.info(f"  [A.39b.3]   sample trade-only features: {_sample}")
+    else:
+        log.info(
+            "  [A.39b] background unused (A.41: self-contained tightness "
+            "from trade distribution only)"
+        )
 
     # Value-range spot check on canonical features present in both frames.
     # If trade_df and background_df compute indicators differently (different
@@ -317,24 +322,40 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
         'bg_cov_low':       0,
     }
 
+    # WHY (Priority-5): Track why each feature column gets rejected so the
+    #      "no_candidates" failure log can tell the user which gate is
+    #      filtering everything.
+    # CHANGED: April 2026 — Priority-5
+    _reject_counts = {
+        'too_many_nan':              0,
+        'too_few_samples':           0,
+        'percentile_fail':           0,
+        'constant_feature':          0,
+        'trade_cov_below_threshold': 0,
+    }
+
     for col in usable_cols:
         col_vals = trade_df[col]
         non_nan = col_vals.notna()
         if non_nan.sum() / n_trades < p['min_non_nan_frac']:
+            _reject_counts['too_many_nan'] += 1
             continue
         vals = col_vals[non_nan].astype(float).values
         if len(vals) < 50:
+            _reject_counts['too_few_samples'] += 1
             continue  # too few samples for a stable percentile
         try:
             p5  = float(np.percentile(vals, 5))
             p95 = float(np.percentile(vals, 95))
         except Exception as _pe:
+            _reject_counts['percentile_fail'] += 1
             log.debug(f"[A.39b] percentile failed for {col}: {_pe}")
             continue
 
         # Degenerate: if p5 and p95 are equal the feature is constant —
         # useless as a discriminator.
         if p95 - p5 < 1e-12:
+            _reject_counts['constant_feature'] += 1
             continue
 
         for op, thr in (('>', p5), ('<', p95)):
@@ -347,6 +368,7 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
                     passes = vals < thr
             trade_cov = float(passes.sum() / len(vals))
             if trade_cov < p['per_condition_coverage'] - 0.02:  # allow small slop
+                _reject_counts['trade_cov_below_threshold'] += 1
                 continue
 
             # Background coverage — fraction of all candle rows passing
@@ -478,6 +500,29 @@ def _scan_candidate_conditions(trade_df, background_df=None, params=None):
             _v = _bg_outcome_counts.get(_k, 0)
             _pct = (100.0 * _v / _total) if _total > 0 else 0.0
             log.info(f"  [A.39b.4]   {_k:<18} {_v:>5}  ({_pct:5.1f}%)")
+
+    # WHY (Priority-5): Rejection summary so "no_candidates" tells the
+    #      user which gate killed everything rather than just failing silently.
+    # CHANGED: April 2026 — Priority-5
+    _total_rejects = sum(_reject_counts.values())
+    if _total_rejects > 0:
+        _dominant = max(_reject_counts.items(), key=lambda kv: kv[1])
+        log.info(
+            f"  [A.39b] scan summary: {len(out)} candidates kept, "
+            f"{_total_rejects} rejections "
+            f"(dominant reason: {_dominant[0]}={_dominant[1]})"
+        )
+        if not out:
+            for _reason, _n in sorted(_reject_counts.items(), key=lambda kv: -kv[1]):
+                if _n > 0:
+                    log.info(f"  [A.39b]   {_reason}: {_n}")
+            if _reject_counts['too_many_nan'] > 0:
+                log.info(
+                    f"  [A.39b] TIP: {_reject_counts['too_many_nan']} features failed "
+                    f"the min_non_nan_frac={p['min_non_nan_frac']:.2f} gate. Lower "
+                    f"'Min non-NaN fraction:' in the Single Rule Mode panel if "
+                    f"your data has low trade-alignment rates."
+                )
 
     return out
 
