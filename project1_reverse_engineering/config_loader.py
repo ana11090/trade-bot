@@ -74,12 +74,17 @@ DEFAULTS = {
     # CHANGED: April 2026 — T3b
     'rule_target_mode':          'regression_weighted',
 
-    # WHY (Stage-A): Feature scope for per-scenario rule discovery.
-    #      'per_tf_only'       — scenario TF features only
-    #      'entry_plus_higher' — scenario TF + all higher TFs (default)
-    #      'all_tfs'           — ignore scope, use everything (legacy)
-    # CHANGED: April 2026 — Stage-A
-    'feature_scope_mode':        'entry_plus_higher',
+    # WHY (StageA-all): User wants one click to run all three scope modes
+    #      rather than forcing a pre-run choice. 'all_scopes_compare' loops
+    #      through per_tf_only, entry_plus_higher, all_tfs in sequence and
+    #      writes each result to its own subfolder. Single-mode values still
+    #      work as before.
+    #      'per_tf_only'        — scenario TF features only
+    #      'entry_plus_higher'  — scenario TF + all higher TFs
+    #      'all_tfs'            — ignore scope, use everything (legacy)
+    #      'all_scopes_compare' — run all three, write to scope_<mode>/ subfolders
+    # CHANGED: April 2026 — StageA-all
+    'feature_scope_mode':        'all_scopes_compare',
 
     # ── Bot Entry Discovery (Phase A.31) ──────────────────────────────────────
     # WHY: Separate hyperparameters for the candle-level entry discoverer.

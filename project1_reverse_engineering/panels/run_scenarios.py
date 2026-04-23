@@ -2293,11 +2293,13 @@ def build_panel(parent):
         font=("Segoe UI", 9, "bold"),
     ).pack(anchor="w")
 
+    # WHY (StageA-all): Add 'all_scopes_compare' as fourth option and new default.
+    # CHANGED: April 2026 — StageA-all
     _fs_var = tk.StringVar(
-        value=str(_cfg.get('feature_scope_mode', 'entry_plus_higher')).lower()
+        value=str(_cfg.get('feature_scope_mode', 'all_scopes_compare')).lower()
     )
-    if _fs_var.get() not in ('per_tf_only', 'entry_plus_higher', 'all_tfs'):
-        _fs_var.set('entry_plus_higher')
+    if _fs_var.get() not in ('per_tf_only', 'entry_plus_higher', 'all_tfs', 'all_scopes_compare'):
+        _fs_var.set('all_scopes_compare')
 
     _fs_radio_row = tk.Frame(_fs_frame, bg="#f0f8ff")
     _fs_radio_row.pack(anchor="w", pady=(3, 0))
@@ -2307,9 +2309,27 @@ def build_panel(parent):
     except Exception:
         _fs_ToolTip = None
 
+    # WHY (StageA-all): 'all_scopes_compare' runs all three scopes per scenario.
+    # CHANGED: April 2026 — StageA-all
     _fs_options = [
+        ('all_scopes_compare',
+         "✨ All scopes  (run all three — default)",
+         "Runs each selected scenario THREE times — once in each of the "
+         "three single-mode scopes below — and writes each result to its "
+         "own subfolder:\n\n"
+         "outputs/scenario_H4/scope_per_tf_only/analysis_report.json\n"
+         "outputs/scenario_H4/scope_entry_plus_higher/analysis_report.json\n"
+         "outputs/scenario_H4/scope_all_tfs/analysis_report.json\n\n"
+         "Rules from all three scopes are auto-saved to the shared rule "
+         "library. Duplicates (same conditions in multiple scopes) are "
+         "dedup-skipped automatically, so the library grows only with "
+         "genuinely different rules.\n\n"
+         "COST: ~3x the Step 3 runtime per scenario. For your data that's "
+         "a few extra seconds per scenario — cheap.\n\n"
+         "WHEN TO USE: Default. Always. Unless you have a specific reason "
+         "to force a single scope."),
         ('entry_plus_higher',
-         "🔭 Entry + higher TFs  (recommended)",
+         "🔭 Entry + higher TFs",
          "Example: M5 scenario trains on M5_* + M15_* + H1_* + H4_* + D1_* "
          "features. H1 scenario trains on H1_* + H4_* + D1_* (drops M5/M15).\n\n"
          "Multi-TF scenarios like H1_M15: entry TF = FIRST segment (H1). "
@@ -2318,8 +2338,7 @@ def build_panel(parent):
          "the H1 scenario. To get a genuinely multi-TF feature pool with both "
          "named TFs, use '🎯 Per-TF only' mode instead.\n\n"
          "Entry signal comes from the scenario TF; higher TFs act as regime "
-         "context filters. Most realistic and usually produces the best rules.\n\n"
-         "Default."),
+         "context filters. Most realistic and usually produces the best rules."),
         ('per_tf_only',
          "🎯 Per-TF only",
          "Example: M5 scenario trains ONLY on M5_* features (~124 cols). "
@@ -2337,7 +2356,8 @@ def build_panel(parent):
          "• Only one scenario selected and scoping is irrelevant.\n\n"
          "WHY YOU USUALLY WON'T:\n"
          "• Every scenario comes out identical — defeats the purpose of "
-         "selecting multiple scenarios."),
+         "selecting multiple scenarios.\n\n"
+         "(The 'All scopes' option above already includes this mode.)"),
     ]
 
     for _val, _lbl, _tip in _fs_options:
@@ -3342,14 +3362,14 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                 return True
 
-            # WHY (Stage-A): Run analyze per scenario so each scenario
-            #      produces its own analysis_report.json from its own
-            #      feature-scoped data. Removed analyze_already_run latch.
-            #      analyze.py writes the report next to the feature_matrix_path
-            #      it receives (scenario_<TF>/), so no post-hoc copy needed.
-            # CHANGED: April 2026 — Stage-A
+            # WHY (StageA-all): Run analyze per scenario. When scope mode is
+            #      'all_scopes_compare', loops through all three single-mode
+            #      scopes and writes each to a scope_<mode>/ subfolder.
+            #      Single-mode paths are byte-identical to Stage-A behavior.
+            # CHANGED: April 2026 — StageA-all
             def _analyze_wrapper(scenario):
                 import analyze as _analyze_mod
+                import shutil as _shutil
                 _out = os.path.normpath(
                     os.path.join(os.path.dirname(__file__), '..', 'outputs')
                 )
@@ -3370,10 +3390,49 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 try:
                     import config_loader as _sa_cl
                     _sa_cfg = _sa_cl.load()
-                    _fs_mode = str(_sa_cfg.get('feature_scope_mode', 'entry_plus_higher')).lower()
+                    _fs_mode = str(_sa_cfg.get('feature_scope_mode', 'all_scopes_compare')).lower()
                 except Exception:
-                    _fs_mode = 'entry_plus_higher'
+                    _fs_mode = 'all_scopes_compare'
 
+                # WHY (StageA-all): all_scopes_compare runs each single-mode
+                #      scope in sequence, writing results to scope_<mode>/.
+                # CHANGED: April 2026 — StageA-all
+                if _fs_mode == 'all_scopes_compare':
+                    _modes_to_run = ('per_tf_only', 'entry_plus_higher', 'all_tfs')
+                    print(
+                        f"  [StageA-all] scenario={scenario} running {len(_modes_to_run)} "
+                        f"scopes: {', '.join(_modes_to_run)}"
+                    )
+                    _all_ok = True
+                    for _mode in _modes_to_run:
+                        _scope_dir = os.path.join(_scenario_dir, f'scope_{_mode}')
+                        os.makedirs(_scope_dir, exist_ok=True)
+                        _fm_scope = os.path.join(_scope_dir, 'feature_matrix.csv')
+                        try:
+                            _shutil.copy2(_fm, _fm_scope)
+                        except Exception as _cpe:
+                            print(f"    [StageA-all] ERROR copying feature_matrix for "
+                                  f"scope={_mode}: {_cpe}")
+                            _all_ok = False
+                            continue
+                        print(f"  [StageA-all] scenario={scenario} scope={_mode} "
+                              f"fm=scenario_{scenario}/scope_{_mode}/")
+                        try:
+                            try:
+                                _analyze_mod.run_analysis(
+                                    feature_matrix_path=_fm_scope,
+                                    feature_scope_mode=_mode,
+                                    scenario_key=scenario,
+                                )
+                            except TypeError:
+                                _analyze_mod.run_analysis(feature_matrix_path=_fm_scope)
+                        except Exception as _ae:
+                            print(f"    [StageA-all] ERROR running scope={_mode} "
+                                  f"for scenario={scenario}: {_ae}")
+                            _all_ok = False
+                    return _all_ok
+
+                # Single-scope path — unchanged from Stage-A.
                 print(f"  [Stage-A] scenario={scenario} scope={_fs_mode} "
                       f"fm={os.path.basename(os.path.dirname(_fm))}/")
 
@@ -3384,7 +3443,6 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                         scenario_key=scenario,
                     )
                 except TypeError:
-                    # Older analyze signature — fall back gracefully.
                     _analyze_mod.run_analysis(feature_matrix_path=_fm)
                 return True
 
