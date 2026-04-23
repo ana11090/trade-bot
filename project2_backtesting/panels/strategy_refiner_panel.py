@@ -3273,7 +3273,11 @@ def build_panel(parent):
             tree_frame = tk.Frame(sel_row, bg=WHITE)
             tree_frame.pack(fill="x", expand=True)
 
-            columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips")
+            # WHY (per-row-delete): "del" column hosts a clickable 🗑 for
+            #      saved rules. A single delete button per row replaces
+            #      the old single-row "🗑 Delete" button in sel_row.
+            # CHANGED: April 2026 — per-row-delete
+            columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
             _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                        height=min(len(_strategies), 8),
                                        selectmode="browse")
@@ -3287,6 +3291,7 @@ def build_panel(parent):
             _strat_tree.heading("pf",       text="PF")
             _strat_tree.heading("net_pips", text="Net Pips")
             _strat_tree.heading("avg_pips", text="Avg Pips")
+            _strat_tree.heading("del",      text="🗑")
 
             _strat_tree.column("star",     width=30,  anchor="center")
             _strat_tree.column("#",        width=70,  anchor="center")
@@ -3297,6 +3302,7 @@ def build_panel(parent):
             _strat_tree.column("pf",       width=60,  anchor="center")
             _strat_tree.column("net_pips", width=90,  anchor="e")
             _strat_tree.column("avg_pips", width=70,  anchor="e")
+            _strat_tree.column("del",      width=40,  anchor="center")
 
             _strat_tree.tag_configure("profitable", foreground="#28a745")
             _strat_tree.tag_configure("losing",     foreground="#dc3545")
@@ -3338,9 +3344,16 @@ def build_panel(parent):
                 if is_starred and tag not in ("saved", "starred"):
                     tag = "starred"
 
+                # WHY (per-row-delete): 🗑 rendered only for saved rules.
+                #      Backtest matrix rows and optimizer rows are
+                #      regenerated from their source outputs; deleting
+                #      them in place would be overwritten on next run.
+                # CHANGED: April 2026 — per-row-delete
+                del_display = "🗑" if source == 'saved' else ""
+
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, rc, exit_name, int(trades), wr_str,
-                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}"
+                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
                 ), tags=(tag,))
 
             # Select first row and sync _strategy_var
@@ -3362,6 +3375,76 @@ def build_panel(parent):
                         break
 
             _strat_tree.bind("<<TreeviewSelect>>", _on_tree_select)
+
+            # WHY (per-row-delete): clicks on the del column's cell
+            #      trigger the delete flow for that specific row. Only
+            #      saved rules (source='saved') have 🗑; clicks on empty
+            #      del cells do nothing. The delete flow asks for
+            #      confirmation and calls shared.saved_rules.delete_rule,
+            #      which atomically rewrites saved_rules.json and
+            #      notifies listeners.
+            # CHANGED: April 2026 — per-row-delete
+            def _on_tree_click(event):
+                # Only cell clicks, not headings or separators
+                region = _strat_tree.identify_region(event.x, event.y)
+                if region != "cell":
+                    return
+                col_id = _strat_tree.identify_column(event.x)  # e.g. '#10'
+                try:
+                    col_index = int(col_id.lstrip('#')) - 1
+                except (ValueError, AttributeError):
+                    return
+                if col_index < 0 or col_index >= len(columns):
+                    return
+                if columns[col_index] != 'del':
+                    return
+
+                item_id = _strat_tree.identify_row(event.y)
+                if not item_id:
+                    return
+
+                # Resolve the strategy record for this row.
+                target_strategy = None
+                for _s in _strategies:
+                    if str(_s.get('index', '')) == item_id:
+                        target_strategy = _s
+                        break
+                if target_strategy is None:
+                    return
+                if target_strategy.get('source') != 'saved':
+                    # Non-saved rows should have empty del cells; this
+                    # branch is a safety net.
+                    return
+
+                rule_id = (
+                    target_strategy.get('saved_rule', {}).get('id')
+                    or target_strategy.get('rule_id')
+                )
+                if not rule_id:
+                    messagebox.showerror(
+                        "Delete Rule",
+                        "Could not determine the rule_id for this row."
+                    )
+                    return
+
+                rule_label = target_strategy.get('label', str(item_id))
+                if not messagebox.askyesno(
+                    "Delete Rule",
+                    f"Delete saved rule:\n\n{rule_label}\n\nThis cannot be undone."
+                ):
+                    return
+
+                try:
+                    from shared.saved_rules import delete_rule as _del_rule
+                    _del_rule(rule_id)
+                    _load_strategies(force=True)
+                    _on_strategies_loaded()
+                except Exception as _de:
+                    import traceback as _tb
+                    _tb.print_exc()
+                    messagebox.showerror("Delete Error", str(_de))
+
+            _strat_tree.bind("<Button-1>", _on_tree_click, add="+")
 
             # Enable load button
             load_btn.configure(state=tk.NORMAL)
@@ -3433,62 +3516,6 @@ def build_panel(parent):
                                     bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
                                     relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
             refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
-
-            # WHY: Delete saved rule. Only enabled when the selected row
-            #      is a saved rule (source='saved'). Asks for confirmation,
-            #      then calls shared.saved_rules.delete_rule and refreshes.
-            # CHANGED: April 2026 — delete button
-            def _do_delete():
-                idx = _get_selected_index()
-                if idx is None:
-                    return
-                src = None
-                rule_id = None
-                rule_label = None
-                for s in _strategies:
-                    if s.get('index') == idx:
-                        src = s.get('source', 'backtest')
-                        rule_id = s.get('saved_rule', {}).get('id') or s.get('rule_id')
-                        rule_label = s.get('label', str(idx))
-                        break
-                if src != 'saved':
-                    messagebox.showinfo(
-                        "Delete Rule",
-                        "Only saved rules (💾) can be deleted.\n"
-                        "Backtest matrix rows are generated by the backtest — re-run to update."
-                    )
-                    return
-                if not messagebox.askyesno(
-                    "Delete Rule",
-                    f"Delete saved rule:\n\n{rule_label}\n\nThis cannot be undone."
-                ):
-                    return
-                try:
-                    from shared.saved_rules import delete_rule
-                    delete_rule(rule_id)
-                    _do_refresh()
-                except Exception as _de:
-                    messagebox.showerror("Delete Error", str(_de))
-
-            delete_btn = tk.Button(sel_row, text="🗑 Delete", command=_do_delete,
-                                   bg="#e74c3c", fg="white", font=("Segoe UI", 9, "bold"),
-                                   relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
-            delete_btn.pack(side=tk.LEFT, padx=(6, 0))
-
-            def _update_delete_btn(*_a):
-                idx = _get_selected_index()
-                is_saved = any(
-                    s.get('source') == 'saved'
-                    for s in _strategies
-                    if s.get('index') == idx
-                )
-                delete_btn.configure(
-                    state=tk.NORMAL if is_saved else tk.DISABLED,
-                    bg="#e74c3c" if is_saved else "#aaaaaa",
-                )
-
-            _strategy_var.trace_add('write', _update_delete_btn)
-            _update_delete_btn()
 
             # WHY: Diagnostic button to generate detailed report about "No Trades" lookup failures
             # CHANGED: April 2026 — diagnostic button
