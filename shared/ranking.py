@@ -83,6 +83,57 @@ def risk_adjusted_score(row):
     return expectancy * n_weight * dd_penalty
 
 
+def risk_adjusted_score_weighted(row, use_td_weight=False):
+    """Wrapper: applies optional time-distribution weight to base score.
+
+    WHY (T2b): Keeping the base score unmodified means the filter/weight
+         behavior is purely additive. When use_td_weight=False, returns
+         the exact base score (byte-equivalent to T1a). When True,
+         multiplies by active_month_coverage (capped 0-1). Missing
+         coverage field defaults to 1.0 so legacy matrices rank the same.
+    CHANGED: April 2026 — T2b v3 — opt-in TD weight wrapper
+    """
+    base = risk_adjusted_score(row)
+    if not use_td_weight:
+        return base
+
+    s = row.get('stats') if isinstance(row.get('stats'), dict) else row
+    try:
+        coverage = float(s.get('active_month_coverage',
+                               row.get('active_month_coverage', 1.0)) or 1.0)
+    except (TypeError, ValueError):
+        coverage = 1.0
+    coverage = max(0.0, min(1.0, coverage))
+    return base * coverage
+
+
+def passes_time_distribution_filter(row, min_coverage=0.5, max_dormant_days=60):
+    """Return True if the row meets minimum time-distribution requirements.
+
+    WHY (T2b): A rule with only 3 active months in a 12-month backtest is
+         not tradable on a calendar-time prop-firm evaluation. When the
+         "Filter regime-concentrated rules" checkbox is ON, failing rows
+         get demoted to the bottom of the ranked matrix (not dropped —
+         users may want to inspect). When OFF, this function is never
+         called and old ranking behavior is preserved exactly.
+    CHANGED: April 2026 — T2b v3 — hard filter
+    """
+    s = row.get('stats') if isinstance(row.get('stats'), dict) else row
+    try:
+        coverage = float(s.get('active_month_coverage',
+                               row.get('active_month_coverage', 0.0)) or 0.0)
+        dormant = float(s.get('longest_dormant_days',
+                              row.get('longest_dormant_days', 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        return True  # can't read → don't punish
+
+    if coverage < min_coverage:
+        return False
+    if max_dormant_days > 0 and dormant > max_dormant_days:
+        return False
+    return True
+
+
 def rule_discovery_score(rule):
     """Score a P1-discovered rule dict. Higher = better.
 

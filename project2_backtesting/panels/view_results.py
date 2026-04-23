@@ -656,6 +656,38 @@ def _display_results_inner(output_text, summary_frame, data, results,
                          font=("Arial", 7, "bold"), padx=3, pady=0
                          ).pack(side=tk.LEFT, padx=(3, 0))
 
+            # WHY (T2b): Surface the auto-stability verdict as a colored badge so
+            #      the user can skip unstable strategies at a glance.
+            # CHANGED: April 2026 — T2b — stability badge in results
+            _sv = r.get('stability_verdict')
+            _s_reason = r.get('stability_verdict_reason') or ''
+            _badge_map = {
+                'LIKELY_REAL':        ('STABLE',     '#28a745'),
+                'MARGINAL':           ('MARGINAL',   '#ffc107'),
+                'INCONCLUSIVE':       ('INCONCLUSIVE','#fd7e14'),
+                'LIKELY_OVERFITTING': ('OVERFIT',    '#dc3545'),
+                'UNTESTED':           ('UNTESTED',   '#6c757d'),
+                'ERROR':              ('ERR',        '#6c757d'),
+            }
+            if _sv in _badge_map:
+                _badge_text, _badge_color = _badge_map[_sv]
+                _badge_frame = tk.Frame(header_row, bg="#ffffff")
+                _badge_frame.pack(side=tk.LEFT, padx=(5, 0))
+                _badge_lbl = tk.Label(
+                    _badge_frame,
+                    text=_badge_text,
+                    bg=_badge_color,
+                    fg="white",
+                    font=("Segoe UI", 8, "bold"),
+                    padx=6, pady=1,
+                )
+                _badge_lbl.pack()
+                try:
+                    from helpers import make_tooltip as _mk_tt
+                    _mk_tt(_badge_lbl, _s_reason)
+                except Exception:
+                    pass
+
             # Save button
             try:
                 from shared.saved_rules import build_save_button

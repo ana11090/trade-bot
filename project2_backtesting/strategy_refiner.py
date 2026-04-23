@@ -731,6 +731,15 @@ def load_strategy_list():
                             'prop_firm_name':    r.get('prop_firm_name', r.get('run_settings', {}).get('prop_firm_name', '')),
                             'prop_firm_stage':   r.get('prop_firm_stage', r.get('run_settings', {}).get('prop_firm_stage', '')),
                             'data_source_id':    r.get('data_source_id', r.get('run_settings', {}).get('data_source_id', '')),
+                            # WHY (T2b): Stability verdict + time-distribution fields
+                            #      attached by the auto-stability gate in run_backtest_panel.
+                            #      Expose them so View Results can render the badge.
+                            # CHANGED: April 2026 — T2b
+                            'stability_verdict':         r.get('stability_verdict'),
+                            'stability_edge_held':       r.get('stability_edge_held'),
+                            'stability_avg_degradation': r.get('stability_avg_degradation'),
+                            'stability_windows_tested':  r.get('stability_windows_tested', 0),
+                            'stability_verdict_reason':  r.get('stability_verdict_reason'),
                         })
     except Exception as e:
         # WHY: Don't let matrix errors prevent saved rules from loading.
@@ -803,6 +812,13 @@ def load_strategy_list():
                 'has_trades':        True,
                 'optimizer_trades':  opt_trades,
                 'optimizer_rules':   opt_rules,
+                # WHY (T2b): No stability data for optimizer results.
+                # CHANGED: April 2026 — T2b
+                'stability_verdict':         None,
+                'stability_edge_held':       None,
+                'stability_avg_degradation': None,
+                'stability_windows_tested':  0,
+                'stability_verdict_reason':  None,
             })
     except Exception:
         pass
@@ -922,6 +938,13 @@ def load_strategy_list():
                         'data_source_path':  rule.get('data_source_path', ''),
                         'is_stale':          is_stale,
                         'stale_issues':      stale_issues,
+                        # WHY (T2b): No stability data for saved rules.
+                        # CHANGED: April 2026 — T2b
+                        'stability_verdict':         None,
+                        'stability_edge_held':       None,
+                        'stability_avg_degradation': None,
+                        'stability_windows_tested':  0,
+                        'stability_verdict_reason':  None,
                     })
     except Exception:
         pass

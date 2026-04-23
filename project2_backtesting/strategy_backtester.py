@@ -2017,6 +2017,11 @@ def compute_stats(trades):
             "max_win_streak": 0, "max_loss_streak": 0,
             "trades_per_day": 0, "days_per_trade": 0,
             "recovery_factor": 0, "winners": 0, "losers": 0, "breakeven": 0,
+            # WHY (T2b): zero defaults for the three time-distribution fields.
+            # CHANGED: April 2026 — T2b
+            "active_month_coverage": 0.0,
+            "longest_dormant_days":  0.0,
+            "total_calendar_days":   0,
         }
 
     # WHY: Vectorized backtest writes 'pips', non-vectorized writes 'pnl_pips'.
@@ -2088,6 +2093,50 @@ def compute_stats(trades):
     except Exception:
         pass
 
+    # WHY (T2b): trades_per_day is an aggregate ratio and gives the same
+    #      number for a rule that fires evenly vs a rule that fires
+    #      300× in one month and 0× the rest of the year. For prop-firm
+    #      EAs we need to REJECT the second kind because evaluation is
+    #      calendar-time, not trade-count. These two metrics measure
+    #      time-distribution directly from entry_time.
+    # CHANGED: April 2026 — T2b — time-distribution metrics
+    active_month_coverage = 0.0
+    longest_dormant_days  = 0.0
+    total_calendar_days   = 0
+    try:
+        _min_per_month = 2
+        try:
+            import config_loader as _cs_cl
+            _min_per_month = int(_cs_cl.load().get('compute_stats_min_per_month', 2))
+        except Exception:
+            pass
+
+        _entry_times_raw = [t.get('entry_time', '') for t in trades]
+        _entry_times = pd.to_datetime(pd.Series(_entry_times_raw), errors='coerce')
+        _entry_times = _entry_times.dropna().sort_values().reset_index(drop=True)
+
+        if len(_entry_times) >= 2:
+            _bt_start = _entry_times.iloc[0]
+            _bt_end   = _entry_times.iloc[-1]
+            total_calendar_days = max(1, (_bt_end - _bt_start).days)
+
+            # Metric 1: fraction of calendar months with >= _min_per_month trades
+            _months_series = _entry_times.dt.to_period('M')
+            _counts_per_month = _months_series.value_counts()
+            _active_months = int((_counts_per_month >= _min_per_month).sum())
+            _first_period = _bt_start.to_period('M')
+            _last_period  = _bt_end.to_period('M')
+            _total_months = int((_last_period - _first_period).n) + 1
+            if _total_months > 0:
+                active_month_coverage = round(_active_months / _total_months, 3)
+
+            # Metric 2: longest inter-trade gap in days
+            _gaps = _entry_times.diff().dt.days.dropna()
+            if len(_gaps) > 0:
+                longest_dormant_days = round(float(_gaps.max()), 1)
+    except Exception:
+        pass
+
     cum  = np.cumsum(net)
     peak = np.maximum.accumulate(cum)
     dd   = peak - cum
@@ -2125,6 +2174,13 @@ def compute_stats(trades):
         "losers":            n_losers,
         "breakeven":         n_breakeven,
         "min_hold_violations": sum(1 for t in trades if t.get('candles_held', 999) <= 0),
+        # WHY (T2b): Time-distribution metrics. Consumers (ranking,
+        #      filters, UI) can read these to reject regime-concentrated
+        #      rules before they reach EA generation.
+        # CHANGED: April 2026 — T2b
+        "active_month_coverage": active_month_coverage,
+        "longest_dormant_days":  longest_dormant_days,
+        "total_calendar_days":   total_calendar_days,
     }
 
     # Dollar P&L equity tracking — only run_backtest sets dollar_pnl.
@@ -2679,9 +2735,38 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      prop-firm DD limits need an ordering that punishes strategies
     #      whose max_dd_pips is large relative to their typical losers.
     # CHANGED: April 2026 — risk-adjusted matrix ranking
+    # WHY (T2b): Same checkbox-gated logic as the multi-TF path. Uses the
+    #      run_settings dict plumbed through by the panel. When keys are
+    #      missing (CLI callers that don't build UI), both flags default
+    #      OFF → exact pre-T2b / T1a behavior.
+    # CHANGED: April 2026 — T2b v3 — checkbox-gated filter + weight
     try:
-        from shared.ranking import risk_adjusted_score
-        matrix.sort(key=risk_adjusted_score, reverse=True)
+        from shared.ranking import (
+            risk_adjusted_score_weighted,
+            passes_time_distribution_filter,
+        )
+        # run_settings is injected into rows by the panel after this
+        # function returns. Inside run_comparison_matrix, rows may not
+        # carry run_settings yet — default both flags OFF (T1a behavior).
+        _td_filter_on = False
+        _td_weight_on = False
+        for _r in matrix:
+            _rs = _r.get('run_settings', {})
+            if _rs:
+                _td_filter_on = bool(_rs.get('td_filter_enabled', False))
+                _td_weight_on = bool(_rs.get('td_weight_enabled', False))
+                break
+
+        _key_fn = lambda x: risk_adjusted_score_weighted(x, use_td_weight=_td_weight_on)
+
+        if _td_filter_on:
+            _passing = [r for r in matrix if passes_time_distribution_filter(r)]
+            _failing = [r for r in matrix if r not in _passing]
+            _passing.sort(key=_key_fn, reverse=True)
+            _failing.sort(key=_key_fn, reverse=True)
+            matrix[:] = _passing + _failing
+        else:
+            matrix.sort(key=_key_fn, reverse=True)
     except Exception:
         matrix.sort(key=lambda x: x["stats"]["net_total_pips"], reverse=True)
 

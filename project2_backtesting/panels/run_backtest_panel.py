@@ -198,6 +198,11 @@ _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 _a42_max_trades_mode_var  = None  # StringVar: "normal" | "custom"
 _a42_max_trades_value_var = None  # IntVar: custom limit
 _a45_combine_var          = None  # BooleanVar: test all rule combinations
+# WHY (T2b): Module-level so background thread can read value. Default
+#      value=True is assigned at widget creation time, not here.
+# CHANGED: April 2026 — T2b v3
+_t2b_td_filter_var        = None  # BooleanVar: demote regime-concentrated rules
+_t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
@@ -744,6 +749,22 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
             _run_settings['combine_all_rules'] = _a45_combine
 
+            # WHY (T2b): Read T2b checkboxes and propagate via run_settings
+            #      so view-results-level sort can apply filter/weight.
+            #      Defaults to True if var is None (UI not built yet).
+            # CHANGED: April 2026 — T2b v3
+            _t2b_td_filter_on = (_t2b_td_filter_var.get()
+                                 if _t2b_td_filter_var is not None else True)
+            _t2b_td_weight_on = (_t2b_td_weight_var.get()
+                                 if _t2b_td_weight_var is not None else True)
+            _run_settings['td_filter_enabled'] = _t2b_td_filter_on
+            _run_settings['td_weight_enabled'] = _t2b_td_weight_on
+            output_text.insert(
+                tk.END,
+                f"Time-distribution filter: {'ON' if _t2b_td_filter_on else 'OFF'}  |  "
+                f"TD weight: {'ON' if _t2b_td_weight_on else 'OFF'}\n"
+            )
+
             output_text.insert(tk.END, f"Multi-TF test: {'ON' if multi_tf else 'OFF'}\n")
 
             # ── Phase A.48: Read configuration if checkbox is ON ──
@@ -1088,13 +1109,41 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         output_text.see(tk.END)
                         break
 
-                # WHY: Same rationale as the per-TF sort in strategy_backtester.py —
-                #      risk-adjusted instead of volume.
-                # CHANGED: April 2026 — risk-adjusted combined-matrix ranking
+                # WHY (T2b): Apply optional time-distribution filter + weight
+                #      based on the two checkboxes. When both OFF, this block
+                #      behaves identically to T1a (byte-equivalent sort key
+                #      and no row demotion).
+                # CHANGED: April 2026 — T2b v3 — checkbox-gated filter + weight
                 try:
-                    from shared.ranking import risk_adjusted_score
-                    all_matrix.sort(key=risk_adjusted_score, reverse=True)
-                except Exception:
+                    from shared.ranking import (
+                        risk_adjusted_score_weighted,
+                        passes_time_distribution_filter,
+                    )
+                    _td_filter_on = _run_settings.get('td_filter_enabled', False)
+                    _td_weight_on = _run_settings.get('td_weight_enabled', False)
+
+                    _key_fn = lambda r: risk_adjusted_score_weighted(
+                        r, use_td_weight=_td_weight_on
+                    )
+
+                    if _td_filter_on:
+                        _passing = [r for r in all_matrix
+                                    if passes_time_distribution_filter(r)]
+                        _failing = [r for r in all_matrix if r not in _passing]
+                        _passing.sort(key=_key_fn, reverse=True)
+                        _failing.sort(key=_key_fn, reverse=True)
+                        all_matrix[:] = _passing + _failing
+                        output_text.insert(
+                            tk.END,
+                            f"[T2b] {len(_passing)} row(s) passed time-distribution filter, "
+                            f"{len(_failing)} demoted to bottom\n"
+                        )
+                    else:
+                        all_matrix.sort(key=_key_fn, reverse=True)
+                except Exception as _t2b_sort_e:
+                    output_text.insert(
+                        tk.END, f"[T2b] sort fallback: {_t2b_sort_e}\n"
+                    )
                     all_matrix.sort(
                         key=lambda r: (r.get('stats') or r).get('net_total_pips', 0),
                         reverse=True,
@@ -1131,6 +1180,164 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             if isinstance(_stats, dict):
                                 _flat.update(_stats)  # merge stats to top level
                             _flattened.append(_flat)
+
+                        # WHY (T2b): Auto-stability gate. Top N candidates get walk_forward_validate
+                        #      run against them so "View Results" already shows a regime-stability
+                        #      verdict without user having to open the validator panel per row.
+                        #      This is the only way to catch "high-PF strategy that blows DD
+                        #      on a regime shift" before EA generation.
+                        # CHANGED: April 2026 — T2b — auto-stability gate
+                        try:
+                            from project1_reverse_engineering import config_loader as _t2b_cl
+                            _t2b_cfg = _t2b_cl.load()
+                            _t2b_top_n    = int(_t2b_cfg.get('auto_stability_top_n',    5))
+                            _t2b_nw       = int(_t2b_cfg.get('auto_stability_n_windows', 3))
+                            _t2b_budget_s = int(_t2b_cfg.get('auto_stability_budget_s', 300))
+                        except Exception:
+                            _t2b_top_n    = 5
+                            _t2b_nw       = 3
+                            _t2b_budget_s = 300
+
+                        # Default every row to untested — only top N get filled in below.
+                        for _r in _flattened:
+                            _r.setdefault('stability_verdict', None)
+                            _r.setdefault('stability_edge_held', None)
+                            _r.setdefault('stability_avg_degradation', None)
+                            _r.setdefault('stability_windows_tested', 0)
+                            _r.setdefault('stability_verdict_reason', None)
+
+                        if _t2b_top_n > 0 and _flattened:
+                            try:
+                                from project2_backtesting.strategy_validator import walk_forward_validate
+                                from project2_backtesting.exit_strategies import (
+                                    FixedSLTP, TrailingStop, ATRBased, ATRTrailing,
+                                    TimeBased, IndicatorExit, HybridExit,
+                                )
+                                _t2b_imports_ok = True
+                            except Exception as _imp_e:
+                                output_text.insert(tk.END, f"\n[T2b] auto-stability imports failed: {_imp_e}\n")
+                                _t2b_imports_ok = False
+
+                            if _t2b_imports_ok:
+                                import time as _t2b_time
+                                _t2b_candidates = [
+                                    r for r in _flattened
+                                    if (r.get('net_profit_factor') or 0) >= 1.0
+                                    and (r.get('total_trades') or 0) >= 30
+                                ][:_t2b_top_n]
+
+                                if not _t2b_candidates:
+                                    output_text.insert(
+                                        tk.END,
+                                        "\n[T2b] No rows met PF>=1 AND trades>=30 — skipping stability gate.\n"
+                                    )
+                                else:
+                                    output_text.insert(
+                                        tk.END,
+                                        f"\n[T2b] Running stability gate on top {len(_t2b_candidates)} "
+                                        f"candidate(s) ({_t2b_nw} windows each, {_t2b_budget_s}s budget)...\n"
+                                    )
+                                    output_text.see(tk.END)
+
+                                    _t2b_start = _t2b_time.time()
+                                    _t2b_exit_map = {
+                                        'FixedSLTP':     FixedSLTP,
+                                        'TrailingStop':  TrailingStop,
+                                        'ATRBased':      ATRBased,
+                                        'ATRTrailing':   ATRTrailing,
+                                        'TimeBased':     TimeBased,
+                                        'IndicatorExit': IndicatorExit,
+                                        'HybridExit':    HybridExit,
+                                    }
+
+                                    for _cand in _t2b_candidates:
+                                        _elapsed = _t2b_time.time() - _t2b_start
+                                        if _elapsed > _t2b_budget_s:
+                                            _cand['stability_verdict']        = 'UNTESTED'
+                                            _cand['stability_verdict_reason'] = f'budget exceeded at {_elapsed:.0f}s'
+                                            continue
+
+                                        _exit_class_name = _cand.get('exit_class', '')
+                                        _exit_cls = _t2b_exit_map.get(_exit_class_name)
+                                        if _exit_cls is None:
+                                            _cand['stability_verdict']        = 'ERROR'
+                                            _cand['stability_verdict_reason'] = f"unknown exit class {_exit_class_name!r}"
+                                            continue
+
+                                        _exit_params = _cand.get('exit_params', {}) or {}
+                                        _rules       = _cand.get('rules', []) or []
+                                        _direction   = _cand.get('direction', 'BUY')
+                                        _cand_tf     = _cand.get('entry_tf', '')
+
+                                        _cand_path = None
+                                        for _p in [
+                                            os.path.join(_data_source_path, f'{symbol}_{_cand_tf}.csv'),
+                                            os.path.join(_data_source_path, f'{symbol.upper()}_{_cand_tf}.csv'),
+                                            os.path.join(_data_source_path, f'{symbol.lower()}_{_cand_tf}.csv'),
+                                        ]:
+                                            if os.path.exists(_p):
+                                                _cand_path = _p
+                                                break
+                                        if _cand_path is None:
+                                            _cand['stability_verdict']        = 'ERROR'
+                                            _cand['stability_verdict_reason'] = 'candle file not found'
+                                            continue
+
+                                        _combo_label = f"{_cand.get('rule_combo','?')} x {_cand.get('exit_strategy','?')}"
+                                        output_text.insert(
+                                            tk.END, f"  [T2b] validating: {_combo_label[:60]}...\n"
+                                        )
+                                        output_text.see(tk.END)
+
+                                        try:
+                                            _wf = walk_forward_validate(
+                                                rules                = _rules,
+                                                candles_path         = _cand_path,
+                                                exit_strategy_class  = _exit_cls,
+                                                exit_strategy_params = _exit_params,
+                                                n_windows            = _t2b_nw,
+                                                train_years          = 2,
+                                                test_years           = 1,
+                                                pip_size             = _cfg_pip_size,
+                                                spread_pips          = _cfg_spread,
+                                                commission_pips      = _cfg_commission,
+                                                account_size         = _cfg_account,
+                                                direction            = _direction,
+                                                risk_per_trade_pct   = _cfg_risk_pct,
+                                                pip_value_per_lot    = _cfg_pip_value,
+                                                leverage             = _cfg_leverage,
+                                                contract_size        = _cfg_contract,
+                                                progress_callback    = None,
+                                            )
+                                            _summ = (_wf or {}).get('summary', {}) or {}
+                                            _cand['stability_verdict']         = _summ.get('verdict', 'ERROR')
+                                            _cand['stability_edge_held']       = _summ.get('edge_held_ratio', 0.0)
+                                            _cand['stability_avg_degradation'] = _summ.get('avg_degradation', 0.0)
+                                            _cand['stability_windows_tested']  = _summ.get('windows_completed', 0)
+                                            _cand['stability_verdict_reason']  = (
+                                                f"edge_held={_summ.get('edge_held_ratio', 0.0):.0%}, "
+                                                f"avg_out_pf={_summ.get('avg_out_pf', 0.0):.2f}, "
+                                                f"degradation={_summ.get('avg_degradation', 0.0):+.2f}"
+                                            )
+                                        except Exception as _wf_e:
+                                            import traceback as _tb
+                                            _cand['stability_verdict']        = 'ERROR'
+                                            _cand['stability_verdict_reason'] = f"{type(_wf_e).__name__}: {_wf_e}"
+                                            output_text.insert(
+                                                tk.END, f"  [T2b] error: {_wf_e}\n{_tb.format_exc()[-500:]}\n"
+                                            )
+
+                                    _t2b_done = _t2b_time.time() - _t2b_start
+                                    from collections import Counter as _t2b_Counter
+                                    _vc = _t2b_Counter(
+                                        _c.get('stability_verdict') for _c in _t2b_candidates
+                                    )
+                                    output_text.insert(
+                                        tk.END,
+                                        f"[T2b] Stability gate done in {_t2b_done:.0f}s — "
+                                        f"{dict(_vc)}\n\n"
+                                    )
+                                    output_text.see(tk.END)
 
                         _combined_output = {
                             "generated_at": _save_time.strftime("%Y-%m-%d %H:%M"),
@@ -3247,6 +3454,44 @@ def build_panel(parent):
         text=f"    OFF = use defaults (spread=2.5, commission=0, no account sizing)\n"
              f"    ON  = read from Configuration panel\n"
              f"{_a48_preview}",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── T2b: Time-distribution filter + weight ────────────────────────────────
+    # WHY (T2b): Reject rules that fire only in narrow time windows. Two
+    #      opt-out checkboxes. Both default ON. If user unchecks both,
+    #      ranking reverts to exactly T1a's pre-T2b behavior.
+    # CHANGED: April 2026 — T2b v3
+    global _t2b_td_filter_var, _t2b_td_weight_var
+
+    _t2b_frame = tk.Frame(panel, bg="white", pady=6)
+    _t2b_frame.pack(fill="x", padx=20)
+
+    _t2b_td_filter_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        _t2b_frame,
+        text="📅 Filter out regime-concentrated rules (demote rules with <50% active months or >60 dormant days)",
+        variable=_t2b_td_filter_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    _t2b_td_weight_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        _t2b_frame,
+        text="⚖️ Weight ranking by time distribution (multiply score by active_month_coverage)",
+        variable=_t2b_td_weight_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    tk.Label(
+        _t2b_frame,
+        text="    ON  (default) = prefer rules that fire across the year, not just in one regime\n"
+             "    OFF both        = exact pre-T2b ranking, no time-distribution awareness",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
