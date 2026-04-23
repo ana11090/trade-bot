@@ -32,6 +32,13 @@ OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 from shared.logging_setup import get_logger
 log = get_logger(__name__)
 
+# WHY (Stage-A): Module-level so compute_feature_importance and
+#      extract_rules can read the active scope without signature changes.
+#      Set to safe defaults; overwritten by run_analysis on each call.
+# CHANGED: April 2026 — Stage-A
+_stage_a_scope_mode = 'all_tfs'
+_stage_a_scenario_key = ''
+
 
 # ── Section 1: Robot Profile ──────────────────────────────────────────────────
 
@@ -396,6 +403,52 @@ def compute_feature_importance(df):
         and 'candle_time' not in c
         and df[c].dtype in ['float64', 'int64', 'float32', 'int32']
     ]
+
+    # WHY (Stage-A): Filter feature_cols to the scenario's TF scope.
+    #      'all_tfs' → no filtering (pre-Stage-A behavior, default).
+    #      'per_tf_only' → keep only cols whose TF prefix is in scenario.
+    #      'entry_plus_higher' → keep scenario TFs + all strictly-higher TFs.
+    #      Unknown mode or empty scenario_key → fall back to no filtering.
+    # CHANGED: April 2026 — Stage-A
+    _TF_ORDER = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'H8', 'D1', 'W1']
+
+    def _stage_a_tf_whitelist(scope_mode, scenario_key):
+        """Return set of TF prefixes to keep, or None for 'no filter'."""
+        if not scope_mode or scope_mode == 'all_tfs':
+            return None
+        if not scenario_key:
+            return None
+        _named_tfs = [p for p in scenario_key.split('_') if p in _TF_ORDER]
+        if not _named_tfs:
+            return None
+        _keep = set(_named_tfs)
+        if scope_mode == 'entry_plus_higher':
+            _entry = _named_tfs[0]
+            try:
+                _entry_idx = _TF_ORDER.index(_entry)
+                for _tf in _TF_ORDER[_entry_idx:]:
+                    _keep.add(_tf)
+            except ValueError:
+                pass
+        # per_tf_only → _keep is exactly the named TFs (no expansion)
+        return _keep
+
+    try:
+        _stage_a_keep = _stage_a_tf_whitelist(_stage_a_scope_mode, _stage_a_scenario_key)
+    except Exception as _sae:
+        log.warning(f"[Stage-A] scope resolution failed: {_sae} — no filtering")
+        _stage_a_keep = None
+
+    if _stage_a_keep is not None:
+        _before = len(feature_cols)
+        feature_cols = [
+            c for c in feature_cols
+            if any(c.startswith(_tf + '_') for _tf in _stage_a_keep)
+        ]
+        log.info(
+            f"[Stage-A] scope={_stage_a_scope_mode} scenario={_stage_a_scenario_key} "
+            f"kept TFs={sorted(_stage_a_keep)} features: {_before} → {len(feature_cols)}"
+        )
 
     if not feature_cols:
         log.info("[ANALYZE] ERROR: no usable features after excluding leak columns")
@@ -1371,10 +1424,21 @@ def _write_text_report(report, filepath):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def run_analysis(feature_matrix_path=None):
+# WHY (Stage-A): Accept feature_scope_mode and scenario_key so the caller
+#      can tell us which TFs to keep. Both are optional — legacy callers
+#      pass nothing and get pre-Stage-A behavior (all TFs).
+# CHANGED: April 2026 — Stage-A
+def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key=None):
     """Run complete analysis and save results."""
     if feature_matrix_path is None:
         feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
+
+    # WHY (Stage-A): Stash scope args on module-level globals so
+    #      compute_feature_importance reads them without signature changes.
+    # CHANGED: April 2026 — Stage-A
+    global _stage_a_scope_mode, _stage_a_scenario_key
+    _stage_a_scope_mode   = (feature_scope_mode or 'all_tfs').lower()
+    _stage_a_scenario_key = scenario_key or ''
 
     log.info('=' * 70)
     log.info('ROBOT ANALYSIS — Full Reverse Engineering')

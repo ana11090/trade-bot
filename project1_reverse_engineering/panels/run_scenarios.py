@@ -2251,6 +2251,96 @@ def build_panel(parent):
 
     scenarios = _build_scenarios()
 
+    # WHY (Stage-A): Feature scope controls which TF indicators the analysis
+    #      tree sees per scenario. Without scoping, every scenario trains on
+    #      the same 620 features and produces identical rules. Default
+    #      'entry_plus_higher' gives entry signal + regime context.
+    # CHANGED: April 2026 — Stage-A
+    _fs_frame = tk.Frame(left_frame, bg="#f0f8ff", padx=10, pady=8)
+    _fs_frame.pack(fill="x", pady=(0, 10))
+
+    tk.Label(
+        _fs_frame,
+        text="🔬 Feature scope (applied to each selected scenario):",
+        bg="#f0f8ff", fg="#16213e",
+        font=("Segoe UI", 9, "bold"),
+    ).pack(anchor="w")
+
+    _fs_var = tk.StringVar(
+        value=str(_cfg.get('feature_scope_mode', 'entry_plus_higher')).lower()
+    )
+    if _fs_var.get() not in ('per_tf_only', 'entry_plus_higher', 'all_tfs'):
+        _fs_var.set('entry_plus_higher')
+
+    _fs_radio_row = tk.Frame(_fs_frame, bg="#f0f8ff")
+    _fs_radio_row.pack(anchor="w", pady=(3, 0))
+
+    try:
+        from shared.tooltip import ToolTip as _fs_ToolTip
+    except Exception:
+        _fs_ToolTip = None
+
+    _fs_options = [
+        ('entry_plus_higher',
+         "🔭 Entry + higher TFs  (recommended)",
+         "Example: M5 scenario trains on M5_* + M15_* + H1_* + H4_* + D1_* "
+         "features. H1 scenario trains on H1_* + H4_* + D1_* (drops M5/M15). "
+         "Multi-TF scenarios (H1_M15) use both named TFs plus anything higher.\n\n"
+         "Entry signal comes from the scenario TF; higher TFs act as regime "
+         "context filters. Most realistic and usually produces the best rules.\n\n"
+         "Default."),
+        ('per_tf_only',
+         "🎯 Per-TF only",
+         "Example: M5 scenario trains ONLY on M5_* features (~124 cols). "
+         "Multi-TF scenarios (H1_M15) use only the TFs explicitly named.\n\n"
+         "Pure per-TF comparison. No cross-TF context. Cleanest mental "
+         "model, but the tree can't use higher-TF indicators as regime "
+         "filters. Sometimes produces more rules (narrower feature space = "
+         "less over-fit), sometimes fewer (less signal available)."),
+        ('all_tfs',
+         "🔀 All TFs  (legacy, pre-Stage-A)",
+         "All features regardless of scenario. Every scenario produces "
+         "identical rules. This was the pre-Stage-A behavior.\n\n"
+         "WHY YOU MIGHT WANT IT:\n"
+         "• Reproducing pre-Stage-A results exactly.\n"
+         "• Only one scenario selected and scoping is irrelevant.\n\n"
+         "WHY YOU USUALLY WON'T:\n"
+         "• Every scenario comes out identical — defeats the purpose of "
+         "selecting multiple scenarios."),
+    ]
+
+    for _val, _lbl, _tip in _fs_options:
+        _rb = tk.Radiobutton(
+            _fs_radio_row,
+            text=_lbl,
+            variable=_fs_var,
+            value=_val,
+            bg="#f0f8ff", fg="#16213e",
+            selectcolor="#ffffff",
+            font=("Segoe UI", 9),
+            activebackground="#f0f8ff",
+            anchor="w",
+        )
+        _rb.pack(anchor="w")
+        if _fs_ToolTip is not None:
+            try:
+                _fs_ToolTip(_rb, _tip)
+            except Exception:
+                pass
+
+    def _fs_save(*_args, _v=_fs_var):
+        try:
+            _cl.save({'feature_scope_mode': str(_v.get())})
+        except Exception as _e:
+            print(f"[Stage-A] Could not save feature_scope_mode: {_e}")
+    _fs_var.trace_add('write', _fs_save)
+
+    try:
+        if not _cfg.get('feature_scope_mode'):
+            _cl.save({'feature_scope_mode': _fs_var.get()})
+    except Exception:
+        pass
+
     scenario_vars = {}
 
     for scenario_key, (label, desc) in scenarios.items():
@@ -3221,36 +3311,50 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                 return True
 
-            # _analyze_wrapper: run analyze.run_analysis once (all scenarios
-            # share the same feature matrix), then copy analysis_report.json
-            # into each scenario's outputs/ subdirectory so the results panel
-            # can retrieve it by scenario name.
-            analyze_already_run = [False]
-
+            # WHY (Stage-A): Run analyze per scenario so each scenario
+            #      produces its own analysis_report.json from its own
+            #      feature-scoped data. Removed analyze_already_run latch.
+            #      analyze.py writes the report next to the feature_matrix_path
+            #      it receives (scenario_<TF>/), so no post-hoc copy needed.
+            # CHANGED: April 2026 — Stage-A
             def _analyze_wrapper(scenario):
-                import shutil
                 import analyze as _analyze_mod
                 _out = os.path.normpath(
                     os.path.join(os.path.dirname(__file__), '..', 'outputs')
                 )
-                if not analyze_already_run[0]:
-                    _fm = os.path.join(_out, 'feature_matrix.csv')
-                    if os.path.exists(_fm):
-                        _analyze_mod.run_analysis(feature_matrix_path=_fm)
-                    else:
-                        _analyze_mod.run_analysis()
-                    analyze_already_run[0] = True
-
-                # Copy analysis_report.json into the scenario subfolder
-                _src = os.path.join(_out, 'analysis_report.json')
                 _scenario_dir = os.path.join(_out, f'scenario_{scenario}')
                 os.makedirs(_scenario_dir, exist_ok=True)
-                if os.path.exists(_src):
-                    try:
-                        shutil.copy2(_src, os.path.join(_scenario_dir, 'analysis_report.json'))
-                    except Exception as _ce:
-                        print(f"  WARNING: could not copy analysis_report.json to "
-                              f"scenario_{scenario}: {_ce}")
+
+                # Prefer per-scenario feature_matrix (Step 2 copies it there).
+                _fm_scenario = os.path.join(_scenario_dir, 'feature_matrix.csv')
+                _fm_master   = os.path.join(_out, 'feature_matrix.csv')
+                if os.path.exists(_fm_scenario):
+                    _fm = _fm_scenario
+                elif os.path.exists(_fm_master):
+                    _fm = _fm_master
+                else:
+                    print(f"  ERROR: no feature_matrix.csv for scenario {scenario}")
+                    return False
+
+                try:
+                    import config_loader as _sa_cl
+                    _sa_cfg = _sa_cl.load()
+                    _fs_mode = str(_sa_cfg.get('feature_scope_mode', 'entry_plus_higher')).lower()
+                except Exception:
+                    _fs_mode = 'entry_plus_higher'
+
+                print(f"  [Stage-A] scenario={scenario} scope={_fs_mode} "
+                      f"fm={os.path.basename(os.path.dirname(_fm))}/")
+
+                try:
+                    _analyze_mod.run_analysis(
+                        feature_matrix_path=_fm,
+                        feature_scope_mode=_fs_mode,
+                        scenario_key=scenario,
+                    )
+                except TypeError:
+                    # Older analyze signature — fall back gracefully.
+                    _analyze_mod.run_analysis(feature_matrix_path=_fm)
                 return True
 
             # WHY (Phase A.31.1): bot_entry_discovery is now Step 4 of

@@ -74,6 +74,13 @@ DEFAULTS = {
     # CHANGED: April 2026 — T3b
     'rule_target_mode':          'regression_weighted',
 
+    # WHY (Stage-A): Feature scope for per-scenario rule discovery.
+    #      'per_tf_only'       — scenario TF features only
+    #      'entry_plus_higher' — scenario TF + all higher TFs (default)
+    #      'all_tfs'           — ignore scope, use everything (legacy)
+    # CHANGED: April 2026 — Stage-A
+    'feature_scope_mode':        'entry_plus_higher',
+
     # ── Bot Entry Discovery (Phase A.31) ──────────────────────────────────────
     # WHY: Separate hyperparameters for the candle-level entry discoverer.
     #      Independent from the rule_* keys above which control the
