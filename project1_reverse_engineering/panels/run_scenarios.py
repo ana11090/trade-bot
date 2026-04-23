@@ -2065,40 +2065,47 @@ def build_panel(parent):
             except Exception:
                 pass
 
+        # WHY (T3b-hotfix): Old early-return on SRM-off skipped the
+        #      Discovery-Settings re-enable call. Radios and spinboxes
+        #      stayed disabled forever after one SRM-on → SRM-off cycle.
+        #      Fix: no early return — fall through unconditionally to
+        #      _a39b_update_discovery_state() at the bottom.
+        # CHANGED: April 2026 — T3b-hotfix — always sync Discovery state
         if not _a39a_enabled_var.get():
             try:
                 _a39a_inner.pack_forget()
             except Exception:
                 pass
-            return
-
-        if not _a39a_inner.winfo_ismapped():
-            _a39a_inner.pack(fill="x", pady=(4, 0))
-
-        _variant_is_a = (_a39a_variant_var.get() or 'a').lower() == 'a'
-
-        # Mode A params panel — only shown for variant 'a'.
-        if _variant_is_a:
-            _a39b_params_frame.pack(fill="x", pady=(8, 0))
-
-        _rendered_discovered = False
-        if _variant_is_a:
-            try:
-                _rendered_discovered = _a39b_render_discovered()
-            except Exception as _re:
-                print(f"[A.39b] render failed: {_re}")
-                _rendered_discovered = False
-
-        if _rendered_discovered:
-            _a39b_discovered_frame.pack(fill="x", pady=(8, 0))
         else:
-            try:
-                _a39a_render_status()
-            except Exception as _e:
-                print(f"[A.39a] Could not render status: {_e}")
-            _a39a_status_frame.pack(fill="x", pady=(8, 0))
+            if not _a39a_inner.winfo_ismapped():
+                _a39a_inner.pack(fill="x", pady=(4, 0))
 
-        # Sync the Discovery Settings enable/disable state.
+            _variant_is_a = (_a39a_variant_var.get() or 'a').lower() == 'a'
+
+            # Mode A params panel — only shown for variant 'a'.
+            if _variant_is_a:
+                _a39b_params_frame.pack(fill="x", pady=(8, 0))
+
+            _rendered_discovered = False
+            if _variant_is_a:
+                try:
+                    _rendered_discovered = _a39b_render_discovered()
+                except Exception as _re:
+                    print(f"[A.39b] render failed: {_re}")
+                    _rendered_discovered = False
+
+            if _rendered_discovered:
+                _a39b_discovered_frame.pack(fill="x", pady=(8, 0))
+            else:
+                try:
+                    _a39a_render_status()
+                except Exception as _e:
+                    print(f"[A.39a] Could not render status: {_e}")
+                _a39a_status_frame.pack(fill="x", pady=(8, 0))
+
+        # WHY (T3b-hotfix): Unconditional — runs whether SRM is on or off
+        #      so state is always synced to the current SRM value.
+        # CHANGED: April 2026 — T3b-hotfix
         try:
             _a39b_update_discovery_state()
         except Exception:
@@ -2523,12 +2530,16 @@ def build_panel(parent):
 
     _t3b_radiobuttons = []
     for _t3b_val, _t3b_label, _t3b_tip in _t3b_options:
+        # WHY (T3b-hotfix): Without explicit selectcolor, Windows Tk renders
+        #      the selection dot invisibly against the card's #fff9e6 bg.
+        # CHANGED: April 2026 — T3b-hotfix
         _rb = tk.Radiobutton(
             _t3a_radio_row,
             text=_t3b_label,
             variable=_t3a_target_var,
             value=_t3b_val,
             bg="#fff9e6", fg="#16213e",
+            selectcolor="#ffffff",
             font=("Segoe UI", 9),
             activebackground="#fff9e6",
             anchor="w",
@@ -2586,6 +2597,16 @@ def build_panel(parent):
         _t3b_update_mode_hints()
     except Exception as _e:
         print(f"[T3b-addendum] initial hint update failed: {_e}")
+
+    # WHY (T3b-hotfix): StringVar's initial value doesn't fire trace_add,
+    #      so rule_target_mode stays absent from config on first launch.
+    #      Force-persist the default once if the key is missing.
+    # CHANGED: April 2026 — T3b-hotfix
+    try:
+        if not _cfg.get('rule_target_mode'):
+            _cl.save({'rule_target_mode': _t3a_target_var.get()})
+    except Exception as _e:
+        print(f"[T3b-hotfix] initial config persist failed: {_e}")
 
     # Add all four radiobuttons to the disable-on-SRM list
     for _t3b_rb in _t3b_radiobuttons:
