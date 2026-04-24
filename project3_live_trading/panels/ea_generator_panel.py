@@ -1254,7 +1254,18 @@ def build_panel(parent):
             global _selected_strat_iid
             for item in _strat_tree_p3.get_children():
                 _strat_tree_p3.delete(item)
-            for row_n, s in enumerate(_strategies, start=1):
+
+            # WHY: Saved rules are at position 202+ in a 234-entry list.
+            #      With 7 visible rows, users never find them. Showing
+            #      saved rules FIRST makes them immediately accessible.
+            # CHANGED: April 2026 — saved rules on top
+            _saved   = [s for s in _strategies if s.get('source') == 'saved']
+            _sep     = [s for s in _strategies if s.get('source') == 'separator']
+            _others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _ordered = _saved + _sep + _others
+
+            backtest_row_n = 0
+            for s in _ordered:
                 src = s.get('source', 'backtest')
                 idx_raw = s.get('index', 0)
                 iid = str(idx_raw)
@@ -1269,17 +1280,27 @@ def build_panel(parent):
 
                 if src == 'separator':
                     _strat_tree_p3.insert("", "end", iid=iid, values=(
-                        "", rc, "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", ""), tags=("separator",))
                     continue
                 elif src == 'saved':
                     numeric_id = s.get('id', '')
-                    id_disp = f"💾 #{numeric_id}"
+                    id_disp = f"Saved #{numeric_id}"
+                    # Show actual conditions in the rule column instead of "Saved #N"
+                    _sr2  = s.get('saved_rule', {})
+                    _dir2 = _sr2.get('direction', _sr2.get('action', ''))
+                    _cds2 = [c.get('feature', '') for c in _sr2.get('conditions', [])]
+                    _ex2  = _sr2.get('exit_class', _sr2.get('exit_name', ''))
+                    rc = (_dir2 + ' | ' if _dir2 else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _cds2
+                    )
+                    ex = _ex2 if _ex2 and _ex2 not in ('Default', '?', '') else '—'
                     tag = "starred" if is_starred else "saved"
                 elif src == 'optimizer':
-                    id_disp = f"🔧 #{row_n}"
+                    id_disp = f"Optimizer"
                     tag = "optimizer"
                 else:
-                    id_disp = f"#{row_n}"
+                    backtest_row_n += 1
+                    id_disp = f"#{backtest_row_n}"
                     tag = "profitable" if pf >= 1.0 else "losing"
                     if is_starred:
                         tag = "starred"
@@ -1822,7 +1843,11 @@ def refresh():
         try:
             for item in _strat_tree_p3.get_children():
                 _strat_tree_p3.delete(item)
-            for row_n, s in enumerate(_strategies, start=1):
+            _s_saved  = [s for s in _strategies if s.get('source') == 'saved']
+            _s_sep    = [s for s in _strategies if s.get('source') == 'separator']
+            _s_others = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _bt_rn = 0
+            for s in _s_saved + _s_sep + _s_others:
                 src = s.get('source', 'backtest')
                 idx_raw = s.get('index', 0)
                 iid = str(idx_raw)
@@ -1835,17 +1860,26 @@ def refresh():
                 is_starred = s.get('is_starred', False)
                 if src == 'separator':
                     _strat_tree_p3.insert("", "end", iid=iid, values=(
-                        "", rc, "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", ""), tags=("separator",))
                     continue
                 elif src == 'saved':
                     numeric_id = s.get('id', '')
-                    id_disp = f"💾 #{numeric_id}"
+                    id_disp = f"Saved #{numeric_id}"
+                    _sr3  = s.get('saved_rule', {})
+                    _dir3 = _sr3.get('direction', _sr3.get('action', ''))
+                    _cds3 = [c.get('feature', '') for c in _sr3.get('conditions', [])]
+                    _ex3  = _sr3.get('exit_class', _sr3.get('exit_name', ''))
+                    rc = (_dir3 + ' | ' if _dir3 else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _cds3
+                    )
+                    ex = _ex3 if _ex3 and _ex3 not in ('Default', '?', '') else '—'
                     tag = "starred" if is_starred else "saved"
                 elif src == 'optimizer':
-                    id_disp = f"🔧 #{row_n}"
+                    id_disp = f"Optimizer"
                     tag = "optimizer"
                 else:
-                    id_disp = f"#{row_n}"
+                    _bt_rn += 1
+                    id_disp = f"#{_bt_rn}"
                     tag = "profitable" if pf >= 1.0 else "losing"
                     if is_starred:
                         tag = "starred"

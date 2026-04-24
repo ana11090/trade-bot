@@ -1142,6 +1142,17 @@ def _do_update():
     global _update_pending, _filtered_trades
     _update_pending = False
     if not _base_trades:
+        # WHY: When a saved rule loads standalone (_base_trades=[]), the chart
+        #      from the previous backtest load remains visible because we used
+        #      to return early here. Now we clear all displays explicitly so
+        #      the user doesn't see stale trade data for the wrong strategy.
+        # CHANGED: April 2026 — clear stale chart on empty trades
+        _filtered_trades = []
+        _update_results_card([], [])
+        if _monthly_chart_canvas:
+            _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, [])
+        _update_drawdown_display([])
+        _update_breach_display([])
         return
     try:
         from project2_backtesting.strategy_refiner import apply_filters, compute_stats_summary
@@ -3385,7 +3396,14 @@ def build_panel(parent):
                 dd_container[0] = _strat_tree
 
             # Populate tree items (happens on both create and refresh)
-            for row_n, s in enumerate(_strategies, start=1):
+            # WHY: Saved rules were at position 202+ (after 201 backtest rows).
+            #      With 8 visible rows the user couldn't find them. Now shown first.
+            # CHANGED: April 2026 — saved rules on top
+            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved']
+            _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
+            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _bt_row_n   = 0
+            for s in _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
                 rc       = s.get('rule_combo', '?')
                 exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
@@ -3396,30 +3414,46 @@ def build_panel(parent):
                 net      = s.get('net_total_pips', s.get('total_pips', 0))
                 avg      = s.get('net_avg_pips', s.get('avg_pips', 0))
 
-                # Star status and source-aware ID formatting
                 is_starred = s.get('is_starred', False)
                 source = s.get('source', 'backtest')
                 star_display = "⭐" if is_starred else ""
 
-                if source == 'saved':
-                    id_display = f"💾#{idx}"
+                if source == 'separator':
+                    _strat_tree.insert("", "end", iid=idx, values=(
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", ""), tags=("separator",))
+                    continue
+                elif source == 'saved':
+                    numeric_id = s.get('id', '')
+                    id_display = f"Saved #{numeric_id}"
+                    # Show actual conditions in the rule column, not "Saved #N"
+                    _sr_dict = s.get('saved_rule', {})
+                    _sr_dir  = _sr_dict.get('direction', _sr_dict.get('action', ''))
+                    _sr_conds = [c.get('feature', '') for c in _sr_dict.get('conditions', [])]
+                    _sr_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                    if _sr_exit in ('', 'Default', '?'):
+                        _sr_exit = _sr_dict.get('exit_class', _sr_dict.get('exit_name', ''))
+                    rc = (_sr_dir + ' | ' if _sr_dir else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _sr_conds
+                    )
+                    exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
+                    wr_s_saved = str(round(wr*100 if wr <= 1 else wr, 1)) + '%'
                     tag = "saved" if not is_starred else "starred"
+                    _strat_tree.insert("", "end", iid=idx, values=(
+                        star_display, id_display, rc, exit_name, int(trades), wr_s_saved,
+                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                    ), tags=(tag,))
+                    continue
                 elif source == 'optimizer':
                     id_display = f"🔧#{idx}"
                     tag = "profitable" if net > 0 else "losing"
                 else:
-                    id_display = f"#{row_n}"
+                    _bt_row_n += 1
+                    id_display = f"#{_bt_row_n}"
                     tag = "profitable" if net > 0 else "losing"
 
                 if is_starred and tag not in ("saved", "starred"):
                     tag = "starred"
 
-                # WHY (per-row-delete v3): 🗑 rendered on everything EXCEPT
-                #      separators (which exist only as visual dividers
-                #      between backtest/optimizer/saved sections).
-                #      Clicking a separator's del cell is a no-op anyway,
-                #      but showing 🗑 on them would be visually wrong.
-                # CHANGED: April 2026 — per-row-delete v3
                 del_display = "" if source == 'separator' else "🗑"
 
                 _strat_tree.insert("", "end", iid=idx, values=(
@@ -3427,13 +3461,21 @@ def build_panel(parent):
                     f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
                 ), tags=(tag,))
 
-            # Select first row and sync _strategy_var + iid tracker
+            # Select first saved rule by default (most relevant to user)
             _tree_children = _strat_tree.get_children()
             if _tree_children:
                 global _selected_strat_iid
-                _strat_tree.selection_set(_tree_children[0])
-                _strategy_var.set(_strategies[0]['label'])
-                _selected_strat_iid = _tree_children[0]  # keep iid in sync
+                _first_saved = next(
+                    (c for c in _tree_children
+                     if "saved" in (_strat_tree.item(c, "tags") or ())),
+                    _tree_children[0]
+                )
+                _strat_tree.selection_set(_first_saved)
+                _selected_strat_iid = _first_saved
+                for _fs in _strategies:
+                    if str(_fs.get('index', '')) == _first_saved:
+                        _strategy_var.set(_fs['label'])
+                        break
 
             # WHY (per-row-delete v3 fix): Set dd_container only when creating
             #      new tree. Event handlers defined below are bound only on
