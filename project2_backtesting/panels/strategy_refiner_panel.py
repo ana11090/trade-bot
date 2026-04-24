@@ -51,6 +51,19 @@ _base_trades     = []        # enriched trades for selected strategy
 _filtered_trades = []        # trades after current filters
 _strategy_var    = None
 _strategies      = []
+# WHY: _get_selected_index() used to match by label string, which breaks when
+#      labels gain/lose the ⚠️ stale prefix between selection and lookup.
+#      _selected_strat_iid stores the Treeview row iid directly (e.g. "saved_1"
+#      or "0") so the index is always available regardless of label changes.
+# CHANGED: April 2026 — iid-based selection
+_selected_strat_iid = None
+# WHY: Background trade-loading thread races with instant saved-rule loads.
+#      Clicking a backtest row starts a thread; immediately clicking a saved
+#      rule clears _base_trades, but the thread finishes later and overwrites
+#      with stale data. Token prevents stale writes: thread only commits if
+#      its token still matches the current one.
+# CHANGED: April 2026 — load token to cancel stale background loads
+_load_token = 0
 
 # Filter vars
 _min_hold_var    = None
@@ -502,6 +515,15 @@ def _load_strategies(force=False):
 
 
 def _get_selected_index():
+    # Primary: use the iid stored on last Treeview click — immune to label changes.
+    if _selected_strat_iid is not None:
+        # Backtest rows have numeric iids stored as strings ("0", "1", ...).
+        try:
+            return int(_selected_strat_iid)
+        except (ValueError, TypeError):
+            pass
+        return _selected_strat_iid  # "saved_N", "optimizer_latest", etc.
+    # Fallback: label matching (initial load before any row is clicked).
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
@@ -513,8 +535,10 @@ def _get_selected_index():
     return None
 
 
-def _load_selected_strategy():
+def _load_selected_strategy(silent=False):
     """Load the selected strategy's trades for filtering/optimizing.
+
+    silent=True suppresses informational popups (used by auto-load on select).
 
     WHY: Different strategy sources need different loading:
       - Backtest results (int index) → load trades from matrix directly
@@ -525,7 +549,11 @@ def _load_selected_strategy():
 
     CHANGED: April 2026 — saved rules match to matrix by name
     """
-    global _base_trades, _filtered_trades
+    global _base_trades, _filtered_trades, _load_token
+    # Increment token so any in-flight background thread knows it's stale.
+    _load_token += 1
+    my_token = _load_token
+
     idx = _get_selected_index()
     if idx is None:
         return
@@ -581,51 +609,59 @@ def _load_selected_strategy():
 
         matched_idx = None
 
-        # WHY: Match saved rules to backtest matrix STRICTLY.
-        #      Loose matching (combo name only) caused wrong trades to load.
-        #      Now requires BOTH conditions AND exit to match.
-        #      If no strict match, load standalone — better than wrong data.
-        # CHANGED: April 2026 — strict matching only
+        # WHY: Match priority matters. Multiple backtest entries can share the
+        #      same feature-name set (BUY-only vs BUY+SELL-combined both use
+        #      features {X, Y, Z}). Old code tried feature-set first and hit
+        #      the wrong entry. The rule_combo is the unique name recorded at
+        #      save time — always try it first.
+        # CHANGED: April 2026 — rule_combo-first matching
 
-        # Build saved rule's condition fingerprint
-        _saved_conds = set(c.get('feature', '') for c in saved_rule.get('conditions', []))
         _saved_exit = exit_name or exit_strategy or ''
 
-        for s in _strategies:
-            if s.get('source') != 'backtest':
-                continue
-
-            # Get matrix entry's conditions
-            _m_rules = s.get('rules', [])
-            _m_conds = set(c.get('feature', '')
-                           for _mr in _m_rules
-                           for c in _mr.get('conditions', []))
-            _m_exit = s.get('exit_name', s.get('exit_strategy', ''))
-
-            # STRICT match: conditions must be identical
-            if not _saved_conds or _m_conds != _saved_conds:
-                continue
-
-            # If saved rule has exit info, it must match too
-            if _saved_exit and _saved_exit not in ('?', 'Default', ''):
-                if _m_exit == _saved_exit:
-                    matched_idx = s.get('index')
-                    break
-            else:
-                # No exit info in saved rule — match by combo name + conditions
-                if rule_combo and s.get('rule_combo', '') == rule_combo:
-                    matched_idx = s.get('index')
-                    break
-
-        # Last resort: exact combo + exit name (for rules saved with proper data)
-        if matched_idx is None and rule_combo and _saved_exit:
+        # ── Pass 1: exact rule_combo + exit_name (most specific) ─────────────
+        if rule_combo:
             for s in _strategies:
                 if s.get('source') != 'backtest':
                     continue
-                if (s.get('rule_combo', '') == rule_combo and
-                    s.get('exit_name', '') == _saved_exit):
-                    matched_idx = s.get('index')
-                    break
+                _m_combo = s.get('rule_combo', '')
+                _m_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                if _m_combo == rule_combo:
+                    if _saved_exit and _saved_exit not in ('?', 'Default', ''):
+                        if _m_exit == _saved_exit:
+                            matched_idx = s.get('index')
+                            break
+                    else:
+                        # No exit info saved — combo name alone is enough
+                        matched_idx = s.get('index')
+                        break
+
+        # ── Pass 2: feature-set + exit (fallback when combo name changed) ────
+        # WHY: Backtest may have been re-run with a different combo naming
+        #      convention. If the combo name no longer exists in the matrix,
+        #      fall back to matching by condition features + exit.
+        #      Still require BOTH to match — features alone hits wrong combos.
+        if matched_idx is None:
+            _saved_conds = set(c.get('feature', '')
+                               for c in saved_rule.get('conditions', []))
+            if _saved_conds:
+                for s in _strategies:
+                    if s.get('source') != 'backtest':
+                        continue
+                    _m_rules = s.get('rules', [])
+                    _m_conds = set(c.get('feature', '')
+                                   for _mr in _m_rules
+                                   for c in _mr.get('conditions', []))
+                    _m_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                    if _m_conds != _saved_conds:
+                        continue
+                    if _saved_exit and _saved_exit not in ('?', 'Default', ''):
+                        if _m_exit == _saved_exit:
+                            matched_idx = s.get('index')
+                            break
+                    else:
+                        if s.get('rule_combo', '') == rule_combo:
+                            matched_idx = s.get('index')
+                            break
 
         # WHY: Diagnostic log so user can check which entry was matched.
         # CHANGED: April 2026 — match diagnostic
@@ -657,10 +693,13 @@ def _load_selected_strategy():
                     _strat_info_lbl.configure(text="⏳ Loading trades...", fg="#e67e22")
                     filters = saved_rule.get('filters_applied')
 
-                    def _do_load_saved(_raw=raw, _filters=filters):
+                    def _do_load_saved(_raw=raw, _filters=filters, _tok=my_token):
                         global _base_trades, _filtered_trades
                         try:
-                            _base_trades = enrich_trades(list(_raw))
+                            _enriched = enrich_trades(list(_raw))
+                            if _load_token != _tok:
+                                return  # stale — a newer load was started
+                            _base_trades = _enriched
                             _filtered_trades = list(_base_trades)
                             if _filters:
                                 try:
@@ -701,10 +740,11 @@ def _load_selected_strategy():
             if state.window:
                 state.window.after(0, _update_strat_info)
                 state.window.after(50, _schedule_update)
-            messagebox.showinfo("Saved Rule — No Trades",
-                f"Loaded rule conditions and settings.\n\n"
-                f"No matching backtest found — run backtest to see trades.\n"
-                f"You can still optimize or generate an EA from this rule.")
+            if not silent:
+                messagebox.showinfo("Saved Rule — No Trades",
+                    f"Loaded rule conditions and settings.\n\n"
+                    f"No matching backtest found — run backtest to see trades.\n"
+                    f"You can still optimize or generate an EA from this rule.")
             return
 
     # ── Normal strategy loading (backtest result or optimizer) ────────────
@@ -720,13 +760,15 @@ def _load_selected_strategy():
             _sel_tf = s.get('entry_tf', '')
             break
 
-    def _do_load():
+    def _do_load(_tok=my_token):
         global _base_trades, _filtered_trades
         try:
             from project2_backtesting.strategy_refiner import (
                 load_trades_from_matrix, enrich_trades
             )
             raw = load_trades_from_matrix(idx, entry_tf=_sel_tf)
+            if _load_token != _tok:
+                return  # stale — user clicked a different row
             if not raw:
                 if state.window:
                     state.window.after(0, lambda: messagebox.showwarning(
@@ -734,14 +776,17 @@ def _load_selected_strategy():
                         "This strategy has no trade data.\n\nRe-run the backtest first."
                     ))
                 return
-            _base_trades = enrich_trades(list(raw))
+            _enriched = enrich_trades(list(raw))
+            if _load_token != _tok:
+                return  # stale — cancelled while enriching
+            _base_trades = _enriched
             _filtered_trades = list(_base_trades)
             if state.window:
                 state.window.after(0, _update_strat_info)
                 state.window.after(50, _schedule_update)
         except Exception as e:
             import traceback; traceback.print_exc()
-            if state.window:
+            if _load_token == _tok and state.window:
                 state.window.after(0, lambda: messagebox.showerror("Load Error", str(e)))
 
     import threading
@@ -3382,11 +3427,13 @@ def build_panel(parent):
                     f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
                 ), tags=(tag,))
 
-            # Select first row and sync _strategy_var
+            # Select first row and sync _strategy_var + iid tracker
             _tree_children = _strat_tree.get_children()
             if _tree_children:
+                global _selected_strat_iid
                 _strat_tree.selection_set(_tree_children[0])
                 _strategy_var.set(_strategies[0]['label'])
+                _selected_strat_iid = _tree_children[0]  # keep iid in sync
 
             # WHY (per-row-delete v3 fix): Set dd_container only when creating
             #      new tree. Event handlers defined below are bound only on
@@ -3396,12 +3443,21 @@ def build_panel(parent):
                 dd_container[0] = _strat_tree
 
             def _on_tree_select(event=None):
+                global _selected_strat_iid
                 sel = _strat_tree.selection()
                 if not sel:
                     return
                 sel_idx = sel[0]
                 for s in _strategies:
                     if str(s.get('index', '')) == sel_idx:
+                        if s.get('source') == 'separator':
+                            return  # ignore separator clicks
+                        # WHY: Store iid directly so _get_selected_index()
+                        #      always returns the clicked row's index, immune
+                        #      to label-string mismatches caused by stale/star
+                        #      marker changes between click and Load.
+                        # CHANGED: April 2026 — iid-based selection
+                        _selected_strat_iid = sel_idx
                         _strategy_var.set(s['label'])
                         break
 

@@ -520,6 +520,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         trail_activation_pips = 0
         trail_distance_pips = 0
 
+    # Exits that legitimately use trailing stop — for all others, Trail* must be
+    # constants (not inputs) so the user cannot accidentally enable trailing in the
+    # MT5 tester and corrupt the exit logic defined by the exit strategy.
+    _has_trailing = exit_class in ('TrailingStop', 'ATRTrailing', 'ATRBased', 'HybridExit')
+
     # ATR params
     sl_atr_mult = exit_params.get('sl_atr_mult', 1.5)
     tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
@@ -1359,17 +1364,22 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'   handle_exit_atr = iATR(NULL, {atr_mql_tf}, ATR_Period);\n'
             f'   if(handle_exit_atr == INVALID_HANDLE) return(INIT_FAILED);'
         )
+        # WHY: trade.Buy/Sell already receives slPrice/tpPrice computed from ATR in the
+        #      lot-sizing block above — SL/TP are set atomically with the order, no
+        #      PositionModify needed. The old PositionModify used trade.ResultOrder()
+        #      (order ticket) not a position ticket, which is wrong in netting mode and
+        #      re-reads ATR at shift 0 (forming bar) risking a different value than the
+        #      lot-sizing read. We store the ATR at entry in globals only for reference.
+        # CHANGED: April 2026 — remove redundant/buggy PositionModify on ATR entry
         exit_on_entry = (
-            f'      // ATR-Based: compute SL/TP from ATR at entry\n'
-            f'      double atrBuf[1];\n'
-            f'      CopyBuffer(handle_exit_atr, 0, 0, 1, atrBuf);\n'
-            f'      double atrVal = atrBuf[0];\n'
-            f'      g_entrySL = atrVal * SL_ATR_Mult;\n'
-            f'      g_entryTP = atrVal * TP_ATR_Mult;\n'
-            f'      // ATR SL/TP: direction-aware ({_direction_label})\n'
-            f'      trade.PositionModify(trade.ResultOrder(),\n'
-            f'         entryPrice {"- g_entrySL" if is_buy else "+ g_entrySL"},\n'
-            f'         entryPrice {"+ g_entryTP" if is_buy else "- g_entryTP"});\n'
+            f'      // ATR SL/TP set atomically in trade.Buy/Sell (slPrice/tpPrice).\n'
+            f'      // Record ATR at entry in globals for management reference.\n'
+            f'      {{\n'
+            f'         double _atrEntry[1];\n'
+            f'         CopyBuffer(handle_exit_atr, 0, 1, 1, _atrEntry);  // shift=1: last closed bar\n'
+            f'         g_entrySL = _atrEntry[0] * SL_ATR_Mult;\n'
+            f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
+            f'      }}\n'
         )
 
     elif exit_class == 'TimeBased':
@@ -1566,7 +1576,16 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_functions_block   = '\n\n'.join(extra_functions) if extra_functions   else 'string GetPayoutStatus() { return "N/A"; }'
 
     # Exit-specific blocks (computed outside f-string to avoid backslash issues)
-    exit_on_entry_block = exit_on_entry if exit_on_entry else '      trade.PositionModify(trade.ResultOrder(),\n         entryPrice - sl,\n         entryPrice + tp);'
+    # WHY: The old fallback called trade.PositionModify(trade.ResultOrder(), entryPrice-sl, entryPrice+tp)
+    #      which has two bugs:
+    #      1. Direction: BUY math hardcoded — for SELL, SL/TP are inverted, overwriting the
+    #         correct values already set atomically by trade.Sell().
+    #      2. Ticket: trade.ResultOrder() returns the ORDER ticket, not the POSITION ticket
+    #         (wrong in netting mode).
+    #      SL/TP are always set atomically in trade.Buy/Sell via slPrice/tpPrice, so no
+    #      post-fill PositionModify is needed for any exit type.
+    # CHANGED: April 2026 — remove direction-buggy fallback PositionModify
+    exit_on_entry_block = exit_on_entry
 
     # ── MinHoldMinutes enforcement helper ──
     # WHY: Backtester post-filters trades < N minutes. EA must prevent voluntary
@@ -1711,6 +1730,22 @@ bool IsMinHoldMet()
 
     _indicator_release_block = '\n'.join(_release_lines) if _release_lines else '   // No indicator handles to release'
 
+    # WHY: Exit-strategy handles (ATR, IndicatorExit) are registered via exit_globals
+    #      and extra_init, completely outside the `handles` list that the release-block
+    #      builder above iterates. They would be silently skipped, leaking the handle
+    #      until the terminal restarts. Append them directly to the built block string.
+    # CHANGED: April 2026 — fix exit-handle leaks in OnDeinit
+
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
+        _indicator_release_block += '\n   if(handle_exit_atr != INVALID_HANDLE) IndicatorRelease(handle_exit_atr);'
+
+    if exit_class == 'IndicatorExit' and exit_globals.strip():
+        # exit_globals first line = IndicatorExit handle declaration (regime handles follow after, already released above)
+        _ind_hv_raw = exit_globals.strip().split('\n')[0].rstrip(';').strip()
+        _ind_hname  = _ind_hv_raw.split()[-1] if _ind_hv_raw and ' ' in _ind_hv_raw else ''
+        if _ind_hname and _ind_hname not in _seen_handles:
+            _indicator_release_block += f'\n   if({_ind_hname} != INVALID_HANDLE) IndicatorRelease({_ind_hname});'
+
     # WHY: ATR-based exit uses ATR × mult for SL, not fixed SLPips.
     #      Lot sizing must match the ACTUAL SL, not the configured one.
     #      Without this, lots are 20× too big and one loss = 6% DD.
@@ -1720,7 +1755,7 @@ bool IsMinHoldMet()
             '   double pipSize = GetPipSize();\n'
             '   // ATR-aware: size lots for ACTUAL ATR SL, not fixed SLPips\n'
             '   double _atrSizeBuf[1];\n'
-            '   CopyBuffer(handle_exit_atr, 0, 0, 1, _atrSizeBuf);\n'
+            '   CopyBuffer(handle_exit_atr, 0, 1, 1, _atrSizeBuf);  // shift=1: last closed bar, matches Python training\n'
             '   double sl = _atrSizeBuf[0] * SL_ATR_Mult;  // ATR SL in price units\n'
             '   double tp = _atrSizeBuf[0] * TP_ATR_Mult;\n'
             '   double lots = CalculateLots(sl);\n'
@@ -1733,6 +1768,38 @@ bool IsMinHoldMet()
             '   double tp = TPPips * pipSize;\n'
             '   double lots = CalculateLots(sl);\n'
             '   if(lots <= 0.0) return;\n'
+        )
+
+    # ── Trailing inputs: editable for trailing exits, locked constants otherwise ──
+    # WHY: For non-trailing exits (ATROnly, FixedSLTP, TimeBased, IndicatorExit)
+    #      the MT5 Strategy Tester shows every `input` parameter and lets the user
+    #      type any value. If TrailDistance is an input defaulting to 0, the user
+    #      can change it to 100 and ManageTrailingStop() will fire every tick —
+    #      silently overriding the ATR/fixed SL with an unintended trailing stop.
+    #      Declaring them as `const double` keeps them in the code (so the
+    #      ManageTrailingStop() function compiles) but hides them from the tester.
+    # CHANGED: April 2026 — lock trailing inputs for non-trailing exits
+    if _has_trailing:
+        _trail_inputs_block = (
+            f'input double TrailActivation    = {trail_activation_pips};   '
+            f'// Activate trailing after this profit (pips)\n'
+            f'input double TrailDistance      = {trail_distance_pips};     '
+            f'// Trailing distance behind price (pips, 0=off)'
+        )
+        _manage_trail_call = (
+            ('if(IsMinHoldMet()) ' if min_hold_minutes > 0 else '')
+            + 'ManageTrailingStop();'
+        )
+    else:
+        _trail_inputs_block = (
+            f'// Trailing disabled for {exit_class} — SL/TP managed by the exit strategy.\n'
+            f'// Declared as const so ManageTrailingStop() compiles but never runs.\n'
+            f'const double TrailActivation    = 0;\n'
+            f'const double TrailDistance      = 0;'
+        )
+        _manage_trail_call = (
+            '// ManageTrailingStop() suppressed: trailing not used for '
+            + exit_class
         )
 
     code = f"""\
@@ -1769,8 +1836,7 @@ input int    DailyResetMinute     = 0;                       // Daily reset minu
 //--- Exit parameters
 input double SLPips             = {sl_pips};                 // Stop loss (pips)
 input double TPPips             = {tp_pips};                 // Take profit (pips)
-input double TrailActivation    = {trail_activation_pips};   // Activate trailing after this profit (pips)
-input double TrailDistance      = {trail_distance_pips};     // Trailing distance behind price (pips, 0=off)
+{_trail_inputs_block}
 {exit_inputs}
 //--- Entry rule thresholds (one per condition — tweak without recompiling)
 {conditions_block}
@@ -1877,7 +1943,7 @@ void OnTick()
    // WHY: Trailing stop must be checked every tick, not just on new bars.
    //      Price can hit the trail level between bars.
    // CHANGED: April 2026 — trailing stop management
-   {"if(IsMinHoldMet()) " if min_hold_minutes > 0 else ""}ManageTrailingStop();
+   {_manage_trail_call}
 
    // WHY: Exit-specific management (time-based, indicator-based, hybrid).
    //      Must be checked every tick for time/indicator exits.

@@ -63,6 +63,12 @@ _scroll_canvas    = None
 _code_text        = None
 _generate_btn     = None
 _status_lbl       = None
+# WHY: Treeview-based strategy selector tracks selected row by iid (e.g.
+#      "saved_1" or "0") instead of by label string, so selection survives
+#      label changes caused by stale/star updates or refresh.
+# CHANGED: April 2026 — Treeview selector replaces Combobox
+_strat_tree_p3    = None   # ttk.Treeview in the strategy selector
+_selected_strat_iid = None  # iid of the currently selected row
 
 # Settings vars
 _symbol_var       = None
@@ -111,6 +117,14 @@ def _load_strategies():
 
 
 def _get_selected_index():
+    # Primary: iid stored on last Treeview row click — immune to label changes.
+    if _selected_strat_iid is not None:
+        try:
+            return int(_selected_strat_iid)
+        except (ValueError, TypeError):
+            pass
+        return _selected_strat_iid  # "saved_N", "optimizer_latest", etc.
+    # Fallback: label match (initial load before any click).
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
@@ -1170,6 +1184,7 @@ def build_panel(parent):
     global _session_vars, _day_vars, _condition_frame
     global _sl_var, _tp_var, _trail_var
     global _test_script_text, _step2_btn
+    global _strat_tree_p3, _selected_strat_iid
 
     _load_strategies()
 
@@ -1190,34 +1205,145 @@ def build_panel(parent):
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
 
+    _strategy_var = tk.StringVar(value="")
+
     if not _strategies:
         tk.Label(sel_frame, text="No backtest results. Run the backtest first.",
                  font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(anchor="w")
-        _strategy_var = tk.StringVar(value="")
     else:
-        _strategy_var = tk.StringVar(value=_strategies[0]['label'])
-        # WHY: Separator rows were selectable in dropdown. Selecting one
-        #      returned __separator__ index → empty data → confusing.
-        # CHANGED: April 2026 — filter separators from dropdown
-        labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
-        dd = ttk.Combobox(sel_frame, textvariable=_strategy_var,
-                          values=labels, state="readonly", width=70)
-        dd.pack(anchor="w")
-        dd.bind("<<ComboboxSelected>>", lambda e: _update_strat_info())
+        # WHY: Treeview replaces Combobox so the user can see rule details
+        #      (WR, PF, exit strategy, source) before generating. Selection
+        #      uses iid directly — not label text — so it survives refreshes
+        #      that add/remove stale/star markers.
+        # CHANGED: April 2026 — Treeview selector
+        global _strat_tree_p3, _selected_strat_iid
+        tree_outer = tk.Frame(sel_frame, bg=WHITE)
+        tree_outer.pack(fill="x", pady=(0, 4))
+
+        p3_cols = ("#", "rule", "exit", "wr", "pf", "trades")
+        _strat_tree_p3 = ttk.Treeview(tree_outer, columns=p3_cols, show="headings",
+                                       height=7, selectmode="browse")
+        _strat_tree_p3.heading("#",      text="#")
+        _strat_tree_p3.heading("rule",   text="Rule / Conditions")
+        _strat_tree_p3.heading("exit",   text="Exit Strategy")
+        _strat_tree_p3.heading("wr",     text="Win Rate")
+        _strat_tree_p3.heading("pf",     text="PF")
+        _strat_tree_p3.heading("trades", text="Trades")
+
+        _strat_tree_p3.column("#",      width=90,  anchor="center", stretch=False)
+        _strat_tree_p3.column("rule",   width=300, anchor="w")
+        _strat_tree_p3.column("exit",   width=130, anchor="w",      stretch=False)
+        _strat_tree_p3.column("wr",     width=75,  anchor="center", stretch=False)
+        _strat_tree_p3.column("pf",     width=55,  anchor="center", stretch=False)
+        _strat_tree_p3.column("trades", width=60,  anchor="center", stretch=False)
+
+        _strat_tree_p3.tag_configure("saved",     foreground="#9b59b6")
+        _strat_tree_p3.tag_configure("starred",   foreground="#f39c12")
+        _strat_tree_p3.tag_configure("separator", foreground="#aaaaaa", font=("Segoe UI", 8))
+        _strat_tree_p3.tag_configure("optimizer", foreground="#2980b9")
+        _strat_tree_p3.tag_configure("profitable", foreground="#28a745")
+        _strat_tree_p3.tag_configure("losing",     foreground="#dc3545")
+
+        tree_scroll = tk.Scrollbar(tree_outer, orient="vertical",
+                                   command=_strat_tree_p3.yview)
+        _strat_tree_p3.configure(yscrollcommand=tree_scroll.set)
+        tree_scroll.pack(side=tk.RIGHT, fill="y")
+        _strat_tree_p3.pack(fill="x", expand=True)
+
+        def _populate_tree_p3():
+            global _selected_strat_iid
+            for item in _strat_tree_p3.get_children():
+                _strat_tree_p3.delete(item)
+            for row_n, s in enumerate(_strategies, start=1):
+                src = s.get('source', 'backtest')
+                idx_raw = s.get('index', 0)
+                iid = str(idx_raw)
+
+                wr  = s.get('win_rate', 0)
+                pf  = s.get('net_profit_factor', s.get('profit_factor', 0))
+                tr  = s.get('total_trades', s.get('trades', 0))
+                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                rc  = s.get('rule_combo', '?')
+                ex  = s.get('exit_name', s.get('exit_strategy', '?'))
+                is_starred = s.get('is_starred', False)
+
+                if src == 'separator':
+                    _strat_tree_p3.insert("", "end", iid=iid, values=(
+                        "", rc, "", "", "", ""), tags=("separator",))
+                    continue
+                elif src == 'saved':
+                    numeric_id = s.get('id', '')
+                    id_disp = f"💾 #{numeric_id}"
+                    tag = "starred" if is_starred else "saved"
+                elif src == 'optimizer':
+                    id_disp = f"🔧 #{row_n}"
+                    tag = "optimizer"
+                else:
+                    id_disp = f"#{row_n}"
+                    tag = "profitable" if pf >= 1.0 else "losing"
+                    if is_starred:
+                        tag = "starred"
+
+                _strat_tree_p3.insert("", "end", iid=iid, values=(
+                    id_disp, rc, ex, wr_str, f"{pf:.2f}", int(tr)
+                ), tags=(tag,))
+
+            # Select first non-separator row
+            children = _strat_tree_p3.get_children()
+            first_sel = next(
+                (c for c in children
+                 if "separator" not in _strat_tree_p3.item(c, "tags")),
+                children[0] if children else None
+            )
+            if first_sel:
+                _strat_tree_p3.selection_set(first_sel)
+                _selected_strat_iid = first_sel
+                for s in _strategies:
+                    if str(s.get('index', '')) == first_sel:
+                        _strategy_var.set(s['label'])
+                        break
+
+        _populate_tree_p3()
+
+        def _on_p3_select(event=None):
+            global _selected_strat_iid
+            sel = _strat_tree_p3.selection()
+            if not sel:
+                return
+            iid = sel[0]
+            # Skip separator rows
+            tags = _strat_tree_p3.item(iid, "tags")
+            if "separator" in tags:
+                return
+            _selected_strat_iid = iid
+            for s in _strategies:
+                if str(s.get('index', '')) == iid:
+                    _strategy_var.set(s['label'])
+                    break
+            _update_strat_info()
+
+        _strat_tree_p3.bind("<<TreeviewSelect>>", _on_p3_select)
 
         def _refresh_strategies():
-            global _strategies
+            global _strategies, _selected_strat_iid
+            prev_iid = _selected_strat_iid
             _load_strategies()
-            new_labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
-            dd['values'] = new_labels
-            if new_labels and _strategy_var.get() not in new_labels:
-                _strategy_var.set(new_labels[0])
+            _populate_tree_p3()
+            # Restore previous selection if it still exists
+            if prev_iid and prev_iid in _strat_tree_p3.get_children():
+                _strat_tree_p3.selection_set(prev_iid)
+                _strat_tree_p3.see(prev_iid)
+                _selected_strat_iid = prev_iid
+                for s in _strategies:
+                    if str(s.get('index', '')) == prev_iid:
+                        _strategy_var.set(s['label'])
+                        break
             _update_strat_info()
-            print(f"[EA GEN] Refreshed — {len(new_labels)} strategies")
+            print(f"[EA GEN] Refreshed — {len(_strategies)} strategies")
 
         tk.Button(sel_frame, text="🔄 Refresh", font=("Segoe UI", 8),
                   bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
-                  command=_refresh_strategies).pack(anchor="w", pady=(4, 0))
+                  command=_refresh_strategies).pack(anchor="w", pady=(2, 0))
 
     _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
                                 bg=WHITE, fg=MIDGREY)
@@ -1688,10 +1814,58 @@ def build_panel(parent):
 
 
 def refresh():
-    global _strategies, _strategy_var
+    global _strategies, _strategy_var, _selected_strat_iid
+    prev_iid = _selected_strat_iid
     _load_strategies()
-    if _strategy_var is not None and _strategies:
-        labels = [s['label'] for s in _strategies if s.get('source') != 'separator']
-        if _strategy_var.get() not in labels:
-            _strategy_var.set(labels[0])
-        _update_strat_info()
+    if _strat_tree_p3 is not None and _strategies:
+        # Repopulate Treeview and restore previous selection if still valid
+        try:
+            for item in _strat_tree_p3.get_children():
+                _strat_tree_p3.delete(item)
+            for row_n, s in enumerate(_strategies, start=1):
+                src = s.get('source', 'backtest')
+                idx_raw = s.get('index', 0)
+                iid = str(idx_raw)
+                wr  = s.get('win_rate', 0)
+                pf  = s.get('net_profit_factor', s.get('profit_factor', 0))
+                tr  = s.get('total_trades', s.get('trades', 0))
+                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                rc  = s.get('rule_combo', '?')
+                ex  = s.get('exit_name', s.get('exit_strategy', '?'))
+                is_starred = s.get('is_starred', False)
+                if src == 'separator':
+                    _strat_tree_p3.insert("", "end", iid=iid, values=(
+                        "", rc, "", "", "", ""), tags=("separator",))
+                    continue
+                elif src == 'saved':
+                    numeric_id = s.get('id', '')
+                    id_disp = f"💾 #{numeric_id}"
+                    tag = "starred" if is_starred else "saved"
+                elif src == 'optimizer':
+                    id_disp = f"🔧 #{row_n}"
+                    tag = "optimizer"
+                else:
+                    id_disp = f"#{row_n}"
+                    tag = "profitable" if pf >= 1.0 else "losing"
+                    if is_starred:
+                        tag = "starred"
+                _strat_tree_p3.insert("", "end", iid=iid, values=(
+                    id_disp, rc, ex, wr_str, f"{pf:.2f}", int(tr)
+                ), tags=(tag,))
+
+            children = _strat_tree_p3.get_children()
+            if prev_iid and prev_iid in children:
+                _strat_tree_p3.selection_set(prev_iid)
+                _strat_tree_p3.see(prev_iid)
+                _selected_strat_iid = prev_iid
+            elif children:
+                first_sel = next(
+                    (c for c in children
+                     if "separator" not in _strat_tree_p3.item(c, "tags")),
+                    children[0]
+                )
+                _strat_tree_p3.selection_set(first_sel)
+                _selected_strat_iid = first_sel
+        except Exception:
+            pass
+    _update_strat_info()
