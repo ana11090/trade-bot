@@ -574,54 +574,86 @@ def load_trades_from_matrix(strategy_index, entry_tf=None):
                 with open(trades_path, 'r', encoding='utf-8') as f:
                     trades_data = json.load(f)
 
-                # The per-TF file is keyed by combo index WITHIN that TF's run.
-                # But strategy_index is the GLOBAL index across all TFs.
-                # We need to find which per-TF index this corresponds to.
-
-                # First try: count how many results before this TF
-                # to compute the per-TF offset
+                # WHY: The trades file is keyed by the LOCAL index within
+                #      that TF's run, but the trades file may contain extra
+                #      entries (from filtered-out or combined backtest runs)
+                #      that are absent from the current matrix. This makes a
+                #      pure position-based mapping (tf_local_idx) unreliable.
+                #      Strategy: compute tf_local_idx, then verify the trade
+                #      count matches the matrix entry. If it doesn't, search
+                #      nearby keys until we find the right one.
+                # CHANGED: April 2026 — count-verified trades lookup
                 try:
                     with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
                         matrix_data = json.load(f)
                     all_results = matrix_data.get('results', []) or matrix_data.get('matrix', [])
 
-                    # Count results with this TF that come before strategy_index
+                    # Get expected trade count and win rate from the matrix row
+                    _expected = all_results[strategy_index] if 0 <= strategy_index < len(all_results) else {}
+                    _expected_count = int(_expected.get('total_trades', _expected.get('trade_count', 0)))
+                    _expected_wr_raw = _expected.get('win_rate', 0)
+                    # win_rate in matrix may be stored as percent (67.7) or fraction (0.677)
+                    _expected_wr = _expected_wr_raw / 100.0 if _expected_wr_raw > 1 else _expected_wr_raw
+
+                    # Count same-TF results before strategy_index to get the candidate key
                     tf_local_idx = 0
                     for ri in range(strategy_index):
                         if ri < len(all_results) and all_results[ri].get('entry_tf', '') == entry_tf:
                             tf_local_idx += 1
 
+                    def _trades_match(trades_list):
+                        """Return True if this trade list matches the matrix row."""
+                        if not trades_list or _expected_count <= 0:
+                            return False
+                        if len(trades_list) != _expected_count:
+                            return False
+                        if _expected_wr > 0:
+                            wins = sum(1 for t in trades_list
+                                       if t.get('profit_pips', t.get('pips', 0)) > 0)
+                            actual_wr = wins / len(trades_list)
+                            if abs(actual_wr - _expected_wr) > 0.02:  # within 2%
+                                return False
+                        return True
+
+                    # Try tf_local_idx first, then search outward
+                    found_key = None
+                    if str(tf_local_idx) in trades_data:
+                        if _trades_match(trades_data[str(tf_local_idx)]):
+                            found_key = str(tf_local_idx)
+
+                    if found_key is None:
+                        # Search nearby keys (trades file may have extra entries
+                        # not in matrix that shift the local index)
+                        max_key = max(int(k) for k in trades_data if k.isdigit()) if trades_data else 0
+                        for offset in range(1, min(30, max_key + 2)):
+                            for delta in (offset, -offset):
+                                candidate = tf_local_idx + delta
+                                if candidate < 0:
+                                    continue
+                                k = str(candidate)
+                                if k in trades_data and _trades_match(trades_data[k]):
+                                    found_key = k
+                                    break
+                            if found_key is not None:
+                                break
+
+                    if found_key is not None:
+                        log.info(f"[REFINER] trades lookup idx={strategy_index} "
+                                 f"tf_local={tf_local_idx} found_key={found_key} "
+                                 f"count={len(trades_data[found_key])}")
+                        return trades_data[found_key]
+
+                    # Last fallback: just use tf_local_idx even if unverified
                     str_idx = str(tf_local_idx)
                     if str_idx in trades_data:
                         return trades_data[str_idx]
                 except Exception:
                     pass
 
-                # Fallback: try direct index
+                # Fallback: try direct global index
                 str_idx = str(strategy_index)
                 if str_idx in trades_data:
                     return trades_data[str_idx]
-
-                # Fallback: try matching by rule_combo + exit name
-                try:
-                    with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
-                        matrix_data = json.load(f)
-                    all_results = matrix_data.get('results', []) or matrix_data.get('matrix', [])
-                    if 0 <= strategy_index < len(all_results):
-                        target = all_results[strategy_index]
-                        target_combo = target.get('rule_combo', '')
-                        target_exit = target.get('exit_strategy', target.get('exit_name', ''))
-                        # Find matching index in trades file
-                        tf_results = [r for r in all_results if r.get('entry_tf', '') == entry_tf]
-                        for ti, tr in enumerate(tf_results):
-                            if (tr.get('rule_combo', '') == target_combo and
-                                (tr.get('exit_strategy', '') == target_exit or
-                                 tr.get('exit_name', '') == target_exit)):
-                                if str(ti) in trades_data:
-                                    return trades_data[str(ti)]
-                                break
-                except Exception:
-                    pass
 
             except Exception as e:
                 log.info(f"[REFINER] Error reading per-TF trades file: {e}")

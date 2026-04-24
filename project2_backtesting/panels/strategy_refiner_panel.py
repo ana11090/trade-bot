@@ -3452,11 +3452,6 @@ def build_panel(parent):
                     if str(s.get('index', '')) == sel_idx:
                         if s.get('source') == 'separator':
                             return  # ignore separator clicks
-                        # WHY: Store iid directly so _get_selected_index()
-                        #      always returns the clicked row's index, immune
-                        #      to label-string mismatches caused by stale/star
-                        #      marker changes between click and Load.
-                        # CHANGED: April 2026 — iid-based selection
                         _selected_strat_iid = sel_idx
                         _strategy_var.set(s['label'])
                         break
