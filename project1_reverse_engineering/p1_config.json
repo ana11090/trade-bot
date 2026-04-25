@@ -53,7 +53,7 @@
   "srm_a_tie_break_within_pct": "0.10",
   "auto_save_discovered_rules": "true",
   "data_source_id": "unlimited_leveraged_data",
-  "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+  "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data",
   "pip_value_per_lot": "1.0",
   "spread": "25",
   "commission": "4.0",

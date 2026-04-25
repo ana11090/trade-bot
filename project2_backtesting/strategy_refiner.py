@@ -574,28 +574,37 @@ def load_trades_from_matrix(strategy_index, entry_tf=None):
                 with open(trades_path, 'r', encoding='utf-8') as f:
                     trades_data = json.load(f)
 
-                # WHY: The trades file is keyed by the LOCAL index within
-                #      that TF's run, but the trades file may contain extra
-                #      entries (from filtered-out or combined backtest runs)
-                #      that are absent from the current matrix. This makes a
-                #      pure position-based mapping (tf_local_idx) unreliable.
-                #      Strategy: compute tf_local_idx, then verify the trade
-                #      count matches the matrix entry. If it doesn't, search
-                #      nearby keys until we find the right one.
-                # CHANGED: April 2026 — count-verified trades lookup
+                # WHY: The trades file is keyed by the original enumerate
+                #      index from the backtester's summary list. The panel
+                #      re-sorts backtest_matrix.json by score after trades
+                #      files are written, so position-based mapping
+                #      (tf_local_idx) is unreliable.
+                #      Primary strategy: read _trades_key from the matrix row
+                #      (set by the backtester before saving trades).
+                #      Fallback for old matrices: tf_local_idx + spiral search.
+                # CHANGED: April 2026 — _trades_key direct lookup
                 try:
                     with open(BACKTEST_MATRIX_PATH, 'r', encoding='utf-8') as f:
                         matrix_data = json.load(f)
                     all_results = matrix_data.get('results', []) or matrix_data.get('matrix', [])
 
-                    # Get expected trade count and win rate from the matrix row
                     _expected = all_results[strategy_index] if 0 <= strategy_index < len(all_results) else {}
                     _expected_count = int(_expected.get('total_trades', _expected.get('trade_count', 0)))
+
+                    # ── Primary: use _trades_key (survives re-sort) ──
+                    _trades_key = _expected.get('_trades_key')
+                    if _trades_key is not None:
+                        str_key = str(_trades_key)
+                        if str_key in trades_data:
+                            log.info(f"[REFINER] trades lookup idx={strategy_index} "
+                                     f"_trades_key={str_key} "
+                                     f"count={len(trades_data[str_key])}")
+                            return trades_data[str_key]
+
+                    # ── Fallback for old matrices without _trades_key ──
                     _expected_wr_raw = _expected.get('win_rate', 0)
-                    # win_rate in matrix may be stored as percent (67.7) or fraction (0.677)
                     _expected_wr = _expected_wr_raw / 100.0 if _expected_wr_raw > 1 else _expected_wr_raw
 
-                    # Count same-TF results before strategy_index to get the candidate key
                     tf_local_idx = 0
                     for ri in range(strategy_index):
                         if ri < len(all_results) and all_results[ri].get('entry_tf', '') == entry_tf:
@@ -611,19 +620,16 @@ def load_trades_from_matrix(strategy_index, entry_tf=None):
                             wins = sum(1 for t in trades_list
                                        if t.get('profit_pips', t.get('pips', 0)) > 0)
                             actual_wr = wins / len(trades_list)
-                            if abs(actual_wr - _expected_wr) > 0.02:  # within 2%
+                            if abs(actual_wr - _expected_wr) > 0.02:
                                 return False
                         return True
 
-                    # Try tf_local_idx first, then search outward
                     found_key = None
                     if str(tf_local_idx) in trades_data:
                         if _trades_match(trades_data[str(tf_local_idx)]):
                             found_key = str(tf_local_idx)
 
                     if found_key is None:
-                        # Search nearby keys (trades file may have extra entries
-                        # not in matrix that shift the local index)
                         max_key = max(int(k) for k in trades_data if k.isdigit()) if trades_data else 0
                         for offset in range(1, min(30, max_key + 2)):
                             for delta in (offset, -offset):
@@ -638,12 +644,11 @@ def load_trades_from_matrix(strategy_index, entry_tf=None):
                                 break
 
                     if found_key is not None:
-                        log.info(f"[REFINER] trades lookup idx={strategy_index} "
+                        log.info(f"[REFINER] trades fallback idx={strategy_index} "
                                  f"tf_local={tf_local_idx} found_key={found_key} "
                                  f"count={len(trades_data[found_key])}")
                         return trades_data[found_key]
 
-                    # Last fallback: just use tf_local_idx even if unverified
                     str_idx = str(tf_local_idx)
                     if str_idx in trades_data:
                         return trades_data[str_idx]

@@ -678,6 +678,31 @@ def _load_selected_strategy(silent=False):
                         matched_idx = s.get('index')
                         break
 
+        # ── Pass 1b: check INNER rules' rule_combo ───────────────────────────
+        # WHY: The top-level rule_combo in the matrix has been auto-generated
+        #      to a format like "#31_BUY_H1_2c_cf54_Trailing_Sto_2f57", but
+        #      the INNER rules still carry the original name like "Rule 1 (BUY)".
+        #      Saved rules use the original name. Match against inner rules too.
+        # CHANGED: April 2026 — match inner rules' rule_combo
+        if matched_idx is None and rule_combo:
+            for s in _strategies:
+                if s.get('source') != 'backtest':
+                    continue
+                _m_exit = s.get('exit_name', s.get('exit_strategy', ''))
+                # Check inner rules for matching rule_combo
+                for _inner_rule in s.get('rules', []):
+                    _inner_combo = _inner_rule.get('rule_combo', '')
+                    if _inner_combo == rule_combo:
+                        if _saved_exit and _saved_exit not in ('?', 'Default', ''):
+                            if _m_exit == _saved_exit:
+                                matched_idx = s.get('index')
+                                break
+                        else:
+                            matched_idx = s.get('index')
+                            break
+                if matched_idx is not None:
+                    break
+
         # ── Pass 2: feature-set + exit (fallback when combo name changed) ────
         # WHY: Backtest may have been re-run with a different combo naming
         #      convention. If the combo name no longer exists in the matrix,
@@ -702,9 +727,8 @@ def _load_selected_strategy(silent=False):
                             matched_idx = s.get('index')
                             break
                     else:
-                        if s.get('rule_combo', '') == rule_combo:
-                            matched_idx = s.get('index')
-                            break
+                        matched_idx = s.get('index')
+                        break
 
         # WHY: Diagnostic log so user can check which entry was matched.
         # CHANGED: April 2026 — match diagnostic
@@ -717,6 +741,52 @@ def _load_selected_strategy(silent=False):
             print(f"[REFINER] Saved rule '{rule_combo}' → matched matrix entry '{_matched_combo}' (idx={matched_idx})")
         else:
             print(f"[REFINER] Saved rule '{rule_combo}' → NO MATCH in matrix")
+
+        # WHY: Helper to load trades from the saved rule's embedded data.
+        #      Saved rules can carry their own trades array (saved at bookmark
+        #      time). This is the most reliable source — it's the exact trades
+        #      that were displayed when the user clicked Save. Use this when:
+        #        1. Matrix match found but backtest_trades file has no data
+        #        2. No matrix match at all (matrix was re-run or cleared)
+        # CHANGED: April 2026 — use embedded trades from saved rule
+        def _try_load_embedded_trades():
+            """Try to load trades from the saved rule's own embedded data.
+            Returns True if trades were loaded, False otherwise."""
+            _embedded = saved_rule.get('trades', [])
+            if not _embedded:
+                return False
+
+            print(f"[REFINER] Loading {len(_embedded)} embedded trades from saved rule")
+            _strat_info_lbl.configure(text=f"⏳ Loading {len(_embedded)} embedded trades...", fg="#e67e22")
+            filters = saved_rule.get('filters_applied')
+
+            def _do_load_embedded(_raw=_embedded, _filters=filters, _tok=my_token):
+                global _base_trades, _filtered_trades
+                try:
+                    from project2_backtesting.strategy_refiner import enrich_trades
+                    _enriched = enrich_trades(list(_raw))
+                    if _load_token != _tok:
+                        return
+                    _base_trades = _enriched
+                    _filtered_trades = list(_base_trades)
+                    if _filters:
+                        try:
+                            from project2_backtesting.strategy_refiner import apply_filters
+                            kept, _ = apply_filters(_base_trades, _filters)
+                            _filtered_trades = list(kept)
+                        except Exception:
+                            pass
+                    if state.window:
+                        state.window.after(0, _update_strat_info)
+                        state.window.after(50, _schedule_update)
+                except Exception as _e:
+                    import traceback; traceback.print_exc()
+                    if state.window:
+                        state.window.after(0, lambda: messagebox.showerror("Load Error", str(_e)))
+
+            import threading
+            threading.Thread(target=_do_load_embedded, daemon=True).start()
+            return True
 
         if matched_idx is not None:
             # WHY: Found the matching backtest result — load its trades
@@ -763,6 +833,11 @@ def _load_selected_strategy(silent=False):
                     threading.Thread(target=_do_load_saved, daemon=True).start()
                     return
                 else:
+                    # WHY: Matrix match found but backtest_trades file is empty/missing.
+                    #      Before showing "No Trades", try the saved rule's embedded trades.
+                    # CHANGED: April 2026 — fallback to embedded trades
+                    if _try_load_embedded_trades():
+                        return
                     messagebox.showwarning("No Trades",
                         f"Matched strategy '{rule_combo}' but it has no trade data.\n\n"
                         "Re-run the backtest to generate trades.")
@@ -772,12 +847,16 @@ def _load_selected_strategy(silent=False):
                 messagebox.showerror("Load Error", str(e))
                 return
         else:
-            # WHY: No matrix match — load the saved rule standalone.
-            #      It won't have trade history, but conditions/exit/params
-            #      are all in the saved rule data. User can still generate
-            #      an EA or re-run the backtest from here.
-            # CHANGED: April 2026 — standalone saved rule loading
-            print(f"[REFINER] No matrix match for '{rule_combo}' — loading standalone")
+            # WHY: No matrix match — try the saved rule's embedded trades first.
+            #      Rules saved after April 2026 carry their full trade list.
+            #      Only show "No Trades" if the saved rule itself has no trades.
+            # CHANGED: April 2026 — embedded trades before giving up
+            if _try_load_embedded_trades():
+                print(f"[REFINER] No matrix match for '{rule_combo}' — using embedded trades")
+                return
+
+            # No matrix match AND no embedded trades — load standalone
+            print(f"[REFINER] No matrix match for '{rule_combo}' — loading standalone (no trades)")
             _base_trades = []
             _filtered_trades = []
             if state.window:
@@ -786,8 +865,8 @@ def _load_selected_strategy(silent=False):
             if not silent:
                 messagebox.showinfo("Saved Rule — No Trades",
                     f"Loaded rule conditions and settings.\n\n"
-                    f"No matching backtest found — run backtest to see trades.\n"
-                    f"You can still optimize or generate an EA from this rule.")
+                    f"No matching backtest found and no embedded trades.\n"
+                    f"Run backtest to see trades, or re-save the rule from View Results.")
             return
 
     # ── Normal strategy loading (backtest result or optimizer) ────────────
@@ -2618,7 +2697,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               bg="#667eea", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
 
-    def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap, c=cand):
+    def _save(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap, c=cand, t=trades_snap):
         try:
             from shared.saved_rules import save_rule
 
@@ -2640,6 +2719,23 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             exit_name = ''
             _base_rules = []
             _base_direction = ''
+            _trades_to_save = list(t) if t else []
+
+            # WHY: trades_snap can be empty if the optimizer hasn't generated
+            #      new candidates yet, or if this is a filter-only optimization.
+            #      Load trades from persisted backtest_trades_{TF}.json files
+            #      so the saved rule has full trade history for validation.
+            # CHANGED: April 2026 — load trades from persisted files if missing
+            if not _trades_to_save and idx is not None:
+                try:
+                    from project2_backtesting.strategy_refiner import load_trades_for_strategy
+                    loaded_trades = load_trades_for_strategy(idx)
+                    if loaded_trades:
+                        _trades_to_save = list(loaded_trades)
+                        print(f"[REFINER SAVE] Loaded {len(_trades_to_save)} trades from backtest_trades file")
+                except Exception as _te:
+                    print(f"[REFINER SAVE] Could not load trades from file: {_te}")
+
             if idx is not None:
                 try:
                     matrix_path = os.path.join(project_root, 'project2_backtesting',
@@ -2669,13 +2765,39 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 except Exception:
                     pass
 
-            entry_tf = 'H1'
-            try:
-                from project2_backtesting.panels.configuration import load_config
-                _cfg = load_config()
-                entry_tf = _cfg.get('winning_scenario', 'H1')
-            except Exception:
-                pass
+            # WHY: Read entry_tf from the actual backtest strategy row, not config.
+            #      In multi-TF backtests, each strategy has its own entry_tf
+            #      (e.g., strategy #10 is M5, strategy #11 is H1). Reading from
+            #      config would save the wrong timeframe.
+            #
+            #      Priority order:
+            #        1. _strat['entry_tf']         — the row from backtest_matrix.json
+            #        2. _strat['entry_timeframe']   — alternative key name
+            #        3. _strat['stats']['entry_tf'] — nested in stats dict
+            #        4. config['winning_scenario']  — last resort (no row data)
+            #
+            #      ONLY fall back to config when the strategy row has NO entry_tf
+            #      at all.  Do NOT override a valid entry_tf (even 'H1') with
+            #      the config value — the row value is the ground truth of what
+            #      timeframe was actually backtested.
+            # CHANGED: April 2026 — read entry_tf from strategy row
+            entry_tf = None
+            if _strat:
+                entry_tf = (
+                    _strat.get('entry_tf') or
+                    _strat.get('entry_timeframe') or
+                    ((_strat.get('stats') or {}).get('entry_tf')) or
+                    None
+                )
+
+            # Fallback to config ONLY if strategy row had no entry_tf at all
+            if not entry_tf:
+                try:
+                    from project2_backtesting.panels.configuration import load_config
+                    _cfg = load_config()
+                    entry_tf = _cfg.get('winning_scenario', 'H1')
+                except Exception:
+                    entry_tf = 'H1'
 
             # WHY: rule_combo + trades_snap were missing from the saved data.
             #      Without rule_combo, downstream lookup-by-name fails.
@@ -2697,9 +2819,21 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             if isinstance(_wr, (int, float)) and 0 < _wr < 1.0:
                 _wr = _wr * 100.0  # Convert decimal to percentage
 
+            # WHY: Preserve original rule IDs and backtest metadata for traceability.
+            #      When a rule is saved from the optimizer, we need to know:
+            #      - Which backtest strategy it came from (index in matrix)
+            #      - What the original rule_id/rule_combo were
+            #      - What the base (unoptimized) stats were
+            #      This allows tracking the optimization lineage and comparing
+            #      before/after performance.
+            # CHANGED: April 2026 — preserve backtest lineage metadata
+            _original_rule_id = _strat.get('rule_id', '') if _strat else ''
+            _original_rule_combo = _strat.get('rule_combo', '') if _strat else ''
+            _backtest_index = idx if idx is not None else -1
+
             data = {
                 'rule_combo': n,
-                'trades': list(trades_snap),
+                'trades': _trades_to_save,
                 'conditions': [],
                 'prediction': 'WIN',
                 'win_rate': round(_wr, 2),
@@ -2717,6 +2851,11 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 'exit_name': exit_name,
                 'entry_timeframe': entry_tf,
                 'direction': _base_direction,
+                # Lineage tracking: where did this optimized strategy come from?
+                'original_rule_id': _original_rule_id,
+                'original_rule_combo': _original_rule_combo,
+                'backtest_strategy_index': _backtest_index,
+                'optimization_applied': True if (f or len(r) != len(_base_rules)) else False,
                 # Regime filter conditions (if active during backtest)
                 'regime_filter_conditions': [],
                 # WHY: The refiner's risk/stage/firm/account are set by the user
@@ -2800,8 +2939,33 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             except Exception as _bse:
                 print(f"[OPTIMIZER SAVE] Could not embed broker specs: {_bse}")
 
+            # Log what's being saved so user can verify
+            _n_trades_saving = len(data.get('trades', []))
+            _n_rules_saving = len(data.get('rules', []))
+            _n_conds_saving = len(data.get('conditions', []))
+            print(f"[REFINER SAVE] Saving rule:")
+            print(f"  Name:           {n}")
+            print(f"  Entry TF:       {entry_tf}  (source: {'strategy row' if _strat and (_strat.get('entry_tf') or _strat.get('entry_timeframe')) else 'config fallback'})")
+            print(f"  Direction:      {data.get('direction', '?')}")
+            print(f"  Rules:          {_n_rules_saving}")
+            print(f"  Conditions:     {_n_conds_saving}")
+            print(f"  Trades:         {_n_trades_saving}")
+            print(f"  Exit:           {exit_name or exit_class or '?'}")
+            print(f"  Win Rate:       {data.get('win_rate', '?')}%")
+            print(f"  Profit Factor:  {data.get('net_profit_factor', '?')}")
+            print(f"  Original ID:    {data.get('original_rule_id', 'N/A')}")
+
             rid = save_rule(data, source=f"Optimizer: {n}", notes=str(f))
-            messagebox.showinfo("Saved", f"Saved as #{rid}!")
+
+            # Show confirmation with key details so user can verify
+            messagebox.showinfo("Saved",
+                f"Saved as #{rid}!\n\n"
+                f"Entry TF:    {entry_tf}\n"
+                f"Direction:   {data.get('direction', '?')}\n"
+                f"Trades:      {_n_trades_saving}\n"
+                f"Win Rate:    {data.get('win_rate', '?')}%\n"
+                f"PF:          {data.get('net_profit_factor', '?')}"
+            )
             # WHY: Refresh the panel to show the newly saved rule in the dropdown
             # CHANGED: April 2026 — auto-refresh after save
             try:

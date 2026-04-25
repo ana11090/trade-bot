@@ -2858,6 +2858,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     try:
         trades_data = {}
         for idx, m in enumerate(summary):
+            # WHY: Persist the original enumerate index so the refiner can
+            #      find the right trades-file key even after the panel
+            #      re-sorts backtest_matrix.json by score.
+            # CHANGED: April 2026 — _trades_key fix for sorted-matrix mismatch
+            m['_trades_key'] = idx
             t_list = m.get('trades', [])
             if t_list:
                 trades_data[str(idx)] = t_list

@@ -169,13 +169,19 @@ def update_rule_field(rule_id, field, value):
 def _generate_rule_id(rule):
     """Generate a descriptive, unique rule ID.
 
-    Format: {direction}_{timeframe}_{N}c_{MMDD}_{hash4}
-    Example: BUY_M5_5c_0420_a7f3
+    Format: {direction}_{timeframe}_{N}c_{MMDD}_{hash8}
+    Example: BUY_M5_5c_0420_a7f3d9e2
 
     WHY: Sequential IDs (#24) tell you nothing. This format
          shows direction, timeframe, complexity, date, and
          a unique hash — all at a glance.
+
+    WHY: Extended hash from 4 to 8 characters for better uniqueness.
+         With 4 hex chars (16^4 = 65K combinations), collision risk
+         was too high when saving hundreds of similar strategies.
+         8 chars gives 16^8 = 4.3 billion combinations.
     CHANGED: April 2026 — descriptive rule IDs
+    CHANGED: April 2026 — 8-char hash for uniqueness
     """
     # Direction
     direction = rule.get('direction', rule.get('action', rule.get('prediction', 'UNK')))
@@ -201,18 +207,25 @@ def _generate_rule_id(rule):
         except Exception:
             pass
 
-    # Short hash from conditions + exit strategy (4 hex chars)
+    # Extended hash from conditions + exit strategy + timestamp (8 hex chars)
     # WHY: Same rule with different exit strategies must get different IDs.
+    # WHY: Add timestamp component to ensure even identical rules saved
+    #      at different times get unique IDs.
     # CHANGED: April 2026 — include exit strategy in hash
+    # CHANGED: April 2026 — 8-char hash with timestamp for uniqueness
+    import time
     cond_str = str(sorted(str(c) for c in conditions)) if conditions else ''
     exit_str = rule.get('exit_name', rule.get('exit_class', ''))
     exit_params = rule.get('exit_params', rule.get('exit_strategy_params', {}))
     if exit_params:
         exit_str += str(sorted(exit_params.items()) if isinstance(exit_params, dict) else str(exit_params))
-    hash_input = cond_str + exit_str if (cond_str or exit_str) else str(rule)
-    hash4 = hashlib.md5(hash_input.encode()).hexdigest()[:4]
 
-    return f"{direction}_{tf}_{n_conds}c_{mmdd}_{hash4}"
+    # Include high-precision timestamp to ensure uniqueness
+    timestamp_str = str(time.time())
+    hash_input = cond_str + exit_str + timestamp_str if (cond_str or exit_str) else str(rule) + timestamp_str
+    hash8 = hashlib.md5(hash_input.encode()).hexdigest()[:8]
+
+    return f"{direction}_{tf}_{n_conds}c_{mmdd}_{hash8}"
 
 
 def save_rule(rule, source="unknown", notes=""):
@@ -240,15 +253,18 @@ def save_rule(rule, source="unknown", notes=""):
         existing_ids = [r.get("id", 0) for r in all_rules if isinstance(r.get("id"), int)]
         new_id       = max(existing_ids, default=0) + 1
 
-        # WHY: Descriptive IDs like BUY_M5_5c_0420_a7f3 are more useful
+        # WHY: Descriptive IDs like BUY_M5_5c_0420_a7f3d9e2 are more useful
         #      than sequential numbers. Keep numeric id for backward compat
         #      but add descriptive rule_id as the display name.
+        # WHY: With 8-char hash + timestamp, collisions are nearly impossible
+        #      (4.3 billion combinations). Duplicate check kept as safety net.
         # CHANGED: April 2026 — descriptive rule IDs
+        # CHANGED: April 2026 — 8-char hash makes duplicates extremely rare
         rule_id = _generate_rule_id(rule)
-        # Handle duplicates (same rule saved twice in same day)
+        # Handle duplicates (extremely rare with 8-char hash + timestamp)
         existing_rule_ids = [r.get("rule_id", "") for r in all_rules]
         if rule_id in existing_rule_ids:
-            # Append counter: BUY_M5_5c_0420_a7f3_2
+            # Append counter: BUY_M5_5c_0420_a7f3d9e2_2
             counter = 2
             while f"{rule_id}_{counter}" in existing_rule_ids:
                 counter += 1
@@ -363,6 +379,27 @@ def save_rule(rule, source="unknown", notes=""):
 
         # CHANGED: April 2026 — atomic write (audit MED #67)
         _atomic_write_json(all_rules, _SAVE_PATH)
+
+    # WHY: Print a summary after every save so the user can verify
+    #      entry_tf, direction, trade count, etc. in the console.
+    # CHANGED: April 2026 — save confirmation log
+    _saved_tf = rule.get('entry_timeframe', rule.get('entry_tf', '?'))
+    _saved_dir = rule.get('direction', '?')
+    _saved_trades = len(rule.get('trades', []))
+    _saved_combo = rule.get('rule_combo', '?')
+    _saved_wr = rule.get('win_rate', '?')
+    _saved_pf = rule.get('net_profit_factor', '?')
+    print(f"\n{'='*50}")
+    print(f"[SAVED RULES] Rule #{new_id} saved successfully")
+    print(f"  Rule ID:        {rule_id}")
+    print(f"  Name:           {_saved_combo}")
+    print(f"  Entry TF:       {_saved_tf}")
+    print(f"  Direction:      {_saved_dir}")
+    print(f"  Trades:         {_saved_trades}")
+    print(f"  Win Rate:       {_saved_wr}")
+    print(f"  Profit Factor:  {_saved_pf}")
+    print(f"  Source:         {source}")
+    print(f"{'='*50}\n")
 
     # WHY (Phase A.40a.1): Notify listeners OUTSIDE the _save_lock so a
     #      slow listener can't block other save/delete operations. The

@@ -16,6 +16,7 @@ BG = "#ffffff"
 FG = "#333333"
 
 _content_frame = None
+_filter_profitable = None  # BooleanVar for "Show only profitable" filter
 
 
 def build_panel(parent):
@@ -123,6 +124,27 @@ def build_panel(parent):
               bg="#e67e22", fg="white", font=("Arial", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT)
 
+    # WHY: Users often have many saved rules (profitable and unprofitable).
+    #      By default, show only profitable rules (positive total pips or
+    #      profit factor > 1.0) to focus on viable strategies. User can
+    #      uncheck to see all rules.
+    # CHANGED: April 2026 — profitable filter (default ON)
+    global _filter_profitable
+    _filter_profitable = tk.BooleanVar(value=True)  # Default: show only profitable
+
+    filter_frame = tk.Frame(inner, bg="#f8f9fa", padx=10, pady=8)
+    filter_frame.pack(fill="x", padx=20, pady=(5, 0))
+
+    tk.Label(filter_frame, text="🔍 Filters:", font=("Arial", 9, "bold"),
+             bg="#f8f9fa", fg="#495057").pack(side=tk.LEFT, padx=(0, 10))
+
+    tk.Checkbutton(filter_frame, text="Show only profitable rules",
+                   variable=_filter_profitable,
+                   command=lambda: _refresh_list(inner, canvas, window_id),
+                   bg="#f8f9fa", fg="#495057", font=("Arial", 9),
+                   activebackground="#f8f9fa", selectcolor="#ffffff",
+                   cursor="hand2").pack(side=tk.LEFT)
+
     # Content frame for rule cards
     _content_frame = tk.Frame(inner, bg=BG)
     _content_frame.pack(fill="both", expand=True, padx=20, pady=10)
@@ -133,7 +155,7 @@ def build_panel(parent):
 
 
 def _refresh_list(inner, canvas, window_id):
-    global _content_frame
+    global _content_frame, _filter_profitable
 
     # WHY (Phase 68 Fix 44): Destroying all children while a tooltip or
     #      hover callback is active causes stale-callback errors on the
@@ -154,8 +176,49 @@ def _refresh_list(inner, canvas, window_id):
                  font=("Arial", 11), bg=BG, fg="#888888").pack(pady=20)
         return
 
-    tk.Label(_content_frame, text=f"{len(all_entries)} saved rules",
+    # WHY: Apply filter to show only profitable rules if checkbox is checked.
+    #      A rule is considered profitable if:
+    #      - total_pips > 0, OR
+    #      - net_total_pips > 0, OR
+    #      - net_profit_factor > 1.0
+    # CHANGED: April 2026 — profitable filter
+    total_count = len(all_entries)
+    if _filter_profitable and _filter_profitable.get():
+        filtered_entries = []
+        for entry in all_entries:
+            rule = entry.get('rule', {})
+            total_pips = rule.get('total_pips', 0) or 0
+            net_total_pips = rule.get('net_total_pips', 0) or 0
+            profit_factor = rule.get('net_profit_factor', 0) or 0
+
+            # Rule is profitable if any of these conditions are true
+            is_profitable = (
+                total_pips > 0 or
+                net_total_pips > 0 or
+                profit_factor > 1.0
+            )
+
+            if is_profitable:
+                filtered_entries.append(entry)
+
+        all_entries = filtered_entries
+
+    # Show count (filtered/total)
+    if _filter_profitable and _filter_profitable.get():
+        count_text = f"{len(all_entries)} of {total_count} rules (profitable only)"
+    else:
+        count_text = f"{len(all_entries)} saved rules"
+
+    tk.Label(_content_frame, text=count_text,
              font=("Arial", 10, "bold"), bg=BG, fg=FG).pack(anchor="w", pady=(0, 10))
+
+    # If filter resulted in no rules, show message
+    if not all_entries and total_count > 0:
+        tk.Label(_content_frame,
+                 text=f"No profitable rules found.\n\n"
+                      f"Uncheck the filter to see all {total_count} rules.",
+                 font=("Arial", 11), bg=BG, fg="#888888").pack(pady=20)
+        return
 
     # WHY: Group rules by firm so user can see all rules for a prop firm together
     # CHANGED: April 2026 — firm grouping
