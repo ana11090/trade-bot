@@ -466,6 +466,49 @@ def _run_lookup_diagnostic():
     threading.Thread(target=_do_diagnostic, daemon=True).start()
 
 
+def _build_eval_settings(firm_name, stage, proj_root):
+    """Return the firm's eval phase parameters as a dict to embed in saved rules.
+
+    WHY: Freezing eval params (target%, DD limits, max days, DD type) at save
+    time means the rule is self-contained. Displaying the eval simulation later
+    uses the exact parameters the rule was saved for — not whatever firm happens
+    to be selected in the UI at that moment.
+    max_calendar_days=None means unlimited (e.g. Get Leveraged).
+    CHANGED: April 2026 — freeze eval params into saved rule
+    """
+    if not firm_name:
+        return {}
+    try:
+        import glob as _ev_glob, json as _ev_json, os as _ev_os
+        _prop_dir = _ev_os.path.join(proj_root, 'prop_firms')
+        for _fp in _ev_glob.glob(_ev_os.path.join(_prop_dir, '*.json')):
+            with open(_fp, encoding='utf-8') as _ff:
+                _fd = _ev_json.load(_ff)
+            if _fd.get('firm_name') != firm_name:
+                continue
+            _ch = _fd.get('challenges', [{}])[0]
+            # Pick the phase matching stage ('evaluation' or 'funded')
+            _phases = _ch.get('phases', [{}])
+            _stage_l = stage.lower()
+            _ph = next(
+                (p for p in _phases
+                 if _stage_l in str(p.get('phase_name', '')).lower()),
+                _phases[0] if _phases else {}
+            )
+            return {
+                'firm_name':         firm_name,
+                'stage':             stage,
+                'target_pct':        _ph.get('profit_target_pct', 6.0),
+                'dd_total_pct':      _ph.get('max_total_drawdown_pct', 6.0),
+                'dd_daily_pct':      _ph.get('max_daily_drawdown_pct', 5.0),
+                'max_calendar_days': _ph.get('max_calendar_days'),   # None = unlimited
+                'dd_type':           _ph.get('drawdown_type', 'static'),
+            }
+    except Exception:
+        pass
+    return {}
+
+
 def _load_strategies(force=False):
     """Load strategy list from backtest matrix + saved rules.
 
@@ -988,93 +1031,274 @@ def _update_strat_info():
     # WHY: Show eval pass rate for the loaded strategy so user knows
     #      how likely it is to pass an evaluation before optimizing.
     # CHANGED: April 2026 — eval simulation on load
+    # FIXED: April 2026 — trailing DD, daily DD, calendar days, eval deadline
     global _eval_info_lbl
     if _eval_info_lbl and _base_trades and len(_base_trades) > 10:
         try:
             import pandas as _eval_pd
-            # Get firm DD/target from rule or P1 config
-            _eval_acct = 10000
-            _eval_dd_total = 6.0
-            _eval_target_pct = 6.0
-            _eval_risk = 1.0
-            _eval_pip_val = 1.0
-            _eval_sl = 150.0
+            from datetime import datetime as _eval_dt
+
+            # ── Load firm/rule parameters ─────────────────────────────────
+            _eval_acct         = 10000.0
+            _eval_dd_total     = 6.0    # total DD limit (%)
+            _eval_dd_daily     = 5.0    # daily DD limit (%)
+            _eval_target_pct   = 6.0    # profit target (%)
+            _eval_max_cal_days = 60     # max calendar days per eval window (default no-limit = 60)
+            _eval_dd_type      = 'static'  # 'static' or 'trailing' / 'trailing_eod'
+            _eval_risk         = 1.0
+            _eval_pip_val      = 1.0
+            _eval_sl           = 150.0
             try:
                 _loaded_idx2 = _get_selected_index()
                 for _s2 in _strategies:
                     if _s2.get('index') == _loaded_idx2:
                         _sr2 = _s2.get('saved_rule', {})
                         _rs2 = _s2.get('run_settings', {})
-                        _eval_acct = float(_sr2.get('account_size', 0) or _rs2.get('starting_capital', 0) or _s2.get('account_size', 0) or 10000)
-                        _eval_dd_total = float(_sr2.get('dd_total_pct', 0) or _rs2.get('dd_total_pct', 0) or _s2.get('dd_total_pct', 0) or 6.0)
-                        _eval_risk = float(_sr2.get('risk_pct', 0) or _rs2.get('risk_pct', 0) or _s2.get('risk_pct', 0) or 1.0)
+
+                        # ── Risk / account / pip params ────────────────────
+                        _eval_acct    = float(_sr2.get('account_size', 0) or _rs2.get('starting_capital', 0) or _s2.get('account_size', 0) or 10000)
+                        _eval_risk    = float(_sr2.get('risk_pct', 0) or _rs2.get('risk_pct', 0) or _s2.get('risk_pct', 0) or 1.0)
                         _eval_pip_val = float(_sr2.get('pip_value_per_lot', 0) or _rs2.get('pip_value_per_lot', 0) or 1.0)
-                        _eval_sl = float(_sr2.get('sl_pips', 0) or 150.0)
-                        # Try to get target from firm
-                        _eval_firm_name = _sr2.get('prop_firm_name', '') or _rs2.get('firm_name', '')
-                        if _eval_firm_name:
-                            import glob
-                            _prop_dir = os.path.join(project_root, 'prop_firms')
-                            for _fp in glob.glob(os.path.join(_prop_dir, '*.json')):
-                                import json as _eval_json
-                                with open(_fp, encoding='utf-8') as _ff:
-                                    _fd = _eval_json.load(_ff)
-                                if _fd.get('firm_name') == _eval_firm_name:
-                                    _ph = _fd.get('challenges', [{}])[0].get('phases', [{}])[0]
-                                    _eval_target_pct = float(_ph.get('profit_target_pct', 6.0))
-                                    _eval_dd_total = float(_ph.get('max_total_drawdown_pct', _eval_dd_total))
-                                    break
+                        _ep2 = (_sr2.get('exit_params') or _sr2.get('exit_strategy_params') or
+                                _s2.get('exit_params') or _s2.get('exit_strategy_params') or {})
+                        _eval_sl = float(
+                            _sr2.get('sl_pips', 0) or _rs2.get('sl_pips', 0) or
+                            _ep2.get('sl_pips', 0) or 0
+                        )
+
+                        # ── Eval scenario params ────────────────────────────
+                        # WHY: Try embedded eval_settings first (frozen at save
+                        #      time for this specific firm+stage). This ensures
+                        #      the eval simulation always uses the correct
+                        #      parameters for the firm the rule was designed for,
+                        #      regardless of what is currently selected in the UI.
+                        #      Fall back to re-reading the firm JSON only for old
+                        #      rules saved before eval_settings was introduced.
+                        # CHANGED: April 2026 — read frozen eval_settings from rule
+                        _es = _sr2.get('eval_settings', {})
+                        if _es:
+                            _eval_target_pct   = float(_es.get('target_pct',   _eval_target_pct))
+                            _eval_dd_total     = float(_es.get('dd_total_pct', _eval_dd_total))
+                            _eval_dd_daily     = float(_es.get('dd_daily_pct', _eval_dd_daily))
+                            _eval_dd_type      = _es.get('dd_type', _eval_dd_type)
+                            _mcd = _es.get('max_calendar_days')  # None = unlimited (Get Leveraged)
+                            _eval_max_cal_days = int(_mcd) if _mcd else 9999
+                        else:
+                            # Legacy fallback: read from firm JSON by name
+                            _eval_dd_total = float(_sr2.get('dd_total_pct', 0) or _rs2.get('dd_total_pct', 0) or _s2.get('dd_total_pct', 0) or 6.0)
+                            _eval_dd_daily = float(_sr2.get('dd_daily_pct', 0) or _rs2.get('dd_daily_pct', 0) or _s2.get('dd_daily_pct', 0) or 5.0)
+                            _eval_firm_name = _sr2.get('prop_firm_name', '') or _rs2.get('firm_name', '')
+                            if _eval_firm_name:
+                                import glob
+                                _prop_dir = os.path.join(project_root, 'prop_firms')
+                                for _fp in glob.glob(os.path.join(_prop_dir, '*.json')):
+                                    import json as _eval_json
+                                    with open(_fp, encoding='utf-8') as _ff:
+                                        _fd = _eval_json.load(_ff)
+                                    if _fd.get('firm_name') == _eval_firm_name:
+                                        _ph = _fd.get('challenges', [{}])[0].get('phases', [{}])[0]
+                                        _eval_target_pct   = float(_ph.get('profit_target_pct', _eval_target_pct))
+                                        _eval_dd_total     = float(_ph.get('max_total_drawdown_pct', _eval_dd_total))
+                                        _eval_dd_daily     = float(_ph.get('max_daily_drawdown_pct', _eval_dd_daily))
+                                        _mcd = _ph.get('max_calendar_days')
+                                        _eval_max_cal_days = int(_mcd) if _mcd else 9999
+                                        _eval_dd_type = _ph.get('drawdown_type', 'static')
+                                        break
                         break
             except Exception:
                 pass
 
-            # Compute lot size and dollar per pip
-            _eval_risk_dollars = _eval_acct * (_eval_risk / 100)
-            _eval_lot = max(0.01, _eval_risk_dollars / (_eval_sl * _eval_pip_val)) if _eval_sl > 0 else 0.01
-            _eval_dpp = _eval_pip_val * _eval_lot
-            _eval_target_dollars = _eval_acct * (_eval_target_pct / 100)
-            _eval_dd_dollars = _eval_acct * (_eval_dd_total / 100)
+            # ── Derive effective SL from actual trade data if not set ────
+            # WHY: ATR-based exits have SL = sl_atr_mult × ATR (e.g. 300-600 pips),
+            #      NOT a fixed 150. Using 150 gives 3×-4× too large a lot size,
+            #      making daily P&L 3×-4× too high — min/avg/max appear 3× too fast.
+            #      Best estimate: average |net_pips| of losing trades ≈ actual SL
+            #      (losers hit their SL in the vast majority of cases).
+            # CHANGED: April 2026 — derive SL from trade data
+            if _eval_sl <= 0:
+                _losers_pips = sorted([abs(t.get('net_pips', 0) or 0)
+                                       for t in _base_trades
+                                       if (t.get('net_pips', 0) or 0) < 0])
+                if len(_losers_pips) >= 5:
+                    # WHY: Mean is skewed by gap-open outliers (a trade stopped
+                    #      at 3× normal SL inflates the average).
+                    #      Median gives the typical SL the strategy actually uses.
+                    _eval_sl = _losers_pips[len(_losers_pips) // 2]
+                else:
+                    _eval_sl = 150.0   # fallback if too few losing trades
 
-            # Build daily PnL
-            _eval_daily = {}
+            # ── Compute $ limits ─────────────────────────────────────────
+            _eval_risk_dollars  = _eval_acct * (_eval_risk / 100)
+            _eval_lot           = max(0.01, _eval_risk_dollars / (_eval_sl * _eval_pip_val)) if _eval_sl > 0 else 0.01
+            _eval_dpp           = _eval_pip_val * _eval_lot   # $ per pip for calculated lot size
+            _eval_target_dollars = _eval_acct * (_eval_target_pct / 100)
+            _eval_dd_total_dollars = _eval_acct * (_eval_dd_total / 100)   # e.g. $600 for 6%
+            _eval_dd_daily_dollars = _eval_acct * (_eval_dd_daily / 100)   # e.g. $500 for 5%
+
+            # ── Pre-parse trade timestamps for speed ─────────────────────
+            _trade_cache = []
             for _t in _base_trades:
                 try:
-                    _day = str(_eval_pd.to_datetime(_t.get('entry_time', '')).date())
-                    _pnl = (_t.get('net_pips', 0) or 0) * _eval_dpp
-                    _eval_daily[_day] = _eval_daily.get(_day, 0) + _pnl
+                    _entry_ts = _eval_pd.to_datetime(_t.get('entry_time', ''))
+                    _exit_ts  = _eval_pd.to_datetime(_t.get('exit_time') or _t.get('entry_time', ''))
+                    _pips     = float(_t.get('net_pips', 0) or 0)
+                    _trade_cache.append((_entry_ts, _exit_ts, _pips))
                 except Exception:
                     continue
 
-            # Simulate eval windows
-            _eval_days_list = sorted(_eval_daily.keys())
-            _eval_days_to_target = []
-            for _si in range(0, max(1, len(_eval_days_list) - 5), 7):
-                _running = 0
-                _dc = 0
-                for _d in _eval_days_list[_si:]:
-                    _running += _eval_daily[_d]
-                    _dc += 1
-                    if _running >= _eval_target_dollars:
-                        _eval_days_to_target.append(_dc)
+            # Collect all unique exit dates to drive the window loop
+            _all_exit_dates = sorted(set(str(_ex.date()) for _, _ex, _ in _trade_cache))
+
+            # ── Simulate rolling eval windows ────────────────────────────
+            # Each window = one hypothetical eval attempt starting fresh on
+            # a different date (every 7 exit-date slots), covering max_cal_days.
+            # Only trades entered ON OR AFTER the window start count.
+            _eval_days_to_target = []   # cal-days to pass for each passing window
+            _window_results      = []   # True=pass, False=fail, one entry per window
+            _total_windows       = 0
+
+            for _si in range(0, len(_all_exit_dates), 7):
+                if _si >= len(_all_exit_dates):
+                    break
+                _start_date_str = _all_exit_dates[_si]
+                _start_dt       = _eval_dt.strptime(_start_date_str, '%Y-%m-%d')
+                _total_windows += 1
+                _win_passed     = False
+
+                _win_daily = {}
+                for _entry_ts, _exit_ts, _pips in _trade_cache:
+                    if _entry_ts.date() < _start_dt.date():
+                        continue
+                    _exit_day = str(_exit_ts.date())
+                    _win_daily[_exit_day] = _win_daily.get(_exit_day, 0) + _pips * _eval_dpp
+
+                _running = 0.0
+                _peak    = 0.0
+
+                for _d in sorted(_win_daily.keys()):
+                    _cur_dt   = _eval_dt.strptime(_d, '%Y-%m-%d')
+                    _cal_days = (_cur_dt - _start_dt).days + 1
+                    if _cal_days > _eval_max_cal_days:
                         break
-                    if _running < -_eval_dd_dollars:
+                    _day_pnl  = _win_daily[_d]
+                    _running += _day_pnl
+                    _peak     = max(_peak, _running)
+                    if _running >= _eval_target_dollars:
+                        _eval_days_to_target.append(_cal_days)
+                        _win_passed = True
+                        break
+                    if 'trailing' in _eval_dd_type:
+                        if _running <= max(-_eval_dd_total_dollars,
+                                          _peak - _eval_dd_total_dollars):
+                            break
+                    else:
+                        if _running <= -_eval_dd_total_dollars:
+                            break
+                    if _day_pnl <= -_eval_dd_daily_dollars:
                         break
 
-            if _eval_days_to_target:
-                _eval_avg = sum(_eval_days_to_target) / len(_eval_days_to_target)
+                _window_results.append(_win_passed)
+
+            # ── Overall period stats ──────────────────────────────────────
+            _all_ts = ([str(_et.date()) for _et, _, _ in _trade_cache] +
+                       [str(_xt.date()) for _, _xt, _ in _trade_cache])
+            _period_start = min(_all_ts) if _all_ts else '?'
+            _period_end   = max(_all_ts) if _all_ts else '?'
+            _trading_days_n = len(set(str(_xt.date()) for _, _xt, _ in _trade_cache))
+            if _period_start != '?' and _period_end != '?':
+                _period_cal_days = (_eval_dt.strptime(_period_end,   '%Y-%m-%d') -
+                                    _eval_dt.strptime(_period_start, '%Y-%m-%d')).days
+                _period_years = _period_cal_days / 365.25
+            else:
+                _period_cal_days = 0
+                _period_years    = 0
+
+            # Failing-streak analysis: a streak = run of consecutive failed windows
+            # Streaks at the start, between passes, and at the end are all counted.
+            _fail_streaks = []
+            _cur_fail = 0
+            for _wr in _window_results:
+                if not _wr:
+                    _cur_fail += 1
+                else:
+                    _fail_streaks.append(_cur_fail)  # includes 0 (back-to-back passes)
+                    _cur_fail = 0
+            if _cur_fail > 0:
+                _fail_streaks.append(_cur_fail)   # trailing failures after last pass
+
+            # ── Build and show display ────────────────────────────────────
+            _eval_passes = len(_eval_days_to_target)
+            _eval_pr     = _eval_passes / _total_windows * 100 if _total_windows else 0
+
+            # Period line
+            _period_str = (
+                f"Period: {_period_start} – {_period_end} "
+                f"({_period_years:.1f} yrs, {_trading_days_n} trading days) | "
+                f"Evals/year: {(_total_windows / _period_years * _eval_pr / 100):.1f}"
+                if _period_years > 0 else "Period: insufficient data"
+            )
+
+            # Window explanation (always shown)
+            _window_def = (
+                f"A 'window' = 1 simulated eval attempt starting fresh on a "
+                f"different date — {_total_windows} attempts tested across the "
+                f"full backtest period, every 7 trading sessions apart"
+            )
+
+            if _eval_days_to_target and _total_windows > 0:
+                _eval_avg = sum(_eval_days_to_target) / _eval_passes
                 _eval_min = min(_eval_days_to_target)
                 _eval_max = max(_eval_days_to_target)
-                _eval_windows = max(len(list(range(0, max(1, len(_eval_days_list) - 5), 7))), 1)
-                _eval_pr = len(_eval_days_to_target) / _eval_windows * 100
-                _eval_text = (f"Eval: {_eval_pr:.0f}% pass rate | "
-                              f"Avg: {_eval_avg:.0f} days | "
-                              f"Min: {_eval_min} days | Max: {_eval_max} days | "
-                              f"Target: {_eval_target_pct}% (${_eval_target_dollars:,.0f})")
+
+                if _eval_passes == 1:
+                    _days_line = (
+                        f"Days to pass: {_eval_min}  "
+                        f"[only 1 window passed — Min/Max/Avg are all the same value; "
+                        f"need more trades for meaningful spread]"
+                    )
+                else:
+                    _days_line = (
+                        f"Avg: {_eval_avg:.0f} days | "
+                        f"Min: {_eval_min} days | Max: {_eval_max} days"
+                    )
+
+                # Fail-streak lines
+                if _fail_streaks:
+                    _fs_max = max(_fail_streaks)
+                    _fs_min = min(_fail_streaks)
+                    _fs_avg = sum(_fail_streaks) / len(_fail_streaks)
+                    _fs_note = ""
+                    if _fs_min == 0:
+                        _fs_note = " (0 = consecutive passes occurred)"
+                    _fail_line = (
+                        f"Fail streaks (windows failed in a row before next pass): "
+                        f"Max={_fs_max} | Avg={_fs_avg:.1f} | Min={_fs_min}{_fs_note}"
+                    )
+                else:
+                    _fail_line = "Fail streaks: n/a (no failures recorded)"
+
+                _eval_text = (
+                    f"Eval: {_eval_pr:.0f}% pass rate "
+                    f"({_eval_passes}/{_total_windows} windows) | "
+                    f"{_days_line} | "
+                    f"Target: {_eval_target_pct}% (${_eval_target_dollars:,.0f})\n"
+                    f"{_period_str}\n"
+                    f"{_fail_line}\n"
+                    f"{_window_def}"
+                )
                 _eval_info_lbl.configure(text=_eval_text, fg="#e65100")
             else:
-                _eval_info_lbl.configure(
-                    text=f"Eval: 0% — never reaches {_eval_target_pct}% target (${_eval_target_dollars:,.0f})",
-                    fg="#dc3545")
+                _fail_streak_len = len(_window_results)  # all windows failed
+                _eval_text = (
+                    f"Eval: 0% pass rate (0/{_total_windows} windows) — "
+                    f"never reaches {_eval_target_pct}% (${_eval_target_dollars:,.0f}) "
+                    f"within {_eval_max_cal_days} cal-days without DD breach\n"
+                    f"{_period_str}\n"
+                    f"Fail streaks: all {_total_windows} windows failed — "
+                    f"strategy does not reach target under these parameters\n"
+                    f"{_window_def}"
+                )
+                _eval_info_lbl.configure(text=_eval_text, fg="#dc3545")
         except Exception as _eval_e:
             print(f"[REFINER] Eval simulation error: {_eval_e}")
             _eval_info_lbl.configure(text="", fg="#999")
@@ -2512,6 +2736,19 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     'firm': _opt_target_var.get() if _opt_target_var else '',
                     'stage': _stage_var.get() if _stage_var else 'Funded',
                 },
+                # WHY: Embed the selected firm's eval parameters at save time.
+                #      Without this, the eval simulation re-reads the firm JSON at
+                #      display time, so changing the firm dropdown later would show
+                #      wrong eval stats for an old rule. Freezing at save time means
+                #      the rule is self-contained: "this rule was designed for FTMO
+                #      Evaluation with 10% total DD, 5% daily DD, 30-day deadline."
+                #      max_calendar_days=None means unlimited (e.g. Get Leveraged).
+                # CHANGED: April 2026 — freeze eval params into saved rule
+                'eval_settings': _build_eval_settings(
+                    _opt_target_var.get() if _opt_target_var else '',
+                    _stage_var.get() if _stage_var else 'Evaluation',
+                    project_root
+                ),
             }
             for rule in _save_rules:
                 if rule.get('prediction') == 'WIN':
@@ -2826,6 +3063,11 @@ def _show_opt_results(candidates):
                             'firm': _opt_target_var.get() if _opt_target_var else '',
                             'stage': _stage_var.get() if _stage_var else 'Funded',
                         },
+                        'eval_settings': _build_eval_settings(
+                            _opt_target_var.get() if _opt_target_var else '',
+                            _stage_var.get() if _stage_var else 'Evaluation',
+                            project_root
+                        ),
                     }
                     for rule in c.get('rules', []):
                         if rule.get('prediction') == 'WIN':
@@ -2955,115 +3197,417 @@ def _show_candidate_trades(trades):
 
 
 def _draw_monthly_chart(canvas, tooltip, trades):
-    """Draw monthly P&L bar chart with hover tooltips."""
+    """Monthly P&L bar chart — one row per year, 12 bars Jan-Dec, scrollable."""
+    import calendar as _cal_mod
     from project2_backtesting.strategy_refiner import compute_monthly_pnl
 
-    # Load account config for profit % calculations
     try:
         from project2_backtesting.panels.configuration import load_config
         cfg = load_config()
-        _acct_size = float(cfg.get('starting_capital', '100000'))
-        _risk_pct = float(cfg.get('risk_pct', '1.0'))
-        _pip_value = float(cfg.get('pip_value_per_lot', '1.0'))
+        _acct   = float(cfg.get('starting_capital', '100000'))
+        _risk   = float(cfg.get('risk_pct', '1.0'))
+        _pip_v  = float(cfg.get('pip_value_per_lot', '1.0'))
     except Exception:
-        _acct_size = 100000
-        _risk_pct = 1.0
-        _pip_value = 1.0
+        _acct, _risk, _pip_v = 100000, 1.0, 1.0
 
     canvas.delete("all")
-    monthly = compute_monthly_pnl(trades, account_size=_acct_size,
-                                   risk_pct=_risk_pct, pip_value=_pip_value)
+    tooltip.place_forget()
 
+    monthly = compute_monthly_pnl(trades, account_size=_acct,
+                                   risk_pct=_risk, pip_value=_pip_v)
     if not monthly:
-        canvas.create_text(200, 100, text="No trade data", font=("Arial", 11), fill="#888")
+        canvas.create_text(200, 80, text="No trade data", font=("Arial", 11), fill="#888")
+        canvas.configure(scrollregion=(0, 0, 400, 160))
         return
 
-    w = canvas.winfo_width() or 800
-    h = canvas.winfo_height() or 200
+    # ── Pre-compute per-day pips for each month (best/worst day + calendar) ──
+    import pandas as _pd_m
+    day_pips_by_month = {}   # {'2024-03': {'2024-03-05': 120.0, ...}, ...}
+    day_trades_by_month = {}  # {'2024-03': {'2024-03-05': [trade,...], ...}, ...}
+    for _t in trades:
+        try:
+            _ts = _pd_m.to_datetime(_t.get('entry_time', ''))
+            _mkey = _ts.strftime('%Y-%m')
+            _dkey = _ts.strftime('%Y-%m-%d')
+            _pips = float(_t.get('net_pips', 0) or 0)
+            day_pips_by_month.setdefault(_mkey, {})
+            day_pips_by_month[_mkey][_dkey] = day_pips_by_month[_mkey].get(_dkey, 0) + _pips
+            day_trades_by_month.setdefault(_mkey, {})
+            day_trades_by_month[_mkey].setdefault(_dkey, []).append(_t)
+        except Exception:
+            continue
 
-    n = len(monthly)
-    if n == 0:
-        return
+    # ── Layout constants ──────────────────────────────────────────────────────
+    w         = canvas.winfo_width() or 800
+    LABEL_W   = 42   # year label on left
+    TOTAL_W   = 68   # year total on right
+    HDR_H     = 18   # month-name header at top
+    ROW_H     = 90   # height per year row
+    BAR_PAD   = 0.15 # fraction of slot used as gap between bars
+    MONTH_ABR = ['Jan','Feb','Mar','Apr','May','Jun',
+                 'Jul','Aug','Sep','Oct','Nov','Dec']
 
-    margin_left = 60
-    margin_right = 20
-    margin_top = 20
-    margin_bottom = 40
-    chart_w = w - margin_left - margin_right
-    chart_h = h - margin_top - margin_bottom
+    # Group data by year
+    years_data = {}   # {'2023': {1: m_dict, 3: m_dict, ...}, ...}
+    for m in monthly:
+        yr  = m['month'][:4]
+        mon = int(m['month'][5:7])
+        years_data.setdefault(yr, {})[mon] = m
+    sorted_years = sorted(years_data.keys())
+    n_years = len(sorted_years)
 
-    bar_width = max(2, min(20, chart_w // n - 2))
+    total_canvas_h = HDR_H + n_years * ROW_H + 10
+    canvas.configure(scrollregion=(0, 0, w, total_canvas_h))
 
-    pnls = [m['pnl_pips'] for m in monthly]
-    max_pnl = max(max(pnls), 1)
-    min_pnl = min(min(pnls), -1)
-    pnl_range = max_pnl - min_pnl
+    # ── Global scale (shared across all years) ────────────────────────────────
+    all_pnls = [m['pnl_pips'] for m in monthly]
+    g_max = max(max(all_pnls), 1)
+    g_min = min(min(all_pnls), -1)
+    g_range = g_max - g_min
 
-    # Zero line position
-    zero_y = margin_top + int(chart_h * max_pnl / pnl_range)
+    chart_w  = w - LABEL_W - TOTAL_W
+    slot_w   = chart_w / 12
+    bar_w    = max(4, int(slot_w * (1 - BAR_PAD * 2)))
 
-    # Draw zero line
-    canvas.create_line(margin_left, zero_y, w - margin_right, zero_y,
-                        fill="#aaa", dash=(3, 3))
-    canvas.create_text(margin_left - 5, zero_y, text="0", anchor="e",
-                        font=("Arial", 7), fill="#888")
+    # ── Draw month-name header (once, at top) ─────────────────────────────────
+    for mi in range(12):
+        xc = LABEL_W + mi * slot_w + slot_w / 2
+        canvas.create_text(xc, HDR_H // 2, text=MONTH_ABR[mi],
+                           font=("Arial", 7, "bold"), fill="#555")
 
-    # Draw bars
-    bar_items = []  # (rect_id, month_data)
+    # ── Draw each year row ────────────────────────────────────────────────────
+    bar_hit_areas = []  # (x1, y1, x2, y2, m_dict, yr_str)
 
-    for i, m in enumerate(monthly):
-        x = margin_left + int(i * chart_w / n) + 1
-        pnl = m['pnl_pips']
+    for yi, yr in enumerate(sorted_years):
+        row_y   = HDR_H + yi * ROW_H
+        yr_data = years_data[yr]
 
-        if pnl >= 0:
-            bar_top = zero_y - int((pnl / pnl_range) * chart_h)
-            bar_bottom = zero_y
-            color = "#28a745"
-        else:
-            bar_top = zero_y
-            bar_bottom = zero_y + int((abs(pnl) / pnl_range) * chart_h)
-            color = "#dc3545"
+        # Row separator
+        if yi > 0:
+            canvas.create_line(0, row_y, w, row_y, fill="#e8e8e8", width=1)
 
-        rect = canvas.create_rectangle(x, bar_top, x + bar_width, bar_bottom,
-                                        fill=color, outline=color, width=0)
-        bar_items.append((rect, m))
+        # Shaded background alternating for readability
+        if yi % 2 == 1:
+            canvas.create_rectangle(0, row_y, w, row_y + ROW_H,
+                                    fill="#fafafa", outline="")
 
-        # Month label (every 3rd or 6th month to avoid crowding)
-        if n <= 36 or i % 3 == 0:
-            label = m['month'][2:]  # '2020-01' → '20-01'
-            canvas.create_text(x + bar_width // 2, h - 10, text=label,
-                                font=("Arial", 6), fill="#888", angle=45)
+        # Year label
+        canvas.create_text(LABEL_W - 4, row_y + ROW_H // 2,
+                           text=yr, font=("Arial", 9, "bold"),
+                           fill="#333", anchor="e")
 
-    # Y-axis labels
-    for val in [max_pnl, max_pnl // 2, min_pnl // 2, min_pnl]:
-        y = zero_y - int((val / pnl_range) * chart_h)
-        canvas.create_text(margin_left - 5, y, text=f"{val:+.0f}",
-                            anchor="e", font=("Arial", 7), fill="#888")
+        # Zero line for this row
+        zero_y = row_y + int(ROW_H * 0.85 * g_max / g_range)
+        canvas.create_line(LABEL_W, zero_y, w - TOTAL_W, zero_y,
+                           fill="#c8c8c8", dash=(2, 4))
+        canvas.create_text(LABEL_W - 4, zero_y,
+                           text="0", font=("Arial", 6), fill="#999", anchor="e")
 
-    # Hover tooltips
+        # Y-axis reference lines (max / min across ALL data)
+        for ref_val, ref_lbl in [(g_max, f"{g_max:+.0f}"), (g_min, f"{g_min:+.0f}")]:
+            ry = row_y + int(ROW_H * 0.85 * (g_max - ref_val) / g_range)
+            if row_y < ry < row_y + ROW_H:
+                canvas.create_line(LABEL_W, ry, LABEL_W + 4, ry, fill="#bbb")
+
+        # Year total
+        yr_total = sum(m['pnl_pips'] for m in yr_data.values())
+        yr_color = "#28a745" if yr_total >= 0 else "#dc3545"
+        canvas.create_text(w - TOTAL_W + 6, row_y + ROW_H // 2,
+                           text=f"{yr_total:+,.0f}p",
+                           font=("Arial", 8, "bold"), fill=yr_color, anchor="w")
+
+        # 12 month bars
+        for mi in range(12):
+            mon = mi + 1
+            xc  = LABEL_W + mi * slot_w + slot_w / 2
+            x1  = int(xc - bar_w / 2)
+            x2  = int(xc + bar_w / 2)
+
+            if mon not in yr_data:
+                # No trades this month — faint tick
+                canvas.create_line(xc, zero_y - 2, xc, zero_y + 2,
+                                   fill="#ddd", width=1)
+                continue
+
+            m = yr_data[mon]
+            pnl = m['pnl_pips']
+
+            bar_span = ROW_H * 0.82
+            if pnl >= 0:
+                bar_top = zero_y - int(bar_span * pnl / g_range)
+                bar_bot = zero_y
+                color   = "#28a745"
+                hover_c = "#1e7e34"
+            else:
+                bar_top = zero_y
+                bar_bot = zero_y + int(bar_span * abs(pnl) / g_range)
+                color   = "#dc3545"
+                hover_c = "#b21f2d"
+
+            bar_top = max(row_y + 2, bar_top)
+            bar_bot = min(row_y + ROW_H - 2, bar_bot)
+
+            rect = canvas.create_rectangle(x1, bar_top, x2, bar_bot,
+                                           fill=color, outline="", tags=("bar",))
+            bar_hit_areas.append((x1, bar_top, x2, bar_bot, m, yr, hover_c, color, rect))
+
+    # ── Hover + click handlers ────────────────────────────────────────────────
+    _hovered = [None]  # track current hovered rect for unhighlight
+
+    def _hit(cx, cy):
+        for entry in bar_hit_areas:
+            x1, y1, x2, y2 = entry[0], entry[1], entry[2], entry[3]
+            if x1 - 4 <= cx <= x2 + 4 and min(y1, y2) - 4 <= cy <= max(y1, y2) + 4:
+                return entry
+        return None
+
     def _on_motion(event):
-        for rect, m in bar_items:
-            coords = canvas.coords(rect)
-            if coords and coords[0] <= event.x <= coords[2]:
-                pnl = m['pnl_pips']
-                pnl_pct = m.get('pnl_pct', 0)
-                pnl_dollars = m.get('pnl_dollars', 0)
+        cx = canvas.canvasx(event.x)
+        cy = canvas.canvasy(event.y)
+        hit = _hit(cx, cy)
+        if hit:
+            x1, y1, x2, y2, m, yr, hc, oc, rect = hit
+            # Highlight bar
+            if _hovered[0] and _hovered[0] is not rect:
+                prev = next((e for e in bar_hit_areas if e[8] == _hovered[0]), None)
+                if prev:
+                    canvas.itemconfig(_hovered[0], fill=prev[7])
+            canvas.itemconfig(rect, fill=hc)
+            _hovered[0] = rect
 
-                text = (f"{m['month']}: {pnl:+,.0f} pips  ({pnl_pct:+.1f}%  ${pnl_dollars:+,.0f})\n"
-                        f"{m['trades']} trades ({m['wins']}W / {m['losses']}L)\n"
-                        f"Avg: {m.get('avg_trades_per_day', 0)}/day  "
-                        f"Min: {m.get('min_trades_per_day', 0)}/day  "
-                        f"Max: {m.get('max_trades_per_day', 0)}/day")
-                tooltip.config(text=text)
-                tooltip.place(x=event.x + 10, y=event.y - 50)
-                return
-        tooltip.place_forget()
+            # Build tooltip text
+            mkey = m['month']
+            dp   = day_pips_by_month.get(mkey, {})
+            best_d  = max(dp.values()) if dp else None
+            worst_d = min(dp.values()) if dp else None
+            mn_num  = int(mkey[5:7])
+            mn_name = _cal_mod.month_name[mn_num]
+            wr_pct  = m['wins'] / m['trades'] * 100 if m['trades'] > 0 else 0
+            be      = m.get('breakeven', 0)
+            hold    = m.get('avg_hold_minutes', 0)
+
+            lines = [
+                f"  {mn_name} {yr}",
+                f"  P&L : {m['pnl_pips']:+,.0f} pips  "
+                f"({m['pnl_pct']:+.1f}%  ${m['pnl_dollars']:+,.0f})",
+                f"  Trades : {m['trades']}  "
+                f"({m['wins']}W / {m['losses']}L"
+                + (f" / {be}BE" if be else "") + f"  WR {wr_pct:.0f}%)",
+                f"  Active days : {m.get('trading_days', '?')}  "
+                f"| Avg/day : {m.get('avg_trades_per_day', 0)}",
+            ]
+            if best_d is not None:
+                lines.append(f"  Best day : {best_d:+,.0f}p  "
+                             f"| Worst day : {worst_d:+,.0f}p")
+            if hold and hold > 0:
+                lines.append(f"  Avg hold : {hold:.0f}m")
+            lines.append("  [Click to open month calendar]")
+
+            tooltip.config(text="\n".join(lines))
+            # Position tooltip — keep it inside the canvas widget bounds
+            tx = min(event.x + 12, canvas.winfo_width() - 260)
+            ty = max(4, event.y - 130)
+            tooltip.place(in_=canvas, x=tx, y=ty)
+        else:
+            if _hovered[0]:
+                prev = next((e for e in bar_hit_areas if e[8] == _hovered[0]), None)
+                if prev:
+                    canvas.itemconfig(_hovered[0], fill=prev[7])
+                _hovered[0] = None
+            tooltip.place_forget()
 
     def _on_leave(event):
+        if _hovered[0]:
+            prev = next((e for e in bar_hit_areas if e[8] == _hovered[0]), None)
+            if prev:
+                canvas.itemconfig(_hovered[0], fill=prev[7])
+            _hovered[0] = None
         tooltip.place_forget()
 
-    canvas.bind("<Motion>", _on_motion)
-    canvas.bind("<Leave>", _on_leave)
+    def _on_click(event):
+        cx = canvas.canvasx(event.x)
+        cy = canvas.canvasy(event.y)
+        hit = _hit(cx, cy)
+        if hit:
+            _, _, _, _, m, yr, *_ = hit
+            _open_month_calendar(
+                m, yr,
+                day_pips_by_month.get(m['month'], {}),
+                day_trades_by_month.get(m['month'], {}),
+                canvas.winfo_toplevel()
+            )
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind("<Motion>",     _on_motion)
+    canvas.bind("<Leave>",      _on_leave)
+    canvas.bind("<Button-1>",   _on_click)
+    canvas.bind("<MouseWheel>", _on_mousewheel)
+
+
+def _open_month_calendar(m_data, yr_str, day_pips, day_trades_map, parent):
+    """Popup: full-month calendar with per-day P&L + trade detail panel."""
+    import calendar as _cal_mod
+
+    month_num  = int(m_data['month'][5:7])
+    year_num   = int(yr_str)
+    month_name = _cal_mod.month_name[month_num]
+    pnl_total  = m_data.get('pnl_pips', 0)
+    n_trades   = m_data.get('trades', 0)
+    wins       = m_data.get('wins', 0)
+    wr         = wins / n_trades * 100 if n_trades > 0 else 0
+
+    popup = tk.Toplevel(parent)
+    popup.title(f"{month_name} {yr_str}")
+    popup.configure(bg="#f0f2f5")
+    popup.resizable(True, True)
+    popup.geometry("520x480")
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    hdr = tk.Frame(popup, bg="#1a1a2a", padx=14, pady=10)
+    hdr.pack(fill="x")
+    tk.Label(hdr, text=f"{month_name} {yr_str}",
+             font=("Segoe UI", 13, "bold"), bg="#1a1a2a", fg="white").pack(side=tk.LEFT)
+    stat_color = "#28a745" if pnl_total >= 0 else "#dc3545"
+    tk.Label(hdr,
+             text=f"{pnl_total:+,.0f} pips  |  {n_trades} trades  |  WR {wr:.0f}%",
+             font=("Segoe UI", 10), bg="#1a1a2a", fg=stat_color).pack(side=tk.RIGHT)
+
+    # ── Calendar grid ─────────────────────────────────────────────────────────
+    cal_frame = tk.Frame(popup, bg="white", padx=12, pady=10)
+    cal_frame.pack(fill="x")
+
+    DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    for col, dn in enumerate(DOW):
+        tk.Label(cal_frame, text=dn, font=("Segoe UI", 8, "bold"),
+                 bg="white", fg="#555", width=7).grid(row=0, column=col, padx=1, pady=1)
+
+    # Compute the key '2024-03-05' format for each day
+    def _dkey(d): return f"{year_num:04d}-{month_num:02d}-{d:02d}"
+
+    cal_weeks = _cal_mod.monthcalendar(year_num, month_num)
+    detail_frame_ref = [None]   # mutable reference
+
+    for wrow, week in enumerate(cal_weeks):
+        for col, day_n in enumerate(week):
+            if day_n == 0:
+                tk.Frame(cal_frame, bg="white", width=52, height=48).grid(
+                    row=wrow + 1, column=col, padx=1, pady=1)
+                continue
+
+            dk = _dkey(day_n)
+            is_weekend = col >= 5
+            has_trades = dk in day_trades_map
+
+            if has_trades:
+                dp = day_pips.get(dk, 0)
+                bg_c = "#d4f5db" if dp >= 0 else "#fad7d7"
+                fg_c = "#1a5c2a" if dp >= 0 else "#7b1c1c"
+                txt  = f"{day_n}\n{dp:+.0f}p"
+                cursor = "hand2"
+                bd_c = "#28a745" if dp >= 0 else "#dc3545"
+            elif is_weekend:
+                bg_c, fg_c, txt, cursor, bd_c = "#f4f4f4", "#bbb", str(day_n), "", "#e0e0e0"
+            else:
+                bg_c, fg_c, txt, cursor, bd_c = "white", "#888", str(day_n), "", "#ddd"
+
+            cell = tk.Label(cal_frame, text=txt,
+                            font=("Consolas", 8), bg=bg_c, fg=fg_c,
+                            width=7, height=3, cursor=cursor,
+                            relief="flat", bd=1,
+                            highlightbackground=bd_c, highlightthickness=1)
+            cell.grid(row=wrow + 1, column=col, padx=1, pady=1)
+
+            if has_trades:
+                day_tl = day_trades_map[dk]
+                def _click(e, _dk=dk, _day=day_n, _tl=day_tl):
+                    _show_day_trades(detail_frame_ref[0], _day, month_name,
+                                     yr_str, _dk, _tl)
+                def _enter(e, c=cell, bg=bg_c):
+                    c.config(relief="raised", highlightthickness=2)
+                def _leave(e, c=cell, bg=bg_c):
+                    c.config(relief="flat", highlightthickness=1)
+                cell.bind("<Button-1>", _click)
+                cell.bind("<Enter>",    _enter)
+                cell.bind("<Leave>",    _leave)
+
+    # ── Day detail panel ──────────────────────────────────────────────────────
+    sep = tk.Frame(popup, bg="#dee2e6", height=1)
+    sep.pack(fill="x", padx=10, pady=4)
+
+    detail_outer = tk.Frame(popup, bg="white", padx=14, pady=8)
+    detail_outer.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+
+    detail_frame = tk.Frame(detail_outer, bg="white")
+    detail_frame.pack(fill="both", expand=True)
+    detail_frame_ref[0] = detail_frame
+
+    tk.Label(detail_frame, text="Click a coloured day to see its trades",
+             font=("Segoe UI", 9, "italic"), bg="white", fg="#999").pack()
+
+    # Close
+    tk.Button(popup, text="Close", command=popup.destroy,
+              font=("Segoe UI", 9), bg="#6c757d", fg="white",
+              relief=tk.FLAT, padx=14, pady=4, cursor="hand2").pack(pady=(0, 8))
+
+
+def _show_day_trades(frame, day_n, month_name, yr_str, day_key, trades_list):
+    """Fill the detail panel with trades for one clicked day."""
+    import pandas as _pd_dt
+    for w in frame.winfo_children():
+        w.destroy()
+
+    total_pips = sum(t.get('net_pips', 0) or 0 for t in trades_list)
+    tc = "#28a745" if total_pips >= 0 else "#dc3545"
+    hdr = tk.Frame(frame, bg="white")
+    hdr.pack(fill="x", pady=(0, 4))
+    tk.Label(hdr, text=f"{month_name} {day_n}, {yr_str}",
+             font=("Segoe UI", 10, "bold"), bg="white", fg="#333").pack(side=tk.LEFT)
+    tk.Label(hdr, text=f"{total_pips:+.0f} pips  |  {len(trades_list)} trade(s)",
+             font=("Segoe UI", 9, "bold"), bg="white", fg=tc).pack(side=tk.RIGHT)
+
+    # Column headers
+    cols_frame = tk.Frame(frame, bg="#f8f9fa")
+    cols_frame.pack(fill="x")
+    for hd, wd in [("Entry", 8), ("Exit", 8), ("Dir", 4), ("Pips", 7), ("Hold", 6)]:
+        tk.Label(cols_frame, text=hd, font=("Consolas", 8, "bold"),
+                 bg="#f8f9fa", fg="#555", width=wd, anchor="w").pack(side=tk.LEFT, padx=2)
+
+    # Rows (sorted by entry time)
+    for t in sorted(trades_list, key=lambda x: x.get('entry_time', '')):
+        pips = t.get('net_pips', 0) or 0
+        direction = t.get('direction', '?')
+        color = "#28a745" if pips > 0 else ("#dc3545" if pips < 0 else "#888")
+        try:
+            entry_t = _pd_dt.to_datetime(t.get('entry_time', '')).strftime('%H:%M')
+        except Exception:
+            entry_t = '?'
+        try:
+            exit_t = _pd_dt.to_datetime(
+                t.get('exit_time') or t.get('entry_time', '')).strftime('%H:%M')
+        except Exception:
+            exit_t = '?'
+        hold_m = t.get('hold_minutes', 0) or 0
+        if hold_m == 0:
+            # compute from timestamps
+            try:
+                et = _pd_dt.to_datetime(t.get('entry_time', ''))
+                xt = _pd_dt.to_datetime(t.get('exit_time', t.get('entry_time', '')))
+                hold_m = (xt - et).total_seconds() / 60
+            except Exception:
+                hold_m = 0
+        hold_str = f"{int(hold_m)}m" if hold_m < 60 else f"{hold_m/60:.1f}h"
+
+        row = tk.Frame(frame, bg="white")
+        row.pack(fill="x", pady=1)
+        for val, wd in [(entry_t, 8), (exit_t, 8), (direction, 4)]:
+            tk.Label(row, text=val, font=("Consolas", 8),
+                     bg="white", fg="#555", width=wd, anchor="w").pack(side=tk.LEFT, padx=2)
+        tk.Label(row, text=f"{pips:+.0f}p", font=("Consolas", 8, "bold"),
+                 bg="white", fg=color, width=7, anchor="w").pack(side=tk.LEFT, padx=2)
+        tk.Label(row, text=hold_str, font=("Consolas", 8),
+                 bg="white", fg="#777", width=6, anchor="w").pack(side=tk.LEFT, padx=2)
 
 
 def _update_drawdown_display(trades):
@@ -3940,29 +4484,48 @@ def build_panel(parent):
     # ── Monthly P&L Chart ─────────────────────────────────────────────────────
     chart_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
     chart_outer.pack(fill="x", padx=5, pady=(10, 5))
-    tk.Label(chart_outer, text="📊 Monthly P&L", font=("Segoe UI", 10, "bold"),
-             bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
+    tk.Label(chart_outer, text="📊 Monthly P&L  (click a bar to open month calendar)",
+             font=("Segoe UI", 10, "bold"), bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 4))
 
-    _monthly_chart_canvas = tk.Canvas(chart_outer, bg="#ffffff", height=200,
-                                       highlightthickness=1, highlightbackground="#ddd")
-    _monthly_chart_canvas.pack(fill="x", pady=5)
+    # Scrollable chart: canvas + vertical scrollbar side by side
+    _chart_scroll_frame = tk.Frame(chart_outer, bg=WHITE)
+    _chart_scroll_frame.pack(fill="x", pady=5)
 
-    # Tooltip label (hidden until hover) — must not block scrolling
-    _monthly_tooltip = tk.Label(chart_outer, text="", font=("Arial", 9, "bold"),
-                                 bg="#333333", fg="white", padx=8, pady=4)
+    _chart_vscroll = tk.Scrollbar(_chart_scroll_frame, orient="vertical")
+    _chart_vscroll.pack(side=tk.RIGHT, fill="y")
 
-    # Forward scroll from tooltip to main canvas
-    def _tooltip_scroll(event):
+    _monthly_chart_canvas = tk.Canvas(
+        _chart_scroll_frame, bg="#ffffff", height=260,
+        highlightthickness=1, highlightbackground="#ddd",
+        yscrollcommand=_chart_vscroll.set
+    )
+    _monthly_chart_canvas.pack(side=tk.LEFT, fill="x", expand=True)
+    _chart_vscroll.config(command=_monthly_chart_canvas.yview)
+
+    # Mousewheel on the chart scrolls the chart itself, not the outer panel
+    def _chart_mousewheel(event):
+        _monthly_chart_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    _monthly_chart_canvas.bind("<MouseWheel>", _chart_mousewheel)
+
+    # Multi-line tooltip (hidden until hover)
+    _monthly_tooltip = tk.Label(
+        chart_outer, text="", font=("Consolas", 8),
+        bg="#1a1a2a", fg="white", padx=8, pady=6,
+        justify="left", relief="flat"
+    )
+    # Forward scroll from tooltip to chart
+    def _tooltip_wheel(event):
         _monthly_tooltip.place_forget()
-        _scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    _monthly_tooltip.bind("<MouseWheel>", _tooltip_scroll)
+        _monthly_chart_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    _monthly_tooltip.bind("<MouseWheel>", _tooltip_wheel)
 
     # Draw placeholder
-    _monthly_chart_canvas.create_text(200, 100, text="Load a strategy to see monthly P&L chart",
-                                       font=("Arial", 11), fill="#888")
+    _monthly_chart_canvas.create_text(
+        200, 130, text="Load a strategy to see monthly P&L",
+        font=("Arial", 11), fill="#888"
+    )
 
-    # Debounce chart resize — fires on every pixel change without this
+    # Debounce chart resize
     _chart_resize_id = [None]
     def _on_chart_resize(event):
         if _chart_resize_id[0]:
