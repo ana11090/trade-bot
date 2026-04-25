@@ -164,7 +164,7 @@ INDICATOR_PATTERNS = [
     (r"^sma_(\d+)_distance$", {
         "mt5_handle_var":  "int handle_sma_{tf}_{p};",
         "mt5_handle_init": "handle_sma_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_sma_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_preamble":    "double sma_{tf}_{p}_buf[1]; CopyBuffer(handle_sma_{tf}_{p},0,1,1,sma_{tf}_{p}_buf); double sma_{tf}_{p}_val=(((iClose(NULL,{mt5_tf},0)-sma_{tf}_{p}_buf[0])/MathMax(sma_{tf}_{p}_buf[0],0.000001))*100.0);",
+        "mt5_preamble":    "double sma_{tf}_{p}_buf[1]; CopyBuffer(handle_sma_{tf}_{p},0,1,1,sma_{tf}_{p}_buf); double sma_{tf}_{p}_val=(((iClose(NULL,{mt5_tf},{shift})-sma_{tf}_{p}_buf[0])/MathMax(sma_{tf}_{p}_buf[0],0.000001))*100.0);",
         "mt5_code":        "sma_{tf}_{p}_val",
         "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1]) / max(ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
@@ -255,50 +255,49 @@ INDICATOR_PATTERNS = [
     # WHY: These are computed in indicator_utils.py as simple OHLC math.
     #      Missing mappings caused indicatorFailed=true → EA never traded.
     # CHANGED: April 2026 — add all price_action MQL5 mappings
-    # WHY: Project 2 backtesting (backtest_engine.py) evaluates rules on candle i
-    #      using indicators from the SAME candle i (no -1 offset). MT5 EAs must
-    #      use shift=0 to match this behavior and produce identical backtest results.
-    #      Note: Project 1 reverse engineering uses (candle_idx - 1) to avoid look-ahead
-    #      from actual trade alignment, but Project 2/3 use current bar.
-    # CHANGED: April 2026 — align MT5 shift with Project 2 backtest (was shift=1, now shift=0)
+    # WHY: Shift depends on whether indicator TF matches entry TF.
+    #      - Same TF (e.g., M15 indicator on M15 entry): shift=1 (previous completed bar)
+    #      - Higher TF (e.g., H1 indicator on M15 entry): shift=0 (current H1 bar)
+    #      This matches Python backtest forward-fill behavior for multi-TF indicators.
+    # CHANGED: April 2026 — dynamic shift via {shift} variable for multi-TF alignment
     (r"^candle_body$", {
-        "mt5_code":       "MathAbs(iClose(NULL,{mt5_tf},0) - iOpen(NULL,{mt5_tf},0))",
+        "mt5_code":       "MathAbs(iClose(NULL,{mt5_tf},{shift}) - iOpen(NULL,{mt5_tf},{shift}))",
         "tradovate_code": "abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Candle body size on {tf}",
     }),
     (r"^candle_range$", {
-        "mt5_code":       "(iHigh(NULL,{mt5_tf},0) - iLow(NULL,{mt5_tf},0))",
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},{shift}) - iLow(NULL,{mt5_tf},{shift}))",
         "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Candle range (high-low) on {tf}",
     }),
     (r"^upper_shadow$", {
-        "mt5_code":       "(iHigh(NULL,{mt5_tf},0) - MathMax(iOpen(NULL,{mt5_tf},0), iClose(NULL,{mt5_tf},0)))",
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},{shift}) - MathMax(iOpen(NULL,{mt5_tf},{shift}), iClose(NULL,{mt5_tf},{shift})))",
         "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - max(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]))",
         "custom_indicator_mt5": False,
         "description": "Upper shadow size on {tf}",
     }),
     (r"^lower_shadow$", {
-        "mt5_code":       "(MathMin(iOpen(NULL,{mt5_tf},0), iClose(NULL,{mt5_tf},0)) - iLow(NULL,{mt5_tf},0))",
+        "mt5_code":       "(MathMin(iOpen(NULL,{mt5_tf},{shift}), iClose(NULL,{mt5_tf},{shift})) - iLow(NULL,{mt5_tf},{shift}))",
         "tradovate_code": "(min(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]) - df_m{tv_tf}['low'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Lower shadow size on {tf}",
     }),
     (r"^body_to_range_ratio$", {
-        "mt5_code":       "(MathAbs(iClose(NULL,{mt5_tf},0) - iOpen(NULL,{mt5_tf},0)) / MathMax(iHigh(NULL,{mt5_tf},0) - iLow(NULL,{mt5_tf},0), 0.000001))",
+        "mt5_code":       "(MathAbs(iClose(NULL,{mt5_tf},{shift}) - iOpen(NULL,{mt5_tf},{shift})) / MathMax(iHigh(NULL,{mt5_tf},{shift}) - iLow(NULL,{mt5_tf},{shift}), 0.000001))",
         "tradovate_code": "(abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1]) / max(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1], 1e-6))",
         "custom_indicator_mt5": False,
         "description": "Body to range ratio on {tf}",
     }),
     (r"^is_bullish$", {
-        "mt5_code":       "(iClose(NULL,{mt5_tf},0) > iOpen(NULL,{mt5_tf},0) ? 1.0 : 0.0)",
+        "mt5_code":       "(iClose(NULL,{mt5_tf},{shift}) > iOpen(NULL,{mt5_tf},{shift}) ? 1.0 : 0.0)",
         "tradovate_code": "(1.0 if df_m{tv_tf}['close'].iloc[-1] > df_m{tv_tf}['open'].iloc[-1] else 0.0)",
         "custom_indicator_mt5": False,
         "description": "Is candle bullish on {tf}",
     }),
     (r"^distance_from_low$", {
-        "mt5_code":       "((iClose(NULL,{mt5_tf},0) - iLow(NULL,{mt5_tf},0)) / MathMax(iClose(NULL,{mt5_tf},0), 0.000001) * 100.0)",
+        "mt5_code":       "((iClose(NULL,{mt5_tf},{shift}) - iLow(NULL,{mt5_tf},{shift})) / MathMax(iClose(NULL,{mt5_tf},{shift}), 0.000001) * 100.0)",
         "tradovate_code": "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
         "description": "Distance from bar low as % on {tf}",
@@ -306,7 +305,7 @@ INDICATOR_PATTERNS = [
 
     # Close position in bar range
     (r"^close_position_in_range$", {
-        "mt5_code":       "(iClose(NULL,{mt5_tf},0)-iLow(NULL,{mt5_tf},0))/(iHigh(NULL,{mt5_tf},0)-iLow(NULL,{mt5_tf},0)+0.000001)",
+        "mt5_code":       "(iClose(NULL,{mt5_tf},{shift})-iLow(NULL,{mt5_tf},{shift}))/(iHigh(NULL,{mt5_tf},{shift})-iLow(NULL,{mt5_tf},{shift})+0.000001)",
         "tradovate_code": "(df_m{tv_tf}['close'].iloc[-1]-df_m{tv_tf}['low'].iloc[-1])/max(df_m{tv_tf}['high'].iloc[-1]-df_m{tv_tf}['low'].iloc[-1],0.000001)",
         "custom_indicator_mt5": False,
         "description": "Close position in bar range on {tf}",
@@ -317,8 +316,9 @@ INDICATOR_PATTERNS = [
     #      Old MQL5 divided by _Point → POINTS (~0-2000 on XAUUSD).
     #      ~100,000× scale difference.
     # CHANGED: April 2026 — fix distance_from_high scale (audit bug family #7)
+    #          April 2026 — dynamic shift via {shift} for multi-TF alignment
     (r"^distance_from_high$", {
-        "mt5_code":       "((iHigh(NULL,{mt5_tf},0)-iClose(NULL,{mt5_tf},0)) / MathMax(iClose(NULL,{mt5_tf},0), 0.000001) * 100.0)",
+        "mt5_code":       "((iHigh(NULL,{mt5_tf},{shift})-iClose(NULL,{mt5_tf},{shift})) / MathMax(iClose(NULL,{mt5_tf},{shift}), 0.000001) * 100.0)",
         "tradovate_code": "((df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
         "description": "Distance from bar high as % on {tf}",
@@ -384,7 +384,7 @@ INDICATOR_PATTERNS = [
             "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0); "
             "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
             "else { double _ema_val_{tf}_{p} = _tmp_buf; "
-            "double _close_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _close_{tf} = iClose(NULL,{mt5_tf},{shift}); "
             "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -426,9 +426,9 @@ INDICATOR_PATTERNS = [
         #      starts from current bar back 20 bars, matching Python rolling(20).
         # CHANGED: April 2026 — align shift with Project 2 backtest (was shift=1, now shift=0)
         "mt5_buffer_read": (
-            "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
+            "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,{shift}); "
             "double _sw_low_{tf} = iLow(NULL,{mt5_tf},_sw_low_idx_{tf}); "
-            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},{shift}); "
             "double val_{var} = (_cl_sw_{tf} > 0) ? (_cl_sw_{tf} - _sw_low_{tf}) / _cl_sw_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -441,9 +441,9 @@ INDICATOR_PATTERNS = [
         "mt5_handle_init": "",
         # CHANGED: April 2026 — align shift with Project 2 backtest (shift=0)
         "mt5_buffer_read": (
-            "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,{shift}); "
             "double _sw_high_{tf} = iHigh(NULL,{mt5_tf},_sw_high_idx_{tf}); "
-            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},0); "
+            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},{shift}); "
             "double val_{var} = (_cl_swh_{tf} > 0) ? (_sw_high_{tf} - _cl_swh_{tf}) / _cl_swh_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -463,13 +463,13 @@ INDICATOR_PATTERNS = [
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
         "mt5_buffer_read": (
-            "int _rl_hi_idx_{var} = iHighest(NULL,{mt5_tf},MODE_HIGH,50,0); "
-            "int _rl_lo_idx_{var} = iLowest(NULL,{mt5_tf},MODE_LOW,50,0); "
+            "int _rl_hi_idx_{var} = iHighest(NULL,{mt5_tf},MODE_HIGH,50,{shift}); "
+            "int _rl_lo_idx_{var} = iLowest(NULL,{mt5_tf},MODE_LOW,50,{shift}); "
             "double _rl_hi_{var} = iHigh(NULL,{mt5_tf},_rl_hi_idx_{var}); "
             "double _rl_lo_{var} = iLow(NULL,{mt5_tf},_rl_lo_idx_{var}); "
             "double _rl_range_{var} = _rl_hi_{var} - _rl_lo_{var}; "
             "double _rl_level_{var} = _rl_lo_{var} + {p}.0/1000.0 * _rl_range_{var}; "
-            "double _rl_close_{var} = iClose(NULL,{mt5_tf},0); "
+            "double _rl_close_{var} = iClose(NULL,{mt5_tf},{shift}); "
             "double val_{var} = (_rl_close_{var} - _rl_level_{var}) / MathMax(_rl_close_{var}, 0.000001) * 100.0;"
         ),
         "tradovate_code": (
@@ -489,12 +489,12 @@ INDICATOR_PATTERNS = [
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
         "mt5_buffer_read": (
-            "int _psr_lo_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,0); "
-            "int _psr_hi_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,0); "
+            "int _psr_lo_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,{shift}); "
+            "int _psr_hi_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,{shift}); "
             "double _psr_lo_{tf} = iLow(NULL,{mt5_tf},_psr_lo_idx_{tf}); "
             "double _psr_hi_{tf} = iHigh(NULL,{mt5_tf},_psr_hi_idx_{tf}); "
             "double _psr_range_{tf} = _psr_hi_{tf} - _psr_lo_{tf}; "
-            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},0) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
+            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},{shift}) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
         ),
         "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / max(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1], 0.000001))",
         "custom_indicator_mt5": False,
@@ -734,7 +734,7 @@ def _mql5_sub_expr(feat_name, uid=''):
         # CHANGED: April 2026 — fix MQL5 iMA syntax for ema_distance sub-expr
         #          April 2026 — align shift with Project 2 backtest (shift=0)
         return ([f'double {buf}[1]; CopyBuffer(iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE),0,0,1,{buf});'],
-                f'((iClose(NULL,{mt5_tf},0)-{buf}[0])/MathMax(iClose(NULL,{mt5_tf},0),0.000001)*100.0)')
+                f'((iClose(NULL,{mt5_tf},{shift})-{buf}[0])/MathMax(iClose(NULL,{mt5_tf},{shift}),0.000001)*100.0)')
     # EMA9 above EMA20 (binary)
     if re.match(r'^ema_(\d+)_above_(\d+)$', ind):
         # WHY: MQL5 iMA returns a handle; 7-param MQL4 call doesn't compile.
@@ -763,11 +763,11 @@ def _mql5_sub_expr(feat_name, uid=''):
     # Candle range (H - L)
     # CHANGED: April 2026 — align shift with Project 2 backtest (shift=0)
     if ind == 'candle_range':
-        return ([], f'(iHigh(NULL,{mt5_tf},0)-iLow(NULL,{mt5_tf},0))')
+        return ([], f'(iHigh(NULL,{mt5_tf},{shift})-iLow(NULL,{mt5_tf},{shift}))')
     # Body-to-range ratio
     # CHANGED: April 2026 — align shift with Project 2 backtest (shift=0)
     if ind == 'body_to_range_ratio':
-        return ([], f'(MathAbs(iClose(NULL,{mt5_tf},0)-iOpen(NULL,{mt5_tf},0))/MathMax(iHigh(NULL,{mt5_tf},0)-iLow(NULL,{mt5_tf},0),0.000001))')
+        return ([], f'(MathAbs(iClose(NULL,{mt5_tf},{shift})-iOpen(NULL,{mt5_tf},{shift}))/MathMax(iHigh(NULL,{mt5_tf},{shift})-iLow(NULL,{mt5_tf},{shift}),0.000001))')
     # WHY: Python pivot uses previous bar of CURRENT timeframe
     #      ((prev_high + prev_low + prev_close) / 3 via .shift(1)).
     #      Old MQL5 hardcoded PERIOD_D1 which meant an H1 feature
@@ -775,13 +775,13 @@ def _mql5_sub_expr(feat_name, uid=''):
     # CHANGED: April 2026 — fix pivot_point timeframe (audit bug family #7)
     #          April 2026 — align shift with Project 2 backtest (shift=0)
     if ind == 'pivot_point':
-        return ([], f'((iHigh(NULL,{mt5_tf},0)+iLow(NULL,{mt5_tf},0)+iClose(NULL,{mt5_tf},0))/3.0)')
+        return ([], f'((iHigh(NULL,{mt5_tf},{shift})+iLow(NULL,{mt5_tf},{shift})+iClose(NULL,{mt5_tf},{shift}))/3.0)')
     # Pivot-point distance (current close − pivot)
     # WHY: Project 2 backtesting uses current bar for all price access.
     #      Both close and pivot components now use shift=0.
     # CHANGED: April 2026 — align shift with Project 2 backtest (was shift=1, now shift=0)
     if ind == 'pivot_point_distance':
-        return ([], f'(iClose(NULL,{mt5_tf},0)-(iHigh(NULL,{mt5_tf},0)+iLow(NULL,{mt5_tf},0)+iClose(NULL,{mt5_tf},0))/3.0)')
+        return ([], f'(iClose(NULL,{mt5_tf},{shift})-(iHigh(NULL,{mt5_tf},{shift})+iLow(NULL,{mt5_tf},{shift})+iClose(NULL,{mt5_tf},{shift}))/3.0)')
     # ROC (rate of change)
     # CHANGED: April 2026 — fix roc sub-expr missing ×100 (audit HIGH)
     #          April 2026 — align shift with Project 2 backtest (shift=0)
@@ -791,16 +791,16 @@ def _mql5_sub_expr(feat_name, uid=''):
         #      of a percentage (0.1–2.0). Models trained on % values would never
         #      fire on the live fractional values.
         n = int(p)
-        return ([], f'((iClose(NULL,{mt5_tf},0)-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001)*100.0)')
+        return ([], f'((iClose(NULL,{mt5_tf},{shift})-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001)*100.0)')
     # Position in swing range (20-bar rolling min/max)
     # CHANGED: April 2026 — align shift with Project 2 backtest (shift=0)
     if ind == 'position_in_swing_range':
         lo_buf = f'{buf}lo'; hi_buf = f'{buf}hi'
         lines = [
-            f'double {lo_buf}=iClose(NULL,{mt5_tf},0); double {hi_buf}=iClose(NULL,{mt5_tf},0);',
+            f'double {lo_buf}=iClose(NULL,{mt5_tf},{shift}); double {hi_buf}=iClose(NULL,{mt5_tf},{shift});',
             f'for(int _si=0;_si<20;_si++){{double _sc=iClose(NULL,{mt5_tf},_si);if(_sc<{lo_buf}){lo_buf}=_sc;if(_sc>{hi_buf}){hi_buf}=_sc;}}',
         ]
-        return (lines, f'((iClose(NULL,{mt5_tf},0)-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
+        return (lines, f'((iClose(NULL,{mt5_tf},{shift})-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
     # WHY: TSI (True Strength Index) requires double EMA of momentum which MT5 lacks as built-in.
     #      Inline computation is complex (25+ lines with nested loops). Risk of subtle bugs.
     #      Instead of silently returning 0, FAIL LOUD so user knows TSI features are broken.
@@ -1583,9 +1583,14 @@ def _match_pattern(indicator_name):
     return None, ()
 
 
-def get_mql_code(feature_name, platform='mt5'):
+def get_mql_code(feature_name, platform='mt5', entry_timeframe=None):
     """
     Convert a Python feature name to platform code.
+
+    Args:
+        feature_name: e.g., "H1_candle_body", "H4_macd_fast_diff"
+        platform: 'mt5' or 'tradovate'
+        entry_timeframe: e.g., 'M15', 'H1' - the entry TF for shift calculation
 
     Returns dict with:
       'var_name': safe variable name for this indicator value
@@ -1603,6 +1608,12 @@ def get_mql_code(feature_name, platform='mt5'):
     tf_info  = TIMEFRAME_MAP.get(tf, TIMEFRAME_MAP['H1'])
     mt5_tf   = tf_info['mt5']
     tv_tf    = tf_info['tradovate']
+
+    # WHY: Shift depends on whether indicator TF matches entry TF.
+    #      - Same TF: shift=1 (previous completed bar - avoids look-ahead)
+    #      - Higher TF: shift=0 (current bar of that timeframe)
+    # CHANGED: April 2026 — conditional shift for multi-timeframe alignment
+    shift = '1' if (entry_timeframe and tf == entry_timeframe) else '0'
 
     # Safe variable name
     var_name = re.sub(r'[^a-zA-Z0-9]', '_', feature_name).lower()
@@ -1691,6 +1702,7 @@ def get_mql_code(feature_name, platform='mt5'):
             .replace('{p1}',    p1)
             .replace('{p2}',    p2)
             .replace('{p2s}',   p2s)
+            .replace('{shift}', shift)
         )
 
     custom = template.get('custom_indicator_mt5', False)

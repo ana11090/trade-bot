@@ -601,7 +601,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             op   = cond.get('operator', '>')
             safe_name = re.sub(r'[^a-zA-Z0-9]', '_', feat)
             param_name = f"Rule1_Cond{ci}_{safe_name[:20]}"
-            mql = get_mql_code(feat, 'mt5')
+            mql = get_mql_code(feat, 'mt5', entry_timeframe)
             var_n = mql['var_name']
             mql_op = OPERATOR_MAP_MQL.get(op, '>')
             condition_checks.append(
@@ -628,7 +628,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 op   = cond.get('operator', '>')
                 safe_name = re.sub(r'[^a-zA-Z0-9]', '_', feat)
                 param_name = f"Rule{ri}_Cond{ci}_{safe_name[:20]}"
-                mql = get_mql_code(feat, 'mt5')
+                mql = get_mql_code(feat, 'mt5', entry_timeframe)
                 var_n = mql['var_name']
                 mql_op = OPERATOR_MAP_MQL.get(op, '>')
                 condition_checks.append(
@@ -1419,7 +1419,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         ind_name = ind_parts[1] if len(ind_parts) > 1 else exit_indicator
         ind_mql_tf = _mql_periods.get(ind_tf, 'PERIOD_H1')
 
-        ind_code = get_mql_code(exit_indicator, 'mt5')
+        ind_code = get_mql_code(exit_indicator, 'mt5', entry_timeframe)
 
         exit_inputs = (
             f'input double ExitThreshold   = {exit_threshold};            // Exit when indicator crosses this\n'
@@ -1530,7 +1530,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             if not _feat:
                 continue
             try:
-                _mql = get_mql_code(_feat, 'mt5')
+                _mql = get_mql_code(_feat, 'mt5', entry_timeframe)
                 _var_n = _mql['var_name']
                 _mql_op = OPERATOR_MAP_MQL.get(_op, '>')
                 _regime_lines.append(f'   // Regime {ri}: {_feat} {_op} {_val}')
@@ -1718,7 +1718,7 @@ bool IsMinHoldMet()
             _feat = rcond.get('feature', '')
             if _feat:
                 try:
-                    _mql = get_mql_code(_feat, 'mt5')
+                    _mql = get_mql_code(_feat, 'mt5', entry_timeframe)
                     hv = _mql.get('handle_var', '').strip().rstrip(';').strip()
                     if hv:
                         hname = hv.split()[-1] if hv else ''
@@ -2406,7 +2406,7 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
             feat = cond.get('feature', '')
             op   = cond.get('operator', '>')
             val  = cond.get('value', 0)
-            tv   = get_mql_code(feat, 'tradovate')
+            tv   = get_mql_code(feat, 'tradovate', entry_timeframe)
             var_n = tv['var_name']
             # WHY: 8-space indent so these lines sit inside the try: block
             #      in check_entry_conditions (try: is at 4-space indent).
