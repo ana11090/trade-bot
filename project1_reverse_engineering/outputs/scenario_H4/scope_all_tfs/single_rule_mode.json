@@ -478,9 +478,9 @@
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
-    "winner_selection": "coverage"
+    "winner_selection": "tightness"
   },
   "reason": "No conjunction of 2..10 conditions reached 85% coverage. The bot may use conditions that span beyond the 46-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
-  "generated_at": "2026-04-26T21:16:27.226793",
+  "generated_at": "2026-04-26T21:24:39.284193",
   "scenario": null
 }

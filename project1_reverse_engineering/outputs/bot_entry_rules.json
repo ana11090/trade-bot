@@ -1,0 +1,127 @@
+{
+  "status": "ok",
+  "discovery_method": "bot_entry_v1",
+  "n_trades": 1106,
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.895
+        },
+        {
+          "feature": "D1_cci_20",
+          "operator": ">",
+          "value": -55.2707
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.64,
+      "win_rate": 0.64,
+      "coverage": 86,
+      "coverage_pct": 24.4,
+      "train_win_rate": 0.721,
+      "train_coverage": 61,
+      "overfit_gap": 0.082,
+      "is_overfit": false,
+      "avg_pips": 117.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 174,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_cci_50",
+          "operator": ">",
+          "value": 53.6611
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 25.04
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.79,
+      "win_rate": 0.79,
+      "coverage": 62,
+      "coverage_pct": 17.6,
+      "train_win_rate": 0.854,
+      "train_coverage": 89,
+      "overfit_gap": 0.064,
+      "is_overfit": false,
+      "avg_pips": 172.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 301,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    }
+  ],
+  "per_tf_summary": [
+    {
+      "tf": "M5",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 1554,
+      "n_test": 666,
+      "n_features": 750
+    },
+    {
+      "tf": "M15",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2329,
+      "n_test": 999,
+      "n_features": 750
+    },
+    {
+      "tf": "H1",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2413,
+      "n_test": 1035,
+      "n_features": 750
+    },
+    {
+      "tf": "H4",
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2583,
+      "n_test": 1108,
+      "n_features": 750
+    },
+    {
+      "tf": "D1",
+      "status": "ok",
+      "n_rules": 2,
+      "n_train": 822,
+      "n_test": 353,
+      "n_features": 750
+    }
+  ],
+  "params": {
+    "max_rules": 37,
+    "max_depth": 3,
+    "n_estimators": 200,
+    "min_coverage": 25,
+    "min_win_rate": 0.55,
+    "neg_ratio": 10
+  }
+}

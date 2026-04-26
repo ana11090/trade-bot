@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:16:35.774862
+Generated: 2026-04-26T21:39:20.866654
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -34,28 +34,8 @@ Trades analyzed: 1106 | Features: 759
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
   RULE 1 (WIN, conf: 93%, 41 trades)
-    IF D1_mt5_macd_std_signal > 90.8717 AND D1_bull_power > 369.9721
+    IF D1_mt5_atr_7 > 34.541 AND D1_macd_fast_signal > 145.3667
     Win rate: 93% | Avg pips: +750
-
-  RULE 2 (WIN, conf: 70%, 74 trades)
-    IF D1_mt5_macd_std_signal > 90.8717 AND D1_bull_power <= 369.9721 AND D1_day_of_week <= 2.5 AND D1_macd_std_diff > -17.466
-    Win rate: 70% | Avg pips: +394
-
-  RULE 3 (WIN, conf: 66%, 41 trades)
-    IF D1_mt5_macd_std_signal <= 90.8717 AND D1_tsi > 10.0659 AND D1_close_position_in_range > 0.1102 AND D1_williams_r_28 > -1.7314
-    Win rate: 66% | Avg pips: +220
-
-  RULE 4 (WIN, conf: 75%, 24 trades)
-    IF D1_mt5_macd_std_signal > 90.8717 AND D1_bull_power <= 369.9721 AND D1_day_of_week <= 2.5 AND D1_macd_std_diff <= -17.466
-    Win rate: 75% | Avg pips: +156
-
-  RULE 5 (WIN, conf: 75%, 20 trades)
-    IF D1_mt5_macd_std_signal <= 90.8717 AND D1_tsi <= 10.0659 AND D1_sma_20_distance <= -2.9547
-    Win rate: 75% | Avg pips: +179
-
-  RULE 6 (WIN, conf: 70%, 20 trades)
-    IF D1_mt5_macd_std_signal <= 90.8717 AND D1_tsi > 10.0659 AND D1_close_position_in_range <= 0.1102
-    Win rate: 70% | Avg pips: +238
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 85 trades (7.7%), WR 72%, avg +385 pips, avg dur 0min

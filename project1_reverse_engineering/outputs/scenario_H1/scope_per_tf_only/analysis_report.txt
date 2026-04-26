@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:16:04.325050
+Generated: 2026-04-26T21:39:01.103272
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -33,21 +33,21 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 68%, 151 trades)
-    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 <= 85.2378 AND H1_volume_change <= 0.3683 AND H1_distance_to_rolling_level_618 <= 0.8274
-    Win rate: 68% | Avg pips: +264
+  RULE 1 (WIN, conf: 100%, 23 trades)
+    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width > 5.7814 AND H1_kst_signal > -25.334
+    Win rate: 100% | Avg pips: +577
 
-  RULE 2 (WIN, conf: 70%, 70 trades)
-    IF H1_bb_50_2_width <= 3.2052 AND H1_bb_20_2_width > 0.6703 AND H1_ichimoku_conversion > 1921.4425 AND H1_upper_shadow <= 0.515
-    Win rate: 70% | Avg pips: +194
+  RULE 2 (WIN, conf: 71%, 34 trades)
+    IF H1_std_dev_20 <= 6.3115 AND H1_volume_ratio_20 > 1.1603 AND H1_cmf > 0.0951
+    Win rate: 71% | Avg pips: +70
 
-  RULE 3 (WIN, conf: 78%, 37 trades)
-    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range > 0.4795
-    Win rate: 78% | Avg pips: +740
+  RULE 3 (WIN, conf: 85%, 26 trades)
+    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width > 5.7814 AND H1_kst_signal <= -25.334
+    Win rate: 85% | Avg pips: +591
 
-  RULE 4 (WIN, conf: 88%, 32 trades)
-    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range <= 0.4795
-    Win rate: 88% | Avg pips: +461
+  RULE 4 (LOSS, conf: 70%, 23 trades)
+    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width <= 5.7814 AND H1_mfi <= 26.9872
+    Win rate: 30% | Avg pips: +29
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 54 trades (4.9%), WR 83%, avg +496 pips, avg dur 0min

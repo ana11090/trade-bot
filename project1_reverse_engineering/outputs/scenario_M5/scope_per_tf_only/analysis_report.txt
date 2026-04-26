@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:15:35.215850
+Generated: 2026-04-26T21:38:18.345656
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -33,25 +33,21 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 91%, 34 trades)
-    IF M5_atr_14 > 9.5491 AND M5_dpo <= 14.6108 AND M5_keltner_width > 0.7303
-    Win rate: 91% | Avg pips: +594
+  RULE 1 (WIN, conf: 92%, 84 trades)
+    IF M5_distance_to_swing_high > 0.8549 AND M5_lower_shadow > 0.63 AND M5_kst_signal > -8.3731
+    Win rate: 92% | Avg pips: +477
 
-  RULE 2 (WIN, conf: 81%, 36 trades)
-    IF M5_atr_14 <= 9.5491 AND M5_mt5_macd_std <= -5.6341
-    Win rate: 81% | Avg pips: +332
+  RULE 2 (WIN, conf: 81%, 67 trades)
+    IF M5_distance_to_swing_high <= 0.8549 AND M5_minus_di <= 24.9203 AND M5_roc_10 <= -0.0483
+    Win rate: 81% | Avg pips: +249
 
-  RULE 3 (WIN, conf: 79%, 33 trades)
-    IF M5_atr_14 > 9.5491 AND M5_dpo <= 14.6108 AND M5_keltner_width <= 0.7303 AND M5_aroon_down <= 40.0
-    Win rate: 79% | Avg pips: +444
+  RULE 3 (WIN, conf: 84%, 31 trades)
+    IF M5_distance_to_swing_high > 0.8549 AND M5_lower_shadow <= 0.63 AND M5_close_position_in_range <= 0.0573
+    Win rate: 84% | Avg pips: +219
 
-  RULE 4 (WIN, conf: 100%, 20 trades)
-    IF M5_atr_14 <= 9.5491 AND M5_mt5_macd_std > -5.6341 AND M5_minus_di <= 21.2915 AND M5_cci_14 <= -79.7986
-    Win rate: 100% | Avg pips: +400
-
-  RULE 5 (WIN, conf: 85%, 20 trades)
-    IF M5_atr_14 > 9.5491 AND M5_dpo > 14.6108
-    Win rate: 85% | Avg pips: +812
+  RULE 4 (WIN, conf: 68%, 22 trades)
+    IF M5_distance_to_swing_high > 0.8549 AND M5_lower_shadow > 0.63 AND M5_kst_signal <= -8.3731
+    Win rate: 68% | Avg pips: +300
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 37 trades (3.3%), WR 89%, avg +564 pips, avg dur 0min

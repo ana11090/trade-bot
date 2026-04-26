@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-26T21:16:35.774862",
+  "generated_at": "2026-04-26T21:39:20.866654",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-26 21:16:35",
+  "activated_at": "2026-04-26 21:39:20",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 3.8,
+  "analysis_time_s": 2.3,
   "trade_count": 1106,
   "feature_count": 759,
   "profile": {
@@ -220,14 +220,14 @@
     {
       "conditions": [
         {
-          "feature": "D1_mt5_macd_std_signal",
+          "feature": "D1_mt5_atr_7",
           "operator": ">",
-          "value": 90.8717
+          "value": 34.541
         },
         {
-          "feature": "D1_bull_power",
+          "feature": "D1_macd_fast_signal",
           "operator": ">",
-          "value": 369.9721
+          "value": 145.3667
         }
       ],
       "prediction": "WIN",
@@ -236,191 +236,11 @@
       "coverage_pct": 4.6,
       "win_rate": 0.927,
       "avg_pips": 750.3,
-      "_target_mode": "regression_weighted",
+      "_target_mode": "binary",
       "avg_pips_test": null,
       "win_rate_test": null,
       "test_samples": 0,
       "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_mt5_macd_std_signal",
-          "operator": ">",
-          "value": 90.8717
-        },
-        {
-          "feature": "D1_bull_power",
-          "operator": "<=",
-          "value": 369.9721
-        },
-        {
-          "feature": "D1_day_of_week",
-          "operator": "<=",
-          "value": 2.5
-        },
-        {
-          "feature": "D1_macd_std_diff",
-          "operator": ">",
-          "value": -17.466
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.703,
-      "coverage": 74,
-      "coverage_pct": 8.4,
-      "win_rate": 0.703,
-      "avg_pips": 394.2,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_mt5_macd_std_signal",
-          "operator": "<=",
-          "value": 90.8717
-        },
-        {
-          "feature": "D1_tsi",
-          "operator": ">",
-          "value": 10.0659
-        },
-        {
-          "feature": "D1_close_position_in_range",
-          "operator": ">",
-          "value": 0.1102
-        },
-        {
-          "feature": "D1_williams_r_28",
-          "operator": ">",
-          "value": -1.7314
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.659,
-      "coverage": 41,
-      "coverage_pct": 4.6,
-      "win_rate": 0.659,
-      "avg_pips": 219.6,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": 99.0,
-      "win_rate_test": 1.0,
-      "test_samples": 1,
-      "test_skip_reason": null,
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_mt5_macd_std_signal",
-          "operator": ">",
-          "value": 90.8717
-        },
-        {
-          "feature": "D1_bull_power",
-          "operator": "<=",
-          "value": 369.9721
-        },
-        {
-          "feature": "D1_day_of_week",
-          "operator": "<=",
-          "value": 2.5
-        },
-        {
-          "feature": "D1_macd_std_diff",
-          "operator": "<=",
-          "value": -17.466
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.75,
-      "coverage": 24,
-      "coverage_pct": 2.7,
-      "win_rate": 0.75,
-      "avg_pips": 155.5,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_mt5_macd_std_signal",
-          "operator": "<=",
-          "value": 90.8717
-        },
-        {
-          "feature": "D1_tsi",
-          "operator": "<=",
-          "value": 10.0659
-        },
-        {
-          "feature": "D1_sma_20_distance",
-          "operator": "<=",
-          "value": -2.9547
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.75,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.75,
-      "avg_pips": 179.3,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": 242.0,
-      "win_rate_test": 1.0,
-      "test_samples": 1,
-      "test_skip_reason": null,
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_mt5_macd_std_signal",
-          "operator": "<=",
-          "value": 90.8717
-        },
-        {
-          "feature": "D1_tsi",
-          "operator": ">",
-          "value": 10.0659
-        },
-        {
-          "feature": "D1_close_position_in_range",
-          "operator": "<=",
-          "value": 0.1102
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.7,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.7,
-      "avg_pips": 238.2,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": -151.0,
-      "win_rate_test": 0.0,
-      "test_samples": 1,
-      "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "xauusd_unlimited_levereged",
       "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"

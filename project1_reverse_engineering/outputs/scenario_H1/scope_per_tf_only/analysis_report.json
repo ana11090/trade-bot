@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-26T21:16:04.325050",
+  "generated_at": "2026-04-26T21:39:01.103272",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-26 21:16:04",
+  "activated_at": "2026-04-26 21:39:01",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 4.1,
+  "analysis_time_s": 2.4,
   "trade_count": 1106,
   "feature_count": 759,
   "profile": {
@@ -220,74 +220,64 @@
     {
       "conditions": [
         {
-          "feature": "H1_bb_50_2_width",
+          "feature": "H1_std_dev_20",
           "operator": ">",
-          "value": 3.2052
-        },
-        {
-          "feature": "H1_std_dev_50",
-          "operator": "<=",
-          "value": 85.2378
-        },
-        {
-          "feature": "H1_volume_change",
-          "operator": "<=",
-          "value": 0.3683
-        },
-        {
-          "feature": "H1_distance_to_rolling_level_618",
-          "operator": "<=",
-          "value": 0.8274
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.675,
-      "coverage": 151,
-      "coverage_pct": 17.1,
-      "win_rate": 0.675,
-      "avg_pips": 264.2,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": 14.1,
-      "win_rate_test": 0.625,
-      "test_samples": 8,
-      "test_skip_reason": null,
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "H1_bb_50_2_width",
-          "operator": "<=",
-          "value": 3.2052
+          "value": 6.3115
         },
         {
           "feature": "H1_bb_20_2_width",
           "operator": ">",
-          "value": 0.6703
+          "value": 5.7814
         },
         {
-          "feature": "H1_ichimoku_conversion",
+          "feature": "H1_kst_signal",
           "operator": ">",
-          "value": 1921.4425
-        },
-        {
-          "feature": "H1_upper_shadow",
-          "operator": "<=",
-          "value": 0.515
+          "value": -25.334
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.7,
-      "coverage": 70,
-      "coverage_pct": 7.9,
-      "win_rate": 0.7,
-      "avg_pips": 194.2,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": 317.0,
-      "win_rate_test": 0.75,
-      "test_samples": 4,
+      "confidence": 1.0,
+      "coverage": 23,
+      "coverage_pct": 2.6,
+      "win_rate": 1.0,
+      "avg_pips": 576.9,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "H1_std_dev_20",
+          "operator": "<=",
+          "value": 6.3115
+        },
+        {
+          "feature": "H1_volume_ratio_20",
+          "operator": ">",
+          "value": 1.1603
+        },
+        {
+          "feature": "H1_cmf",
+          "operator": ">",
+          "value": 0.0951
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.706,
+      "coverage": 34,
+      "coverage_pct": 3.8,
+      "win_rate": 0.706,
+      "avg_pips": 69.5,
+      "_target_mode": "binary",
+      "avg_pips_test": 96.9,
+      "win_rate_test": 0.556,
+      "test_samples": 9,
       "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "xauusd_unlimited_levereged",
@@ -296,28 +286,28 @@
     {
       "conditions": [
         {
-          "feature": "H1_bb_50_2_width",
+          "feature": "H1_std_dev_20",
           "operator": ">",
-          "value": 3.2052
+          "value": 6.3115
         },
         {
-          "feature": "H1_std_dev_50",
+          "feature": "H1_bb_20_2_width",
           "operator": ">",
-          "value": 85.2378
+          "value": 5.7814
         },
         {
-          "feature": "H1_close_position_in_range",
-          "operator": ">",
-          "value": 0.4795
+          "feature": "H1_kst_signal",
+          "operator": "<=",
+          "value": -25.334
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.784,
-      "coverage": 37,
-      "coverage_pct": 4.2,
-      "win_rate": 0.784,
-      "avg_pips": 739.5,
-      "_target_mode": "regression_weighted",
+      "confidence": 0.846,
+      "coverage": 26,
+      "coverage_pct": 2.9,
+      "win_rate": 0.846,
+      "avg_pips": 590.6,
+      "_target_mode": "binary",
       "avg_pips_test": null,
       "win_rate_test": null,
       "test_samples": 0,
@@ -329,32 +319,32 @@
     {
       "conditions": [
         {
-          "feature": "H1_bb_50_2_width",
+          "feature": "H1_std_dev_20",
           "operator": ">",
-          "value": 3.2052
+          "value": 6.3115
         },
         {
-          "feature": "H1_std_dev_50",
-          "operator": ">",
-          "value": 85.2378
-        },
-        {
-          "feature": "H1_close_position_in_range",
+          "feature": "H1_bb_20_2_width",
           "operator": "<=",
-          "value": 0.4795
+          "value": 5.7814
+        },
+        {
+          "feature": "H1_mfi",
+          "operator": "<=",
+          "value": 26.9872
         }
       ],
-      "prediction": "WIN",
-      "confidence": 0.875,
-      "coverage": 32,
-      "coverage_pct": 3.6,
-      "win_rate": 0.875,
-      "avg_pips": 461.3,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
+      "prediction": "LOSS",
+      "confidence": 0.696,
+      "coverage": 23,
+      "coverage_pct": 2.6,
+      "win_rate": 0.304,
+      "avg_pips": 29.3,
+      "_target_mode": "binary",
+      "avg_pips_test": 63.2,
+      "win_rate_test": 0.4,
+      "test_samples": 5,
+      "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "xauusd_unlimited_levereged",
       "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"

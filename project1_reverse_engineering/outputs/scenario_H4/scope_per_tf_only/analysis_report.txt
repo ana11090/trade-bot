@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:16:17.980166
+Generated: 2026-04-26T21:39:09.958484
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -33,29 +33,21 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 66%, 127 trades)
-    IF H4_bb_20_2_width > 5.7486 AND H4_kst_signal <= 58.2197 AND H4_bb_20_3_upper <= 5531.1702 AND H4_keltner_width > 1.8446
-    Win rate: 66% | Avg pips: +208
+  RULE 1 (WIN, conf: 83%, 169 trades)
+    IF H4_atr_14 > 15.6497 AND H4_adx_21 > 27.569 AND H4_mfi <= 72.936
+    Win rate: 83% | Avg pips: +386
 
-  RULE 2 (WIN, conf: 93%, 30 trades)
-    IF H4_bb_20_2_width > 5.7486 AND H4_kst_signal > 58.2197
-    Win rate: 93% | Avg pips: +777
+  RULE 2 (WIN, conf: 67%, 174 trades)
+    IF H4_atr_14 > 15.6497 AND H4_adx_21 <= 27.569 AND H4_macd_std_diff > -0.345
+    Win rate: 67% | Avg pips: +160
 
-  RULE 3 (WIN, conf: 70%, 40 trades)
-    IF H4_bb_20_2_width <= 5.7486 AND H4_bull_power <= -7.6658 AND H4_sma_200_distance > 0.8433
-    Win rate: 70% | Avg pips: +350
+  RULE 3 (WIN, conf: 76%, 38 trades)
+    IF H4_atr_14 <= 15.6497 AND H4_distance_from_high <= 0.09 AND H4_std_dev_20 > 10.4872
+    Win rate: 76% | Avg pips: +169
 
-  RULE 4 (WIN, conf: 85%, 26 trades)
-    IF H4_bb_20_2_width > 5.7486 AND H4_kst_signal <= 58.2197 AND H4_bb_20_3_upper <= 5531.1702 AND H4_keltner_width <= 1.8446
-    Win rate: 85% | Avg pips: +430
-
-  RULE 5 (WIN, conf: 82%, 22 trades)
-    IF H4_bb_20_2_width > 5.7486 AND H4_kst_signal <= 58.2197 AND H4_bb_20_3_upper > 5531.1702
-    Win rate: 82% | Avg pips: +633
-
-  RULE 6 (WIN, conf: 70%, 20 trades)
-    IF H4_bb_20_2_width <= 5.7486 AND H4_bull_power > -7.6658 AND H4_mt5_ema_200_distance <= 2.8922 AND H4_close_position_in_range <= 0.0427
-    Win rate: 70% | Avg pips: +138
+  RULE 4 (LOSS, conf: 68%, 165 trades)
+    IF H4_atr_14 <= 15.6497 AND H4_distance_from_high > 0.09 AND H4_psar_signal > 0.5
+    Win rate: 32% | Avg pips: +3
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 129 trades (11.7%), WR 74%, avg +379 pips, avg dur 0min

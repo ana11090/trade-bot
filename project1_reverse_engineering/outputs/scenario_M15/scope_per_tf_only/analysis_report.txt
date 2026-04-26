@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:15:49.236672
+Generated: 2026-04-26T21:38:52.219145
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -33,37 +33,21 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 70%, 163 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 <= 18.967 AND M15_macd_fast_diff <= -0.3467 AND M15_volume_ratio_20 <= 1.3305
-    Win rate: 70% | Avg pips: +216
+  RULE 1 (WIN, conf: 96%, 53 trades)
+    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 > 20.1138 AND M15_donchian_upper > 4941.26
+    Win rate: 96% | Avg pips: +629
 
-  RULE 2 (WIN, conf: 78%, 37 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal <= -0.5521
-    Win rate: 78% | Avg pips: +267
+  RULE 2 (WIN, conf: 73%, 222 trades)
+    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 <= 20.1138 AND M15_mt5_macd_fast_diff <= -0.6449
+    Win rate: 73% | Avg pips: +230
 
-  RULE 3 (WIN, conf: 92%, 25 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 > 18.967 AND M15_psar > 5099.1062
-    Win rate: 92% | Avg pips: +784
+  RULE 3 (WIN, conf: 68%, 28 trades)
+    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 > 20.1138 AND M15_donchian_upper <= 4941.26
+    Win rate: 68% | Avg pips: +357
 
-  RULE 4 (WIN, conf: 88%, 24 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal > -0.5521
-    Win rate: 88% | Avg pips: +700
-
-  RULE 5 (WIN, conf: 79%, 24 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 <= 18.967 AND M15_macd_fast_diff <= -0.3467 AND M15_volume_ratio_20 > 1.3305
-    Win rate: 79% | Avg pips: +361
-
-  RULE 6 (WIN, conf: 68%, 28 trades)
-    IF M15_std_dev_20 > 7.1525 AND M15_atr_28 <= 18.967 AND M15_macd_fast_diff > -0.3467 AND M15_mass_index <= 24.5134
-    Win rate: 68% | Avg pips: +279
-
-  RULE 7 (WIN, conf: 71%, 21 trades)
-    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index <= 23.416 AND M15_mfi <= 42.9686
-    Win rate: 71% | Avg pips: +300
-
-  RULE 8 (WIN, conf: 67%, 21 trades)
-    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index > 23.416 AND M15_plus_di <= 8.2355
-    Win rate: 67% | Avg pips: +152
+  RULE 4 (WIN, conf: 86%, 21 trades)
+    IF M15_std_dev_20 <= 5.4025 AND M15_minus_di <= 16.5914 AND M15_day_of_week <= 2.5
+    Win rate: 86% | Avg pips: +188
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 45 trades (4.1%), WR 87%, avg +557 pips, avg dur 0min

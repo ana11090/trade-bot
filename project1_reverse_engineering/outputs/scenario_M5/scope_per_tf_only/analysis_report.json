@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-26T21:15:35.215850",
+  "generated_at": "2026-04-26T21:38:18.345656",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-04-26 21:15:35",
+  "activated_at": "2026-04-26 21:38:18",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 12.0,
+  "analysis_time_s": 2.4,
   "trade_count": 1106,
   "feature_count": 759,
   "profile": {
@@ -220,28 +220,28 @@
     {
       "conditions": [
         {
-          "feature": "M5_atr_14",
+          "feature": "M5_distance_to_swing_high",
           "operator": ">",
-          "value": 9.5491
+          "value": 0.8549
         },
         {
-          "feature": "M5_dpo",
-          "operator": "<=",
-          "value": 14.6108
+          "feature": "M5_lower_shadow",
+          "operator": ">",
+          "value": 0.63
         },
         {
-          "feature": "M5_keltner_width",
+          "feature": "M5_kst_signal",
           "operator": ">",
-          "value": 0.7303
+          "value": -8.3731
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.912,
-      "coverage": 34,
-      "coverage_pct": 3.8,
-      "win_rate": 0.912,
-      "avg_pips": 593.5,
-      "_target_mode": "regression_weighted",
+      "confidence": 0.917,
+      "coverage": 84,
+      "coverage_pct": 9.5,
+      "win_rate": 0.917,
+      "avg_pips": 476.6,
+      "_target_mode": "binary",
       "avg_pips_test": null,
       "win_rate_test": null,
       "test_samples": 0,
@@ -253,99 +253,28 @@
     {
       "conditions": [
         {
-          "feature": "M5_atr_14",
+          "feature": "M5_distance_to_swing_high",
           "operator": "<=",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_mt5_macd_std",
-          "operator": "<=",
-          "value": -5.6341
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.806,
-      "coverage": 36,
-      "coverage_pct": 4.1,
-      "win_rate": 0.806,
-      "avg_pips": 332.3,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M5_atr_14",
-          "operator": ">",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_dpo",
-          "operator": "<=",
-          "value": 14.6108
-        },
-        {
-          "feature": "M5_keltner_width",
-          "operator": "<=",
-          "value": 0.7303
-        },
-        {
-          "feature": "M5_aroon_down",
-          "operator": "<=",
-          "value": 40.0
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.788,
-      "coverage": 33,
-      "coverage_pct": 3.7,
-      "win_rate": 0.788,
-      "avg_pips": 444.4,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M5_atr_14",
-          "operator": "<=",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_mt5_macd_std",
-          "operator": ">",
-          "value": -5.6341
+          "value": 0.8549
         },
         {
           "feature": "M5_minus_di",
           "operator": "<=",
-          "value": 21.2915
+          "value": 24.9203
         },
         {
-          "feature": "M5_cci_14",
+          "feature": "M5_roc_10",
           "operator": "<=",
-          "value": -79.7986
+          "value": -0.0483
         }
       ],
       "prediction": "WIN",
-      "confidence": 1.0,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 1.0,
-      "avg_pips": 399.9,
-      "_target_mode": "regression_weighted",
+      "confidence": 0.806,
+      "coverage": 67,
+      "coverage_pct": 7.6,
+      "win_rate": 0.806,
+      "avg_pips": 249.3,
+      "_target_mode": "binary",
       "avg_pips_test": null,
       "win_rate_test": null,
       "test_samples": 0,
@@ -357,23 +286,61 @@
     {
       "conditions": [
         {
-          "feature": "M5_atr_14",
+          "feature": "M5_distance_to_swing_high",
           "operator": ">",
-          "value": 9.5491
+          "value": 0.8549
         },
         {
-          "feature": "M5_dpo",
-          "operator": ">",
-          "value": 14.6108
+          "feature": "M5_lower_shadow",
+          "operator": "<=",
+          "value": 0.63
+        },
+        {
+          "feature": "M5_close_position_in_range",
+          "operator": "<=",
+          "value": 0.0573
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.85,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.85,
-      "avg_pips": 812.4,
-      "_target_mode": "regression_weighted",
+      "confidence": 0.839,
+      "coverage": 31,
+      "coverage_pct": 3.5,
+      "win_rate": 0.839,
+      "avg_pips": 218.7,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_distance_to_swing_high",
+          "operator": ">",
+          "value": 0.8549
+        },
+        {
+          "feature": "M5_lower_shadow",
+          "operator": ">",
+          "value": 0.63
+        },
+        {
+          "feature": "M5_kst_signal",
+          "operator": "<=",
+          "value": -8.3731
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.682,
+      "coverage": 22,
+      "coverage_pct": 2.5,
+      "win_rate": 0.682,
+      "avg_pips": 300.0,
+      "_target_mode": "binary",
       "avg_pips_test": null,
       "win_rate_test": null,
       "test_samples": 0,

@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:16:22.190803
+Generated: 2026-04-26T21:39:12.535243
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -33,29 +33,13 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 86%, 57 trades)
-    IF H4_bb_20_2_width > 5.7486 AND D1_bull_power <= 369.9721 AND H4_ema_200_distance <= 6.0647 AND H4_ema_50_distance > -1.3713
-    Win rate: 86% | Avg pips: +470
+  RULE 1 (WIN, conf: 84%, 155 trades)
+    IF H4_mt5_atr_14 > 15.6497 AND H4_adx_21 > 27.569 AND D1_aroon_indicator <= 90.0
+    Win rate: 84% | Avg pips: +386
 
-  RULE 2 (WIN, conf: 93%, 41 trades)
-    IF H4_bb_20_2_width > 5.7486 AND D1_bull_power > 369.9721
-    Win rate: 93% | Avg pips: +750
-
-  RULE 3 (WIN, conf: 68%, 31 trades)
-    IF H4_bb_20_2_width <= 5.7486 AND D1_tsi > 10.0659 AND D1_close_position_in_range > 0.1102 AND D1_stoch_21_k > 97.6611
-    Win rate: 68% | Avg pips: +290
-
-  RULE 4 (WIN, conf: 75%, 20 trades)
-    IF H4_bb_20_2_width <= 5.7486 AND D1_tsi <= 10.0659 AND D1_sma_20_distance <= -2.9547
-    Win rate: 75% | Avg pips: +179
-
-  RULE 5 (WIN, conf: 67%, 21 trades)
-    IF H4_bb_20_2_width <= 5.7486 AND D1_tsi > 10.0659 AND D1_close_position_in_range <= 0.1102
-    Win rate: 67% | Avg pips: +337
-
-  RULE 6 (WIN, conf: 67%, 21 trades)
-    IF H4_bb_20_2_width > 5.7486 AND D1_bull_power <= 369.9721 AND H4_ema_200_distance > 6.0647 AND H4_cci_50 > 159.6659
-    Win rate: 67% | Avg pips: +347
+  RULE 2 (WIN, conf: 67%, 174 trades)
+    IF H4_mt5_atr_14 > 15.6497 AND H4_adx_21 <= 27.569 AND H4_macd_std_diff > -0.345
+    Win rate: 67% | Avg pips: +160
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
   'Big winners': 134 trades (12.1%), WR 67%, avg +315 pips, avg dur 0min
