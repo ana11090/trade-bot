@@ -4059,8 +4059,12 @@ def build_panel(parent):
                 # WHY (per-row-delete): "del" column hosts a clickable 🗑 for
                 #      saved rules. A single delete button per row replaces
                 #      the old single-row "🗑 Delete" button in sel_row.
+                # WHY: Entry timeframe column shows which TF the strategy was
+                #      backtested on (M5, M15, H1, etc.). Critical for verifying
+                #      that the EA generator uses the correct timeframe.
                 # CHANGED: April 2026 — per-row-delete
-                columns = ("star", "#", "rule", "exit", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
+                #          April 2026 — add entry TF column for verification
+                columns = ("star", "#", "rule", "exit", "tf", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
                                            selectmode="browse")
@@ -4069,6 +4073,7 @@ def build_panel(parent):
                 _strat_tree.heading("#",        text="#")
                 _strat_tree.heading("rule",     text="Rule")
                 _strat_tree.heading("exit",     text="Exit Strategy")
+                _strat_tree.heading("tf",       text="TF")
                 _strat_tree.heading("trades",   text="Trades")
                 _strat_tree.heading("wr",       text="Win Rate")
                 _strat_tree.heading("pf",       text="PF")
@@ -4080,6 +4085,7 @@ def build_panel(parent):
                 _strat_tree.column("#",        width=70,  anchor="center")
                 _strat_tree.column("rule",     width=160, anchor="w")
                 _strat_tree.column("exit",     width=120, anchor="w")
+                _strat_tree.column("tf",       width=45,  anchor="center")
                 _strat_tree.column("trades",   width=60,  anchor="center")
                 _strat_tree.column("wr",       width=70,  anchor="center")
                 _strat_tree.column("pf",       width=60,  anchor="center")
@@ -4128,7 +4134,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4145,9 +4151,17 @@ def build_panel(parent):
                     )
                     exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
                     wr_s_saved = str(round(wr*100 if wr <= 1 else wr, 1)) + '%'
+                    # WHY: Show entry TF from saved rule data
+                    # CHANGED: April 2026 — add entry TF column
+                    entry_tf_display = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        (s.get('stats', {}) or {}).get('entry_tf') or
+                        '—'
+                    )
                     tag = "saved" if not is_starred else "starred"
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        star_display, id_display, rc, exit_name, int(trades), wr_s_saved,
+                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
                     ), tags=(tag,))
                     continue
@@ -4164,8 +4178,17 @@ def build_panel(parent):
 
                 del_display = "" if source == 'separator' else "🗑"
 
+                # WHY: Show entry TF from backtest matrix data
+                # CHANGED: April 2026 — add entry TF column
+                entry_tf_display = (
+                    s.get('entry_tf') or
+                    s.get('entry_timeframe') or
+                    (s.get('stats', {}) or {}).get('entry_tf') or
+                    '—'
+                )
+
                 _strat_tree.insert("", "end", iid=idx, values=(
-                    star_display, id_display, rc, exit_name, int(trades), wr_str,
+                    star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_str,
                     f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
                 ), tags=(tag,))
 

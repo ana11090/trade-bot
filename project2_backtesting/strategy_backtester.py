@@ -560,7 +560,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   swap_cost_per_lot_per_night=0,
                                   news_blackout_minutes=0,
                                   max_trades_per_day=0,
-                                  leverage=0, contract_size=100.0):
+                                  leverage=0, contract_size=100.0,
+                                  compound_equity=False):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -582,6 +583,9 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
           reads exit_strategy.sl_pips directly — no ATR fallback needed.
     """
     trades = []
+    # WHY: Running balance for compound equity.
+    # CHANGED: April 2026 — equity-tracking lot sizing
+    _running_balance = float(account_size) if account_size is not None else None
 
     sl_pips = exit_strategy.sl_pips
     tp_pips = exit_strategy.tp_pips
@@ -822,7 +826,10 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # CHANGED: April 2026 — use actual sl_pips for lot sizing (audit Family #2)
         lot_size = 0.01
         if account_size and risk_per_trade_pct > 0 and sl_pips > 0:
-            risk_dollars = account_size * (risk_per_trade_pct / 100)
+            # WHY: When compound_equity=True, use running balance for sizing.
+            # CHANGED: April 2026 — equity-tracking lot sizing
+            _sizing_equity = _running_balance if (compound_equity and _running_balance) else account_size
+            risk_dollars = _sizing_equity * (risk_per_trade_pct / 100)
             lot_size = max(0.01, round(risk_dollars / (sl_pips * pip_value_per_lot), 2))
             # WHY (leverage): Cap lot_size to what the account can margin.
             #      A $10K account at 1:10 on XAUUSD (~$3300/oz, 100 oz/lot)
@@ -831,11 +838,16 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             # CHANGED: April 2026 — margin-aware lot sizing
             if leverage > 0 and entry_price > 0:
                 margin_per_lot = (contract_size * entry_price) / leverage
-                max_lots_by_margin = (account_size * 0.95) / margin_per_lot
+                max_lots_by_margin = (_sizing_equity * 0.95) / margin_per_lot
                 if lot_size > max_lots_by_margin:
                     lot_size = max(0.01, round(max_lots_by_margin, 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size
+
+        # WHY: Update running balance for compound equity.
+        # CHANGED: April 2026 — equity-tracking lot sizing
+        if compound_equity and _running_balance is not None and account_size:
+            _running_balance = max(account_size * 0.5, _running_balance + net_profit)
 
         # WHY (Phase A.42): Increment daily counter after a trade opens.
         # CHANGED: April 2026 — Phase A.42
@@ -893,7 +905,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      contract_size is the number of base units per lot
                  #      (100 oz for XAUUSD, 100000 for FX pairs).
                  # CHANGED: April 2026 — margin-aware lot sizing
-                 leverage=0, contract_size=100.0):
+                 leverage=0, contract_size=100.0,
+                 # WHY: Static account_size means no compounding — after
+                 #      winning $200 you still risk based on $10,000. With
+                 #      compound_equity=True, lot sizing uses running balance
+                 #      so winners make subsequent trades larger, accelerating
+                 #      toward the eval profit target.
+                 # CHANGED: April 2026 — equity-tracking lot sizing
+                 compound_equity=False):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -903,6 +922,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     Returns list of trade dicts.
     """
     trades = []
+    # WHY: Running balance for compound equity — updated after each trade.
+    #      Clamped to 50% of starting capital as a safety floor.
+    # CHANGED: April 2026 — equity-tracking lot sizing
+    _running_balance = float(account_size) if account_size is not None else None
 
     # WHY: Drop duplicate candle timestamps before any further processing.
     #      Raw CSVs with duplicate bars produce corrupted rolling indicators.
@@ -1168,8 +1191,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     # WHY: FixedSLTP has constant SL/TP levels — numpy finds the exit candle
     #      in microseconds per trade vs milliseconds for the iterrows loop.
     # CHANGED: April 2026 — vectorized FixedSLTP path
-    from project2_backtesting.exit_strategies import FixedSLTP
-    if isinstance(exit_strategy, FixedSLTP) and signal_indices:
+    from project2_backtesting.exit_strategies import FixedSLTP, ATRFixedSLTP
+    # WHY: ATRFixedSLTP has per-trade SL/TP (set in on_entry from ATR).
+    #      The vectorized path assumes constant SL/TP across all trades.
+    #      ATRFixedSLTP must use the iterative run_backtest path instead.
+    # CHANGED: April 2026 — exclude ATRFixedSLTP from vectorized path
+    if isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP) and signal_indices:
         return _vectorized_fixed_sltp_exits(
             df, signal_indices, signal_rule_ids, rules,
             exit_strategy, direction, pip_size,
@@ -1180,6 +1207,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             news_blackout_minutes=news_blackout_minutes,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
+            compound_equity=compound_equity,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -1398,7 +1426,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 exit_strategy, _entry_for_sizing, pip_size, default_sl_pips
             )
 
-            risk_dollars = account_size * (risk_per_trade_pct / 100.0)
+            # WHY: When compound_equity=True, use running balance for sizing
+            #      so winners compound. Otherwise use static account_size.
+            # CHANGED: April 2026 — equity-tracking lot sizing
+            _sizing_equity = _running_balance if (compound_equity and _running_balance) else account_size
+            risk_dollars = _sizing_equity * (risk_per_trade_pct / 100.0)
             lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot)
             # WHY: Silent min(lot_size, 100.0) hid absurdly large positions
             #      (e.g. 500-lot size on a $10M virtual account) and made stats
@@ -1427,10 +1459,17 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             # CHANGED: April 2026 — margin-aware lot sizing
             if leverage > 0 and entry_price > 0:
                 _margin_per_lot = (contract_size * entry_price) / leverage
-                _max_lots = (account_size * 0.95) / _margin_per_lot
+                _max_lots = (_sizing_equity * 0.95) / _margin_per_lot
                 if lot_size > _max_lots:
                     lot_size = max(0.01, round(_max_lots, 2))
             dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
+
+            # WHY: Update running balance after each trade so compounding
+            #      works for the next trade. Floor at 50% of starting capital
+            #      to prevent degenerate lot sizes after heavy drawdowns.
+            # CHANGED: April 2026 — equity-tracking lot sizing
+            if compound_equity and _running_balance is not None and dollar_pnl is not None:
+                _running_balance = max(account_size * 0.5, _running_balance + dollar_pnl)
         else:
             lot_size   = None
             dollar_pnl = None
@@ -1491,7 +1530,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   max_trades_per_day=0,
                   # WHY (leverage): 0 = no margin check (backward compat).
                   # CHANGED: April 2026 — margin-aware lot sizing
-                  leverage=0, contract_size=100.0):
+                  leverage=0, contract_size=100.0,
+                  # WHY: When True, lot sizing uses running balance so
+                  #      winners compound into larger subsequent positions.
+                  # CHANGED: April 2026 — equity-tracking lot sizing
+                  compound_equity=False):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -1509,6 +1552,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
     trades = []
+    # WHY: Running balance for compound equity — same as run_backtest.
+    # CHANGED: April 2026 — equity-tracking lot sizing
+    _running_balance = float(account_size) if account_size is not None else None
     _skipped_count = 0   # FIX 12E: track SANE_PIP_LIMIT skips
 
     if len(df) == 0:
@@ -1674,9 +1720,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     # ── Use vectorized exit for FixedSLTP ────────────────────────────────
     # WHY: Same optimization as run_backtest — vectorized exit detection.
+    #      ATRFixedSLTP has per-trade SL/TP (set in on_entry from ATR)
+    #      so it must NOT use the vectorized path which assumes constant SL/TP.
     # CHANGED: April 2026 — vectorized FixedSLTP in fast_backtest
-    from project2_backtesting.exit_strategies import FixedSLTP
-    if isinstance(exit_strategy, FixedSLTP):
+    # CHANGED: April 2026 — exclude ATRFixedSLTP from vectorized path
+    from project2_backtesting.exit_strategies import FixedSLTP, ATRFixedSLTP
+    if isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP):
         return _vectorized_fixed_sltp_exits(
             df, signal_indices, signal_rule_ids, rules,
             exit_strategy, direction, pip_size,
@@ -1685,6 +1734,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             default_sl_pips, pip_value_per_lot,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
+            compound_equity=compound_equity,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────
@@ -1954,18 +2004,26 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         lot_size = 0.01
         if account_size and risk_per_trade_pct > 0:
-            risk_dollars = account_size * (risk_per_trade_pct / 100)
+            # WHY: When compound_equity=True, use running balance for sizing.
+            # CHANGED: April 2026 — equity-tracking lot sizing
+            _sizing_equity = _running_balance if (compound_equity and _running_balance) else account_size
+            risk_dollars = _sizing_equity * (risk_per_trade_pct / 100)
             lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot) if _sl_for_sizing > 0 else 0.01
             lot_size = max(0.01, round(lot_size, 2))
             # WHY (leverage): Same margin cap as run_backtest.
             # CHANGED: April 2026 — margin-aware lot sizing
             if leverage > 0 and entry_price > 0:
                 _margin_per_lot = (contract_size * entry_price) / leverage
-                _max_lots = (account_size * 0.95) / _margin_per_lot
+                _max_lots = (_sizing_equity * 0.95) / _margin_per_lot
                 if lot_size > _max_lots:
                     lot_size = max(0.01, round(_max_lots, 2))
 
         net_profit = net_pips * pip_value_per_lot * lot_size
+
+        # WHY: Update running balance for compound equity.
+        # CHANGED: April 2026 — equity-tracking lot sizing
+        if compound_equity and _running_balance is not None and account_size:
+            _running_balance = max(account_size * 0.5, _running_balance + net_profit)
 
         # WHY (Quick Fix + same-bar bias fix): The vectorized path includes
         #      candles_held and cost_pips in each trade dict. The non-vectorized
@@ -2237,7 +2295,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      0 = no margin check (backward compat).
                           # CHANGED: April 2026 — margin-aware lot sizing
                           leverage=0, contract_size=100.0,
-                          funded_protect=False):
+                          funded_protect=False,
+                          compound_equity=False):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2656,6 +2715,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # WHY (leverage): Pass margin constraints through.
                 # CHANGED: April 2026 — margin-aware lot sizing
                 leverage=leverage, contract_size=contract_size,
+                compound_equity=compound_equity,
             )
             stats = compute_stats(trades)
 

@@ -1,6 +1,0 @@
-rule_id,confidence,coverage,wins,conditions_count,action
-1,0.7636363636363637,55,42,2,BUY or SELL
-2,0.825,40,33,3,BUY or SELL
-3,0.6578947368421053,38,25,4,BUY or SELL
-4,0.75,12,9,6,BUY or SELL
-5,0.75,8,6,6,BUY or SELL

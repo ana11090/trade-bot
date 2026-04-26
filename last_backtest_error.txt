@@ -1,22 +1,17 @@
 === TK CALLBACK EXCEPTION ===
-Time:  2026-04-25T10:36:58.966159
-Type:  KeyboardInterrupt
-Error: KeyboardInterrupt()
+Time:  2026-04-25T19:38:16.424352
+Type:  AttributeError
+Error: AttributeError("'dict' object has no attribute 'append'")
 
 --- Full traceback ---
 Traceback (most recent call last):
   File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1892, in __call__
     return self.func(*args)
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 2311, in destroy
-    for c in list(self.children.values()): c.destroy()
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 2579, in destroy
-    for c in list(self.children.values()): c.destroy()
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 2579, in destroy
-    for c in list(self.children.values()): c.destroy()
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 2579, in destroy
-    for c in list(self.children.values()): c.destroy()
-  [Previous line repeated 3 more times]
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 2580, in destroy
-    self.tk.call('destroy', self._w)
-KeyboardInterrupt
+  File "d:\traiding data\trade-bot\project2_backtesting\panels\strategy_refiner_panel.py", line 4407, in _toggle_star
+    is_now_starred = toggle(rc, es)
+  File "d:\traiding data\trade-bot\shared\starred.py", line 122, in toggle
+    star(rule_combo, exit_strategy, entry_tf)
+  File "d:\traiding data\trade-bot\shared\starred.py", line 94, in star
+    starred.append(key)
+AttributeError: 'dict' object has no attribute 'append'
 

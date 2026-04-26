@@ -30,8 +30,8 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 189,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
     },
     {
       "conditions": [
@@ -60,8 +60,8 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 327,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
     }
   ],
   "per_tf_summary": [

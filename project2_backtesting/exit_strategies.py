@@ -395,6 +395,484 @@ class ATRBased(ExitStrategy):
                 f"max {self.max_candles} candles")
 
 
+class ATRFixedSLTP(ExitStrategy):
+    """ATR-proportional SL/TP — adapts to volatility, then holds fixed.
+
+    WHY: Default FixedSLTP uses sl_pips=150, but H1 ATR on XAUUSD in 2026
+         averages 4,371 pips. A 150-pip SL = 3.4% of ATR — pure noise.
+         This class reads ATR at entry time and sets SL/TP as multiples
+         of it. Once set, the levels are fixed (no trailing), so the
+         exit logic is identical to FixedSLTP.
+
+         Unlike ATRBased (which works in raw price units internally),
+         this class converts to pips immediately and stores self.sl_pips
+         and self.tp_pips so that:
+         - _expected_sl_pips_for_exit() Path 1 reads self.sl_pips directly
+         - Lot sizing is correct per trade
+         - The on_new_candle logic is simple fixed SL/TP
+
+    CHANGED: April 2026 — ATR-adaptive exits for high-volatility instruments
+    """
+    name = "ATR Fixed SL/TP"
+
+    def __init__(self, sl_atr_mult=1.0, tp_atr_mult=2.5, atr_column="H1_atr_14",
+                 max_candles=200, pip_size=0.01):
+        super().__init__(pip_size=pip_size, sl_atr_mult=sl_atr_mult,
+                         tp_atr_mult=tp_atr_mult, max_candles=max_candles)
+        self.sl_atr_mult = sl_atr_mult
+        self.tp_atr_mult = tp_atr_mult
+        self.atr_column  = atr_column
+        self.max_candles  = max_candles
+        # WHY: sl_pips and tp_pips are set per trade in on_entry().
+        #      Default to 150/300 so the strategy is safe to use even
+        #      if on_entry is never called (backward compat with any
+        #      code path that skips the hook).
+        # CHANGED: April 2026 — safe defaults
+        self.sl_pips = 150
+        self.tp_pips = 300
+        self._entry_atr = None
+        self._missing_atr_warned = False
+
+    def on_entry(self, candle):
+        """Called when position opens — compute SL/TP from ATR at entry.
+
+        Sets self.sl_pips and self.tp_pips in pips (not price units).
+        If ATR is missing or NaN, keeps the previous values (or defaults).
+        """
+        raw = candle.get(self.atr_column, None)
+        if raw is None:
+            self._entry_atr = None
+        else:
+            try:
+                atr_val = float(raw)
+                if atr_val != atr_val or atr_val <= 0:  # NaN check
+                    self._entry_atr = None
+                else:
+                    self._entry_atr = atr_val
+            except (TypeError, ValueError):
+                self._entry_atr = None
+
+        if self._entry_atr is not None and self.pip_size > 0:
+            # WHY: Convert price-unit ATR to pips, then apply multipliers.
+            #      round() avoids floating-point dust in SL/TP comparisons.
+            # CHANGED: April 2026 — ATR to pips conversion
+            self.sl_pips = max(10, round(self._entry_atr * self.sl_atr_mult / self.pip_size))
+            self.tp_pips = max(20, round(self._entry_atr * self.tp_atr_mult / self.pip_size))
+        else:
+            if not self._missing_atr_warned:
+                try:
+                    from shared.logging_setup import get_logger
+                    _log = get_logger(__name__)
+                    _log.warning(
+                        f"[ATRFixedSLTP] ATR column '{self.atr_column}' missing or "
+                        f"invalid at entry. Using fallback sl_pips={self.sl_pips}, "
+                        f"tp_pips={self.tp_pips}. (Warning shown once.)"
+                    )
+                except Exception:
+                    pass
+                self._missing_atr_warned = True
+
+    def on_new_candle(self, candle, pos):
+        entry     = pos["entry_price"]
+        direction = pos["direction"]
+
+        # WHY: Time-based ceiling — same as FixedSLTP.
+        # CHANGED: April 2026 — max hold cap
+        if self.max_candles is not None:
+            held = pos.get("candles_held", 0)
+            if held >= self.max_candles:
+                reason = "ATR_FIXED_MAX_CANDLES"
+                if self._entry_atr is None:
+                    reason = "ATR_FIXED_NO_DATA"
+                return {
+                    "exit_price": float(candle["close"]),
+                    "reason":     reason,
+                }
+
+        if direction == "BUY":
+            sl_price = entry - self.sl_pips * self.pip_size
+            tp_price = entry + self.tp_pips * self.pip_size
+        else:
+            sl_price = entry + self.sl_pips * self.pip_size
+            tp_price = entry - self.tp_pips * self.pip_size
+
+        result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
+        if result == "SL":
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "ATR_FIXED_SL_GAP" if fill != sl_price else "ATR_FIXED_SL"
+            return {"exit_price": fill, "reason": reason}
+        if result == "TP":
+            fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+            reason = "ATR_FIXED_TP_GAP" if fill != tp_price else "ATR_FIXED_TP"
+            return {"exit_price": fill, "reason": reason}
+        return None
+
+    def describe(self):
+        return (f"ATR Fixed SL {self.sl_atr_mult}x / TP {self.tp_atr_mult}x, "
+                f"max {self.max_candles} candles")
+
+
+class ATRBreakevenTrail(ExitStrategy):
+    """ATR-based SL → breakeven lock → trailing stop → hard TP.
+
+    WHY: Prop firm evals have tight trailing DD limits. Once a trade
+         moves 1× ATR in profit, locking SL at breakeven means the
+         trade cannot add to drawdown. The trailing phase then captures
+         trend profits while the hard TP caps hold time.
+         All distances scale with ATR so the strategy works across
+         any instrument or volatility regime.
+    CHANGED: April 2026 — DD-safe ATR trailing exit
+    """
+    name = "ATR BE Trail"
+
+    def __init__(self, sl_atr_mult=1.0, breakeven_atr_mult=1.0,
+                 trail_activation_atr_mult=1.5, trail_atr_mult=1.0,
+                 tp_atr_mult=3.0, atr_column="H1_atr_14",
+                 max_candles=200, pip_size=0.01):
+        super().__init__(pip_size=pip_size,
+                         sl_atr_mult=sl_atr_mult,
+                         breakeven_atr_mult=breakeven_atr_mult,
+                         trail_activation_atr_mult=trail_activation_atr_mult,
+                         trail_atr_mult=trail_atr_mult,
+                         tp_atr_mult=tp_atr_mult,
+                         max_candles=max_candles)
+        self.sl_atr_mult               = sl_atr_mult
+        self.breakeven_atr_mult        = breakeven_atr_mult
+        self.trail_activation_atr_mult = trail_activation_atr_mult
+        self.trail_atr_mult            = trail_atr_mult
+        self.tp_atr_mult               = tp_atr_mult
+        self.atr_column                = atr_column
+        self.max_candles               = max_candles
+        # WHY: sl_pips set in on_entry() for lot sizing via
+        #      _expected_sl_pips_for_exit() Path 1. Defaults to 150
+        #      for safety if on_entry is never called.
+        # CHANGED: April 2026 — safe default for lot sizing
+        self.sl_pips     = 150
+        self._entry_atr  = None
+        self._sl_price   = None
+        self._tp_price   = None
+        self._be_distance_price  = None
+        self._trail_activation_price_dist = None
+        self._trail_distance_price = None
+        self._breakeven_locked = False
+        self._missing_atr_warned = False
+
+    def on_entry(self, candle):
+        """Read ATR at entry, pre-compute all distance thresholds."""
+        raw = candle.get(self.atr_column, None)
+        self._breakeven_locked = False
+
+        if raw is None:
+            self._entry_atr = None
+        else:
+            try:
+                atr_val = float(raw)
+                if atr_val != atr_val or atr_val <= 0:
+                    self._entry_atr = None
+                else:
+                    self._entry_atr = atr_val
+            except (TypeError, ValueError):
+                self._entry_atr = None
+
+        if self._entry_atr is not None and self.pip_size > 0:
+            atr = self._entry_atr
+            # WHY: Pre-compute all price distances once at entry.
+            #      on_new_candle just compares against these — no
+            #      per-candle ATR lookups needed.
+            # CHANGED: April 2026 — pre-compute at entry
+            self._sl_price_dist     = atr * self.sl_atr_mult
+            self._be_distance_price = atr * self.breakeven_atr_mult
+            self._trail_activation_price_dist = atr * self.trail_activation_atr_mult
+            self._trail_distance_price = atr * self.trail_atr_mult
+            self._tp_price_dist     = atr * self.tp_atr_mult
+            # WHY: Set sl_pips for lot sizing via _expected_sl_pips_for_exit()
+            # CHANGED: April 2026 — lot sizing awareness
+            self.sl_pips = max(10, round(self._sl_price_dist / self.pip_size))
+        else:
+            # Fallback: use fixed distances if ATR missing
+            self._sl_price_dist     = 150 * self.pip_size
+            self._be_distance_price = 150 * self.pip_size
+            self._trail_activation_price_dist = 225 * self.pip_size
+            self._trail_distance_price = 150 * self.pip_size
+            self._tp_price_dist     = 450 * self.pip_size
+            self.sl_pips = 150
+
+            if not self._missing_atr_warned:
+                try:
+                    from shared.logging_setup import get_logger
+                    _log = get_logger(__name__)
+                    _log.warning(
+                        f"[ATRBreakevenTrail] ATR column '{self.atr_column}' "
+                        f"missing or invalid at entry. Using fixed fallback "
+                        f"sl=150 pips. (Warning shown once.)"
+                    )
+                except Exception:
+                    pass
+                self._missing_atr_warned = True
+
+    def on_new_candle(self, candle, pos):
+        entry     = pos["entry_price"]
+        direction = pos["direction"]
+        highest   = pos["highest_since_entry"]
+        lowest    = pos["lowest_since_entry"]
+
+        # WHY: Max hold cap — strongest guarantee against hanging.
+        # CHANGED: April 2026 — max hold safety
+        if self.max_candles is not None:
+            if pos.get("candles_held", 0) >= self.max_candles:
+                reason = "ATRBE_MAX_CANDLES"
+                if self._entry_atr is None:
+                    reason = "ATRBE_NO_DATA"
+                return {"exit_price": float(candle["close"]), "reason": reason}
+
+        if direction == "BUY":
+            # Hard TP check first
+            tp_price = entry + self._tp_price_dist
+            if candle["high"] >= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
+                return {"exit_price": fill, "reason": reason}
+
+            # Compute current profit from best price
+            profit_from_entry = highest - entry
+
+            # Phase 3: Trailing (activates after trail_activation distance)
+            if profit_from_entry >= self._trail_activation_price_dist:
+                trail_sl = highest - self._trail_distance_price
+                # WHY: Trail SL must be at least at breakeven. Never
+                #      trail BELOW entry once breakeven was reached.
+                # CHANGED: April 2026 — floor trail at entry
+                trail_sl = max(trail_sl, entry)
+                if candle["low"] <= trail_sl:
+                    fill = self._get_fill_price(candle, trail_sl, direction, is_sl=True)
+                    reason = "ATRBE_TRAIL_GAP" if fill != trail_sl else "ATRBE_TRAIL"
+                    return {"exit_price": fill, "reason": reason}
+
+            # Phase 2: Breakeven lock
+            elif profit_from_entry >= self._be_distance_price:
+                self._breakeven_locked = True
+                if candle["low"] <= entry:
+                    fill = self._get_fill_price(candle, entry, direction, is_sl=True)
+                    reason = "ATRBE_BREAKEVEN_GAP" if fill != entry else "ATRBE_BREAKEVEN"
+                    return {"exit_price": fill, "reason": reason}
+
+            # Phase 1: Initial ATR SL
+            else:
+                sl_price = entry - self._sl_price_dist
+                if candle["low"] <= sl_price:
+                    fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                    reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
+                    return {"exit_price": fill, "reason": reason}
+
+        else:  # SELL
+            # Hard TP
+            tp_price = entry - self._tp_price_dist
+            if candle["low"] <= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
+                return {"exit_price": fill, "reason": reason}
+
+            profit_from_entry = entry - lowest
+
+            # Phase 3: Trailing
+            if profit_from_entry >= self._trail_activation_price_dist:
+                trail_sl = lowest + self._trail_distance_price
+                trail_sl = min(trail_sl, entry)  # floor at breakeven
+                if candle["high"] >= trail_sl:
+                    fill = self._get_fill_price(candle, trail_sl, direction, is_sl=True)
+                    reason = "ATRBE_TRAIL_GAP" if fill != trail_sl else "ATRBE_TRAIL"
+                    return {"exit_price": fill, "reason": reason}
+
+            # Phase 2: Breakeven
+            elif profit_from_entry >= self._be_distance_price:
+                self._breakeven_locked = True
+                if candle["high"] >= entry:
+                    fill = self._get_fill_price(candle, entry, direction, is_sl=True)
+                    reason = "ATRBE_BREAKEVEN_GAP" if fill != entry else "ATRBE_BREAKEVEN"
+                    return {"exit_price": fill, "reason": reason}
+
+            # Phase 1: Initial SL
+            else:
+                sl_price = entry + self._sl_price_dist
+                if candle["high"] >= sl_price:
+                    fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                    reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
+                    return {"exit_price": fill, "reason": reason}
+
+        return None
+
+    def describe(self):
+        return (f"ATR BE Trail: SL {self.sl_atr_mult}x, "
+                f"BE at {self.breakeven_atr_mult}x, "
+                f"trail at {self.trail_activation_atr_mult}x / "
+                f"{self.trail_atr_mult}x, TP {self.tp_atr_mult}x, "
+                f"max {self.max_candles} candles")
+
+
+class PSARExit(ExitStrategy):
+    """ATR-based SL + Parabolic SAR trend reversal exit.
+
+    WHY: PSAR is purpose-built for trailing trends. It stays in winning
+         trades longer than fixed TP during strong trends, and exits
+         faster than wide ATR TP during quick reversals.
+         ATR SL underneath protects against gap moves where PSAR hasn't
+         flipped yet. Hard TP caps grind-forever scenarios.
+
+         Uses psar_signal column (1.0 = bullish, 0.0 = bearish) rather
+         than comparing psar price to candle price — avoids floating-point
+         edge cases where psar ≈ close.
+    CHANGED: April 2026 — PSAR-based exit with ATR safety net
+    """
+    name = "PSAR Exit"
+
+    def __init__(self, sl_atr_mult=1.5, tp_atr_mult=4.0,
+                 atr_column="H1_atr_14",
+                 psar_signal_column="H1_psar_signal",
+                 min_candles_before_psar=2,
+                 max_candles=200, pip_size=0.01):
+        super().__init__(pip_size=pip_size,
+                         sl_atr_mult=sl_atr_mult,
+                         tp_atr_mult=tp_atr_mult,
+                         max_candles=max_candles)
+        self.sl_atr_mult          = sl_atr_mult
+        self.tp_atr_mult          = tp_atr_mult
+        self.atr_column           = atr_column
+        self.psar_signal_column   = psar_signal_column
+        # WHY: Skip PSAR check for the first N candles after entry.
+        #      PSAR sometimes hasn't "caught up" to a new entry yet —
+        #      it can still be flipped against the trade from the prior
+        #      move. Giving it 2 candles to settle avoids false exits
+        #      on the very first bar.
+        # CHANGED: April 2026 — min candles before PSAR check
+        self.min_candles_before_psar = min_candles_before_psar
+        self.max_candles           = max_candles
+        # WHY: sl_pips for lot sizing via _expected_sl_pips_for_exit()
+        # CHANGED: April 2026 — lot sizing awareness
+        self.sl_pips = 150  # default, updated in on_entry
+        self._entry_atr = None
+        self._sl_price_dist = None
+        self._tp_price_dist = None
+        self._missing_atr_warned = False
+
+    def on_entry(self, candle):
+        """Read ATR at entry, compute SL/TP distances."""
+        raw = candle.get(self.atr_column, None)
+        if raw is None:
+            self._entry_atr = None
+        else:
+            try:
+                atr_val = float(raw)
+                if atr_val != atr_val or atr_val <= 0:
+                    self._entry_atr = None
+                else:
+                    self._entry_atr = atr_val
+            except (TypeError, ValueError):
+                self._entry_atr = None
+
+        if self._entry_atr is not None and self.pip_size > 0:
+            atr = self._entry_atr
+            self._sl_price_dist = atr * self.sl_atr_mult
+            self._tp_price_dist = atr * self.tp_atr_mult
+            self.sl_pips = max(10, round(self._sl_price_dist / self.pip_size))
+        else:
+            self._sl_price_dist = 150 * self.pip_size
+            self._tp_price_dist = 450 * self.pip_size
+            self.sl_pips = 150
+            if not self._missing_atr_warned:
+                try:
+                    from shared.logging_setup import get_logger
+                    _log = get_logger(__name__)
+                    _log.warning(
+                        f"[PSARExit] ATR column '{self.atr_column}' missing or "
+                        f"invalid at entry. Using fixed fallback sl=150 pips. "
+                        f"(Warning shown once.)"
+                    )
+                except Exception:
+                    pass
+                self._missing_atr_warned = True
+
+    def on_new_candle(self, candle, pos):
+        entry     = pos["entry_price"]
+        direction = pos["direction"]
+
+        # Max hold cap
+        if self.max_candles is not None:
+            if pos.get("candles_held", 0) >= self.max_candles:
+                reason = "PSAR_MAX_CANDLES"
+                if self._entry_atr is None:
+                    reason = "PSAR_NO_DATA"
+                return {"exit_price": float(candle["close"]), "reason": reason}
+
+        if direction == "BUY":
+            # Hard TP
+            tp_price = entry + self._tp_price_dist
+            if candle["high"] >= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "PSAR_TP_GAP" if fill != tp_price else "PSAR_TP"
+                return {"exit_price": fill, "reason": reason}
+
+            # ATR SL (safety net — always active)
+            sl_price = entry - self._sl_price_dist
+            if candle["low"] <= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
+                return {"exit_price": fill, "reason": reason}
+
+            # PSAR flip check (after min candles settle period)
+            if pos.get("candles_held", 0) >= self.min_candles_before_psar:
+                psar_signal = candle.get(self.psar_signal_column)
+                if psar_signal is not None:
+                    try:
+                        # WHY: BUY exit when PSAR flips bearish (signal = 0.0).
+                        #      psar_signal: 1.0 = bullish, 0.0 = bearish.
+                        # CHANGED: April 2026 — PSAR flip detection
+                        if float(psar_signal) == 0.0:
+                            return {
+                                "exit_price": float(candle["close"]),
+                                "reason": "PSAR_FLIP"
+                            }
+                    except (TypeError, ValueError):
+                        pass
+
+        else:  # SELL
+            # Hard TP
+            tp_price = entry - self._tp_price_dist
+            if candle["low"] <= tp_price:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "PSAR_TP_GAP" if fill != tp_price else "PSAR_TP"
+                return {"exit_price": fill, "reason": reason}
+
+            # ATR SL
+            sl_price = entry + self._sl_price_dist
+            if candle["high"] >= sl_price:
+                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+                reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
+                return {"exit_price": fill, "reason": reason}
+
+            # PSAR flip check
+            if pos.get("candles_held", 0) >= self.min_candles_before_psar:
+                psar_signal = candle.get(self.psar_signal_column)
+                if psar_signal is not None:
+                    try:
+                        # WHY: SELL exit when PSAR flips bullish (signal = 1.0).
+                        # CHANGED: April 2026 — PSAR flip detection
+                        if float(psar_signal) == 1.0:
+                            return {
+                                "exit_price": float(candle["close"]),
+                                "reason": "PSAR_FLIP"
+                            }
+                    except (TypeError, ValueError):
+                        pass
+
+        return None
+
+    def describe(self):
+        return (f"PSAR exit ({self.psar_signal_column}), "
+                f"ATR SL {self.sl_atr_mult}x, TP {self.tp_atr_mult}x, "
+                f"settle {self.min_candles_before_psar} candles, "
+                f"max {self.max_candles} candles")
+
+
 class ATRTrailing(ExitStrategy):
     """ATR-based SL/TP with trailing stop — matches what EA generator produces.
 
@@ -689,6 +1167,38 @@ def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
         FixedSLTP(sl_pips=150, tp_pips=200,  max_candles=1000, pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=300,  max_candles=1000, pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=500,  max_candles=1000, pip_size=pip_size),
+        # WHY: ATR-proportional fixed exits. SL/TP scale with current
+        #      volatility — 150/300 was fine when H1 ATR was 400-600
+        #      pips (2021-2023), but ATR in 2025-2026 is 1500-4400.
+        #      These adapt automatically.
+        # CHANGED: April 2026 — ATR-scaled exits
+        ATRFixedSLTP(sl_atr_mult=1.0, tp_atr_mult=2.0, max_candles=100,
+                     pip_size=pip_size, atr_column=_atr_col),
+        ATRFixedSLTP(sl_atr_mult=1.0, tp_atr_mult=3.0, max_candles=200,
+                     pip_size=pip_size, atr_column=_atr_col),
+        ATRFixedSLTP(sl_atr_mult=1.5, tp_atr_mult=3.0, max_candles=200,
+                     pip_size=pip_size, atr_column=_atr_col),
+        # WHY: Breakeven trail — once in profit, trade can't add to DD.
+        #      Critical for prop firm evals with tight trailing DD.
+        # CHANGED: April 2026 — DD-safe ATR trailing
+        ATRBreakevenTrail(sl_atr_mult=1.0, breakeven_atr_mult=1.0,
+                          trail_activation_atr_mult=1.5, trail_atr_mult=1.0,
+                          tp_atr_mult=3.0, max_candles=200,
+                          pip_size=pip_size, atr_column=_atr_col),
+        ATRBreakevenTrail(sl_atr_mult=1.0, breakeven_atr_mult=0.7,
+                          trail_activation_atr_mult=1.0, trail_atr_mult=0.8,
+                          tp_atr_mult=4.0, max_candles=300,
+                          pip_size=pip_size, atr_column=_atr_col),
+        # WHY: PSAR trend-following exit. Stays in trends longer than
+        #      fixed TP, exits faster on reversals. ATR SL as safety net.
+        # CHANGED: April 2026 — PSAR exit
+        PSARExit(sl_atr_mult=1.5, tp_atr_mult=4.0,
+                 psar_signal_column=f"{entry_tf}_psar_signal" if entry_tf else "H1_psar_signal",
+                 atr_column=_atr_col, max_candles=200, pip_size=pip_size),
+        PSARExit(sl_atr_mult=1.0, tp_atr_mult=3.0,
+                 psar_signal_column=f"{entry_tf}_psar_signal" if entry_tf else "H1_psar_signal",
+                 atr_column=_atr_col, min_candles_before_psar=3,
+                 max_candles=150, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=50,  trail_distance_pips=100,
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150,

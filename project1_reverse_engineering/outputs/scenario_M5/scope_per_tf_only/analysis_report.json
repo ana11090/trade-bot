@@ -1,0 +1,733 @@
+{
+  "generated_at": "2026-04-25T15:25:51.655816",
+  "entry_timeframe": null,
+  "direction": "BUY",
+  "activated_at": "2026-04-25 15:25:51",
+  "discovery_method": "p1_run_scenarios",
+  "scenario": null,
+  "analysis_time_s": 12.7,
+  "trade_count": 1106,
+  "feature_count": 629,
+  "profile": {
+    "direction": "buy_only",
+    "direction_split": {
+      "Buy": 1.0
+    },
+    "trade_count": 1106,
+    "date_range": [
+      "2020-01-07",
+      "2026-03-10"
+    ],
+    "avg_duration_minutes": 3.0,
+    "duration_category": "scalper",
+    "win_rate": 0.5841,
+    "avg_win_pips": 347.0,
+    "avg_loss_pips": -136.4,
+    "reward_risk_ratio": 2.54,
+    "sl_pattern": {
+      "fixed": true,
+      "levels": 1,
+      "fixed_value_pips": 150.0,
+      "confidence": 0.88
+    },
+    "tp_pattern": {
+      "fixed": false,
+      "type": "trailing_or_indicator",
+      "cv": 1.04
+    },
+    "active_hours": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      21,
+      22,
+      23
+    ],
+    "peak_hours": [
+      12,
+      13,
+      11
+    ],
+    "sessions": [
+      "Asian",
+      "London",
+      "New York"
+    ],
+    "active_days": [
+      "Friday",
+      "Monday",
+      "Thursday",
+      "Wednesday",
+      "Tuesday"
+    ],
+    "trades_per_month_avg": 14.7,
+    "frequency_trend": "increasing",
+    "yearly_stats": [
+      {
+        "year": 2020,
+        "count": 96,
+        "win_rate": 0.677,
+        "avg_pips": 154.5,
+        "trades_per_month": 8.0
+      },
+      {
+        "year": 2021,
+        "count": 73,
+        "win_rate": 0.548,
+        "avg_pips": 96.6,
+        "trades_per_month": 6.1
+      },
+      {
+        "year": 2022,
+        "count": 105,
+        "win_rate": 0.495,
+        "avg_pips": 60.4,
+        "trades_per_month": 8.8
+      },
+      {
+        "year": 2023,
+        "count": 85,
+        "win_rate": 0.447,
+        "avg_pips": 65.1,
+        "trades_per_month": 7.1
+      },
+      {
+        "year": 2024,
+        "count": 167,
+        "win_rate": 0.491,
+        "avg_pips": 58.2,
+        "trades_per_month": 13.9
+      },
+      {
+        "year": 2025,
+        "count": 380,
+        "win_rate": 0.605,
+        "avg_pips": 128.6,
+        "trades_per_month": 31.7
+      },
+      {
+        "year": 2026,
+        "count": 200,
+        "win_rate": 0.695,
+        "avg_pips": 346.6,
+        "trades_per_month": 66.7
+      }
+    ]
+  },
+  "feature_importance": {
+    "top_20": [
+      [
+        "M5_sma_50_distance",
+        0.024857
+      ],
+      [
+        "M5_distance_to_swing_high",
+        0.024183
+      ],
+      [
+        "M5_candle_range",
+        0.023389
+      ],
+      [
+        "M5_distance_to_rolling_level_618",
+        0.021011
+      ],
+      [
+        "M5_distance_to_rolling_level_786",
+        0.019966
+      ],
+      [
+        "M5_bb_20_3_width",
+        0.019236
+      ],
+      [
+        "M5_std_dev_20",
+        0.018653
+      ],
+      [
+        "M5_roc_20",
+        0.018281
+      ],
+      [
+        "M5_bb_20_2_width",
+        0.018239
+      ],
+      [
+        "M5_minus_di",
+        0.017475
+      ],
+      [
+        "M5_bear_power",
+        0.016889
+      ],
+      [
+        "M5_atr_28",
+        0.015955
+      ],
+      [
+        "M5_kst_signal",
+        0.015308
+      ],
+      [
+        "M5_macd_std_signal",
+        0.015104
+      ],
+      [
+        "M5_lower_shadow",
+        0.014746
+      ],
+      [
+        "M5_stoch_21_k",
+        0.014244
+      ],
+      [
+        "M5_awesome_oscillator",
+        0.01422
+      ],
+      [
+        "M5_atr_50",
+        0.013719
+      ],
+      [
+        "M5_distance_to_swing_low",
+        0.013248
+      ],
+      [
+        "M5_distance_to_rolling_level_382",
+        0.01308
+      ]
+    ],
+    "train_accuracy": 0.698,
+    "test_accuracy": 0.3964
+  },
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_atr_14",
+          "operator": ">",
+          "value": 9.5491
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": "<=",
+          "value": 14.6108
+        },
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.7303
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.912,
+      "coverage": 34,
+      "coverage_pct": 3.8,
+      "win_rate": 0.912,
+      "avg_pips": 593.5,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_atr_14",
+          "operator": "<=",
+          "value": 9.5491
+        },
+        {
+          "feature": "M5_macd_std",
+          "operator": "<=",
+          "value": -5.6341
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.806,
+      "coverage": 36,
+      "coverage_pct": 4.1,
+      "win_rate": 0.806,
+      "avg_pips": 332.3,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_atr_14",
+          "operator": ">",
+          "value": 9.5491
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": "<=",
+          "value": 14.6108
+        },
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.7303
+        },
+        {
+          "feature": "M5_aroon_down",
+          "operator": "<=",
+          "value": 40.0
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.788,
+      "coverage": 33,
+      "coverage_pct": 3.7,
+      "win_rate": 0.788,
+      "avg_pips": 444.4,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_atr_14",
+          "operator": "<=",
+          "value": 9.5491
+        },
+        {
+          "feature": "M5_macd_std",
+          "operator": ">",
+          "value": -5.6341
+        },
+        {
+          "feature": "M5_minus_di",
+          "operator": "<=",
+          "value": 21.2915
+        },
+        {
+          "feature": "M5_cci_14",
+          "operator": "<=",
+          "value": -79.7986
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 1.0,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 1.0,
+      "avg_pips": 399.9,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_atr_14",
+          "operator": ">",
+          "value": 9.5491
+        },
+        {
+          "feature": "M5_dpo",
+          "operator": ">",
+          "value": 14.6108
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.85,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.85,
+      "avg_pips": 812.4,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 3,
+      "name": "Big winners",
+      "count": 38,
+      "pct": 3.4,
+      "avg_duration_min": 0.0,
+      "avg_pips": 550.8,
+      "win_rate": 0.895,
+      "top_features": [
+        "M5_distance_to_rolling_level_382",
+        "M5_kst_signal",
+        "M5_macd_std_signal",
+        "M5_kst",
+        "M5_awesome_oscillator"
+      ]
+    },
+    {
+      "cluster_id": 1,
+      "name": "Profit cluster",
+      "count": 158,
+      "pct": 14.3,
+      "avg_duration_min": 0.0,
+      "avg_pips": 257.6,
+      "win_rate": 0.627,
+      "top_features": [
+        "M5_distance_to_rolling_level_382",
+        "M5_bull_power",
+        "M5_cmf",
+        "M5_kst_signal",
+        "M5_dpo"
+      ]
+    },
+    {
+      "cluster_id": 0,
+      "name": "Profit cluster",
+      "count": 683,
+      "pct": 61.8,
+      "avg_duration_min": 0.0,
+      "avg_pips": 117.5,
+      "win_rate": 0.562,
+      "top_features": [
+        "M5_distance_to_rolling_level_382",
+        "M5_bull_power",
+        "M5_is_late_session",
+        "M5_is_weekend",
+        "M5_price_above_cloud"
+      ]
+    },
+    {
+      "cluster_id": 2,
+      "name": "Profit cluster",
+      "count": 227,
+      "pct": 20.5,
+      "avg_duration_min": 0.0,
+      "avg_pips": 87.2,
+      "win_rate": 0.568,
+      "top_features": [
+        "M5_distance_to_rolling_level_382",
+        "M5_is_weekend",
+        "M5_cmf",
+        "M5_bull_power",
+        "M5_is_asian_session"
+      ]
+    }
+  ],
+  "regimes": {
+    "trend": {
+      "trending": {
+        "count": 545,
+        "win_rate": 0.622,
+        "avg_pips": 199.5,
+        "total_pips": 108739.0
+      },
+      "ranging": {
+        "count": 561,
+        "win_rate": 0.547,
+        "avg_pips": 94.3,
+        "total_pips": 52926.0
+      },
+      "indicator_used": "H4_adx_14",
+      "adx_threshold": 25.0
+    },
+    "volatility": {
+      "high": {
+        "count": 487,
+        "win_rate": 0.659,
+        "avg_pips": 229.8,
+        "total_pips": 111936.0
+      },
+      "low": {
+        "count": 619,
+        "win_rate": 0.525,
+        "avg_pips": 80.3,
+        "total_pips": 49729.0
+      },
+      "indicator_used": "H1_atr_14",
+      "median_value": 10.56
+    },
+    "direction": {
+      "above_ema200": {
+        "count": 812,
+        "win_rate": 0.597,
+        "avg_pips": 167.4,
+        "total_pips": 135917.0
+      },
+      "below_ema200": {
+        "count": 294,
+        "win_rate": 0.548,
+        "avg_pips": 87.6,
+        "total_pips": 25748.0
+      },
+      "indicator_used": "H4_ema_200_distance"
+    },
+    "session": {
+      "asian": {
+        "count": 301,
+        "win_rate": 0.601,
+        "avg_pips": 145.4,
+        "total_pips": 43766.0
+      },
+      "london": {
+        "count": 647,
+        "win_rate": 0.573,
+        "avg_pips": 128.0,
+        "total_pips": 82794.0
+      },
+      "new_york": {
+        "count": 499,
+        "win_rate": 0.591,
+        "avg_pips": 148.2,
+        "total_pips": 73948.0
+      }
+    },
+    "day_of_week": {
+      "Monday": {
+        "count": 230,
+        "win_rate": 0.613,
+        "avg_pips": 165.2,
+        "total_pips": 38001.0
+      },
+      "Tuesday": {
+        "count": 196,
+        "win_rate": 0.592,
+        "avg_pips": 159.8,
+        "total_pips": 31330.0
+      },
+      "Wednesday": {
+        "count": 212,
+        "win_rate": 0.561,
+        "avg_pips": 136.4,
+        "total_pips": 28922.0
+      },
+      "Thursday": {
+        "count": 217,
+        "win_rate": 0.567,
+        "avg_pips": 116.3,
+        "total_pips": 25238.0
+      },
+      "Friday": {
+        "count": 247,
+        "win_rate": 0.583,
+        "avg_pips": 149.8,
+        "total_pips": 37009.0
+      }
+    }
+  },
+  "evolution": [
+    {
+      "period": "2020",
+      "trades": 96,
+      "months": 12,
+      "trades_per_month": 8.0,
+      "win_rate": 0.677,
+      "avg_pips": 154.5,
+      "avg_duration_min": 18.7,
+      "peak_hour": 13
+    },
+    {
+      "period": "2021",
+      "trades": 73,
+      "months": 12,
+      "trades_per_month": 6.1,
+      "win_rate": 0.548,
+      "avg_pips": 96.6,
+      "avg_duration_min": 20.9,
+      "peak_hour": 12
+    },
+    {
+      "period": "2022",
+      "trades": 105,
+      "months": 12,
+      "trades_per_month": 8.8,
+      "win_rate": 0.495,
+      "avg_pips": 60.4,
+      "avg_duration_min": 56.1,
+      "peak_hour": 11
+    },
+    {
+      "period": "2023",
+      "trades": 85,
+      "months": 12,
+      "trades_per_month": 7.1,
+      "win_rate": 0.447,
+      "avg_pips": 65.1,
+      "avg_duration_min": 28.9,
+      "peak_hour": 13
+    },
+    {
+      "period": "2024",
+      "trades": 167,
+      "months": 12,
+      "trades_per_month": 13.9,
+      "win_rate": 0.491,
+      "avg_pips": 58.2,
+      "avg_duration_min": 30.4,
+      "peak_hour": 12
+    },
+    {
+      "period": "2025",
+      "trades": 380,
+      "months": 12,
+      "trades_per_month": 31.7,
+      "win_rate": 0.605,
+      "avg_pips": 128.6,
+      "avg_duration_min": 5.2,
+      "peak_hour": 12
+    },
+    {
+      "period": "2026",
+      "trades": 200,
+      "months": 3,
+      "trades_per_month": 66.7,
+      "win_rate": 0.695,
+      "avg_pips": 346.6,
+      "avg_duration_min": 1.6,
+      "peak_hour": 15
+    }
+  ],
+  "anomalies": {
+    "count": 56,
+    "pct": 5.1,
+    "anomaly_win_rate": 0.786,
+    "normal_win_rate": 0.573,
+    "top_10": [
+      {
+        "trade_id": 156,
+        "open_time": "2026-01-29 02:03:00",
+        "pips": 1045.0,
+        "is_winner": true,
+        "score": -0.708,
+        "hour": 0,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 129,
+        "open_time": "2026-02-02 08:33:00",
+        "pips": 564.0,
+        "is_winner": true,
+        "score": -0.7,
+        "hour": 6,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 149,
+        "open_time": "2026-01-29 18:56:00",
+        "pips": 417.0,
+        "is_winner": true,
+        "score": -0.693,
+        "hour": 16,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 131,
+        "open_time": "2026-02-02 03:29:00",
+        "pips": 423.0,
+        "is_winner": true,
+        "score": -0.681,
+        "hour": 1,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 128,
+        "open_time": "2026-02-02 09:03:00",
+        "pips": -150.0,
+        "is_winner": false,
+        "score": -0.676,
+        "hour": 7,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 147,
+        "open_time": "2026-01-29 19:12:00",
+        "pips": 1187.0,
+        "is_winner": true,
+        "score": -0.674,
+        "hour": 17,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 148,
+        "open_time": "2026-01-29 19:02:00",
+        "pips": 1257.0,
+        "is_winner": true,
+        "score": -0.674,
+        "hour": 17,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 111,
+        "open_time": "2026-02-04 03:19:00",
+        "pips": 420.0,
+        "is_winner": true,
+        "score": -0.673,
+        "hour": 1,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 117,
+        "open_time": "2026-02-03 02:03:00",
+        "pips": 352.0,
+        "is_winner": true,
+        "score": -0.669,
+        "hour": 0,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 145,
+        "open_time": "2026-01-30 04:46:00",
+        "pips": 768.0,
+        "is_winner": true,
+        "score": -0.668,
+        "hour": 2,
+        "duration": 3.0
+      }
+    ]
+  },
+  "suggestions": [
+    {
+      "type": "filter",
+      "description": "Only trade in high volatility (ATR above median)",
+      "impact": "Would improve win rate from 58% to ~66%",
+      "trades_filtered": 619,
+      "pct_filtered": 56.0
+    }
+  ],
+  "regime_filter_discovery": null
+}

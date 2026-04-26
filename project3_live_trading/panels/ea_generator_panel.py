@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import shutil
+import threading
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
@@ -55,6 +56,8 @@ _FIRMS = _load_firms()
 
 # ── Module-level state ────────────────────────────────────────────────────────
 _strategies       = []
+_strategies_cache = []
+_cache_mtime      = 0
 _strategy_var     = None
 _platform_var     = None   # 'mt5' or 'tradovate'
 _strat_info_lbl   = None
@@ -69,6 +72,7 @@ _status_lbl       = None
 # CHANGED: April 2026 — Treeview selector replaces Combobox
 _strat_tree_p3    = None   # ttk.Treeview in the strategy selector
 _selected_strat_iid = None  # iid of the currently selected row
+_on_strategies_loaded_fn = None  # reference to build_panel's _on_strategies_loaded
 
 # Settings vars
 _symbol_var       = None
@@ -106,13 +110,41 @@ _test_generated    = False  # True once Step 1 is done
 _step2_btn         = None   # Full EA button (only enabled after Step 1)
 
 
-def _load_strategies():
-    global _strategies
+def _run_lookup_diagnostic():
+    """Run lookup diagnostic — reuses the refiner panel's implementation."""
+    if _strat_info_lbl:
+        _strat_info_lbl.configure(text="⏳ Running diagnostic...", fg=AMBER)
     try:
+        from project2_backtesting.panels.strategy_refiner_panel import (
+            _run_lookup_diagnostic as _diag_impl,
+        )
+        _diag_impl()
+    except ImportError as e:
+        messagebox.showerror("Import Error", f"Cannot import diagnostic function: {e}")
+
+
+def _load_strategies(force=False):
+    """Load strategy list with mtime caching on matrix + saved_rules files."""
+    global _strategies, _strategies_cache, _cache_mtime
+    try:
+        backtest_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
+        saved_path = os.path.join(project_root, 'saved_rules.json')
+        current_mtime = 0
+        if os.path.exists(backtest_path):
+            current_mtime += os.path.getmtime(backtest_path)
+        if os.path.exists(saved_path):
+            current_mtime += os.path.getmtime(saved_path)
+        if not force and current_mtime == _cache_mtime and _strategies_cache:
+            _strategies = _strategies_cache
+            return
+        _cache_mtime = current_mtime
+
         from project2_backtesting.strategy_refiner import load_strategy_list
         _strategies = load_strategy_list()
+        _strategies_cache = _strategies
     except Exception as e:
-        print(f"[ea_gen_panel] {e}")
+        print(f"[ea_gen_panel] Error loading strategies: {e}")
+        import traceback; traceback.print_exc()
         _strategies = []
 
 
@@ -128,6 +160,8 @@ def _get_selected_index():
     if not _strategies or _strategy_var is None:
         return None
     val = _strategy_var.get()
+    if '───' in val:
+        return None  # separator, not a real selection
     for s in _strategies:
         if s['label'] == val:
             return s['index']
@@ -1186,8 +1220,6 @@ def build_panel(parent):
     global _test_script_text, _step2_btn
     global _strat_tree_p3, _selected_strat_iid
 
-    _load_strategies()
-
     panel = tk.Frame(parent, bg=BG)
 
     # ── Header ────────────────────────────────────────────────────────────────
@@ -1205,170 +1237,439 @@ def build_panel(parent):
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
 
+    sel_row = tk.Frame(sel_frame, bg=WHITE)
+    sel_row.pack(fill="x")
+
+    # Show loading message initially
+    loading_lbl = tk.Label(sel_row, text="⏳ Loading strategies...",
+                           font=("Segoe UI", 10), bg=WHITE, fg=GREY)
+    loading_lbl.pack(side=tk.LEFT)
+
     _strategy_var = tk.StringVar(value="")
+    dd_container = [None]  # Use list to allow mutation in nested function
+    star_btn_container = [None]  # Placeholder for star button
 
-    if not _strategies:
-        tk.Label(sel_frame, text="No backtest results. Run the backtest first.",
-                 font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(anchor="w")
-    else:
-        # WHY: Treeview replaces Combobox so the user can see rule details
-        #      (WR, PF, exit strategy, source) before generating. Selection
-        #      uses iid directly — not label text — so it survives refreshes
-        #      that add/remove stale/star markers.
-        # CHANGED: April 2026 — Treeview selector
-        global _strat_tree_p3, _selected_strat_iid
-        tree_outer = tk.Frame(sel_frame, bg=WHITE)
-        tree_outer.pack(fill="x", pady=(0, 4))
+    load_btn = tk.Button(sel_row, text="Load", command=_update_strat_info,
+                         bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
+                         relief=tk.FLAT, cursor="hand2", padx=14, pady=4,
+                         state=tk.DISABLED)  # Disabled until loading completes
+    load_btn.pack(side=tk.RIGHT, padx=(10, 0))
 
-        p3_cols = ("#", "rule", "exit", "wr", "pf", "trades")
-        _strat_tree_p3 = ttk.Treeview(tree_outer, columns=p3_cols, show="headings",
-                                       height=7, selectmode="browse")
-        _strat_tree_p3.heading("#",      text="#")
-        _strat_tree_p3.heading("rule",   text="Rule / Conditions")
-        _strat_tree_p3.heading("exit",   text="Exit Strategy")
-        _strat_tree_p3.heading("wr",     text="Win Rate")
-        _strat_tree_p3.heading("pf",     text="PF")
-        _strat_tree_p3.heading("trades", text="Trades")
+    # Column definition for Treeview (used in click handler)
+    # WHY: Entry timeframe column shows which TF the strategy was backtested on.
+    #      Critical for verifying EA generator uses correct timeframe.
+    # CHANGED: April 2026 — add entry TF column for verification
+    p3_columns = ("star", "#", "rule", "exit", "tf", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
 
-        _strat_tree_p3.column("#",      width=90,  anchor="center", stretch=False)
-        _strat_tree_p3.column("rule",   width=300, anchor="w")
-        _strat_tree_p3.column("exit",   width=130, anchor="w",      stretch=False)
-        _strat_tree_p3.column("wr",     width=75,  anchor="center", stretch=False)
-        _strat_tree_p3.column("pf",     width=55,  anchor="center", stretch=False)
-        _strat_tree_p3.column("trades", width=60,  anchor="center", stretch=False)
+    # ── Async strategy loading ────────────────────────────────────────────
+    def _on_strategies_loaded():
+        nonlocal dd_container, star_btn_container
 
-        _strat_tree_p3.tag_configure("saved",     foreground="#9b59b6")
-        _strat_tree_p3.tag_configure("starred",   foreground="#f39c12")
-        _strat_tree_p3.tag_configure("separator", foreground="#aaaaaa", font=("Segoe UI", 8))
-        _strat_tree_p3.tag_configure("optimizer", foreground="#2980b9")
-        _strat_tree_p3.tag_configure("profitable", foreground="#28a745")
-        _strat_tree_p3.tag_configure("losing",     foreground="#dc3545")
+        existing_tree = dd_container[0] if dd_container else None
+        has_existing_tree = existing_tree and hasattr(existing_tree, 'get_children')
 
-        tree_scroll = tk.Scrollbar(tree_outer, orient="vertical",
-                                   command=_strat_tree_p3.yview)
-        _strat_tree_p3.configure(yscrollcommand=tree_scroll.set)
-        tree_scroll.pack(side=tk.RIGHT, fill="y")
-        _strat_tree_p3.pack(fill="x", expand=True)
+        if not _strategies:
+            if has_existing_tree:
+                for widget in sel_row.winfo_children():
+                    widget.destroy()
+                dd_container[0] = None
+            tk.Label(sel_row, text="No backtest results. Run the backtest first.",
+                     font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
+        else:
+            global _strat_tree_p3, _selected_strat_iid
 
-        def _populate_tree_p3():
-            global _selected_strat_iid
-            for item in _strat_tree_p3.get_children():
-                _strat_tree_p3.delete(item)
+            if has_existing_tree:
+                # Reuse existing tree - just clear items
+                _strat_tree_p3 = existing_tree
+                for item in _strat_tree_p3.get_children():
+                    _strat_tree_p3.delete(item)
+            else:
+                tree_frame = tk.Frame(sel_row, bg=WHITE)
+                tree_frame.pack(fill="x", expand=True)
 
-            # WHY: Saved rules are at position 202+ in a 234-entry list.
-            #      With 7 visible rows, users never find them. Showing
-            #      saved rules FIRST makes them immediately accessible.
-            # CHANGED: April 2026 — saved rules on top
-            _saved   = [s for s in _strategies if s.get('source') == 'saved']
-            _sep     = [s for s in _strategies if s.get('source') == 'separator']
-            _others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
-            _ordered = _saved + _sep + _others
+                _strat_tree_p3 = ttk.Treeview(tree_frame, columns=p3_columns, show="headings",
+                                               height=min(len(_strategies), 8),
+                                               selectmode="browse")
 
-            backtest_row_n = 0
-            for s in _ordered:
-                src = s.get('source', 'backtest')
-                idx_raw = s.get('index', 0)
-                iid = str(idx_raw)
+                _strat_tree_p3.heading("star",     text="⭐")
+                _strat_tree_p3.heading("#",        text="#")
+                _strat_tree_p3.heading("rule",     text="Rule")
+                _strat_tree_p3.heading("exit",     text="Exit Strategy")
+                _strat_tree_p3.heading("tf",       text="TF")
+                _strat_tree_p3.heading("trades",   text="Trades")
+                _strat_tree_p3.heading("wr",       text="Win Rate")
+                _strat_tree_p3.heading("pf",       text="PF")
+                _strat_tree_p3.heading("net_pips", text="Net Pips")
+                _strat_tree_p3.heading("avg_pips", text="Avg Pips")
+                _strat_tree_p3.heading("del",      text="🗑")
 
-                wr  = s.get('win_rate', 0)
-                pf  = s.get('net_profit_factor', s.get('profit_factor', 0))
-                tr  = s.get('total_trades', s.get('trades', 0))
-                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
-                rc  = s.get('rule_combo', '?')
-                ex  = s.get('exit_name', s.get('exit_strategy', '?'))
+                _strat_tree_p3.column("star",     width=30,  anchor="center")
+                _strat_tree_p3.column("#",        width=70,  anchor="center")
+                _strat_tree_p3.column("rule",     width=160, anchor="w")
+                _strat_tree_p3.column("exit",     width=120, anchor="w")
+                _strat_tree_p3.column("tf",       width=45,  anchor="center")
+                _strat_tree_p3.column("trades",   width=60,  anchor="center")
+                _strat_tree_p3.column("wr",       width=70,  anchor="center")
+                _strat_tree_p3.column("pf",       width=60,  anchor="center")
+                _strat_tree_p3.column("net_pips", width=90,  anchor="e")
+                _strat_tree_p3.column("avg_pips", width=70,  anchor="e")
+                _strat_tree_p3.column("del",      width=40,  anchor="center")
+
+                _strat_tree_p3.tag_configure("saved",      foreground="#9b59b6")
+                _strat_tree_p3.tag_configure("starred",    foreground="#f39c12")
+                _strat_tree_p3.tag_configure("separator",  foreground="#aaaaaa", font=("Segoe UI", 8))
+                _strat_tree_p3.tag_configure("profitable", foreground="#28a745")
+                _strat_tree_p3.tag_configure("losing",     foreground="#dc3545")
+
+                tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
+                                           command=_strat_tree_p3.yview)
+                _strat_tree_p3.configure(yscrollcommand=tree_scroll.set)
+                tree_scroll.pack(side=tk.RIGHT, fill="y")
+                _strat_tree_p3.pack(fill="x", expand=True)
+
+                dd_container[0] = _strat_tree_p3
+
+            # ── Populate rows ─────────────────────────────────────────────
+            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved']
+            _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
+            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _bt_row_n   = 0
+            for s in _sr_saved + _sr_sep + _sr_others:
+                idx = str(s.get('index', 0))
+                rc       = s.get('rule_combo', '?')
+                exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
+                trades   = s.get('total_trades', s.get('trades', 0))
+                wr       = s.get('win_rate', 0)
+                wr_str   = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
+                pf       = s.get('net_profit_factor', s.get('profit_factor', 0))
+                net      = s.get('net_total_pips', s.get('total_pips', 0))
+                avg      = s.get('net_avg_pips', s.get('avg_pips', 0))
+
                 is_starred = s.get('is_starred', False)
+                source = s.get('source', 'backtest')
+                star_display = "⭐" if is_starred else ""
 
-                if src == 'separator':
-                    _strat_tree_p3.insert("", "end", iid=iid, values=(
-                        "", "── Backtest Results ──", "", "", "", ""), tags=("separator",))
+                if source == 'separator':
+                    _strat_tree_p3.insert("", "end", iid=idx, values=(
+                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
-                elif src == 'saved':
+                elif source == 'saved':
                     numeric_id = s.get('id', '')
-                    id_disp = f"Saved #{numeric_id}"
-                    # Show actual conditions in the rule column instead of "Saved #N"
-                    _sr2  = s.get('saved_rule', {})
-                    _dir2 = _sr2.get('direction', _sr2.get('action', ''))
-                    _cds2 = [c.get('feature', '') for c in _sr2.get('conditions', [])]
-                    _ex2  = _sr2.get('exit_class', _sr2.get('exit_name', ''))
-                    rc = (_dir2 + ' | ' if _dir2 else '') + ', '.join(
-                        f.split('_', 1)[1] if '_' in f else f for f in _cds2
+                    id_display = f"Saved #{numeric_id}"
+                    _sr_dict = s.get('saved_rule', {})
+                    _sr_dir  = _sr_dict.get('direction', _sr_dict.get('action', ''))
+                    _sr_conds = [c.get('feature', '') for c in _sr_dict.get('conditions', [])]
+                    _sr_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                    if _sr_exit in ('', 'Default', '?'):
+                        _sr_exit = _sr_dict.get('exit_class', _sr_dict.get('exit_name', ''))
+                    rc = (_sr_dir + ' | ' if _sr_dir else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _sr_conds
                     )
-                    ex = _ex2 if _ex2 and _ex2 not in ('Default', '?', '') else '—'
-                    tag = "starred" if is_starred else "saved"
-                elif src == 'optimizer':
-                    id_disp = f"Optimizer"
-                    tag = "optimizer"
+                    exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
+                    wr_s_saved = str(round(wr*100 if wr <= 1 else wr, 1)) + '%'
+                    # WHY: Show entry TF from saved rule data
+                    # CHANGED: April 2026 — add entry TF column
+                    entry_tf_display = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        (s.get('stats', {}) or {}).get('entry_tf') or
+                        '—'
+                    )
+                    tag = "saved" if not is_starred else "starred"
+                    _strat_tree_p3.insert("", "end", iid=idx, values=(
+                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_saved,
+                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                    ), tags=(tag,))
+                    continue
+                elif source == 'optimizer':
+                    id_display = f"🔧#{idx}"
+                    tag = "profitable" if net > 0 else "losing"
                 else:
-                    backtest_row_n += 1
-                    id_disp = f"#{backtest_row_n}"
-                    tag = "profitable" if pf >= 1.0 else "losing"
-                    if is_starred:
-                        tag = "starred"
+                    _bt_row_n += 1
+                    id_display = f"#{_bt_row_n}"
+                    tag = "profitable" if net > 0 else "losing"
 
-                _strat_tree_p3.insert("", "end", iid=iid, values=(
-                    id_disp, rc, ex, wr_str, f"{pf:.2f}", int(tr)
+                if is_starred and tag not in ("saved", "starred"):
+                    tag = "starred"
+
+                del_display = "" if source == 'separator' else "🗑"
+
+                # WHY: Show entry TF from backtest matrix data
+                # CHANGED: April 2026 — add entry TF column
+                entry_tf_display = (
+                    s.get('entry_tf') or
+                    s.get('entry_timeframe') or
+                    (s.get('stats', {}) or {}).get('entry_tf') or
+                    '—'
+                )
+
+                _strat_tree_p3.insert("", "end", iid=idx, values=(
+                    star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_str,
+                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
                 ), tags=(tag,))
 
-            # Select first non-separator row
-            children = _strat_tree_p3.get_children()
-            first_sel = next(
-                (c for c in children
-                 if "separator" not in _strat_tree_p3.item(c, "tags")),
-                children[0] if children else None
-            )
-            if first_sel:
-                _strat_tree_p3.selection_set(first_sel)
-                _selected_strat_iid = first_sel
-                for s in _strategies:
-                    if str(s.get('index', '')) == first_sel:
-                        _strategy_var.set(s['label'])
+            # Select first saved-tagged row
+            _tree_children = _strat_tree_p3.get_children()
+            if _tree_children:
+                _first_saved = next(
+                    (c for c in _tree_children
+                     if "saved" in (_strat_tree_p3.item(c, "tags") or ())),
+                    _tree_children[0]
+                )
+                _strat_tree_p3.selection_set(_first_saved)
+                _selected_strat_iid = _first_saved
+                for _fs in _strategies:
+                    if str(_fs.get('index', '')) == _first_saved:
+                        _strategy_var.set(_fs['label'])
                         break
 
-        _populate_tree_p3()
+            # ── Event handlers (bind only on first creation) ──────────
+            if not has_existing_tree:
+                def _on_p3_select(event=None):
+                    global _selected_strat_iid
+                    sel = _strat_tree_p3.selection()
+                    if not sel:
+                        return
+                    iid = sel[0]
+                    for s in _strategies:
+                        if str(s.get('index', '')) == iid:
+                            if s.get('source') == 'separator':
+                                return
+                            _selected_strat_iid = iid
+                            _strategy_var.set(s['label'])
+                            break
 
-        def _on_p3_select(event=None):
-            global _selected_strat_iid
-            sel = _strat_tree_p3.selection()
-            if not sel:
-                return
-            iid = sel[0]
-            # Skip separator rows
-            tags = _strat_tree_p3.item(iid, "tags")
-            if "separator" in tags:
-                return
-            _selected_strat_iid = iid
-            for s in _strategies:
-                if str(s.get('index', '')) == iid:
-                    _strategy_var.set(s['label'])
-                    break
-            _update_strat_info()
+                def _on_tree_click(event):
+                    region = _strat_tree_p3.identify_region(event.x, event.y)
+                    if region != "cell":
+                        return
+                    col_id = _strat_tree_p3.identify_column(event.x)
+                    try:
+                        col_index = int(col_id.lstrip('#')) - 1
+                    except (ValueError, AttributeError):
+                        return
+                    if col_index < 0 or col_index >= len(p3_columns):
+                        return
+                    if p3_columns[col_index] != 'del':
+                        return
 
-        _strat_tree_p3.bind("<<TreeviewSelect>>", _on_p3_select)
+                    item_id = _strat_tree_p3.identify_row(event.y)
+                    if not item_id:
+                        return
 
-        def _refresh_strategies():
-            global _strategies, _selected_strat_iid
-            prev_iid = _selected_strat_iid
-            _load_strategies()
-            _populate_tree_p3()
-            # Restore previous selection if it still exists
-            if prev_iid and prev_iid in _strat_tree_p3.get_children():
-                _strat_tree_p3.selection_set(prev_iid)
-                _strat_tree_p3.see(prev_iid)
-                _selected_strat_iid = prev_iid
+                    target_strategy = None
+                    for _s in _strategies:
+                        if str(_s.get('index', '')) == item_id:
+                            target_strategy = _s
+                            break
+                    if target_strategy is None:
+                        return
+
+                    src = target_strategy.get('source', 'backtest')
+                    rule_label = target_strategy.get('label', str(item_id))
+
+                    if src == 'separator':
+                        return
+
+                    if src == 'saved':
+                        rule_id = (
+                            target_strategy.get('id')
+                            or target_strategy.get('rule_id')
+                        )
+                        if not rule_id:
+                            _idx_val = str(target_strategy.get('index', ''))
+                            if _idx_val.startswith('saved_'):
+                                rule_id = _idx_val[len('saved_'):]
+                        if not rule_id:
+                            rule_id = target_strategy.get('saved_rule', {}).get('id')
+                        if not rule_id:
+                            messagebox.showerror(
+                                "Delete Rule",
+                                f"Could not resolve rule ID for this saved rule.\n\n"
+                                f"Strategy dict keys: "
+                                f"{sorted(target_strategy.keys())[:15]}..."
+                            )
+                            return
+                        if not messagebox.askyesno(
+                            "Delete Rule",
+                            f"Delete saved rule:\n\n{rule_label}\n\n"
+                            f"This rewrites saved_rules.json and cannot be undone."
+                        ):
+                            return
+                        try:
+                            from shared.saved_rules import delete_rule as _del_rule
+                            _del_rule(rule_id)
+                            def _reload():
+                                _load_strategies(force=True)
+                                _on_strategies_loaded()
+                            sel_row.after(100, _reload)
+                        except Exception as _de:
+                            import traceback as _tb
+                            _tb.print_exc()
+                            messagebox.showerror("Delete Error", str(_de))
+                        return
+
+                    if src == 'optimizer':
+                        messagebox.showinfo(
+                            "Optimizer Result",
+                            "Optimizer results live in _validator_optimized.json, "
+                            "not in backtest_matrix.json. To change or remove "
+                            "them, re-run the optimizer (it overwrites this file "
+                            "on each run)."
+                        )
+                        return
+
+                    # Backtest row delete
+                    array_index = target_strategy.get('index')
+                    if not isinstance(array_index, int):
+                        messagebox.showerror(
+                            "Delete Backtest Row",
+                            f"Cannot resolve array index for this row "
+                            f"(got {type(array_index).__name__}={array_index!r})."
+                        )
+                        return
+
+                    exp_rc = target_strategy.get('rule_combo', '')
+                    exp_ex = (target_strategy.get('exit_strategy', '')
+                              or target_strategy.get('exit_name', ''))
+                    exp_tf = target_strategy.get('entry_tf', '') or ''
+
+                    if not messagebox.askyesno(
+                        "Delete Backtest Row",
+                        f"Delete this row from backtest_matrix.json:\n\n"
+                        f"{rule_label}\n\n"
+                        f"This will be regenerated if you re-run the backtest. "
+                        f"Continue?"
+                    ):
+                        return
+
+                    try:
+                        from project2_backtesting.strategy_refiner import delete_matrix_row as _del_mx
+                        result = _del_mx(
+                            array_index=array_index,
+                            expected_rule_combo=exp_rc or None,
+                            expected_exit_strategy=exp_ex or None,
+                            expected_entry_tf=exp_tf if exp_tf else None,
+                        )
+                        if result.get('removed'):
+                            def _reload():
+                                _load_strategies(force=True)
+                                _on_strategies_loaded()
+                            sel_row.after(100, _reload)
+                        else:
+                            messagebox.showwarning(
+                                "Delete Backtest Row",
+                                f"Row was not removed.\n\nReason: {result.get('reason')}"
+                            )
+                    except ValueError as _ve:
+                        messagebox.showwarning(
+                            "Delete Backtest Row",
+                            f"Could not delete row safely:\n\n{_ve}"
+                        )
+                    except Exception as _de:
+                        import traceback as _tb
+                        _tb.print_exc()
+                        messagebox.showerror("Delete Error", str(_de))
+
+                _strat_tree_p3.bind("<<TreeviewSelect>>", _on_p3_select)
+                _strat_tree_p3.bind("<Button-1>", _on_tree_click, add="+")
+
+            # ── Star button ───────────────────────────────────────────
+            def _toggle_star():
+                idx = _get_selected_index()
+                if idx is None:
+                    return
                 for s in _strategies:
-                    if str(s.get('index', '')) == prev_iid:
-                        _strategy_var.set(s['label'])
+                    if s.get('index') == idx:
+                        rc = s.get('rule_combo', '')
+                        es = s.get('exit_strategy', s.get('exit_name', ''))
+                        try:
+                            from shared.starred import toggle
+                            is_now_starred = toggle(rc, es)
+                            star_btn.configure(
+                                text="⭐ Starred" if is_now_starred else "☆ Star",
+                                bg="#f39c12" if is_now_starred else "#95a5a6",
+                            )
+                            _load_strategies(force=True)
+                            cur_label = None
+                            for s2 in _strategies:
+                                if s2.get('index') == idx:
+                                    cur_label = s2.get('label')
+                                    break
+                            if cur_label:
+                                _strategy_var.set(cur_label)
+                        except ImportError:
+                            pass
                         break
-            _update_strat_info()
-            print(f"[EA GEN] Refreshed — {len(_strategies)} strategies")
 
-        tk.Button(sel_frame, text="🔄 Refresh", font=("Segoe UI", 8),
-                  bg="#3498db", fg="white", relief=tk.FLAT, padx=8,
-                  command=_refresh_strategies).pack(anchor="w", pady=(2, 0))
+            star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
+                                 bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
+                                 relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            star_btn.pack(side=tk.LEFT, padx=(6, 0))
+            star_btn_container[0] = star_btn
 
-    _strat_info_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9),
-                                bg=WHITE, fg=MIDGREY)
-    _strat_info_lbl.pack(anchor="w", pady=(4, 0))
+            def _update_star_btn(*args):
+                idx = _get_selected_index()
+                if idx is None:
+                    return
+                for s in _strategies:
+                    if s.get('index') == idx:
+                        is_s = s.get('is_starred', False)
+                        star_btn.configure(
+                            text="⭐ Starred" if is_s else "☆ Star",
+                            bg="#f39c12" if is_s else "#95a5a6",
+                        )
+                        break
+
+            _strategy_var.trace_add('write', _update_star_btn)
+            _update_star_btn()
+
+            # ── Refresh button ────────────────────────────────────────
+            def _do_refresh():
+                try:
+                    _load_strategies(force=True)
+                    _on_strategies_loaded()
+                    messagebox.showinfo("Refreshed", "Strategy list reloaded from disk.")
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    messagebox.showerror("Refresh Error", str(e))
+
+            refresh_btn = tk.Button(sel_row, text="🔄 Refresh", command=_do_refresh,
+                                    bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
+                                    relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            # ── Diagnose button ───────────────────────────────────────
+            diagnose_btn = tk.Button(sel_row, text="🔍 Diagnose", command=_run_lookup_diagnostic,
+                                     bg="#8e44ad", fg="white", font=("Segoe UI", 9, "bold"),
+                                     relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            diagnose_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            # Enable load button
+            load_btn.configure(state=tk.NORMAL)
+
+        # Remove loading label
+        try:
+            loading_lbl.destroy()
+        except Exception:
+            pass
+
+    # Store reference so module-level refresh() can call it
+    global _on_strategies_loaded_fn
+    _on_strategies_loaded_fn = _on_strategies_loaded
+
+    def _load_in_background():
+        """Background thread: load strategies, then schedule UI update."""
+        _load_strategies()
+        panel.after(0, _on_strategies_loaded)
+
+    # Start background loading
+    threading.Thread(target=_load_in_background, daemon=True).start()
+
+    _strat_info_lbl = tk.Label(sel_frame, text="Click Load to load a strategy.",
+                                font=("Segoe UI", 9), bg=WHITE, fg=GREY)
+    _strat_info_lbl.pack(anchor="w", pady=(5, 0))
 
     _badge_lbl = tk.Label(sel_frame, text="", font=("Segoe UI", 9, "italic"),
                            bg=WHITE, fg=GREY)
@@ -1835,71 +2136,10 @@ def build_panel(parent):
 
 
 def refresh():
-    global _strategies, _strategy_var, _selected_strat_iid
-    prev_iid = _selected_strat_iid
-    _load_strategies()
-    if _strat_tree_p3 is not None and _strategies:
-        # Repopulate Treeview and restore previous selection if still valid
+    """Reload strategies and repopulate the Treeview."""
+    _load_strategies(force=True)
+    if _on_strategies_loaded_fn:
         try:
-            for item in _strat_tree_p3.get_children():
-                _strat_tree_p3.delete(item)
-            _s_saved  = [s for s in _strategies if s.get('source') == 'saved']
-            _s_sep    = [s for s in _strategies if s.get('source') == 'separator']
-            _s_others = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
-            _bt_rn = 0
-            for s in _s_saved + _s_sep + _s_others:
-                src = s.get('source', 'backtest')
-                idx_raw = s.get('index', 0)
-                iid = str(idx_raw)
-                wr  = s.get('win_rate', 0)
-                pf  = s.get('net_profit_factor', s.get('profit_factor', 0))
-                tr  = s.get('total_trades', s.get('trades', 0))
-                wr_str = f"{wr:.1f}%" if wr > 1 else f"{wr*100:.1f}%"
-                rc  = s.get('rule_combo', '?')
-                ex  = s.get('exit_name', s.get('exit_strategy', '?'))
-                is_starred = s.get('is_starred', False)
-                if src == 'separator':
-                    _strat_tree_p3.insert("", "end", iid=iid, values=(
-                        "", "── Backtest Results ──", "", "", "", ""), tags=("separator",))
-                    continue
-                elif src == 'saved':
-                    numeric_id = s.get('id', '')
-                    id_disp = f"Saved #{numeric_id}"
-                    _sr3  = s.get('saved_rule', {})
-                    _dir3 = _sr3.get('direction', _sr3.get('action', ''))
-                    _cds3 = [c.get('feature', '') for c in _sr3.get('conditions', [])]
-                    _ex3  = _sr3.get('exit_class', _sr3.get('exit_name', ''))
-                    rc = (_dir3 + ' | ' if _dir3 else '') + ', '.join(
-                        f.split('_', 1)[1] if '_' in f else f for f in _cds3
-                    )
-                    ex = _ex3 if _ex3 and _ex3 not in ('Default', '?', '') else '—'
-                    tag = "starred" if is_starred else "saved"
-                elif src == 'optimizer':
-                    id_disp = f"Optimizer"
-                    tag = "optimizer"
-                else:
-                    _bt_rn += 1
-                    id_disp = f"#{_bt_rn}"
-                    tag = "profitable" if pf >= 1.0 else "losing"
-                    if is_starred:
-                        tag = "starred"
-                _strat_tree_p3.insert("", "end", iid=iid, values=(
-                    id_disp, rc, ex, wr_str, f"{pf:.2f}", int(tr)
-                ), tags=(tag,))
-
-            children = _strat_tree_p3.get_children()
-            if prev_iid and prev_iid in children:
-                _strat_tree_p3.selection_set(prev_iid)
-                _strat_tree_p3.see(prev_iid)
-                _selected_strat_iid = prev_iid
-            elif children:
-                first_sel = next(
-                    (c for c in children
-                     if "separator" not in _strat_tree_p3.item(c, "tags")),
-                    children[0]
-                )
-                _strat_tree_p3.selection_set(first_sel)
-                _selected_strat_iid = first_sel
+            _on_strategies_loaded_fn()
         except Exception:
             pass
-    _update_strat_info()

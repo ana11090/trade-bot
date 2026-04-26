@@ -162,6 +162,18 @@ def generate_ea(
         pass
 
     sl_pips = exit_params.get('sl_pips', 150)
+
+    # WHY: XAUUSD and other metals use 2-digit pricing (e.g., 4379.53) where
+    #      1 pip = 0.01 points. Forex-style sl_pips=150 means 150*0.01=1.5 points,
+    #      which is 10x too small for metals (gets stopped out immediately).
+    #      ATR on XAUUSD H1 is typically 9-15 points = 900-1500 pips.
+    #      If backtest used ATR-based SL but user generates a fixed-pip EA,
+    #      we must scale the pip values to match real market volatility.
+    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+    if _ea_inst == 'metals' and sl_pips > 0 and sl_pips < 1000:
+        sl_pips *= 10
+        print(f"[EA GEN] ⚠ Metals detected: scaled SL from {sl_pips//10} to {sl_pips} pips")
+
     if _ea_leverage > 0 and account_size > 0 and sl_pips > 0:
         _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
                           'US30': 40000, 'NAS100': 18000, 'DAX': 18000}
@@ -269,13 +281,43 @@ def generate_ea(
         mql_period = _mql_periods.get(entry_timeframe, 'PERIOD_H1')
         sl_pips = exit_params.get('sl_pips', 150)
         tp_pips = exit_params.get('tp_pips', 0 if exit_class in ('TimeBased', 'IndicatorExit') else 300)
+
+        # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
+        #      Apply same scaling here for verification report generation.
+        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+        try:
+            from shared.prop_firm_engine import get_instrument_type
+            _inst_type = get_instrument_type(symbol)
+            if _inst_type == 'metals':
+                if sl_pips > 0 and sl_pips < 1000:
+                    sl_pips *= 10
+                if tp_pips > 0 and tp_pips < 1000:
+                    tp_pips *= 10
+        except Exception:
+            pass
+
         max_candles = exit_params.get('max_candles', 12)
 
         trail_activation_pips = exit_params.get('trail_activation_pips', exit_params.get('activation_pips', 50))
         trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
+
+        # WHY: Metals need 10x scaling for trailing parameters in verification report.
+        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+        if _inst_type == 'metals':
+            if trail_activation_pips > 0 and trail_activation_pips < 1000:
+                trail_activation_pips *= 10
+            if trail_distance_pips > 0 and trail_distance_pips < 1000:
+                trail_distance_pips *= 10
+
         sl_atr_mult = exit_params.get('sl_atr_mult', 2.0)
         tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
         breakeven_pips = exit_params.get('breakeven_pips', 50)
+
+        # WHY: Metals need 10x scaling for breakeven parameter too.
+        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+        if _inst_type == 'metals' and breakeven_pips > 0 and breakeven_pips < 1000:
+            breakeven_pips *= 10
+
         prop_firm_name = prop_firm.get('name', 'None') if prop_firm else 'None'
 
         # ── Save verification report as separate .txt ──
@@ -431,6 +473,24 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
 
+    # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
+    #      Apply same scaling here for MT5 EA generation.
+    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+    try:
+        from shared.prop_firm_engine import get_instrument_type
+        _inst_type = get_instrument_type(symbol)
+        if _inst_type == 'metals':
+            if sl_pips > 0 and sl_pips < 1000:
+                _old_sl = sl_pips
+                sl_pips *= 10
+                print(f"[EA GEN MT5] Metals detected: scaled SL {_old_sl} → {sl_pips} pips")
+            if tp_pips > 0 and tp_pips < 1000:
+                _old_tp = tp_pips
+                tp_pips *= 10
+                print(f"[EA GEN MT5] Metals detected: scaled TP {_old_tp} → {tp_pips} pips")
+    except Exception:
+        pass
+
     # ── Trailing stop parameters ──────────────────────────────────────
     # WHY: TrailingStop has two thresholds:
     #      1. activation_pips: profit needed before trailing starts
@@ -439,6 +499,19 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # CHANGED: April 2026 — separate activation and distance
     trail_activation_pips = exit_params.get('activation_pips', 50)
     trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
+
+    # WHY: Metals need 10x scaling for trailing parameters too.
+    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+    try:
+        from shared.prop_firm_engine import get_instrument_type
+        _inst_type_trail = get_instrument_type(symbol)
+        if _inst_type_trail == 'metals':
+            if trail_activation_pips > 0 and trail_activation_pips < 1000:
+                trail_activation_pips *= 10
+            if trail_distance_pips > 0 and trail_distance_pips < 1000:
+                trail_distance_pips *= 10
+    except Exception:
+        pass
 
     # WHY: Direction-dependent code fragments. Old code hardcoded BUY logic
     #      everywhere — for SELL strategies, the EA placed BUY orders with
@@ -2402,6 +2475,20 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
 
     sl_pips  = exit_params.get('sl_pips', 150)
     tp_pips  = exit_params.get('tp_pips', 300)
+
+    # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
+    #      Apply same scaling here for Tradovate EA generation.
+    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+    try:
+        from shared.prop_firm_engine import get_instrument_type
+        _inst_type = get_instrument_type(symbol)
+        if _inst_type == 'metals':
+            if sl_pips > 0 and sl_pips < 1000:
+                sl_pips *= 10
+            if tp_pips > 0 and tp_pips < 1000:
+                tp_pips *= 10
+    except Exception:
+        pass
 
     # Build condition checks
     indicator_lines = []

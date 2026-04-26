@@ -1,0 +1,96 @@
+======================================================================
+ROBOT ANALYSIS REPORT
+Generated: 2026-04-25T15:27:32.514646
+Trades analyzed: 1106 | Features: 629
+======================================================================
+
+-- ROBOT IDENTITY (auto-detected) ---------------------------------
+  Direction:      buy_only
+  Type:           scalper
+  Date range:     2020-01-07 to 2026-03-10
+  Win rate:       58%
+  Reward:Risk:    2.5:1
+  Avg win:        +347 pips
+  Avg loss:       -136 pips
+  Stop loss:      Fixed 150 pips (confidence: 88%)
+  Take profit:    Dynamic / trailing
+  Sessions:       Asian, London, New York
+  Peak hours:     [12, 13, 11] UTC
+  Frequency:      increasing (15/month avg)
+
+-- TOP FEATURES (what the robot reacts to) ------------------------
+  Model accuracy: train=76.6%, test=57.7%
+   1. H1_bb_20_2_width                              3.1%
+   2. H1_bb_20_3_width                              3.0%
+   3. H1_std_dev_20                                 2.8%
+   4. H1_lower_shadow                               2.8%
+   5. H1_keltner_width                              2.3%
+   6. H1_atr_7                                      1.9%
+   7. H1_atr_14                                     1.8%
+   8. H1_std_dev_50                                 1.8%
+   9. H1_distance_from_high                         1.7%
+  10. H1_atr_28                                     1.6%
+
+-- TRADING RULES (IF/THEN) ----------------------------------------
+
+  RULE 1 (WIN, conf: 68%, 151 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 <= 85.2378 AND H1_volume_change <= 0.3683 AND H1_distance_to_rolling_level_618 <= 0.8274
+    Win rate: 68% | Avg pips: +264
+
+  RULE 2 (WIN, conf: 70%, 70 trades)
+    IF H1_bb_50_2_width <= 3.2052 AND H1_bb_20_3_width > 1.0054 AND H1_ichimoku_conversion > 1921.4425 AND H1_upper_shadow <= 0.515
+    Win rate: 70% | Avg pips: +194
+
+  RULE 3 (WIN, conf: 78%, 37 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range > 0.4795
+    Win rate: 78% | Avg pips: +740
+
+  RULE 4 (WIN, conf: 88%, 32 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range <= 0.4795
+    Win rate: 88% | Avg pips: +461
+
+-- TRADE CLUSTERS (auto-detected groups) --------------------------
+  'Big winners': 51 trades (4.6%), WR 86%, avg +528 pips, avg dur 0min
+  'Profit cluster': 247 trades (22.3%), WR 62%, avg +229 pips, avg dur 0min
+  'Profit cluster': 582 trades (52.6%), WR 56%, avg +104 pips, avg dur 0min
+  'Profit cluster': 226 trades (20.4%), WR 56%, avg +79 pips, avg dur 0min
+
+-- MARKET REGIME PERFORMANCE --------------------------------------
+  trend:
+    trending              : WR 62%, avg +200 pips (545 trades)
+    ranging               : WR 55%, avg +94 pips (561 trades)
+  volatility:
+    high                  : WR 66%, avg +230 pips (487 trades)
+    low                   : WR 52%, avg +80 pips (619 trades)
+  direction:
+    above_ema200          : WR 60%, avg +167 pips (812 trades)
+    below_ema200          : WR 55%, avg +88 pips (294 trades)
+  session:
+    asian                 : WR 60%, avg +145 pips (301 trades)
+    london                : WR 57%, avg +128 pips (647 trades)
+    new_york              : WR 59%, avg +148 pips (499 trades)
+  day_of_week:
+    Monday                : WR 61%, avg +165 pips (230 trades)
+    Tuesday               : WR 59%, avg +160 pips (196 trades)
+    Wednesday             : WR 56%, avg +136 pips (212 trades)
+    Thursday              : WR 57%, avg +116 pips (217 trades)
+    Friday                : WR 58%, avg +150 pips (247 trades)
+
+-- TIME PERIOD EVOLUTION ------------------------------------------
+  2020:   96 trades, WR 68%, avg +154 pips, 8.0/month
+  2021:   73 trades, WR 55%, avg +97 pips, 6.1/month
+  2022:  105 trades, WR 50%, avg +60 pips, 8.8/month
+  2023:   85 trades, WR 45%, avg +65 pips, 7.1/month
+  2024:  167 trades, WR 49%, avg +58 pips, 13.9/month
+  2025:  380 trades, WR 60%, avg +129 pips, 31.7/month
+  2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
+
+-- ANOMALIES -------------------------------------------------------
+  54 outlier trades (4.9%)
+  Anomaly win rate: 83% vs normal: 57%
+
+-- IMPROVEMENT SUGGESTIONS ----------------------------------------
+  -> Only trade in high volatility (ATR above median)
+     Would improve win rate from 58% to ~66%
+
+======================================================================
