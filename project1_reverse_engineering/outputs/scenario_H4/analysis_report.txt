@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-23T15:24:06.490109
-Trades analyzed: 1106 | Features: 629
+Generated: 2026-04-26T21:45:52.900347
+Trades analyzed: 1106 | Features: 759
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,49 +19,37 @@ Trades analyzed: 1106 | Features: 629
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=77.1%, test=63.1%
-   1. H4_std_dev_50                                 1.3%
-   2. H4_std_dev_20                                 1.2%
-   3. H4_lower_shadow                               1.2%
-   4. H4_keltner_width                              1.1%
-   5. H4_atr_28                                     1.1%
-   6. H4_adx_21                                     1.1%
-   7. H4_bb_20_2_width                              1.0%
-   8. H4_distance_from_high                         1.0%
-   9. H4_atr_7                                      1.0%
-  10. D1_std_dev_20                                 0.9%
+  Model accuracy: train=80.0%, test=61.7%
+   1. M15_std_dev_20                                0.9%
+   2. H1_bb_20_3_width                              0.8%
+   3. M5_distance_to_swing_high                     0.8%
+   4. H1_lower_shadow                               0.7%
+   5. H1_bb_20_2_width                              0.7%
+   6. M15_atr_21                                    0.6%
+   7. M15_bb_50_2_width                             0.6%
+   8. H4_keltner_width                              0.5%
+   9. H1_std_dev_20                                 0.5%
+  10. M5_bear_power                                 0.4%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 86%, 57 trades)
-    IF H4_bb_20_3_width > 8.6228 AND D1_bull_power <= 369.9721 AND H4_ema_200_distance <= 6.0647 AND H4_ema_50_distance > -1.3713
-    Win rate: 86% | Avg pips: +470
+  RULE 1 (WIN, conf: 67%, 331 trades)
+    IF D1_awesome_oscillator <= 379.7972 AND H1_keltner_width > 0.7686
+    Win rate: 67% | Avg pips: +213
 
-  RULE 2 (WIN, conf: 93%, 41 trades)
-    IF H4_bb_20_3_width > 8.6228 AND D1_bull_power > 369.9721
-    Win rate: 93% | Avg pips: +750
+  RULE 2 (WIN, conf: 90%, 30 trades)
+    IF D1_awesome_oscillator > 379.7972 AND M5_bull_power <= 8.1156
+    Win rate: 90% | Avg pips: +851
 
-  RULE 3 (WIN, conf: 68%, 31 trades)
-    IF H4_bb_20_3_width <= 8.6228 AND D1_tsi > 10.0659 AND D1_close_position_in_range > 0.1102 AND D1_stoch_21_k > 97.6611
-    Win rate: 68% | Avg pips: +290
-
-  RULE 4 (WIN, conf: 75%, 20 trades)
-    IF H4_bb_20_3_width <= 8.6228 AND D1_tsi <= 10.0659 AND D1_sma_20_distance <= -2.9547
-    Win rate: 75% | Avg pips: +179
-
-  RULE 5 (WIN, conf: 67%, 21 trades)
-    IF H4_bb_20_3_width <= 8.6228 AND D1_tsi > 10.0659 AND D1_close_position_in_range <= 0.1102
-    Win rate: 67% | Avg pips: +337
-
-  RULE 6 (WIN, conf: 67%, 21 trades)
-    IF H4_bb_20_3_width > 8.6228 AND D1_bull_power <= 369.9721 AND H4_ema_200_distance > 6.0647 AND H4_cci_50 > 159.6659
-    Win rate: 67% | Avg pips: +347
+  RULE 3 (WIN, conf: 82%, 27 trades)
+    IF D1_awesome_oscillator > 379.7972 AND M5_bull_power > 8.1156
+    Win rate: 82% | Avg pips: +465
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 138 trades (12.5%), WR 67%, avg +308 pips, avg dur 0min
-  'Profit cluster': 174 trades (15.7%), WR 71%, avg +286 pips, avg dur 0min
-  'Profit cluster': 514 trades (46.5%), WR 57%, avg +103 pips, avg dur 0min
-  'Profit cluster': 280 trades (25.3%), WR 49%, avg +59 pips, avg dur 0min
+  'Big winners': 46 trades (4.2%), WR 89%, avg +558 pips, avg dur 0min
+  'Profit cluster': 218 trades (19.7%), WR 61%, avg +239 pips, avg dur 0min
+  'Profit cluster': 492 trades (44.5%), WR 60%, avg +111 pips, avg dur 0min
+  'Profit cluster': 350 trades (31.6%), WR 50%, avg +84 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -94,8 +82,8 @@ Trades analyzed: 1106 | Features: 629
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  55 outlier trades (5.0%)
-  Anomaly win rate: 84% vs normal: 57%
+  56 outlier trades (5.1%)
+  Anomaly win rate: 86% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

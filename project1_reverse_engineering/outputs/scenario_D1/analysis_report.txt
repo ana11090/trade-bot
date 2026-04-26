@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-23T15:24:10.127420
-Trades analyzed: 1106 | Features: 629
+Generated: 2026-04-26T21:45:56.037039
+Trades analyzed: 1106 | Features: 759
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,49 +19,37 @@ Trades analyzed: 1106 | Features: 629
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=74.3%, test=60.8%
-   1. D1_std_dev_20                                 2.5%
-   2. D1_upper_shadow                               2.3%
-   3. D1_atr_7                                      1.9%
-   4. D1_bb_20_2_width                              1.9%
-   5. D1_atr_14                                     1.6%
-   6. D1_roc_20                                     1.6%
-   7. D1_tsi                                        1.6%
-   8. D1_bb_20_3_width                              1.6%
-   9. D1_candle_range                               1.6%
-  10. D1_macd_std                                   1.5%
+  Model accuracy: train=80.0%, test=61.7%
+   1. M15_std_dev_20                                0.9%
+   2. H1_bb_20_3_width                              0.8%
+   3. M5_distance_to_swing_high                     0.8%
+   4. H1_lower_shadow                               0.7%
+   5. H1_bb_20_2_width                              0.7%
+   6. M15_atr_21                                    0.6%
+   7. M15_bb_50_2_width                             0.6%
+   8. H4_keltner_width                              0.5%
+   9. H1_std_dev_20                                 0.5%
+  10. M5_bear_power                                 0.4%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 93%, 41 trades)
-    IF D1_macd_std_signal > 99.4541 AND D1_bull_power > 369.9721
-    Win rate: 93% | Avg pips: +750
+  RULE 1 (WIN, conf: 67%, 331 trades)
+    IF D1_awesome_oscillator <= 379.7972 AND H1_keltner_width > 0.7686
+    Win rate: 67% | Avg pips: +213
 
-  RULE 2 (WIN, conf: 66%, 56 trades)
-    IF D1_macd_std_signal <= 99.4541 AND D1_tsi > 10.0659 AND D1_close_position_in_range > 0.1102 AND D1_close_position_in_range > 0.9429
-    Win rate: 66% | Avg pips: +246
+  RULE 2 (WIN, conf: 90%, 30 trades)
+    IF D1_awesome_oscillator > 379.7972 AND M5_bull_power <= 8.1156
+    Win rate: 90% | Avg pips: +851
 
-  RULE 3 (WIN, conf: 74%, 27 trades)
-    IF D1_macd_std_signal > 99.4541 AND D1_bull_power <= 369.9721 AND D1_std_dev_20 <= 138.8423
-    Win rate: 74% | Avg pips: +459
-
-  RULE 4 (WIN, conf: 75%, 24 trades)
-    IF D1_macd_std_signal > 99.4541 AND D1_bull_power <= 369.9721 AND D1_std_dev_20 > 138.8423 AND D1_psar > 5482.4346
-    Win rate: 75% | Avg pips: +424
-
-  RULE 5 (WIN, conf: 75%, 20 trades)
-    IF D1_macd_std_signal <= 99.4541 AND D1_tsi <= 10.0659 AND D1_sma_20_distance <= -2.9547
-    Win rate: 75% | Avg pips: +179
-
-  RULE 6 (WIN, conf: 70%, 20 trades)
-    IF D1_macd_std_signal <= 99.4541 AND D1_tsi > 10.0659 AND D1_close_position_in_range <= 0.1102
-    Win rate: 70% | Avg pips: +238
+  RULE 3 (WIN, conf: 82%, 27 trades)
+    IF D1_awesome_oscillator > 379.7972 AND M5_bull_power > 8.1156
+    Win rate: 82% | Avg pips: +465
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 116 trades (10.5%), WR 71%, avg +363 pips, avg dur 0min
-  'Profit cluster': 169 trades (15.3%), WR 69%, avg +277 pips, avg dur 0min
-  'Profit cluster': 597 trades (54.0%), WR 57%, avg +108 pips, avg dur 0min
-  'Mixed cluster': 224 trades (20.3%), WR 48%, avg +35 pips, avg dur 0min
+  'Big winners': 46 trades (4.2%), WR 89%, avg +558 pips, avg dur 0min
+  'Profit cluster': 218 trades (19.7%), WR 61%, avg +239 pips, avg dur 0min
+  'Profit cluster': 492 trades (44.5%), WR 60%, avg +111 pips, avg dur 0min
+  'Profit cluster': 350 trades (31.6%), WR 50%, avg +84 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -95,7 +83,7 @@ Trades analyzed: 1106 | Features: 629
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 84% vs normal: 57%
+  Anomaly win rate: 86% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)
