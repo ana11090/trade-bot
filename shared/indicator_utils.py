@@ -9,6 +9,114 @@ import numpy as np
 import ta
 
 
+# ── MT5-compatible indicator helpers ─────────────────────────────────────────
+# WHY: MT5 built-in indicators (iRSI, iATR, iStochastic) use Wilder's
+#      smoothing (alpha=1/N), while the `ta` Python library uses standard
+#      EMA (alpha=2/(N+1)). This causes 5-25% divergence in indicator values.
+#      MACD signal line: MT5 uses SMA, `ta` uses EMA.
+#      Stochastic %D: MT5 uses SMA, `ta` uses EMA.
+#      These helpers compute MT5-matching values so backtested rules that
+#      target MT5 prop firms (e.g. Get Levered) produce matching live results.
+# CHANGED: April 2026 — MT5 indicator parity
+
+def _wilders_smoothing(series, period):
+    """Wilder's smoothing (alpha=1/period), seeded with SMA — matches MT5.
+
+    Uses raw numpy arrays for performance (~10x faster than pandas iloc
+    on M5 datasets with 1.5M rows).
+    """
+    arr = np.asarray(series, dtype=np.float64)
+    out = np.full(len(arr), np.nan)
+    # Find first index where we have `period` valid (non-NaN) values
+    valid_count = 0
+    seed_end = -1
+    for i in range(len(arr)):
+        if not np.isnan(arr[i]):
+            valid_count += 1
+            if valid_count == period:
+                seed_end = i
+                break
+    if seed_end < 0:
+        return pd.Series(out, index=series.index)
+    # Seed with SMA of first `period` valid values
+    first_valid = seed_end - period + 1
+    out[seed_end] = np.nanmean(arr[first_valid:seed_end + 1])
+    alpha = 1.0 / period
+    complement = 1.0 - alpha
+    for i in range(seed_end + 1, len(arr)):
+        val = arr[i] if not np.isnan(arr[i]) else 0.0
+        out[i] = out[i - 1] * complement + val * alpha
+    return pd.Series(out, index=series.index)
+
+
+def _mt5_rsi(close, period):
+    """RSI using Wilder's smoothing — matches MT5 iRSI."""
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = _wilders_smoothing(gain, period)
+    avg_loss = _wilders_smoothing(loss, period)
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
+def _mt5_atr(high, low, close, period):
+    """ATR using Wilder's smoothing — matches MT5 iATR."""
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return _wilders_smoothing(tr, period)
+
+
+def _mt5_macd(close, fast, slow, signal):
+    """MACD with SMA signal line — matches MT5 iMACD.
+
+    MT5 computes: MACD = EMA(fast) - EMA(slow), Signal = SMA(signal) of MACD.
+    The `ta` library uses EMA for the signal line instead of SMA.
+    """
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.rolling(window=signal).mean()  # SMA, not EMA
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def _mt5_stochastic(high, low, close, k_period, d_period=3):
+    """Stochastic with SMA smoothing — matches MT5 iStochastic.
+
+    MT5: %K = SMA(d_period) of raw stochastic, %D = SMA(d_period) of %K.
+    """
+    lowest_low = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+    raw_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+    k = raw_k.rolling(window=d_period).mean()   # SMA smoothing
+    d = k.rolling(window=d_period).mean()        # SMA of %K
+    return k, d
+
+
+def _mt5_ema(series, period):
+    """EMA seeded with SMA of first N values — matches MT5 iMA(MODE_EMA).
+
+    MT5 seeds the first EMA value with SMA(period), then applies the
+    standard EMA formula.  Python's pandas ewm() initializes differently,
+    causing divergence for the first ~50 bars.
+    """
+    arr = np.asarray(series, dtype=np.float64)
+    out = np.full(len(arr), np.nan)
+    if len(arr) < period:
+        return pd.Series(out, index=series.index)
+    # Seed with SMA of first `period` values
+    out[period - 1] = np.mean(arr[:period])
+    alpha = 2.0 / (period + 1)
+    complement = 1.0 - alpha
+    for i in range(period, len(arr)):
+        out[i] = arr[i] * alpha + out[i - 1] * complement
+    return pd.Series(out, index=series.index)
+
+
 def compute_all_indicators(candles_df, prefix=""):
     """
     Compute ALL 119 indicators on a candle DataFrame.
@@ -421,6 +529,41 @@ def compute_all_indicators(candles_df, prefix=""):
     indicators[f'{prefix}std_dev_20'] = candles_df['close'].rolling(window=20).std()
     indicators[f'{prefix}std_dev_50'] = candles_df['close'].rolling(window=50).std()
 
+    # ── MT5-compatible indicators (Wilder's smoothing) ────────────────────
+    # WHY: MT5 built-ins use Wilder's smoothing, not standard EMA.
+    #      These mt5_ prefixed columns match MT5 iRSI/iATR exactly.
+    #      Use for prop firms running on MT5 (e.g. Get Levered).
+    # CHANGED: April 2026 — MT5 indicator parity
+    for period in [7, 14, 21, 28, 50]:
+        indicators[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(candles_df['close'], period)
+
+    for period in [7, 14, 21, 28, 50, 100]:
+        indicators[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
+            candles_df['high'], candles_df['low'], candles_df['close'], period)
+
+    # MT5 MACD (SMA signal line)
+    _m_std, _ms_std, _md_std = _mt5_macd(candles_df['close'], 12, 26, 9)
+    indicators[f'{prefix}mt5_macd_std'] = _m_std
+    indicators[f'{prefix}mt5_macd_std_signal'] = _ms_std
+    indicators[f'{prefix}mt5_macd_std_diff'] = _md_std
+    _m_fast, _ms_fast, _md_fast = _mt5_macd(candles_df['close'], 5, 13, 5)
+    indicators[f'{prefix}mt5_macd_fast'] = _m_fast
+    indicators[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
+    indicators[f'{prefix}mt5_macd_fast_diff'] = _md_fast
+
+    # MT5 Stochastic (SMA smoothing)
+    for period in [14, 21]:
+        _k, _d = _mt5_stochastic(
+            candles_df['high'], candles_df['low'], candles_df['close'], period)
+        indicators[f'{prefix}mt5_stoch_{period}_k'] = _k
+        indicators[f'{prefix}mt5_stoch_{period}_d'] = _d
+
+    # MT5 EMA (SMA-seeded — matches MT5 iMA with MODE_EMA)
+    for period in [9, 20, 50, 100, 200]:
+        mt5_ema = _mt5_ema(candles_df['close'], period)
+        indicators[f'{prefix}mt5_ema_{period}_distance'] = (
+            (candles_df['close'] - mt5_ema) / mt5_ema * 100)
+
     # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
     #      never saw those values at the time of the early trades, so
     #      training on them is a look-ahead leak. Keep ffill (which is
@@ -516,6 +659,16 @@ INDICATOR_GROUP_MAP = {
     "mass_index": "mass_index",
     "dpo": "dpo",
     "std_dev": "std_dev",
+    # MT5-compatible indicators (Wilder's smoothing / SMA seeding)
+    "mt5_rsi": "mt5_rsi",
+    "mt5_atr": "mt5_atr",
+    "mt5_macd": "mt5_macd",
+    "mt5_macd_std": "mt5_macd",
+    "mt5_macd_std_diff": "mt5_macd",
+    "mt5_macd_fast": "mt5_macd",
+    "mt5_macd_fast_diff": "mt5_macd",
+    "mt5_stoch": "mt5_stoch",
+    "mt5_ema": "mt5_ema",
 }
 
 
@@ -858,6 +1011,42 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     if only is None or 'std_dev' in only:
         indicators[f'{prefix}std_dev_20'] = df['close'].rolling(window=20).std()
         indicators[f'{prefix}std_dev_50'] = df['close'].rolling(window=50).std()
+
+    # ── MT5-compatible indicators (Wilder's smoothing) ────────────────────
+    # WHY: MT5 built-ins use Wilder's smoothing, not standard EMA.
+    #      These mt5_ prefixed columns match MT5 iRSI/iATR exactly.
+    # CHANGED: April 2026 — MT5 indicator parity
+    if only is None or 'mt5_rsi' in only or 'rsi' in only:
+        for period in [7, 14, 21, 28, 50]:
+            indicators[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(df['close'], period)
+
+    if only is None or 'mt5_atr' in only or 'atr' in only:
+        for period in [7, 14, 21, 28, 50, 100]:
+            indicators[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
+                df['high'], df['low'], df['close'], period)
+
+    if only is None or 'mt5_macd' in only or 'macd' in only:
+        _m_std, _ms_std, _md_std = _mt5_macd(df['close'], 12, 26, 9)
+        indicators[f'{prefix}mt5_macd_std'] = _m_std
+        indicators[f'{prefix}mt5_macd_std_signal'] = _ms_std
+        indicators[f'{prefix}mt5_macd_std_diff'] = _md_std
+        _m_fast, _ms_fast, _md_fast = _mt5_macd(df['close'], 5, 13, 5)
+        indicators[f'{prefix}mt5_macd_fast'] = _m_fast
+        indicators[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
+        indicators[f'{prefix}mt5_macd_fast_diff'] = _md_fast
+
+    if only is None or 'mt5_stoch' in only or 'stoch' in only:
+        for period in [14, 21]:
+            _k, _d = _mt5_stochastic(
+                df['high'], df['low'], df['close'], period)
+            indicators[f'{prefix}mt5_stoch_{period}_k'] = _k
+            indicators[f'{prefix}mt5_stoch_{period}_d'] = _d
+
+    if only is None or 'mt5_ema' in only or 'ema' in only:
+        for period in [9, 20, 50, 100, 200]:
+            mt5_ema = _mt5_ema(df['close'], period)
+            indicators[f'{prefix}mt5_ema_{period}_distance'] = (
+                (df['close'] - mt5_ema) / mt5_ema * 100)
 
     # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
     #      never saw those values at the time of the early trades, so

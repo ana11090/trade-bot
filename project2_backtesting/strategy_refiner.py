@@ -2135,7 +2135,8 @@ def deep_optimize_generate(
         log.info(f"  [GENERATE] Loading {total} indicators across {len(required)} TFs")
 
         indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=required)
+            data_dir, candles_df['timestamp'], required_indicators=required,
+            entry_tf=timeframe)
         log.info(f"  [GENERATE] Built {len(indicators_df.columns)} indicator columns")
 
     # ── Pre-compute SMART/REGIME features ONCE ────────────────────────────

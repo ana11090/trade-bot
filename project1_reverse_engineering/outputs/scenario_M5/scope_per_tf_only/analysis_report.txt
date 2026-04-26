@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-25T15:25:51.655816
-Trades analyzed: 1106 | Features: 629
+Generated: 2026-04-26T21:15:35.215850
+Trades analyzed: 1106 | Features: 759
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 629
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=69.8%, test=39.6%
-   1. M5_sma_50_distance                            2.5%
-   2. M5_distance_to_swing_high                     2.4%
-   3. M5_candle_range                               2.3%
-   4. M5_distance_to_rolling_level_618              2.1%
-   5. M5_distance_to_rolling_level_786              2.0%
-   6. M5_bb_20_3_width                              1.9%
-   7. M5_std_dev_20                                 1.9%
-   8. M5_roc_20                                     1.8%
-   9. M5_bb_20_2_width                              1.8%
-  10. M5_minus_di                                   1.7%
+  Model accuracy: train=70.6%, test=39.6%
+   1. M5_distance_to_swing_high                     2.1%
+   2. M5_distance_to_rolling_level_786              1.9%
+   3. M5_sma_50_distance                            1.9%
+   4. M5_candle_range                               1.8%
+   5. M5_bb_20_3_width                              1.7%
+   6. M5_distance_to_rolling_level_618              1.6%
+   7. M5_bb_20_2_width                              1.6%
+   8. M5_bear_power                                 1.5%
+   9. M5_minus_di                                   1.5%
+  10. M5_roc_20                                     1.5%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -38,7 +38,7 @@ Trades analyzed: 1106 | Features: 629
     Win rate: 91% | Avg pips: +594
 
   RULE 2 (WIN, conf: 81%, 36 trades)
-    IF M5_atr_14 <= 9.5491 AND M5_macd_std <= -5.6341
+    IF M5_atr_14 <= 9.5491 AND M5_mt5_macd_std <= -5.6341
     Win rate: 81% | Avg pips: +332
 
   RULE 3 (WIN, conf: 79%, 33 trades)
@@ -46,7 +46,7 @@ Trades analyzed: 1106 | Features: 629
     Win rate: 79% | Avg pips: +444
 
   RULE 4 (WIN, conf: 100%, 20 trades)
-    IF M5_atr_14 <= 9.5491 AND M5_macd_std > -5.6341 AND M5_minus_di <= 21.2915 AND M5_cci_14 <= -79.7986
+    IF M5_atr_14 <= 9.5491 AND M5_mt5_macd_std > -5.6341 AND M5_minus_di <= 21.2915 AND M5_cci_14 <= -79.7986
     Win rate: 100% | Avg pips: +400
 
   RULE 5 (WIN, conf: 85%, 20 trades)
@@ -54,10 +54,10 @@ Trades analyzed: 1106 | Features: 629
     Win rate: 85% | Avg pips: +812
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 38 trades (3.4%), WR 90%, avg +551 pips, avg dur 0min
-  'Profit cluster': 158 trades (14.3%), WR 63%, avg +258 pips, avg dur 0min
-  'Profit cluster': 683 trades (61.8%), WR 56%, avg +118 pips, avg dur 0min
-  'Profit cluster': 227 trades (20.5%), WR 57%, avg +87 pips, avg dur 0min
+  'Big winners': 37 trades (3.3%), WR 89%, avg +564 pips, avg dur 0min
+  'Profit cluster': 168 trades (15.2%), WR 62%, avg +251 pips, avg dur 0min
+  'Profit cluster': 684 trades (61.8%), WR 56%, avg +115 pips, avg dur 0min
+  'Profit cluster': 217 trades (19.6%), WR 56%, avg +92 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:

@@ -59,13 +59,14 @@ def _check_missing_features(rules, indicators_df):
     return _needed - _have
 
 
-def _load_data_cached(candles_path, rules=None):
+def _load_data_cached(candles_path, rules=None, entry_tf=None):
     """Load candles + indicators, returning cached copies if path matches last call.
 
     WHY: Old code cached by path only. If rules changed, the cached parquet
          might be missing indicator columns the new rules need. Now checks
          required columns and forces rebuild when missing.
     CHANGED: April 2026 — column-aware cache validation
+    CHANGED: April 2026 — entry_tf param for look-ahead prevention
     """
     global _cached_candles_path, _cached_candles_df, _cached_indicators_df
 
@@ -144,8 +145,18 @@ def _load_data_cached(candles_path, rules=None):
         #      groups were never computed → columns missing → 0 trades.
         #      Passing None = compute everything, no mapping needed.
         # CHANGED: April 2026 — pass None to avoid group name mangling
+
+        # Infer entry_tf from candle path if not provided (e.g. xauusd_H1.csv → H1)
+        _inferred_tf = entry_tf
+        if _inferred_tf is None:
+            import re as _re
+            _tf_match = _re.search(r'_(M1|M5|M15|H1|H4|D1|W1)\.csv$', candles_path, _re.IGNORECASE)
+            if _tf_match:
+                _inferred_tf = _tf_match.group(1).upper()
+
         indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=None)
+            data_dir, candles_df['timestamp'], required_indicators=None,
+            entry_tf=_inferred_tf)
 
         # Verify the rebuild actually produced the needed columns
         _still_missing = _check_missing_features(rules, indicators_df)

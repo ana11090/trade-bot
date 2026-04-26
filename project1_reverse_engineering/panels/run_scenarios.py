@@ -3674,11 +3674,14 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     f"Check the console output for details."))
 
         except Exception as e:
-            def show_error():
-                output_text.insert(tk.END, f"\n\nFATAL ERROR: {str(e)}\n")
-                import traceback
-                output_text.insert(tk.END, traceback.format_exc())
-                messagebox.showerror("Error", f"Execution failed:\n{str(e)}")
+            import traceback
+            _err_msg = str(e)
+            _err_tb = traceback.format_exc()
+            print(f"\n[FATAL] {_err_msg}\n{_err_tb}")
+            def show_error(_msg=_err_msg, _tb=_err_tb):
+                output_text.insert(tk.END, f"\n\nFATAL ERROR: {_msg}\n")
+                output_text.insert(tk.END, _tb)
+                messagebox.showerror("Error", f"Execution failed:\n{_msg}")
             output_text.after(0, show_error)
 
         finally:

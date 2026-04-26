@@ -45,6 +45,16 @@
       "tightness": 0.2176
     },
     {
+      "feature": "H4_mt5_macd_fast_diff",
+      "operator": ">",
+      "threshold": -20.867236,
+      "value": -20.867236,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2309
+    },
+    {
       "feature": "H4_atr_21",
       "operator": "<",
       "threshold": 108.542543,
@@ -53,6 +63,16 @@
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2345
+    },
+    {
+      "feature": "H1_mt5_macd_std_diff",
+      "operator": ">",
+      "threshold": -10.582114,
+      "value": -10.582114,
+      "trade_coverage": 0.9477,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2338
     },
     {
       "feature": "H1_dpo",
@@ -83,16 +103,6 @@
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2418
-    },
-    {
-      "feature": "H4_macd_fast_diff",
-      "operator": ">",
-      "threshold": -16.024032,
-      "value": -16.024032,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.2432
     },
     {
       "feature": "H1_macd_std_signal",
@@ -175,14 +185,34 @@
       "tightness": 0.2795
     },
     {
-      "feature": "H1_macd_fast_diff",
+      "feature": "H1_mt5_macd_fast_diff",
       "operator": ">",
-      "threshold": -6.968978,
-      "value": -6.968978,
+      "threshold": -8.786099,
+      "value": -8.786099,
+      "trade_coverage": 0.9487,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2801
+    },
+    {
+      "feature": "H4_mt5_macd_fast_diff",
+      "operator": "<",
+      "threshold": 14.481184,
+      "value": 14.481184,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2942
+    },
+    {
+      "feature": "H1_mt5_macd_std_diff",
+      "operator": "<",
+      "threshold": 7.078765,
+      "value": 7.078765,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2901
+      "tightness": 0.2967
     },
     {
       "feature": "H4_awesome_oscillator",
@@ -205,16 +235,6 @@
       "tightness": 0.3016
     },
     {
-      "feature": "H4_macd_fast_diff",
-      "operator": "<",
-      "threshold": 11.227873,
-      "value": 11.227873,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3066
-    },
-    {
       "feature": "H1_bull_power",
       "operator": "<",
       "threshold": 40.874431,
@@ -225,14 +245,14 @@
       "tightness": 0.3093
     },
     {
-      "feature": "H1_macd_fast_diff",
+      "feature": "H1_mt5_macd_fast_diff",
       "operator": "<",
-      "threshold": 5.124107,
-      "value": 5.124107,
-      "trade_coverage": 0.9497,
+      "threshold": 6.245461,
+      "value": 6.245461,
+      "trade_coverage": 0.9487,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.3215
+      "tightness": 0.3179
     },
     {
       "feature": "H4_volume_change",
@@ -443,26 +463,6 @@
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.4454
-    },
-    {
-      "feature": "H4_volume_change",
-      "operator": ">",
-      "threshold": -0.483029,
-      "value": -0.483029,
-      "trade_coverage": 0.9486,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4477
-    },
-    {
-      "feature": "H4_ultimate_oscillator",
-      "operator": "<",
-      "threshold": 71.251424,
-      "value": 71.251424,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4517
     }
   ],
   "chosen": [],
@@ -470,7 +470,7 @@
   "top_10_conjunctions": [],
   "params": {
     "target_coverage": 0.85,
-    "per_condition_coverage": 0.74,
+    "per_condition_coverage": 0.75,
     "min_non_nan_frac": 0.85,
     "pool_size": 46,
     "min_cardinality": 2,
@@ -481,6 +481,6 @@
     "winner_selection": "coverage"
   },
   "reason": "No conjunction of 2..10 conditions reached 85% coverage. The bot may use conditions that span beyond the 46-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
-  "generated_at": "2026-04-25T15:27:40.924388",
+  "generated_at": "2026-04-26T21:16:13.405278",
   "scenario": null
 }

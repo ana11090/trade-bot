@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-25T15:27:32.514646
-Trades analyzed: 1106 | Features: 629
+Generated: 2026-04-26T21:16:04.325050
+Trades analyzed: 1106 | Features: 759
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 629
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=76.6%, test=57.7%
-   1. H1_bb_20_2_width                              3.1%
-   2. H1_bb_20_3_width                              3.0%
-   3. H1_std_dev_20                                 2.8%
-   4. H1_lower_shadow                               2.8%
-   5. H1_keltner_width                              2.3%
-   6. H1_atr_7                                      1.9%
-   7. H1_atr_14                                     1.8%
-   8. H1_std_dev_50                                 1.8%
-   9. H1_distance_from_high                         1.7%
-  10. H1_atr_28                                     1.6%
+  Model accuracy: train=76.7%, test=57.7%
+   1. H1_std_dev_20                                 2.6%
+   2. H1_bb_20_3_width                              2.4%
+   3. H1_bb_20_2_width                              2.2%
+   4. H1_lower_shadow                               2.0%
+   5. H1_atr_7                                      1.9%
+   6. H1_keltner_width                              1.8%
+   7. H1_mt5_atr_7                                  1.7%
+   8. H1_bb_50_2_width                              1.4%
+   9. H1_mt5_atr_21                                 1.4%
+  10. H1_atr_28                                     1.4%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -38,7 +38,7 @@ Trades analyzed: 1106 | Features: 629
     Win rate: 68% | Avg pips: +264
 
   RULE 2 (WIN, conf: 70%, 70 trades)
-    IF H1_bb_50_2_width <= 3.2052 AND H1_bb_20_3_width > 1.0054 AND H1_ichimoku_conversion > 1921.4425 AND H1_upper_shadow <= 0.515
+    IF H1_bb_50_2_width <= 3.2052 AND H1_bb_20_2_width > 0.6703 AND H1_ichimoku_conversion > 1921.4425 AND H1_upper_shadow <= 0.515
     Win rate: 70% | Avg pips: +194
 
   RULE 3 (WIN, conf: 78%, 37 trades)
@@ -50,10 +50,10 @@ Trades analyzed: 1106 | Features: 629
     Win rate: 88% | Avg pips: +461
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 51 trades (4.6%), WR 86%, avg +528 pips, avg dur 0min
-  'Profit cluster': 247 trades (22.3%), WR 62%, avg +229 pips, avg dur 0min
-  'Profit cluster': 582 trades (52.6%), WR 56%, avg +104 pips, avg dur 0min
-  'Profit cluster': 226 trades (20.4%), WR 56%, avg +79 pips, avg dur 0min
+  'Big winners': 54 trades (4.9%), WR 83%, avg +496 pips, avg dur 0min
+  'Profit cluster': 222 trades (20.1%), WR 62%, avg +241 pips, avg dur 0min
+  'Profit cluster': 595 trades (53.8%), WR 56%, avg +106 pips, avg dur 0min
+  'Profit cluster': 235 trades (21.2%), WR 56%, avg +78 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -86,8 +86,8 @@ Trades analyzed: 1106 | Features: 629
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  54 outlier trades (4.9%)
-  Anomaly win rate: 83% vs normal: 57%
+  56 outlier trades (5.1%)
+  Anomaly win rate: 84% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

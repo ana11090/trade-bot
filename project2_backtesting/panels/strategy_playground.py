@@ -53,7 +53,8 @@ def _load_data_once():
     # Load all indicators (use cache if available)
     _ALL_TF = {tf: list(set(deps)) for tf, deps in _SMART_DEPENDENCIES.items()}
     indicators = build_multi_tf_indicators(data_dir, candles['timestamp'],
-                                            required_indicators=_ALL_TF)
+                                            required_indicators=_ALL_TF,
+                                            entry_tf=tf)
 
     # Compute SMART features
     try:

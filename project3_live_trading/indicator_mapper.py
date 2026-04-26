@@ -66,6 +66,15 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "RSI({p}) on {tf}",
     }),
+    # MT5 RSI (Wilder's smoothing — same MQL5 code, Python uses _mt5_rsi)
+    (r"^mt5_rsi_(\d+)$", {
+        "mt5_handle_var":  "int handle_rsi_{tf}_{p};",
+        "mt5_handle_init": "handle_rsi_{tf}_{p} = iRSI(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_rsi_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_rsi_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.rsi(df_m{tv_tf}['close'], length={p}).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat RSI({p}) on {tf}",
+    }),
     # ADX
     (r"^adx_(\d+)$", {
         "mt5_handle_var":  "int handle_adx_{tf}_{p};",
@@ -93,18 +102,86 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "ATR({p}) on {tf}",
     }),
+    # MT5 ATR (Wilder's smoothing — same MQL5 code, Python uses _mt5_atr)
+    (r"^mt5_atr_(\d+)$", {
+        "mt5_handle_var":  "int handle_atr_{tf}_{p};",
+        "mt5_handle_init": "handle_atr_{tf}_{p} = iATR(NULL,{mt5_tf},{p}); if(handle_atr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_atr_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.atr(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat ATR({p}) on {tf}",
+    }),
     # WHY: macd_fast_diff = MACD histogram = MACD line - Signal line.
     #      Old code read buffer 2 but MQL5's iMACD only has buffer 0 (MACD)
     #      and buffer 1 (Signal). Buffer 2 doesn't exist → EMPTY_VALUE →
     #      EA never entered trades. Fix: read both buffers and subtract.
     # CHANGED: April 2026 — fix MACD buffer index
+    # CHANGED: April 2026 — fix Fast MACD parameters (5,13,5) vs Standard (12,26,9)
     (r"^macd_fast_diff$", {
-        "mt5_handle_var":  "int handle_macd_{tf};",
-        "mt5_handle_init": "handle_macd_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_{tf}, 0, {mt5_tf}); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_handle_var":  "int handle_macd_fast_{tf};",
+        "mt5_handle_init": "handle_macd_fast_{tf} = iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE); if(handle_macd_fast_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_fast_{tf}, 0, {mt5_tf}); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_fast_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'], fast=5, slow=13, signal=5)['MACDh_5_13_5'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Fast MACD (5,13,5) histogram on {tf}",
+    }),
+    # Standard MACD (12, 26, 9)
+    (r"^macd_std_diff$", {
+        "mt5_handle_var":  "int handle_macd_std_{tf};",
+        "mt5_handle_init": "handle_macd_std_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_std_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double _macd_std_main_{tf} = SafeCopyBuf(handle_macd_std_{tf}, 0, {mt5_tf}); double _macd_std_sig_{tf} = SafeCopyBuf(handle_macd_std_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_std_main_{tf} != EMPTY_VALUE && _macd_std_sig_{tf} != EMPTY_VALUE) ? _macd_std_main_{tf} - _macd_std_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDh_12_26_9'].iloc[-1]",
         "custom_indicator_mt5": False,
-        "description": "MACD histogram on {tf}",
+        "description": "Standard MACD (12,26,9) histogram on {tf}",
+    }),
+    # MT5 MACD variants (SMA signal line — same MQL5 code since iMACD already uses SMA)
+    (r"^mt5_macd_fast_diff$", {
+        "mt5_handle_var":  "int handle_macd_fast_{tf};",
+        "mt5_handle_init": "handle_macd_fast_{tf} = iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE); if(handle_macd_fast_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_fast_{tf}, 0, {mt5_tf}); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_fast_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'], fast=5, slow=13, signal=5)['MACDh_5_13_5'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Fast MACD (5,13,5) histogram on {tf}",
+    }),
+    (r"^mt5_macd_std_diff$", {
+        "mt5_handle_var":  "int handle_macd_std_{tf};",
+        "mt5_handle_init": "handle_macd_std_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_std_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double _macd_std_main_{tf} = SafeCopyBuf(handle_macd_std_{tf}, 0, {mt5_tf}); double _macd_std_sig_{tf} = SafeCopyBuf(handle_macd_std_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_std_main_{tf} != EMPTY_VALUE && _macd_std_sig_{tf} != EMPTY_VALUE) ? _macd_std_main_{tf} - _macd_std_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDh_12_26_9'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Standard MACD (12,26,9) histogram on {tf}",
+    }),
+    (r"^mt5_macd_fast$", {
+        "mt5_handle_var":  "int handle_macd_fast_{tf};",
+        "mt5_handle_init": "handle_macd_fast_{tf} = iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE); if(handle_macd_fast_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_fast_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'], fast=5, slow=13, signal=5)['MACD_5_13_5'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Fast MACD (5,13,5) line on {tf}",
+    }),
+    (r"^mt5_macd_std$", {
+        "mt5_handle_var":  "int handle_macd_std_{tf};",
+        "mt5_handle_init": "handle_macd_std_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_std_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_std_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACD_12_26_9'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Standard MACD (12,26,9) line on {tf}",
+    }),
+    (r"^mt5_macd_fast_signal$", {
+        "mt5_handle_var":  "int handle_macd_fast_{tf};",
+        "mt5_handle_init": "handle_macd_fast_{tf} = iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE); if(handle_macd_fast_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_fast_{tf}, 1, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'], fast=5, slow=13, signal=5)['MACDs_5_13_5'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Fast MACD (5,13,5) signal on {tf}",
+    }),
+    (r"^mt5_macd_std_signal$", {
+        "mt5_handle_var":  "int handle_macd_std_{tf};",
+        "mt5_handle_init": "handle_macd_std_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_std_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_macd_std_{tf}, 1, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDs_12_26_9'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Standard MACD (12,26,9) signal on {tf}",
     }),
     # SMA distance
     # WHY: Python formula (shared/indicator_utils.py line 58) is
@@ -333,6 +410,21 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "Distance from EMA({p}) as % of price on {tf}",
     }),
+    # MT5 EMA distance (SMA-seeded EMA — same MQL5 code since iMA already uses SMA seeding)
+    (r"^mt5_ema_(\d+)_distance$", {
+        "mt5_handle_var":  "int handle_ema_{tf}_{p};",
+        "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": (
+            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
+            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "else { double _ema_val_{tf}_{p} = _tmp_buf; "
+            "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
+            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
+        ),
+        "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Distance from EMA({p}) as % of price on {tf}",
+    }),
 
     # ── EMA above (boolean: ema_fast > ema_slow) ─────────────────────────
     (r"^ema_(\d+)_above_(\d+)$", {
@@ -450,6 +542,23 @@ INDICATOR_PATTERNS = [
         "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Stochastic %K({p}) on {tf}",
+    }),
+    # MT5 Stochastic (SMA smoothing — same MQL5 code since iStochastic uses MODE_SMA)
+    (r"^mt5_stoch_(\d+)_k$", {
+        "mt5_handle_var":  "int handle_stoch_{tf}_{p};",
+        "mt5_handle_init": "handle_stoch_{tf}_{p} = iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH); if(handle_stoch_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_stoch_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Stochastic %K({p}) on {tf}",
+    }),
+    (r"^mt5_stoch_(\d+)_d$", {
+        "mt5_handle_var":  "int handle_stoch_{tf}_{p};",
+        "mt5_handle_init": "handle_stoch_{tf}_{p} = iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH); if(handle_stoch_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_stoch_{tf}_{p}, 1, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHd_{p}_3_3'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-compat Stochastic %D({p}) on {tf}",
     }),
 
     # ── Williams %R ───────────────────────────────────────────────────────
@@ -582,10 +691,8 @@ SMART_FORMULAS = {
     #      Tag these entries so callers can detect TSI usage before generating EAs.
     # CHANGED: April 2026 — Phase 60 Fix 4 — TSI explicitly flagged unsupported
     #          (audit Part D HIGH #11)
-    'SMART_tsi_bullish':         {'type': 'compare_const',  'a': 'H1_tsi', 'op': '>', 'value': 0,
-                                  'live_unsupported': True, 'live_note': 'TSI not in MT5 built-ins'},
-    'SMART_tsi_strong':          {'type': 'compare_const_abs', 'a': 'H1_tsi', 'op': '>', 'value': 20,
-                                  'live_unsupported': True, 'live_note': 'TSI not in MT5 built-ins'},
+    'SMART_tsi_bullish':         {'type': 'compare_const',  'a': 'H1_tsi', 'op': '>', 'value': 0},
+    'SMART_tsi_strong':          {'type': 'compare_const_abs', 'a': 'H1_tsi', 'op': '>', 'value': 20},
 }
 
 # ── REGIME feature formulas ───────────────────────────────────────────────────
@@ -652,8 +759,12 @@ def _mql5_sub_expr(feat_name, uid=''):
     if re.match(r'^atr_\d+$', ind):
         return ([f'double {buf}[1]; CopyBuffer(iATR(NULL,{mt5_tf},{p}),0,0,1,{buf});'],
                 f'{buf}[0]')
-    # MACD histogram
+    # MACD histogram - Fast MACD (5,13,5)
     if ind == 'macd_fast_diff':
+        return ([f'double {buf}[1]; CopyBuffer(iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE),2,0,1,{buf});'],
+                f'{buf}[0]')
+    # MACD histogram - Standard MACD (12,26,9)
+    if ind == 'macd_std_diff':
         return ([f'double {buf}[1]; CopyBuffer(iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE),2,0,1,{buf});'],
                 f'{buf}[0]')
     # BB width
@@ -737,16 +848,32 @@ def _mql5_sub_expr(feat_name, uid=''):
             f'for(int _si=1;_si<20;_si++){{double _sc=iClose(NULL,{mt5_tf},_si);if(_sc<{lo_buf}){lo_buf}=_sc;if(_sc>{hi_buf}){hi_buf}=_sc;}}',
         ]
         return (lines, f'((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
-    # WHY: TSI (True Strength Index) requires double EMA of momentum which MT5 lacks as built-in.
-    #      Inline computation is complex (25+ lines with nested loops). Risk of subtle bugs.
-    #      Instead of silently returning 0, FAIL LOUD so user knows TSI features are broken.
-    # CHANGED: April 2026 — make TSI failure loud instead of silent (audit bug family #7, FIX 8 Option B)
+    # TSI (True Strength Index) — inline computation via double-EMA of momentum.
+    # TSI = 100 * EMA(EMA(mom, fast), slow) / EMA(EMA(|mom|, fast), slow)
+    # Python: ta.momentum.TSIIndicator(close, window_slow=25, window_fast=13)
+    # CHANGED: April 2026 — implement TSI inline for MT5 (was previously unsupported)
     if ind == 'tsi':
+        # Compute TSI using nested EMA loop. Needs ~50 bars warmup.
+        # fast=13, slow=25. Read 80 bars of close to ensure warmup.
+        n_bars = 80
         return ([
-            f'Print("ERROR: TSI indicator not implemented for feature {feat_name}");',
-            f'Print("FIX: Either remove TSI features from rules OR implement custom TSI indicator");',
-            f'indicatorFailed = true;'
-        ], '0.0')
+            f'double _tsi_close_{uid}[{n_bars}];',
+            f'if(CopyClose(NULL,{mt5_tf},0,{n_bars},_tsi_close_{uid}) < {n_bars}) {{ Print("TSI: not enough bars"); }}',
+            f'// Compute momentum and apply double-EMA',
+            f'double _tsi_mom[{n_bars-1}], _tsi_absmom[{n_bars-1}];',
+            f'for(int _ti=0; _ti<{n_bars-1}; _ti++) {{ _tsi_mom[_ti] = _tsi_close_{uid}[_ti+1] - _tsi_close_{uid}[_ti]; _tsi_absmom[_ti] = MathAbs(_tsi_mom[_ti]); }}',
+            f'// First EMA (fast=13) on momentum and |momentum|',
+            f'double _tsi_ema1[{n_bars-1}], _tsi_ema1a[{n_bars-1}];',
+            f'double _af1 = 2.0/14.0;',  # alpha = 2/(13+1)
+            f'_tsi_ema1[0] = _tsi_mom[0]; _tsi_ema1a[0] = _tsi_absmom[0];',
+            f'for(int _ti=1; _ti<{n_bars-1}; _ti++) {{ _tsi_ema1[_ti] = _tsi_mom[_ti]*_af1 + _tsi_ema1[_ti-1]*(1.0-_af1); _tsi_ema1a[_ti] = _tsi_absmom[_ti]*_af1 + _tsi_ema1a[_ti-1]*(1.0-_af1); }}',
+            f'// Second EMA (slow=25) on the first EMA results',
+            f'double _tsi_ema2[{n_bars-1}], _tsi_ema2a[{n_bars-1}];',
+            f'double _af2 = 2.0/26.0;',  # alpha = 2/(25+1)
+            f'_tsi_ema2[0] = _tsi_ema1[0]; _tsi_ema2a[0] = _tsi_ema1a[0];',
+            f'for(int _ti=1; _ti<{n_bars-1}; _ti++) {{ _tsi_ema2[_ti] = _tsi_ema1[_ti]*_af2 + _tsi_ema2[_ti-1]*(1.0-_af2); _tsi_ema2a[_ti] = _tsi_ema1a[_ti]*_af2 + _tsi_ema2a[_ti-1]*(1.0-_af2); }}',
+            f'double _tsi_val_{uid} = (MathAbs(_tsi_ema2a[{n_bars-2}]) > 0.000001) ? 100.0 * _tsi_ema2[{n_bars-2}] / _tsi_ema2a[{n_bars-2}] : 0.0;',
+        ], f'_tsi_val_{uid}')
     # Unknown
     return ([f'// TODO: {feat_name} — unknown sub-feature'], '0.0')
 
@@ -772,6 +899,8 @@ def _py_sub_expr(feat_name):
     if re.match(r'^atr_\d+$', ind):
         return f"ta.atr({df}['high'],{df}['low'],{df}['close'],length={p}).iloc[-1]"
     if ind == 'macd_fast_diff':
+        return f"ta.macd({df}['close'], fast=5, slow=13, signal=5)['MACDh_5_13_5'].iloc[-1]"
+    if ind == 'macd_std_diff':
         return f"ta.macd({df}['close'])['MACDh_12_26_9'].iloc[-1]"
     if re.match(r'^bb_\d+_[\d.]+_width$', ind):
         return (f"(ta.bbands({df}['close'],length={p1},std={p2})[f'BBU_{p1}_{p2}_0'].iloc[-1]"
@@ -905,6 +1034,8 @@ def _generate_smart_mql(feature_name, formula, platform):
             elif re.match(r'^atr_\d+$', ind):
                 init = f'iATR(NULL,{mt5_tf},{pr})'
             elif ind == 'macd_fast_diff':
+                init = f'iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE)'
+            elif ind == 'macd_std_diff':
                 init = f'iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE)'
             elif re.match(r'^cci_\d+$', ind):
                 init = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
@@ -926,7 +1057,7 @@ def _generate_smart_mql(feature_name, formula, platform):
                 return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
                         'read_code': _rc(lines), 'custom_indicator': False,
                         'description': f'Direction of {col}'}
-            buf_n = 2 if ind == 'macd_fast_diff' else 0
+            buf_n = 2 if ind in ('macd_fast_diff', 'macd_std_diff') else 0
             lines = [
                 f'double {buf}[4]; CopyBuffer({init},{buf_n},0,4,{buf});',
                 f'double val_{var_name} = {buf}[0] - {buf}[3];',
@@ -948,6 +1079,8 @@ def _generate_smart_mql(feature_name, formula, platform):
             elif re.match(r'^atr_\d+$', ind):
                 init = f'iATR(NULL,{mt5_tf},{pr})'
             elif ind == 'macd_fast_diff':
+                init = f'iMACD(NULL,{mt5_tf},5,13,5,PRICE_CLOSE)'
+            elif ind == 'macd_std_diff':
                 init = f'iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE)'
             elif re.match(r'^cci_\d+$', ind):
                 init = f'iCCI(NULL,{mt5_tf},{pr},PRICE_TYPICAL)'
@@ -979,7 +1112,7 @@ def _generate_smart_mql(feature_name, formula, platform):
                 return {'var_name': var_name, 'handle_var': '', 'handle_init': '',
                         'read_code': _rc(lines), 'custom_indicator': False,
                         'description': f'Acceleration of {col}'}
-            buf_n = 2 if ind == 'macd_fast_diff' else 0
+            buf_n = 2 if ind in ('macd_fast_diff', 'macd_std_diff') else 0
             lines = [
                 f'double {buf}[7]; CopyBuffer({init},{buf_n},0,7,{buf});',
                 f'double val_{var_name} = ({buf}[0]-{buf}[3]) - ({buf}[3]-{buf}[6]);',
@@ -1311,6 +1444,8 @@ def _generate_smart_mql(feature_name, formula, platform):
                 # CHANGED: April 2026 — Phase 64 Fix 2
                 expr = f"(ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-1] - ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr}).iloc[-4])"
             elif ind == 'macd_fast_diff':
+                expr = f"(ta.macd({df}['close'],fast=5,slow=13,signal=5)['MACDh_5_13_5'].iloc[-1] - ta.macd({df}['close'],fast=5,slow=13,signal=5)['MACDh_5_13_5'].iloc[-4])"
+            elif ind == 'macd_std_diff':
                 expr = f"(ta.macd({df}['close'],fast=12,slow=26,signal=9)['MACDh_12_26_9'].iloc[-1] - ta.macd({df}['close'],fast=12,slow=26,signal=9)['MACDh_12_26_9'].iloc[-4])"
             elif re.match(r'^bb_\d+_[\d.]+_width$', ind):
                 p1b = p_info['params'][0] if p_info['params'] else '20'
@@ -1347,6 +1482,14 @@ def _generate_smart_mql(feature_name, formula, platform):
                 _cci = f"ta.cci({df}['high'],{df}['low'],{df}['close'],length={pr})"
                 expr = (f"(({_cci}.iloc[-1]-{_cci}.iloc[-4])"
                         f" - ({_cci}.iloc[-4]-{_cci}.iloc[-7]))")
+            elif ind == 'macd_fast_diff':
+                _macd = f"ta.macd({df}['close'],fast=5,slow=13,signal=5)['MACDh_5_13_5']"
+                expr = (f"(({_macd}.iloc[-1]-{_macd}.iloc[-4])"
+                        f" - ({_macd}.iloc[-4]-{_macd}.iloc[-7]))")
+            elif ind == 'macd_std_diff':
+                _macd = f"ta.macd({df}['close'])['MACDh_12_26_9']"
+                expr = (f"(({_macd}.iloc[-1]-{_macd}.iloc[-4])"
+                        f" - ({_macd}.iloc[-4]-{_macd}.iloc[-7]))")
             else:
                 # Phase 64 Fix 3: log instead of silent 0.0
                 expr = f"(print('WARNING: accel not implemented for {col}') or 0.0)"

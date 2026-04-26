@@ -182,6 +182,14 @@ def _generate_mt5_test(win_rules, strategy_name):
 //--- Indicator handles
 {handle_decls_str}
 
+//+------------------------------------------------------------------+
+//| Get bar shift for indicator reading (avoid look-ahead bias)       |
+//+------------------------------------------------------------------+
+int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
+{{
+   return 1;  // Use last completed bar for testing
+}}
+
 void OnStart()
 {{
    int total  = 0;

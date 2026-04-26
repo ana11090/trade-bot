@@ -116,7 +116,8 @@ def _build_candle_matrix_for_tf(tf, data_dir, trade_candle_set, progress_cb):
     # Build full multi-TF indicators on this TF's timestamp spine.
     _log(f"  [{tf}] merging cross-TF indicators...", progress_cb)
     spine = tf_ind['timestamp']
-    full_ind = build_multi_tf_indicators(data_dir, spine, required_indicators=None)
+    full_ind = build_multi_tf_indicators(data_dir, spine, required_indicators=None,
+                                         entry_tf=tf)
     full_ind['timestamp'] = spine.values
 
     # Label: 1 if this candle's timestamp is in the trade-bucket set for this TF

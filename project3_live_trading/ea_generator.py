@@ -21,6 +21,22 @@ OPERATOR_MAP_MQL = {'>': '>', '>=': '>=', '<': '<', '<=': '<=', '==': '==', '!='
 OPERATOR_MAP_PY  = OPERATOR_MAP_MQL
 
 
+def _mql_condition_expr(val_expr, op, param_expr):
+    """Build an MQL5 condition expression, using tolerance for == and !=.
+
+    WHY: Python backtester uses abs(a-b) < 0.001 for == comparisons.
+         MQL5 strict == on doubles almost never matches. Use the same
+         tolerance so EA behavior matches Python.
+    CHANGED: April 2026 — float equality tolerance for EA/Python parity
+    """
+    if op == '==':
+        return f'MathAbs({val_expr} - {param_expr}) < 0.001'
+    elif op == '!=':
+        return f'MathAbs({val_expr} - {param_expr}) >= 0.001'
+    mql_op = OPERATOR_MAP_MQL.get(op, '>')
+    return f'{val_expr} {mql_op} {param_expr}'
+
+
 def generate_ea(
     strategy,
     platform='mt5',
@@ -163,16 +179,13 @@ def generate_ea(
 
     sl_pips = exit_params.get('sl_pips', 150)
 
-    # WHY: XAUUSD and other metals use 2-digit pricing (e.g., 4379.53) where
-    #      1 pip = 0.01 points. Forex-style sl_pips=150 means 150*0.01=1.5 points,
-    #      which is 10x too small for metals (gets stopped out immediately).
-    #      ATR on XAUUSD H1 is typically 9-15 points = 900-1500 pips.
-    #      If backtest used ATR-based SL but user generates a fixed-pip EA,
-    #      we must scale the pip values to match real market volatility.
-    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-    if _ea_inst == 'metals' and sl_pips > 0 and sl_pips < 1000:
-        sl_pips *= 10
-        print(f"[EA GEN] ⚠ Metals detected: scaled SL from {sl_pips//10} to {sl_pips} pips")
+    # WHY: The Python backtester already uses pip_size=0.01 for XAUUSD, so
+    #      sl_pips values from the backtest are already in the correct scale.
+    #      The old 10x metals multiplier (audit bug #10) caused a mismatch:
+    #      backtest SL=150 pips (1.50 price) vs EA SL=1500 pips (15.0 price).
+    #      GetPipSize() in the EA returns 0.01 for 2-digit metals, so the
+    #      pip values must pass through UNSCALED to match the backtest.
+    # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
     if _ea_leverage > 0 and account_size > 0 and sl_pips > 0:
         _approx_prices = {'XAUUSD': 3300, 'XAGUSD': 30, 'EURUSD': 1.08, 'GBPUSD': 1.26,
@@ -282,41 +295,31 @@ def generate_ea(
         sl_pips = exit_params.get('sl_pips', 150)
         tp_pips = exit_params.get('tp_pips', 0 if exit_class in ('TimeBased', 'IndicatorExit') else 300)
 
-        # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
-        #      Apply same scaling here for verification report generation.
-        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
+        # WHY: Pip values from backtest are already correct for all instruments.
+        #      Old 10x metals scaling removed — it caused SL/TP mismatch.
+        # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
         try:
             from shared.prop_firm_engine import get_instrument_type
             _inst_type = get_instrument_type(symbol)
-            if _inst_type == 'metals':
-                if sl_pips > 0 and sl_pips < 1000:
-                    sl_pips *= 10
-                if tp_pips > 0 and tp_pips < 1000:
-                    tp_pips *= 10
         except Exception:
-            pass
+            _inst_type = 'forex'
 
         max_candles = exit_params.get('max_candles', 12)
 
         trail_activation_pips = exit_params.get('trail_activation_pips', exit_params.get('activation_pips', 50))
         trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
 
-        # WHY: Metals need 10x scaling for trailing parameters in verification report.
-        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-        if _inst_type == 'metals':
-            if trail_activation_pips > 0 and trail_activation_pips < 1000:
-                trail_activation_pips *= 10
-            if trail_distance_pips > 0 and trail_distance_pips < 1000:
-                trail_distance_pips *= 10
+        # WHY: Trailing params from backtest are already correct for all instruments.
+        #      Old 10x metals scaling removed — it caused trail param mismatch.
+        # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
         sl_atr_mult = exit_params.get('sl_atr_mult', 2.0)
         tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
         breakeven_pips = exit_params.get('breakeven_pips', 50)
 
-        # WHY: Metals need 10x scaling for breakeven parameter too.
-        # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-        if _inst_type == 'metals' and breakeven_pips > 0 and breakeven_pips < 1000:
-            breakeven_pips *= 10
+        # WHY: Breakeven pips from backtest are already correct for all instruments.
+        #      Old 10x metals scaling removed — it caused breakeven mismatch.
+        # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
         prop_firm_name = prop_firm.get('name', 'None') if prop_firm else 'None'
 
@@ -473,23 +476,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips = exit_params.get('sl_pips', 150)
     tp_pips = exit_params.get('tp_pips', 300)
 
-    # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
-    #      Apply same scaling here for MT5 EA generation.
-    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-    try:
-        from shared.prop_firm_engine import get_instrument_type
-        _inst_type = get_instrument_type(symbol)
-        if _inst_type == 'metals':
-            if sl_pips > 0 and sl_pips < 1000:
-                _old_sl = sl_pips
-                sl_pips *= 10
-                print(f"[EA GEN MT5] Metals detected: scaled SL {_old_sl} → {sl_pips} pips")
-            if tp_pips > 0 and tp_pips < 1000:
-                _old_tp = tp_pips
-                tp_pips *= 10
-                print(f"[EA GEN MT5] Metals detected: scaled TP {_old_tp} → {tp_pips} pips")
-    except Exception:
-        pass
+    # WHY: Pip values from backtest are already correct for all instruments.
+    #      Old 10x metals scaling removed — it caused SL/TP mismatch.
+    #      Python backtester uses pip_size=0.01 for XAUUSD, and the EA's
+    #      GetPipSize() also returns 0.01 for 2-digit metals.
+    # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
     # ── Trailing stop parameters ──────────────────────────────────────
     # WHY: TrailingStop has two thresholds:
@@ -500,18 +491,9 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     trail_activation_pips = exit_params.get('activation_pips', 50)
     trail_distance_pips = exit_params.get('trail_distance_pips', exit_params.get('trail_pips', 100))
 
-    # WHY: Metals need 10x scaling for trailing parameters too.
-    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-    try:
-        from shared.prop_firm_engine import get_instrument_type
-        _inst_type_trail = get_instrument_type(symbol)
-        if _inst_type_trail == 'metals':
-            if trail_activation_pips > 0 and trail_activation_pips < 1000:
-                trail_activation_pips *= 10
-            if trail_distance_pips > 0 and trail_distance_pips < 1000:
-                trail_distance_pips *= 10
-    except Exception:
-        pass
+    # WHY: Trailing params from backtest are already correct for all instruments.
+    #      Old 10x metals scaling removed — it caused trail param mismatch.
+    # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
     # WHY: Direction-dependent code fragments. Old code hardcoded BUY logic
     #      everywhere — for SELL strategies, the EA placed BUY orders with
@@ -519,10 +501,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      direction-aware fragments once and substitute them throughout.
     # CHANGED: April 2026 — direction-aware code generation
     if is_buy:
-        # For BUY: SL below ask, TP above ask, profit when bid > entry
+        # For BUY: SL/TP relative to BID (the monitoring price for longs).
+        # WHY: Python backtester enters at bar OPEN (≈BID) and checks SL
+        #      against bar LOW (≈lowest BID). Using ASK - sl would shrink
+        #      the effective SL distance by the spread, causing far more
+        #      stop-outs than the backtester predicts.
         _entry_call         = "trade.Buy(lots, _Symbol, 0, slPrice, tpPrice, \"EA_Entry\")"
-        _sl_price_expr      = "ask - sl"
-        _tp_price_expr      = "ask + tp"
+        _sl_price_expr      = "bid - sl"
+        _tp_price_expr      = "bid + tp"
         _entry_price_src    = "ask"
         _profit_pips_expr   = "(_bid - _openP) / GetPipSize()"      # for trailing/hybrid
         _be_new_sl_expr     = "_openP + _Point"                      # breakeven SL
@@ -537,10 +523,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         _direction_label    = "BUY"
         _trade_dir_const    = "ORDER_TYPE_BUY"
     else:
-        # For SELL: SL above bid, TP below bid, profit when ask < entry
+        # For SELL: SL/TP relative to ASK (the monitoring price for shorts).
+        # WHY: Python backtester checks SL against bar HIGH (≈highest ASK).
+        #      Using BID + sl would shrink effective SL distance by the spread.
         _entry_call         = "trade.Sell(lots, _Symbol, 0, slPrice, tpPrice, \"EA_Entry\")"
-        _sl_price_expr      = "bid + sl"   # SL above current bid
-        _tp_price_expr      = "bid - tp"   # TP below current bid
+        _sl_price_expr      = "ask + sl"   # SL above current ask
+        _tp_price_expr      = "ask - tp"   # TP below current ask
         _entry_price_src    = "bid"
         _profit_pips_expr   = "(_openP - _ask) / GetPipSize()"      # SELL profits when price drops
         _be_new_sl_expr     = "_openP - _Point"                      # breakeven SL ABOVE entry for sells (wait, see below)
@@ -622,31 +610,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     }
     mql_period = _mql_periods.get(entry_timeframe, 'PERIOD_H1')
 
-    # WHY (Phase 60 Fix 3): Collect TSI-using features before generating
-    #      condition code. TSI is not implemented for MT5 — the indicator
-    #      always returns 0, so rules using SMART_tsi_* can never fire.
-    #      Warn via a prominent comment block in the generated EA and
-    #      via Python logging so the user sees it before deployment.
-    # CHANGED: April 2026 — Phase 60 Fix 3 — TSI incompatibility warning
-    #          (audit Part D HIGH #11)
-    _TSI_FEATURES = {'SMART_tsi_bullish', 'SMART_tsi_strong'}
-    _tsi_rules = []
-    for _ri, _r in enumerate(win_rules, 1):
-        _tsi_conds = [c['feature'] for c in _r.get('conditions', [])
-                      if c.get('feature', '') in _TSI_FEATURES]
-        if _tsi_conds:
-            _tsi_rules.append(f"Rule {_ri}: {', '.join(_tsi_conds)}")
-    if _tsi_rules:
-        import logging as _log_mod
-        _logger = _log_mod.getLogger(__name__)
-        _logger.warning(
-            "[EA GENERATOR] %d rule(s) use TSI features which are NOT "
-            "implemented for MT5 live trading. These rules will NEVER "
-            "fire in live because SMART_tsi_bullish / SMART_tsi_strong "
-            "always evaluate to 0. Rules affected: %s. "
-            "Consider removing TSI conditions or replacing with RSI/MACD.",
-            len(_tsi_rules), '; '.join(_tsi_rules)
-        )
+    # NOTE: TSI is now implemented inline for MT5 (April 2026 — double-EMA
+    #       computation in indicator_mapper._mql5_sub_expr). The previous
+    #       warning block was removed as SMART_tsi_bullish/tsi_strong now
+    #       work in live trading.
 
     # WHY: Old code AND'd ALL conditions from ALL rules. For multi-rule
     #      strategies the EA required all 42 conditions true simultaneously.
@@ -676,11 +643,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             param_name = f"Rule1_Cond{ci}_{safe_name[:20]}"
             mql = get_mql_code(feat, 'mt5')
             var_n = mql['var_name']
-            mql_op = OPERATOR_MAP_MQL.get(op, '>')
+            cond_expr = _mql_condition_expr(f'val_{var_n}', op, param_name)
             condition_checks.append(
                 f'   // Condition {ci}: {feat} {op} {cond.get("value", 0):.4f}\n'
                 f'   {mql["read_code"]}\n'
-                f'   if(!(val_{var_n} {mql_op} {param_name})) entrySignal = false;\n'
+                f'   if(!({cond_expr})) entrySignal = false;\n'
             )
     else:
         # Multiple rules — OR between rules, AND within each
@@ -703,10 +670,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 param_name = f"Rule{ri}_Cond{ci}_{safe_name[:20]}"
                 mql = get_mql_code(feat, 'mt5')
                 var_n = mql['var_name']
-                mql_op = OPERATOR_MAP_MQL.get(op, '>')
+                cond_expr = _mql_condition_expr(f'val_{var_n}', op, param_name)
                 condition_checks.append(
                     f'      {mql["read_code"]}\n'
-                    f'      if(!(val_{var_n} {mql_op} {param_name})) rule{ri} = false;\n'
+                    f'      if(!({cond_expr})) rule{ri} = false;\n'
                 )
             condition_checks.append(
                 f'      if(rule{ri}) entrySignal = true;\n'
@@ -862,21 +829,18 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                     f'   }}')
 
             if total_alert is not None:
-                extra_inputs.append(f'input double EvalTotalDDAlert = {total_alert}; // EA stops here (firm blows at {dd_total_pct}%)')
+                extra_inputs.append(f'input double EvalTotalDDAlert = {total_alert}; // Alert only (firm blows at {dd_total_pct}%)')
+                extra_globals.append('bool g_totalDDAlertSent = false;')
                 extra_tick_checks.append(
                     f'   // [{rname}] Total DD alert at {total_alert}% (firm limit: {dd_total_pct}%)\n'
-                    f'   // WHY: DD is % of starting balance, not % of HWM. Old code\n'
-                    f'   //      used g_hwm as denominator → wrong alert thresholds\n'
-                    f'   //      whenever balance grew above starting. April 2026 fix.\n'
-                    f'   if(UsePropFirmMode)\n'
+                    f'   // NOTE: Alert only (once) — does NOT stop trading.\n'
+                    f'   if(UsePropFirmMode && !g_totalDDAlertSent)\n'
                     f'   {{\n'
                     f'      double totalDDPct = (g_startingBalance > 0) ? (g_hwm - equity) / g_startingBalance * 100.0 : 0;\n'
                     f'      if(totalDDPct >= EvalTotalDDAlert)\n'
                     f'      {{\n'
-                    f'         g_stopForever = true;\n'
-                    f'         CloseAllPositions("TotalDDBuffer");\n'
-                    f'         Alert("[EVAL] Total DD buffer hit: " + DoubleToString(totalDDPct,1) + "%");\n'
-                    f'         return;\n'
+                    f'         Alert("[EVAL] Total DD buffer hit: " + DoubleToString(totalDDPct,1) + "% — trading continues");\n'
+                    f'         g_totalDDAlertSent = true;\n'
                     f'      }}\n'
                     f'   }}')
 
@@ -995,21 +959,26 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_globals.append('double  g_originalStartingBalance = 0.0;   // Original starting balance — NEVER overwritten')
     extra_globals.append('bool    g_ddLocked                = false; // True when trailing DD has locked')
 
-    # Payout cycle tracking globals (always)
-    extra_globals.append('datetime g_payoutWaitStart    = 0;     // When bot entered waiting state')
-    extra_globals.append('datetime g_lastReminderSent   = 0;     // Last reminder email time')
-    extra_globals.append('bool     g_initialAlertSent   = false; // True after first stopped-state email')
-    extra_globals.append('bool     g_prevPayoutFlag     = false; // Rising-edge for PayoutReceived')
+    # WHY: Payout cycle tracking only applies to funded accounts. In eval
+    #      mode there is no payout — you pass the eval and move to funded.
+    #      g_stopForever must be permanent in eval (no payout-based recovery).
+    # CHANGED: April 2026 — skip payout logic for eval stage
+    # Globals are always declared (needed by SaveDDState for compilation)
     extra_globals.append('bool     g_postPayoutLockApplied = false;')
-    extra_globals.append('bool     g_prevWithdrawnFlag     = false;')
+    if stage != 'evaluation':
+        extra_globals.append('datetime g_payoutWaitStart    = 0;     // When bot entered waiting state')
+        extra_globals.append('datetime g_lastReminderSent   = 0;     // Last reminder email time')
+        extra_globals.append('bool     g_initialAlertSent   = false; // True after first stopped-state email')
+        extra_globals.append('bool     g_prevPayoutFlag     = false; // Rising-edge for PayoutReceived')
+        extra_globals.append('bool     g_prevWithdrawnFlag     = false;')
 
-    # Payout inputs (always — manual confirmation flow)
-    extra_inputs.append('input bool   PayoutReceived          = false; // Set TRUE after confirming payout in firm dashboard')
-    extra_inputs.append('input int    ReminderFirstAfterDays  = 5;     // Send first reminder after N days')
-    extra_inputs.append('input int    ReminderRepeatEveryDays = 2;     // Repeat every N days until confirmed')
+        # Payout inputs (funded only — manual confirmation flow)
+        extra_inputs.append('input bool   PayoutReceived          = false; // Set TRUE after confirming payout in firm dashboard')
+        extra_inputs.append('input int    ReminderFirstAfterDays  = 5;     // Send first reminder after N days')
+        extra_inputs.append('input int    ReminderRepeatEveryDays = 2;     // Repeat every N days until confirmed')
 
-    if post_payout.get('dd_locks_at') == 'initial_balance':
-        extra_inputs.append('input bool   PayoutWithdrawn         = false; // Set TRUE after withdrawing payout — locks DD floor permanently')
+        if post_payout.get('dd_locks_at') == 'initial_balance':
+            extra_inputs.append('input bool   PayoutWithdrawn         = false; // Set TRUE after withdrawing payout — locks DD floor permanently')
 
     # OnInit: init all globals + restore from GlobalVariables (survives MT5 restart)
     # WHY: g_originalStartingBalance is set ONCE at the very first OnInit
@@ -1038,13 +1007,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     extra_init.append(f'   g_hwm              = g_startingBalance;')
     extra_init.append(f'   g_ddFloor          = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
     extra_init.append(f'   g_dailyReference   = MathMax(AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY));')
-    extra_init.append(f'   g_payoutWaitStart  = 0;')
-    extra_init.append(f'   g_lastReminderSent = 0;')
-    extra_init.append(f'   g_initialAlertSent = false;')
-    extra_init.append(f'   g_prevPayoutFlag   = PayoutReceived;')
-    if post_payout.get('dd_locks_at') == 'initial_balance':
-        extra_init.append(f'   g_prevWithdrawnFlag     = PayoutWithdrawn;')
-        extra_init.append(f'   g_postPayoutLockApplied = false;')
+    if stage != 'evaluation':
+        extra_init.append(f'   g_payoutWaitStart  = 0;')
+        extra_init.append(f'   g_lastReminderSent = 0;')
+        extra_init.append(f'   g_initialAlertSent = false;')
+        extra_init.append(f'   g_prevPayoutFlag   = PayoutReceived;')
+        if post_payout.get('dd_locks_at') == 'initial_balance':
+            extra_init.append(f'   g_prevWithdrawnFlag     = PayoutWithdrawn;')
+            extra_init.append(f'   g_postPayoutLockApplied = false;')
     # WHY: _gvPrefix already set above — same per-magic key pattern.
     # CHANGED: April 2026 — per-magic GlobalVariable keys (audit HIGH)
     extra_init.append(f'   if(GlobalVariableCheck("EA_ddLocked_" + _gvPrefix))')
@@ -1184,187 +1154,164 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     )
 
     # ── CheckPayoutFlag() — manual payout confirmation via input toggle ───
-    # WHY: User toggles PayoutReceived=true after collecting payout from the
-    #      firm dashboard. Rising-edge detection starts a fresh trading cycle
-    #      without restarting the EA. While waiting, periodic email reminders
-    #      prompt the user to confirm.
-    # CHANGED: April 2026 — replaces time-based auto-resume
-    payout_reset_items = []
-    if has_min_profit_days:
-        payout_reset_items.append('g_profitDayCount      = 0;')
-    if has_consistency:
-        payout_reset_items.append('g_bestDayProfit       = 0;')
-        payout_reset_items.append('g_periodProfit        = 0;')
-    if has_protect_phase:
-        payout_reset_items.append('g_payoutCondsMet      = false;')
-    payout_reset_items.append('g_stopForever         = false;')
-    # WHY: g_startingBalance is used for period-profit accounting in the
-    #      next cycle, so it DOES update to the current balance. But
-    #      g_ddFloor is anchored to g_originalStartingBalance which never
-    #      changes. Same for g_hwm — it starts the new period from current
-    #      balance for HWM tracking, but the floor stays anchored.
-    # CHANGED: April 2026 — fix post-payout floor drift (audit bug #3)
-    payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
-    # Read dd_reset_on_payout from firm data
-    _dd_reset = True  # default: reset on payout
-    try:
-        _firm_d = (prop_firm or {}).get('firm_data', {})
-        _challenge = _firm_d.get('challenges', [{}])[0]
-        _dd_reset = _challenge.get('funded', {}).get('dd_reset_on_payout', True)
-    except Exception:
-        pass
-    if _dd_reset:
-        payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
-        payout_reset_items.append('g_hwm                 = g_startingBalance;')
-    else:
-        payout_reset_items.append('// DD does NOT reset on payout (firm rule: dd_reset_on_payout=false)')
-        payout_reset_items.append('// g_ddFloor and g_hwm are preserved -- trailing DD continues')
-    # WHY: Firms with permanent post-payout lock (e.g. FTMO where trailing
-    #      DD locks to initial balance after first withdrawal) need
-    #      g_ddLocked to STAY true across payout cycles. Old code
-    #      unconditionally reset it to false, breaking the rule on the
-    #      second payout. Now: only reset when the firm allows the lock
-    #      to release after each payout (non-strict firms).
-    # CHANGED: April 2026 — preserve permanent post-payout lock (audit MED)
-    if post_payout.get('dd_locks_at') == 'initial_balance':
-        # Strict firm — lock is permanent after first payout.
-        # Don't reset g_ddLocked, don't reset g_postPayoutLockApplied.
-        payout_reset_items.append('// g_ddLocked preserved (permanent post-payout lock firm)')
-        payout_reset_items.append('// g_postPayoutLockApplied preserved (lock already applied)')
-    else:
-        # Non-strict firm — lock releases on new cycle.
-        payout_reset_items.append('g_ddLocked            = false;')
-        payout_reset_items.append('g_postPayoutLockApplied = false;')
-    payout_reset_items.append('g_payoutWaitStart     = 0;')
-    payout_reset_items.append('g_lastReminderSent    = 0;')
-    payout_reset_items.append('g_initialAlertSent    = false;')
-    payout_reset_items.append('SaveDDState();')
-    payout_reset_block = '\n      '.join(payout_reset_items)
+    # WHY: Eval has no payout cycle — pass the eval and you're done.
+    #      g_stopForever is permanent in eval mode. Payout logic only
+    #      applies to funded accounts where the trader collects payouts.
+    # CHANGED: April 2026 — skip payout logic for eval stage
+    if stage != 'evaluation':
+        payout_reset_items = []
+        if has_min_profit_days:
+            payout_reset_items.append('g_profitDayCount      = 0;')
+        if has_consistency:
+            payout_reset_items.append('g_bestDayProfit       = 0;')
+            payout_reset_items.append('g_periodProfit        = 0;')
+        if has_protect_phase:
+            payout_reset_items.append('g_payoutCondsMet      = false;')
+        payout_reset_items.append('g_stopForever         = false;')
+        payout_reset_items.append('g_startingBalance     = AccountInfoDouble(ACCOUNT_BALANCE);')
+        _dd_reset = True
+        try:
+            _firm_d = (prop_firm or {}).get('firm_data', {})
+            _challenge = _firm_d.get('challenges', [{}])[0]
+            _dd_reset = _challenge.get('funded', {}).get('dd_reset_on_payout', True)
+        except Exception:
+            pass
+        if _dd_reset:
+            payout_reset_items.append(f'g_ddFloor             = g_originalStartingBalance * (1.0 - {dd_total_pct}/100.0);')
+            payout_reset_items.append('g_hwm                 = g_startingBalance;')
+        else:
+            payout_reset_items.append('// DD does NOT reset on payout (firm rule: dd_reset_on_payout=false)')
+            payout_reset_items.append('// g_ddFloor and g_hwm are preserved -- trailing DD continues')
+        if post_payout.get('dd_locks_at') == 'initial_balance':
+            payout_reset_items.append('// g_ddLocked preserved (permanent post-payout lock firm)')
+            payout_reset_items.append('// g_postPayoutLockApplied preserved (lock already applied)')
+        else:
+            payout_reset_items.append('g_ddLocked            = false;')
+            payout_reset_items.append('g_postPayoutLockApplied = false;')
+        payout_reset_items.append('g_payoutWaitStart     = 0;')
+        payout_reset_items.append('g_lastReminderSent    = 0;')
+        payout_reset_items.append('g_initialAlertSent    = false;')
+        payout_reset_items.append('SaveDDState();')
+        payout_reset_block = '\n      '.join(payout_reset_items)
 
-    # Which gate variable means "bot is in waiting-for-payout state"
-    waiting_cond = 'g_payoutCondsMet' if has_protect_phase else 'g_stopForever'
+        waiting_cond = 'g_payoutCondsMet' if has_protect_phase else 'g_stopForever'
 
-    extra_functions.append(
-        f'//+------------------------------------------------------------------+\n'
-        f'//| CheckPayoutFlag — detect rising edge of PayoutReceived input    |\n'
-        f'//| WHY: Bot halts after payout conditions met. User manually sets  |\n'
-        f'//|      PayoutReceived=true once payout is confirmed. This detects |\n'
-        f'//|      that toggle and starts a fresh cycle.                      |\n'
-        f'//| CHANGED: April 2026 — manual confirmation + reminder system    |\n'
-        f'//+------------------------------------------------------------------+\n'
-        f'void CheckPayoutFlag()\n'
-        f'{{\n'
-        f'   // ── Rising edge: payout just confirmed ───────────────────────\n'
-        f'   if(PayoutReceived && !g_prevPayoutFlag)\n'
-        f'   {{\n'
-        f'      g_prevPayoutFlag = true;\n'
-        f'      Print("[PAYOUT] Confirmed — starting new cycle. Balance: $",\n'
-        f'            DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2));\n'
-        f'      {payout_reset_block}\n'
-        f'      Alert("[CYCLE] Payout confirmed — new trading cycle started!");\n'
-        f'      SendNotification("[PAYOUT] " + _Symbol + " — New cycle started after payout confirmation");\n'
-        f'      return;\n'
-        f'   }}\n'
-        f'   g_prevPayoutFlag = PayoutReceived;\n'
-        f'\n'
-        f'   // ── While stopped and awaiting payout confirmation ───────────\n'
-        f'   if(!{waiting_cond} || PayoutReceived) return;\n'
-        f'\n'
-        f'   // Send initial alert once when we first enter waiting state\n'
-        f'   if(!g_initialAlertSent)\n'
-        f'   {{\n'
-        f'      g_payoutWaitStart  = TimeCurrent();\n'
-        f'      g_lastReminderSent = TimeCurrent();\n'
-        f'      g_initialAlertSent = true;\n'
-        f'      string s0 = GetPayoutStatus();\n'
-        f'      SendNotification("[PAYOUT] WAITING — set PayoutReceived=true when collected | " + s0);\n'
-        f'      SendMail("[PAYOUT] " + _Symbol + " — Waiting for confirmation",\n'
-        f'               "Payout conditions met. Bot stopped.\\n" + s0 +\n'
-        f'               "\\n\\nSet PayoutReceived=true in EA inputs once payout is in your account.");\n'
-        f'   }}\n'
-        f'\n'
-        f'   // Send scheduled reminder emails\n'
-        f'   if(g_payoutWaitStart <= 0) return;\n'
-        f'   double waitDays    = (TimeCurrent() - g_payoutWaitStart)  / 86400.0;\n'
-        f'   double sinceRemind = (TimeCurrent() - g_lastReminderSent) / 86400.0;\n'
-        f'   bool sendFirst  = (waitDays  >= ReminderFirstAfterDays && sinceRemind >= ReminderFirstAfterDays);\n'
-        f'   bool sendRepeat = (waitDays  >  ReminderFirstAfterDays && sinceRemind >= ReminderRepeatEveryDays\n'
-        f'                      && ReminderRepeatEveryDays > 0);\n'
-        f'   if(sendFirst || sendRepeat)\n'
-        f'   {{\n'
-        f'      g_lastReminderSent = TimeCurrent();\n'
-        f'      string sr = GetPayoutStatus();\n'
-        f'      SendMail("[PAYOUT REMINDER] " + _Symbol,\n'
-        f'               "Waiting " + DoubleToString(waitDays, 1) + " days for payout confirmation.\\n"\n'
-        f'               + sr + "\\n\\nSet PayoutReceived=true in EA inputs to resume trading.");\n'
-        f'   }}\n'
-        f'}}'
-    )
-
-    # Insert CheckPayoutFlag at the very start of tick checks so it runs
-    # BEFORE the g_stopForever guard — allows the bot to resume if payout confirmed.
-    # CHANGED: April 2026 — manual payout confirmation
-    extra_tick_checks.insert(0,
-        f'   // ── Payout confirmation (MUST run before g_stopForever guard) ─\n'
-        f'   // WHY: Clears g_stopForever when user confirms payout received.\n'
-        f'   // CHANGED: April 2026 — manual confirmation system\n'
-        f'   CheckPayoutFlag();'
-    )
-
-    # ── CheckPostPayoutLock() — only if firm locks DD at initial_balance ──
-    # WHY: Some firms (e.g. FTMO) lock trailing DD to initial balance after
-    #      first withdrawal. User confirms via PayoutWithdrawn=true toggle.
-    # CHANGED: April 2026 — post-payout lock system
-    if post_payout.get('dd_locks_at') == 'initial_balance':
         extra_functions.append(
             f'//+------------------------------------------------------------------+\n'
-            f'//| CheckPostPayoutLock — lock DD floor after withdrawal confirmed  |\n'
-            f'//| WHY: After first withdrawal, firm locks trailing DD floor to    |\n'
-            f'//|      initial balance. User confirms via PayoutWithdrawn toggle. |\n'
-            f'//| CHANGED: April 2026 — post-payout DD lock                      |\n'
+            f'//| CheckPayoutFlag — detect rising edge of PayoutReceived input    |\n'
+            f'//| WHY: Bot halts after payout conditions met. User manually sets  |\n'
+            f'//|      PayoutReceived=true once payout is confirmed. This detects |\n'
+            f'//|      that toggle and starts a fresh cycle.                      |\n'
+            f'//| CHANGED: April 2026 — manual confirmation + reminder system    |\n'
             f'//+------------------------------------------------------------------+\n'
-            f'void CheckPostPayoutLock()\n'
+            f'void CheckPayoutFlag()\n'
             f'{{\n'
-            f'   if(g_postPayoutLockApplied) return;\n'
-            f'   // Rising edge: withdrawal confirmed\n'
-            f'   if(PayoutWithdrawn && !g_prevWithdrawnFlag)\n'
+            f'   // ── Rising edge: payout just confirmed ───────────────────────\n'
+            f'   if(PayoutReceived && !g_prevPayoutFlag)\n'
             f'   {{\n'
-            f'      g_prevWithdrawnFlag     = true;\n'
-            f'      g_postPayoutLockApplied = true;\n'
-            f'      g_ddLocked              = true;\n'
-            f'      // WHY: Post-payout lock anchors to ORIGINAL starting\n'
-            f'      //      balance, not the current (post-payout) balance.\n'
-            f'      // CHANGED: April 2026 — fix post-payout floor drift\n'
-            f'      g_ddFloor               = g_originalStartingBalance;\n'
-            f'      SaveDDState();\n'
-            f'      Print("[DD] Post-payout lock applied: floor = $",\n'
-            f'            DoubleToString(g_originalStartingBalance, 2));\n'
-            f'      SendMail("[DD] " + _Symbol + " — Post-payout DD floor locked",\n'
-            f'               "Withdrawal confirmed. DD floor locked at starting balance $" +\n'
-            f'               DoubleToString(g_originalStartingBalance, 2) + ".");\n'
+            f'      g_prevPayoutFlag = true;\n'
+            f'      Print("[PAYOUT] Confirmed — starting new cycle. Balance: $",\n'
+            f'            DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2));\n'
+            f'      {payout_reset_block}\n'
+            f'      Alert("[CYCLE] Payout confirmed — new trading cycle started!");\n'
+            f'      SendNotification("[PAYOUT] " + _Symbol + " — New cycle started after payout confirmation");\n'
+            f'      return;\n'
             f'   }}\n'
-            f'   g_prevWithdrawnFlag = PayoutWithdrawn;\n'
+            f'   g_prevPayoutFlag = PayoutReceived;\n'
+            f'\n'
+            f'   // ── While stopped and awaiting payout confirmation ───────────\n'
+            f'   if(!{waiting_cond} || PayoutReceived) return;\n'
+            f'\n'
+            f'   // Send initial alert once when we first enter waiting state\n'
+            f'   if(!g_initialAlertSent)\n'
+            f'   {{\n'
+            f'      g_payoutWaitStart  = TimeCurrent();\n'
+            f'      g_lastReminderSent = TimeCurrent();\n'
+            f'      g_initialAlertSent = true;\n'
+            f'      string s0 = GetPayoutStatus();\n'
+            f'      SendNotification("[PAYOUT] WAITING — set PayoutReceived=true when collected | " + s0);\n'
+            f'      SendMail("[PAYOUT] " + _Symbol + " — Waiting for confirmation",\n'
+            f'               "Payout conditions met. Bot stopped.\\n" + s0 +\n'
+            f'               "\\n\\nSet PayoutReceived=true in EA inputs once payout is in your account.");\n'
+            f'   }}\n'
+            f'\n'
+            f'   // Send scheduled reminder emails\n'
+            f'   if(g_payoutWaitStart <= 0) return;\n'
+            f'   double waitDays    = (TimeCurrent() - g_payoutWaitStart)  / 86400.0;\n'
+            f'   double sinceRemind = (TimeCurrent() - g_lastReminderSent) / 86400.0;\n'
+            f'   bool sendFirst  = (waitDays  >= ReminderFirstAfterDays && sinceRemind >= ReminderFirstAfterDays);\n'
+            f'   bool sendRepeat = (waitDays  >  ReminderFirstAfterDays && sinceRemind >= ReminderRepeatEveryDays\n'
+            f'                      && ReminderRepeatEveryDays > 0);\n'
+            f'   if(sendFirst || sendRepeat)\n'
+            f'   {{\n'
+            f'      g_lastReminderSent = TimeCurrent();\n'
+            f'      string sr = GetPayoutStatus();\n'
+            f'      SendMail("[PAYOUT REMINDER] " + _Symbol,\n'
+            f'               "Waiting " + DoubleToString(waitDays, 1) + " days for payout confirmation.\\n"\n'
+            f'               + sr + "\\n\\nSet PayoutReceived=true in EA inputs to resume trading.");\n'
+            f'   }}\n'
             f'}}'
         )
-        extra_tick_checks.insert(1,
-            f'   CheckPostPayoutLock();'
+
+        # Insert CheckPayoutFlag at the very start of tick checks so it runs
+        # BEFORE the g_stopForever guard — allows the bot to resume if payout confirmed.
+        extra_tick_checks.insert(0,
+            f'   // ── Payout confirmation (MUST run before g_stopForever guard) ─\n'
+            f'   // WHY: Clears g_stopForever when user confirms payout received.\n'
+            f'   // CHANGED: April 2026 — manual confirmation system\n'
+            f'   CheckPayoutFlag();'
         )
 
-    # ── GetPayoutStatus function ──────────────────────────────────────────
-    parts = ['"Status: "']
-    if has_min_profit_days:
-        parts.append('"Days=" + IntegerToString(g_profitDayCount) + "/" + IntegerToString(MinProfitDays)')
-    if has_consistency:
-        parts.append('"Best=" + DoubleToString(g_periodProfit>0 ? g_bestDayProfit/g_periodProfit*100 : 0, 1) + "%"')
-    # WHY: g_periodProfit is only tracked when consistency/protect_phase exist
-    # CHANGED: April 2026 — guard usage to prevent showing "0" when not tracked
-    if has_consistency or has_protect_phase:
-        parts.append('"Profit=$" + DoubleToString(g_periodProfit, 0)')
-    if has_protect_phase:
-        parts.append('(g_payoutCondsMet ? " MET" : " NOT MET")')
-    extra_functions.append(
-        f'string GetPayoutStatus()\n'
-        f'{{ return {" + ".join(parts)}; }}')
+        # ── CheckPostPayoutLock() — only if firm locks DD at initial_balance ──
+        if post_payout.get('dd_locks_at') == 'initial_balance':
+            extra_functions.append(
+                f'//+------------------------------------------------------------------+\n'
+                f'//| CheckPostPayoutLock — lock DD floor after withdrawal confirmed  |\n'
+                f'//| WHY: After first withdrawal, firm locks trailing DD floor to    |\n'
+                f'//|      initial balance. User confirms via PayoutWithdrawn toggle. |\n'
+                f'//| CHANGED: April 2026 — post-payout DD lock                      |\n'
+                f'//+------------------------------------------------------------------+\n'
+                f'void CheckPostPayoutLock()\n'
+                f'{{\n'
+                f'   if(g_postPayoutLockApplied) return;\n'
+                f'   // Rising edge: withdrawal confirmed\n'
+                f'   if(PayoutWithdrawn && !g_prevWithdrawnFlag)\n'
+                f'   {{\n'
+                f'      g_prevWithdrawnFlag     = true;\n'
+                f'      g_postPayoutLockApplied = true;\n'
+                f'      g_ddLocked              = true;\n'
+                f'      // WHY: Post-payout lock anchors to ORIGINAL starting\n'
+                f'      //      balance, not the current (post-payout) balance.\n'
+                f'      // CHANGED: April 2026 — fix post-payout floor drift\n'
+                f'      g_ddFloor               = g_originalStartingBalance;\n'
+                f'      SaveDDState();\n'
+                f'      Print("[DD] Post-payout lock applied: floor = $",\n'
+                f'            DoubleToString(g_originalStartingBalance, 2));\n'
+                f'      SendMail("[DD] " + _Symbol + " — Post-payout DD floor locked",\n'
+                f'               "Withdrawal confirmed. DD floor locked at starting balance $" +\n'
+                f'               DoubleToString(g_originalStartingBalance, 2) + ".");\n'
+                f'   }}\n'
+                f'   g_prevWithdrawnFlag = PayoutWithdrawn;\n'
+                f'}}'
+            )
+            extra_tick_checks.insert(1,
+                f'   CheckPostPayoutLock();'
+            )
+
+    # ── GetPayoutStatus function (funded only — eval doesn't need it) ──
+    if stage != 'evaluation':
+        parts = ['"Status: "']
+        if has_min_profit_days:
+            parts.append('"Days=" + IntegerToString(g_profitDayCount) + "/" + IntegerToString(MinProfitDays)')
+        if has_consistency:
+            parts.append('"Best=" + DoubleToString(g_periodProfit>0 ? g_bestDayProfit/g_periodProfit*100 : 0, 1) + "%"')
+        if has_consistency or has_protect_phase:
+            parts.append('"Profit=$" + DoubleToString(g_periodProfit, 0)')
+        if has_protect_phase:
+            parts.append('(g_payoutCondsMet ? " MET" : " NOT MET")')
+        extra_functions.append(
+            f'string GetPayoutStatus()\n'
+            f'{{ return {" + ".join(parts)}; }}')
 
     # ── OnTradeTransaction ────────────────────────────────────────────────
     on_trade_body = '\n'.join(extra_on_trade)
@@ -1479,7 +1426,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      {{\n'
             f'         {_time_guard}CloseAllPositions("TimeExit");\n'
             f'         g_entryBarIndex = 0;\n'
+            f'         // WHY: Python backtester enforces occupied_until_idx which\n'
+            f'         //      prevents re-entry on the same bar a trade exits.\n'
+            f'         //      Without this, the EA re-enters within seconds on the\n'
+            f'         //      same M15 bar, taking far more trades than the backtest.\n'
+            f'         // CHANGED: April 2026 — block same-bar re-entry after TimeExit\n'
+            f'         g_lastBarTime = iTime(_Symbol, {mql_period}, 0);\n'
             f'         Print("[EA] Time exit after ", barsHeld, " candles");\n'
+            f'         return;\n'
             f'      }}\n'
             f'   }}\n'
         )
@@ -1511,6 +1465,9 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      {{\n'
             f'         {_ind_guard}CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
             f'         Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
+            f'         // Block same-bar re-entry (match Python backtester behavior)\n'
+            f'         g_lastBarTime = iTime(_Symbol, {mql_period}, 0);\n'
+            f'         return;\n'
             f'      }}\n'
             f'   }}\n'
         )
@@ -1583,6 +1540,9 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      {{\n'
             f'         {_hybrid_time_guard}CloseAllPositions("HybridTimeExit");\n'
             f'         g_entryBarIndex = 0;\n'
+            f'         // Block same-bar re-entry (match Python backtester behavior)\n'
+            f'         g_lastBarTime = iTime(_Symbol, {mql_period}, 0);\n'
+            f'         return;\n'
             f'      }}\n'
             f'   }}\n'
         )
@@ -1605,10 +1565,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             try:
                 _mql = get_mql_code(_feat, 'mt5')
                 _var_n = _mql['var_name']
-                _mql_op = OPERATOR_MAP_MQL.get(_op, '>')
+                _cond_expr = _mql_condition_expr(f'val_{_var_n}', _op, f'{float(_val):.6f}')
                 _regime_lines.append(f'   // Regime {ri}: {_feat} {_op} {_val}')
                 _regime_lines.append(f'   {_mql["read_code"]}')
-                _regime_lines.append(f'   if(!(val_{_var_n} {_mql_op} {float(_val):.6f})) regimePass = false;')
+                _regime_lines.append(f'   if(!({_cond_expr})) regimePass = false;')
                 # Add handle if needed
                 if _mql.get('handle_var') and _mql['handle_var'] not in exit_globals:
                     exit_globals += _mql['handle_var'] + '\n'
@@ -1746,9 +1706,9 @@ bool IsMinHoldMet()
         _vr.append("EVAL RULES (IMPORTANT):")
         _vr.append("  * Hit profit target -> STOP IMMEDIATELY (don't overtrade)")
         _vr.append("  * Trailing DD floor RISES with equity -- profits tighten the rope")
-        _vr.append("  * No payout cycle in eval -- trade once, pass, done")
+        _vr.append("  * No payout cycle in eval -- pass the eval, then move to funded")
+        _vr.append("  * Total DD breach -> PERMANENT STOP (no payout recovery in eval)")
         _vr.append("  * Daily DD alert: stop BEFORE limit (save the account)")
-        _vr.append("  * dd_reset_on_payout: check firm rules before enabling")
         _vr.append("")
     _vr.append(f"  Validation: Grade {grade} ({score}/100)")
     _vr.append(f"  Backtest: WR {base_stats.get('win_rate',0)*100:.1f}%, PF {base_stats.get('profit_factor',0):.2f}, {base_stats.get('total_pips',0):+,.0f} pips")
@@ -1875,6 +1835,27 @@ bool IsMinHoldMet()
             + exit_class
         )
 
+    # DD floor behavior: eval = log once + continue, funded = close + halt
+    if stage == 'evaluation':
+        _dd_floor_action = (
+            '            " — WARNING: DD floor breached, trading continues.");\n'
+            '      g_ddFloor = 0.0;  // Clear floor so this warning only fires once\n'
+        )
+    else:
+        _dd_floor_action = (
+            '            " — closing all positions and halting.");\n'
+            '      CloseAllPositions("DDFloorBreach");\n'
+            '      g_stopForever = true;\n'
+            '      SaveDDState();\n'
+            '      SendNotification("[DD BREACH] " + _Symbol + " — Account protection triggered. Bot halted.");\n'
+            '      SendMail("[DD BREACH] " + _Symbol,\n'
+            '               "Equity $" + DoubleToString(equity, 2) +\n'
+            '               " dropped below DD floor $" + DoubleToString(g_ddFloor, 2) +\n'
+            '               ". All positions closed. Bot halted permanently.\\n\\n" +\n'
+            '               "Restart the EA manually after investigating the cause.");\n'
+            '      return;\n'
+        )
+
     code = f"""\
 {_vr_header}\
 #property copyright "Generated by Trade Bot"
@@ -1988,28 +1969,36 @@ void OnTick()
    if(equity > g_dailyHighEquity) g_dailyHighEquity = equity;
 
    //--- DD floor enforcement — fires every tick, before anything else
-   // WHY: g_ddFloor was set in 7 places but never checked. The broker
-   //      would close the account when equity breached the floor, but
-   //      the EA would keep trying to open new trades until it did.
-   //      Now: if equity drops below the floor, close every position
-   //      and halt trading forever (requires manual EA restart).
-   // CHANGED: April 2026 — fix dead g_ddFloor (audit bug #4)
    if(g_ddFloor > 0.0 && equity < g_ddFloor)
    {{
       Print("[DD BREACH] Equity $", DoubleToString(equity, 2),
             " dropped below floor $", DoubleToString(g_ddFloor, 2),
-            " — closing all positions and halting.");
-      CloseAllPositions("DDFloorBreach");
-      g_stopForever = true;
-      SaveDDState();
-      SendNotification("[DD BREACH] " + _Symbol + " — Account protection triggered. Bot halted.");
-      SendMail("[DD BREACH] " + _Symbol,
-               "Equity $" + DoubleToString(equity, 2) +
-               " dropped below DD floor $" + DoubleToString(g_ddFloor, 2) +
-               ". All positions closed. Bot halted permanently.\\n\\n" +
-               "Restart the EA manually after investigating the cause.");
-      return;
+{_dd_floor_action}\
    }}
+
+   //--- DST-safe daily reset — MUST run before g_stopForDay guard
+   // WHY: g_stopForDay blocks everything below it. If the daily reset
+   //      was placed after the guard, g_stopForDay would never be cleared
+   //      and the EA would stay stopped permanently after the first DD day.
+   // CHANGED: April 2026 — moved daily reset above g_stopForDay guard
+   MqlDateTime _now_gmt;
+   TimeToStruct(TimeGMT(), _now_gmt);
+   if(_now_gmt.hour == DailyResetHourGMT && _now_gmt.min >= DailyResetMinute
+      && !g_dailyResetDone)
+   {{
+      g_dailyResetDone  = true;
+      g_dailyTrades     = 0;
+      g_stopForDay      = false;
+      g_dailyHighEquity = equity;
+      // NOTE: g_sessionEquity is reset AFTER extra_daily_reset_block so that
+      //       profit-day counters still read yesterday's baseline correctly.
+{extra_daily_reset_block}
+      g_sessionEquity   = equity;   // NOW reset: tomorrow's baseline
+      Print("[DD] Daily reset at ", DailyResetHourGMT, ":", DailyResetMinute,
+            " GMT. Equity=$", DoubleToString(equity, 2));
+   }}
+   if(_now_gmt.hour != DailyResetHourGMT)
+      g_dailyResetDone = false;   // re-arm for next day
 
    if(g_stopForDay) return;
 
@@ -2036,34 +2025,6 @@ void OnTick()
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    if(currentBarTime == g_lastBarTime) return;
    g_lastBarTime = currentBarTime;
-
-   //--- DST-safe daily reset
-   // WHY: Static reset-hour computation failed on DST change days — the hour
-   //      could shift ±1 and the reset would be missed or fire twice.
-   //      Now uses an input the user can adjust manually twice a year.
-   //      g_dailyResetDone prevents double-firing within the reset hour window.
-   // CHANGED: April 2026 — DST-safe + correct g_sessionEquity ordering
-   // WHY: Daily reset anchored to GMT because firm rule is "23:00 GMT+3"
-   //      which is always the same GMT hour (20:00) regardless of broker
-   //      server timezone or DST. Old code compared against TimeCurrent
-   //      (server time) which was wrong for any non-GMT broker.
-   // CHANGED: April 2026 — fix reset hour timezone (audit bug #6)
-   MqlDateTime _now_gmt;
-   TimeToStruct(TimeGMT(), _now_gmt);
-   if(_now_gmt.hour == DailyResetHourGMT && _now_gmt.min >= DailyResetMinute
-      && !g_dailyResetDone)
-   {{
-      g_dailyResetDone  = true;
-      g_dailyTrades     = 0;
-      g_stopForDay      = false;
-      g_dailyHighEquity = equity;
-      // NOTE: g_sessionEquity is reset AFTER extra_daily_reset_block so that
-      //       profit-day counters still read yesterday's baseline correctly.
-{extra_daily_reset_block}
-      g_sessionEquity   = equity;   // NOW reset: tomorrow's baseline
-   }}
-   if(_now_gmt.hour != DailyResetHourGMT)
-      g_dailyResetDone = false;   // re-arm for next day
 
    //--- Skip checks
    double spreadPips = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) / 10.0;
@@ -2169,22 +2130,22 @@ ENUM_TIMEFRAMES g_entryTF = {mql_period};
 
 //+------------------------------------------------------------------+
 //| Calculate correct bar shift for multi-timeframe indicators        |
-//| WHY: Python backtest evaluates on current bar (shift=1 for same   |
-//|      TF to avoid look-ahead, shift=0 for higher TF indicators).   |
-//| CHANGED: April 2026 — dynamic shift based on TF comparison        |
+//| WHY: ALL timeframes use shift=1 (previous completed bar).         |
+//|      Python backtester shifts higher-TF timestamps forward so     |
+//|      merge_asof picks the last COMPLETED bar. Using shift=1 here  |
+//|      achieves the same result: iCustom reads the prior closed bar.|
+//| CHANGED: April 2026 — shift=1 for all TFs to match Python fix    |
 //+------------------------------------------------------------------+
 int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
 {{
-   // Same timeframe: use shift=1 (previous completed bar - avoid look-ahead)
-   // Higher timeframe: use shift=0 (current bar of that TF)
-   return (indicatorTF == g_entryTF) ? 1 : 0;
+   return 1;
 }}
 
 //+------------------------------------------------------------------+
-//| SafeCopyBuffer — wrapper with dynamic shift                       |
-//| WHY: Indicator buffers need different shifts based on timeframe.  |
-//|      Same TF indicators use shift=1, higher TF use shift=0.       |
-//| CHANGED: April 2026 — dynamic shift calculation                   |
+//| SafeCopyBuffer — wrapper with shift=1 for all timeframes          |
+//| WHY: All indicator reads use shift=1 (previous completed bar)     |
+//|      to match the Python backtester's look-ahead prevention.      |
+//| CHANGED: April 2026 — uniform shift=1 for EA/Python parity       |
 //+------------------------------------------------------------------+
 double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
 {{
@@ -2476,19 +2437,9 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
     sl_pips  = exit_params.get('sl_pips', 150)
     tp_pips  = exit_params.get('tp_pips', 300)
 
-    # WHY: XAUUSD and other metals need 10x pip values (see line 164 comment).
-    #      Apply same scaling here for Tradovate EA generation.
-    # CHANGED: April 2026 — metals pip scaling fix (audit bug #10)
-    try:
-        from shared.prop_firm_engine import get_instrument_type
-        _inst_type = get_instrument_type(symbol)
-        if _inst_type == 'metals':
-            if sl_pips > 0 and sl_pips < 1000:
-                sl_pips *= 10
-            if tp_pips > 0 and tp_pips < 1000:
-                tp_pips *= 10
-    except Exception:
-        pass
+    # WHY: Pip values from backtest are already correct for all instruments.
+    #      Old 10x metals scaling removed — it caused SL/TP mismatch.
+    # CHANGED: April 2026 — removed metals 10x scaling (was wrong)
 
     # Build condition checks
     indicator_lines = []

@@ -7,7 +7,9 @@ This is ~100x faster than the naive candle-by-candle loop.
 
 Multi-timeframe indicators: loads M5/M15/H1/H4/D1 CSVs, computes the full
 indicator set for each timeframe (prefixed e.g. H1_rsi_14), then aligns
-everything to the H1 timestamp spine using merge_asof (no look-ahead bias).
+everything to the entry timestamp spine using merge_asof.  Higher-TF bars
+are shifted forward by one bar duration so merge_asof(backward) finds the
+previous COMPLETED bar, preventing look-ahead bias.
 Indicator DataFrames are cached as parquet so the first run is slow (~5 min)
 but subsequent runs load in seconds.
 """
@@ -437,12 +439,17 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     return ind
 
 
-def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=None):
+def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=None, entry_tf=None):
     """
     Load and align all timeframe indicators onto the entry timeframe's timestamp spine.
 
     For each TF, uses merge_asof with direction='backward' so each entry candle
-    receives the most recent indicator values from that TF without look-ahead.
+    receives the most recent indicator values from that TF.
+
+    Look-ahead prevention: when entry_tf is provided, higher-TF indicator
+    timestamps are shifted forward by one bar duration before the merge.
+    This ensures merge_asof(backward) finds the previous COMPLETED bar,
+    not the currently-forming one whose final values aren't yet available.
 
     required_indicators: optional dict {"M5": ["adx_14", "aroon_down", ...], ...}
         returned by _extract_required_indicators(). When provided, each TF only
@@ -468,6 +475,19 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
             f"{tf} indicator DataFrame is empty after loading"
         tf_ind['timestamp'] = tf_ind['timestamp'].astype('datetime64[ns]')
         tf_ind = tf_ind.sort_values('timestamp').reset_index(drop=True)
+
+        # Look-ahead prevention: shift higher-TF timestamps forward by one bar
+        # duration so merge_asof(backward) finds the PREVIOUS COMPLETED bar,
+        # not the forming one.  E.g. H1 bar at 10:00 → shifted to 11:00, so
+        # an M15 entry at 10:00 picks up the H1 09:00 bar (completed).
+        if entry_tf is not None:
+            _TF_MIN = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240,
+                        'D1': 1440, 'W1': 10080}
+            entry_minutes = _TF_MIN.get(entry_tf, 60)
+            tf_minutes = _TF_MIN.get(tf, 60)
+            if tf_minutes > entry_minutes:
+                tf_ind = tf_ind.copy()
+                tf_ind['timestamp'] = tf_ind['timestamp'] + pd.Timedelta(minutes=tf_minutes)
 
         merged = pd.merge_asof(
             combined[['timestamp']],
@@ -1112,8 +1132,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                     valid_rule = False
                     break
 
-            # NaN values from to_numeric coercion become False (NaN <op> x → False)
-            cond_arr = np.where(np.isnan(col_arr), False, cond_arr)
+            # NaN/inf values become False — no signal if indicator is invalid
+            cond_arr = np.where(np.isnan(col_arr) | np.isinf(col_arr), False, cond_arr)
             rule_mask_np &= cond_arr
 
         if not valid_rule:
@@ -1655,8 +1675,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     valid_rule = False
                     break
 
-            # NaN values from to_numeric coercion become False (NaN <op> x → False)
-            cond_arr = np.where(np.isnan(col_arr), False, cond_arr)
+            # NaN/inf values become False — no signal if indicator is invalid
+            cond_arr = np.where(np.isnan(col_arr) | np.isinf(col_arr), False, cond_arr)
             rule_mask_np &= cond_arr
 
         if not valid_rule:
@@ -2039,7 +2059,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'direction':    direction,
             'pips':         round(pips, 1),
             'net_pips':     round(net_pips, 1),
-            'cost_pips':    round(commission_pips, 1),
+            'cost_pips':    round(spread_pips + commission_pips, 1),
             'net_profit':   round(net_profit, 2),
             'lot_size':     lot_size,
             'candles_held': exit_idx,
@@ -2203,6 +2223,19 @@ def compute_stats(trades):
     # Recovery factor: net profit / max drawdown
     recovery_factor = round(float(sum(net)) / max_dd_pips, 2) if max_dd_pips > 0 else 0.0
 
+    # END_OF_DATA bias detection: trades forced-closed at data boundary
+    # WHY: Trades still open at the end of the dataset are closed at the
+    #      last candle's close price, which biases results (losers get a
+    #      better price than SL would give). If >15% of trades are END_OF_DATA,
+    #      the stats are unreliable.
+    # CHANGED: April 2026 — END_OF_DATA bias reporting
+    _eod_trades = sum(1 for t in trades if t.get('exit_reason') == 'END_OF_DATA')
+    _eod_pct = round(_eod_trades / len(trades) * 100, 1) if trades else 0.0
+    if _eod_pct > 15:
+        log.warning(f"  [STATS] {_eod_pct}% of trades ({_eod_trades}/{len(trades)}) "
+                    f"exited at END_OF_DATA — results may be biased. "
+                    f"Consider extending candle data or using shorter max_hold.")
+
     stats = {
         "total_trades":      len(trades),
         "win_rate":          round(win_rate, 1),
@@ -2232,6 +2265,8 @@ def compute_stats(trades):
         "losers":            n_losers,
         "breakeven":         n_breakeven,
         "min_hold_violations": sum(1 for t in trades if t.get('candles_held', 999) <= 0),
+        "end_of_data_trades": _eod_trades,
+        "end_of_data_pct":   _eod_pct,
         # WHY (T2b): Time-distribution metrics. Consumers (ranking,
         #      filters, UI) can read these to reject regime-concentrated
         #      rules before they reach EA generation.
@@ -2332,6 +2367,20 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     log.info(f"  {len(candles_df)} candles "
              f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
 
+    # Timezone validation: candle timestamps must be tz-naive (assumed UTC).
+    # WHY: MT5 brokers often export data in server time (UTC+2/+3). If
+    #      tz-aware timestamps slip through, session-based indicators
+    #      (London open, NY close) compute on the wrong hours.
+    # CHANGED: April 2026 — timezone validation
+    _ts = candles_df['timestamp']
+    if hasattr(_ts.dt, 'tz') and _ts.dt.tz is not None:
+        log.warning(f"  [TZ] Candle timestamps have timezone {_ts.dt.tz} — "
+                    f"stripping to tz-naive (assumed UTC). If your data is NOT "
+                    f"in UTC, session indicators will be misaligned.")
+        candles_df['timestamp'] = _ts.dt.tz_localize(None)
+    else:
+        log.info(f"  [TZ] Timestamps are tz-naive (assumed UTC)")
+
     from shared.data_validator import check_backtest_data_quality
     dq_warnings = check_backtest_data_quality(candles_df, timeframe=timeframe)
     if dq_warnings:
@@ -2387,7 +2436,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     # Results are cached as parquet; separate cache files for partial vs full builds.
     log.info(f"\nBuilding multi-timeframe indicators (M5 / M15 / H1 / H4 / D1)...")
     indicators_df = build_multi_tf_indicators(
-        data_dir, candles_df['timestamp'], required_indicators=required_indicators)
+        data_dir, candles_df['timestamp'], required_indicators=required_indicators,
+        entry_tf=timeframe)
     log.info(f"  Total indicator columns: {len(indicators_df.columns)}")
 
     # ── Compute SMART & REGIME features if any rules reference them ───────────────

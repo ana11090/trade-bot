@@ -451,6 +451,7 @@ def run_scratch_discovery(
         indicators_df = build_multi_tf_indicators(
             data_dir, candles['timestamp'],
             required_indicators=_ALL_TF_INDICATORS,
+            entry_tf=tf,
         )
         log.info(f"[DEBUG] Indicators built: {indicators_df.shape}")
     except Exception as e:

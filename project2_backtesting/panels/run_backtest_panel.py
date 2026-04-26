@@ -1712,7 +1712,8 @@ def _a26_diagnose_rules(output_text):
     data_dir = _a26_os.path.dirname(candle_path)
     try:
         indicators_df = build_multi_tf_indicators(
-            data_dir, candles_df['timestamp'], required_indicators=required)
+            data_dir, candles_df['timestamp'], required_indicators=required,
+            entry_tf=entry_tf)
     except Exception as _e:
         import traceback as _tb
         output_text.insert(tk.END,
