@@ -61,7 +61,7 @@ INDICATOR_PATTERNS = [
     (r"^rsi_(\d+)$", {
         "mt5_handle_var":  "int handle_rsi_{tf}_{p};",
         "mt5_handle_init": "handle_rsi_{tf}_{p} = iRSI(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_rsi_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_rsi_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_rsi_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.rsi(df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "RSI({p}) on {tf}",
@@ -70,7 +70,7 @@ INDICATOR_PATTERNS = [
     (r"^adx_(\d+)$", {
         "mt5_handle_var":  "int handle_adx_{tf}_{p};",
         "mt5_handle_init": "handle_adx_{tf}_{p} = iADX(NULL,{mt5_tf},{p}); if(handle_adx_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['ADX_{p}'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "ADX({p}) on {tf}",
@@ -79,7 +79,7 @@ INDICATOR_PATTERNS = [
     (r"^cci_(\d+)$", {
         "mt5_handle_var":  "int handle_cci_{tf}_{p};",
         "mt5_handle_init": "handle_cci_{tf}_{p} = iCCI(NULL,{mt5_tf},{p},PRICE_TYPICAL); if(handle_cci_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_cci_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_cci_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.cci(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "CCI({p}) on {tf}",
@@ -88,7 +88,7 @@ INDICATOR_PATTERNS = [
     (r"^atr_(\d+)$", {
         "mt5_handle_var":  "int handle_atr_{tf}_{p};",
         "mt5_handle_init": "handle_atr_{tf}_{p} = iATR(NULL,{mt5_tf},{p}); if(handle_atr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_atr_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_atr_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.atr(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "ATR({p}) on {tf}",
@@ -101,7 +101,7 @@ INDICATOR_PATTERNS = [
     (r"^macd_fast_diff$", {
         "mt5_handle_var":  "int handle_macd_{tf};",
         "mt5_handle_init": "handle_macd_{tf} = iMACD(NULL,{mt5_tf},12,26,9,PRICE_CLOSE); if(handle_macd_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_{tf}, 0); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_{tf}, 1); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double _macd_main_{tf} = SafeCopyBuf(handle_macd_{tf}, 0, {mt5_tf}); double _macd_sig_{tf} = SafeCopyBuf(handle_macd_{tf}, 1, {mt5_tf}); double val_{var} = (_macd_main_{tf} != EMPTY_VALUE && _macd_sig_{tf} != EMPTY_VALUE) ? _macd_main_{tf} - _macd_sig_{tf} : EMPTY_VALUE; if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.macd(df_m{tv_tf}['close'])['MACDh_12_26_9'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "MACD histogram on {tf}",
@@ -118,7 +118,7 @@ INDICATOR_PATTERNS = [
     (r"^sma_(\d+)_distance$", {
         "mt5_handle_var":  "int handle_sma_{tf}_{p};",
         "mt5_handle_init": "handle_sma_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_sma_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_preamble":    "double sma_{tf}_{p}_buf[1]; CopyBuffer(handle_sma_{tf}_{p},0,1,1,sma_{tf}_{p}_buf); double sma_{tf}_{p}_val=(((iClose(NULL,{mt5_tf},1)-sma_{tf}_{p}_buf[0])/MathMax(sma_{tf}_{p}_buf[0],0.000001))*100.0);",
+        "mt5_preamble":    "double sma_{tf}_{p}_buf[1]; CopyBuffer(handle_sma_{tf}_{p},0,1,1,sma_{tf}_{p}_buf); double sma_{tf}_{p}_val=(((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-sma_{tf}_{p}_buf[0])/MathMax(sma_{tf}_{p}_buf[0],0.000001))*100.0);",
         "mt5_code":        "sma_{tf}_{p}_val",
         "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1]) / max(ta.sma(df_m{tv_tf}['close'], length={p}).iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
@@ -134,7 +134,7 @@ INDICATOR_PATTERNS = [
     (r"^bb_(\d+)_(\d+(?:\.\d+)?)_width$", {
         "mt5_handle_var":  "int handle_bb_{tf}_{p1}_{p2s};",
         "mt5_handle_init": "handle_bb_{tf}_{p1}_{p2s} = iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE); if(handle_bb_{tf}_{p1}_{p2s}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _tmp0 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 0); double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2); if(_tmp0 == EMPTY_VALUE || _tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = (_tmp0 > 0) ? ((_tmp1 - _tmp2) / _tmp0 * 100.0) : 0.0; }",
+        "mt5_buffer_read": "double _tmp0 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 0, {mt5_tf}); double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1, {mt5_tf}); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2, {mt5_tf}); if(_tmp0 == EMPTY_VALUE || _tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = (_tmp0 > 0) ? ((_tmp1 - _tmp2) / _tmp0 * 100.0) : 0.0; }",
         "tradovate_code":  "ta.bbands(df_m{tv_tf}['close'], length={p1}, std={p2})['BBB_{p1}_{p2}_0'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Bollinger Band({p1},{p2}) width as % of middle on {tf}",
@@ -143,7 +143,7 @@ INDICATOR_PATTERNS = [
     (r"^aroon_(?:down|up)$", {
         "mt5_handle_var":  "int handle_aroon_{tf};",
         "mt5_handle_init": "handle_aroon_{tf} = iCustom(NULL,{mt5_tf},\"Aroon\",14); if(handle_aroon_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_aroon_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_aroon_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.aroon(df_m{tv_tf}['high'], df_m{tv_tf}['low'], length=14)['AROOND_14'].iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "Aroon on {tf} (custom indicator)",
@@ -152,7 +152,7 @@ INDICATOR_PATTERNS = [
     (r"^bear_power$", {
         "mt5_handle_var":  "int handle_bears_{tf};",
         "mt5_handle_init": "handle_bears_{tf} = iBearsPower(NULL,{mt5_tf},13); if(handle_bears_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_bears_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_bears_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "df_m{tv_tf}['low'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length=13).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Bears Power on {tf}",
@@ -168,7 +168,7 @@ INDICATOR_PATTERNS = [
     (r"^ultimate_oscillator$", {
         "mt5_handle_var":  "int handle_uo_{tf};",
         "mt5_handle_init": "handle_uo_{tf} = iCustom(NULL,{mt5_tf},\"UltimateOscillator\",7,14,28); if(handle_uo_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_uo_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_uo_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.uo(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close']).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "Ultimate Oscillator on {tf} (custom indicator)",
@@ -177,7 +177,7 @@ INDICATOR_PATTERNS = [
     (r"^dpo$", {
         "mt5_handle_var":  "int handle_dpo_{tf};",
         "mt5_handle_init": "handle_dpo_{tf} = iCustom(NULL,{mt5_tf},\"DPO\",20); if(handle_dpo_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_dpo_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_dpo_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.dpo(df_m{tv_tf}['close'], length=20).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "DPO(20) on {tf} (custom indicator)",
@@ -186,7 +186,7 @@ INDICATOR_PATTERNS = [
     (r"^kst$", {
         "mt5_handle_var":  "int handle_kst_{tf};",
         "mt5_handle_init": "handle_kst_{tf} = iCustom(NULL,{mt5_tf},\"KST\",10,15,20,30); if(handle_kst_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_kst_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_kst_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.kst(df_m{tv_tf}['close'])['KST_10_15_20_30_10_10_10_15'].iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "KST on {tf} (custom indicator)",
@@ -195,7 +195,7 @@ INDICATOR_PATTERNS = [
     (r"^vpt$", {
         "mt5_handle_var":  "int handle_vpt_{tf};",
         "mt5_handle_init": "handle_vpt_{tf} = iCustom(NULL,{mt5_tf},\"VPT\"); if(handle_vpt_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_vpt_{tf}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_vpt_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.vpt(df_m{tv_tf}['close'], df_m{tv_tf}['volume']).iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "VPT on {tf} (custom indicator)",
@@ -206,43 +206,43 @@ INDICATOR_PATTERNS = [
     #      Missing mappings caused indicatorFailed=true → EA never traded.
     # CHANGED: April 2026 — add all price_action MQL5 mappings
     (r"^candle_body$", {
-        "mt5_code":       "MathAbs(iClose(NULL,{mt5_tf},1) - iOpen(NULL,{mt5_tf},1))",
+        "mt5_code":       "MathAbs(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})) - iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf})))",
         "tradovate_code": "abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Candle body size on {tf}",
     }),
     (r"^candle_range$", {
-        "mt5_code":       "(iHigh(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1))",
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf})) - iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})))",
         "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Candle range (high-low) on {tf}",
     }),
     (r"^upper_shadow$", {
-        "mt5_code":       "(iHigh(NULL,{mt5_tf},1) - MathMax(iOpen(NULL,{mt5_tf},1), iClose(NULL,{mt5_tf},1)))",
+        "mt5_code":       "(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf})) - MathMax(iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf})), iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))))",
         "tradovate_code": "(df_m{tv_tf}['high'].iloc[-1] - max(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]))",
         "custom_indicator_mt5": False,
         "description": "Upper shadow size on {tf}",
     }),
     (r"^lower_shadow$", {
-        "mt5_code":       "(MathMin(iOpen(NULL,{mt5_tf},1), iClose(NULL,{mt5_tf},1)) - iLow(NULL,{mt5_tf},1))",
+        "mt5_code":       "(MathMin(iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf})), iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))) - iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})))",
         "tradovate_code": "(min(df_m{tv_tf}['open'].iloc[-1], df_m{tv_tf}['close'].iloc[-1]) - df_m{tv_tf}['low'].iloc[-1])",
         "custom_indicator_mt5": False,
         "description": "Lower shadow size on {tf}",
     }),
     (r"^body_to_range_ratio$", {
-        "mt5_code":       "(MathAbs(iClose(NULL,{mt5_tf},1) - iOpen(NULL,{mt5_tf},1)) / MathMax(iHigh(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1), 0.000001))",
+        "mt5_code":       "(MathAbs(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})) - iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf}))) / MathMax(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf})) - iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})), 0.000001))",
         "tradovate_code": "(abs(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['open'].iloc[-1]) / max(df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1], 1e-6))",
         "custom_indicator_mt5": False,
         "description": "Body to range ratio on {tf}",
     }),
     (r"^is_bullish$", {
-        "mt5_code":       "(iClose(NULL,{mt5_tf},1) > iOpen(NULL,{mt5_tf},1) ? 1.0 : 0.0)",
+        "mt5_code":       "(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})) > iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf})) ? 1.0 : 0.0)",
         "tradovate_code": "(1.0 if df_m{tv_tf}['close'].iloc[-1] > df_m{tv_tf}['open'].iloc[-1] else 0.0)",
         "custom_indicator_mt5": False,
         "description": "Is candle bullish on {tf}",
     }),
     (r"^distance_from_low$", {
-        "mt5_code":       "((iClose(NULL,{mt5_tf},1) - iLow(NULL,{mt5_tf},1)) / MathMax(iClose(NULL,{mt5_tf},1), 0.000001) * 100.0)",
+        "mt5_code":       "((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})) - iLow(NULL,{mt5_tf},GetBarShift({mt5_tf}))) / MathMax(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})), 0.000001) * 100.0)",
         "tradovate_code": "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
         "description": "Distance from bar low as % on {tf}",
@@ -250,7 +250,7 @@ INDICATOR_PATTERNS = [
 
     # Close position in bar range
     (r"^close_position_in_range$", {
-        "mt5_code":       "(iClose(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1))/(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1)+0.000001)",
+        "mt5_code":       "(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})))/(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iLow(NULL,{mt5_tf},GetBarShift({mt5_tf}))+0.000001)",
         "tradovate_code": "(df_m{tv_tf}['close'].iloc[-1]-df_m{tv_tf}['low'].iloc[-1])/max(df_m{tv_tf}['high'].iloc[-1]-df_m{tv_tf}['low'].iloc[-1],0.000001)",
         "custom_indicator_mt5": False,
         "description": "Close position in bar range on {tf}",
@@ -262,7 +262,7 @@ INDICATOR_PATTERNS = [
     #      ~100,000× scale difference.
     # CHANGED: April 2026 — fix distance_from_high scale (audit bug family #7)
     (r"^distance_from_high$", {
-        "mt5_code":       "((iHigh(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},1)) / MathMax(iClose(NULL,{mt5_tf},1), 0.000001) * 100.0)",
+        "mt5_code":       "((iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))) / MathMax(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})), 0.000001) * 100.0)",
         "tradovate_code": "((df_m{tv_tf}['high'].iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / max(df_m{tv_tf}['close'].iloc[-1], 1e-6) * 100)",
         "custom_indicator_mt5": False,
         "description": "Distance from bar high as % on {tf}",
@@ -287,7 +287,7 @@ INDICATOR_PATTERNS = [
         "mt5_handle_var":  "int handle_mom_{tf}_{p};",
         "mt5_handle_init": "handle_mom_{tf}_{p} = iMomentum(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_mom_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
         "mt5_buffer_read": (
-            "double _tmp = SafeCopyBuf(handle_mom_{tf}_{p}, 0); "
+            "double _tmp = SafeCopyBuf(handle_mom_{tf}_{p}, 0, {mt5_tf}); "
             "if(_tmp == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
             "else { double val_{var} = (_tmp - 100.0);  "
             "// iMomentum returns 100-based, subtract 100 to match Python roc % change"
@@ -303,7 +303,7 @@ INDICATOR_PATTERNS = [
     (r"^ema_(\d+)$", {
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_ema_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "EMA({p}) on {tf}",
@@ -323,10 +323,10 @@ INDICATOR_PATTERNS = [
         #      iClose(tf, 1) to match. Same for iHigh/iLow shifts.
         # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         "mt5_buffer_read": (
-            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0); "
+            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
             "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
             "else { double _ema_val_{tf}_{p} = _tmp_buf; "
-            "double _close_{tf} = iClose(NULL,{mt5_tf},1); "
+            "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
             "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -343,8 +343,8 @@ INDICATOR_PATTERNS = [
             "if(handle_ema_{tf}_{p1}==INVALID_HANDLE || handle_ema_{tf}_{p2}==INVALID_HANDLE) return(INIT_FAILED);"
         ),
         "mt5_buffer_read": (
-            "double _tmp1 = SafeCopyBuf(handle_ema_{tf}_{p1}, 0); "
-            "double _tmp2 = SafeCopyBuf(handle_ema_{tf}_{p2}, 0); "
+            "double _tmp1 = SafeCopyBuf(handle_ema_{tf}_{p1}, 0, {mt5_tf}); "
+            "double _tmp2 = SafeCopyBuf(handle_ema_{tf}_{p2}, 0, {mt5_tf}); "
             "if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
             "else { double val_{var} = (_tmp1 > _tmp2) ? 1.0 : 0.0; }"
         ),
@@ -369,7 +369,7 @@ INDICATOR_PATTERNS = [
         "mt5_buffer_read": (
             "int _sw_low_idx_{tf} = iLowest(NULL,{mt5_tf},MODE_LOW,20,1); "
             "double _sw_low_{tf} = iLow(NULL,{mt5_tf},_sw_low_idx_{tf}); "
-            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},1); "
+            "double _cl_sw_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
             "double val_{var} = (_cl_sw_{tf} > 0) ? (_cl_sw_{tf} - _sw_low_{tf}) / _cl_sw_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -384,7 +384,7 @@ INDICATOR_PATTERNS = [
         "mt5_buffer_read": (
             "int _sw_high_idx_{tf} = iHighest(NULL,{mt5_tf},MODE_HIGH,20,1); "
             "double _sw_high_{tf} = iHigh(NULL,{mt5_tf},_sw_high_idx_{tf}); "
-            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},1); "
+            "double _cl_swh_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
             "double val_{var} = (_cl_swh_{tf} > 0) ? (_sw_high_{tf} - _cl_swh_{tf}) / _cl_swh_{tf} * 100.0 : 0.0;"
         ),
         "tradovate_code":  "(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['close'].iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
@@ -410,7 +410,7 @@ INDICATOR_PATTERNS = [
             "double _rl_lo_{var} = iLow(NULL,{mt5_tf},_rl_lo_idx_{var}); "
             "double _rl_range_{var} = _rl_hi_{var} - _rl_lo_{var}; "
             "double _rl_level_{var} = _rl_lo_{var} + {p}.0/1000.0 * _rl_range_{var}; "
-            "double _rl_close_{var} = iClose(NULL,{mt5_tf},1); "
+            "double _rl_close_{var} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
             "double val_{var} = (_rl_close_{var} - _rl_level_{var}) / MathMax(_rl_close_{var}, 0.000001) * 100.0;"
         ),
         "tradovate_code": (
@@ -435,7 +435,7 @@ INDICATOR_PATTERNS = [
             "double _psr_lo_{tf} = iLow(NULL,{mt5_tf},_psr_lo_idx_{tf}); "
             "double _psr_hi_{tf} = iHigh(NULL,{mt5_tf},_psr_hi_idx_{tf}); "
             "double _psr_range_{tf} = _psr_hi_{tf} - _psr_lo_{tf}; "
-            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},1) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
+            "double val_{var} = (_psr_range_{tf} > 0) ? (iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})) - _psr_lo_{tf}) / _psr_range_{tf} : 0.5;"
         ),
         "tradovate_code":  "((df_m{tv_tf}['close'].iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1]) / max(df_m{tv_tf}['high'].rolling(20).max().iloc[-1] - df_m{tv_tf}['low'].rolling(20).min().iloc[-1], 0.000001))",
         "custom_indicator_mt5": False,
@@ -446,7 +446,7 @@ INDICATOR_PATTERNS = [
     (r"^stoch_(\d+)_k$", {
         "mt5_handle_var":  "int handle_stoch_{tf}_{p};",
         "mt5_handle_init": "handle_stoch_{tf}_{p} = iStochastic(NULL,{mt5_tf},{p},3,3,MODE_SMA,STO_LOWHIGH); if(handle_stoch_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_stoch_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_stoch_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.stoch(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],k={p})['STOCHk_{p}_3_3'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Stochastic %K({p}) on {tf}",
@@ -456,7 +456,7 @@ INDICATOR_PATTERNS = [
     (r"^williams_r_(\d+)$", {
         "mt5_handle_var":  "int handle_wpr_{tf}_{p};",
         "mt5_handle_init": "handle_wpr_{tf}_{p} = iWPR(NULL,{mt5_tf},{p}); if(handle_wpr_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_wpr_{tf}_{p}, 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_wpr_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.willr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Williams %R({p}) on {tf}",
@@ -471,7 +471,7 @@ INDICATOR_PATTERNS = [
     (r"^std_dev_(\d+)$", {
         "mt5_handle_var":  "int handle_std_{tf}_{p};",
         "mt5_handle_init": "handle_std_{tf}_{p} = iStdDev(NULL,{mt5_tf},{p},0,MODE_SMA,PRICE_CLOSE); if(handle_std_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _raw_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0); double val_{var} = 0; if(_raw_{var} == EMPTY_VALUE) {{ indicatorFailed = true; }} else {{ val_{var} = _raw_{var} * MathSqrt((double){p} / MathMax((double){p} - 1.0, 1.0)); }}",
+        "mt5_buffer_read": "double _raw_{var} = SafeCopyBuf(handle_std_{tf}_{p}, 0, {mt5_tf}); double val_{var} = 0; if(_raw_{var} == EMPTY_VALUE) {{ indicatorFailed = true; }} else {{ val_{var} = _raw_{var} * MathSqrt((double){p} / MathMax((double){p} - 1.0, 1.0)); }}",
         "tradovate_code":  "df_m{tv_tf}['close'].rolling({p}).std().iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Standard Deviation({p}) on {tf} (ddof=1 to match Python)",
@@ -491,8 +491,8 @@ INDICATOR_PATTERNS = [
             "if(handle_ema_{tf}_20_kc==INVALID_HANDLE || handle_atr_{tf}_10_kc==INVALID_HANDLE) return(INIT_FAILED);"
         ),
         "mt5_buffer_read": (
-            "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0); "
-            "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0); "
+            "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0, {mt5_tf}); "
+            "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0, {mt5_tf}); "
             "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE || _tmp_ema <= 0) { indicatorFailed = true; val_{var} = 0; } "
             "else { double val_{var} = (_tmp_atr * 4.0) / _tmp_ema * 100.0; }  "
             "// Keltner width % = (upper - lower) / middle × 100 = (4 × ATR) / EMA × 100"
@@ -672,7 +672,7 @@ def _mql5_sub_expr(feat_name, uid=''):
         #      Use CopyBuffer(iMA(...),0,1,1,buf) to read bar-1 value.
         # CHANGED: April 2026 — fix MQL5 iMA syntax for ema_distance sub-expr
         return ([f'double {buf}[1]; CopyBuffer(iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE),0,1,1,{buf});'],
-                f'((iClose(NULL,{mt5_tf},1)-{buf}[0])/MathMax(iClose(NULL,{mt5_tf},1),0.000001)*100.0)')
+                f'((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-{buf}[0])/MathMax(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})),0.000001)*100.0)')
     # EMA9 above EMA20 (binary)
     if re.match(r'^ema_(\d+)_above_(\d+)$', ind):
         # WHY: MQL5 iMA returns a handle; 7-param MQL4 call doesn't compile.
@@ -700,17 +700,17 @@ def _mql5_sub_expr(feat_name, uid=''):
                 f'{buf}[0]')
     # Candle range (H - L)
     if ind == 'candle_range':
-        return ([], f'(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1))')
+        return ([], f'(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})))')
     # Body-to-range ratio
     if ind == 'body_to_range_ratio':
-        return ([], f'(MathAbs(iClose(NULL,{mt5_tf},1)-iOpen(NULL,{mt5_tf},1))/MathMax(iHigh(NULL,{mt5_tf},1)-iLow(NULL,{mt5_tf},1),0.000001))')
+        return ([], f'(MathAbs(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iOpen(NULL,{mt5_tf},GetBarShift({mt5_tf})))/MathMax(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iLow(NULL,{mt5_tf},GetBarShift({mt5_tf})),0.000001))')
     # WHY: Python pivot uses previous bar of CURRENT timeframe
     #      ((prev_high + prev_low + prev_close) / 3 via .shift(1)).
     #      Old MQL5 hardcoded PERIOD_D1 which meant an H1 feature
     #      would read YESTERDAY's D1 bar — completely different value.
     # CHANGED: April 2026 — fix pivot_point timeframe (audit bug family #7)
     if ind == 'pivot_point':
-        return ([], f'((iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
+        return ([], f'((iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))+iLow(NULL,{mt5_tf},GetBarShift({mt5_tf}))+iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})))/3.0)')
     # Pivot-point distance (current close − pivot)
     # WHY: Old expression mixed shift 0 (current forming bar) for the
     #      close with shift 1 (last closed) for the pivot components.
@@ -719,7 +719,7 @@ def _mql5_sub_expr(feat_name, uid=''):
     #      Matches Python's candle_idx-1 training convention.
     # CHANGED: April 2026 — consistent shift-1 everywhere (audit HIGH #29)
     if ind == 'pivot_point_distance':
-        return ([], f'(iClose(NULL,{mt5_tf},1)-(iHigh(NULL,{mt5_tf},1)+iLow(NULL,{mt5_tf},1)+iClose(NULL,{mt5_tf},1))/3.0)')
+        return ([], f'(iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-(iHigh(NULL,{mt5_tf},GetBarShift({mt5_tf}))+iLow(NULL,{mt5_tf},GetBarShift({mt5_tf}))+iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})))/3.0)')
     # ROC (rate of change)
     if re.match(r'^roc_\d+$', ind):
         # WHY: ROC is defined as percent change × 100. Old expr divided but
@@ -728,15 +728,15 @@ def _mql5_sub_expr(feat_name, uid=''):
         #      fire on the live fractional values.
         # CHANGED: April 2026 — fix roc sub-expr missing ×100 (audit HIGH)
         n = int(p) + 1
-        return ([], f'((iClose(NULL,{mt5_tf},1)-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001)*100.0)')
+        return ([], f'((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-iClose(NULL,{mt5_tf},{n}))/MathMax(iClose(NULL,{mt5_tf},{n}),0.001)*100.0)')
     # Position in swing range (20-bar rolling min/max)
     if ind == 'position_in_swing_range':
         lo_buf = f'{buf}lo'; hi_buf = f'{buf}hi'
         lines = [
-            f'double {lo_buf}=iClose(NULL,{mt5_tf},1); double {hi_buf}=iClose(NULL,{mt5_tf},1);',
+            f'double {lo_buf}=iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); double {hi_buf}=iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}));',
             f'for(int _si=1;_si<20;_si++){{double _sc=iClose(NULL,{mt5_tf},_si);if(_sc<{lo_buf}){lo_buf}=_sc;if(_sc>{hi_buf}){hi_buf}=_sc;}}',
         ]
-        return (lines, f'((iClose(NULL,{mt5_tf},1)-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
+        return (lines, f'((iClose(NULL,{mt5_tf},GetBarShift({mt5_tf}))-{lo_buf})/MathMax({hi_buf}-{lo_buf},0.000001))')
     # WHY: TSI (True Strength Index) requires double EMA of momentum which MT5 lacks as built-in.
     #      Inline computation is complex (25+ lines with nested loops). Risk of subtle bugs.
     #      Instead of silently returning 0, FAIL LOUD so user knows TSI features are broken.

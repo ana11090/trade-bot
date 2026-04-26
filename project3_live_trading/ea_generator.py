@@ -2090,30 +2090,35 @@ double GetPipSize()
 }}
 
 //+------------------------------------------------------------------+
-//| SafeCopyBuffer — wrapper that returns sentinel on failure         |
-//| WHY: Indicator handles aren't always ready (warmup, errors). The  |
-//|      old code called CopyBuffer and read buf[0] unconditionally,  |
-//|      which reads uninitialized memory. This wrapper returns       |
-//|      EMPTY_VALUE on any failure so callers can short-circuit.     |
-//|                                                                   |
-//|      CRITICAL: start_pos is 1 (last closed bar), NOT 0 (current   |
-//|      forming bar). Python training reads features at the last     |
-//|      closed candle — see step1_align_price.py candle_idx - 1.     |
-//|      Reading shift 0 in MT5 produces feature values from a bar    |
-//|      that hadn't closed yet at the time the rule was trained,    |
-//|      so MT5 live values diverge from Python training values.     |
-//|      All 22 buffered indicators (EMA, RSI, MACD, Bollinger, ATR,  |
-//|      etc.) inherit this convention via SafeCopyBuf.               |
-//| CHANGED: April 2026 — defensive indicator reads + shift-1 fix     |
-//|          (audit HIGH — Phase 20 missed by Phase 19a Fix 1)        |
+//| Global: Entry timeframe for shift calculation                     |
 //+------------------------------------------------------------------+
-double SafeCopyBuf(int handle, int bufNum)
+ENUM_TIMEFRAMES g_entryTF = {mql_period};
+
+//+------------------------------------------------------------------+
+//| Calculate correct bar shift for multi-timeframe indicators        |
+//| WHY: Python backtest evaluates on current bar (shift=1 for same   |
+//|      TF to avoid look-ahead, shift=0 for higher TF indicators).   |
+//| CHANGED: April 2026 — dynamic shift based on TF comparison        |
+//+------------------------------------------------------------------+
+int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
+{{
+   // Same timeframe: use shift=1 (previous completed bar - avoid look-ahead)
+   // Higher timeframe: use shift=0 (current bar of that TF)
+   return (indicatorTF == g_entryTF) ? 1 : 0;
+}}
+
+//+------------------------------------------------------------------+
+//| SafeCopyBuffer — wrapper with dynamic shift                       |
+//| WHY: Indicator buffers need different shifts based on timeframe.  |
+//|      Same TF indicators use shift=1, higher TF use shift=0.       |
+//| CHANGED: April 2026 — dynamic shift calculation                   |
+//+------------------------------------------------------------------+
+double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
 {{
    if(handle == INVALID_HANDLE) return EMPTY_VALUE;
    double tmp[1];
-   // start_pos = 1 reads the LAST CLOSED bar's value, matching
-   // Python training's candle_idx - 1 convention.
-   int copied = CopyBuffer(handle, bufNum, 1, 1, tmp);
+   int shift = GetBarShift(indicatorTF);
+   int copied = CopyBuffer(handle, bufNum, shift, 1, tmp);
    if(copied <= 0) return EMPTY_VALUE;
    return tmp[0];
 }}
