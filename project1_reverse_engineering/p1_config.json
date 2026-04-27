@@ -53,7 +53,7 @@
   "srm_a_tie_break_within_pct": "0.10",
   "auto_save_discovered_rules": "true",
   "data_source_id": "xauusd_unlimited_levereged",
-  "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+  "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
   "pip_value_per_lot": "1.0",
   "spread": "25",
   "commission": "4.0",

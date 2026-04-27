@@ -1,11 +1,165 @@
-[
-  {
-    "id": 1,
-    "rule_id": "BUY_H1_3c_0426_2bf0a982",
-    "saved_at": "2026-04-26T21:06:54.768518",
-    "source": "Step3:scope_per_tf_only:BUY:conf91",
-    "notes": "",
-    "rule": {
+{
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_awesome_oscillator",
+          "operator": "<=",
+          "value": 379.7972
+        },
+        {
+          "feature": "H1_keltner_width",
+          "operator": ">",
+          "value": 0.7686
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.671,
+      "coverage": 331,
+      "coverage_pct": 37.4,
+      "win_rate": 0.671,
+      "avg_pips": 212.8,
+      "_target_mode": "regression_raw",
+      "avg_pips_test": 65.2,
+      "win_rate_test": 0.571,
+      "test_samples": 14,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_awesome_oscillator",
+          "operator": ">",
+          "value": 379.7972
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": "<=",
+          "value": 8.1156
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.9,
+      "coverage": 30,
+      "coverage_pct": 3.4,
+      "win_rate": 0.9,
+      "avg_pips": 850.8,
+      "_target_mode": "regression_raw",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_awesome_oscillator",
+          "operator": ">",
+          "value": 379.7972
+        },
+        {
+          "feature": "M5_bull_power",
+          "operator": ">",
+          "value": 8.1156
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.815,
+      "coverage": 27,
+      "coverage_pct": 3.1,
+      "win_rate": 0.815,
+      "avg_pips": 465.3,
+      "_target_mode": "regression_raw",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.895
+        },
+        {
+          "feature": "D1_cci_20",
+          "operator": ">",
+          "value": -55.2707
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.64,
+      "win_rate": 0.64,
+      "coverage": 86,
+      "coverage_pct": 24.4,
+      "train_win_rate": 0.721,
+      "train_coverage": 61,
+      "overfit_gap": 0.082,
+      "is_overfit": false,
+      "avg_pips": 117.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 174,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+      "_a46_source_tag": "BotEntry"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_cci_50",
+          "operator": ">",
+          "value": 53.6611
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 25.04
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.79,
+      "win_rate": 0.79,
+      "coverage": 62,
+      "coverage_pct": 17.6,
+      "train_win_rate": 0.854,
+      "train_coverage": 89,
+      "overfit_gap": 0.064,
+      "is_overfit": false,
+      "avg_pips": 172.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 301,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
+      "_a46_source_tag": "BotEntry"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -95,16 +249,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 2,
-    "rule_id": "BUY_H1_2c_0426_83642d7e",
-    "saved_at": "2026-04-26T21:06:54.779225",
-    "source": "Step3:scope_per_tf_only:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -184,16 +332,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 3,
-    "rule_id": "BUY_H1_4c_0426_60f343cf",
-    "saved_at": "2026-04-26T21:06:54.782783",
-    "source": "Step3:scope_per_tf_only:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -293,16 +435,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 4,
-    "rule_id": "BUY_H1_4c_0426_541d6cb9",
-    "saved_at": "2026-04-26T21:06:54.794857",
-    "source": "Step3:scope_per_tf_only:BUY:conf100",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -402,16 +538,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 5,
-    "rule_id": "BUY_H1_2c_0426_bd486ec4",
-    "saved_at": "2026-04-26T21:06:54.802931",
-    "source": "Step3:scope_per_tf_only:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -491,16 +621,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 6,
-    "rule_id": "BUY_H1_4c_0426_8ec15d21",
-    "saved_at": "2026-04-26T21:07:00.662054",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -600,16 +724,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 7,
-    "rule_id": "BUY_H1_4c_0426_b22d876a",
-    "saved_at": "2026-04-26T21:07:00.674086",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -709,16 +827,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 8,
-    "rule_id": "BUY_H1_4c_0426_bf72e408",
-    "saved_at": "2026-04-26T21:07:00.680652",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf78",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -818,16 +930,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 9,
-    "rule_id": "BUY_H1_4c_0426_bf3da0df",
-    "saved_at": "2026-04-26T21:07:00.695184",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf84",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -927,16 +1033,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 10,
-    "rule_id": "BUY_H1_4c_0426_dbd7d430",
-    "saved_at": "2026-04-26T21:07:00.698126",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -1036,16 +1136,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 11,
-    "rule_id": "BUY_H1_4c_0426_750d230b",
-    "saved_at": "2026-04-26T21:07:00.710374",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf95",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -1145,16 +1239,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 12,
-    "rule_id": "BUY_H1_3c_0426_de65244a",
-    "saved_at": "2026-04-26T21:07:00.722189",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -1244,16 +1332,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 13,
-    "rule_id": "BUY_H1_3c_0426_39954fb0",
-    "saved_at": "2026-04-26T21:07:00.728318",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf80",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -1343,16 +1425,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 14,
-    "rule_id": "BUY_H1_3c_0426_9977e439",
-    "saved_at": "2026-04-26T21:07:00.740698",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -1442,16 +1518,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 15,
-    "rule_id": "BUY_H1_4c_0426_068115bf",
-    "saved_at": "2026-04-26T21:07:09.352013",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -1551,16 +1621,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 16,
-    "rule_id": "BUY_H1_4c_0426_726e58a8",
-    "saved_at": "2026-04-26T21:07:09.356563",
-    "source": "Step3:scope_per_tf_only:BUY:conf78",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -1660,16 +1724,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 17,
-    "rule_id": "BUY_H1_3c_0426_f417b5e5",
-    "saved_at": "2026-04-26T21:07:09.369213",
-    "source": "Step3:scope_per_tf_only:BUY:conf92",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -1759,16 +1817,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 18,
-    "rule_id": "BUY_H1_4c_0426_4e906a4b",
-    "saved_at": "2026-04-26T21:07:09.380777",
-    "source": "Step3:scope_per_tf_only:BUY:conf88",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -1868,16 +1920,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 19,
-    "rule_id": "BUY_H1_4c_0426_74515360",
-    "saved_at": "2026-04-26T21:07:09.395366",
-    "source": "Step3:scope_per_tf_only:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -1977,16 +2023,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 20,
-    "rule_id": "BUY_H1_4c_0426_5963137a",
-    "saved_at": "2026-04-26T21:07:09.405415",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -2086,16 +2126,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 21,
-    "rule_id": "BUY_H1_3c_0426_e54752dc",
-    "saved_at": "2026-04-26T21:07:09.417110",
-    "source": "Step3:scope_per_tf_only:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -2185,16 +2219,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 22,
-    "rule_id": "BUY_H1_3c_0426_d79373ed",
-    "saved_at": "2026-04-26T21:07:09.426008",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -2284,16 +2312,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 23,
-    "rule_id": "BUY_H1_4c_0426_296fdfc1",
-    "saved_at": "2026-04-26T21:07:13.283561",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf78",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2393,16 +2415,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 24,
-    "rule_id": "BUY_H1_4c_0426_f65726d0",
-    "saved_at": "2026-04-26T21:07:13.297188",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2502,16 +2518,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 25,
-    "rule_id": "BUY_H1_4c_0426_c5ebb310",
-    "saved_at": "2026-04-26T21:07:13.313594",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf95",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2611,16 +2621,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 26,
-    "rule_id": "BUY_H1_3c_0426_be385217",
-    "saved_at": "2026-04-26T21:07:13.313594",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2710,16 +2714,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 27,
-    "rule_id": "BUY_H1_4c_0426_e164aae8",
-    "saved_at": "2026-04-26T21:07:21.862398",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2819,16 +2817,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 28,
-    "rule_id": "BUY_H1_4c_0426_d7ca5fe8",
-    "saved_at": "2026-04-26T21:07:21.878359",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -2928,16 +2920,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 29,
-    "rule_id": "BUY_H1_3c_0426_0d4eaf41",
-    "saved_at": "2026-04-26T21:07:21.892697",
-    "source": "Step3:scope_per_tf_only:BUY:conf78",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3027,16 +3013,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 30,
-    "rule_id": "BUY_H1_3c_0426_ea9e71d1",
-    "saved_at": "2026-04-26T21:07:21.905883",
-    "source": "Step3:scope_per_tf_only:BUY:conf88",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3126,16 +3106,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 31,
-    "rule_id": "BUY_H1_4c_0426_1eeab67b",
-    "saved_at": "2026-04-26T21:07:25.588932",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf69",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3235,16 +3209,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 32,
-    "rule_id": "BUY_H1_4c_0426_f0e7964b",
-    "saved_at": "2026-04-26T21:07:25.617052",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3344,16 +3312,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 33,
-    "rule_id": "BUY_H1_4c_0426_81c4c548",
-    "saved_at": "2026-04-26T21:07:25.627566",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf96",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3453,16 +3415,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 34,
-    "rule_id": "BUY_H1_4c_0426_0dbe9bb0",
-    "saved_at": "2026-04-26T21:07:25.644422",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3562,16 +3518,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 35,
-    "rule_id": "BUY_H1_3c_0426_e6b6ef8e",
-    "saved_at": "2026-04-26T21:07:25.659758",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -3661,16 +3611,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 36,
-    "rule_id": "BUY_H1_4c_0426_060f47af",
-    "saved_at": "2026-04-26T21:07:34.081072",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -3770,16 +3714,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 37,
-    "rule_id": "BUY_H1_2c_0426_8d9d8d10",
-    "saved_at": "2026-04-26T21:07:34.101029",
-    "source": "Step3:scope_per_tf_only:BUY:conf93",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -3859,16 +3797,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 38,
-    "rule_id": "BUY_H1_3c_0426_60c8479b",
-    "saved_at": "2026-04-26T21:07:34.115479",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -3958,16 +3890,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 39,
-    "rule_id": "BUY_H1_4c_0426_41928b0c",
-    "saved_at": "2026-04-26T21:07:34.129546",
-    "source": "Step3:scope_per_tf_only:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4067,16 +3993,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 40,
-    "rule_id": "BUY_H1_3c_0426_12ada15e",
-    "saved_at": "2026-04-26T21:07:34.143569",
-    "source": "Step3:scope_per_tf_only:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4166,16 +4086,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 41,
-    "rule_id": "BUY_H1_4c_0426_e2d61418",
-    "saved_at": "2026-04-26T21:07:34.158523",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4275,16 +4189,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 42,
-    "rule_id": "BUY_H1_4c_0426_e15c7e95",
-    "saved_at": "2026-04-26T21:07:37.636763",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf86",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4384,16 +4292,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 43,
-    "rule_id": "BUY_H1_2c_0426_bc497a9a",
-    "saved_at": "2026-04-26T21:07:37.652459",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf93",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4473,16 +4375,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 44,
-    "rule_id": "BUY_H1_4c_0426_c10b0266",
-    "saved_at": "2026-04-26T21:07:37.665123",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4582,16 +4478,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 45,
-    "rule_id": "BUY_H1_3c_0426_75242d68",
-    "saved_at": "2026-04-26T21:07:37.684330",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4681,16 +4571,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 46,
-    "rule_id": "BUY_H1_3c_0426_2c69f50f",
-    "saved_at": "2026-04-26T21:07:37.691675",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4780,16 +4664,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 47,
-    "rule_id": "BUY_H1_4c_0426_6218c0b5",
-    "saved_at": "2026-04-26T21:07:37.706844",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -4889,16 +4767,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 48,
-    "rule_id": "BUY_H1_2c_0426_098e857d",
-    "saved_at": "2026-04-26T21:07:46.203806",
-    "source": "Step3:scope_per_tf_only:BUY:conf93",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -4978,16 +4850,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 49,
-    "rule_id": "BUY_H1_4c_0426_ed3e777f",
-    "saved_at": "2026-04-26T21:07:46.219830",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -5087,16 +4953,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 50,
-    "rule_id": "BUY_H1_4c_0426_c8cf9a6d",
-    "saved_at": "2026-04-26T21:07:46.238187",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -5196,16 +5056,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 51,
-    "rule_id": "BUY_H1_4c_0426_ab770e70",
-    "saved_at": "2026-04-26T21:07:46.252980",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -5305,16 +5159,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 52,
-    "rule_id": "BUY_H1_3c_0426_13e77cb5",
-    "saved_at": "2026-04-26T21:07:46.276568",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -5404,16 +5252,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 53,
-    "rule_id": "BUY_H1_3c_0426_734daf68",
-    "saved_at": "2026-04-26T21:07:46.291568",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -5503,16 +5345,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 54,
-    "rule_id": "BUY_H1_4c_0426_9fd333e4",
-    "saved_at": "2026-04-26T21:07:58.253071",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -5612,16 +5448,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 55,
-    "rule_id": "BUY_H1_4c_0426_ead9de25",
-    "saved_at": "2026-04-26T21:07:58.274683",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -5721,16 +5551,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 56,
-    "rule_id": "BUY_H1_4c_0426_fbf058a6",
-    "saved_at": "2026-04-26T21:07:58.296413",
-    "source": "Step3:scope_per_tf_only:BUY:conf83",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -5830,16 +5654,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 57,
-    "rule_id": "BUY_H1_4c_0426_95e86c98",
-    "saved_at": "2026-04-26T21:07:58.312486",
-    "source": "Step3:scope_per_tf_only:BUY:conf83",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -5939,16 +5757,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 58,
-    "rule_id": "BUY_H1_4c_0426_3fd4485f",
-    "saved_at": "2026-04-26T21:07:58.331884",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -6048,16 +5860,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 59,
-    "rule_id": "BUY_D1_2c_0426_c0c97b68",
-    "saved_at": "2026-04-26T21:21:13.016216",
-    "source": "Step4:?:BUY",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -6104,16 +5910,10 @@
       "status": "discovered",
       "grade": "",
       "score": 0,
-      "spread_pips": 2.5
-    }
-  },
-  {
-    "id": 60,
-    "rule_id": "BUY_D1_2c_0426_0e893fcb",
-    "saved_at": "2026-04-26T21:21:13.039292",
-    "source": "Step4:?:BUY",
-    "notes": "",
-    "rule": {
+      "spread_pips": 2.5,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -6160,16 +5960,10 @@
       "status": "discovered",
       "grade": "",
       "score": 0,
-      "spread_pips": 2.5
-    }
-  },
-  {
-    "id": 61,
-    "rule_id": "BUY_H1_3c_0426_8cdecb22",
-    "saved_at": "2026-04-26T21:32:41.428782",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "spread_pips": 2.5,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -6259,16 +6053,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 62,
-    "rule_id": "BUY_H1_3c_0426_57d6d73a",
-    "saved_at": "2026-04-26T21:32:41.449855",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_atr_14",
@@ -6358,16 +6146,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 63,
-    "rule_id": "BUY_H1_3c_0426_9886db17",
-    "saved_at": "2026-04-26T21:32:44.360819",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf87",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -6457,16 +6239,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 64,
-    "rule_id": "BUY_H1_3c_0426_804fb71b",
-    "saved_at": "2026-04-26T21:32:44.379835",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -6556,16 +6332,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 65,
-    "rule_id": "BUY_D1_3c_0426_c16a37f3",
-    "saved_at": "2026-04-26T21:33:12.864524",
-    "source": "Step4:?:BUY",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -6617,16 +6387,10 @@
       "status": "discovered",
       "grade": "",
       "score": 0,
-      "spread_pips": 2.5
-    }
-  },
-  {
-    "id": 66,
-    "rule_id": "BUY_D1_3c_0426_c58d7be4",
-    "saved_at": "2026-04-26T21:33:12.886089",
-    "source": "Step4:?:BUY",
-    "notes": "",
-    "rule": {
+      "spread_pips": 2.5,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_distance_from_high",
@@ -6678,16 +6442,10 @@
       "status": "discovered",
       "grade": "",
       "score": 0,
-      "spread_pips": 2.5
-    }
-  },
-  {
-    "id": 67,
-    "rule_id": "BUY_H1_3c_0426_8d1dc5cf",
-    "saved_at": "2026-04-26T21:33:15.233794",
-    "source": "Step3:scope_per_tf_only:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "spread_pips": 2.5,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -6777,16 +6535,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 68,
-    "rule_id": "BUY_H1_3c_0426_3c021495",
-    "saved_at": "2026-04-26T21:33:15.255309",
-    "source": "Step3:scope_per_tf_only:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -6876,16 +6628,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 69,
-    "rule_id": "BUY_H1_3c_0426_44476c02",
-    "saved_at": "2026-04-26T21:33:15.273689",
-    "source": "Step3:scope_per_tf_only:BUY:conf92",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -6975,16 +6721,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 70,
-    "rule_id": "BUY_H1_3c_0426_0b353ea4",
-    "saved_at": "2026-04-26T21:33:24.144889",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -7074,16 +6814,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 71,
-    "rule_id": "BUY_H1_3c_0426_1967770d",
-    "saved_at": "2026-04-26T21:33:26.787896",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf74",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -7173,16 +6907,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 72,
-    "rule_id": "BUY_H1_3c_0426_c42d794c",
-    "saved_at": "2026-04-26T21:33:32.854451",
-    "source": "Step3:scope_per_tf_only:BUY:conf69",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -7272,16 +7000,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 73,
-    "rule_id": "BUY_H1_3c_0426_3642bbd3",
-    "saved_at": "2026-04-26T21:33:35.315063",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf77",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_2_width",
@@ -7371,16 +7093,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 74,
-    "rule_id": "BUY_H1_3c_0426_95a16974",
-    "saved_at": "2026-04-26T21:33:41.289317",
-    "source": "Step3:scope_per_tf_only:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_macd_std_signal",
@@ -7470,16 +7186,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 75,
-    "rule_id": "BUY_H1_3c_0426_7e805254",
-    "saved_at": "2026-04-26T21:33:50.348683",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -7569,16 +7279,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 76,
-    "rule_id": "BUY_H1_3c_0426_30daf7a7",
-    "saved_at": "2026-04-26T21:33:50.370564",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_bb_50_2_width",
@@ -7668,16 +7372,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 77,
-    "rule_id": "BUY_H1_4c_0426_e3f7d70c",
-    "saved_at": "2026-04-26T21:35:46.157169",
-    "source": "Step3:scope_per_tf_only:BUY:conf97",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -7777,16 +7475,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 78,
-    "rule_id": "BUY_H1_4c_0426_56b5cd91",
-    "saved_at": "2026-04-26T21:35:46.182358",
-    "source": "Step3:scope_per_tf_only:BUY:conf91",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -7886,16 +7578,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 79,
-    "rule_id": "BUY_H1_4c_0426_58e15b8b",
-    "saved_at": "2026-04-26T21:35:46.203746",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -7995,16 +7681,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 80,
-    "rule_id": "BUY_H1_4c_0426_1c5a6b47",
-    "saved_at": "2026-04-26T21:35:46.224528",
-    "source": "Step3:scope_per_tf_only:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -8104,16 +7784,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 81,
-    "rule_id": "BUY_H1_3c_0426_f3f30e45",
-    "saved_at": "2026-04-26T21:35:46.245912",
-    "source": "Step3:scope_per_tf_only:BUY:conf84",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -8203,16 +7877,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 82,
-    "rule_id": "BUY_H1_4c_0426_48efbc80",
-    "saved_at": "2026-04-26T21:35:46.267276",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -8312,16 +7980,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 83,
-    "rule_id": "BUY_H1_3c_0426_63e4ea43",
-    "saved_at": "2026-04-26T21:35:46.283398",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -8411,16 +8073,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 84,
-    "rule_id": "BUY_H1_4c_0426_f52a9b48",
-    "saved_at": "2026-04-26T21:35:49.318951",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf97",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -8520,16 +8176,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 85,
-    "rule_id": "BUY_H1_4c_0426_92272e01",
-    "saved_at": "2026-04-26T21:35:49.341790",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -8629,16 +8279,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 86,
-    "rule_id": "BUY_H1_4c_0426_25d523a2",
-    "saved_at": "2026-04-26T21:35:49.363027",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -8738,16 +8382,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 87,
-    "rule_id": "BUY_H1_4c_0426_37613198",
-    "saved_at": "2026-04-26T21:35:49.385666",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -8847,16 +8485,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 88,
-    "rule_id": "BUY_H1_4c_0426_96277db2",
-    "saved_at": "2026-04-26T21:35:49.407617",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf80",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -8956,16 +8588,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 89,
-    "rule_id": "BUY_H1_4c_0426_b9f85dbf",
-    "saved_at": "2026-04-26T21:35:49.429876",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9065,16 +8691,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 90,
-    "rule_id": "BUY_H1_4c_0426_144e66cf",
-    "saved_at": "2026-04-26T21:35:49.450746",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9174,16 +8794,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 91,
-    "rule_id": "BUY_H1_4c_0426_cf7d5d3d",
-    "saved_at": "2026-04-26T21:36:20.406456",
-    "source": "Step3:scope_per_tf_only:BUY:conf84",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9283,16 +8897,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 92,
-    "rule_id": "BUY_H1_4c_0426_8bc28a8e",
-    "saved_at": "2026-04-26T21:36:20.431006",
-    "source": "Step3:scope_per_tf_only:BUY:conf100",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9392,16 +9000,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 93,
-    "rule_id": "BUY_H1_4c_0426_0b6d00d4",
-    "saved_at": "2026-04-26T21:36:20.453535",
-    "source": "Step3:scope_per_tf_only:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9501,16 +9103,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 94,
-    "rule_id": "BUY_H1_4c_0426_556288fc",
-    "saved_at": "2026-04-26T21:36:20.477557",
-    "source": "Step3:scope_per_tf_only:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9610,16 +9206,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 95,
-    "rule_id": "BUY_H1_3c_0426_ee98499b",
-    "saved_at": "2026-04-26T21:36:20.500806",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9709,16 +9299,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 96,
-    "rule_id": "BUY_H1_3c_0426_33065f44",
-    "saved_at": "2026-04-26T21:36:20.525317",
-    "source": "Step3:scope_per_tf_only:BUY:conf86",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9808,16 +9392,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 97,
-    "rule_id": "BUY_H1_4c_0426_3470038c",
-    "saved_at": "2026-04-26T21:36:20.548886",
-    "source": "Step3:scope_per_tf_only:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -9917,16 +9495,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 98,
-    "rule_id": "BUY_H1_4c_0426_281c952e",
-    "saved_at": "2026-04-26T21:36:23.444055",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf95",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -10026,16 +9598,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 99,
-    "rule_id": "BUY_H1_4c_0426_78c0ed15",
-    "saved_at": "2026-04-26T21:36:23.469545",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -10135,16 +9701,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 100,
-    "rule_id": "BUY_H1_4c_0426_c60f2cf6",
-    "saved_at": "2026-04-26T21:36:23.488688",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf86",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -10244,16 +9804,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 101,
-    "rule_id": "BUY_H1_4c_0426_b84b5e62",
-    "saved_at": "2026-04-26T21:36:23.518908",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf80",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -10353,16 +9907,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 102,
-    "rule_id": "BUY_H1_4c_0426_7786dc73",
-    "saved_at": "2026-04-26T21:36:23.541631",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -10462,16 +10010,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 103,
-    "rule_id": "BUY_H1_4c_0426_61fc6dae",
-    "saved_at": "2026-04-26T21:36:29.825932",
-    "source": "Step3:scope_per_tf_only:BUY:conf76",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -10571,16 +10113,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 104,
-    "rule_id": "BUY_H1_3c_0426_666c19f9",
-    "saved_at": "2026-04-26T21:36:29.853811",
-    "source": "Step3:scope_per_tf_only:BUY:conf100",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -10670,16 +10206,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 105,
-    "rule_id": "BUY_H1_3c_0426_52e12a65",
-    "saved_at": "2026-04-26T21:36:29.879229",
-    "source": "Step3:scope_per_tf_only:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -10769,16 +10299,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 106,
-    "rule_id": "BUY_H1_3c_0426_04dd0b24",
-    "saved_at": "2026-04-26T21:36:29.905314",
-    "source": "Step3:scope_per_tf_only:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -10868,16 +10392,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 107,
-    "rule_id": "BUY_H1_4c_0426_2c072cfd",
-    "saved_at": "2026-04-26T21:36:29.930393",
-    "source": "Step3:scope_per_tf_only:BUY:conf74",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -10977,16 +10495,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 108,
-    "rule_id": "BUY_H1_3c_0426_d79a684d",
-    "saved_at": "2026-04-26T21:36:29.956601",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11076,16 +10588,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 109,
-    "rule_id": "BUY_H1_4c_0426_f9f254ae",
-    "saved_at": "2026-04-26T21:36:32.705058",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11185,16 +10691,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 110,
-    "rule_id": "BUY_H1_3c_0426_12b57fa6",
-    "saved_at": "2026-04-26T21:36:32.729305",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf97",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11284,16 +10784,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 111,
-    "rule_id": "BUY_H1_3c_0426_574c1fdd",
-    "saved_at": "2026-04-26T21:36:32.759800",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11383,16 +10877,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 112,
-    "rule_id": "BUY_H1_4c_0426_3aab393b",
-    "saved_at": "2026-04-26T21:36:32.786722",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf100",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11492,16 +10980,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 113,
-    "rule_id": "BUY_H1_3c_0426_e1927e33",
-    "saved_at": "2026-04-26T21:36:32.812457",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf77",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11591,16 +11073,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 114,
-    "rule_id": "BUY_H1_4c_0426_bc830fde",
-    "saved_at": "2026-04-26T21:36:32.838790",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11700,16 +11176,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 115,
-    "rule_id": "BUY_H1_4c_0426_e7904aeb",
-    "saved_at": "2026-04-26T21:36:32.865308",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -11809,16 +11279,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 116,
-    "rule_id": "BUY_H1_4c_0426_f52bd265",
-    "saved_at": "2026-04-26T21:36:39.118119",
-    "source": "Step3:scope_per_tf_only:BUY:conf94",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -11918,16 +11382,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 117,
-    "rule_id": "BUY_H1_4c_0426_ca1a1418",
-    "saved_at": "2026-04-26T21:36:39.147565",
-    "source": "Step3:scope_per_tf_only:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12027,16 +11485,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 118,
-    "rule_id": "BUY_H1_4c_0426_fe69b840",
-    "saved_at": "2026-04-26T21:36:39.175672",
-    "source": "Step3:scope_per_tf_only:BUY:conf77",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12136,16 +11588,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 119,
-    "rule_id": "BUY_H1_4c_0426_754dceb3",
-    "saved_at": "2026-04-26T21:36:39.202847",
-    "source": "Step3:scope_per_tf_only:BUY:conf72",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12245,16 +11691,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 120,
-    "rule_id": "BUY_H1_3c_0426_afa5e944",
-    "saved_at": "2026-04-26T21:36:39.230059",
-    "source": "Step3:scope_per_tf_only:BUY:conf76",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12344,16 +11784,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 121,
-    "rule_id": "BUY_H1_4c_0426_167e5f8f",
-    "saved_at": "2026-04-26T21:36:39.258799",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12453,16 +11887,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 122,
-    "rule_id": "BUY_H1_4c_0426_f043f125",
-    "saved_at": "2026-04-26T21:36:39.287005",
-    "source": "Step3:scope_per_tf_only:BUY:conf72",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -12562,16 +11990,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 123,
-    "rule_id": "BUY_H1_4c_0426_3940e70d",
-    "saved_at": "2026-04-26T21:36:41.765191",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf88",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -12671,16 +12093,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 124,
-    "rule_id": "BUY_H1_4c_0426_c5173f19",
-    "saved_at": "2026-04-26T21:36:41.794187",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -12780,16 +12196,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 125,
-    "rule_id": "BUY_H1_4c_0426_cf14eda3",
-    "saved_at": "2026-04-26T21:36:41.819826",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf71",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -12889,16 +12299,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 126,
-    "rule_id": "BUY_H1_4c_0426_f2263416",
-    "saved_at": "2026-04-26T21:36:41.851299",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -12998,16 +12402,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 127,
-    "rule_id": "BUY_H1_4c_0426_3ee06643",
-    "saved_at": "2026-04-26T21:36:41.880442",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf72",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -13107,16 +12505,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 128,
-    "rule_id": "BUY_H1_4c_0426_e175475f",
-    "saved_at": "2026-04-26T21:36:48.056821",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_atr_7",
@@ -13216,16 +12608,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 129,
-    "rule_id": "BUY_H1_2c_0426_bdb61ee7",
-    "saved_at": "2026-04-26T21:36:48.087193",
-    "source": "Step3:scope_per_tf_only:BUY:conf93",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_mt5_atr_7",
@@ -13305,16 +12691,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 130,
-    "rule_id": "BUY_H1_4c_0426_7e3a1d1e",
-    "saved_at": "2026-04-26T21:36:56.564950",
-    "source": "Step3:scope_per_tf_only:BUY:conf78",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13414,16 +12794,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 131,
-    "rule_id": "BUY_H1_4c_0426_84468fa5",
-    "saved_at": "2026-04-26T21:36:56.598233",
-    "source": "Step3:scope_per_tf_only:BUY:conf100",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13523,16 +12897,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 132,
-    "rule_id": "BUY_H1_4c_0426_45aba44b",
-    "saved_at": "2026-04-26T21:36:56.622775",
-    "source": "Step3:scope_per_tf_only:BUY:conf74",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13632,16 +13000,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 133,
-    "rule_id": "BUY_H1_4c_0426_1eab7c16",
-    "saved_at": "2026-04-26T21:36:56.655865",
-    "source": "Step3:scope_per_tf_only:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13741,16 +13103,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 134,
-    "rule_id": "BUY_H1_4c_0426_37cd8cf9",
-    "saved_at": "2026-04-26T21:36:56.688343",
-    "source": "Step3:scope_per_tf_only:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13850,16 +13206,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 135,
-    "rule_id": "BUY_H1_3c_0426_3fc42741",
-    "saved_at": "2026-04-26T21:36:56.714183",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -13949,16 +13299,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 136,
-    "rule_id": "BUY_H1_3c_0426_7bd4a0f4",
-    "saved_at": "2026-04-26T21:36:56.745874",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14048,16 +13392,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 137,
-    "rule_id": "BUY_H1_3c_0426_8dfafbe9",
-    "saved_at": "2026-04-26T21:38:17.928328",
-    "source": "Step3:scope_per_tf_only:BUY:conf92",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -14147,16 +13485,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 138,
-    "rule_id": "BUY_H1_3c_0426_e70d63f0",
-    "saved_at": "2026-04-26T21:38:17.959410",
-    "source": "Step3:scope_per_tf_only:BUY:conf81",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_distance_to_swing_high",
@@ -14246,16 +13578,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 139,
-    "rule_id": "BUY_H1_3c_0426_681fcb10",
-    "saved_at": "2026-04-26T21:38:20.943640",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf91",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14345,16 +13671,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 140,
-    "rule_id": "BUY_H1_3c_0426_c2f0c059",
-    "saved_at": "2026-04-26T21:38:20.975188",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14444,16 +13764,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 141,
-    "rule_id": "BUY_H1_3c_0426_b1e7b332",
-    "saved_at": "2026-04-26T21:38:21.006711",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14543,16 +13857,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 142,
-    "rule_id": "BUY_H1_3c_0426_f60c35aa",
-    "saved_at": "2026-04-26T21:38:51.804098",
-    "source": "Step3:scope_per_tf_only:BUY:conf96",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14642,16 +13950,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 143,
-    "rule_id": "BUY_H1_3c_0426_06b4c30b",
-    "saved_at": "2026-04-26T21:38:51.836314",
-    "source": "Step3:scope_per_tf_only:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14741,16 +14043,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 144,
-    "rule_id": "BUY_H1_3c_0426_14a2b2c4",
-    "saved_at": "2026-04-26T21:38:54.633317",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf74",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -14840,16 +14136,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 145,
-    "rule_id": "BUY_H1_3c_0426_64a39308",
-    "saved_at": "2026-04-26T21:39:03.360824",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf83",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -14939,16 +14229,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 146,
-    "rule_id": "BUY_H1_3c_0426_5f4c3a68",
-    "saved_at": "2026-04-26T21:39:03.395657",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf97",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -15038,16 +14322,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 147,
-    "rule_id": "BUY_H1_3c_0426_7cc1456b",
-    "saved_at": "2026-04-26T21:39:03.428288",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_20",
@@ -15137,16 +14415,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 148,
-    "rule_id": "BUY_H1_3c_0426_e487d86d",
-    "saved_at": "2026-04-26T21:39:09.501753",
-    "source": "Step3:scope_per_tf_only:BUY:conf83",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -15236,16 +14508,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 149,
-    "rule_id": "BUY_H1_3c_0426_029b9549",
-    "saved_at": "2026-04-26T21:39:09.534668",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -15335,16 +14601,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 150,
-    "rule_id": "BUY_H1_3c_0426_e8ca7471",
-    "saved_at": "2026-04-26T21:39:09.579856",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_atr_14",
@@ -15434,16 +14694,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 151,
-    "rule_id": "BUY_H1_3c_0426_80ffe27f",
-    "saved_at": "2026-04-26T21:39:12.098369",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf84",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -15533,16 +14787,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 152,
-    "rule_id": "BUY_H1_3c_0426_e703ee24",
-    "saved_at": "2026-04-26T21:39:12.131563",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_mt5_atr_14",
@@ -15632,16 +14880,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 153,
-    "rule_id": "BUY_H1_3c_0426_857ed397",
-    "saved_at": "2026-04-26T21:39:26.516227",
-    "source": "Step3:scope_per_tf_only:BUY:conf96",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -15731,16 +14973,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 154,
-    "rule_id": "BUY_H1_3c_0426_cd358ef6",
-    "saved_at": "2026-04-26T21:39:26.556319",
-    "source": "Step3:scope_per_tf_only:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -15830,16 +15066,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 155,
-    "rule_id": "BUY_H1_3c_0426_bd9291f2",
-    "saved_at": "2026-04-26T21:39:26.593482",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_std_dev_20",
@@ -15929,16 +15159,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 156,
-    "rule_id": "BUY_H1_2c_0426_4376bfd4",
-    "saved_at": "2026-04-26T21:43:11.602561",
-    "source": "Step3:scenario_M5:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_awesome_oscillator",
@@ -16018,16 +15242,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 157,
-    "rule_id": "BUY_H1_2c_0426_ac2f053f",
-    "saved_at": "2026-04-26T21:43:11.637661",
-    "source": "Step3:scenario_M5:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_awesome_oscillator",
@@ -16107,16 +15325,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 158,
-    "rule_id": "BUY_H1_2c_0426_1a8c1693",
-    "saved_at": "2026-04-26T21:43:11.674240",
-    "source": "Step3:scenario_M5:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_awesome_oscillator",
@@ -16196,111 +15408,9 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
+      "score": 0,
+      "_a46_source_tag": "Saved"
     }
-  },
-  {
-    "id": 159,
-    "rule_id": "BUY_H1_3c_0422_568c_no_rolling",
-    "saved_at": "2026-04-26T18:48:03.412678+00:00",
-    "source": "Manual variant \u2014 removed unsupported indicator",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "M15_std_dev_20",
-          "operator": ">",
-          "value": 5.4025
-        },
-        {
-          "feature": "M5_sma_50_distance",
-          "operator": ">",
-          "value": -0.3194
-        },
-        {
-          "feature": "D1_adx_21",
-          "operator": ">",
-          "value": 21.8789
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.707,
-      "coverage": 225,
-      "coverage_pct": 25.5,
-      "win_rate": 0.707,
-      "avg_pips": 239.5,
-      "_target_mode": "binary",
-      "avg_pips_test": 133.0,
-      "win_rate_test": 0.63,
-      "test_samples": 189,
-      "test_skip_reason": null,
-      "direction": "BUY",
-      "entry_timeframe": "H1",
-      "rule_combo": "BUY_H1_3c_0422_568c_no_rolling",
-      "scenario": "scope_entry_plus_higher",
-      "spread_pips": 25.0,
-      "commission_pips": 4.0,
-      "leverage": 10,
-      "contract_size": 100.0,
-      "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged",
-      "discovery_settings": {
-        "regime_filter_enabled": false,
-        "regime_at_discovery": false,
-        "regime_strictness": "conservative",
-        "regime_mode": "automatic",
-        "single_rule_mode_enabled": false,
-        "single_rule_mode_variant": "a",
-        "srm_dedup_correlated": true,
-        "srm_winner_selection": "tightness",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
-        "prop_firm_stage": "Evaluation",
-        "prop_firm_account": "10000"
-      },
-      "rules": [
-        {
-          "prediction": "WIN",
-          "action": "BUY",
-          "conditions": [
-            {
-              "feature": "M15_std_dev_20",
-              "operator": ">",
-              "value": 5.4025
-            },
-            {
-              "feature": "M5_sma_50_distance",
-              "operator": ">",
-              "value": -0.3194
-            },
-            {
-              "feature": "D1_adx_21",
-              "operator": ">",
-              "value": 21.8789
-            },
-            {
-              "feature": "M5_distance_to_rolling_level_786",
-              "operator": ">",
-              "value": -0.4726
-            }
-          ]
-        }
-      ],
-      "spread": 25.0,
-      "pip_size": 0.01,
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.3,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "status": "discovered",
-      "grade": "",
-      "score": 0
-    }
-  }
-]
+  ],
+  "discovery_method": "selected_subset"
+}
