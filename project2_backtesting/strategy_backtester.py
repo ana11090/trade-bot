@@ -1308,6 +1308,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 entry_price += slip   # buy fills higher
             else:
                 entry_price -= slip   # sell fills lower
+        # WHY: BUY enters at ASK (bid + spread); SELL enters at BID but pays
+        #      spread on the close, modelled here as a lower entry price so that
+        #      SL/TP levels computed from entry_price already include spread cost.
+        #      Without this, SL/TP are placed from the raw bid open, meaning:
+        #      SL is spread-pips too far away (fewer stop-outs, inflated WR) and
+        #      TP is spread-pips too close (more take-profits, inflated WR).
+        #      The vectorized fast_backtest path (line ~676) applies the same
+        #      correction; this brings the iterative path into parity with it
+        #      and with MT5 backtester behaviour.
+        # CHANGED: April 2026 — fix iterative path spread parity with MT5 / fast_backtest
+        if trade_dir == "BUY":
+            entry_price += spread_pips * pip_size
+        else:
+            entry_price -= spread_pips * pip_size
         entry_time = next_candle["timestamp"]
 
         pos = {
@@ -1407,7 +1421,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if trade_dir == "SELL":
             pnl_pips = -pnl_pips
 
-        cost     = spread_pips + commission_pips
+        # WHY: Spread is now baked into entry_price (added above), so pnl_pips
+        #      is already net of spread — subtracting it again would double-count.
+        #      Only subtract commission here. Matches fast_backtest (line ~826)
+        #      which also only subtracts commission_pips after spread-adjusted entry.
+        # CHANGED: April 2026 — remove spread double-count (MT5 parity fix)
+        cost     = commission_pips
         net_pips = pnl_pips - cost
 
         # Swap costs for overnight holds (Wednesday triple-roll aware)
@@ -1501,11 +1520,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         #      doing trade.get('pips') silently got None from run_backtest
         #      and a post-spread value from fast_backtest. Add a matching
         #      'pips' key here so both backtester outputs share semantics.
-        #      pips = pnl_pips - spread_pips; net_pips = pips - commission
-        #      (equivalent to the existing pnl_pips - cost).
+        #      pips = pnl_pips (spread already in entry_price, so pnl_pips is
+        #      already post-spread); net_pips = pips - commission.
+        #      Old formula subtracted spread_pips here which double-counted it
+        #      (once in entry_price above, once here). Now matches fast_backtest.
         # CHANGED: April 2026 — Phase 28 Fix 3 — add 'pips' key for schema
-        #          consistency with fast_backtest (audit Part C crit #6)
-        _pips_post_spread = pnl_pips - spread_pips
+        #          consistency with fast_backtest; spread already in entry_price
+        _pips_post_spread = pnl_pips
         # WHY (Phase A.42): Increment daily counter after trade opens.
         # CHANGED: April 2026 — Phase A.42
         if _a42_limit_rb > 0:
@@ -1524,7 +1545,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "exit_price":  round(exit_price, 5),
             "pips":        round(_pips_post_spread, 1),
             "pnl_pips":    round(pnl_pips, 1),
-            "cost_pips":   round(cost, 1),
+            # WHY: cost_pips is an informational field showing the total
+            #      transaction cost (spread + commission). Spread is baked into
+            #      entry_price and commission is subtracted from net_pips, so
+            #      the sum is the full round-trip cost — matches fast_backtest
+            #      which also reports spread + commission regardless of how
+            #      each component is applied in the P&L calculation.
+            # CHANGED: April 2026 — consistent cost_pips with fast_backtest
+            "cost_pips":   round(spread_pips + commission_pips, 1),
             "net_pips":    round(net_pips, 1),
             "exit_reason":  exit_reason,
             "candles_held": candles_held,
