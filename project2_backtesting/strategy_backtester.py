@@ -932,7 +932,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      so winners make subsequent trades larger, accelerating
                  #      toward the eval profit target.
                  # CHANGED: April 2026 — equity-tracking lot sizing
-                 compound_equity=False):
+                 compound_equity=False,
+                 # WHY: hard_close_hour forces all positions closed at a
+                 #      specific GMT hour (0-23). -1 = disabled (backward
+                 #      compat). Matches the EA's DailyResetHourGMT / prop firm
+                 #      rules that require no overnight holds.
+                 # CHANGED: April 2026 — hard close hour (backtester parity)
+                 hard_close_hour=-1,
+                 # WHY: cooldown_candles blocks new entries for N candles after
+                 #      a trade closes. The EA's CooldownMinutes does the same.
+                 #      0 = no cooldown (backward compat, pre-phase behaviour).
+                 # CHANGED: April 2026 — cooldown between trades (MT5 parity)
+                 cooldown_candles=0):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1232,6 +1243,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     # ── Simulate trades from signal candles ──────────────────────────────────
     occupied_until_idx = -1   # index of last candle in current open trade
+    _last_exit_pos     = -1   # integer position of last exit (for cooldown)
     # WHY (Phase A.42): Per-day trade counter for max_trades_per_day.
     # CHANGED: April 2026 — Phase A.42
     _a42_daily_counts_rb: dict = {}
@@ -1243,6 +1255,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     for sig_idx in signal_indices:
         if sig_idx <= occupied_until_idx:
             continue
+        # WHY: Cooldown prevents back-to-back entries. The EA's CooldownMinutes
+        #      blocks re-entry for N minutes after a trade closes. We model
+        #      this as N candles since bar data has no per-minute resolution.
+        # CHANGED: April 2026 — cooldown between trades (MT5 parity)
+        if cooldown_candles > 0 and _last_exit_pos >= 0:
+            _sig_pos = index_positions.get(sig_idx, 0)
+            if _sig_pos <= _last_exit_pos + cooldown_candles:
+                continue
 
         rule_id       = int(signal_rule_ids.loc[sig_idx])
         entry_pos_int = index_positions.get(sig_idx, 0)
@@ -1385,6 +1405,23 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if future_idx in ind.index:
                 candle_dict.update(ind.loc[future_idx].to_dict())
 
+            # WHY: hard_close_hour forces all positions closed at a specific GMT
+            #      hour. The EA does this to match prop firm rules or to avoid
+            #      overnight holds. Without this, backtester lets trades hold
+            #      indefinitely — inflating results vs live EA behaviour.
+            # CHANGED: April 2026 — hard close hour (MT5/backtester parity)
+            if hard_close_hour >= 0:
+                try:
+                    _candle_hour = pd.Timestamp(future_candle['timestamp']).hour
+                    if _candle_hour == hard_close_hour:
+                        exit_price  = float(future_candle["open"])
+                        exit_time   = future_candle["timestamp"]
+                        exit_reason = "HARD_CLOSE_HOUR"
+                        occupied_until_idx = future_idx
+                        break
+                except Exception:
+                    pass
+
             result = exit_strategy.on_new_candle(candle_dict, pos)
             if result:
                 exit_price  = result["exit_price"]
@@ -1416,6 +1453,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             #      open their own trades.
             # CHANGED: April 2026 — Phase A.28.2
             occupied_until_idx = sig_idx
+
+        # Track exit position for cooldown (integer position of last closed trade)
+        _last_exit_pos = index_positions.get(occupied_until_idx, _last_exit_pos)
 
         pnl_pips = (exit_price - entry_price) / pip_size
         if trade_dir == "SELL":
@@ -1582,7 +1622,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY: When True, lot sizing uses running balance so
                   #      winners compound into larger subsequent positions.
                   # CHANGED: April 2026 — equity-tracking lot sizing
-                  compound_equity=False):
+                  compound_equity=False,
+                  # WHY: hard_close_hour / cooldown_candles — same semantics as
+                  #      run_backtest. Defaults maintain backward compatibility.
+                  # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
+                  hard_close_hour=-1,
+                  cooldown_candles=0):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -1787,11 +1832,18 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     # ── Simulate trades from signal candles ──────────────────────────────
     occupied_until_idx = -1
+    _last_exit_pos_fbt = -1   # integer position of last exit (for cooldown)
     index_positions = {idx: pos for pos, idx in enumerate(df.index)}
 
     for sig_idx in signal_indices:
         if sig_idx <= occupied_until_idx:
             continue
+        # WHY: Cooldown prevents back-to-back entries — mirrors EA's CooldownMinutes.
+        # CHANGED: April 2026 — cooldown between trades (MT5 parity)
+        if cooldown_candles > 0 and _last_exit_pos_fbt >= 0:
+            _sig_pos_fbt = index_positions.get(sig_idx, 0)
+            if _sig_pos_fbt <= _last_exit_pos_fbt + cooldown_candles:
+                continue
 
         entry_pos_int = index_positions.get(sig_idx, 0)
         if entry_pos_int + 1 >= len(df):
@@ -1950,6 +2002,24 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 except Exception:
                     pass
 
+            # WHY: Hard close overrides SL/TP — force-exit at the specified GMT hour.
+            #      Checked before the exit strategy so it always takes priority.
+            # CHANGED: April 2026 — hard close hour (MT5/backtester parity)
+            if hard_close_hour >= 0:
+                try:
+                    _hc_ts = (candle['timestamp'] if isinstance(candle, dict)
+                              else candle.get('timestamp', ''))
+                    if pd.Timestamp(_hc_ts).hour == hard_close_hour:
+                        _open_val = (candle.get('open', float(future_candles.iloc[ci]['open']))
+                                     if isinstance(candle, dict)
+                                     else float(future_candles.iloc[ci]['open']))
+                        step_result = {'exit_price': _open_val, 'reason': 'HARD_CLOSE_HOUR'}
+                        result   = step_result
+                        exit_idx = ci
+                        break
+                except Exception:
+                    pass
+
             try:
                 step_result = exit_strategy.on_new_candle(candle, pos_info)
             except Exception as e:
@@ -2096,8 +2166,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
         }
         trades.append(trade)
 
-        # Mark occupied candles
+        # Mark occupied candles and update cooldown tracker
         occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
+        _last_exit_pos_fbt = min(entry_pos_int + 1 + exit_idx, len(df) - 1)
 
     if _skipped_count > 0:
         # CHANGED: April 2026 — Phase 35 Fix 1b — updated limit reference
@@ -2359,7 +2430,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # CHANGED: April 2026 — margin-aware lot sizing
                           leverage=0, contract_size=100.0,
                           funded_protect=False,
-                          compound_equity=False):
+                          compound_equity=False,
+                          # WHY: hard_close_hour / cooldown_candles passed through
+                          #      to fast_backtest for full parity with the live EA.
+                          # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
+                          hard_close_hour=-1,
+                          cooldown_candles=0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2794,6 +2870,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # CHANGED: April 2026 — margin-aware lot sizing
                 leverage=leverage, contract_size=contract_size,
                 compound_equity=compound_equity,
+                hard_close_hour=hard_close_hour,
+                cooldown_candles=cooldown_candles,
             )
             stats = compute_stats(trades)
 

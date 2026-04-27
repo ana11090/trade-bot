@@ -900,7 +900,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     break
                     except Exception:
                         pass
-                    _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or 1.0
+                    _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or float(_bt_cfg.get('slippage_pips', 1.0))
+                    # WHY: hard_close_hour and cooldown match the EA's DailyResetHourGMT
+                    #      and CooldownMinutes. Read from config so backtest reflects
+                    #      live EA behaviour. -1 = disabled, 0 = no cooldown.
+                    # CHANGED: April 2026 — hard close + cooldown from config
+                    _cfg_hard_close  = int(float(_bt_cfg.get('hard_close_hour', -1)))
+                    _cfg_cooldown    = int(float(_bt_cfg.get('cooldown_candles', 0)))
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
 
@@ -1088,6 +1094,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         breach_daily_safety_pct=_cfg_dd_daily * 0.9 if _cfg_dd_daily > 0 else 4.0,
                         breach_total_safety_pct=_cfg_dd_total * 0.95 if _cfg_dd_total > 0 else 8.0,
                         funded_protect=_funded_protect_var.get() if _funded_protect_var else False,
+                        # WHY: Pass hard_close_hour and cooldown only when
+                        #      using config (flag OFF = raw test, pre-phase compat).
+                        # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
+                        hard_close_hour=_cfg_hard_close if _a48_use_cfg else -1,
+                        cooldown_candles=_cfg_cooldown if _a48_use_cfg else 0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

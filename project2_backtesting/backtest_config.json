@@ -20,5 +20,7 @@
   "firm_name": "",
   "stage": "Evaluation",
   "backtest_start": "",
-  "backtest_end": ""
+  "backtest_end": "",
+  "slippage_pips": "1.0",
+  "cooldown_candles": "0"
 }
