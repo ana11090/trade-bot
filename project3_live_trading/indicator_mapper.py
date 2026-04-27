@@ -1646,8 +1646,14 @@ def parse_feature_name(feature_name):
     for tf in known_tfs:
         if feature_name.startswith(tf + '_'):
             indicator = feature_name[len(tf) + 1:]
-            # Extract numeric params
-            params = re.findall(r'\d+(?:\.\d+)?', indicator)
+            # WHY: mt5_ prefixed indicators (mt5_rsi_14, mt5_atr_14, etc.)
+            #      contain a numeric "5" in the prefix that is NOT a parameter.
+            #      Strip the mt5_ prefix before extracting numeric params so
+            #      mt5_rsi_14 produces params=['14'] not ['5','14'], which
+            #      would otherwise cause iRSI(period=5) instead of iRSI(period=14).
+            # CHANGED: April 2026 — fix mt5_ prefix param extraction bug
+            _ind_for_params = re.sub(r'^mt5_', '', indicator)
+            params = re.findall(r'\d+(?:\.\d+)?', _ind_for_params)
             return {'timeframe': tf, 'indicator': indicator, 'params': params}
     # No known prefix — treat entire name as indicator on H1
     return {'timeframe': 'H1', 'indicator': feature_name, 'params': []}

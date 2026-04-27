@@ -51,7 +51,8 @@ _ui_acct_var = None        # tk.StringVar — current account size
 _ui_data_source_var = None # tk.StringVar — current data source display name
 _ui_firm_map = {}          # firm_name → firm dict
 _ui_source_map = {}        # source display name → {id, path}
-_ui_margin_cap_var = None  # tk.BooleanVar — margin cap checkbox
+_ui_margin_cap_var  = None  # tk.BooleanVar — margin cap checkbox
+_ui_mt5_parity_var  = None  # tk.BooleanVar — MT5 parity indicators checkbox
 
 
 def build_panel(parent):
@@ -2392,6 +2393,67 @@ def build_panel(parent):
     except Exception:
         pass
 
+    # ── MT5 Parity checkbox ───────────────────────────────────────────────
+    # WHY: When checked, rule discovery only uses mt5_ prefixed indicator
+    #      versions (rsi, atr, ema_distance, macd, stochastic) which match
+    #      MT5's Wilder smoothing exactly. Indicators without mt5_ variants
+    #      (adx, cci, bb, candle stats, sessions) are kept as-is since they
+    #      already match MT5 or are pure price math.
+    # CHANGED: April 2026 — MT5 parity indicator filter
+    global _ui_mt5_parity_var
+    _mt5_parity_var = tk.BooleanVar(value=True)
+    _ui_mt5_parity_var = _mt5_parity_var
+
+    _mt5_sep = ttk.Separator(_fs_frame, orient="horizontal")
+    _mt5_sep.pack(fill="x", pady=(8, 4))
+
+    _mt5_parity_cb = tk.Checkbutton(
+        _fs_frame,
+        text="🎯 MT5 Parity — use only indicators matching MT5 values",
+        variable=_mt5_parity_var,
+        font=("Segoe UI", 9, "bold"),
+        bg="#f0f8ff", fg="#16213e",
+        selectcolor="#ffffff",
+        activebackground="#f0f8ff",
+    )
+    _mt5_parity_cb.pack(anchor="w", pady=(0, 2))
+
+    tk.Label(
+        _fs_frame,
+        text="Excludes rsi, atr, ema_distance, macd, stochastic (non-mt5 versions). "
+             "Keeps adx, cci, bb, candle stats, sessions.",
+        bg="#f0f8ff", fg="#888",
+        font=("Segoe UI", 8),
+        wraplength=450,
+        justify="left",
+    ).pack(anchor="w", padx=(22, 0))
+
+    if _fs_ToolTip is not None:
+        try:
+            _fs_ToolTip(_mt5_parity_cb,
+                "When checked, decision tree ONLY sees mt5_ prefixed versions of\n"
+                "RSI, ATR, EMA distance, MACD, and Stochastic — using Wilder's\n"
+                "smoothing matching MT5 built-ins (iRSI, iATR, etc.).\n\n"
+                "Indicators already matching MT5 (ADX, CCI, BB, candle stats,\n"
+                "session flags, PSAR) are unaffected.\n\n"
+                "Default: ON. Turn off only if MT5 parity is not required."
+            )
+        except Exception:
+            pass
+
+    def _mt5_save(*_args, _v=_mt5_parity_var):
+        try:
+            _cl.save({'mt5_parity_indicators': '1' if _v.get() else '0'})
+        except Exception:
+            pass
+    _mt5_parity_var.trace_add('write', _mt5_save)
+
+    try:
+        _saved_mt5 = _cfg.get('mt5_parity_indicators', '1')
+        _mt5_parity_var.set(_saved_mt5 == '1')
+    except Exception:
+        pass
+
     scenario_vars = {}
 
     for scenario_key, (label, desc) in scenarios.items():
@@ -3418,11 +3480,15 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                         print(f"  [StageA-all] scenario={scenario} scope={_mode} "
                               f"fm=scenario_{scenario}/scope_{_mode}/")
                         try:
+                            # WHY: Pass mt5_parity so analyze.py filters indicators.
+                            # CHANGED: April 2026 — MT5 parity indicator filter
+                            _mt5p = _ui_mt5_parity_var.get() if _ui_mt5_parity_var else True
                             try:
                                 _analyze_mod.run_analysis(
                                     feature_matrix_path=_fm_scope,
                                     feature_scope_mode=_mode,
                                     scenario_key=scenario,
+                                    mt5_parity=_mt5p,
                                 )
                             except TypeError:
                                 _analyze_mod.run_analysis(feature_matrix_path=_fm_scope)
@@ -3436,11 +3502,13 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 print(f"  [Stage-A] scenario={scenario} scope={_fs_mode} "
                       f"fm={os.path.basename(os.path.dirname(_fm))}/")
 
+                _mt5p = _ui_mt5_parity_var.get() if _ui_mt5_parity_var else True
                 try:
                     _analyze_mod.run_analysis(
                         feature_matrix_path=_fm,
                         feature_scope_mode=_fs_mode,
                         scenario_key=scenario,
+                        mt5_parity=_mt5p,
                     )
                 except TypeError:
                     _analyze_mod.run_analysis(feature_matrix_path=_fm)

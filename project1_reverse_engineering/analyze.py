@@ -38,6 +38,13 @@ log = get_logger(__name__)
 # CHANGED: April 2026 — Stage-A
 _stage_a_scope_mode = 'all_tfs'
 _stage_a_scenario_key = ''
+# WHY: When True, only use mt5_ prefixed versions of indicators that have them
+#      (rsi, atr, ema_distance, macd, stochastic). These use Wilder's smoothing
+#      matching MT5 built-ins exactly — so discovered rules transfer to MT5 EAs.
+#      Indicators without mt5_ versions (adx, cci, bb, candle stats, sessions)
+#      are kept as-is since they already match MT5 or are pure price math.
+# CHANGED: April 2026 — MT5 parity indicator filter
+_mt5_parity = True
 
 
 # ── Section 1: Robot Profile ──────────────────────────────────────────────────
@@ -473,6 +480,40 @@ def compute_feature_importance(df):
             f"[Stage-A] scope={_stage_a_scope_mode} scenario={_stage_a_scenario_key} "
             f"kept TFs={sorted(_stage_a_keep)} features: {_before} → {len(feature_cols)}"
         )
+
+    # WHY: When _mt5_parity is True, exclude non-mt5_ versions of indicators
+    #      that have mt5_ equivalents in this DataFrame (e.g. H1_rsi_14 when
+    #      H1_mt5_rsi_14 exists). The decision tree will then only use the
+    #      MT5-matching variants. Indicators with no mt5_ counterpart (adx,
+    #      cci, bb, candle stats, sessions) are kept unchanged.
+    #      Checkbox-off preserves pre-phase behaviour (all features visible).
+    # CHANGED: April 2026 — MT5 parity indicator filter
+    if _mt5_parity:
+        # Build set of non-prefixed indicator bases that have a mt5_ twin.
+        # E.g. "H1_mt5_rsi_14" exists → base "rsi_14" should be excluded from
+        # non-mt5 columns, so "H1_rsi_14" is dropped while "H1_mt5_rsi_14" stays.
+        _mt5_bases = set()
+        for c in df.columns:
+            _parts = c.split('_', 1)
+            if len(_parts) == 2 and _parts[1].startswith('mt5_'):
+                _mt5_bases.add(_parts[1].replace('mt5_', '', 1))  # e.g. 'rsi_14'
+
+        if _mt5_bases:
+            _before_mt5 = len(feature_cols)
+            _known_tfs = ('M5_', 'M15_', 'H1_', 'H4_', 'D1_')
+            feature_cols = [
+                c for c in feature_cols
+                if not any(
+                    c.startswith(tf) and c[len(tf):] in _mt5_bases
+                    for tf in _known_tfs
+                )
+            ]
+            _after_mt5 = len(feature_cols)
+            if _before_mt5 != _after_mt5:
+                log.info(
+                    f"[MT5-PARITY] Excluded {_before_mt5 - _after_mt5} non-mt5 "
+                    f"features (mt5_ versions present). Remaining: {_after_mt5}"
+                )
 
     if not feature_cols:
         log.info("[ANALYZE] ERROR: no usable features after excluding leak columns")
@@ -1619,7 +1660,8 @@ def _write_text_report(report, filepath):
 #      can tell us which TFs to keep. Both are optional — legacy callers
 #      pass nothing and get pre-Stage-A behavior (all TFs).
 # CHANGED: April 2026 — Stage-A
-def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key=None):
+def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key=None,
+                 mt5_parity=True):
     """Run complete analysis and save results."""
     if feature_matrix_path is None:
         feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
@@ -1627,9 +1669,10 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
     # WHY (Stage-A): Stash scope args on module-level globals so
     #      compute_feature_importance reads them without signature changes.
     # CHANGED: April 2026 — Stage-A
-    global _stage_a_scope_mode, _stage_a_scenario_key
+    global _stage_a_scope_mode, _stage_a_scenario_key, _mt5_parity
     _stage_a_scope_mode   = (feature_scope_mode or 'all_tfs').lower()
     _stage_a_scenario_key = scenario_key or ''
+    _mt5_parity = mt5_parity
 
     log.info('=' * 70)
     log.info('ROBOT ANALYSIS — Full Reverse Engineering')
