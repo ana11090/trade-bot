@@ -706,13 +706,20 @@ def build_panel(parent):
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
               ).pack(side=tk.LEFT, padx=(8, 0))
 
-    tk.Button(_btn_row, text="📤 MT5 Tick Export Script",
+    # WHY: Tick buttons on a second row — four buttons in one row gets
+    #      clipped on narrow panels. Candle buttons on row 1, tick
+    #      buttons on row 2.
+    # CHANGED: April 2026 — tick buttons on second row
+    _btn_row2 = tk.Frame(data_frame, bg="#ffffff")
+    _btn_row2.pack(anchor="w", pady=(4, 0))
+
+    tk.Button(_btn_row2, text="📤 MT5 Tick Export Script",
               command=_download_mt5_tick_export,
               bg="#6c757d", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
-              ).pack(side=tk.LEFT, padx=(8, 0))
+              ).pack(side=tk.LEFT)
 
-    tk.Button(_btn_row, text="📥 Import Tick Data",
+    tk.Button(_btn_row2, text="📥 Import Tick Data",
               command=_import_tick_data,
               bg="#17a2b8", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
