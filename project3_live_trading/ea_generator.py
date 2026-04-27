@@ -285,6 +285,11 @@ def generate_ea(
             'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
             'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
             'Hybrid Exit': 'HybridExit', 'HybridExit': 'HybridExit',
+            # WHY: New ATR-adaptive exits from backtester need MQL5 generation.
+            # CHANGED: April 2026 — map new exit strategies
+            'ATR Fixed SL/TP': 'ATRFixedSLTP', 'ATRFixedSLTP': 'ATRFixedSLTP',
+            'ATR BE Trail': 'ATRBreakevenTrail', 'ATRBreakevenTrail': 'ATRBreakevenTrail',
+            'PSAR Exit': 'PSARExit', 'PSARExit': 'PSARExit',
         }
         exit_class = _exit_class_map.get(exit_name, exit_name)
         _mql_periods = {
@@ -545,6 +550,21 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # for both directions, since "move SL to entry" is direction-agnostic.
     _be_new_sl_expr = "_openP"
 
+    # WHY: ATRBreakevenTrail uses price-unit distances (not pip-based) because
+    #      ATR is in price units. These fragments differ from HybridExit's
+    #      pip-based equivalents.
+    # CHANGED: April 2026 — direction-aware ATR breakeven trail fragments
+    if is_buy:
+        _profit_price_expr   = "_bid - _openP"
+        _atrbe_trail_sl_expr = "_bid - _trDist"
+        _atrbe_floor_sl      = "if(_newSL < _openP) _newSL = _openP + _Point;"
+        _atrbe_trail_compare = "_newSL > _curSL + _Point || _curSL == 0"
+    else:
+        _profit_price_expr   = "_openP - _ask"
+        _atrbe_trail_sl_expr = "_ask + _trDist"
+        _atrbe_floor_sl      = "if(_newSL > _openP) _newSL = _openP - _Point;"
+        _atrbe_trail_compare = "_newSL < _curSL - _Point || _curSL == 0"
+
     # ── Determine exit strategy type ──────────────────────────────────────
     # WHY: Different exit strategies need different MQL5 code.
     #      FixedSLTP: set SL/TP at entry, done.
@@ -563,6 +583,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         'Time-Based': 'TimeBased', 'TimeBased': 'TimeBased',
         'Indicator Exit': 'IndicatorExit', 'IndicatorExit': 'IndicatorExit',
         'Hybrid': 'HybridExit', 'HybridExit': 'HybridExit',
+        # WHY: New ATR-adaptive exits from backtester need MQL5 generation.
+        # CHANGED: April 2026 — map new exit strategies
+        'ATR Fixed SL/TP': 'ATRFixedSLTP', 'ATRFixedSLTP': 'ATRFixedSLTP',
+        'ATR BE Trail': 'ATRBreakevenTrail', 'ATRBreakevenTrail': 'ATRBreakevenTrail',
+        'PSAR Exit': 'PSARExit', 'PSARExit': 'PSARExit',
     }
     exit_class = exit_class_map.get(exit_class, 'FixedSLTP')
 
@@ -577,19 +602,28 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     #      Non-zero defaults activate ManageTrailingStop which closes trades
     #      early — untested behavior not in the backtest.
     # CHANGED: April 2026 — disable trailing for non-trailing exits
-    if exit_class in ('TimeBased', 'IndicatorExit', 'FixedSLTP', 'ATROnly'):
+    # CHANGED: April 2026 — ATRFixedSLTP has no trailing (SL/TP fixed at entry)
+    if exit_class in ('TimeBased', 'IndicatorExit', 'FixedSLTP', 'ATROnly', 'ATRFixedSLTP'):
         trail_activation_pips = 0
         trail_distance_pips = 0
 
     # Exits that legitimately use trailing stop — for all others, Trail* must be
     # constants (not inputs) so the user cannot accidentally enable trailing in the
     # MT5 tester and corrupt the exit logic defined by the exit strategy.
-    _has_trailing = exit_class in ('TrailingStop', 'ATRTrailing', 'ATRBased', 'HybridExit')
+    # CHANGED: April 2026 — ATRBreakevenTrail uses trailing; PSARExit does not
+    _has_trailing = exit_class in ('TrailingStop', 'ATRTrailing', 'ATRBased', 'HybridExit',
+                                    'ATRBreakevenTrail')
 
     # ATR params
     sl_atr_mult = exit_params.get('sl_atr_mult', 1.5)
     tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
-    atr_column = exit_params.get('atr_column', 'H1_atr_14')
+    atr_column  = exit_params.get('atr_column', 'H1_atr_14')
+    # WHY: ATRBreakevenTrail and PSARExit need additional per-trade params.
+    # CHANGED: April 2026 — new ATR exit params
+    breakeven_atr_mult        = exit_params.get('breakeven_atr_mult', 1.0)
+    trail_activation_atr_mult = exit_params.get('trail_activation_atr_mult', 1.5)
+    trail_atr_mult            = exit_params.get('trail_atr_mult', 1.0)
+    min_candles_before_psar   = exit_params.get('min_candles_before_psar', 2)
 
     # Time params
     max_candles = exit_params.get('max_candles', 12)
@@ -1362,7 +1396,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     exit_on_entry = ''
     exit_management = ''
 
-    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
+    # WHY: ATRFixedSLTP/ATRBreakevenTrail/PSARExit all read ATR at entry.
+    #      They share the same entry block as ATRBased/ATROnly/ATRTrailing.
+    #      Management differs per class (see elif blocks below).
+    # CHANGED: April 2026 — new ATR exits share entry block
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing',
+                      'ATRFixedSLTP', 'ATRBreakevenTrail', 'PSARExit'):
         # WHY: ATR-Based reads ATR at entry and computes SL/TP as multiples.
         #      Adapts to current volatility — wide SL in volatile markets,
         #      tight SL in quiet markets.
@@ -1401,6 +1440,166 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
             f'      }}\n'
         )
+
+        # WHY: ATRBreakevenTrail/PSARExit need additional globals beyond
+        #      the basic ATR handle for per-trade state tracking.
+        # CHANGED: April 2026 — extended globals for new ATR exits
+        if exit_class == 'ATRBreakevenTrail':
+            exit_globals = (
+                f'int handle_exit_atr;\n'
+                f'double g_entrySL = 0.0;\n'
+                f'double g_entryTP = 0.0;\n'
+                f'double g_entryATR = 0.0;    // raw ATR at entry (price units)\n'
+                f'int g_entryBarIndex = 0;\n'
+                f'bool g_breakevenSet = false;\n'
+            )
+            exit_on_entry = (
+                f'      // ATRBreakevenTrail: read ATR, store for breakeven/trail computation\n'
+                f'      {{\n'
+                f'         double _atrEntry[1];\n'
+                f'         CopyBuffer(handle_exit_atr, 0, 1, 1, _atrEntry);\n'
+                f'         g_entryATR = _atrEntry[0];\n'
+                f'         g_entrySL = _atrEntry[0] * SL_ATR_Mult;\n'
+                f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
+                f'      }}\n'
+                f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+                f'      g_breakevenSet = false;\n'
+            )
+            _be_pos_chk = (
+                f'         datetime _openT = (datetime)PositionGetInteger(POSITION_TIME);\n'
+                f'         if((int)(TimeCurrent()-_openT) < MinHoldMinutes*60) continue;\n'
+            ) if min_hold_minutes > 0 else ''
+            _tg_be = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
+            exit_management = (
+                f'   // ATRBreakevenTrail: BE lock → ATR trail → hard TP ({_direction_label})\n'
+                f'   if(g_entryATR > 0)\n'
+                f'   {{\n'
+                f'      double _beDist = g_entryATR * BE_ATR_Mult;\n'
+                f'      double _trAct  = g_entryATR * TrailAct_ATR_Mult;\n'
+                f'      double _trDist = g_entryATR * Trail_ATR_Mult;\n'
+                f'      for(int _hi = PositionsTotal()-1; _hi >= 0; _hi--)\n'
+                f'      {{\n'
+                f'         ulong _ht = PositionGetTicket(_hi);\n'
+                f'         if(_ht<=0 || PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;\n'
+                f'         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;\n'
+                f'{_be_pos_chk}'
+                f'         double _openP = PositionGetDouble(POSITION_PRICE_OPEN);\n'
+                f'         double _curSL = PositionGetDouble(POSITION_SL);\n'
+                f'         double _curTP = PositionGetDouble(POSITION_TP);\n'
+                f'         double _bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);\n'
+                f'         double _ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);\n'
+                f'         double _profit = {_profit_price_expr};\n'
+                f'         if(_profit >= _trAct)\n'
+                f'         {{\n'
+                f'            double _newSL = {_atrbe_trail_sl_expr};\n'
+                f'            {_atrbe_floor_sl}\n'
+                f'            if({_atrbe_trail_compare})\n'
+                f'               trade.PositionModify(_ht, _newSL, _curTP);\n'
+                f'         }}\n'
+                f'         else if(!g_breakevenSet && _profit >= _beDist)\n'
+                f'         {{\n'
+                f'            trade.PositionModify(_ht, {_be_new_sl_expr}, _curTP);\n'
+                f'            g_breakevenSet = true;\n'
+                f'         }}\n'
+                f'      }}\n'
+                f'   }}\n'
+                f'   if(g_entryBarIndex>0 && MaxHoldCandles>0)\n'
+                f'   {{\n'
+                f'      if(Bars(_Symbol,{mql_period})-g_entryBarIndex >= MaxHoldCandles)\n'
+                f'      {{\n'
+                f'         {_tg_be}CloseAllPositions("ATRBETimeExit");\n'
+                f'         g_entryBarIndex = 0;\n'
+                f'      }}\n'
+                f'   }}\n'
+            )
+
+        elif exit_class == 'ATRFixedSLTP':
+            exit_globals = (
+                f'int handle_exit_atr;\n'
+                f'double g_entrySL = 0.0;\n'
+                f'double g_entryTP = 0.0;\n'
+                f'int g_entryBarIndex = 0;\n'
+            )
+            exit_on_entry = (
+                f'      {{\n'
+                f'         double _atrEntry[1];\n'
+                f'         CopyBuffer(handle_exit_atr, 0, 1, 1, _atrEntry);\n'
+                f'         g_entrySL = _atrEntry[0] * SL_ATR_Mult;\n'
+                f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
+                f'      }}\n'
+                f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+            )
+            _tg_af = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
+            exit_management = (
+                f'   // ATRFixedSLTP: time limit only — SL/TP set atomically at entry\n'
+                f'   if(g_entryBarIndex > 0 && MaxHoldCandles > 0)\n'
+                f'   {{\n'
+                f'      int _barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
+                f'      if(_barsHeld >= MaxHoldCandles)\n'
+                f'      {{\n'
+                f'         {_tg_af}CloseAllPositions("ATRFixedTimeExit");\n'
+                f'         g_entryBarIndex = 0;\n'
+                f'      }}\n'
+                f'   }}\n'
+            )
+
+        elif exit_class == 'PSARExit':
+            psar_signal_col = exit_params.get('psar_signal_column', f'{atr_column.split("_")[0]}_psar_signal')
+            psar_tf = psar_signal_col.split('_')[0] if '_' in psar_signal_col else 'H1'
+            psar_mql_tf = _mql_periods.get(psar_tf, 'PERIOD_H1')
+            extra_init.append(
+                f'   handle_exit_psar = iSAR(NULL, {psar_mql_tf}, 0.02, 0.2);\n'
+                f'   if(handle_exit_psar == INVALID_HANDLE) return(INIT_FAILED);'
+            )
+            exit_globals = (
+                f'int handle_exit_atr;\n'
+                f'int handle_exit_psar;\n'
+                f'double g_entrySL = 0.0;\n'
+                f'double g_entryTP = 0.0;\n'
+                f'int g_entryBarIndex = 0;\n'
+            )
+            exit_on_entry = (
+                f'      {{\n'
+                f'         double _atrEntry[1];\n'
+                f'         CopyBuffer(handle_exit_atr, 0, 1, 1, _atrEntry);\n'
+                f'         g_entrySL = _atrEntry[0] * SL_ATR_Mult;\n'
+                f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
+                f'      }}\n'
+                f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+            )
+            _tg_psar = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
+            if is_buy:
+                _psar_flip = (
+                    f'         double _psarBuf[1];\n'
+                    f'         CopyBuffer(handle_exit_psar, 0, 1, 1, _psarBuf);\n'
+                    f'         if(_psarBuf[0] > SymbolInfoDouble(_Symbol, SYMBOL_BID))\n'
+                )
+            else:
+                _psar_flip = (
+                    f'         double _psarBuf[1];\n'
+                    f'         CopyBuffer(handle_exit_psar, 0, 1, 1, _psarBuf);\n'
+                    f'         if(_psarBuf[0] < SymbolInfoDouble(_Symbol, SYMBOL_ASK))\n'
+                )
+            exit_management = (
+                f'   // PSARExit: PSAR flip exit + time limit ({_direction_label})\n'
+                f'   if(g_entryBarIndex > 0)\n'
+                f'   {{\n'
+                f'      int _barsHeld = Bars(_Symbol, {mql_period}) - g_entryBarIndex;\n'
+                f'      if(_barsHeld >= PSAR_SettleCandles)\n'
+                f'      {{\n'
+                f'{_psar_flip}'
+                f'         {{\n'
+                f'            {_tg_psar}CloseAllPositions("PSARFlipExit");\n'
+                f'            g_entryBarIndex = 0;\n'
+                f'         }}\n'
+                f'      }}\n'
+                f'      if(g_entryBarIndex > 0 && MaxHoldCandles > 0 && _barsHeld >= MaxHoldCandles)\n'
+                f'      {{\n'
+                f'         {_tg_psar}CloseAllPositions("PSARTimeExit");\n'
+                f'         g_entryBarIndex = 0;\n'
+                f'      }}\n'
+                f'   }}\n'
+            )
 
     elif exit_class == 'TimeBased':
         # WHY: Time-Based closes the trade after N candles regardless of profit.
@@ -1681,6 +1880,14 @@ bool IsMinHoldMet()
         _vr.append(f"  Activation: +{trail_activation_pips} pips, Trail: {trail_distance_pips} pips")
     elif exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
         _vr.append(f"  SL: {sl_atr_mult}x ATR, TP: {tp_atr_mult}x ATR")
+    elif exit_class == 'ATRFixedSLTP':
+        _vr.append(f"  SL: {sl_atr_mult}x ATR, TP: {tp_atr_mult}x ATR, Max: {max_candles} candles")
+    elif exit_class == 'ATRBreakevenTrail':
+        _vr.append(f"  SL: {sl_atr_mult}x ATR, TP: {tp_atr_mult}x ATR")
+        _vr.append(f"  BE at: {breakeven_atr_mult}x ATR, Trail at: {trail_activation_atr_mult}x ATR / {trail_atr_mult}x dist")
+        _vr.append(f"  Max: {max_candles} candles")
+    elif exit_class == 'PSARExit':
+        _vr.append(f"  ATR SL: {sl_atr_mult}x, Hard TP: {tp_atr_mult}x, PSAR settle: {min_candles_before_psar} candles")
     elif exit_class == 'TimeBased':
         _vr.append(f"  Max hold: {max_candles} candles")
     elif exit_class == 'HybridExit':
@@ -1769,8 +1976,12 @@ bool IsMinHoldMet()
     #      until the terminal restarts. Append them directly to the built block string.
     # CHANGED: April 2026 — fix exit-handle leaks in OnDeinit
 
-    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
+    # CHANGED: April 2026 — release handles for new ATR exits too
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing',
+                      'ATRFixedSLTP', 'ATRBreakevenTrail', 'PSARExit'):
         _indicator_release_block += '\n   if(handle_exit_atr != INVALID_HANDLE) IndicatorRelease(handle_exit_atr);'
+    if exit_class == 'PSARExit':
+        _indicator_release_block += '\n   if(handle_exit_psar != INVALID_HANDLE) IndicatorRelease(handle_exit_psar);'
 
     if exit_class == 'IndicatorExit' and exit_globals.strip():
         # exit_globals first line = IndicatorExit handle declaration (regime handles follow after, already released above)
@@ -1783,7 +1994,9 @@ bool IsMinHoldMet()
     #      Lot sizing must match the ACTUAL SL, not the configured one.
     #      Without this, lots are 20× too big and one loss = 6% DD.
     # CHANGED: April 2026 — ATR-aware lot sizing
-    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing'):
+    # CHANGED: April 2026 — new ATR exits use ATR-aware lot sizing
+    if exit_class in ('ATRBased', 'ATROnly', 'ATRTrailing',
+                      'ATRFixedSLTP', 'ATRBreakevenTrail', 'PSARExit'):
         _lot_sizing_code = (
             '   double pipSize = GetPipSize();\n'
             '   // ATR-aware: size lots for ACTUAL ATR SL, not fixed SLPips\n'
