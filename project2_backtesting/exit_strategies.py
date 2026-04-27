@@ -90,6 +90,21 @@ class ExitStrategy:
                 return candle_open   # gapped down past TP (lucky fill)
         return target_price
 
+    @staticmethod
+    def _normalize_price(price, pip_size):
+        """Round price to pip precision, matching MT5's NormalizeDouble.
+
+        WHY: MT5 normalizes all SL/TP prices to SYMBOL_DIGITS precision.
+             Without this, floating-point dust (e.g. 4800.2500000001) can
+             cause Python and MT5 to trigger differently on edge-case candles.
+        CHANGED: April 2026 — price normalization for MT5 parity
+        """
+        if pip_size > 0:
+            import math
+            _decimals = max(0, -int(math.floor(math.log10(pip_size))))
+            return round(price, _decimals)
+        return price
+
 
 class FixedSLTP(ExitStrategy):
     """Fixed stop loss and take profit in pips.
@@ -134,12 +149,14 @@ class FixedSLTP(ExitStrategy):
                     "reason":     "FIXED_MAX_CANDLES",
                 }
 
+        # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
+        # CHANGED: April 2026 — price normalization for MT5 parity
         if direction == "BUY":
-            sl_price = entry - self.sl_pips * self.pip_size
-            tp_price = entry + self.tp_pips * self.pip_size
+            sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
+            tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
         else:  # SELL
-            sl_price = entry + self.sl_pips * self.pip_size
-            tp_price = entry - self.tp_pips * self.pip_size
+            sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
+            tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
 
         result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
         if result == "SL":
@@ -230,6 +247,53 @@ class TrailingStop(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["low"] <= effective_sl:
+                # WHY: Ambiguity — candle made a new high (trail advances) AND
+                #      the low hit the trail. With ticks, determine which happened
+                #      first. Without ticks the candle-based result stands.
+                # CHANGED: April 2026 — tick-aware trailing ambiguity
+                _new_high_this_candle = candle["high"] > pos.get("highest_since_entry", entry)
+                _is_trailing = effective_sl > fixed_sl
+                if _new_high_this_candle and _is_trailing:
+                    _tick_loader = pos.get('_tick_loader')
+                    _ticks = _tick_loader(candle.get('timestamp')) if _tick_loader else None
+                    if _ticks is not None and len(_ticks) > 0:
+                        _run_high  = pos.get("highest_since_entry", highest)
+                        _trail_pip = self.trail_distance_pips * self.pip_size
+                        for _, _tick in _ticks.iterrows():
+                            try:
+                                _bid = float(_tick['bid'])
+                                if _bid > _run_high:
+                                    _run_high = _bid
+                                _tick_trail = _run_high - _trail_pip
+                                _tick_eff   = max(fixed_sl, _tick_trail)
+                                if _bid <= _tick_eff:
+                                    _tr = _tick_eff > fixed_sl
+                                    _reason = "TRAILING_STOP_TICK" if _tr else "STOP_LOSS_TICK"
+                                    return {"exit_price": _tick_eff, "reason": _reason}
+                            except Exception:
+                                continue
+                        # ticks ended without SL hit — try M1 before accepting candle result
+                        _m1_loader = pos.get('_m1_loader')
+                        _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+                        if _m1_candles is not None and len(_m1_candles) > 0:
+                            # CHANGED: April 2026 — M1 fallback for BUY trailing ambiguity
+                            _m1_run_high = pos.get("highest_since_entry", highest)
+                            _trail_pip   = self.trail_distance_pips * self.pip_size
+                            for _, _m1 in _m1_candles.iterrows():
+                                try:
+                                    _m1_high = float(_m1['high'])
+                                    _m1_low  = float(_m1['low'])
+                                    if _m1_high > _m1_run_high:
+                                        _m1_run_high = _m1_high
+                                    _m1_trail  = _m1_run_high - _trail_pip
+                                    _m1_eff_sl = max(fixed_sl, _m1_trail)
+                                    if _m1_low <= _m1_eff_sl:
+                                        _tr = _m1_eff_sl > fixed_sl
+                                        return {"exit_price": _m1_eff_sl,
+                                                "reason": "TRAILING_STOP_M1" if _tr else "STOP_LOSS_M1"}
+                                except Exception:
+                                    continue
+                        return None  # ticks + M1 ended without SL hit
                 fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
                 is_trailing = effective_sl > fixed_sl
                 if fill != effective_sl:
@@ -256,6 +320,51 @@ class TrailingStop(ExitStrategy):
                 effective_sl = fixed_sl
 
             if candle["high"] >= effective_sl:
+                # WHY: Tick-aware SELL trailing ambiguity — same as BUY.
+                # CHANGED: April 2026 — tick-aware trailing ambiguity
+                _new_low_this_candle = candle["low"] < pos.get("lowest_since_entry", entry)
+                _is_trailing_sell = effective_sl < fixed_sl
+                if _new_low_this_candle and _is_trailing_sell:
+                    _tick_loader = pos.get('_tick_loader')
+                    _ticks = _tick_loader(candle.get('timestamp')) if _tick_loader else None
+                    if _ticks is not None and len(_ticks) > 0:
+                        _run_low   = pos.get("lowest_since_entry", lowest)
+                        _trail_pip = self.trail_distance_pips * self.pip_size
+                        for _, _tick in _ticks.iterrows():
+                            try:
+                                _bid = float(_tick['bid'])
+                                if _bid < _run_low:
+                                    _run_low = _bid
+                                _tick_trail = _run_low + _trail_pip
+                                _tick_eff   = min(fixed_sl, _tick_trail)
+                                if _bid >= _tick_eff:
+                                    _tr = _tick_eff < fixed_sl
+                                    _reason = "TRAILING_STOP_TICK" if _tr else "STOP_LOSS_TICK"
+                                    return {"exit_price": _tick_eff, "reason": _reason}
+                            except Exception:
+                                continue
+                        # ticks ended without SL hit — try M1 before accepting candle result
+                        _m1_loader = pos.get('_m1_loader')
+                        _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+                        if _m1_candles is not None and len(_m1_candles) > 0:
+                            # CHANGED: April 2026 — M1 fallback for SELL trailing ambiguity
+                            _m1_run_low = pos.get("lowest_since_entry", lowest)
+                            _trail_pip  = self.trail_distance_pips * self.pip_size
+                            for _, _m1 in _m1_candles.iterrows():
+                                try:
+                                    _m1_high = float(_m1['high'])
+                                    _m1_low  = float(_m1['low'])
+                                    if _m1_low < _m1_run_low:
+                                        _m1_run_low = _m1_low
+                                    _m1_trail  = _m1_run_low + _trail_pip
+                                    _m1_eff_sl = min(fixed_sl, _m1_trail)
+                                    if _m1_high >= _m1_eff_sl:
+                                        _tr = _m1_eff_sl < fixed_sl
+                                        return {"exit_price": _m1_eff_sl,
+                                                "reason": "TRAILING_STOP_M1" if _tr else "STOP_LOSS_M1"}
+                                except Exception:
+                                    continue
+                        return None  # ticks + M1 ended without SL hit
                 fill = self._get_fill_price(candle, effective_sl, direction, is_sl=True)
                 is_trailing = effective_sl < fixed_sl
                 if fill != effective_sl:
@@ -489,12 +598,14 @@ class ATRFixedSLTP(ExitStrategy):
                     "reason":     reason,
                 }
 
+        # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
+        # CHANGED: April 2026 — price normalization for MT5 parity
         if direction == "BUY":
-            sl_price = entry - self.sl_pips * self.pip_size
-            tp_price = entry + self.tp_pips * self.pip_size
+            sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
+            tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
         else:
-            sl_price = entry + self.sl_pips * self.pip_size
-            tp_price = entry - self.tp_pips * self.pip_size
+            sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
+            tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
 
         result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
         if result == "SL":
@@ -627,7 +738,9 @@ class ATRBreakevenTrail(ExitStrategy):
 
         if direction == "BUY":
             # Hard TP check first
-            tp_price = entry + self._tp_price_dist
+            # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
+            # CHANGED: April 2026 — price normalization for MT5 parity
+            tp_price = self._normalize_price(entry + self._tp_price_dist, self.pip_size)
             if candle["high"] >= tp_price:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
@@ -635,6 +748,78 @@ class ATRBreakevenTrail(ExitStrategy):
 
             # Compute current profit from best price
             profit_from_entry = highest - entry
+
+            # WHY: Intra-candle ambiguity — both initial SL and breakeven
+            #      activation are within this candle's range. Use tick data
+            #      to determine which was hit first. Falls back to conservative
+            #      SL if no ticks available.
+            # CHANGED: April 2026 — tick-aware breakeven ambiguity resolution
+            _initial_sl_price = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
+            _be_threshold     = entry + self._be_distance_price
+            _be_would_activate = candle["high"] >= _be_threshold
+            _sl_would_hit      = candle["low"]  <= _initial_sl_price
+            if _be_would_activate and _sl_would_hit and not self._breakeven_locked:
+                _tick_loader = pos.get('_tick_loader')
+                _ticks = _tick_loader(candle.get('timestamp')) if _tick_loader else None
+                if _ticks is not None and len(_ticks) > 0:
+                    _highest_bid = entry
+                    _be_activated = False
+                    for _, _tick in _ticks.iterrows():
+                        try:
+                            _bid = float(_tick['bid'])
+                            if _bid > _highest_bid:
+                                _highest_bid = _bid
+                            if _bid <= _initial_sl_price:
+                                # SL hit first
+                                return {"exit_price": _initial_sl_price, "reason": "ATRBE_SL_TICK"}
+                            if _highest_bid >= _be_threshold:
+                                _be_activated = True
+                                break  # breakeven activated first — check for exit below
+                        except Exception:
+                            continue
+                    if _be_activated:
+                        self._breakeven_locked = True
+                        # Check if bid then pulled back to entry (breakeven exit)
+                        for _, _tick in _ticks.iterrows():
+                            try:
+                                if float(_tick['bid']) >= _be_threshold:
+                                    break  # scan from breakeven activation point
+                            except Exception:
+                                continue
+                        # fall through — let phase logic handle rest of candle
+                    # else: ticks ended without either — no exit, fall through
+                else:
+                    # No tick data — try M1 sub-candles
+                    # WHY: M1 gives 60 data points per H1 bar — resolves
+                    #      most ambiguity without the storage cost of ticks.
+                    # CHANGED: April 2026 — M1 fallback for BUY breakeven ambiguity
+                    _m1_loader = pos.get('_m1_loader')
+                    _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+                    if _m1_candles is not None and len(_m1_candles) > 0:
+                        _m1_highest = entry
+                        for _, _m1 in _m1_candles.iterrows():
+                            try:
+                                _m1_high = float(_m1['high'])
+                                _m1_low  = float(_m1['low'])
+                                if _m1_high > _m1_highest:
+                                    _m1_highest = _m1_high
+                                if _m1_low <= _initial_sl_price:
+                                    _m1c = {'open': float(_m1['open']), 'high': _m1_high,
+                                            'low': _m1_low, 'close': float(_m1['close'])}
+                                    fill = self._get_fill_price(_m1c, _initial_sl_price, direction, is_sl=True)
+                                    return {"exit_price": fill, "reason": "ATRBE_SL_M1"}
+                                if (_m1_highest - entry) >= self._be_distance_price:
+                                    self._breakeven_locked = True
+                                    if _m1_low <= entry:
+                                        return {"exit_price": entry, "reason": "ATRBE_BREAKEVEN_M1"}
+                                    break  # breakeven locked — let phase logic handle rest
+                            except Exception:
+                                continue
+                        # fall through to phase logic (breakeven may be locked)
+                    else:
+                        # No M1 either — conservative: assume SL hit first
+                        fill = self._get_fill_price(candle, _initial_sl_price, direction, is_sl=True)
+                        return {"exit_price": fill, "reason": "ATRBE_SL_AMBIGUOUS"}
 
             # Phase 3: Trailing (activates after trail_activation distance)
             if profit_from_entry >= self._trail_activation_price_dist:
@@ -658,7 +843,7 @@ class ATRBreakevenTrail(ExitStrategy):
 
             # Phase 1: Initial ATR SL
             else:
-                sl_price = entry - self._sl_price_dist
+                sl_price = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
                 if candle["low"] <= sl_price:
                     fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                     reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
@@ -666,13 +851,68 @@ class ATRBreakevenTrail(ExitStrategy):
 
         else:  # SELL
             # Hard TP
-            tp_price = entry - self._tp_price_dist
+            tp_price = self._normalize_price(entry - self._tp_price_dist, self.pip_size)
             if candle["low"] <= tp_price:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
                 return {"exit_price": fill, "reason": reason}
 
             profit_from_entry = entry - lowest
+
+            # WHY: Tick-aware breakeven ambiguity resolution for SELL.
+            # CHANGED: April 2026 — tick-aware breakeven ambiguity resolution
+            _initial_sl_price = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
+            _be_threshold_sell = entry - self._be_distance_price
+            _be_would_activate = candle["low"]  <= _be_threshold_sell
+            _sl_would_hit      = candle["high"] >= _initial_sl_price
+            if _be_would_activate and _sl_would_hit and not self._breakeven_locked:
+                _tick_loader = pos.get('_tick_loader')
+                _ticks = _tick_loader(candle.get('timestamp')) if _tick_loader else None
+                if _ticks is not None and len(_ticks) > 0:
+                    _lowest_bid = entry
+                    _be_activated_sell = False
+                    for _, _tick in _ticks.iterrows():
+                        try:
+                            _bid = float(_tick['bid'])
+                            if _bid < _lowest_bid:
+                                _lowest_bid = _bid
+                            if _bid >= _initial_sl_price:
+                                return {"exit_price": _initial_sl_price, "reason": "ATRBE_SL_TICK"}
+                            if _lowest_bid <= _be_threshold_sell:
+                                _be_activated_sell = True
+                                break
+                        except Exception:
+                            continue
+                    if _be_activated_sell:
+                        self._breakeven_locked = True
+                else:
+                    # No tick data — try M1 sub-candles (SELL)
+                    # CHANGED: April 2026 — M1 fallback for SELL breakeven ambiguity
+                    _m1_loader = pos.get('_m1_loader')
+                    _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+                    if _m1_candles is not None and len(_m1_candles) > 0:
+                        _m1_lowest = entry
+                        for _, _m1 in _m1_candles.iterrows():
+                            try:
+                                _m1_high = float(_m1['high'])
+                                _m1_low  = float(_m1['low'])
+                                if _m1_low < _m1_lowest:
+                                    _m1_lowest = _m1_low
+                                if _m1_high >= _initial_sl_price:
+                                    _m1c = {'open': float(_m1['open']), 'high': _m1_high,
+                                            'low': _m1_low, 'close': float(_m1['close'])}
+                                    fill = self._get_fill_price(_m1c, _initial_sl_price, direction, is_sl=True)
+                                    return {"exit_price": fill, "reason": "ATRBE_SL_M1"}
+                                if (entry - _m1_lowest) >= self._be_distance_price:
+                                    self._breakeven_locked = True
+                                    if _m1_high >= entry:
+                                        return {"exit_price": entry, "reason": "ATRBE_BREAKEVEN_M1"}
+                                    break
+                            except Exception:
+                                continue
+                    else:
+                        fill = self._get_fill_price(candle, _initial_sl_price, direction, is_sl=True)
+                        return {"exit_price": fill, "reason": "ATRBE_SL_AMBIGUOUS"}
 
             # Phase 3: Trailing
             if profit_from_entry >= self._trail_activation_price_dist:
@@ -693,7 +933,7 @@ class ATRBreakevenTrail(ExitStrategy):
 
             # Phase 1: Initial SL
             else:
-                sl_price = entry + self._sl_price_dist
+                sl_price = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
                 if candle["high"] >= sl_price:
                     fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                     reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
@@ -805,14 +1045,16 @@ class PSARExit(ExitStrategy):
 
         if direction == "BUY":
             # Hard TP
-            tp_price = entry + self._tp_price_dist
+            # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
+            # CHANGED: April 2026 — price normalization for MT5 parity
+            tp_price = self._normalize_price(entry + self._tp_price_dist, self.pip_size)
             if candle["high"] >= tp_price:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "PSAR_TP_GAP" if fill != tp_price else "PSAR_TP"
                 return {"exit_price": fill, "reason": reason}
 
             # ATR SL (safety net — always active)
-            sl_price = entry - self._sl_price_dist
+            sl_price = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
             if candle["low"] <= sl_price:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
@@ -836,14 +1078,14 @@ class PSARExit(ExitStrategy):
 
         else:  # SELL
             # Hard TP
-            tp_price = entry - self._tp_price_dist
+            tp_price = self._normalize_price(entry - self._tp_price_dist, self.pip_size)
             if candle["low"] <= tp_price:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "PSAR_TP_GAP" if fill != tp_price else "PSAR_TP"
                 return {"exit_price": fill, "reason": reason}
 
             # ATR SL
-            sl_price = entry + self._sl_price_dist
+            sl_price = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
             if candle["high"] >= sl_price:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"

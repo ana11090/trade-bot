@@ -578,6 +578,13 @@ def walk_forward_validate(
 
     candles_df, indicators_df = _load_data_cached(candles_path, rules=rules)
 
+    # WHY: data_dir is needed by fast_backtest to find tick/M1 files for
+    #      intra-candle exit ambiguity resolution. Without this, walk-forward
+    #      validation uses the conservative fallback even when tick data is
+    #      available — producing slightly different results than the main backtest.
+    # CHANGED: April 2026 — thread data_dir for tick/M1 parity
+    _wf_data_dir = os.path.dirname(os.path.abspath(candles_path))
+
     print(f"[WF] Candles: {len(candles_df)} rows, "
           f"{candles_df['timestamp'].min()} to {candles_df['timestamp'].max()}")
     print(f"[WF] Indicators: {len(indicators_df)} rows, {len(indicators_df.columns)} columns")
@@ -771,6 +778,9 @@ def walk_forward_validate(
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
                 leverage=leverage, contract_size=contract_size,
+                # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
+                # CHANGED: April 2026 — tick/M1 parity in walk-forward
+                data_dir=_wf_data_dir,
             )
         except Exception as e:
             in_trades = []
@@ -819,6 +829,9 @@ def walk_forward_validate(
                 default_sl_pips=default_sl_pips,
                 pip_value_per_lot=pip_value_per_lot,
                 leverage=leverage, contract_size=contract_size,
+                # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
+                # CHANGED: April 2026 — tick/M1 parity in walk-forward
+                data_dir=_wf_data_dir,
             )
         except Exception as e:
             out_trades = []
@@ -1294,6 +1307,10 @@ def slippage_stress_test(
 
     candles_df, indicators_df = _load_data_cached(candles_path, rules=rules)
 
+    # WHY: data_dir for tick/M1 resolution — same exit behavior as main backtest.
+    # CHANGED: April 2026 — thread data_dir for tick/M1 parity
+    _ss_data_dir = os.path.dirname(os.path.abspath(candles_path))
+
     # Pre-trim once — slippage loop has no per-level date filter
     _c = candles_df.iloc[200:].reset_index(drop=True)
     _i = indicators_df.iloc[200:].reset_index(drop=True)
@@ -1330,6 +1347,9 @@ def slippage_stress_test(
                     slippage_pips=float(slip_pips),
                     account_size=account_size,
                     leverage=leverage, contract_size=contract_size,
+                    # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
+                    # CHANGED: April 2026 — tick/M1 parity in slippage stress test
+                    data_dir=_ss_data_dir,
                 )
                 # Apply filters if provided (max_trades_per_day, sessions, etc.)
                 if filters and run_trades:

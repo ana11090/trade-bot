@@ -211,7 +211,13 @@ INDICATOR_PATTERNS = [
     (r"^bb_(\d+)_(\d+(?:\.\d+)?)_width$", {
         "mt5_handle_var":  "int handle_bb_{tf}_{p1}_{p2s};",
         "mt5_handle_init": "handle_bb_{tf}_{p1}_{p2s} = iBands(NULL,{mt5_tf},{p1},0,{p2},PRICE_CLOSE); if(handle_bb_{tf}_{p1}_{p2s}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double _tmp0 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 0, {mt5_tf}); double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1, {mt5_tf}); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2, {mt5_tf}); if(_tmp0 == EMPTY_VALUE || _tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } else { double val_{var} = (_tmp0 > 0) ? ((_tmp1 - _tmp2) / _tmp0 * 100.0) : 0.0; }",
+        # WHY: Old template declared val_{var} inside the else{} block,
+        #      making it invisible to the condition check on the next line.
+        #      The if branch also referenced the undeclared outer variable.
+        #      Fix: declare val_{var} = 0.0 BEFORE the if/else so both
+        #      branches and the subsequent comparison share the same variable.
+        # CHANGED: April 2026 — fix bb_width scope bug (undeclared identifier)
+        "mt5_buffer_read": "double val_{var} = 0.0; double _tmp0 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 0, {mt5_tf}); double _tmp1 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 1, {mt5_tf}); double _tmp2 = SafeCopyBuf(handle_bb_{tf}_{p1}_{p2s}, 2, {mt5_tf}); if(_tmp0 == EMPTY_VALUE || _tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; } else { val_{var} = (_tmp0 > 0) ? ((_tmp1 - _tmp2) / _tmp0 * 100.0) : 0.0; }",
         "tradovate_code":  "ta.bbands(df_m{tv_tf}['close'], length={p1}, std={p2})['BBB_{p1}_{p2}_0'].iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "Bollinger Band({p1},{p2}) width as % of middle on {tf}",
@@ -1739,6 +1745,49 @@ def get_mql_code(feature_name, platform='mt5'):
             'read_code':       f'MqlDateTime _dt_{var_name}; TimeToStruct(TimeCurrent(), _dt_{var_name}); double val_{var_name} = (double)_dt_{var_name}.day;',
             'custom_indicator': False,
             'description':     f'{tf} Day of Month',
+        }
+
+    # ── tsi ──────────────────────────────────────────────────────────────────
+    # WHY: TSI is fully implemented in _mql5_sub_expr but the pattern
+    #      matcher doesn't cover it as a top-level feature. Delegate to
+    #      the sub-expr helper and wrap its (lines, expr) output.
+    # CHANGED: April 2026 — fix tsi top-level routing (was falling through
+    #          to unsupported fallback, blocking every rule that used it)
+    if ind == 'tsi':
+        _lines, _expr = _mql5_sub_expr(feature_name)
+        _setup = '\n      '.join(_lines)
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       f'{_setup}\n      double val_{var_name} = {_expr};',
+            'custom_indicator': False,
+            'description':     f'{tf} TSI (True Strength Index, inline double-EMA)',
+        }
+
+    # ── obv ──────────────────────────────────────────────────────────────────
+    # WHY: MT5 has no built-in OBV. Compute rolling OBV over 200 bars inline.
+    #      Python's OBV is cumulative from dataset start — the absolute value
+    #      differs from a 200-bar rolling window. Thresholds from Python
+    #      training must be recalibrated against live MT5 OBV values.
+    # CHANGED: April 2026 — implement OBV inline for MT5
+    if ind == 'obv':
+        _n = 200
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       (
+                f'double val_{var_name} = 0.0;\n'
+                f'      {{\n'
+                f'         double _obv_cl[{_n+1}]; long _obv_vl[{_n+1}];\n'
+                f'         if(CopyClose(NULL,{mt5_tf},0,{_n+1},_obv_cl)>0 && CopyTickVolume(NULL,{mt5_tf},0,{_n+1},_obv_vl)>0) {{\n'
+                f'            for(int _oi={_n-1};_oi>=0;_oi--) {{ if(_obv_cl[_oi]>_obv_cl[_oi+1]) val_{var_name}+=(double)_obv_vl[_oi]; else if(_obv_cl[_oi]<_obv_cl[_oi+1]) val_{var_name}-=(double)_obv_vl[_oi]; }}\n'
+                f'         }}\n'
+                f'      }} // NOTE: OBV threshold from Python training needs recalibration for MT5'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} OBV (On-Balance Volume, rolling {_n} bars — recalibrate threshold)',
         }
 
     if template is None:

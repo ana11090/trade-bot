@@ -5,6 +5,11 @@
 #property script_show_inputs
 
 input int    YearsBack     = 5;
+// WHY: M1 candles provide 60 sub-bars per H1 candle for intra-candle
+//      exit simulation. Smaller than tick data (~750K rows for 2 years
+//      vs 25M rows for ticks) but resolves 95%+ of ambiguity.
+// CHANGED: April 2026 — M1 export
+input bool   Export_M1     = true;
 input bool   Export_M5     = true;
 input bool   Export_M15    = true;
 input bool   Export_H1     = true;
@@ -76,6 +81,7 @@ void OnStart()
    Print("  Offset: server - GMT = ", (int)(TimeCurrent() - TimeGMT()) / 3600, " hours");
    Print("============================================================");
 
+   if(Export_M1)  ExportTimeframe(PERIOD_M1,  "M1");
    if(Export_M5)  ExportTimeframe(PERIOD_M5,  "M5");
    if(Export_M15) ExportTimeframe(PERIOD_M15, "M15");
    if(Export_H1)  ExportTimeframe(PERIOD_H1,  "H1");

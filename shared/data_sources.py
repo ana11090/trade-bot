@@ -43,8 +43,19 @@ def list_sources():
         symbol = ''
         date_range = ''
 
+        # WHY: Tick data files follow naming XAUUSD_ticks_YYYY_MM.csv.
+        #      Detect them before the timeframe loop so they're not
+        #      mistaken for a timeframe called "TICKS".
+        # CHANGED: April 2026 — tick data detection
+        has_ticks = False
+        tick_files = []
+        for _tf in sorted(os.listdir(src_path)):
+            if _tf.endswith('.csv') and '_ticks' in _tf.lower():
+                has_ticks = True
+                tick_files.append(_tf)
+
         for f in sorted(os.listdir(src_path)):
-            if f.endswith('.csv'):
+            if f.endswith('.csv') and '_ticks' not in f.lower():  # skip tick files
                 # Parse filename: XAUUSD_M5.csv or xauusd_M5.csv
                 parts = f.replace('.csv', '').split('_')
                 if len(parts) >= 2:
@@ -94,6 +105,11 @@ def list_sources():
                 'broker': meta.get('broker', ''),
                 'timezone_offset': meta.get('timezone_offset', ''),
                 'imported_at': meta.get('imported_at', ''),
+                # WHY: Expose tick availability so UI and backtester can
+                #      show status and enable tick-aware exit simulation.
+                # CHANGED: April 2026 — tick data detection
+                'has_ticks': has_ticks,
+                'tick_files': tick_files,
             })
 
     return result
@@ -188,6 +204,49 @@ def import_data_source(source_folder, source_id, display_name='', broker='', tim
         json.dump(meta, f, indent=2)
 
     return {'source_id': source_id, 'path': dest, 'files_copied': copied}
+
+
+def import_tick_data(tick_folder, source_id):
+    """Import tick CSV files into an existing data source.
+
+    WHY: Tick files are imported separately from candle data because
+         they're much larger and optional. Goes into the same source
+         folder so the backtester finds them via data_source_id.
+    CHANGED: April 2026 — tick data import
+
+    Args:
+        tick_folder: path containing XAUUSD_ticks_*.csv files
+        source_id: existing data source ID to add ticks to
+
+    Returns:
+        dict with import results
+    """
+    dest = os.path.join(get_sources_dir(), source_id)
+    if not os.path.isdir(dest):
+        return {'error': f'Data source {source_id} not found at {dest}'}
+
+    copied = 0
+    for f in os.listdir(tick_folder):
+        if f.endswith('.csv') and '_ticks' in f.lower():
+            shutil.copy2(os.path.join(tick_folder, f), os.path.join(dest, f))
+            copied += 1
+
+    # Update metadata
+    meta_path = os.path.join(dest, '_source_info.json')
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as fh:
+                meta = json.load(fh)
+        except Exception:
+            pass
+    meta['has_ticks'] = True
+    meta['tick_files_imported'] = copied
+    meta['ticks_imported_at'] = datetime.now().isoformat()
+    with open(meta_path, 'w') as fh:
+        json.dump(meta, fh, indent=2)
+
+    return {'source_id': source_id, 'tick_files_copied': copied}
 
 
 def _migrate_legacy_if_needed():

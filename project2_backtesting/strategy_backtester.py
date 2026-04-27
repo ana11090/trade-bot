@@ -48,6 +48,178 @@ import threading as _bt_threading
 # CHANGED: April 2026 — graceful stop
 _stop_requested = _bt_threading.Event()
 
+# WHY: Real broker spreads vary by session. Fixed spread overestimates
+#      London/NY entries (real spread ~15-20) and underestimates Asian
+#      entries (real spread ~40-60). Session-based spread models this
+#      without needing tick-level data.
+#      When variable_spread=False, returns the fixed spread (backward compat).
+# CHANGED: April 2026 — session-based variable spread model
+_SESSION_SPREAD_MULTIPLIERS = {
+    'london':  0.8,    # 25 × 0.8 = 20 pips
+    'ny':      0.9,    # 25 × 0.9 = 22.5 pips
+    'asian':   1.6,    # 25 × 1.6 = 40 pips
+    'late':    2.0,    # 25 × 2.0 = 50 pips
+    'default': 1.0,    # fallback = base spread
+}
+
+def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=False):
+    """Return spread in pips for this candle's session.
+
+    When variable_spread=False, returns base_spread_pips unchanged.
+    When True, applies session multiplier based on UTC hour.
+    """
+    if not variable_spread:
+        return base_spread_pips
+    try:
+        hour = pd.Timestamp(candle_timestamp).hour
+        if 0 <= hour <= 6:
+            mult = _SESSION_SPREAD_MULTIPLIERS['asian']
+        elif 7 <= hour <= 11:
+            mult = _SESSION_SPREAD_MULTIPLIERS['london']
+        elif 12 <= hour <= 20:
+            mult = _SESSION_SPREAD_MULTIPLIERS['ny']
+        else:
+            mult = _SESSION_SPREAD_MULTIPLIERS['late']
+        return round(base_spread_pips * mult, 1)
+    except Exception:
+        return base_spread_pips
+
+
+# WHY: Tick data resolves intra-candle exit ambiguity. When a candle's
+#      range covers both the initial SL and breakeven activation, the
+#      backtester can't know which was hit first from OHLC alone.
+#      With tick data it simulates tick-by-tick exactly like MT5.
+#      Tick files are stored in the data source folder as
+#      XAUUSD_ticks_YYYY_MM.csv (monthly split, matching export_ticks.mq5).
+#      Loading is LAZY — only triggered when ambiguity is detected.
+# CHANGED: April 2026 — tick data loader for exit ambiguity resolution
+
+_TF_MINUTES = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240, 'D1': 1440}
+_tick_cache = {}         # {(data_dir, year, month): DataFrame or None}
+_tick_available = {}     # {data_dir: bool} — cached availability check
+
+def _check_ticks_available(data_dir):
+    """Return True if tick CSV files exist in this data source folder."""
+    if data_dir in _tick_available:
+        return _tick_available[data_dir]
+    try:
+        has = any('_ticks' in f and f.endswith('.csv')
+                  for f in os.listdir(data_dir))
+    except Exception:
+        has = False
+    _tick_available[data_dir] = has
+    return has
+
+def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
+    """Load ticks that fall within one candle's time window.
+
+    WHY: Only called when an exit strategy detects an ambiguous candle
+         (both SL and breakeven could be hit). NOT called on every candle.
+    CHANGED: April 2026 — lazy tick loading
+
+    Returns DataFrame with [timestamp_ms, bid, ask] or None if unavailable.
+    """
+    if not _check_ticks_available(data_dir):
+        return None
+    try:
+        ts    = pd.Timestamp(candle_timestamp)
+        year  = ts.year
+        month = ts.month
+        cache_key = (data_dir, year, month)
+        if cache_key not in _tick_cache:
+            patterns = [
+                f'XAUUSD_ticks_{year:04d}_{month:02d}.csv',
+                f'xauusd_ticks_{year:04d}_{month:02d}.csv',
+            ]
+            tick_path = None
+            for p in patterns:
+                _candidate = os.path.join(data_dir, p)
+                if os.path.exists(_candidate):
+                    tick_path = _candidate
+                    break
+            if tick_path is None:
+                _tick_cache[cache_key] = None
+            else:
+                try:
+                    # WHY: float32 is enough for prices and halves memory vs float64.
+                    tick_df = pd.read_csv(
+                        tick_path,
+                        dtype={'timestamp_ms': 'int64', 'bid': 'float32', 'ask': 'float32'},
+                    )
+                    _tick_cache[cache_key] = tick_df
+                except Exception as _te:
+                    log.warning(f"[TICKS] Failed to load {tick_path}: {_te}")
+                    _tick_cache[cache_key] = None
+        tick_df = _tick_cache[cache_key]
+        if tick_df is None:
+            return None
+        candle_start_ms = int(ts.timestamp() * 1000)
+        candle_end_ms   = candle_start_ms + candle_tf_minutes * 60 * 1000
+        mask = (tick_df['timestamp_ms'] >= candle_start_ms) & \
+               (tick_df['timestamp_ms'] <  candle_end_ms)
+        result = tick_df.loc[mask]
+        return result if len(result) > 0 else None
+    except Exception as _e:
+        log.warning(f"[TICKS] Error loading ticks for {candle_timestamp}: {_e}")
+        return None
+
+
+# WHY: M1 candles provide intra-candle resolution without tick data.
+#      60 M1 candles per H1 bar, 12 per M5, 3 per M15. When ticks
+#      aren't available, M1 resolves most exit ambiguity. Loaded once
+#      and cached for the entire backtest run (much smaller than ticks).
+# CHANGED: April 2026 — M1 sub-candle loader
+
+_m1_cache = {}  # {data_dir: DataFrame or None}
+
+def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
+    """Load M1 sub-candles within one higher-TF candle's time window.
+
+    WHY: Fallback when tick data isn't available. M1 gives 60 data
+         points per H1 candle vs 1 OHLC summary.
+    CHANGED: April 2026 — M1 fallback for tick simulation
+
+    Returns DataFrame with timestamp, open, high, low, close or None.
+    """
+    if data_dir not in _m1_cache:
+        patterns = [
+            os.path.join(data_dir, 'M1.csv'),
+            os.path.join(data_dir, 'XAUUSD_M1.csv'),
+            os.path.join(data_dir, 'xauusd_M1.csv'),
+        ]
+        m1_path = None
+        for p in patterns:
+            if os.path.exists(p):
+                m1_path = p
+                break
+        if m1_path is None:
+            _m1_cache[data_dir] = None
+        else:
+            try:
+                m1_df = pd.read_csv(m1_path, dtype={
+                    'open': 'float32', 'high': 'float32',
+                    'low': 'float32', 'close': 'float32',
+                })
+                m1_df['timestamp'] = pd.to_datetime(m1_df['timestamp'])
+                _m1_cache[data_dir] = m1_df
+                log.info(f"[M1] Loaded {len(m1_df)} M1 candles from {m1_path}")
+            except Exception as _me:
+                log.warning(f"[M1] Failed to load M1 data from {m1_path}: {_me}")
+                _m1_cache[data_dir] = None
+
+    m1_df = _m1_cache[data_dir]
+    if m1_df is None:
+        return None
+    try:
+        ts          = pd.Timestamp(candle_timestamp)
+        candle_end  = ts + pd.Timedelta(minutes=candle_tf_minutes)
+        mask = (m1_df['timestamp'] >= ts) & (m1_df['timestamp'] < candle_end)
+        result = m1_df.loc[mask]
+        return result if len(result) > 0 else None
+    except Exception:
+        return None
+
+
 def request_backtest_stop():
     """Signal the backtester to stop after the current combo."""
     _stop_requested.set()
@@ -678,6 +850,22 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         else:
             entry_price -= (spread_pips + slippage_pips) * pip_size
 
+        # WHY: MaxSpreadPips filter for vectorized path. Can't easily
+        #      vary spread per entry in numpy, but CAN skip entries
+        #      during wide-spread sessions.
+        # CHANGED: April 2026 — max spread filter in vectorized path
+        if max_spread_pips > 0 and variable_spread:
+            _entry_spread = _get_session_spread(
+                all_times[entry_pos + 1], spread_pips, variable_spread
+            )
+            if _entry_spread > max_spread_pips:
+                continue
+            # Use session spread for this entry
+            if direction == "BUY":
+                entry_price = all_opens[entry_pos + 1] + (_entry_spread + slippage_pips) * pip_size
+            else:
+                entry_price = all_opens[entry_pos + 1] - (_entry_spread + slippage_pips) * pip_size
+
         entry_time = all_times[entry_pos + 1]
 
         # Compute SL/TP levels
@@ -943,7 +1131,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      a trade closes. The EA's CooldownMinutes does the same.
                  #      0 = no cooldown (backward compat, pre-phase behaviour).
                  # CHANGED: April 2026 — cooldown between trades (MT5 parity)
-                 cooldown_candles=0):
+                 cooldown_candles=0,
+                 # WHY: variable_spread applies session-based spread multipliers
+                 #      instead of fixed spread. max_spread_pips skips entries
+                 #      when spread exceeds limit (matches EA's MaxSpreadPips).
+                 #      Both default to backward-compat off state.
+                 # CHANGED: April 2026 — session-based variable spread model
+                 variable_spread=False,
+                 max_spread_pips=0,
+                 # WHY: data_dir path lets the exit strategy resolve intra-candle
+                 #      ambiguity using tick data when available. None = disabled.
+                 # CHANGED: April 2026 — tick data for exit ambiguity resolution
+                 data_dir=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -957,6 +1156,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     #      Clamped to 50% of starting capital as a safety floor.
     # CHANGED: April 2026 — equity-tracking lot sizing
     _running_balance = float(account_size) if account_size is not None else None
+
+    # WHY: Infer candle duration once per call for tick window sizing.
+    #      Median of first 10 gaps is robust against weekend/session gaps.
+    # CHANGED: April 2026 — tick data candle duration
+    _run_candle_tf_minutes = 60  # default H1
+    try:
+        _ts_sample = pd.to_datetime(candles_df['timestamp'].iloc[:11])
+        _gaps = [max(1, int((_ts_sample.iloc[i+1] - _ts_sample.iloc[i]).total_seconds() / 60))
+                 for i in range(len(_ts_sample) - 1)]
+        if _gaps:
+            import statistics
+            _run_candle_tf_minutes = int(statistics.median(_gaps))
+    except Exception:
+        pass
 
     # WHY: Drop duplicate candle timestamps before any further processing.
     #      Raw CSVs with duplicate bars produce corrupted rolling indicators.
@@ -1328,20 +1541,23 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 entry_price += slip   # buy fills higher
             else:
                 entry_price -= slip   # sell fills lower
-        # WHY: BUY enters at ASK (bid + spread); SELL enters at BID but pays
-        #      spread on the close, modelled here as a lower entry price so that
-        #      SL/TP levels computed from entry_price already include spread cost.
-        #      Without this, SL/TP are placed from the raw bid open, meaning:
-        #      SL is spread-pips too far away (fewer stop-outs, inflated WR) and
-        #      TP is spread-pips too close (more take-profits, inflated WR).
-        #      The vectorized fast_backtest path (line ~676) applies the same
-        #      correction; this brings the iterative path into parity with it
-        #      and with MT5 backtester behaviour.
-        # CHANGED: April 2026 — fix iterative path spread parity with MT5 / fast_backtest
+        # WHY: Session-based spread models real broker behavior.
+        #      Asian session spread is 1.5-2x wider than London.
+        # CHANGED: April 2026 — variable spread model
+        _trade_spread = _get_session_spread(
+            next_candle["timestamp"], spread_pips, variable_spread
+        )
+
+        # WHY: MaxSpreadPips filter — skip entry when spread is too wide.
+        #      Matches MT5 EA's MaxSpreadPips check.
+        # CHANGED: April 2026 — max spread filter
+        if max_spread_pips > 0 and _trade_spread > max_spread_pips:
+            continue
+
         if trade_dir == "BUY":
-            entry_price += spread_pips * pip_size
+            entry_price += _trade_spread * pip_size
         else:
-            entry_price -= spread_pips * pip_size
+            entry_price -= _trade_spread * pip_size
         entry_time = next_candle["timestamp"]
 
         pos = {
@@ -1373,6 +1589,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 signal_idx = ind.index[entry_pos_int]
                 candle_dict.update(ind.loc[signal_idx].to_dict())   # indicators from SIGNAL bar
             exit_strategy.on_entry(candle_dict)
+
+        # WHY: Provide tick and M1 loaders to exit strategies.
+        #      Fallback chain: ticks → M1 → conservative.
+        # CHANGED: April 2026 — tick data + M1 fallback in position info
+        if data_dir and _check_ticks_available(data_dir):
+            _d, _cm = data_dir, _run_candle_tf_minutes
+            pos['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
+        else:
+            pos['_tick_loader'] = None
+        if data_dir:
+            _d, _cm = data_dir, _run_candle_tf_minutes
+            pos['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
+        else:
+            pos['_m1_loader'] = None
 
         # WHY (same-bar exit bias fix): pos["highest_since_entry"] is seeded
         #      from next_candle (the entry candle, df.iloc[entry_pos_int+1]).
@@ -1592,7 +1822,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             #      which also reports spread + commission regardless of how
             #      each component is applied in the P&L calculation.
             # CHANGED: April 2026 — consistent cost_pips with fast_backtest
-            "cost_pips":   round(spread_pips + commission_pips, 1),
+            "cost_pips":   round(_trade_spread + commission_pips, 1),
             "net_pips":    round(net_pips, 1),
             "exit_reason":  exit_reason,
             "candles_held": candles_held,
@@ -1627,7 +1857,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   #      run_backtest. Defaults maintain backward compatibility.
                   # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                   hard_close_hour=-1,
-                  cooldown_candles=0):
+                  cooldown_candles=0,
+                  # WHY: variable_spread / max_spread_pips — see run_backtest.
+                  # CHANGED: April 2026 — session-based variable spread model
+                  variable_spread=False,
+                  max_spread_pips=0,
+                  # WHY: data_dir for tick-aware exit ambiguity resolution.
+                  # CHANGED: April 2026 — tick data for exit ambiguity resolution
+                  data_dir=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -1933,6 +2170,19 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     candle_minutes = int(np.median(_gaps))
             except Exception:
                 pass
+
+        # WHY: Provide tick and M1 loaders. Fallback: ticks → M1 → conservative.
+        # CHANGED: April 2026 — tick + M1 fallback in position info (fast_backtest)
+        if data_dir and _check_ticks_available(data_dir):
+            _d, _cm = data_dir, candle_minutes
+            pos_info['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
+        else:
+            pos_info['_tick_loader'] = None
+        if data_dir:
+            _d, _cm = data_dir, candle_minutes
+            pos_info['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
+        else:
+            pos_info['_m1_loader'] = None
 
         # WHY (Phase A.10): Old code did `candle = future_candles.iloc[ci]`
         #      then `float(candle['close'])` etc. on every iteration. Each
@@ -2435,7 +2685,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      to fast_backtest for full parity with the live EA.
                           # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                           hard_close_hour=-1,
-                          cooldown_candles=0):
+                          cooldown_candles=0,
+                          # WHY: variable_spread / max_spread_pips passed through
+                          #      to fast_backtest for session-based spread model.
+                          # CHANGED: April 2026 — session-based variable spread model
+                          variable_spread=False,
+                          max_spread_pips=0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2872,6 +3127,14 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 compound_equity=compound_equity,
                 hard_close_hour=hard_close_hour,
                 cooldown_candles=cooldown_candles,
+                # WHY: Pass variable spread through from matrix config.
+                # CHANGED: April 2026 — session-based variable spread model
+                variable_spread=variable_spread,
+                max_spread_pips=max_spread_pips,
+                # WHY: data_dir enables tick-aware exit ambiguity resolution.
+                #      Already derived from candles_path above.
+                # CHANGED: April 2026 — tick data for exit ambiguity resolution
+                data_dir=data_dir,
             )
             stats = compute_stats(trades)
 

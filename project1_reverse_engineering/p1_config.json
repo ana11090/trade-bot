@@ -37,7 +37,7 @@
   "rule_min_confidence": "0.65",
   "rule_min_coverage": "5",
   "match_rate_threshold": "0.70",
-  "rule_tree_max_depth": "2",
+  "rule_tree_max_depth": "3",
   "rule_tree_min_samples_leaf": "20",
   "rule_tree_min_samples_split": "23",
   "rule_min_leaf_samples": "15",
@@ -64,6 +64,6 @@
   "dd_daily_pct": "3.0",
   "dd_total_pct": "6.0",
   "margin_cap_enabled": "1",
-  "rule_target_mode": "regression_raw",
+  "rule_target_mode": "regression_weighted",
   "feature_scope_mode": "all_tfs"
 }

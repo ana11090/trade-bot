@@ -2290,6 +2290,11 @@ def deep_optimize_generate(
                 leverage=leverage,
                 contract_size=contract_size,
                 risk_per_trade_pct=risk_per_trade_pct,
+                # WHY: Pass data_dir so tick/M1 resolution works during deep
+                #      optimization — same exit behavior as the main backtest.
+                #      data_dir is captured from the enclosing function scope.
+                # CHANGED: April 2026 — tick/M1 parity in deep optimizer
+                data_dir=data_dir,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,

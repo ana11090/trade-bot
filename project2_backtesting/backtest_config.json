@@ -22,5 +22,7 @@
   "backtest_start": "",
   "backtest_end": "",
   "slippage_pips": "1.0",
-  "cooldown_candles": "0"
+  "cooldown_candles": "0",
+  "variable_spread": "0",
+  "max_spread_pips": "50"
 }

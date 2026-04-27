@@ -659,8 +659,7 @@ def add_rule_variant_no_rolling():
                 break
 
         if not source:
-            print("[saved_rules] Source rule not found")
-            return
+            return  # migration not applicable — source rule not in this environment
 
         new_entry = copy.deepcopy(source)
         rule = new_entry['rule']

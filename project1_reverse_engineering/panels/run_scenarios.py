@@ -618,6 +618,79 @@ def build_panel(parent):
                 "5. CSVs saved in MT5 → MQL5/Files/\n"
                 "6. Come back here → Import Data Source")
 
+    # WHY: Tick data export script — separate from candle export because
+    #      tick files are much larger and optional. Follows same download
+    #      pattern as the candle export script.
+    # CHANGED: April 2026 — tick data export button
+    def _download_mt5_tick_export():
+        import shutil
+        _script_src = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            'project3_live_trading', 'templates', 'export_ticks.mq5')
+        if not os.path.exists(_script_src):
+            messagebox.showerror("Not Found",
+                f"export_ticks.mq5 not found at:\n{_script_src}")
+            return
+        from tkinter import filedialog
+        _dst = filedialog.asksaveasfilename(
+            title="Save MT5 Tick Export Script",
+            defaultextension=".mq5",
+            filetypes=[("MQL5 Script", "*.mq5"), ("All files", "*.*")],
+            initialfile="export_ticks.mq5",
+        )
+        if _dst:
+            shutil.copy2(_script_src, _dst)
+            messagebox.showinfo("Saved",
+                f"Script saved to:\n{_dst}\n\n"
+                "How to use:\n"
+                "1. Copy to MT5 → MQL5/Scripts/\n"
+                "2. Compile in MetaEditor (F7)\n"
+                "3. Open chart for your symbol (e.g. XAUUSD)\n"
+                "4. Drag script onto the chart\n"
+                "5. Monthly CSV files saved in MT5 → MQL5/Files/\n"
+                "6. Come back here → Import Tick Data")
+
+    # WHY: Import tick data into an existing data source. Separate from
+    #      candle import because ticks go into an already-existing source.
+    # CHANGED: April 2026 — tick data import button
+    def _import_tick_data():
+        from shared.data_sources import list_sources, import_tick_data
+        sources = list_sources()
+        if not sources:
+            messagebox.showerror("Error", "No data sources found. Import candle data first.")
+            return
+
+        from tkinter import filedialog
+        tick_folder = filedialog.askdirectory(
+            title="Select folder with XAUUSD_ticks_*.csv files")
+        if not tick_folder:
+            return
+
+        tick_files = [f for f in os.listdir(tick_folder)
+                      if f.endswith('.csv') and '_ticks' in f.lower()]
+        if not tick_files:
+            messagebox.showerror("Error",
+                f"No tick files (*_ticks_*.csv) found in:\n{tick_folder}")
+            return
+
+        # Default to the currently selected source
+        target_id = None
+        _cur_name = _data_source_var.get() if _data_source_var else ''
+        for s in sources:
+            if s['name'] == _cur_name or s['id'] == _cur_name:
+                target_id = s['id']
+                break
+        if not target_id:
+            target_id = sources[0]['id']
+
+        result = import_tick_data(tick_folder, target_id)
+        if 'error' in result:
+            messagebox.showerror("Error", result['error'])
+        else:
+            messagebox.showinfo("Success",
+                f"Imported {result['tick_files_copied']} tick files "
+                f"into source '{target_id}'.")
+
     _btn_row = tk.Frame(data_frame, bg="#ffffff")
     _btn_row.pack(anchor="w", pady=(8, 0))
 
@@ -630,6 +703,18 @@ def build_panel(parent):
     tk.Button(_btn_row, text="📤 MT5 Historical Data Export Script",
               command=_download_mt5_export,
               bg="#6c757d", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(side=tk.LEFT, padx=(8, 0))
+
+    tk.Button(_btn_row, text="📤 MT5 Tick Export Script",
+              command=_download_mt5_tick_export,
+              bg="#6c757d", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(side=tk.LEFT, padx=(8, 0))
+
+    tk.Button(_btn_row, text="📥 Import Tick Data",
+              command=_import_tick_data,
+              bg="#17a2b8", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
               ).pack(side=tk.LEFT, padx=(8, 0))
 

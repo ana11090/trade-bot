@@ -807,6 +807,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _bt_cfg = {}
             _inst_type = 'metals'
             _cfg_symbol = 'XAUUSD'
+            _cfg_variable_spread = False
+            _cfg_max_spread = 0.0
 
             if _a48_use_cfg:
                 try:
@@ -907,6 +909,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # CHANGED: April 2026 — hard close + cooldown from config
                     _cfg_hard_close  = int(float(_bt_cfg.get('hard_close_hour', -1)))
                     _cfg_cooldown    = int(float(_bt_cfg.get('cooldown_candles', 0)))
+                    # WHY: variable_spread and max_spread_pips — session-based
+                    #      spread model and max-spread entry filter.
+                    # CHANGED: April 2026 — session-based variable spread model
+                    _cfg_variable_spread = _bt_cfg.get('variable_spread', '0') == '1'
+                    _cfg_max_spread = float(_bt_cfg.get('max_spread_pips', 0))
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
 
@@ -974,9 +981,31 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"   DD limits: {_cfg_dd_daily}% daily / {_cfg_dd_total}% total ({_dd_source})\n"
                         + (f"   Min hold: {_cfg_min_hold}min (firm rule)\n" if _cfg_min_hold > 0 else "")
                     )
-                    # Show data source
+                    # Show data source + resolution level
+                    # WHY: Show which resolution level is active so the user
+                    #      knows whether exit ambiguity is resolved exactly
+                    #      (ticks), approximately (M1), or conservatively.
+                    # CHANGED: April 2026 — 3-level resolution status display
+                    try:
+                        from project2_backtesting.strategy_backtester import _check_ticks_available
+                        _has_ticks = _check_ticks_available(_data_source_path) if _data_source_path else False
+                        _has_m1 = False
+                        if _data_source_path:
+                            for _m1p in ['M1.csv', 'XAUUSD_M1.csv', 'xauusd_M1.csv']:
+                                if os.path.exists(os.path.join(_data_source_path, _m1p)):
+                                    _has_m1 = True
+                                    break
+                        if _has_ticks:
+                            _resolution = "Tick resolution (exact MT5 parity)"
+                        elif _has_m1:
+                            _resolution = "M1 resolution (95%+ parity)"
+                        else:
+                            _resolution = "Candle resolution (conservative fallback)"
+                    except Exception:
+                        _resolution = "unknown"
                     output_text.insert(tk.END,
-                        f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n\n"
+                        f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n"
+                        f"   Exit resolution: {_resolution}\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")
@@ -1099,6 +1128,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                         hard_close_hour=_cfg_hard_close if _a48_use_cfg else -1,
                         cooldown_candles=_cfg_cooldown if _a48_use_cfg else 0,
+                        # WHY: Pass variable spread only when using config.
+                        # CHANGED: April 2026 — session-based variable spread model
+                        variable_spread=_cfg_variable_spread if _a48_use_cfg else False,
+                        max_spread_pips=_cfg_max_spread if _a48_use_cfg else 0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
