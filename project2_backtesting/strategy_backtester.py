@@ -2484,6 +2484,26 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: April 2026 — restore spread cost (revert 8dddd52)
         net_pips = pips - spread_pips - commission_pips
 
+        # WHY: Add swap — this branch was missing swap entirely, causing
+        #      net_pips to be overstated for every ATR/trailing/PSAR/
+        #      Hybrid/Indicator/TimeBased exit. The vectorized path and
+        #      slow path both compute swap; this branch now mirrors them.
+        # CHANGED: April 2026 — add swap to non-vectorized fast path
+        swap_per_night_fbt = _select_swap_pips(
+            direction, swap_long_pips_per_night, swap_short_pips_per_night)
+        swap_nights_fbt    = 0
+        swap_cost_pips_fbt = 0.0
+        if swap_per_night_fbt != 0:
+            try:
+                _fbt_entry_dt = pd.Timestamp(entry_time)
+                _fbt_exit_dt  = pd.Timestamp(exit_time)
+                swap_nights_fbt = _count_swap_nights(_fbt_entry_dt, _fbt_exit_dt)
+                if swap_nights_fbt > 0:
+                    swap_cost_pips_fbt = swap_nights_fbt * swap_per_night_fbt
+                    net_pips += swap_cost_pips_fbt    # signed: negative = cost
+            except Exception:
+                pass
+
         # WHY: Same as Fix 7B — prefer actual exit_strategy.sl_pips over
         #      the default. See Fix 7B comment for full explanation.
         # CHANGED: April 2026 — use actual sl_pips (audit Family #2)
@@ -2518,7 +2538,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      path was missing both. After the same-bar bias fix, the loop
         #      starts at ci=1, so exit_idx is 1-based (minimum 1). Therefore
         #      candles_held = exit_idx (not exit_idx + 1).
+        # WHY: Added cost-breakdown fields (cost_spread_pips, cost_commission_pips,
+        #      cost_swap_pips, swap_nights) to match the vectorized path. Without
+        #      them the diagnostic summary showed 0 for spread/commission/swap
+        #      on every ATR/trailing/PSAR/Hybrid/Indicator/TimeBased exit.
         # CHANGED: April 2026 — add candles_held + cost_pips; updated for bias fix
+        # CHANGED: April 2026 — add swap + cost-breakdown fields (was missing)
         trade = {
             'entry_time':   str(entry_time),
             'exit_time':    str(exit_time),
@@ -2533,6 +2558,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'candles_held': exit_idx,
             'exit_reason':  exit_reason,
             'rule_id':      int(signal_rule_ids.loc[sig_idx]),
+            # WHY: Per-trade cost breakdown — matches vectorized path schema.
+            # CHANGED: April 2026 — cost breakdown (was missing from this path)
+            'cost_spread_pips':     round(-float(spread_pips), 1),
+            'cost_commission_pips': round(-float(commission_pips), 1),
+            'cost_swap_pips':       round(float(swap_cost_pips_fbt), 1),
+            'swap_nights':          int(swap_nights_fbt),
         }
         trades.append(trade)
 
