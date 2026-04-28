@@ -2138,13 +2138,29 @@ int OnInit()
    {handle_inits}
 
    //--- Open log file
+   // WHY: Without FILE_COMMON, FileOpen writes to the Strategy Tester's
+   //      sandbox (Tester\<ID>\Agent-127.0.0.1-3000\MQL5\Files\) which
+   //      MT5 wipes at run start AND on agent shutdown — leaving the user
+   //      with a 0 KB file and no way to diagnose backtest behavior.
+   //      FILE_COMMON redirects to Terminal\Common\Files\ which persists
+   //      across tests and is readable while a test is running.
+   // CHANGED: April 2026 — FILE_COMMON for log persistence in tester
    if(LogTrades)
    {{
-      g_logHandle = FileOpen(LogFilePath, FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+      g_logHandle = FileOpen(LogFilePath, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
       if(g_logHandle != INVALID_HANDLE)
+      {{
          FileWrite(g_logHandle, "timestamp","symbol","direction","lots",
                    "entry_price","exit_price","net_pips","exit_reason",
                    "entry_time","exit_time","skip_reason");
+         Print("[EA] Trade log opened (FILE_COMMON): ", LogFilePath,
+               "  path: Terminal\\Common\\Files\\", LogFilePath);
+      }}
+      else
+      {{
+         Print("[EA] FAILED to open trade log: ", LogFilePath,
+               "  GetLastError=", GetLastError());
+      }}
    }}
 
    g_sessionEquity   = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -2614,9 +2630,32 @@ void LogTrade(string action, string dir, double lots, double entry, double exitP
 
 //+------------------------------------------------------------------+
 //| Log a skipped signal                                               |
+//| WHY: Two LogSkip call sites fire on every tick when their state   |
+//|      flag is set. Without throttling, these spam the journal      |
+//|      millions of times in a long backtest. Track which reasons    |
+//|      we've printed since the last bar, print once per (bar,reason)|
+//| CHANGED: April 2026 — journal mirror + per-bar throttle          |
 //+------------------------------------------------------------------+
+string   g_lastSkipKey     = "";
+datetime g_lastSkipBarTime = 0;
+
 void LogSkip(string reason, double val)
 {{
+   // WHY: Print to journal FIRST — visible even if FileOpen failed.
+   //      Throttle: print once per (current bar, reason) pair.
+   // CHANGED: April 2026 — journal mirror with per-bar throttle
+   datetime _curBar = iTime(_Symbol, {mql_period}, 0);
+   string   _key    = TimeToString(_curBar) + "|" + reason;
+   if(_key != g_lastSkipKey || _curBar != g_lastSkipBarTime)
+   {{
+      Print("[SKIP] ", reason,
+            (val != 0 ? "  val=" + DoubleToString(val, 2) : ""),
+            "  time=", TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES));
+      g_lastSkipKey     = _key;
+      g_lastSkipBarTime = _curBar;
+   }}
+
+   // CSV log (existing behavior, preserved)
    if(!LogTrades || g_logHandle == INVALID_HANDLE) return;
    FileWrite(g_logHandle,
       TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES),
