@@ -2240,7 +2240,16 @@ void OnTick()
    g_lastBarTime = currentBarTime;
 
    //--- Skip checks
-   double spreadPips = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) / 10.0;
+   // WHY: SYMBOL_SPREAD returns spread in POINTS, not pips. For 5-digit
+   //      forex (digits=5, 1 pip = 10 points) the old "/10.0" was correct.
+   //      For 2-digit XAUUSD (digits=2, 1 pip = 1 point) "/10.0" reported
+   //      spread as 1/10th the real value, letting wide-spread trades
+   //      through MaxSpreadPips. Convert via points × SYMBOL_POINT / GetPipSize()
+   //      so the math is digit-count-agnostic.
+   // CHANGED: April 2026 — fix spread filter for 2-digit symbols (XAUUSD)
+   double _spread_points   = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double _spread_in_price = _spread_points * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double spreadPips       = _spread_in_price / GetPipSize();
    if(spreadPips > MaxSpreadPips)
    {{ LogSkip("spread_too_wide", spreadPips); return; }}
 
