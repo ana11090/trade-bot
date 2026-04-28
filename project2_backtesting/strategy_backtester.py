@@ -789,7 +789,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   #      every FixedSLTP backtest when the params are non-default.
                                   # CHANGED: April 2026 — fix NameError in vectorized path
                                   variable_spread=False,
-                                  max_spread_pips=0):
+                                  max_spread_pips=0,
+                                  # WHY: Seed the per-entry slippage RNG so fast and slow
+                                  #      paths use the same uniform distribution and are
+                                  #      comparable on equal seeds. None = unseeded.
+                                  # CHANGED: April 2026 — slippage symmetry fix
+                                  slippage_seed=None):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -814,6 +819,24 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
     # WHY: Running balance for compound equity.
     # CHANGED: April 2026 — equity-tracking lot sizing
     _running_balance = float(account_size) if account_size is not None else None
+
+    # WHY: Slippage RNG — same uniform(0, slippage_pips) distribution as
+    #      the slow path (run_backtest). Old fast path used constant
+    #      slippage_pips which was 2× more pessimistic than slow path's
+    #      average. Both paths now agree on the same distribution.
+    # CHANGED: April 2026 — slippage symmetry fix
+    _vect_slip_rng = random.Random(slippage_seed)
+
+    # WHY: Normalize SL/TP prices to MT5's symbol-digits precision,
+    #      matching MT5's NormalizeDouble on order placement. The slow
+    #      path already does this via exit_strategies._normalize_price.
+    #      Without normalization, sub-pip dust (e.g. 4275.001234) can
+    #      cause the fast path to trigger SL when MT5 doesn't (or miss
+    #      when MT5 hits) on candles where low ≈ SL.
+    # CHANGED: April 2026 — SL/TP normalization parity fix
+    import math as _vect_math
+    _vect_decimals = (max(0, -int(_vect_math.floor(_vect_math.log10(pip_size))))
+                      if pip_size > 0 else 2)
 
     sl_pips = exit_strategy.sl_pips
     tp_pips = exit_strategy.tp_pips
@@ -875,6 +898,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         entry_price = all_opens[entry_pos + 1]
 
+        # WHY: Per-entry random slippage — same uniform(0, max) distribution
+        #      as the slow path. Constant slippage was 2× too pessimistic.
+        # CHANGED: April 2026 — slippage symmetry fix
+        _slip_this_entry = (_vect_slip_rng.uniform(0, slippage_pips)
+                            if slippage_pips > 0 else 0.0)
+
         # WHY: Old code added spread only to BUY entries. SELL entries
         #      receive the bid (open - spread/2), so spread should also
         #      cost the SELL trader — entry_price should be SUBTRACTED
@@ -882,9 +911,9 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         #      this fix, SELL strategies look ~2 pips better than live.
         # CHANGED: April 2026 — fix SELL spread cost (audit Family #4)
         if direction == "BUY":
-            entry_price += (spread_pips + slippage_pips) * pip_size
+            entry_price += (spread_pips + _slip_this_entry) * pip_size
         else:
-            entry_price -= (spread_pips + slippage_pips) * pip_size
+            entry_price -= (spread_pips + _slip_this_entry) * pip_size
 
         # WHY: MaxSpreadPips filter for vectorized path. Can't easily
         #      vary spread per entry in numpy, but CAN skip entries
@@ -898,19 +927,22 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 continue
             # Use session spread for this entry
             if direction == "BUY":
-                entry_price = all_opens[entry_pos + 1] + (_entry_spread + slippage_pips) * pip_size
+                entry_price = all_opens[entry_pos + 1] + (_entry_spread + _slip_this_entry) * pip_size
             else:
-                entry_price = all_opens[entry_pos + 1] - (_entry_spread + slippage_pips) * pip_size
+                entry_price = all_opens[entry_pos + 1] - (_entry_spread + _slip_this_entry) * pip_size
 
         entry_time = all_times[entry_pos + 1]
 
-        # Compute SL/TP levels
+        # WHY: Normalize SL/TP to MT5 symbol-digits precision (NormalizeDouble
+        #      parity). Sub-pip dust on raw floats causes rare SL/TP mismatches
+        #      vs MT5 on candles where low/high ≈ SL/TP. Matches slow path.
+        # CHANGED: April 2026 — SL/TP normalization parity fix
         if direction == "BUY":
-            sl_price = entry_price - sl_pips * pip_size
-            tp_price = entry_price + tp_pips * pip_size
+            sl_price = round(entry_price - sl_pips * pip_size, _vect_decimals)
+            tp_price = round(entry_price + tp_pips * pip_size, _vect_decimals)
         else:
-            sl_price = entry_price + sl_pips * pip_size
-            tp_price = entry_price - tp_pips * pip_size
+            sl_price = round(entry_price + sl_pips * pip_size, _vect_decimals)
+            tp_price = round(entry_price - tp_pips * pip_size, _vect_decimals)
 
         # WHY: Old code set start two positions after the signal, skipping
         #      the entry candle entirely. But entry happens at the OPEN of
@@ -1509,6 +1541,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             compound_equity=compound_equity,
             variable_spread=variable_spread,
             max_spread_pips=max_spread_pips,
+            slippage_seed=slippage_seed,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -1934,7 +1967,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY: Asymmetric swap — see _select_swap_pips.
                   # CHANGED: April 2026 — asymmetric swap
                   swap_long_pips_per_night=0.0,
-                  swap_short_pips_per_night=0.0):
+                  swap_short_pips_per_night=0.0,
+                  # WHY: Seed the slippage RNG so fast_backtest agrees with
+                  #      run_backtest on the same seed. None = unseeded.
+                  # CHANGED: April 2026 — slippage symmetry fix
+                  slippage_seed=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2139,6 +2176,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             compound_equity=compound_equity,
             variable_spread=variable_spread,
             max_spread_pips=max_spread_pips,
+            slippage_seed=slippage_seed,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────
