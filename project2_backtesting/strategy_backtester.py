@@ -3367,6 +3367,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _comm_total    = sum(t.get('cost_commission_pips', 0) for t in _btrds)
                 _swap_total    = sum(t.get('cost_swap_pips', 0) for t in _btrds)
                 _swap_nights_t = sum(t.get('swap_nights', 0) for t in _btrds)
+                _net           = sum(t.get('net_pips', 0) for t in _btrds)
                 # WHY: Derive gross from net + costs so the breakdown
                 #      reconciles by construction. The 'pips' field on
                 #      fast and slow paths has subtly different definitions
@@ -3375,7 +3376,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 #      costs is path-agnostic and always balances exactly.
                 # CHANGED: April 2026 — derive gross from net for honest reconcile
                 _gross         = _net - _spread_total - _comm_total - _swap_total
-                _net           = sum(t.get('net_pips', 0) for t in _btrds)
                 log.info(f"  Strategy: {_best.get('rule_combo','?')} x "
                          f"{_best.get('exit_name','?')}")
                 log.info(f"  Trades:               {_n:>8d}")
