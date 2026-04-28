@@ -904,20 +904,21 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         _slip_this_entry = (_vect_slip_rng.uniform(0, slippage_pips)
                             if slippage_pips > 0 else 0.0)
 
-        # WHY: Old code added spread only to BUY entries. SELL entries
-        #      receive the bid (open - spread/2), so spread should also
-        #      cost the SELL trader — entry_price should be SUBTRACTED
-        #      by spread_pips (making the SELL entry worse). Without
-        #      this fix, SELL strategies look ~2 pips better than live.
-        # CHANGED: April 2026 — fix SELL spread cost (audit Family #4)
+        # WHY: Apply ONLY slippage to entry_price. Spread is NOT baked in —
+        #      MT5's SL/TP are anchored to the raw BID fill price, not the
+        #      ASK. The EA explicitly uses slPrice = bid - sl. Baking spread
+        #      into entry moves SL/TP to ask-anchored, making Python trigger
+        #      stops 25 pips earlier than MT5 does. Spread paid as cost line.
+        # CHANGED: April 2026 — restore bid-anchored SL/TP (revert 8dddd52)
         if direction == "BUY":
-            entry_price += (spread_pips + _slip_this_entry) * pip_size
+            entry_price += _slip_this_entry * pip_size
         else:
-            entry_price -= (spread_pips + _slip_this_entry) * pip_size
+            entry_price -= _slip_this_entry * pip_size
 
-        # WHY: MaxSpreadPips filter for vectorized path. Can't easily
-        #      vary spread per entry in numpy, but CAN skip entries
-        #      during wide-spread sessions.
+        # Default cost spread — overridden below if variable_spread is on.
+        _spread_for_cost = spread_pips
+
+        # WHY: MaxSpreadPips filter for vectorized path.
         # CHANGED: April 2026 — max spread filter in vectorized path
         if max_spread_pips > 0 and variable_spread:
             _entry_spread = _get_session_spread(
@@ -925,11 +926,13 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             )
             if _entry_spread > max_spread_pips:
                 continue
-            # Use session spread for this entry
+            # Bid-anchored entry — only slippage added, not spread.
+            # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
             if direction == "BUY":
-                entry_price = all_opens[entry_pos + 1] + (_entry_spread + _slip_this_entry) * pip_size
+                entry_price = all_opens[entry_pos + 1] + _slip_this_entry * pip_size
             else:
-                entry_price = all_opens[entry_pos + 1] - (_entry_spread + _slip_this_entry) * pip_size
+                entry_price = all_opens[entry_pos + 1] - _slip_this_entry * pip_size
+            _spread_for_cost = _entry_spread   # use session spread for cost
 
         entry_time = all_times[entry_pos + 1]
 
@@ -1081,7 +1084,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         else:
             pnl_pips = (entry_price - exit_price) / pip_size
 
-        net_pips = pnl_pips - commission_pips
+        # WHY: Spread is NOT baked into entry_price (revert 8dddd52), so
+        #      subtract it here as a cost line. _spread_for_cost is the
+        #      actual spread for this trade (session spread or constant).
+        # CHANGED: April 2026 — restore spread cost subtraction (revert 8dddd52)
+        net_pips = pnl_pips - _spread_for_cost - commission_pips
 
         # WHY: Real broker swaps are negative (cost) and asymmetric.
         #      Old code skipped negatives so all real swaps were zero.
@@ -1149,7 +1156,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             'entry_price':  round(float(entry_price), 5),
             'exit_price':   round(float(exit_price), 5),
             'direction':    direction,
-            'pips':         round(float(pnl_pips + commission_pips), 1),
+            # WHY: pips = raw gross bid move. With bid-anchored entry,
+            #      pnl_pips IS the gross. Old workaround (+ commission_pips)
+            #      was specific to the spread-bake-in semantics — removed.
+            # CHANGED: April 2026 — pips = raw gross (revert 8dddd52)
+            'pips':         round(float(pnl_pips), 1),
             'net_pips':     round(float(net_pips), 1),
             'net_profit':   round(float(net_profit), 2),
             'lot_size':     lot_size,
@@ -1160,7 +1171,9 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             #      Signed: spread/commission always negative (cost),
             #      swap negative for typical broker, positive if credit.
             # CHANGED: April 2026 — cost breakdown
-            'cost_spread_pips':     round(-float(spread_pips), 1),
+            # WHY: Use _spread_for_cost (session spread or constant).
+            # CHANGED: April 2026 — variable-spread cost reporting
+            'cost_spread_pips':     round(-float(_spread_for_cost), 1),
             'cost_commission_pips': round(-float(commission_pips), 1),
             'cost_swap_pips':       round(float(swap_cost_pips), 1),
             'swap_nights':          int(swap_nights),
@@ -1646,10 +1659,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if max_spread_pips > 0 and _trade_spread > max_spread_pips:
             continue
 
-        if trade_dir == "BUY":
-            entry_price += _trade_spread * pip_size
-        else:
-            entry_price -= _trade_spread * pip_size
+        # WHY: Restore bid-anchored entry. Spread paid as a cost line in
+        #      net_pips below, NOT baked into entry_price. Matches MT5 EA's
+        #      slPrice = bid - sl convention. See revert notes (8dddd52).
+        # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
         entry_time = next_candle["timestamp"]
 
         pos = {
@@ -1783,12 +1796,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if trade_dir == "SELL":
             pnl_pips = -pnl_pips
 
-        # WHY: Spread is now baked into entry_price (added above), so pnl_pips
-        #      is already net of spread — subtracting it again would double-count.
-        #      Only subtract commission here. Matches fast_backtest (line ~826)
-        #      which also only subtracts commission_pips after spread-adjusted entry.
-        # CHANGED: April 2026 — remove spread double-count (MT5 parity fix)
-        cost     = commission_pips
+        # WHY: Spread is NOT baked into entry_price (revert 8dddd52). Subtract
+        #      it as a cost line. _trade_spread is the per-trade spread
+        #      (session spread or constant), same value used in cost_pips below.
+        # CHANGED: April 2026 — restore spread cost (revert 8dddd52)
+        cost     = _trade_spread + commission_pips
         net_pips = pnl_pips - cost
 
         # WHY: Asymmetric, sign-preserving swap. See _select_swap_pips.
@@ -1884,13 +1896,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         #      doing trade.get('pips') silently got None from run_backtest
         #      and a post-spread value from fast_backtest. Add a matching
         #      'pips' key here so both backtester outputs share semantics.
-        #      pips = pnl_pips (spread already in entry_price, so pnl_pips is
-        #      already post-spread); net_pips = pips - commission.
-        #      Old formula subtracted spread_pips here which double-counted it
-        #      (once in entry_price above, once here). Now matches fast_backtest.
+        #      pips = pnl_pips = raw gross bid move (bid-anchored entry,
+        #      spread not baked in). net_pips = pips - spread - commission.
         # CHANGED: April 2026 — Phase 28 Fix 3 — add 'pips' key for schema
-        #          consistency with fast_backtest; spread already in entry_price
-        _pips_post_spread = pnl_pips
+        #          consistency with fast_backtest
+        # CHANGED: April 2026 — pips = raw gross (revert 8dddd52)
+        _pips_gross = pnl_pips
         # WHY (Phase A.42): Increment daily counter after trade opens.
         # CHANGED: April 2026 — Phase A.42
         if _a42_limit_rb > 0:
@@ -1907,14 +1918,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             # CHANGED: April 2026 — use 5 decimal places like vectorized path
             "entry_price": round(entry_price, 5),
             "exit_price":  round(exit_price, 5),
-            "pips":        round(_pips_post_spread, 1),
+            "pips":        round(_pips_gross, 1),
             "pnl_pips":    round(pnl_pips, 1),
-            # WHY: cost_pips is an informational field showing the total
-            #      transaction cost (spread + commission). Spread is baked into
-            #      entry_price and commission is subtracted from net_pips, so
-            #      the sum is the full round-trip cost — matches fast_backtest
-            #      which also reports spread + commission regardless of how
-            #      each component is applied in the P&L calculation.
+            # WHY: cost_pips = spread + commission = full round-trip cost.
+            #      Both are now explicit cost lines (spread not baked in).
             # CHANGED: April 2026 — consistent cost_pips with fast_backtest
             "cost_pips":   round(_trade_spread + commission_pips, 1),
             "net_pips":    round(net_pips, 1),
@@ -2204,16 +2211,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
         entry_time  = next_candle['timestamp']
         entry_price = float(next_candle['open'])
 
-        # WHY: Old code added spread only to BUY entries. SELL entries
-        #      receive the bid (open - spread/2), so spread should also
-        #      cost the SELL trader — entry_price should be SUBTRACTED
-        #      by spread_pips (making the SELL entry worse). Without
-        #      this fix, SELL strategies look ~2 pips better than live.
-        # CHANGED: April 2026 — fix SELL spread cost (audit Family #4)
+        # WHY: Apply only slippage to entry_price. Spread paid as cost line.
+        #      Bid-anchored entry matches MT5 EA's bid - sl convention.
+        # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
         if direction == "BUY":
-            entry_price += (spread_pips + slippage_pips) * pip_size
+            entry_price += slippage_pips * pip_size
         else:
-            entry_price -= (spread_pips + slippage_pips) * pip_size
+            entry_price -= slippage_pips * pip_size
 
         # Simulate trade exit by stepping through future candles
         # WHY: Exit strategies implement on_new_candle(candle, pos) which is
@@ -2476,7 +2480,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
                      f"reason={exit_reason}) — legitimate long hold, "
                      f"above {SANE_PIP_LIMIT_LARGE}-pip log threshold")
 
-        net_pips = pips - commission_pips
+        # WHY: Restore spread as cost line (revert 8dddd52).
+        # CHANGED: April 2026 — restore spread cost (revert 8dddd52)
+        net_pips = pips - spread_pips - commission_pips
 
         # WHY: Same as Fix 7B — prefer actual exit_strategy.sl_pips over
         #      the default. See Fix 7B comment for full explanation.
