@@ -933,10 +933,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         entry_time = all_times[entry_pos + 1]
 
-        # WHY: Normalize SL/TP to MT5 symbol-digits precision (NormalizeDouble
-        #      parity). Sub-pip dust on raw floats causes rare SL/TP mismatches
-        #      vs MT5 on candles where low/high ≈ SL/TP. Matches slow path.
-        # CHANGED: April 2026 — SL/TP normalization parity fix
+        # WHY: Normalize entry/SL/TP to MT5 symbol-digits precision
+        #      (NormalizeDouble parity). Sub-pip dust on raw floats causes
+        #      rare SL/TP mismatches vs MT5 on candles where low/high ≈ SL/TP.
+        #      Entry is normalized first so SL/TP derived from it are clean.
+        # CHANGED: April 2026 — entry/SL/TP normalization parity fix
+        entry_price = round(entry_price, _vect_decimals)
         if direction == "BUY":
             sl_price = round(entry_price - sl_pips * pip_size, _vect_decimals)
             tp_price = round(entry_price + tp_pips * pip_size, _vect_decimals)
