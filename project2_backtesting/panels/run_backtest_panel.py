@@ -1003,9 +1003,24 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             _resolution = "Candle resolution (conservative fallback)"
                     except Exception:
                         _resolution = "unknown"
+                    # WHY: Show tick/M1 status so user knows which exit
+                    #      resolution is active for this run.
+                    # CHANGED: April 2026 — tick/M1 status in backtest info
+                    try:
+                        _tf_bt = [f for f in os.listdir(_data_source_path)
+                                  if '_ticks' in f and f.endswith('.csv')]
+                    except Exception:
+                        _tf_bt = []
+                    if _has_ticks:
+                        _tick_line = (f"Tick data: {len(_tf_bt)} months available"
+                                      f" — exact MT5 parity for those candles")
+                    elif _has_m1:
+                        _tick_line = "M1 data available — 95%+ MT5 parity for exit resolution"
+                    else:
+                        _tick_line = "No tick/M1 data — using conservative exit fallback"
                     output_text.insert(tk.END,
                         f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n"
-                        f"   Exit resolution: {_resolution}\n\n"
+                        f"   {_tick_line}\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")

@@ -29,9 +29,12 @@ project1_reverse_engineering/outputs/strategy_search_results.json
 datasets/*/candles/*.csv
 project1_reverse_engineering/outputs/smart_feature_matrix.csv
 
-# Exclude large historical data CSV files
+# Exclude all data source CSV and tick files (too large for GitHub)
 data/sources/original/*.csv
 data/sources/xauusd_levereged_data/*.csv
+data/sources/xauusd_unlimited_levereged/*.csv
+data/sources/unlimited_leveraged_data/*.csv
 xauusd/Files xauusd levereged/*.csv
+xauusd/xauusd unlimited levereged/*.csv
 # Large output files
 project2_backtesting/outputs/backtest_trades_*.json

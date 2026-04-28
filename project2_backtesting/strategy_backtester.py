@@ -753,7 +753,15 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   news_blackout_minutes=0,
                                   max_trades_per_day=0,
                                   leverage=0, contract_size=100.0,
-                                  compound_equity=False):
+                                  compound_equity=False,
+                                  # WHY: variable_spread / max_spread_pips must reach this
+                                  #      function so the MaxSpreadPips filter fires on the
+                                  #      vectorized path. Without them the NameError at
+                                  #      "if max_spread_pips > 0 and variable_spread" crashes
+                                  #      every FixedSLTP backtest when the params are non-default.
+                                  # CHANGED: April 2026 — fix NameError in vectorized path
+                                  variable_spread=False,
+                                  max_spread_pips=0):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -1452,6 +1460,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
             compound_equity=compound_equity,
+            variable_spread=variable_spread,
+            max_spread_pips=max_spread_pips,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -2065,6 +2075,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
             compound_equity=compound_equity,
+            variable_spread=variable_spread,
+            max_spread_pips=max_spread_pips,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────

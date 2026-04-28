@@ -1,0 +1,21 @@
+=== WORKER THREAD EXCEPTION ===
+Time:  2026-04-27T15:35:36.293405
+Type:  NameError
+Error: NameError("name 'max_spread_pips' is not defined")
+
+--- Full traceback ---
+Traceback (most recent call last):
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 1096, in run_in_thread
+    tf_results = run_comparison_matrix(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 3110, in run_comparison_matrix
+    trades = fast_backtest(
+             ^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 2059, in fast_backtest
+    return _vectorized_fixed_sltp_exits(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 857, in _vectorized_fixed_sltp_exits
+    if max_spread_pips > 0 and variable_spread:
+       ^^^^^^^^^^^^^^^
+NameError: name 'max_spread_pips' is not defined. Did you mean: 'spread_pips'?
+

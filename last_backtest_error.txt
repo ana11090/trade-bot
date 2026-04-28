@@ -1,17 +1,21 @@
-=== TK CALLBACK EXCEPTION ===
-Time:  2026-04-25T19:38:16.424352
-Type:  AttributeError
-Error: AttributeError("'dict' object has no attribute 'append'")
+=== WORKER THREAD EXCEPTION ===
+Time:  2026-04-27T15:35:36.293405
+Type:  NameError
+Error: NameError("name 'max_spread_pips' is not defined")
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1892, in __call__
-    return self.func(*args)
-  File "d:\traiding data\trade-bot\project2_backtesting\panels\strategy_refiner_panel.py", line 4407, in _toggle_star
-    is_now_starred = toggle(rc, es)
-  File "d:\traiding data\trade-bot\shared\starred.py", line 122, in toggle
-    star(rule_combo, exit_strategy, entry_tf)
-  File "d:\traiding data\trade-bot\shared\starred.py", line 94, in star
-    starred.append(key)
-AttributeError: 'dict' object has no attribute 'append'
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 1096, in run_in_thread
+    tf_results = run_comparison_matrix(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 3110, in run_comparison_matrix
+    trades = fast_backtest(
+             ^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 2059, in fast_backtest
+    return _vectorized_fixed_sltp_exits(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\strategy_backtester.py", line 857, in _vectorized_fixed_sltp_exits
+    if max_spread_pips > 0 and variable_spread:
+       ^^^^^^^^^^^^^^^
+NameError: name 'max_spread_pips' is not defined. Did you mean: 'spread_pips'?
 

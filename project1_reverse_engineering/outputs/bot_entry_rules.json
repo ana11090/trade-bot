@@ -7,13 +7,48 @@
       "conditions": [
         {
           "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 34.21
+        },
+        {
+          "feature": "M5_roc_50",
+          "operator": "<=",
+          "value": 0.0897
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.718,
+      "win_rate": 0.718,
+      "coverage": 78,
+      "coverage_pct": 22.2,
+      "train_win_rate": 0.708,
+      "train_coverage": 65,
+      "overfit_gap": -0.01,
+      "is_overfit": false,
+      "avg_pips": 186.2,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 245,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
           "operator": "<=",
           "value": 0.5875
         },
         {
           "feature": "D1_lower_shadow",
           "operator": ">",
-          "value": 10.895
+          "value": 10.945
         },
         {
           "feature": "D1_cci_20",
@@ -22,13 +57,13 @@
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.64,
-      "win_rate": 0.64,
-      "coverage": 86,
-      "coverage_pct": 24.4,
-      "train_win_rate": 0.721,
-      "train_coverage": 61,
-      "overfit_gap": 0.082,
+      "confidence": 0.632,
+      "win_rate": 0.632,
+      "coverage": 87,
+      "coverage_pct": 24.7,
+      "train_win_rate": 0.698,
+      "train_coverage": 63,
+      "overfit_gap": 0.066,
       "is_overfit": false,
       "avg_pips": 117.3,
       "source": "bot_entry",
@@ -46,30 +81,65 @@
           "value": 0.5875
         },
         {
-          "feature": "H4_cci_50",
-          "operator": ">",
-          "value": 53.6611
-        },
-        {
           "feature": "D1_candle_range",
           "operator": ">",
-          "value": 25.04
+          "value": 34.21
+        },
+        {
+          "feature": "M5_roc_50",
+          "operator": ">",
+          "value": 0.0897
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.79,
-      "win_rate": 0.79,
-      "coverage": 62,
-      "coverage_pct": 17.6,
-      "train_win_rate": 0.854,
-      "train_coverage": 89,
-      "overfit_gap": 0.064,
-      "is_overfit": false,
-      "avg_pips": 172.3,
+      "confidence": 0.776,
+      "win_rate": 0.776,
+      "coverage": 67,
+      "coverage_pct": 19.0,
+      "train_win_rate": 0.97,
+      "train_coverage": 33,
+      "overfit_gap": 0.194,
+      "is_overfit": true,
+      "avg_pips": 207.7,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 301,
+      "n_real_trades_in_rule": 275,
+      "data_source_id": "xauusd_unlimited_levereged",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_ema_9_distance",
+          "operator": ">",
+          "value": -0.0929
+        },
+        {
+          "feature": "M15_ema_9_distance",
+          "operator": "<=",
+          "value": -0.1096
+        },
+        {
+          "feature": "M15_distance_from_high",
+          "operator": ">",
+          "value": 0.2743
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.595,
+      "win_rate": 0.595,
+      "coverage": 42,
+      "coverage_pct": 3.9,
+      "train_win_rate": 0.829,
+      "train_coverage": 41,
+      "overfit_gap": 0.234,
+      "is_overfit": true,
+      "avg_pips": 200.2,
+      "source": "bot_entry",
+      "entry_timeframe": "M15",
+      "action": "BUY",
+      "n_real_trades_in_rule": 63,
       "data_source_id": "xauusd_unlimited_levereged",
       "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
     }
@@ -79,40 +149,40 @@
       "tf": "M5",
       "status": "ok",
       "n_rules": 0,
-      "n_train": 1554,
-      "n_test": 666,
+      "n_train": 2632,
+      "n_test": 1128,
       "n_features": 750
     },
     {
       "tf": "M15",
       "status": "ok",
-      "n_rules": 0,
-      "n_train": 2329,
-      "n_test": 999,
+      "n_rules": 1,
+      "n_train": 2536,
+      "n_test": 1088,
       "n_features": 750
     },
     {
       "tf": "H1",
       "status": "ok",
       "n_rules": 0,
-      "n_train": 2413,
-      "n_test": 1035,
+      "n_train": 2410,
+      "n_test": 1034,
       "n_features": 750
     },
     {
       "tf": "H4",
       "status": "ok",
       "n_rules": 0,
-      "n_train": 2583,
-      "n_test": 1108,
+      "n_train": 2579,
+      "n_test": 1106,
       "n_features": 750
     },
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 2,
-      "n_train": 822,
-      "n_test": 353,
+      "n_rules": 3,
+      "n_train": 820,
+      "n_test": 352,
       "n_features": 750
     }
   ],

@@ -498,6 +498,46 @@ def build_panel(parent):
                 info += f"\n  Broker: {src['broker']}"
             if src.get('timezone_offset'):
                 info += f"  |  Timezone: {src['timezone_offset']}"
+
+            # WHY: Show tick and M1 data availability so the user knows
+            #      what resolution the backtester will use. Without this,
+            #      ticks are invisible — user can't tell if import worked.
+            # CHANGED: April 2026 — tick/M1 status in data source info
+            try:
+                import re as _re_ticks
+                _has_m1    = 'M1' in src.get('timeframes', [])
+                _has_ticks = src.get('has_ticks', False)
+                _tick_files = src.get('tick_files', [])
+
+                info += "\n  "
+                if _has_ticks and _tick_files:
+                    _tick_months = []
+                    for _tf in sorted(_tick_files):
+                        _m = _re_ticks.search(r'(\d{4})_(\d{2})', _tf)
+                        if _m:
+                            _tick_months.append(f"{_m.group(1)}-{_m.group(2)}")
+                    if _tick_months:
+                        info += f"Ticks: {len(_tick_files)} months ({_tick_months[0]} to {_tick_months[-1]})"
+                    else:
+                        info += f"Ticks: {len(_tick_files)} files"
+                else:
+                    info += "Ticks: none"
+
+                if _has_m1:
+                    info += "  |  M1: available"
+                else:
+                    info += "  |  M1: none"
+
+                info += "\n  Exit resolution: "
+                if _has_ticks:
+                    info += "tick-by-tick (exact MT5 parity)"
+                elif _has_m1:
+                    info += "M1 sub-candles (95%+ parity)"
+                else:
+                    info += "candle-level (conservative fallback)"
+            except Exception:
+                pass
+
             _ds_info_label.config(text=info)
             # Save to P1 config
             try:
@@ -650,30 +690,56 @@ def build_panel(parent):
                 "5. Monthly CSV files saved in MT5 → MQL5/Files/\n"
                 "6. Come back here → Import Tick Data")
 
-    # WHY: Import tick data into an existing data source. Separate from
-    #      candle import because ticks go into an already-existing source.
     # CHANGED: April 2026 — tick data import button
+    # CHANGED: April 2026 — accept single-file MT5 Symbols-window export
     def _import_tick_data():
         from shared.data_sources import list_sources, import_tick_data
         sources = list_sources()
         if not sources:
-            messagebox.showerror("Error", "No data sources found. Import candle data first.")
+            messagebox.showerror("Error",
+                "No data sources found. Import candle data first.")
+            return
+
+        # WHY: Two upstream paths can produce tick data:
+        #      (a) export_ticks.mq5 in MT5/MQL5/Files/ → folder with
+        #          XAUUSD_ticks_YYYY_MM.csv files
+        #      (b) MT5 Symbols window (Ctrl+U) → Export ticks → ONE
+        #          tab-separated CSV
+        #      Ask the user which one before opening the file dialog.
+        # CHANGED: April 2026 — two-mode picker
+        _choice = messagebox.askyesnocancel(
+            "Import Tick Data — pick mode",
+            "How is your tick data stored?\n\n"
+            "• YES — single tab-separated CSV from MT5's Symbols window "
+            "(Ctrl+U → Export ticks)\n"
+            "• NO  — folder of monthly files like "
+            "XAUUSD_ticks_2025_12.csv from the export_ticks.mq5 script\n"
+            "• CANCEL — abort"
+        )
+        if _choice is None:
             return
 
         from tkinter import filedialog
-        tick_folder = filedialog.askdirectory(
-            title="Select folder with XAUUSD_ticks_*.csv files")
-        if not tick_folder:
-            return
+        if _choice:  # YES = single file
+            tick_source = filedialog.askopenfilename(
+                title="Select MT5 Symbols-window tick export CSV",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+            if not tick_source:
+                return
+        else:        # NO = folder of monthly files
+            tick_source = filedialog.askdirectory(
+                title="Select folder with XAUUSD_ticks_*.csv files")
+            if not tick_source:
+                return
+            tick_files = [f for f in os.listdir(tick_source)
+                          if f.endswith('.csv') and '_ticks' in f.lower()]
+            if not tick_files:
+                messagebox.showerror("Error",
+                    f"No tick files (*_ticks_*.csv) found in:\n"
+                    f"{tick_source}")
+                return
 
-        tick_files = [f for f in os.listdir(tick_folder)
-                      if f.endswith('.csv') and '_ticks' in f.lower()]
-        if not tick_files:
-            messagebox.showerror("Error",
-                f"No tick files (*_ticks_*.csv) found in:\n{tick_folder}")
-            return
-
-        # Default to the currently selected source
+        # Default to the currently selected source.
         target_id = None
         _cur_name = _data_source_var.get() if _data_source_var else ''
         for s in sources:
@@ -683,13 +749,36 @@ def build_panel(parent):
         if not target_id:
             target_id = sources[0]['id']
 
-        result = import_tick_data(tick_folder, target_id)
+        # Symbol from the source record (best-effort) or default.
+        _src   = next((s for s in sources if s['id'] == target_id), {})
+        symbol = (_src.get('symbol') or 'XAUUSD').upper()
+
+        result = import_tick_data(tick_source, target_id, symbol=symbol)
         if 'error' in result:
             messagebox.showerror("Error", result['error'])
+            return
+
+        # Build a friendly summary that distinguishes the two modes.
+        if result.get('mode') == 'single_file_split':
+            msg = (
+                f"Single-file import into source '{target_id}':\n\n"
+                f"  Months written:             {result['months_written']}\n"
+                f"  Months already on disk:     "
+                f"{result['months_skipped_existing']}\n"
+                f"  Rows read from file:        {result['rows_in']:,}\n"
+                f"  Tick rows emitted:          {result['rows_out']:,}\n"
+                f"  Rows dropped (no quote yet):"
+                f" {result['rows_dropped_no_quote']:,}\n"
+            )
+            if result['months_skipped_existing']:
+                msg += (
+                    "\nNote: months that already had files on disk were "
+                    "left untouched. Delete them manually first if you "
+                    "want to replace them.")
         else:
-            messagebox.showinfo("Success",
-                f"Imported {result['tick_files_copied']} tick files "
-                f"into source '{target_id}'.")
+            msg = (f"Imported {result['tick_files_copied']} tick files "
+                   f"into source '{target_id}'.")
+        messagebox.showinfo("Success", msg)
 
     _btn_row = tk.Frame(data_frame, bg="#ffffff")
     _btn_row.pack(anchor="w", pady=(8, 0))

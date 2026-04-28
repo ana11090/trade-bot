@@ -221,7 +221,11 @@ DEFAULTS = {
     # ── Data Source ───────────────────────────────────────────────────────────
     # WHY: Without these in DEFAULTS, save() silently drops them (line 264).
     # CHANGED: April 2026 — data source keys
-    'data_source_id':       'original',
+    # WHY: Default changed from 'original' (a placeholder folder that
+    #      typically doesn't exist on user disks) to the canonical name
+    #      used by the system after the April-2026 unification.
+    # CHANGED: April 2026 — default to unified source name
+    'data_source_id':       'unlimited_leveraged_data',
     'data_source_path':     '',
     'pip_value_per_lot':    '1.0',
     'spread':               '25',

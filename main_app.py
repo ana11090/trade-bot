@@ -53,6 +53,28 @@ window.attributes('-topmost', True)  # Make window appear on top
 window.after_idle(window.attributes, '-topmost', False)  # Disable topmost after appearing
 state.window = window
 
+# WHY: Run-once migration of data source names. Idempotent — does
+#      nothing if everything is already unified. Runs before any
+#      panel is built so widgets that read the data source ID see
+#      the post-migration value, not the stale one.
+# CHANGED: April 2026 — source-name unification migration
+try:
+    from shared.data_sources import migrate_source_names
+    _migration_result = migrate_source_names()
+    _migration_total = (
+        _migration_result.get('rename_count', 0)
+        + _migration_result.get('p1_config_changes', 0)
+        + _migration_result.get('saved_rules_changes', 0)
+        + _migration_result.get('output_files_changed', 0)
+    )
+    if _migration_total > 0:
+        print(f"[main_app] migrate_source_names: {_migration_result}")
+    if _migration_result.get('error'):
+        print(f"[main_app] migration error: {_migration_result['error']}")
+except Exception as _mig_e:
+    # Migration failure must not prevent app startup.
+    print(f"[main_app] WARNING: migrate_source_names raised: {_mig_e}")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN AREA — scrollable canvas
 # ─────────────────────────────────────────────────────────────────────────────
