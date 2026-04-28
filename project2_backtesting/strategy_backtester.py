@@ -2770,7 +2770,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      (backward compat when no firm is selected).
                           # CHANGED: April 2026 — asymmetric swap
                           swap_long_pips_per_night=0.0,
-                          swap_short_pips_per_night=0.0):
+                          swap_short_pips_per_night=0.0,
+                          # WHY: Gate management exits (trail, BE, indicator) during
+                          #      first N minutes after entry — matches EA MinHoldMinutes.
+                          #      Patched onto each management-style exit before the run.
+                          #      0 = disabled (backward compat).
+                          # CHANGED: April 2026 — min hold parity with MT5 EA
+                          min_hold_minutes=0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -2850,13 +2856,37 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     if exit_strategies is None:
         exit_strategies = get_default_exit_strategies(pip_size=pip_size, entry_tf=timeframe)
 
+    # WHY: Apply min hold from firm to every management-style exit.
+    #      Fast-path exits (FixedSLTP/ATRFixedSLTP) use broker-level SL/TP
+    #      and aren't gated. Management exits gate ratchet/BE/indicator
+    #      logic during the first min_hold_minutes after entry.
+    # CHANGED: April 2026 — auto-apply min hold to management exits
+    if min_hold_minutes and int(min_hold_minutes) > 0:
+        _mh_seconds = int(min_hold_minutes) * 60
+        from project2_backtesting.exit_strategies import (
+            TrailingStop, ATRBreakevenTrail, PSARExit,
+            ATRTrailing, IndicatorExit, HybridExit,
+        )
+        _mgmt_classes = (TrailingStop, ATRBreakevenTrail, PSARExit,
+                         ATRTrailing, IndicatorExit, HybridExit)
+        _patched = 0
+        for _exit in exit_strategies:
+            if isinstance(_exit, _mgmt_classes):
+                try:
+                    _exit.min_hold_seconds = _mh_seconds
+                    _patched += 1
+                except Exception:
+                    pass
+        log.info(f"[MIN HOLD] Applied {min_hold_minutes}min ({_mh_seconds}s) "
+                 f"to {_patched} management-style exits")
+
     # WHY (T1c): Make ATR column resolution visible. A run on M5 entries
-    #      should see atr_column='M5_atr_14' flow into every ATRBased and
+    #      should see atr_column='M5_mt5_atr_14' flow into every ATRBased and
     #      ATRTrailing instance. This one log line makes misconfiguration
     #      obvious when user runs multi-TF backtests.
     # CHANGED: April 2026 — T1c diagnostic
     log.info(f"[T1c] entry_tf={timeframe} → ATR exits will use "
-             f"{timeframe}_atr_14 for SL/TP sizing")
+             f"{timeframe}_mt5_atr_14 for SL/TP sizing")
 
     # Extract which indicators each TF actually needs — skips the other ~575
     # WHY (Phase A.42.1): Pass exit strategies so their indicator

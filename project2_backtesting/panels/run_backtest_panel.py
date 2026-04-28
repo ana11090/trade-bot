@@ -998,6 +998,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     except Exception as _swap_e:
                         print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
 
+                    # WHY: Show min hold being applied so user can confirm parity.
+                    # CHANGED: April 2026 — min hold diagnostic line
+                    if _cfg_min_hold > 0:
+                        print(f"[BACKTEST] Min hold: {_cfg_min_hold}min "
+                              f"(from {_firm_display}, gates management exits)")
+
                     # Build period display text
                     if _cfg_bt_start and _cfg_bt_end:
                         _period_text = f"   Period: {_cfg_bt_start} → {_cfg_bt_end}\n"
@@ -1187,6 +1193,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — asymmetric swap
                         swap_long_pips_per_night=_cfg_swap_long if _a48_use_cfg else 0.0,
                         swap_short_pips_per_night=_cfg_swap_short if _a48_use_cfg else 0.0,
+                        # WHY: Min hold gates management exits — matches EA MinHoldMinutes.
+                        # CHANGED: April 2026 — min hold parity with MT5 EA
+                        min_hold_minutes=_cfg_min_hold if _a48_use_cfg else 0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

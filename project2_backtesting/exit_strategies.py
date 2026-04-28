@@ -3,6 +3,9 @@ EXIT STRATEGIES — Pluggable exit strategy implementations.
 Each strategy decides when to close a position based on price action.
 Used by the strategy backtester to test different exit approaches.
 """
+# WHY: Used by _check_management_blocked for min-hold time comparisons.
+# CHANGED: April 2026 — min hold parity with MT5 EA
+import pandas as pd
 
 
 class ExitStrategy:
@@ -105,6 +108,26 @@ class ExitStrategy:
             return round(price, _decimals)
         return price
 
+    def _check_management_blocked(self, pos, candle):
+        """Return True if still within the min-hold window.
+
+        WHY: MT5 EA's MinHoldMinutes skips management actions (trail
+             ratchet, breakeven lock, indicator exit) until the trade
+             has been open for at least N minutes. Broker-level SL/TP
+             still fires immediately. Without this, Python fires
+             management exits within the same candle as entry.
+        CHANGED: April 2026 — min hold parity with MT5 EA
+        """
+        _mhs = getattr(self, 'min_hold_seconds', 0)
+        if not _mhs:
+            return False
+        try:
+            _entry_dt = pd.Timestamp(pos.get("entry_time"))
+            _now_dt   = pd.Timestamp(candle.get("timestamp"))
+            return (_now_dt - _entry_dt).total_seconds() < _mhs
+        except Exception:
+            return False
+
 
 class FixedSLTP(ExitStrategy):
     """Fixed stop loss and take profit in pips.
@@ -193,7 +216,11 @@ class TrailingStop(ExitStrategy):
     name = "Trailing Stop"
 
     def __init__(self, sl_pips=150, activation_pips=50, trail_distance_pips=100,
-                 tp_pips=None, max_candles=None, pip_size=0.01):
+                 tp_pips=None, max_candles=None, pip_size=0.01,
+                 # WHY: Gate trail ratchet during first N seconds. Broker SL/TP
+                 #      still fires immediately. Matches EA's MinHoldMinutes.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
                          activation_pips=activation_pips,
                          trail_distance_pips=trail_distance_pips,
@@ -205,8 +232,9 @@ class TrailingStop(ExitStrategy):
         #      caps duration. Either alone is sufficient to prevent the
         #      hang. Both default to None to preserve old construction.
         # CHANGED: April 2026 — Phase A.13
-        self.tp_pips     = tp_pips
-        self.max_candles = max_candles
+        self.tp_pips          = tp_pips
+        self.max_candles      = max_candles
+        self.min_hold_seconds = int(min_hold_seconds or 0)
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
@@ -226,6 +254,10 @@ class TrailingStop(ExitStrategy):
                     "reason":     "TRAILING_MAX_CANDLES",
                 }
 
+        # WHY: Gate trail ratchet during min_hold window. Matches EA.
+        # CHANGED: April 2026 — min hold parity
+        _mgmt_blocked = self._check_management_blocked(pos, candle)
+
         if direction == "BUY":
             fixed_sl    = entry - self.sl_pips * self.pip_size
             profit_pips = (highest - entry) / self.pip_size
@@ -240,7 +272,7 @@ class TrailingStop(ExitStrategy):
                     fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                     return {"exit_price": fill, "reason": "TAKE_PROFIT"}
 
-            if profit_pips >= self.activation_pips:
+            if profit_pips >= self.activation_pips and not _mgmt_blocked:
                 trail_sl     = highest - self.trail_distance_pips * self.pip_size
                 effective_sl = max(fixed_sl, trail_sl)
             else:
@@ -313,7 +345,7 @@ class TrailingStop(ExitStrategy):
                     fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                     return {"exit_price": fill, "reason": "TAKE_PROFIT"}
 
-            if profit_pips >= self.activation_pips:
+            if profit_pips >= self.activation_pips and not _mgmt_blocked:
                 trail_sl     = lowest + self.trail_distance_pips * self.pip_size
                 effective_sl = min(fixed_sl, trail_sl)
             else:
@@ -405,7 +437,12 @@ class ATRBased(ExitStrategy):
     #      backward-compat but the warning now surfaces the problem.
     # CHANGED: April 2026 — Phase 31 Fix 8 — no silent ATR fallback
     #          (audit Part C HIGH #13 + #14)
-    def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_atr_14",
+    # WHY: MT5's iATR uses Wilder's smoothing seeded with SMA(period).
+    #      The non-MT5 H1_atr_14 column uses pandas.ewm() which seeds
+    #      with the first value and diverges by 3-8% from MT5 native.
+    #      Using mt5_atr_14 makes Python lot sizing and SL/TP match MT5.
+    # CHANGED: April 2026 — switch to MT5-parity ATR column
+    def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_mt5_atr_14",
                  max_candles=1000):
         super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
                          max_candles=max_candles)
@@ -524,7 +561,7 @@ class ATRFixedSLTP(ExitStrategy):
     """
     name = "ATR Fixed SL/TP"
 
-    def __init__(self, sl_atr_mult=1.0, tp_atr_mult=2.5, atr_column="H1_atr_14",
+    def __init__(self, sl_atr_mult=1.0, tp_atr_mult=2.5, atr_column="H1_mt5_atr_14",
                  max_candles=200, pip_size=0.01):
         super().__init__(pip_size=pip_size, sl_atr_mult=sl_atr_mult,
                          tp_atr_mult=tp_atr_mult, max_candles=max_candles)
@@ -638,8 +675,11 @@ class ATRBreakevenTrail(ExitStrategy):
 
     def __init__(self, sl_atr_mult=1.0, breakeven_atr_mult=1.0,
                  trail_activation_atr_mult=1.5, trail_atr_mult=1.0,
-                 tp_atr_mult=3.0, atr_column="H1_atr_14",
-                 max_candles=200, pip_size=0.01):
+                 tp_atr_mult=3.0, atr_column="H1_mt5_atr_14",
+                 max_candles=200, pip_size=0.01,
+                 # WHY: Gate BE lock and trail during min_hold window.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(pip_size=pip_size,
                          sl_atr_mult=sl_atr_mult,
                          breakeven_atr_mult=breakeven_atr_mult,
@@ -654,6 +694,7 @@ class ATRBreakevenTrail(ExitStrategy):
         self.tp_atr_mult               = tp_atr_mult
         self.atr_column                = atr_column
         self.max_candles               = max_candles
+        self.min_hold_seconds          = int(min_hold_seconds or 0)
         # WHY: sl_pips set in on_entry() for lot sizing via
         #      _expected_sl_pips_for_exit() Path 1. Defaults to 150
         #      for safety if on_entry is never called.
@@ -726,6 +767,10 @@ class ATRBreakevenTrail(ExitStrategy):
         direction = pos["direction"]
         highest   = pos["highest_since_entry"]
         lowest    = pos["lowest_since_entry"]
+
+        # WHY: Gate BE lock and trail during min_hold window. Matches EA.
+        # CHANGED: April 2026 — min hold parity
+        _mgmt_blocked = self._check_management_blocked(pos, candle)
 
         # WHY: Max hold cap — strongest guarantee against hanging.
         # CHANGED: April 2026 — max hold safety
@@ -822,7 +867,9 @@ class ATRBreakevenTrail(ExitStrategy):
                         return {"exit_price": fill, "reason": "ATRBE_SL_AMBIGUOUS"}
 
             # Phase 3: Trailing (activates after trail_activation distance)
-            if profit_from_entry >= self._trail_activation_price_dist:
+            # WHY: Gated by min hold — trail ratchet is a management action.
+            # CHANGED: April 2026 — min hold parity
+            if profit_from_entry >= self._trail_activation_price_dist and not _mgmt_blocked:
                 trail_sl = highest - self._trail_distance_price
                 # WHY: Trail SL must be at least at breakeven. Never
                 #      trail BELOW entry once breakeven was reached.
@@ -833,8 +880,8 @@ class ATRBreakevenTrail(ExitStrategy):
                     reason = "ATRBE_TRAIL_GAP" if fill != trail_sl else "ATRBE_TRAIL"
                     return {"exit_price": fill, "reason": reason}
 
-            # Phase 2: Breakeven lock
-            elif profit_from_entry >= self._be_distance_price:
+            # Phase 2: Breakeven lock (also gated — management action)
+            elif profit_from_entry >= self._be_distance_price and not _mgmt_blocked:
                 self._breakeven_locked = True
                 if candle["low"] <= entry:
                     fill = self._get_fill_price(candle, entry, direction, is_sl=True)
@@ -914,8 +961,8 @@ class ATRBreakevenTrail(ExitStrategy):
                         fill = self._get_fill_price(candle, _initial_sl_price, direction, is_sl=True)
                         return {"exit_price": fill, "reason": "ATRBE_SL_AMBIGUOUS"}
 
-            # Phase 3: Trailing
-            if profit_from_entry >= self._trail_activation_price_dist:
+            # Phase 3: Trailing (gated)
+            if profit_from_entry >= self._trail_activation_price_dist and not _mgmt_blocked:
                 trail_sl = lowest + self._trail_distance_price
                 trail_sl = min(trail_sl, entry)  # floor at breakeven
                 if candle["high"] >= trail_sl:
@@ -923,8 +970,8 @@ class ATRBreakevenTrail(ExitStrategy):
                     reason = "ATRBE_TRAIL_GAP" if fill != trail_sl else "ATRBE_TRAIL"
                     return {"exit_price": fill, "reason": reason}
 
-            # Phase 2: Breakeven
-            elif profit_from_entry >= self._be_distance_price:
+            # Phase 2: Breakeven (gated)
+            elif profit_from_entry >= self._be_distance_price and not _mgmt_blocked:
                 self._breakeven_locked = True
                 if candle["high"] >= entry:
                     fill = self._get_fill_price(candle, entry, direction, is_sl=True)
@@ -966,10 +1013,13 @@ class PSARExit(ExitStrategy):
     name = "PSAR Exit"
 
     def __init__(self, sl_atr_mult=1.5, tp_atr_mult=4.0,
-                 atr_column="H1_atr_14",
+                 atr_column="H1_mt5_atr_14",
                  psar_signal_column="H1_psar_signal",
                  min_candles_before_psar=2,
-                 max_candles=200, pip_size=0.01):
+                 max_candles=200, pip_size=0.01,
+                 # WHY: Gate PSAR flip exit during min_hold window. Matches EA.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(pip_size=pip_size,
                          sl_atr_mult=sl_atr_mult,
                          tp_atr_mult=tp_atr_mult,
@@ -985,7 +1035,8 @@ class PSARExit(ExitStrategy):
         #      on the very first bar.
         # CHANGED: April 2026 — min candles before PSAR check
         self.min_candles_before_psar = min_candles_before_psar
-        self.max_candles           = max_candles
+        self.max_candles             = max_candles
+        self.min_hold_seconds        = int(min_hold_seconds or 0)
         # WHY: sl_pips for lot sizing via _expected_sl_pips_for_exit()
         # CHANGED: April 2026 — lot sizing awareness
         self.sl_pips = 150  # default, updated in on_entry
@@ -1060,8 +1111,11 @@ class PSARExit(ExitStrategy):
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
                 return {"exit_price": fill, "reason": reason}
 
-            # PSAR flip check (after min candles settle period)
-            if pos.get("candles_held", 0) >= self.min_candles_before_psar:
+            # PSAR flip check — gated by min hold (management action)
+            # WHY: CHANGED: April 2026 — min hold parity
+            _psar_mgmt_blocked = self._check_management_blocked(pos, candle)
+            if (pos.get("candles_held", 0) >= self.min_candles_before_psar
+                    and not _psar_mgmt_blocked):
                 psar_signal = candle.get(self.psar_signal_column)
                 if psar_signal is not None:
                     try:
@@ -1091,8 +1145,9 @@ class PSARExit(ExitStrategy):
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
                 return {"exit_price": fill, "reason": reason}
 
-            # PSAR flip check
-            if pos.get("candles_held", 0) >= self.min_candles_before_psar:
+            # PSAR flip check — gated by min hold
+            if (pos.get("candles_held", 0) >= self.min_candles_before_psar
+                    and not _psar_mgmt_blocked):
                 psar_signal = candle.get(self.psar_signal_column)
                 if psar_signal is not None:
                     try:
@@ -1125,21 +1180,25 @@ class ATRTrailing(ExitStrategy):
     """
     name = "ATR + Trailing"
 
-    def __init__(self, sl_atr_mult=2.0, tp_atr_mult=4.0, atr_column="H1_atr_14",
+    def __init__(self, sl_atr_mult=2.0, tp_atr_mult=4.0, atr_column="H1_mt5_atr_14",
                  activation_pips=50, trail_distance_pips=100,
-                 max_candles=1000, pip_size=0.01):
+                 max_candles=1000, pip_size=0.01,
+                 # WHY: Gate trail ratchet during min_hold window. Matches EA.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
                          activation_pips=activation_pips,
                          trail_distance_pips=trail_distance_pips,
                          max_candles=max_candles, pip_size=pip_size)
-        self.sl_atr_mult = sl_atr_mult
-        self.tp_atr_mult = tp_atr_mult
-        self.atr_column = atr_column
-        self.activation_pips = activation_pips
+        self.sl_atr_mult         = sl_atr_mult
+        self.tp_atr_mult         = tp_atr_mult
+        self.atr_column          = atr_column
+        self.activation_pips     = activation_pips
         self.trail_distance_pips = trail_distance_pips
-        self.max_candles = max_candles
-        self.pip_size = pip_size
-        self._entry_atr = None
+        self.max_candles         = max_candles
+        self.pip_size            = pip_size
+        self.min_hold_seconds    = int(min_hold_seconds or 0)
+        self._entry_atr          = None
 
     def on_entry(self, candle):
         raw = candle.get(self.atr_column, None)
@@ -1172,12 +1231,16 @@ class ATRTrailing(ExitStrategy):
         sl_distance = atr * self.sl_atr_mult
         tp_distance = atr * self.tp_atr_mult
 
+        # WHY: Gate trail ratchet during min_hold window. Matches EA.
+        # CHANGED: April 2026 — min hold parity
+        _trail_mgmt_blocked = self._check_management_blocked(pos, candle)
+
         if direction == "BUY":
             sl_price = entry - sl_distance
             tp_price = entry + tp_distance
 
             profit_pips = (highest - entry) / self.pip_size
-            if profit_pips >= self.activation_pips:
+            if profit_pips >= self.activation_pips and not _trail_mgmt_blocked:
                 trail_sl = highest - self.trail_distance_pips * self.pip_size
                 if trail_sl > sl_price:
                     sl_price = trail_sl
@@ -1193,7 +1256,7 @@ class ATRTrailing(ExitStrategy):
             tp_price = entry - tp_distance
 
             profit_pips = (entry - lowest) / self.pip_size
-            if profit_pips >= self.activation_pips:
+            if profit_pips >= self.activation_pips and not _trail_mgmt_blocked:
                 trail_sl = lowest + self.trail_distance_pips * self.pip_size
                 if trail_sl < sl_price:
                     sl_price = trail_sl
@@ -1260,14 +1323,18 @@ class IndicatorExit(ExitStrategy):
 
     def __init__(self, sl_pips=150, exit_indicator="M5_rsi_14",
                  exit_threshold=70, exit_direction="above",
-                 max_candles=500, pip_size=0.01):
+                 max_candles=500, pip_size=0.01,
+                 # WHY: Gate indicator-based exit during min_hold window.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
                          exit_indicator=exit_indicator, exit_threshold=exit_threshold,
                          max_candles=max_candles)
-        self.sl_pips        = sl_pips
-        self.exit_indicator  = exit_indicator
-        self.exit_threshold  = exit_threshold
-        self.exit_direction  = exit_direction
+        self.sl_pips          = sl_pips
+        self.exit_indicator   = exit_indicator
+        self.exit_threshold   = exit_threshold
+        self.exit_direction   = exit_direction
+        self.min_hold_seconds = int(min_hold_seconds or 0)
         # WHY (Phase A.14): defensive max-hold cap. Without it, trades
         #      that drift in profit while the exit indicator never
         #      crosses its threshold run to end-of-data.
@@ -1291,7 +1358,9 @@ class IndicatorExit(ExitStrategy):
                 reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
                 return {"exit_price": fill, "reason": reason}
 
-        if pos["candles_held"] >= 1:
+        # WHY: Gate indicator exit during min_hold window. Matches EA.
+        # CHANGED: April 2026 — min hold parity
+        if pos["candles_held"] >= 1 and not self._check_management_blocked(pos, candle):
             indicator_value = candle.get(self.exit_indicator)
             if indicator_value is not None:
                 if self.exit_direction == "above" and indicator_value >= self.exit_threshold:
@@ -1322,15 +1391,19 @@ class HybridExit(ExitStrategy):
     name = "Hybrid"
 
     def __init__(self, sl_pips=150, breakeven_activation_pips=50,
-                 trail_distance_pips=100, max_candles=12, pip_size=0.01):
+                 trail_distance_pips=100, max_candles=12, pip_size=0.01,
+                 # WHY: Gate BE move and trail during min_hold window.
+                 # CHANGED: April 2026 — min hold parity
+                 min_hold_seconds=0):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
                          breakeven_activation_pips=breakeven_activation_pips,
                          trail_distance_pips=trail_distance_pips,
                          max_candles=max_candles)
-        self.sl_pips      = sl_pips
-        self.breakeven_pips = breakeven_activation_pips
-        self.trail_pips    = trail_distance_pips
-        self.max_candles   = max_candles
+        self.sl_pips          = sl_pips
+        self.breakeven_pips   = breakeven_activation_pips
+        self.trail_pips       = trail_distance_pips
+        self.max_candles      = max_candles
+        self.min_hold_seconds = int(min_hold_seconds or 0)
 
     def on_new_candle(self, candle, pos):
         entry     = pos["entry_price"]
@@ -1338,11 +1411,15 @@ class HybridExit(ExitStrategy):
         highest   = pos["highest_since_entry"]
         lowest    = pos["lowest_since_entry"]
 
+        # WHY: Gate BE move and trail during min_hold window. Matches EA.
+        # CHANGED: April 2026 — min hold parity
+        _hybrid_mgmt_blocked = self._check_management_blocked(pos, candle)
+
         if direction == "BUY":
             fixed_sl    = entry - self.sl_pips * self.pip_size
             profit_pips = (highest - entry) / self.pip_size
 
-            if profit_pips >= self.breakeven_pips:
+            if profit_pips >= self.breakeven_pips and not _hybrid_mgmt_blocked:
                 trail_sl     = highest - self.trail_pips * self.pip_size
                 effective_sl = max(entry, trail_sl)
             else:
@@ -1360,7 +1437,7 @@ class HybridExit(ExitStrategy):
             fixed_sl    = entry + self.sl_pips * self.pip_size
             profit_pips = (entry - lowest) / self.pip_size
 
-            if profit_pips >= self.breakeven_pips:
+            if profit_pips >= self.breakeven_pips and not _hybrid_mgmt_blocked:
                 trail_sl     = lowest + self.trail_pips * self.pip_size
                 effective_sl = min(entry, trail_sl)
             else:
@@ -1404,7 +1481,10 @@ def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
     #      subsequent signal in the backtest via the END_OF_DATA
     #      lockout in fast_backtest.
     # CHANGED: April 2026 — Phase A.28.2
-    _atr_col = f"{entry_tf}_atr_14" if entry_tf else "H1_atr_14"
+    # WHY: MT5 parity — use mt5_atr_14 which matches MT5 iATR's Wilder+SMA
+    #      seeding behavior. See comment in ATRBased.__init__.
+    # CHANGED: April 2026 — MT5-parity ATR for all default exit instances
+    _atr_col = f"{entry_tf}_mt5_atr_14" if entry_tf else "H1_mt5_atr_14"
     return [
         FixedSLTP(sl_pips=150, tp_pips=200,  max_candles=1000, pip_size=pip_size),
         FixedSLTP(sl_pips=150, tp_pips=300,  max_candles=1000, pip_size=pip_size),
@@ -1451,7 +1531,10 @@ def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
                     trail_distance_pips=100, pip_size=pip_size, atr_column=_atr_col),
         TimeBased(sl_pips=150, max_candles=6,  pip_size=pip_size),
         TimeBased(sl_pips=150, max_candles=12, pip_size=pip_size),
-        IndicatorExit(sl_pips=150, exit_indicator="H1_rsi_14",
+        # WHY: MT5 parity — H1_rsi_14 (ta library) diverges from MT5 iRSI.
+        #      H1_mt5_rsi_14 uses Wilder's smoothing seeded with SMA(period).
+        # CHANGED: April 2026 — MT5-parity RSI for IndicatorExit
+        IndicatorExit(sl_pips=150, exit_indicator="H1_mt5_rsi_14",
                       exit_threshold=70, exit_direction="above", pip_size=pip_size),
         HybridExit(sl_pips=150, breakeven_activation_pips=50,
                    trail_distance_pips=100, max_candles=12, pip_size=pip_size),
