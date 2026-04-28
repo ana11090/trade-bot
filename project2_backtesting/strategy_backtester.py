@@ -1889,7 +1889,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "lot_size":     lot_size,
             "dollar_pnl":   dollar_pnl,
             "swap_nights":  swap_nights,
-            "swap_cost_pips": round(swap_cost_pips, 1),
+            # WHY: Dropped legacy 'swap_cost_pips' key — use 'cost_swap_pips'
+            #      which is consistent with fast_backtest and the cost breakdown.
+            # CHANGED: April 2026 — unify swap key name
             # WHY: Per-trade cost breakdown for diagnostic summary.
             # CHANGED: April 2026 — cost breakdown
             "cost_spread_pips":     round(-float(_trade_spread), 1),
@@ -3365,7 +3367,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _comm_total    = sum(t.get('cost_commission_pips', 0) for t in _btrds)
                 _swap_total    = sum(t.get('cost_swap_pips', 0) for t in _btrds)
                 _swap_nights_t = sum(t.get('swap_nights', 0) for t in _btrds)
-                _gross         = sum(t.get('pips', 0) for t in _btrds)
+                # WHY: trade['pips'] is post-spread (spread baked into entry_price).
+                #      Add spread back to get true pre-cost gross so the
+                #      breakdown Gross - all costs = Net is arithmetically honest.
+                # CHANGED: April 2026 — fix gross overstating by N×spread
+                _gross         = (sum(t.get('pips', 0) for t in _btrds)
+                                  - _spread_total)   # spread_total is negative, so subtract = add back
                 _net           = sum(t.get('net_pips', 0) for t in _btrds)
                 log.info(f"  Strategy: {_best.get('rule_combo','?')} x "
                          f"{_best.get('exit_name','?')}")
