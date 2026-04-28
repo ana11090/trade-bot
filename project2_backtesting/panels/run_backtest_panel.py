@@ -889,10 +889,33 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_dd_daily = 5.0
                         _cfg_dd_total = 10.0
                         _dd_source = "defaults"
-                    # WHY: _cfg_min_hold is resolved after _firm_display (below).
-                    #      Zero here is just the pre-assignment safety default.
-                    # CHANGED: April 2026 — min hold loaded via _firm_display fallback
+                    # WHY: First attempt — fast path for rules that carry
+                    #      prop_firm_name explicitly. Only 8/34 rules have
+                    #      this set; the rest fall through to the _firm_display
+                    #      fallback below (after _firm_display is resolved).
+                    # CHANGED: April 2026 — min hold from firm
                     _cfg_min_hold = 0
+                    try:
+                        _mh_firm = _first_rule.get('prop_firm_name', '')
+                        if _mh_firm:
+                            import glob as _mh_glob
+                            import json as _mh_json
+                            _mh_dir = os.path.join(project_root, 'prop_firms')
+                            for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
+                                try:
+                                    with open(_mh_fp, encoding='utf-8') as _mh_f:
+                                        _mh_fd = _mh_json.load(_mh_f)
+                                except Exception:
+                                    continue
+                                if _mh_fd.get('firm_name') == _mh_firm:
+                                    _mh_sec = int(_mh_fd.get('challenges', [{}])[0]
+                                                  .get('restrictions', {})
+                                                  .get('min_trade_duration_seconds', 0))
+                                    if _mh_sec > 0:
+                                        _cfg_min_hold = max(1, _mh_sec // 60)
+                                    break
+                    except Exception:
+                        pass
                     _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or float(_bt_cfg.get('slippage_pips', 1.0))
                     # WHY: hard_close_hour and cooldown match the EA's DailyResetHourGMT
                     #      and CooldownMinutes. Read from config so backtest reflects
@@ -983,34 +1006,34 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     except Exception as _swap_e:
                         print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
 
-                    # WHY: Load min_hold using _firm_display (which has rule →
-                    #      P2 config → P1 config fallback) instead of the rule's
-                    #      prop_firm_name directly. The old approach missed 26/34
-                    #      saved rules that don't carry prop_firm_name. By reading
-                    #      from _firm_display (already resolved above) we get the
-                    #      same firm for EVERY rule, regardless of how it was saved.
+                    # WHY: Fallback — fires only when the rule-based attempt above
+                    #      produced 0 (26/34 rules don't carry prop_firm_name).
+                    #      Uses _firm_display which has rule → P2 config → P1
+                    #      config fallback, same as the swap loader. Guarded by
+                    #      _cfg_min_hold == 0 so the two blocks don't fight.
                     # CHANGED: April 2026 — fallback parity with swap loader
-                    try:
-                        _mh_name = _firm_display.split(' (')[0] if _firm_display else ''
-                        if _mh_name and _mh_name not in ('No firm selected', 'No firm', ''):
-                            import glob as _mh_glob
-                            import json as _mh_json
-                            _mh_dir = os.path.join(project_root, 'prop_firms')
-                            for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
-                                try:
-                                    with open(_mh_fp, encoding='utf-8') as _mh_f:
-                                        _mh_fd = _mh_json.load(_mh_f)
-                                    if _mh_fd.get('firm_name') == _mh_name:
-                                        _mh_sec = int(_mh_fd.get('challenges', [{}])[0]
-                                                      .get('restrictions', {})
-                                                      .get('min_trade_duration_seconds', 0))
-                                        if _mh_sec > 0:
-                                            _cfg_min_hold = max(1, _mh_sec // 60)
+                    if _cfg_min_hold == 0:
+                        try:
+                            _mh_name2 = _firm_display.split(' (')[0] if _firm_display else ''
+                            if _mh_name2 and _mh_name2 not in ('No firm selected', 'No firm', ''):
+                                import glob as _mh_glob2
+                                import json as _mh_json2
+                                _mh_dir2 = os.path.join(project_root, 'prop_firms')
+                                for _mh_fp2 in _mh_glob2.glob(os.path.join(_mh_dir2, '*.json')):
+                                    try:
+                                        with open(_mh_fp2, encoding='utf-8') as _mh_f2:
+                                            _mh_fd2 = _mh_json2.load(_mh_f2)
+                                    except Exception:
+                                        continue
+                                    if _mh_fd2.get('firm_name') == _mh_name2:
+                                        _mh_sec2 = int(_mh_fd2.get('challenges', [{}])[0]
+                                                       .get('restrictions', {})
+                                                       .get('min_trade_duration_seconds', 0))
+                                        if _mh_sec2 > 0:
+                                            _cfg_min_hold = max(1, _mh_sec2 // 60)
                                         break
-                                except Exception:
-                                    continue
-                    except Exception:
-                        pass
+                        except Exception as _mh_e2:
+                            print(f"[BACKTEST] WARNING: min-hold fallback failed: {_mh_e2}")
 
                     # WHY: Show min hold being applied so user can confirm parity.
                     # CHANGED: April 2026 — min hold diagnostic line
