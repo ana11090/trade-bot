@@ -889,25 +889,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_dd_daily = 5.0
                         _cfg_dd_total = 10.0
                         _dd_source = "defaults"
-                    # WHY: Min hold from firm restrictions via rule.
-                    # CHANGED: April 2026 — min hold from firm
+                    # WHY: _cfg_min_hold is resolved after _firm_display (below).
+                    #      Zero here is just the pre-assignment safety default.
+                    # CHANGED: April 2026 — min hold loaded via _firm_display fallback
                     _cfg_min_hold = 0
-                    try:
-                        _mh_firm = _first_rule.get('prop_firm_name', '')
-                        if _mh_firm:
-                            import glob as _mh_glob
-                            _mh_dir = os.path.join(project_root, 'prop_firms')
-                            for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
-                                import json as _mh_json
-                                with open(_mh_fp, encoding='utf-8') as _mh_f:
-                                    _mh_fd = _mh_json.load(_mh_f)
-                                if _mh_fd.get('firm_name') == _mh_firm:
-                                    _mh_sec = int(_mh_fd.get('challenges', [{}])[0].get('restrictions', {}).get('min_trade_duration_seconds', 0))
-                                    if _mh_sec > 0:
-                                        _cfg_min_hold = max(1, _mh_sec // 60)
-                                    break
-                    except Exception:
-                        pass
                     _cfg_slippage    = float(_first_rule.get('slippage_pips', 0)) or float(_bt_cfg.get('slippage_pips', 1.0))
                     # WHY: hard_close_hour and cooldown match the EA's DailyResetHourGMT
                     #      and CooldownMinutes. Read from config so backtest reflects
@@ -997,6 +982,35 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
                     except Exception as _swap_e:
                         print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
+
+                    # WHY: Load min_hold using _firm_display (which has rule →
+                    #      P2 config → P1 config fallback) instead of the rule's
+                    #      prop_firm_name directly. The old approach missed 26/34
+                    #      saved rules that don't carry prop_firm_name. By reading
+                    #      from _firm_display (already resolved above) we get the
+                    #      same firm for EVERY rule, regardless of how it was saved.
+                    # CHANGED: April 2026 — fallback parity with swap loader
+                    try:
+                        _mh_name = _firm_display.split(' (')[0] if _firm_display else ''
+                        if _mh_name and _mh_name not in ('No firm selected', 'No firm', ''):
+                            import glob as _mh_glob
+                            import json as _mh_json
+                            _mh_dir = os.path.join(project_root, 'prop_firms')
+                            for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
+                                try:
+                                    with open(_mh_fp, encoding='utf-8') as _mh_f:
+                                        _mh_fd = _mh_json.load(_mh_f)
+                                    if _mh_fd.get('firm_name') == _mh_name:
+                                        _mh_sec = int(_mh_fd.get('challenges', [{}])[0]
+                                                      .get('restrictions', {})
+                                                      .get('min_trade_duration_seconds', 0))
+                                        if _mh_sec > 0:
+                                            _cfg_min_hold = max(1, _mh_sec // 60)
+                                        break
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
 
                     # WHY: Show min hold being applied so user can confirm parity.
                     # CHANGED: April 2026 — min hold diagnostic line

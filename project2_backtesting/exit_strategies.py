@@ -1321,7 +1321,9 @@ class IndicatorExit(ExitStrategy):
     """Fixed SL with indicator-based exit (e.g. RSI overbought)."""
     name = "Indicator Exit"
 
-    def __init__(self, sl_pips=150, exit_indicator="M5_rsi_14",
+    # WHY: Default to MT5-parity RSI for consistency with other exits.
+    # CHANGED: April 2026 — MT5-parity RSI default
+    def __init__(self, sl_pips=150, exit_indicator="H1_mt5_rsi_14",
                  exit_threshold=70, exit_direction="above",
                  max_candles=500, pip_size=0.01,
                  # WHY: Gate indicator-based exit during min_hold window.
