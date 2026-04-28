@@ -270,7 +270,8 @@ def main():
         log.info("")
         log.info("If running BEFORE the spread-bake-in revert (commit 0b1fe50),")
         log.info(f"expect Δentry/SL/TP ≈ {args.spread_pips:.0f} pips for BUY trades.")
-        log.info("After the revert, all deltas should be < 0.01 pip.")
+        log.info("After the revert, ΔSL and ΔTP should be 0; Δentry stays ~spread "
+                 "(Python tracks bid, MT5 fills at ask — different by design).")
         return 4
 
 
