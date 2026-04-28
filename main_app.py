@@ -75,6 +75,56 @@ except Exception as _mig_e:
     # Migration failure must not prevent app startup.
     print(f"[main_app] WARNING: migrate_source_names raised: {_mig_e}")
 
+# WHY: Auto-cleanup of non-MT5-parity rules at startup. Old rules can
+#      reference indicator versions (e.g. H4_atr_14) that diverge from
+#      MT5's iATR by 3-15% — those rules trigger entries at different
+#      candles in MT5 vs Python. After the parity work, all new rules
+#      use the mt5_ columns; this hook clears out the legacy ones.
+#      Idempotent: if no non-parity rules exist, no dialog is shown.
+# CHANGED: April 2026 — non-MT5-parity rule cleanup at startup
+try:
+    from tkinter import messagebox
+    from shared.saved_rules import cleanup_non_mt5_parity_rules_with_confirm
+
+    def _confirm_non_parity_cleanup(found):
+        _sample_lines = []
+        for r in found[:5]:
+            _id    = r.get('id') if r.get('id') is not None else '?'
+            _combo = r.get('rule_combo') or '?'
+            _bad   = ', '.join(r.get('bad_features', [])[:4])
+            if len(r.get('bad_features', [])) > 4:
+                _bad += ', ...'
+            _sample_lines.append(f"  • id={_id}  {_combo}  ({_bad})")
+        _sample_text = '\n'.join(_sample_lines)
+        _more = (f"\n  ... and {len(found) - 5} more"
+                 if len(found) > 5 else '')
+        return messagebox.askyesno(
+            "Clean up non-MT5-parity rules?",
+            f"Found {len(found)} saved rules that reference non-MT5 "
+            f"indicator features (e.g. H4_atr_14 instead of "
+            f"H4_mt5_atr_14).\n\n"
+            f"These rules trigger entries at slightly different candles "
+            f"in MT5 vs Python (indicators diverge 3-15% during early "
+            f"bars).\n\n"
+            f"Sample:\n{_sample_text}{_more}\n\n"
+            f"Delete them now? Git is your recovery path.",
+        )
+
+    _cnp_result = cleanup_non_mt5_parity_rules_with_confirm(
+        _confirm_non_parity_cleanup
+    )
+    if _cnp_result.get('deleted', 0) > 0:
+        print(f"[main_app] non-MT5-parity cleanup: "
+              f"deleted {_cnp_result['deleted']} rules "
+              f"({_cnp_result['before']} -> {_cnp_result['after']})")
+    elif _cnp_result.get('skipped'):
+        _cnp_reason = _cnp_result.get('reason', '?')
+        if _cnp_reason != 'no_non_parity_rules':
+            print(f"[main_app] non-MT5-parity cleanup skipped: {_cnp_reason}")
+except Exception as _cnp_e:
+    # Cleanup failure must not block app startup.
+    print(f"[main_app] WARNING: non-MT5-parity cleanup raised: {_cnp_e}")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN AREA — scrollable canvas
 # ─────────────────────────────────────────────────────────────────────────────

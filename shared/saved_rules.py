@@ -688,3 +688,113 @@ try:
     add_rule_variant_no_rolling()
 except Exception as _e:
     print(f"[saved_rules] variant error: {_e}")
+
+
+# WHY: Old rules can carry conditions that reference non-MT5 indicator
+#      versions (e.g. H4_atr_14 instead of H4_mt5_atr_14). Those rules
+#      trigger entries at slightly different candles in MT5 vs Python
+#      because the underlying indicators diverge by 3-15% during early
+#      bars (Wilder seed mismatch). Cleanest fix: delete them so the
+#      rule library only contains MT5-aligned rules.
+# CHANGED: April 2026 — non-MT5-parity rule cleanup
+_MT5_PARITY_INDICATOR_ROOTS = ('rsi', 'atr', 'ema', 'macd', 'stoch')
+_TF_PREFIXES = ('M5_', 'M15_', 'H1_', 'H4_', 'D1_')
+
+
+def _is_non_mt5_parity_feature(feature):
+    """Return True if this feature has a TF-prefixed mt5 counterpart but
+    does NOT use the mt5 prefix itself."""
+    if not isinstance(feature, str):
+        return False
+    base = feature
+    for tf in _TF_PREFIXES:
+        if base.startswith(tf):
+            base = base[len(tf):]
+            break
+    else:
+        return False  # no TF prefix — ignore
+    if base.startswith('mt5_'):
+        return False  # already parity
+    indicator_root = base.split('_', 1)[0]
+    return indicator_root in _MT5_PARITY_INDICATOR_ROOTS
+
+
+def find_non_mt5_parity_rules():
+    """Scan saved_rules.json and return list of dicts describing each
+    rule that uses at least one non-MT5-parity feature.
+
+    Returns: list of {'index': int, 'id': any, 'rule_combo': str,
+                       'bad_features': list of str}
+    """
+    rules = load_all()
+    out = []
+    for i, r in enumerate(rules):
+        if not isinstance(r, dict):
+            continue
+        nested = r.get('rule', {}) if isinstance(r.get('rule'), dict) else {}
+        bad = []
+        for cond in nested.get('conditions', []):
+            if not isinstance(cond, dict):
+                continue
+            feat = cond.get('feature', '')
+            if _is_non_mt5_parity_feature(feat):
+                bad.append(feat)
+        if bad:
+            out.append({
+                'index': i,
+                'id': r.get('id') or r.get('rule_id'),
+                'rule_combo': nested.get('rule_combo', '?'),
+                'bad_features': bad,
+            })
+    return out
+
+
+def delete_non_mt5_parity_rules(rules_to_delete_indices):
+    """Delete the specified rule indices from saved_rules.json in place.
+
+    Args:
+        rules_to_delete_indices: iterable of int indices as returned by
+            find_non_mt5_parity_rules() (each entry's 'index' key).
+
+    Returns: dict with keys 'before', 'after', 'deleted'.
+    """
+    rules = load_all()
+    before = len(rules)
+    drop_set = set(int(i) for i in rules_to_delete_indices)
+    kept = [r for i, r in enumerate(rules) if i not in drop_set]
+    after = len(kept)
+    deleted = before - after
+    if deleted == 0:
+        return {'before': before, 'after': after, 'deleted': 0}
+    with open(_SAVE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(kept, f, indent=2)
+    return {'before': before, 'after': after, 'deleted': deleted}
+
+
+def cleanup_non_mt5_parity_rules_with_confirm(confirm_callback):
+    """One-shot cleanup — idempotent, no dialog when nothing to clean.
+
+    Args:
+        confirm_callback: callable(found_list) -> bool. Only called when
+            at least one non-parity rule exists. Should show a dialog
+            and return True if the user agreed to delete.
+
+    Returns: dict with result keys (deleted, skipped, reason, ...).
+    """
+    found = find_non_mt5_parity_rules()
+    if not found:
+        return {'before': 0, 'after': 0, 'deleted': 0,
+                'skipped': True, 'reason': 'no_non_parity_rules'}
+    try:
+        agreed = bool(confirm_callback(found))
+    except Exception as e:
+        n = len(load_all())
+        return {'before': n, 'after': n, 'deleted': 0,
+                'skipped': True,
+                'reason': f'confirm_callback_error: {e}'}
+    if not agreed:
+        n = len(load_all())
+        return {'before': n, 'after': n, 'deleted': 0,
+                'skipped': True, 'reason': 'user_declined'}
+    indices = [r['index'] for r in found]
+    return delete_non_mt5_parity_rules(indices)
