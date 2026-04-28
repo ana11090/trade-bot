@@ -3367,12 +3367,14 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _comm_total    = sum(t.get('cost_commission_pips', 0) for t in _btrds)
                 _swap_total    = sum(t.get('cost_swap_pips', 0) for t in _btrds)
                 _swap_nights_t = sum(t.get('swap_nights', 0) for t in _btrds)
-                # WHY: trade['pips'] is post-spread (spread baked into entry_price).
-                #      Add spread back to get true pre-cost gross so the
-                #      breakdown Gross - all costs = Net is arithmetically honest.
-                # CHANGED: April 2026 — fix gross overstating by N×spread
-                _gross         = (sum(t.get('pips', 0) for t in _btrds)
-                                  - _spread_total)   # spread_total is negative, so subtract = add back
+                # WHY: Derive gross from net + costs so the breakdown
+                #      reconciles by construction. The 'pips' field on
+                #      fast and slow paths has subtly different definitions
+                #      (commission included on fast, not slow), so deriving
+                #      _gross from sum(pips) was unreliable. Net + signed
+                #      costs is path-agnostic and always balances exactly.
+                # CHANGED: April 2026 — derive gross from net for honest reconcile
+                _gross         = _net - _spread_total - _comm_total - _swap_total
                 _net           = sum(t.get('net_pips', 0) for t in _btrds)
                 log.info(f"  Strategy: {_best.get('rule_combo','?')} x "
                          f"{_best.get('exit_name','?')}")
