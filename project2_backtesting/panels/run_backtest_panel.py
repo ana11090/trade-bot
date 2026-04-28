@@ -209,6 +209,13 @@ _t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
 # CHANGED: April 2026 — T2b-fix — opt-in stability gate
 _t2b_stability_var        = None  # BooleanVar: run walk-forward on top rows
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
+# WHY: Optional date-range overrides for the backtest. When filled they
+#      override _cfg_bt_start/_cfg_bt_end (which come from saved config).
+#      Empty = test the full data range (pre-existing behavior).
+#      Use case: match MT5 Strategy Tester's date range exactly.
+# CHANGED: April 2026 — date-range UI for MT5 parity comparison
+_bt_date_start_var        = None  # StringVar: backtest start date (YYYY-MM-DD)
+_bt_date_end_var          = None  # StringVar: backtest end date (YYYY-MM-DD)
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
 #      into output_text via format_exc(), but the user reported they
@@ -801,6 +808,19 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _cfg_slippage = 0.0
             _cfg_bt_start = None
             _cfg_bt_end = None
+            # WHY: UI date fields apply even without saved config.
+            # CHANGED: April 2026 — date-range UI override (independent path)
+            try:
+                _ui_start_off = (_bt_date_start_var.get().strip()
+                                 if _bt_date_start_var is not None else "")
+                _ui_end_off   = (_bt_date_end_var.get().strip()
+                                 if _bt_date_end_var is not None else "")
+                if _ui_start_off:
+                    _cfg_bt_start = _ui_start_off
+                if _ui_end_off:
+                    _cfg_bt_end = _ui_end_off
+            except Exception:
+                pass
             _cfg_firm_data = {}
             _firm_display = 'No firm selected'
             _selected_firm_name = ''
@@ -935,6 +955,21 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
                     _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
                     _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
+
+                    # WHY: UI date fields override saved-config dates when filled.
+                    #      Empty fields preserve the saved-config values (or None).
+                    # CHANGED: April 2026 — date-range UI override
+                    try:
+                        _ui_start = (_bt_date_start_var.get().strip()
+                                     if _bt_date_start_var is not None else "")
+                        _ui_end   = (_bt_date_end_var.get().strip()
+                                     if _bt_date_end_var is not None else "")
+                        if _ui_start:
+                            _cfg_bt_start = _ui_start
+                        if _ui_end:
+                            _cfg_bt_end = _ui_end
+                    except Exception:
+                        pass
 
                     # Instrument type for leverage fallback
                     try:
@@ -3627,6 +3662,50 @@ def build_panel(parent):
         bg="white",
         justify="left",
     ).pack(anchor="w")
+
+    # ── Date Range Override (optional) ────────────────────────────────────────
+    # WHY: Enables clean comparison with MT5 Strategy Tester by matching
+    #      the exact date window. Backend already supports start_date/end_date;
+    #      this plumbs through a UI override on top of any saved-config dates.
+    # CHANGED: April 2026 — date-range UI for MT5 parity comparison
+    global _bt_date_start_var, _bt_date_end_var
+
+    _date_frame = tk.Frame(panel, bg="white", pady=6)
+    _date_frame.pack(fill="x", padx=20)
+
+    tk.Label(
+        _date_frame,
+        text="📅 Backtest date range (optional — leave blank to test all data)",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+        fg="#333",
+    ).pack(anchor="w")
+
+    _bt_date_start_var = tk.StringVar(value="")
+    _bt_date_end_var   = tk.StringVar(value="")
+
+    _date_row = tk.Frame(_date_frame, bg="white")
+    _date_row.pack(fill="x", pady=(4, 0))
+
+    tk.Label(_date_row, text="    Start (YYYY-MM-DD):",
+             font=("Segoe UI", 9), bg="white", fg="#333").pack(side=tk.LEFT)
+    tk.Entry(_date_row, textvariable=_bt_date_start_var, width=14,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(4, 12))
+
+    tk.Label(_date_row, text="End (YYYY-MM-DD):",
+             font=("Segoe UI", 9), bg="white", fg="#333").pack(side=tk.LEFT)
+    tk.Entry(_date_row, textvariable=_bt_date_end_var, width=14,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(4, 0))
+
+    tk.Label(
+        _date_frame,
+        text="    Examples: 2026-03-04 → 2026-04-09 (match MT5 36-day window)\n"
+             "    Blank fields = use full data range or saved-config dates.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w", pady=(2, 0))
 
     # ── T2b: Time-distribution filter + weight ────────────────────────────────
     # WHY (T2b): Reject rules that fire only in narrow time windows. Two
