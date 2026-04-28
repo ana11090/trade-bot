@@ -247,8 +247,8 @@
       "test_samples": 0,
       "test_skip_reason": "no_test_matches",
       "action": "BUY",
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
   ],
   "clusters": [

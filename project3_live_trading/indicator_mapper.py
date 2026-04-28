@@ -369,10 +369,14 @@ INDICATOR_PATTERNS = [
     (r"^roc_(\d+)$", {
         "mt5_handle_var":  "int handle_mom_{tf}_{p};",
         "mt5_handle_init": "handle_mom_{tf}_{p} = iMomentum(NULL,{mt5_tf},{p},PRICE_CLOSE); if(handle_mom_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        # WHY: Old template declared val_{var} inside else{} (scope bug) and
+        #      was missing the closing } on the else block entirely.
+        # CHANGED: April 2026 — fix roc scope bug + missing closing brace
         "mt5_buffer_read": (
+            "double val_{var} = 0.0; "
             "double _tmp = SafeCopyBuf(handle_mom_{tf}_{p}, 0, {mt5_tf}); "
-            "if(_tmp == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
-            "else { double val_{var} = (_tmp - 100.0);  "
+            "if(_tmp == EMPTY_VALUE) { indicatorFailed = true; } "
+            "else { val_{var} = (_tmp - 100.0); } "
             "// iMomentum returns 100-based, subtract 100 to match Python roc % change"
         ),
         "tradovate_code":  "ta.roc(df_m{tv_tf}['close'], length={p}).iloc[-1]",
@@ -405,12 +409,15 @@ INDICATOR_PATTERNS = [
         #      see step1_align_price.py Phase 3 fix). MT5 must use
         #      iClose(tf, 1) to match. Same for iHigh/iLow shifts.
         # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
+        # WHY: Old template declared val_{var} inside else{} (scope bug).
+        # CHANGED: April 2026 — fix ema_distance scope bug
         "mt5_buffer_read": (
+            "double val_{var} = 0.0; "
             "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
-            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; } "
             "else { double _ema_val_{tf}_{p} = _tmp_buf; "
             "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
-            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
+            "val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
         "custom_indicator_mt5": False,
@@ -420,12 +427,15 @@ INDICATOR_PATTERNS = [
     (r"^mt5_ema_(\d+)_distance$", {
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        # WHY: Same scope fix as ema_N_distance above.
+        # CHANGED: April 2026 — fix mt5_ema_distance scope bug
         "mt5_buffer_read": (
+            "double val_{var} = 0.0; "
             "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
-            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
+            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; } "
             "else { double _ema_val_{tf}_{p} = _tmp_buf; "
             "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
-            "double val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
+            "val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
         "custom_indicator_mt5": False,
@@ -440,11 +450,14 @@ INDICATOR_PATTERNS = [
             "handle_ema_{tf}_{p2} = iMA(NULL,{mt5_tf},{p2},0,MODE_EMA,PRICE_CLOSE); "
             "if(handle_ema_{tf}_{p1}==INVALID_HANDLE || handle_ema_{tf}_{p2}==INVALID_HANDLE) return(INIT_FAILED);"
         ),
+        # WHY: Old template declared val_{var} inside else{} (scope bug).
+        # CHANGED: April 2026 — fix ema_above scope bug
         "mt5_buffer_read": (
+            "double val_{var} = 0.0; "
             "double _tmp1 = SafeCopyBuf(handle_ema_{tf}_{p1}, 0, {mt5_tf}); "
             "double _tmp2 = SafeCopyBuf(handle_ema_{tf}_{p2}, 0, {mt5_tf}); "
-            "if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; val_{var} = 0; } "
-            "else { double val_{var} = (_tmp1 > _tmp2) ? 1.0 : 0.0; }"
+            "if(_tmp1 == EMPTY_VALUE || _tmp2 == EMPTY_VALUE) { indicatorFailed = true; } "
+            "else { val_{var} = (_tmp1 > _tmp2) ? 1.0 : 0.0; }"
         ),
         "tradovate_code":  "1.0 if ta.ema(df_m{tv_tf}['close'],{p1}).iloc[-1] > ta.ema(df_m{tv_tf}['close'],{p2}).iloc[-1] else 0.0",
         "custom_indicator_mt5": False,
@@ -605,11 +618,16 @@ INDICATOR_PATTERNS = [
             "handle_atr_{tf}_10_kc = iATR(NULL,{mt5_tf},10); "
             "if(handle_ema_{tf}_20_kc==INVALID_HANDLE || handle_atr_{tf}_10_kc==INVALID_HANDLE) return(INIT_FAILED);"
         ),
+        # WHY: Old template declared val_{var} inside the else{} block,
+        #      making it invisible to the condition check on the next line.
+        #      Same root cause as the bb_width scope bug.
+        # CHANGED: April 2026 — fix keltner_width scope bug (undeclared identifier)
         "mt5_buffer_read": (
+            "double val_{var} = 0.0; "
             "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0, {mt5_tf}); "
             "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0, {mt5_tf}); "
-            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE || _tmp_ema <= 0) { indicatorFailed = true; val_{var} = 0; } "
-            "else { double val_{var} = (_tmp_atr * 4.0) / _tmp_ema * 100.0; }  "
+            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE || _tmp_ema <= 0) { indicatorFailed = true; } "
+            "else { val_{var} = (_tmp_atr * 4.0) / _tmp_ema * 100.0; }  "
             "// Keltner width % = (upper - lower) / middle × 100 = (4 × ATR) / EMA × 100"
         ),
         "tradovate_code":  "((ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 4) / max(ta.ema(df_m{tv_tf}['close'],20).iloc[-1], 1e-6) * 100)",

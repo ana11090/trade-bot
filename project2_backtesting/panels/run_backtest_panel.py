@@ -809,6 +809,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _cfg_symbol = 'XAUUSD'
             _cfg_variable_spread = False
             _cfg_max_spread = 0.0
+            # WHY: Per-firm asymmetric swap. Read from prop_firms/<firm>.json
+            #      under instrument_specs.<symbol>. Default to 0 if firm
+            #      hasn't measured swap yet (zero = "not modeled").
+            # CHANGED: April 2026 — per-firm asymmetric swap
+            _cfg_swap_long  = 0.0
+            _cfg_swap_short = 0.0
 
             if _a48_use_cfg:
                 try:
@@ -961,6 +967,36 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                 _firm_display = _fd_name
                         except Exception:
                             pass
+
+                    # WHY: Read per-firm asymmetric swap from the firm JSON.
+                    #      Firm display name is already resolved above.
+                    #      _cfg_symbol is set earlier from rule/config.
+                    # CHANGED: April 2026 — per-firm asymmetric swap
+                    try:
+                        import glob as _swap_glob
+                        _pf_dir = os.path.join(project_root, 'prop_firms')
+                        _swap_loaded = False
+                        for _pf_file in _swap_glob.glob(os.path.join(_pf_dir, '*.json')):
+                            try:
+                                with open(_pf_file, 'r', encoding='utf-8') as _pf_fh:
+                                    _pf_data = json.load(_pf_fh)
+                                if _pf_data.get('firm_name', '') == _firm_display.split(' (')[0]:
+                                    _sym_up = _cfg_symbol.upper() if _cfg_symbol else 'XAUUSD'
+                                    _sym_spec = _pf_data.get('instrument_specs', {}).get(_sym_up, {})
+                                    _cfg_swap_long  = float(_sym_spec.get('swap_long_pips_per_night', 0) or 0)
+                                    _cfg_swap_short = float(_sym_spec.get('swap_short_pips_per_night', 0) or 0)
+                                    _swap_loaded = True
+                                    break
+                            except Exception:
+                                continue
+                        if _swap_loaded and (_cfg_swap_long != 0 or _cfg_swap_short != 0):
+                            print(f"[BACKTEST] Swap rates: long={_cfg_swap_long:+.2f}, "
+                                  f"short={_cfg_swap_short:+.2f} pips/night "
+                                  f"({_firm_display} / {_cfg_symbol})")
+                        elif not _swap_loaded:
+                            print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
+                    except Exception as _swap_e:
+                        print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
 
                     # Build period display text
                     if _cfg_bt_start and _cfg_bt_end:
@@ -1147,6 +1183,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — session-based variable spread model
                         variable_spread=_cfg_variable_spread if _a48_use_cfg else False,
                         max_spread_pips=_cfg_max_spread if _a48_use_cfg else 0,
+                        # WHY: Per-firm asymmetric swap — zero when no firm or no data.
+                        # CHANGED: April 2026 — asymmetric swap
+                        swap_long_pips_per_night=_cfg_swap_long if _a48_use_cfg else 0.0,
+                        swap_short_pips_per_night=_cfg_swap_short if _a48_use_cfg else 0.0,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

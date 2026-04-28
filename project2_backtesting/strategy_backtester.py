@@ -744,12 +744,40 @@ def _count_swap_nights(entry_dt, exit_dt):
     return days + extra
 
 
+# WHY: Real brokers charge different swap rates for long vs short
+#      (gold longs are typically much more expensive than shorts —
+#      Get Leveraged: long -45.5 pips/night, short -33.6).
+#      Old code took a single swap_cost_per_lot_per_night value and
+#      ignored it when not > 0, which meant every NEGATIVE swap (i.e.
+#      every real broker swap) was treated as zero. Both bugs fixed:
+#      pick by direction, allow negative values to flow through.
+# CHANGED: April 2026 — asymmetric swap with per-direction values
+def _select_swap_pips(direction, swap_long_pips_per_night,
+                       swap_short_pips_per_night):
+    """Return the swap-pip-per-night value matching the trade direction.
+
+    Kept signed: negative = cost, positive = credit.
+    """
+    if direction is None:
+        return 0.0
+    d = str(direction).upper()
+    if d == 'BUY':
+        return float(swap_long_pips_per_night or 0)
+    if d == 'SELL':
+        return float(swap_short_pips_per_night or 0)
+    return 0.0
+
+
 def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   exit_strategy, direction, pip_size,
                                   spread_pips, commission_pips, slippage_pips,
                                   account_size, risk_per_trade_pct,
                                   default_sl_pips, pip_value_per_lot,
-                                  swap_cost_per_lot_per_night=0,
+                                  # WHY: Asymmetric swap — old single value ignored negatives
+                                  #      and assumed long==short. Both bugs fixed.
+                                  # CHANGED: April 2026 — asymmetric swap
+                                  swap_long_pips_per_night=0,
+                                  swap_short_pips_per_night=0,
                                   news_blackout_minutes=0,
                                   max_trades_per_day=0,
                                   leverage=0, contract_size=100.0,
@@ -1021,15 +1049,22 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         net_pips = pnl_pips - commission_pips
 
-        # Swap costs (Wednesday triple-roll aware)
+        # WHY: Real broker swaps are negative (cost) and asymmetric.
+        #      Old code skipped negatives so all real swaps were zero.
+        # CHANGED: April 2026 — asymmetric, sign-preserving swap
+        swap_per_night = _select_swap_pips(
+            direction, swap_long_pips_per_night, swap_short_pips_per_night)
+        swap_nights    = 0
         swap_cost_pips = 0.0
-        if swap_cost_per_lot_per_night > 0:
+        if swap_per_night != 0:
             entry_dt    = pd.Timestamp(entry_time)
             exit_dt     = pd.Timestamp(exit_time)
             swap_nights = _count_swap_nights(entry_dt, exit_dt)
             if swap_nights > 0:
-                swap_cost_pips = (swap_nights * swap_cost_per_lot_per_night) / pip_value_per_lot
-                net_pips -= swap_cost_pips
+                # swap_per_night is already in pips/night — signed.
+                # ADD to net_pips (not subtract): negative swap reduces P/L.
+                swap_cost_pips = swap_nights * swap_per_night
+                net_pips += swap_cost_pips
 
         # Lot sizing
         # WHY: Old code used default_sl_pips (=150) for every strategy.
@@ -1087,6 +1122,14 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             'exit_reason':  exit_reason,
             'candles_held': candles_held,
             'rule_id':      rule_id,
+            # WHY: Per-trade cost breakdown for the diagnostic.
+            #      Signed: spread/commission always negative (cost),
+            #      swap negative for typical broker, positive if credit.
+            # CHANGED: April 2026 — cost breakdown
+            'cost_spread_pips':     round(-float(spread_pips), 1),
+            'cost_commission_pips': round(-float(commission_pips), 1),
+            'cost_swap_pips':       round(float(swap_cost_pips), 1),
+            'swap_nights':          int(swap_nights),
         })
 
         occupied_until_idx = df.index[exit_pos]
@@ -1110,7 +1153,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  slippage_seed=None,
                  account_size=None, risk_per_trade_pct=1.0,
                  default_sl_pips=150.0, pip_value_per_lot=1.0,
-                 swap_cost_per_lot_per_night=0.0,
+                 # WHY: Asymmetric swap — see _select_swap_pips.
+                 # CHANGED: April 2026 — asymmetric swap
+                 swap_long_pips_per_night=0.0,
+                 swap_short_pips_per_night=0.0,
                  news_blackout_minutes=0,
                  # WHY (Phase A.42): 0 = no limit; positive int = max trades
                  #      per calendar day, matching live EA's MaxTradesPerDay.
@@ -1455,7 +1501,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             spread_pips, commission_pips, slippage_pips,
             account_size, risk_per_trade_pct,
             default_sl_pips, pip_value_per_lot,
-            swap_cost_per_lot_per_night,
+            swap_long_pips_per_night=swap_long_pips_per_night,
+            swap_short_pips_per_night=swap_short_pips_per_night,
             news_blackout_minutes=news_blackout_minutes,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
@@ -1709,18 +1756,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         cost     = commission_pips
         net_pips = pnl_pips - cost
 
-        # Swap costs for overnight holds (Wednesday triple-roll aware)
-        swap_nights = 0
+        # WHY: Asymmetric, sign-preserving swap. See _select_swap_pips.
+        # CHANGED: April 2026 — asymmetric swap
+        swap_per_night_rb = _select_swap_pips(
+            trade_dir, swap_long_pips_per_night, swap_short_pips_per_night)
+        swap_nights    = 0
         swap_cost_pips = 0.0
-        if swap_cost_per_lot_per_night > 0:
+        if swap_per_night_rb != 0:
             entry_dt    = pd.to_datetime(entry_time)
             exit_dt     = pd.to_datetime(exit_time)
             swap_nights = _count_swap_nights(entry_dt, exit_dt)
             if swap_nights > 0:
-                # Convert swap cost to pips (swap is $/lot/night, pip_value is $/pip/lot)
-                swap_total_per_lot = swap_nights * swap_cost_per_lot_per_night
-                swap_cost_pips = swap_total_per_lot / pip_value_per_lot
-                net_pips -= swap_cost_pips
+                # swap_per_night_rb is already in pips/night — signed.
+                swap_cost_pips = swap_nights * swap_per_night_rb
+                net_pips += swap_cost_pips    # signed: negative = cost
 
         # Position sizing and dollar P&L (optional, when account_size is provided)
         if account_size is not None:
@@ -1841,6 +1890,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "dollar_pnl":   dollar_pnl,
             "swap_nights":  swap_nights,
             "swap_cost_pips": round(swap_cost_pips, 1),
+            # WHY: Per-trade cost breakdown for diagnostic summary.
+            # CHANGED: April 2026 — cost breakdown
+            "cost_spread_pips":     round(-float(_trade_spread), 1),
+            "cost_commission_pips": round(-float(commission_pips), 1),
+            "cost_swap_pips":       round(float(swap_cost_pips), 1),
         })
 
     return trades
@@ -1874,7 +1928,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   max_spread_pips=0,
                   # WHY: data_dir for tick-aware exit ambiguity resolution.
                   # CHANGED: April 2026 — tick data for exit ambiguity resolution
-                  data_dir=None):
+                  data_dir=None,
+                  # WHY: Asymmetric swap — see _select_swap_pips.
+                  # CHANGED: April 2026 — asymmetric swap
+                  swap_long_pips_per_night=0.0,
+                  swap_short_pips_per_night=0.0):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2072,6 +2130,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
             spread_pips, commission_pips, slippage_pips,
             account_size, risk_per_trade_pct,
             default_sl_pips, pip_value_per_lot,
+            swap_long_pips_per_night=swap_long_pips_per_night,
+            swap_short_pips_per_night=swap_short_pips_per_night,
             max_trades_per_day=max_trades_per_day,
             leverage=leverage, contract_size=contract_size,
             compound_equity=compound_equity,
@@ -2702,7 +2762,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      to fast_backtest for session-based spread model.
                           # CHANGED: April 2026 — session-based variable spread model
                           variable_spread=False,
-                          max_spread_pips=0):
+                          max_spread_pips=0,
+                          # WHY: Per-firm asymmetric swap rates. Passed through to
+                          #      fast_backtest. Default 0 = no swap modeled
+                          #      (backward compat when no firm is selected).
+                          # CHANGED: April 2026 — asymmetric swap
+                          swap_long_pips_per_night=0.0,
+                          swap_short_pips_per_night=0.0):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -3147,6 +3213,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 #      Already derived from candles_path above.
                 # CHANGED: April 2026 — tick data for exit ambiguity resolution
                 data_dir=data_dir,
+                # WHY: Per-firm asymmetric swap passed from matrix config.
+                # CHANGED: April 2026 — asymmetric swap
+                swap_long_pips_per_night=swap_long_pips_per_night,
+                swap_short_pips_per_night=swap_short_pips_per_night,
             )
             stats = compute_stats(trades)
 
@@ -3278,6 +3348,42 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                  f"{s['total_trades']:>4d} trades, WR {wr_str:>6s}, "
                  f"Net PF {s['net_profit_factor']:>5.2f}, "
                  f"Net {s['net_total_pips']:>+8.0f} pips  (gross {s['total_pips']:>+8.0f})")
+    log.info("=" * 70)
+
+    # WHY: Shows where P/L is going — user can see what swap is actually
+    #      costing on the best strategy without inspecting individual trades.
+    # CHANGED: April 2026 — diagnostic cost breakdown
+    try:
+        log.info("")
+        log.info("Cost breakdown — best strategy in this run:")
+        if matrix and matrix[0].get('trades'):
+            _best   = matrix[0]
+            _btrds  = _best['trades']
+            _n      = len(_btrds)
+            if _n > 0:
+                _spread_total  = sum(t.get('cost_spread_pips', 0) for t in _btrds)
+                _comm_total    = sum(t.get('cost_commission_pips', 0) for t in _btrds)
+                _swap_total    = sum(t.get('cost_swap_pips', 0) for t in _btrds)
+                _swap_nights_t = sum(t.get('swap_nights', 0) for t in _btrds)
+                _gross         = sum(t.get('pips', 0) for t in _btrds)
+                _net           = sum(t.get('net_pips', 0) for t in _btrds)
+                log.info(f"  Strategy: {_best.get('rule_combo','?')} x "
+                         f"{_best.get('exit_name','?')}")
+                log.info(f"  Trades:               {_n:>8d}")
+                log.info(f"  Gross pips:           {_gross:>+10.0f}")
+                log.info(f"  - Spread:             {_spread_total:>+10.0f}  "
+                         f"(avg {_spread_total/_n:.1f}/trade)")
+                log.info(f"  - Commission:         {_comm_total:>+10.0f}  "
+                         f"(avg {_comm_total/_n:.1f}/trade)")
+                log.info(f"  - Swap:               {_swap_total:>+10.0f}  "
+                         f"({_swap_nights_t} nights, avg {_swap_total/_n:.1f}/trade)")
+                log.info(f"  Net pips:             {_net:>+10.0f}")
+                log.info(f"  Swap rates used:  long={swap_long_pips_per_night:+.2f}  "
+                         f"short={swap_short_pips_per_night:+.2f} pips/night")
+        else:
+            log.info("  (no trades to summarise)")
+    except Exception as _cbd_e:
+        log.warning(f"  [cost breakdown] {_cbd_e}")
     log.info("=" * 70)
 
     # ── Save outputs ─────────────────────────────────────────────────────────

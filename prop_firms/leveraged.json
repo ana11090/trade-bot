@@ -18,21 +18,33 @@
       "pip_size": 0.01,
       "typical_spread": 25,
       "commission_per_lot": 4.0,
-      "contract_size": 100
+      "commission_basis": "round_turn",
+      "contract_size": 100,
+      "swap_long_pips_per_night": -45.5,
+      "swap_short_pips_per_night": -33.6,
+      "swap_source": "MT5 Symbol Specification dialog (Get Leveraged, April 2026). Swap type: in points. Long: -45.509, Short: -33.613. Wednesday triple-roll applies."
     },
     "XAGUSD": {
       "pip_value_per_lot": 5.0,
       "pip_size": 0.001,
       "typical_spread": 3.0,
       "commission_per_lot": 4.0,
-      "contract_size": 5000
+      "commission_basis": "round_turn",
+      "contract_size": 5000,
+      "swap_long_pips_per_night": 0,
+      "swap_short_pips_per_night": 0,
+      "swap_source": "Not yet measured — defaulting to zero"
     },
     "EURUSD": {
       "pip_value_per_lot": 10.0,
       "pip_size": 0.0001,
       "typical_spread": 1.5,
       "commission_per_lot": 4.0,
-      "contract_size": 100000
+      "commission_basis": "round_turn",
+      "contract_size": 100000,
+      "swap_long_pips_per_night": 0,
+      "swap_short_pips_per_night": 0,
+      "swap_source": "Not yet measured — defaulting to zero"
     }
   },
 

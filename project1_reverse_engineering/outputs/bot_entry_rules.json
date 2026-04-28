@@ -35,8 +35,8 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 245,
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -70,8 +70,8 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 174,
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -105,8 +105,8 @@
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 275,
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     },
     {
       "conditions": [
@@ -140,8 +140,8 @@
       "entry_timeframe": "M15",
       "action": "BUY",
       "n_real_trades_in_rule": 63,
-      "data_source_id": "xauusd_unlimited_levereged",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\xauusd_unlimited_levereged"
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
     }
   ],
   "per_tf_summary": [

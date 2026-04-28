@@ -47,6 +47,14 @@ TF_MQL5_PERIOD = {
 #      comment below documents the assumption.
 # CHANGED: April 2026 — Phase 32 Fix 5 — XAGUSD pip fix + JPY note
 #          (audit Part C HIGH #93)
+# WHY: This dict is a FALLBACK ONLY. Per-firm symbol specs (spread,
+#      commission, swap, pip_value) live in prop_firms/<firm>.json
+#      under "instrument_specs". When a firm is selected the panel
+#      reads from that JSON. INSTRUMENT_SPECS is used ONLY when no
+#      firm is selected or for instruments the firm hasn't documented.
+#      Do not edit this dict to track per-firm reality — edit the
+#      firm JSON instead. Per-firm specs are authoritative.
+# CHANGED: April 2026 — clarify fallback role (per-firm authoritative)
 INSTRUMENT_SPECS = {
     # WHY: Confirmed from prop firm broker diagnostic (April 2026).
     #      tickValue=$1.00, not $10.00. Spread 20-30 pips during
