@@ -1023,6 +1023,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         import glob as _swap_glob
                         _pf_dir = os.path.join(project_root, 'prop_firms')
                         _swap_loaded = False
+                        # WHY: Pre-init so diagnostic block doesn't NameError when
+                        #      no firm matches and the matched block never ran.
+                        # CHANGED: April 2026 — per-firm parity diagnostics
+                        _firm_max_spread = None
+                        _firm_hard_close = None
                         for _pf_file in _swap_glob.glob(os.path.join(_pf_dir, '*.json')):
                             try:
                                 with open(_pf_file, 'r', encoding='utf-8') as _pf_fh:
@@ -1043,6 +1048,22 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _firm_spread_mults = _sym_spec.get('spread_session_multipliers')
                                     if isinstance(_firm_spread_mults, dict):
                                         _cfg_session_spread_multipliers = _firm_spread_mults
+                                    # WHY: Per-firm max-spread filter. Same key the EA reads
+                                    #      (instrument_specs.<symbol>.max_spread_pips_filter).
+                                    #      Override saved-config when the firm JSON has it so
+                                    #      EA and Python use the same filter threshold.
+                                    # CHANGED: April 2026 — per-firm max_spread parity with EA
+                                    _firm_max_spread = _sym_spec.get('max_spread_pips_filter')
+                                    if _firm_max_spread is not None:
+                                        _cfg_max_spread = float(_firm_max_spread)
+                                    # WHY: Per-firm hard close hour. Top-level firm JSON key
+                                    #      hard_close_hour_gmt — same key the EA reads.
+                                    #      Override saved-config when the firm has it so
+                                    #      EA and Python close at the same hour. -1 disables.
+                                    # CHANGED: April 2026 — per-firm hard_close parity with EA
+                                    _firm_hard_close = _pf_data.get('hard_close_hour_gmt')
+                                    if _firm_hard_close is not None:
+                                        _cfg_hard_close = int(_firm_hard_close)
                                     _swap_loaded = True
                                     break
                             except Exception:
@@ -1058,6 +1079,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             _mults_str = " + session multipliers" if _cfg_session_spread_multipliers else ""
                             print(f"[BACKTEST] Spread profile: base={_cfg_spread:.1f} pips "
                                   f"({_firm_display} / {_cfg_symbol}){_mults_str}")
+                        # WHY: Show per-firm max-spread filter and hard-close hour when applied.
+                        # CHANGED: April 2026 — per-firm max_spread + hard_close diagnostics
+                        if _swap_loaded and _firm_max_spread is not None:
+                            print(f"[BACKTEST] Max spread filter: {_cfg_max_spread:.1f} pips "
+                                  f"({_firm_display} firm)")
+                        if _swap_loaded and _firm_hard_close is not None:
+                            _hc_str = "disabled" if _cfg_hard_close < 0 else f"{_cfg_hard_close}h GMT"
+                            print(f"[BACKTEST] Hard close: {_hc_str} ({_firm_display} firm)")
                         elif not _swap_loaded:
                             print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
                     except Exception as _swap_e:
