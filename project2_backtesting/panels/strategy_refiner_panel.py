@@ -1809,6 +1809,31 @@ def _start_optimization():
                         selected_strategy_row = s
                         break
 
+            # WHY: Per-firm cost/exit parity with Run Backtest.
+            # CHANGED: April 2026 — per-firm parity in optimizer
+            from shared.firm_settings_resolver import resolve_firm_settings
+            _opt_firm_name = ''
+            _opt_symbol = 'XAUUSD'
+            try:
+                if selected_strategy_row:
+                    _rs = selected_strategy_row.get('run_settings', {}) or {}
+                    _opt_firm_name = (_rs.get('firm_name', '') or
+                                      selected_strategy_row.get('prop_firm_name', '') or '')
+                    _opt_symbol = (_rs.get('symbol', '') or
+                                   selected_strategy_row.get('symbol', '') or 'XAUUSD')
+            except Exception:
+                pass
+            _opt_firm = resolve_firm_settings(_opt_firm_name, _opt_symbol, use_config=True)
+            if _opt_firm['firm_resolved'] and _opt_firm['spread_pips'] != spread_pips:
+                spread_pips = _opt_firm['spread_pips']
+            if _opt_firm['firm_resolved']:
+                print(f"[OPTIMIZER] Per-firm settings: {_opt_firm_name} / {_opt_symbol} | "
+                      f"spread={_opt_firm['spread_pips']:.1f} | "
+                      f"max_spread={_opt_firm['max_spread_pips']:.1f} | "
+                      f"hard_close={_opt_firm['hard_close_hour']}h | "
+                      f"min_hold={_opt_firm['min_hold_minutes']}m | "
+                      f"variable_spread={_opt_firm['variable_spread']}")
+
             all_candidates = []
 
             # Get stage and account size
@@ -2180,6 +2205,15 @@ def _start_optimization():
                     risk_per_trade_pct=risk_pct,
                     dd_daily_limit=_cfg_dd_daily,
                     dd_total_limit=_cfg_dd_total,
+                    # WHY: Per-firm parity from _opt_firm resolved above.
+                    # CHANGED: April 2026 — per-firm parity in optimizer
+                    max_spread_pips=_opt_firm['max_spread_pips'],
+                    hard_close_hour=_opt_firm['hard_close_hour'],
+                    variable_spread=_opt_firm['variable_spread'],
+                    session_spread_multipliers=_opt_firm['session_spread_multipliers'],
+                    min_hold_minutes=_opt_firm['min_hold_minutes'],
+                    cooldown_candles=_opt_firm['cooldown_candles'],
+                    slippage_pips=_opt_firm['slippage_pips'],
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")

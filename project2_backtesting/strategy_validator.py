@@ -529,6 +529,16 @@ def walk_forward_validate(
     # CHANGED: April 2026 — leverage pass-through
     leverage=0,
     contract_size=100.0,
+    # WHY: Per-firm cost/exit parity with Run Backtest. Forwarded to both
+    #      in-sample and out-of-sample fast_backtest calls.
+    # CHANGED: April 2026 — per-firm parity in walk-forward validator
+    max_spread_pips=0.0,
+    hard_close_hour=-1,
+    variable_spread=False,
+    session_spread_multipliers=None,
+    min_hold_minutes=0,
+    cooldown_candles=0,
+    slippage_pips=0.0,
 ):
     """
     Rule-stability test across sliding time windows.
@@ -781,6 +791,15 @@ def walk_forward_validate(
                 # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
                 # CHANGED: April 2026 — tick/M1 parity in walk-forward
                 data_dir=_wf_data_dir,
+                # WHY: Per-firm parity — same cost/exit model as Run Backtest.
+                # CHANGED: April 2026 — per-firm parity in walk-forward
+                max_spread_pips=max_spread_pips,
+                hard_close_hour=hard_close_hour,
+                variable_spread=variable_spread,
+                session_spread_multipliers=session_spread_multipliers,
+                min_hold_minutes=min_hold_minutes,
+                cooldown_candles=cooldown_candles,
+                slippage_pips=slippage_pips,
             )
         except Exception as e:
             in_trades = []
@@ -832,6 +851,15 @@ def walk_forward_validate(
                 # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
                 # CHANGED: April 2026 — tick/M1 parity in walk-forward
                 data_dir=_wf_data_dir,
+                # WHY: Per-firm parity — same cost/exit model as Run Backtest.
+                # CHANGED: April 2026 — per-firm parity in walk-forward
+                max_spread_pips=max_spread_pips,
+                hard_close_hour=hard_close_hour,
+                variable_spread=variable_spread,
+                session_spread_multipliers=session_spread_multipliers,
+                min_hold_minutes=min_hold_minutes,
+                cooldown_candles=cooldown_candles,
+                slippage_pips=slippage_pips,
             )
         except Exception as e:
             out_trades = []
@@ -1291,6 +1319,14 @@ def slippage_stress_test(
     filters=None,
     leverage=0,
     contract_size=100.0,
+    # WHY: Per-firm parity. slippage_pips excluded — it's the test variable.
+    # CHANGED: April 2026 — per-firm parity in slippage stress test
+    max_spread_pips=0.0,
+    hard_close_hour=-1,
+    variable_spread=False,
+    session_spread_multipliers=None,
+    min_hold_minutes=0,
+    cooldown_candles=0,
 ):
     """
     Re-run the backtest at increasing slippage levels to find where the
@@ -1350,6 +1386,14 @@ def slippage_stress_test(
                     # WHY: Pass data_dir so tick/M1 resolution matches main backtest.
                     # CHANGED: April 2026 — tick/M1 parity in slippage stress test
                     data_dir=_ss_data_dir,
+                    # WHY: Per-firm parity. slippage_pips is the test variable above.
+                    # CHANGED: April 2026 — per-firm parity in slippage stress test
+                    max_spread_pips=max_spread_pips,
+                    hard_close_hour=hard_close_hour,
+                    variable_spread=variable_spread,
+                    session_spread_multipliers=session_spread_multipliers,
+                    min_hold_minutes=min_hold_minutes,
+                    cooldown_candles=cooldown_candles,
                 )
                 # Apply filters if provided (max_trades_per_day, sessions, etc.)
                 if filters and run_trades:

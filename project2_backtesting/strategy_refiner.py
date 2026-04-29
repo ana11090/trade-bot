@@ -1985,6 +1985,16 @@ def deep_optimize_generate(
     risk_per_trade_pct=1.0,
     dd_daily_limit=5.0,
     dd_total_limit=10.0,
+    # WHY: Per-firm cost/exit parity with Run Backtest. Forwarded to
+    #      fast_backtest. Defaults preserve pre-prompt behaviour.
+    # CHANGED: April 2026 — per-firm parity in deep optimizer
+    max_spread_pips=0.0,
+    hard_close_hour=-1,
+    variable_spread=False,
+    session_spread_multipliers=None,
+    min_hold_minutes=0,
+    cooldown_candles=0,
+    slippage_pips=0.0,
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -2295,6 +2305,15 @@ def deep_optimize_generate(
                 #      data_dir is captured from the enclosing function scope.
                 # CHANGED: April 2026 — tick/M1 parity in deep optimizer
                 data_dir=data_dir,
+                # WHY: Per-firm parity — same cost/exit model as Run Backtest.
+                # CHANGED: April 2026 — per-firm parity in deep optimizer
+                max_spread_pips=max_spread_pips,
+                hard_close_hour=hard_close_hour,
+                variable_spread=variable_spread,
+                session_spread_multipliers=session_spread_multipliers,
+                min_hold_minutes=min_hold_minutes,
+                cooldown_candles=cooldown_candles,
+                slippage_pips=slippage_pips,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,

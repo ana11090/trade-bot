@@ -2883,6 +2883,25 @@ def _run(mode, override_idx=None, done_event=None):
             pass
         if _val_min_hold > 0:
             print(f"[VALIDATOR] Min hold from firm: {_val_min_hold}min")
+
+        # WHY: Per-firm cost/exit parity with Run Backtest.
+        # CHANGED: April 2026 — per-firm parity in validator
+        from shared.firm_settings_resolver import resolve_firm_settings
+        _val_firm_name = _val_run_settings.get('firm_name', '')
+        _val_symbol = _val_run_settings.get('symbol', 'XAUUSD')
+        _val_firm_settings = resolve_firm_settings(
+            _val_firm_name, _val_symbol, use_config=True
+        )
+        if _val_firm_settings['min_hold_minutes'] != _val_min_hold:
+            print(f"[VALIDATOR] Min hold reconciled: {_val_min_hold} → "
+                  f"{_val_firm_settings['min_hold_minutes']}")
+            _val_min_hold = _val_firm_settings['min_hold_minutes']
+        if _val_firm_settings['firm_resolved']:
+            print(f"[VALIDATOR] Per-firm settings: {_val_firm_name} / {_val_symbol} | "
+                  f"max_spread={_val_firm_settings['max_spread_pips']:.1f} | "
+                  f"hard_close={_val_firm_settings['hard_close_hour']}h | "
+                  f"variable_spread={_val_firm_settings['variable_spread']}")
+
         # WHY: Read pip_value from strategy's run_settings first, then UI, then default.
         #      Strategy carries its own broker specs (single source of truth).
         # CHANGED: April 2026 — rule-driven pip_value (BUG 5 fix)
@@ -3025,6 +3044,15 @@ def _run(mode, override_idx=None, done_event=None):
                     direction=strategy_direction,
                     leverage=_val_leverage,
                     contract_size=_val_contract,
+                    # WHY: Per-firm parity from _val_firm_settings resolved above.
+                    # CHANGED: April 2026 — per-firm parity in walk-forward
+                    max_spread_pips=_val_firm_settings['max_spread_pips'],
+                    hard_close_hour=_val_firm_settings['hard_close_hour'],
+                    variable_spread=_val_firm_settings['variable_spread'],
+                    session_spread_multipliers=_val_firm_settings['session_spread_multipliers'],
+                    min_hold_minutes=_val_firm_settings['min_hold_minutes'],
+                    cooldown_candles=_val_firm_settings['cooldown_candles'],
+                    slippage_pips=_val_firm_settings['slippage_pips'],
                 )
                 state.window.after(0, lambda r=wf_result: _display_wf_results(r))
 
@@ -3088,6 +3116,14 @@ def _run(mode, override_idx=None, done_event=None):
                     filters=strategy_filters,
                     leverage=_val_leverage,
                     contract_size=_val_contract,
+                    # WHY: Per-firm parity. slippage_pips is the test variable.
+                    # CHANGED: April 2026 — per-firm parity in slippage stress
+                    max_spread_pips=_val_firm_settings['max_spread_pips'],
+                    hard_close_hour=_val_firm_settings['hard_close_hour'],
+                    variable_spread=_val_firm_settings['variable_spread'],
+                    session_spread_multipliers=_val_firm_settings['session_spread_multipliers'],
+                    min_hold_minutes=_val_firm_settings['min_hold_minutes'],
+                    cooldown_candles=_val_firm_settings['cooldown_candles'],
                 )
                 state.window.after(0, lambda r=slip_result: _display_slip_results(r))
 
