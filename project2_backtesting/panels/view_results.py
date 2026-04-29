@@ -906,8 +906,22 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                         _target_exit = result_row.get('exit_strategy',
                                                         result_row.get('exit_name', ''))
 
-                                        # Try direct index first (works for single-TF runs)
-                                        _str_idx = str(result_idx)
+                                        # WHY: Use the persisted _trades_key if present —
+                                        #      it's the original write-order index from
+                                        #      strategy_backtester.py:3607 and survives any
+                                        #      sort/filter applied by the panel. Falls back
+                                        #      to result_idx (sorted-view position) only for
+                                        #      old matrix files written before _trades_key
+                                        #      was added. Without this, the default sort by
+                                        #      net_pips makes _a47_tf_idx point at the wrong
+                                        #      combo's trades — displayed count and downloaded
+                                        #      CSV count then disagree.
+                                        # CHANGED: April 2026 — use _trades_key for export lookup
+                                        _persisted_key = result_row.get('_trades_key')
+                                        if _persisted_key is not None:
+                                            _str_idx = str(_persisted_key)
+                                        else:
+                                            _str_idx = str(result_idx)
                                         if _str_idx in _all_trades:
                                             _trades = _all_trades[_str_idx]
                                         else:
