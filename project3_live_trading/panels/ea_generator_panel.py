@@ -79,6 +79,7 @@ _symbol_var       = None
 _magic_var        = None
 _risk_var         = None
 _spread_var       = None
+_hard_close_var   = None
 _cooldown_var     = None
 _news_cb_var      = None
 _news_min_var     = None
@@ -1105,7 +1106,26 @@ def _generate():
             cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 0,
             min_hold_minutes=_auto_min_hold[0],
             news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 0,
-            max_spread_pips=float(_spread_var.get()) if _spread_var else 5.0,
+            # WHY: Per-firm spread filter. Order of precedence:
+            #      1. firm_data.instrument_specs[symbol].max_spread_pips_filter
+            #      2. panel field value (user override or fallback default)
+            # CHANGED: April 2026 — per-firm spread filter via firm JSON
+            max_spread_pips=(
+                float(firm_data.get('instrument_specs', {})
+                              .get(_symbol_var.get() if _symbol_var else 'XAUUSD', {})
+                              .get('max_spread_pips_filter') or 0)
+                or (float(_spread_var.get()) if _spread_var and _spread_var.get().strip() else 65.0)
+            ),
+            # WHY: Per-firm hard close hour. Order of precedence:
+            #      1. firm_data.hard_close_hour_gmt
+            #      2. panel field value (user override or fallback default)
+            #      -1 disables.
+            # CHANGED: April 2026 — parity with Python hard_close_hour
+            hard_close_hour=(
+                int(firm_data['hard_close_hour_gmt'])
+                if 'hard_close_hour_gmt' in firm_data
+                else (int(_hard_close_var.get()) if _hard_close_var and _hard_close_var.get().strip() else 23)
+            ),
             direction=_strat_direction,
             # WHY: Leverage from strategy rule, not firm dropdown.
             #      Rule was backtested at this leverage — EA must match.
@@ -1120,6 +1140,19 @@ def _generate():
                 0
             ),
         )
+        # WHY: Show which firm/panel value resolved for spread and hard close.
+        # CHANGED: April 2026 — visibility for per-firm resolution
+        try:
+            _res_sym = _symbol_var.get() if _symbol_var else 'XAUUSD'
+            _res_spread = firm_data.get('instrument_specs', {}).get(_res_sym, {}).get('max_spread_pips_filter')
+            _res_hc = firm_data.get('hard_close_hour_gmt')
+            print(f"[EA_GEN] Spread filter: "
+                  f"{_res_spread if _res_spread else (_spread_var.get() if _spread_var else '65')} pips "
+                  f"({'firm' if _res_spread else 'panel'}) | "
+                  f"Hard close: {_res_hc if _res_hc is not None else (_hard_close_var.get() if _hard_close_var else '23')}h GMT "
+                  f"({'firm' if _res_hc is not None else 'panel'})")
+        except Exception:
+            pass
     except Exception as e:
         import traceback; traceback.print_exc()
         messagebox.showerror("Generation Error", str(e))
@@ -1211,7 +1244,7 @@ def _copy_to_clipboard():
 def build_panel(parent):
     global _strategy_var, _strat_info_lbl, _badge_lbl, _scroll_canvas
     global _platform_var, _code_text, _generate_btn, _status_lbl
-    global _symbol_var, _magic_var, _risk_var, _spread_var, _cooldown_var
+    global _symbol_var, _magic_var, _risk_var, _spread_var, _hard_close_var, _cooldown_var
     global _news_cb_var, _news_min_var, _firm_var, _ea_stage_var, _ea_challenge_var
     global _ea_account_var, _rules_info_lbl, _dd_info_lbl
     global _daily_dd_var, _total_dd_var, _safety_var, _consistency_var, _max_day_var
@@ -1902,7 +1935,16 @@ def build_panel(parent):
     _symbol_var   = _field(tr_frame, "Symbol:", "XAUUSD", 10)
     _magic_var    = _field(tr_frame, "Magic number:", "12345", 8)
     _risk_var     = _field(tr_frame, "Risk per trade %:", "1.0", 6)
-    _spread_var   = _field(tr_frame, "Max spread (pips):", "5.0", 6)
+    # WHY: Default 5.0 blocked every bar on Get Leveraged. Per-firm value
+    #      from prop_firms/<firm>.json instrument_specs[symbol].max_spread_pips_filter
+    #      overrides at generation time when present. 65 = safe fallback.
+    # CHANGED: April 2026 — per-firm spread filter via firm JSON
+    _spread_var   = _field(tr_frame, "Max spread (pips, firm overrides):", "65.0", 6)
+    # WHY: Force-close hour for parity with Python hard_close_hour.
+    #      Per-firm value from prop_firms/<firm>.json hard_close_hour_gmt
+    #      overrides at generation time. -1 disables. 23 matches Python config.
+    # CHANGED: April 2026 — parity with Python hard_close_hour
+    _hard_close_var = _field(tr_frame, "Hard close hour (GMT, firm overrides, -1=off):", "23", 6)
     # WHY: Cooldown was 60 by default but the backtest doesn't test with
     #      any cooldown. Adding one in the EA = fewer trades than backtest
     #      showed = untested behavior. Default to 0 to match backtest.

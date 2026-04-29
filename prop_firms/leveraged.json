@@ -2,6 +2,8 @@
   "firm_id": "leveraged",
   "firm_name": "Get Leveraged",
   "website": "https://getleveraged.com",
+  "hard_close_hour_gmt": 23,
+  "hard_close_hour_source": "Force-close all positions at this GMT hour daily. Matches Python backtest_config.json hard_close_hour=23. Set to -1 to disable. Independent of drawdown_mechanics.daily_dd.reset_time.",
   "market_type": "forex_cfd",
   "leverage": "1:30",
   "leverage_by_instrument": {
@@ -25,6 +27,8 @@
         "late":    1.05,
         "default": 1.00
       },
+      "max_spread_pips_filter": 65,
+      "max_spread_pips_filter_source": "Observed max spread in MT5 journal log (9,125 [SKIP] events): 61 pips. 65 = max + 4 pip margin so the EA spread filter rarely fires on normal bars.",
       "commission_per_lot": 4.0,
       "commission_basis": "round_turn",
       "contract_size": 100,

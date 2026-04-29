@@ -54,7 +54,18 @@ def generate_ea(
     min_hold_minutes=0,
     cooldown_minutes=0,
     news_filter_minutes=0,
-    max_spread_pips=5.0,
+    # WHY: Default 5.0 blocked every bar on Get Leveraged (real spread 31-61 pips).
+    #      Panel reads firm-specific value from prop_firms/<firm>.json
+    #      instrument_specs[symbol].max_spread_pips_filter when present;
+    #      65.0 is the function-level fallback for firms without measured data.
+    # CHANGED: April 2026 — per-firm spread filter via firm JSON
+    max_spread_pips=65.0,
+    # WHY: Force-close positions at this GMT hour, matching Python's
+    #      hard_close_hour (strategy_backtester.py:1748-1754). Per-firm
+    #      value lives in prop_firms/<firm>.json hard_close_hour_gmt.
+    #      -1 disables. Panel passes firm value or defaults to 23.
+    # CHANGED: April 2026 — parity with Python hard_close_hour
+    hard_close_hour=23,
     trailing_stop=None,
     output_path=None,
     direction=None,  # NEW: 'BUY' or 'SELL' — if None, read from strategy dict
@@ -223,6 +234,7 @@ def generate_ea(
             cooldown_minutes=cooldown_minutes,
             news_filter_minutes=news_filter_minutes,
             max_spread_pips=max_spread_pips,
+            hard_close_hour=hard_close_hour,
             dd_daily_pct=dd_daily_pct,
             dd_total_pct=dd_total_pct,
             dd_safety_pct=dd_safety_pct,
@@ -256,6 +268,7 @@ def generate_ea(
             cooldown_minutes=cooldown_minutes,
             news_filter_minutes=news_filter_minutes,
             max_spread_pips=max_spread_pips,
+            hard_close_hour=hard_close_hour,
             dd_daily_pct=dd_daily_pct,
             dd_total_pct=dd_total_pct,
             dd_safety_pct=dd_safety_pct,
@@ -1904,7 +1917,7 @@ bool IsMinHoldMet()
         _vr.append("")
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
-    _vr.append(f"  Max spread: {max_spread_pips} pips  |  News: {news_filter_minutes}min")
+    _vr.append(f"  Max spread: {max_spread_pips} pips  |  Hard close: {hard_close_hour}h GMT  |  News: {news_filter_minutes}min")
     _vr.append("")
     _vr.append(f"SETTINGS: {symbol}, Risk {risk_per_trade_pct}%, Account ${account_size:,.0f}, Magic {magic_number}")
     _vr.append(f"  Firm: {prop_firm_name} ({stage}), DD: {dd_daily_pct}%/{dd_total_pct}%")
@@ -2084,6 +2097,7 @@ input int    Leverage           = {leverage};                // Account leverage
 input int    MaxTradesPerDay    = {max_trades_per_day};      // Max trades per day
 input int    MagicNumber        = {magic_number};            // Magic number
 input double MaxSpreadPips      = {max_spread_pips};         // Max spread to allow entry
+input int    HardCloseHourGMT   = {hard_close_hour};         // Force-close all positions at this GMT hour daily (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
 input bool   UseNewsFilter      = {'true' if news_filter_minutes > 0 else 'false'};  // Skip trading around news
@@ -2230,6 +2244,30 @@ void OnTick()
       g_dailyResetDone = false;   // re-arm for next day
 
    if(g_stopForDay) return;
+
+   // WHY: Hard close hour — force-close all our positions when GMT hour
+   //      matches HardCloseHourGMT. Mirrors Python's hard_close_hour
+   //      (strategy_backtester.py:1748-1754) which closes all open
+   //      positions when candle.hour == hard_close_hour. Without this,
+   //      the EA holds across the boundary while Python closes — known
+   //      ~5% trade-count divergence on tested rules. Value is per-firm
+   //      from prop_firms/<firm>.json; -1 disables (live overnight holds).
+   // CHANGED: April 2026 — parity with Python hard_close_hour
+   if(HardCloseHourGMT >= 0 && _now_gmt.hour == HardCloseHourGMT)
+   {{
+      for(int _hci = PositionsTotal() - 1; _hci >= 0; _hci--)
+      {{
+         ulong _hc_ticket = PositionGetTicket(_hci);
+         if(_hc_ticket > 0
+            && PositionGetInteger(POSITION_MAGIC) == MagicNumber
+            && PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {{
+            trade.PositionClose(_hc_ticket);
+            Print("[HARD_CLOSE_HOUR] Closed ticket=", _hc_ticket,
+                  " at hour=", _now_gmt.hour, " GMT");
+         }}
+      }}
+   }}
 
    // WHY: Trailing stop must be checked every tick, not just on new bars.
    //      Price can hit the trail level between bars.
