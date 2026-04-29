@@ -410,14 +410,17 @@ INDICATOR_PATTERNS = [
         #      iClose(tf, 1) to match. Same for iHigh/iLow shifts.
         # CHANGED: April 2026 — fix current-bar look-ahead (audit HIGH #29)
         # WHY: Old template declared val_{var} inside else{} (scope bug).
-        # CHANGED: April 2026 — fix ema_distance scope bug
+        #      Also renamed _tmp_buf/_ema_val/_close to include {var} suffix
+        #      so two ema_distance conditions in the same rule don't clash
+        #      on the intermediate variable names.
+        # CHANGED: April 2026 — fix ema_distance scope bug + variable clash
         "mt5_buffer_read": (
             "double val_{var} = 0.0; "
-            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
-            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; } "
-            "else { double _ema_val_{tf}_{p} = _tmp_buf; "
-            "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
-            "val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
+            "double _tb_{var} = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
+            "if(_tb_{var} == EMPTY_VALUE) { indicatorFailed = true; } "
+            "else { double _ev_{var} = _tb_{var}; "
+            "double _cl_{var} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
+            "val_{var} = (_cl_{var} > 0) ? (_cl_{var} - _ev_{var}) / _cl_{var} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
         "custom_indicator_mt5": False,
@@ -427,15 +430,15 @@ INDICATOR_PATTERNS = [
     (r"^mt5_ema_(\d+)_distance$", {
         "mt5_handle_var":  "int handle_ema_{tf}_{p};",
         "mt5_handle_init": "handle_ema_{tf}_{p} = iMA(NULL,{mt5_tf},{p},0,MODE_EMA,PRICE_CLOSE); if(handle_ema_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        # WHY: Same scope fix as ema_N_distance above.
-        # CHANGED: April 2026 — fix mt5_ema_distance scope bug
+        # WHY: Same scope fix as ema_N_distance above, plus var-suffix fix.
+        # CHANGED: April 2026 — fix mt5_ema_distance scope bug + variable clash
         "mt5_buffer_read": (
             "double val_{var} = 0.0; "
-            "double _tmp_buf = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
-            "if(_tmp_buf == EMPTY_VALUE) { indicatorFailed = true; } "
-            "else { double _ema_val_{tf}_{p} = _tmp_buf; "
-            "double _close_{tf} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
-            "val_{var} = (_close_{tf} > 0) ? (_close_{tf} - _ema_val_{tf}_{p}) / _close_{tf} * 100.0 : 0.0; }"
+            "double _tb_{var} = SafeCopyBuf(handle_ema_{tf}_{p}, 0, {mt5_tf}); "
+            "if(_tb_{var} == EMPTY_VALUE) { indicatorFailed = true; } "
+            "else { double _ev_{var} = _tb_{var}; "
+            "double _cl_{var} = iClose(NULL,{mt5_tf},GetBarShift({mt5_tf})); "
+            "val_{var} = (_cl_{var} > 0) ? (_cl_{var} - _ev_{var}) / _cl_{var} * 100.0 : 0.0; }"
         ),
         "tradovate_code":  "(df_m{tv_tf}['close'].iloc[-1] - ta.ema(df_m{tv_tf}['close'], length={p}).iloc[-1]) / df_m{tv_tf}['close'].iloc[-1] * 100",
         "custom_indicator_mt5": False,

@@ -2154,7 +2154,7 @@ int OnInit()
                    "entry_price","exit_price","net_pips","exit_reason",
                    "entry_time","exit_time","skip_reason");
          Print("[EA] Trade log opened (FILE_COMMON): ", LogFilePath,
-               "  path: Terminal\\Common\\Files\\", LogFilePath);
+               "  (location: Terminal/Common/Files/)");
       }}
       else
       {{
