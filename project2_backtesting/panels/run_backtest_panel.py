@@ -835,6 +835,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: April 2026 — per-firm asymmetric swap
             _cfg_swap_long  = 0.0
             _cfg_swap_short = 0.0
+            # WHY: Per-firm session spread multipliers from prop_firms/<firm>.json.
+            #      None = use module default (_SESSION_SPREAD_MULTIPLIERS).
+            # CHANGED: April 2026 — per-firm spread calibration
+            _cfg_session_spread_multipliers = None
 
             if _a48_use_cfg:
                 try:
@@ -1028,6 +1032,17 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _sym_spec = _pf_data.get('instrument_specs', {}).get(_sym_up, {})
                                     _cfg_swap_long  = float(_sym_spec.get('swap_long_pips_per_night', 0) or 0)
                                     _cfg_swap_short = float(_sym_spec.get('swap_short_pips_per_night', 0) or 0)
+                                    # WHY: Per-firm spread profile: base (typical_spread) and
+                                    #      session multipliers. Override saved-config spread when
+                                    #      the firm JSON has measured data. Multipliers are None
+                                    #      when not present → module-level fallback fires.
+                                    # CHANGED: April 2026 — per-firm spread calibration
+                                    _firm_typical_spread = _sym_spec.get('typical_spread')
+                                    if _firm_typical_spread is not None:
+                                        _cfg_spread = float(_firm_typical_spread)
+                                    _firm_spread_mults = _sym_spec.get('spread_session_multipliers')
+                                    if isinstance(_firm_spread_mults, dict):
+                                        _cfg_session_spread_multipliers = _firm_spread_mults
                                     _swap_loaded = True
                                     break
                             except Exception:
@@ -1036,6 +1051,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             print(f"[BACKTEST] Swap rates: long={_cfg_swap_long:+.2f}, "
                                   f"short={_cfg_swap_short:+.2f} pips/night "
                                   f"({_firm_display} / {_cfg_symbol})")
+                        # WHY: Show spread profile being applied.
+                        # CHANGED: April 2026 — per-firm spread calibration diagnostic
+                        if _swap_loaded and (_firm_typical_spread is not None
+                                             or _cfg_session_spread_multipliers is not None):
+                            _mults_str = " + session multipliers" if _cfg_session_spread_multipliers else ""
+                            print(f"[BACKTEST] Spread profile: base={_cfg_spread:.1f} pips "
+                                  f"({_firm_display} / {_cfg_symbol}){_mults_str}")
                         elif not _swap_loaded:
                             print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
                     except Exception as _swap_e:
@@ -1265,6 +1287,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — asymmetric swap
                         swap_long_pips_per_night=_cfg_swap_long if _a48_use_cfg else 0.0,
                         swap_short_pips_per_night=_cfg_swap_short if _a48_use_cfg else 0.0,
+                        # WHY: Per-firm session spread multipliers — None = use module default.
+                        # CHANGED: April 2026 — per-firm spread calibration
+                        session_spread_multipliers=_cfg_session_spread_multipliers if _a48_use_cfg else None,
                         # WHY: Min hold gates management exits — matches EA MinHoldMinutes.
                         # CHANGED: April 2026 — min hold parity with MT5 EA
                         min_hold_minutes=_cfg_min_hold if _a48_use_cfg else 0,

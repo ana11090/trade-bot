@@ -48,38 +48,48 @@ import threading as _bt_threading
 # CHANGED: April 2026 — graceful stop
 _stop_requested = _bt_threading.Event()
 
-# WHY: Real broker spreads vary by session. Fixed spread overestimates
-#      London/NY entries (real spread ~15-20) and underestimates Asian
-#      entries (real spread ~40-60). Session-based spread models this
-#      without needing tick-level data.
+# WHY: Fallback spread multipliers used when no per-firm dict is loaded.
+#      Models a generic tight-spread broker (London tighter, Asian wider).
+#      Per-firm calibrated multipliers live in prop_firms/<firm>.json under
+#      instrument_specs.<symbol>.spread_session_multipliers and are passed
+#      through run_comparison_matrix → _get_session_spread(multipliers=...).
 #      When variable_spread=False, returns the fixed spread (backward compat).
 # CHANGED: April 2026 — session-based variable spread model
+# CHANGED: April 2026 — per-firm spread calibration via firm JSON override
 _SESSION_SPREAD_MULTIPLIERS = {
-    'london':  0.8,    # 25 × 0.8 = 20 pips
-    'ny':      0.9,    # 25 × 0.9 = 22.5 pips
-    'asian':   1.6,    # 25 × 1.6 = 40 pips
-    'late':    2.0,    # 25 × 2.0 = 50 pips
+    'london':  0.8,    # generic tight broker — 25 × 0.8 = 20 pips
+    'ny':      0.9,    # generic tight broker — 25 × 0.9 = 22.5 pips
+    'asian':   1.6,    # generic tight broker — 25 × 1.6 = 40 pips
+    'late':    2.0,    # generic tight broker — 25 × 2.0 = 50 pips
     'default': 1.0,    # fallback = base spread
 }
 
-def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=False):
+def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=False,
+                        multipliers=None):
     """Return spread in pips for this candle's session.
 
     When variable_spread=False, returns base_spread_pips unchanged.
     When True, applies session multiplier based on UTC hour.
+
+    multipliers: optional per-firm dict with keys 'london', 'ny', 'asian',
+                 'late'. When None, falls back to _SESSION_SPREAD_MULTIPLIERS.
     """
     if not variable_spread:
         return base_spread_pips
+    # WHY: Per-firm multipliers from prop_firms/<firm>.json. None = fallback
+    #      to the generic module-level dict. Missing keys also fall back.
+    # CHANGED: April 2026 — per-firm spread profile override
+    _mults = multipliers if isinstance(multipliers, dict) else _SESSION_SPREAD_MULTIPLIERS
     try:
         hour = pd.Timestamp(candle_timestamp).hour
         if 0 <= hour <= 6:
-            mult = _SESSION_SPREAD_MULTIPLIERS['asian']
+            mult = _mults.get('asian', _SESSION_SPREAD_MULTIPLIERS['asian'])
         elif 7 <= hour <= 11:
-            mult = _SESSION_SPREAD_MULTIPLIERS['london']
+            mult = _mults.get('london', _SESSION_SPREAD_MULTIPLIERS['london'])
         elif 12 <= hour <= 20:
-            mult = _SESSION_SPREAD_MULTIPLIERS['ny']
+            mult = _mults.get('ny', _SESSION_SPREAD_MULTIPLIERS['ny'])
         else:
-            mult = _SESSION_SPREAD_MULTIPLIERS['late']
+            mult = _mults.get('late', _SESSION_SPREAD_MULTIPLIERS['late'])
         return round(base_spread_pips * mult, 1)
     except Exception:
         return base_spread_pips
@@ -794,7 +804,10 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   #      paths use the same uniform distribution and are
                                   #      comparable on equal seeds. None = unseeded.
                                   # CHANGED: April 2026 — slippage symmetry fix
-                                  slippage_seed=None):
+                                  slippage_seed=None,
+                                  # WHY: Per-firm session spread multipliers. None = module default.
+                                  # CHANGED: April 2026 — per-firm spread calibration
+                                  session_spread_multipliers=None):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -922,7 +935,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # CHANGED: April 2026 — max spread filter in vectorized path
         if max_spread_pips > 0 and variable_spread:
             _entry_spread = _get_session_spread(
-                all_times[entry_pos + 1], spread_pips, variable_spread
+                all_times[entry_pos + 1], spread_pips, variable_spread,
+                multipliers=session_spread_multipliers,
             )
             if _entry_spread > max_spread_pips:
                 continue
@@ -1240,6 +1254,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # CHANGED: April 2026 — session-based variable spread model
                  variable_spread=False,
                  max_spread_pips=0,
+                 # WHY: Per-firm session spread multipliers. None = module default.
+                 # CHANGED: April 2026 — per-firm spread calibration
+                 session_spread_multipliers=None,
                  # WHY: data_dir path lets the exit strategy resolve intra-candle
                  #      ambiguity using tick data when available. None = disabled.
                  # CHANGED: April 2026 — tick data for exit ambiguity resolution
@@ -1556,6 +1573,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             compound_equity=compound_equity,
             variable_spread=variable_spread,
             max_spread_pips=max_spread_pips,
+            session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
         )
 
@@ -1650,7 +1668,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         #      Asian session spread is 1.5-2x wider than London.
         # CHANGED: April 2026 — variable spread model
         _trade_spread = _get_session_spread(
-            next_candle["timestamp"], spread_pips, variable_spread
+            next_candle["timestamp"], spread_pips, variable_spread,
+            multipliers=session_spread_multipliers,
         )
 
         # WHY: MaxSpreadPips filter — skip entry when spread is too wide.
@@ -1970,6 +1989,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # CHANGED: April 2026 — session-based variable spread model
                   variable_spread=False,
                   max_spread_pips=0,
+                  # WHY: Per-firm session spread multipliers. None = module default.
+                  # CHANGED: April 2026 — per-firm spread calibration
+                  session_spread_multipliers=None,
                   # WHY: data_dir for tick-aware exit ambiguity resolution.
                   # CHANGED: April 2026 — tick data for exit ambiguity resolution
                   data_dir=None,
@@ -2185,6 +2207,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             compound_equity=compound_equity,
             variable_spread=variable_spread,
             max_spread_pips=max_spread_pips,
+            session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
         )
 
@@ -2842,6 +2865,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # CHANGED: April 2026 — session-based variable spread model
                           variable_spread=False,
                           max_spread_pips=0,
+                          # WHY: Per-firm session spread multipliers. None = module default.
+                          # CHANGED: April 2026 — per-firm spread calibration
+                          session_spread_multipliers=None,
                           # WHY: Per-firm asymmetric swap rates. Passed through to
                           #      fast_backtest. Default 0 = no swap modeled
                           #      (backward compat when no firm is selected).
@@ -3318,6 +3344,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # CHANGED: April 2026 — session-based variable spread model
                 variable_spread=variable_spread,
                 max_spread_pips=max_spread_pips,
+                # WHY: Per-firm spread profile from matrix config.
+                # CHANGED: April 2026 — per-firm spread calibration
+                session_spread_multipliers=session_spread_multipliers,
                 # WHY: data_dir enables tick-aware exit ambiguity resolution.
                 #      Already derived from candles_path above.
                 # CHANGED: April 2026 — tick data for exit ambiguity resolution

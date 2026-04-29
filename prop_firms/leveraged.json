@@ -16,7 +16,15 @@
     "XAUUSD": {
       "pip_value_per_lot": 1.0,
       "pip_size": 0.01,
-      "typical_spread": 25,
+      "typical_spread": 37,
+      "spread_source": "Calibrated April 2026 from 23.7M ticks of bid+ask data (5 months). Per-session medians: london=37, ny=36, asian=40, late=39 pips. Overall median=37 pips. Old value (25) was an unmeasured guess.",
+      "spread_session_multipliers": {
+        "london":  1.00,
+        "ny":      0.97,
+        "asian":   1.08,
+        "late":    1.05,
+        "default": 1.00
+      },
       "commission_per_lot": 4.0,
       "commission_basis": "round_turn",
       "contract_size": 100,
