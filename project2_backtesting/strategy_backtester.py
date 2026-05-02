@@ -3586,6 +3586,63 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     unique_tfs = sorted(set(r.get('entry_tf', timeframe) for r in summary))
     top_level_tf = 'multi' if len(unique_tfs) > 1 else (unique_tfs[0] if unique_tfs else timeframe)
 
+    # ── Save each rule × exit combo as its own JSON file ──────────────────
+    # WHY: backtest_matrix.json is a single ~1.6 MB git-lfs blob containing
+    #      every combo from the run, which makes diffing one strategy or
+    #      git-adding "just rule #94" effectively impossible. Per-rule
+    #      files mirror the #NN index the Refiner panel shows, are small
+    #      enough to read in a normal editor, and let the user push the
+    #      exact strategies they want shared without dragging the whole
+    #      matrix along.
+    # CHANGED: April 2026 — per-rule file dump
+    _rules_dir = os.path.join(output_dir, 'rules')
+    try:
+        os.makedirs(_rules_dir, exist_ok=True)
+        # Wipe stale per-rule files from previous runs so the folder
+        # always reflects the most recent backtest. The matrix file
+        # itself is the long-term ledger; per-rule files are per-run.
+        for _stale in os.listdir(_rules_dir):
+            if _stale.startswith('rule_') and _stale.endswith('.json'):
+                try:
+                    os.remove(os.path.join(_rules_dir, _stale))
+                except Exception:
+                    # Per-row resilience: a single failed delete must not
+                    # abort the run. Worst case the user sees one stale
+                    # file on next git status.
+                    pass
+    except Exception as _mk_e:
+        log.warning(f"Could not prepare rules dir {_rules_dir}: {_mk_e}")
+        _rules_dir = None
+
+    if _rules_dir:
+        _written = 0
+        for _row in summary:
+            try:
+                _rc = str(_row.get('rule_combo', ''))
+                if not _rc:
+                    continue
+                # Filename: turn '#94_BUY_H1_3c_ae9f_Time_Base_dc5a' into
+                #           'rule_94_BUY_H1_3c_ae9f_Time_Base_dc5a.json'.
+                # Strip leading '#', replace any remaining filesystem-
+                # hostile characters defensively.
+                _safe = _rc.lstrip('#')
+                for _ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+                    _safe = _safe.replace(_ch, '_')
+                _fname = f"rule_{_safe}.json"
+                _fpath = os.path.join(_rules_dir, _fname)
+                # WHY: Write the FULL row (including trades) so each
+                #      file is a self-contained record. backtest_matrix.json
+                #      will later strip trades for size; per-rule files
+                #      keep them for review.
+                with open(_fpath, 'w', encoding='utf-8') as _f_per:
+                    json.dump(_row, _f_per, indent=2, default=str)
+                _written += 1
+            except Exception as _row_e:
+                # Per-row try/except: one bad row never aborts the whole save.
+                log.warning(f"Could not save per-rule file for "
+                            f"{_row.get('rule_combo', '?')}: {_row_e}")
+        log.info(f"Saved {_written} per-rule files to {_rules_dir}")
+
     # ── Phase A.48: Save trades to separate file, strip from main JSON ──
     # WHY (Phase A.48): Storing full trade lists inside backtest_matrix.json
     #      caused 3-4 GB JSON files and out-of-memory crashes on multi-TF
