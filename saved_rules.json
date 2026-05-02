@@ -1419,5 +1419,165 @@
       "spread_pips": 2.5
     },
     "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 34,
+    "rule_id": "_H1_3c_0502_fa088431",
+    "saved_at": "2026-05-02T19:34:31.019311",
+    "source": "Backtest Result",
+    "notes": "94",
+    "rule": {
+      "rule_combo": "#11_BUY_H1_3c_ae9f_Time_Based_dc5a",
+      "exit_strategy": "SL 150 pips, close after 12 candles",
+      "exit_name": "Time-Based",
+      "exit_params": {
+        "sl_pips": 150,
+        "max_candles": 12
+      },
+      "prediction": "WIN",
+      "win_rate": 21.4,
+      "net_total_pips": 13876.0,
+      "net_profit_factor": 2.22,
+      "total_trades": 14,
+      "max_dd_pips": 10030.0,
+      "entry_timeframe": "H1",
+      "rules": [
+        {
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": "<=",
+              "value": -152.2146
+            }
+          ],
+          "prediction": "WIN",
+          "confidence": 0.667,
+          "coverage": 21,
+          "coverage_pct": 7.5,
+          "win_rate": 0.667,
+          "avg_pips": 418.1,
+          "action": "BUY",
+          "direction": "BUY",
+          "entry_timeframe": "H1",
+          "entry_tf": "H1",
+          "rule_combo": "Rule 7 (BUY)",
+          "scenario": "outputs",
+          "spread_pips": 2.5,
+          "commission_pips": 0.0,
+          "discovery_settings": {
+            "regime_filter_enabled": true,
+            "regime_at_discovery": true,
+            "regime_strictness": "conservative",
+            "regime_mode": "automatic"
+          },
+          "rules": [
+            {
+              "prediction": "WIN",
+              "action": "BUY",
+              "conditions": [
+                {
+                  "feature": "H1_candle_body",
+                  "operator": ">",
+                  "value": 14.94
+                },
+                {
+                  "feature": "M15_plus_di",
+                  "operator": "<=",
+                  "value": 24.3427
+                },
+                {
+                  "feature": "M15_cci_50",
+                  "operator": "<=",
+                  "value": -152.2146
+                }
+              ]
+            }
+          ],
+          "regime_filter": [
+            {
+              "feature": "H1_std_dev_20",
+              "direction": ">",
+              "threshold": 17.741695
+            }
+          ],
+          "saved_at": "2026-04-19T11:56:22.134661",
+          "data_source_id": "unlimited_leveraged_data",
+          "_a46_source_tag": "Saved"
+        }
+      ],
+      "rule_indices": [
+        10
+      ],
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": "<=",
+          "value": -152.2146
+        }
+      ],
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "direction": "BUY",
+      "run_settings": {
+        "rule_source": "\ud83d\udce6 All Sources Combined (3 sources)",
+        "multi_tf": true,
+        "combine_all_rules": false,
+        "use_config": true,
+        "safety_stops": true,
+        "regime_filter_enabled": false,
+        "regime_filter_conditions": [],
+        "td_filter_enabled": true,
+        "td_weight_enabled": true,
+        "stability_gate_enabled": false,
+        "max_one_trade": true,
+        "same_candle_sl": "LOSS",
+        "risk_pct": 0.3,
+        "starting_capital": 10000.0,
+        "leverage": 10,
+        "contract_size": 100.0,
+        "firm_id": "leveraged",
+        "firm_name": "Get Leveraged",
+        "data_source_id": "unlimited_leveraged_data",
+        "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      },
+      "risk_pct": 0.3,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "signals_before_regime_filter": 21,
+      "signals_after_regime_filter": 21,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "firm_id": "leveraged",
+      "firm_name": "Get Leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "pip_value_per_lot": 1.0,
+      "risk_pct_firm": 0,
+      "dd_daily_pct": 0,
+      "dd_total_pct": 0,
+      "account_size": 10000
+    }
   }
 ]

@@ -474,6 +474,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   risk_per_trade_pct, max_trades_per_day, session_filter,
                   day_filter, min_hold_minutes, cooldown_minutes,
                   news_filter_minutes, max_spread_pips,
+                  # WHY: hard_close_hour was added to outer generate_ea()
+                  #      and passed through at line 237 to this inner func,
+                  #      but this signature was missed → TypeError on
+                  #      every EA generation. The big f-string at line ~2086
+                  #      and the verification-report append at line ~1920
+                  #      both reference {hard_close_hour} as a local — it
+                  #      must exist as a function parameter.
+                  # CHANGED: April 2026 — fix EA generation crash
+                  hard_close_hour,
                   dd_daily_pct, dd_total_pct, dd_safety_pct, consistency_pct,
                   grade, score, base_stats, prop_firm_name,
                   stage='evaluation', trading_rules=None,
@@ -728,8 +737,32 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             )
 
     # Handle variable declarations
-    handle_vars  = '\n'.join(h['handle_var'] for h in handles if h.get('handle_var'))
-    handle_inits = '\n   '.join(h['handle_init'] for h in handles if h.get('handle_init'))
+    # WHY: Two indicators can share the same handle declaration (e.g.
+    #      plus_di and minus_di both declare int handle_adx_<TF>_14_dmi;
+    #      because they read different buffers from the same iADX handle).
+    #      Without dedup, the .mq5 file would contain the declaration
+    #      twice → MQL5 compile error "identifier already declared".
+    #      The init code is similarly wrapped in idempotency-checking
+    #      `if(handle == 0) { handle = iADX(...); }` so emitting it twice
+    #      is benign for INIT but the var declaration must be unique.
+    # CHANGED: May 2026 — dedup handle declarations to support shared handles
+    _seen_handle_vars = set()
+    _unique_handle_vars = []
+    for h in handles:
+        _hv = h.get('handle_var', '')
+        if _hv and _hv not in _seen_handle_vars:
+            _seen_handle_vars.add(_hv)
+            _unique_handle_vars.append(_hv)
+    handle_vars = '\n'.join(_unique_handle_vars)
+
+    _seen_handle_inits = set()
+    _unique_handle_inits = []
+    for h in handles:
+        _hi = h.get('handle_init', '')
+        if _hi and _hi not in _seen_handle_inits:
+            _seen_handle_inits.add(_hi)
+            _unique_handle_inits.append(_hi)
+    handle_inits = '\n   '.join(_unique_handle_inits)
 
     # ── Build dynamic session filter code ─────────────────────────────────
     # WHY: The optimizer might find that only London+NY sessions are profitable.
@@ -2717,7 +2750,15 @@ def _generate_tradovate(win_rules, exit_name, exit_params, symbol, magic_number,
                         max_spread_pips, dd_daily_pct, dd_total_pct, dd_safety_pct,
                         grade, score, base_stats,
                         direction='BUY',           # NEW
-                        entry_timeframe='H1'):     # NEW
+                        entry_timeframe='H1',      # NEW
+                        # WHY: Outer generate_ea passes hard_close_hour to both
+                        #      _generate_mt5 and _generate_tradovate (line 271).
+                        #      Tradovate template doesn't currently use it, but
+                        #      we must accept the kwarg or the call crashes with
+                        #      TypeError. Future: extend Tradovate template to
+                        #      honor it (NQ/ES futures sessions).
+                        # CHANGED: April 2026 — fix EA generation crash
+                        hard_close_hour=23):
     """Generate Tradovate Python bot. direction must be 'BUY' or 'SELL'."""
     if direction not in ('BUY', 'SELL'):
         raise ValueError(f"_generate_tradovate: direction must be BUY or SELL, got {direction!r}")

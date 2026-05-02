@@ -84,6 +84,37 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "ADX({p}) on {tf}",
     }),
+    # ── DMI components (+DI / −DI) ─────────────────────────────────────────
+    # WHY: Python computes plus_di and minus_di at shared/indicator_utils.py:449-450
+    #      using ta.trend.ADXIndicator with fixed window=14. They share the
+    #      SAME iADX indicator handle as adx_14 — buffers 1 and 2 on that
+    #      handle. Without explicit mappings, the matcher hits the
+    #      template-is-None fallback at line ~1814 which emits a placeholder
+    #      that sets indicatorFailed=true on every bar. That blocks every
+    #      entry signal in the EA → 100% of bars skip with
+    #      [SKIP] indicator_not_ready.
+    #      Period is hard-coded 14 because that's what Python uses; no period
+    #      suffix appears in the feature name (it's just "plus_di", not
+    #      "plus_di_14"). If Python ever exposes a parameterised version,
+    #      add r"^plus_di_(\d+)$" with {p} substitution; for now 14 is
+    #      single-source-of-truth.
+    # CHANGED: May 2026 — add MT5 mapping for DMI components
+    (r"^plus_di$", {
+        "mt5_handle_var":  "int handle_adx_{tf}_14_dmi;",
+        "mt5_handle_init": "if(handle_adx_{tf}_14_dmi == 0) { handle_adx_{tf}_14_dmi = iADX(NULL,{mt5_tf},14); if(handle_adx_{tf}_14_dmi==INVALID_HANDLE) return(INIT_FAILED); }",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_14_dmi, 1, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length=14)['DMP_14'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "+DI(14) on {tf}",
+    }),
+    (r"^minus_di$", {
+        "mt5_handle_var":  "int handle_adx_{tf}_14_dmi;",
+        "mt5_handle_init": "if(handle_adx_{tf}_14_dmi == 0) { handle_adx_{tf}_14_dmi = iADX(NULL,{mt5_tf},14); if(handle_adx_{tf}_14_dmi==INVALID_HANDLE) return(INIT_FAILED); }",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_14_dmi, 2, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length=14)['DMN_14'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "−DI(14) on {tf}",
+    }),
     # CCI
     (r"^cci_(\d+)$", {
         "mt5_handle_var":  "int handle_cci_{tf}_{p};",
@@ -92,6 +123,46 @@ INDICATOR_PATTERNS = [
         "tradovate_code":  "ta.cci(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p}).iloc[-1]",
         "custom_indicator_mt5": False,
         "description": "CCI({p}) on {tf}",
+    }),
+    # ── Mass Index ──────────────────────────────────────────────────────────
+    # WHY: Python computes mass_index at shared/indicator_utils.py:518-522 using
+    #      ta.trend.MassIndex(high, low, window_fast=9, window_slow=25). MT5 has
+    #      no built-in iMassIndex, so we compute inline:
+    #         amplitude  = high - low
+    #         ema1       = EMA(amplitude, 9)
+    #         ema2       = EMA(ema1, 9)
+    #         mass_ratio = ema1 / ema2
+    #         result     = sum of mass_ratio over last 25 bars
+    #      Need at least 25 + 9 + 9 = 43 bars of history. Use 60 for safety.
+    #      Without this mapping, rules using mass_index hit the placeholder
+    #      fallback and the EA blocks every signal with [SKIP] indicator_not_ready.
+    # CHANGED: May 2026 — add MT5 mapping for Mass Index (rule id=17 uses it)
+    (r"^mass_index$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": (
+            "double _mi_h_{tf}[60], _mi_l_{tf}[60]; "
+            "if(CopyHigh(NULL,{mt5_tf},1,60,_mi_h_{tf}) < 60 || "
+               "CopyLow(NULL,{mt5_tf},1,60,_mi_l_{tf}) < 60) indicatorFailed = true; "
+            "double _mi_amp_{tf}[60]; "
+            "for(int _mi_i=0; _mi_i<60; _mi_i++) _mi_amp_{tf}[_mi_i] = _mi_h_{tf}[_mi_i] - _mi_l_{tf}[_mi_i]; "
+            "double _mi_ema1_{tf}[60], _mi_ema2_{tf}[60]; "
+            "double _mi_af_{tf} = 2.0/10.0; "
+            "_mi_ema1_{tf}[0] = _mi_amp_{tf}[0]; "
+            "for(int _mi_j=1; _mi_j<60; _mi_j++) "
+                "_mi_ema1_{tf}[_mi_j] = _mi_amp_{tf}[_mi_j]*_mi_af_{tf} + _mi_ema1_{tf}[_mi_j-1]*(1.0-_mi_af_{tf}); "
+            "_mi_ema2_{tf}[0] = _mi_ema1_{tf}[0]; "
+            "for(int _mi_k=1; _mi_k<60; _mi_k++) "
+                "_mi_ema2_{tf}[_mi_k] = _mi_ema1_{tf}[_mi_k]*_mi_af_{tf} + _mi_ema2_{tf}[_mi_k-1]*(1.0-_mi_af_{tf}); "
+            "double val_{var} = 0.0; "
+            "for(int _mi_s=35; _mi_s<60; _mi_s++) {"
+                "if(_mi_ema2_{tf}[_mi_s] > 0.000001) "
+                    "val_{var} += _mi_ema1_{tf}[_mi_s] / _mi_ema2_{tf}[_mi_s]; "
+            "}"
+        ),
+        "tradovate_code": "ta.mass_index(df_m{tv_tf}['high'], df_m{tv_tf}['low'], window_fast=9, window_slow=25).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "Mass Index (fast=9, slow=25) on {tf}",
     }),
     # ATR
     (r"^atr_(\d+)$", {
