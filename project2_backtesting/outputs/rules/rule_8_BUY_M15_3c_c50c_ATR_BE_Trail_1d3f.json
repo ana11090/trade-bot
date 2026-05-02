@@ -1,0 +1,108 @@
+{
+  "rule_combo": "#8_BUY_M15_3c_c50c_ATR_BE_Trail_1d3f",
+  "rule_indices": [
+    7
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_ema_9_distance",
+          "operator": ">",
+          "value": -0.0929
+        },
+        {
+          "feature": "M15_ema_9_distance",
+          "operator": "<=",
+          "value": -0.1096
+        },
+        {
+          "feature": "M15_distance_from_high",
+          "operator": ">",
+          "value": 0.2743
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.595,
+      "win_rate": 0.595,
+      "coverage": 42,
+      "coverage_pct": 3.9,
+      "train_win_rate": 0.829,
+      "train_coverage": 41,
+      "overfit_gap": 0.234,
+      "is_overfit": true,
+      "avg_pips": 200.2,
+      "source": "bot_entry",
+      "entry_timeframe": "M15",
+      "action": "BUY",
+      "n_real_trades_in_rule": 63,
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "_a46_source_tag": "BotEntry",
+      "direction": "BUY"
+    }
+  ],
+  "exit_strategy": "ATR BE Trail: SL 1.0x, BE at 1.0x, trail at 1.5x / 1.0x, TP 3.0x, max 200 candles",
+  "exit_name": "ATR BE Trail",
+  "exit_class": "ATRBreakevenTrail",
+  "exit_params": {
+    "sl_atr_mult": 1.0,
+    "breakeven_atr_mult": 1.0,
+    "trail_activation_atr_mult": 1.5,
+    "trail_atr_mult": 1.0,
+    "tp_atr_mult": 3.0,
+    "max_candles": 200
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 0,
+  "win_rate": 0,
+  "avg_pips": 0,
+  "net_avg_pips": 0,
+  "total_pips": 0,
+  "net_total_pips": 0,
+  "profit_factor": 0,
+  "net_profit_factor": 0,
+  "max_dd_pips": 0,
+  "total_costs": 0,
+  "avg_winner": 0,
+  "avg_loser": 0,
+  "best_trade": 0,
+  "worst_trade": 0,
+  "expectancy": 0,
+  "risk_reward_ratio": 0,
+  "std_pips": 0,
+  "sharpe_ish": 0,
+  "max_win_streak": 0,
+  "max_loss_streak": 0,
+  "trades_per_day": 0,
+  "days_per_trade": 0,
+  "recovery_factor": 0,
+  "winners": 0,
+  "losers": 0,
+  "breakeven": 0,
+  "active_month_coverage": 0.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 0,
+  "trades": [],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 0,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 0,
+    "survival_rate_per_month": 0,
+    "total_months": 0,
+    "months_blown": 0,
+    "worst_daily_pct": 0,
+    "worst_total_pct": 0
+  },
+  "signals_before_regime_filter": 110,
+  "signals_after_regime_filter": 110,
+  "entry_tf": "D1"
+}

@@ -1,0 +1,133 @@
+{
+  "rule_combo": "#4_BUY_XX_3c_00f8_ATR_Fixed_SL_016e",
+  "rule_indices": [
+    3
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "H1_bb_50_2_width",
+          "operator": "<=",
+          "value": 3.2052
+        },
+        {
+          "feature": "D1_tsi",
+          "operator": "<=",
+          "value": 10.0861
+        },
+        {
+          "feature": "H1_bear_power",
+          "operator": "<=",
+          "value": -18.1571
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.8,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.8,
+      "avg_pips": 219.7,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "unlimited_leveraged_data",
+      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data",
+      "_a46_source_tag": "Step3",
+      "direction": "BUY"
+    }
+  ],
+  "exit_strategy": "ATR Fixed SL 1.0x / TP 3.0x, max 200 candles",
+  "exit_name": "ATR Fixed SL/TP",
+  "exit_class": "ATRFixedSLTP",
+  "exit_params": {
+    "sl_atr_mult": 1.0,
+    "tp_atr_mult": 3.0,
+    "max_candles": 200
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 1,
+  "win_rate": 0.0,
+  "avg_pips": -14860.0,
+  "net_avg_pips": -15219.5,
+  "total_pips": -14860.0,
+  "net_total_pips": -15220.0,
+  "profit_factor": 0.0,
+  "net_profit_factor": 0.0,
+  "max_dd_pips": 0.0,
+  "total_costs": 41.0,
+  "avg_winner": 0.0,
+  "avg_loser": -15219.5,
+  "best_trade": -15219.5,
+  "worst_trade": -15219.5,
+  "expectancy": -15219.5,
+  "risk_reward_ratio": 0.0,
+  "std_pips": 0.0,
+  "sharpe_ish": 0.0,
+  "max_win_streak": 0,
+  "max_loss_streak": 1,
+  "trades_per_day": 1.0,
+  "days_per_trade": 1.0,
+  "recovery_factor": 0.0,
+  "winners": 0,
+  "losers": 1,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 0.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 0,
+  "total_dollar_pnl": -152.19,
+  "max_dd_dollars": 0.0,
+  "trades": [
+    {
+      "entry_time": "2026-03-10 00:00:00",
+      "exit_time": "2026-03-15 00:00:00",
+      "entry_price": 5139.7,
+      "exit_price": 4991.1,
+      "direction": "BUY",
+      "pips": -14860.0,
+      "net_pips": -15219.5,
+      "cost_pips": 41.0,
+      "net_profit": -152.19,
+      "lot_size": 0.01,
+      "candles_held": 4,
+      "exit_reason": "ATR_FIXED_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -318.5,
+      "swap_nights": 7
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 1,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-10"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 1,
+    "survival_rate_per_month": 100.0,
+    "total_months": 1,
+    "months_blown": 0,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 2.7,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 110,
+  "signals_after_regime_filter": 110,
+  "entry_tf": "D1"
+}

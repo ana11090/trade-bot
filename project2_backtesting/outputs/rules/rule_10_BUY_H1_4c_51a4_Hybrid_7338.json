@@ -1,0 +1,223 @@
+{
+  "rule_combo": "#10_BUY_H1_4c_51a4_Hybrid_7338",
+  "rule_indices": [
+    9
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": ">",
+          "value": -152.2146
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.5943
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.833,
+      "coverage": 24,
+      "coverage_pct": 8.6,
+      "win_rate": 0.833,
+      "avg_pips": 293.9,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": ">",
+              "value": -152.2146
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.5943
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ],
+      "saved_at": "2026-04-19T11:56:22.119100",
+      "data_source_id": "unlimited_leveraged_data",
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "SL 150, BE at +100, trail 200, max 24 candles",
+  "exit_name": "Hybrid",
+  "exit_class": "HybridExit",
+  "exit_params": {
+    "sl_pips": 150,
+    "breakeven_activation_pips": 100,
+    "trail_distance_pips": 200,
+    "max_candles": 24
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 3,
+  "win_rate": 0.0,
+  "avg_pips": -2977.3,
+  "net_avg_pips": -3094.2,
+  "total_pips": -8932.0,
+  "net_total_pips": -9282.0,
+  "profit_factor": 0.0,
+  "net_profit_factor": 0.0,
+  "max_dd_pips": 8653.0,
+  "total_costs": 123.0,
+  "avg_winner": 0.0,
+  "avg_loser": -3094.2,
+  "best_trade": -629.5,
+  "worst_trade": -5040.5,
+  "expectancy": -3094.17,
+  "risk_reward_ratio": 0.0,
+  "std_pips": 1837.7,
+  "sharpe_ish": -1.68,
+  "max_win_streak": 0,
+  "max_loss_streak": 3,
+  "trades_per_day": 0.21,
+  "days_per_trade": 4.7,
+  "recovery_factor": -1.07,
+  "winners": 0,
+  "losers": 3,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 10.0,
+  "total_calendar_days": 14,
+  "total_dollar_pnl": -1850.21,
+  "max_dd_dollars": 1730.6,
+  "trades": [
+    {
+      "entry_time": "2026-03-15 00:00:00",
+      "exit_time": "2026-03-16 00:00:00",
+      "entry_price": 5003.06,
+      "exit_price": 4997.63,
+      "direction": "BUY",
+      "pips": -543.0,
+      "net_pips": -629.5,
+      "cost_pips": 41.0,
+      "net_profit": -119.61,
+      "lot_size": 0.19,
+      "candles_held": 1,
+      "exit_reason": "TRAILING_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    },
+    {
+      "entry_time": "2026-03-25 00:00:00",
+      "exit_time": "2026-03-26 00:00:00",
+      "entry_price": 4546.97,
+      "exit_price": 4498.34,
+      "direction": "BUY",
+      "pips": -4863.0,
+      "net_pips": -5040.5,
+      "cost_pips": 41.0,
+      "net_profit": -1008.1,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "TRAILING_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-29 00:00:00",
+      "exit_time": "2026-03-30 00:00:00",
+      "entry_price": 4484.44,
+      "exit_price": 4449.18,
+      "direction": "BUY",
+      "pips": -3526.0,
+      "net_pips": -3612.5,
+      "cost_pips": 41.0,
+      "net_profit": -722.5,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "TRAILING_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 1,
+    "blown_count": 1,
+    "daily_breach_dates": [],
+    "total_breach_dates": [
+      "2026-03-29"
+    ],
+    "daily_safety_stops": 3,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-15",
+      "2026-03-25",
+      "2026-03-29"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 14,
+    "survival_rate_per_month": 0.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 8.1,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 4,
+  "signals_after_regime_filter": 4,
+  "entry_tf": "D1"
+}
