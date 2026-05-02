@@ -2170,6 +2170,11 @@ bool   g_dailyResetDone  = false;   // DST-safe: prevents double-reset within sa
 datetime g_lastTradeTime = 0;
 datetime g_lastBarTime   = 0;
 int    g_logHandle       = INVALID_HANDLE;
+// WHY: One-shot flag for the first-bar GMT diagnostic in OnTick. Without
+//      a guard, the diagnostic Print would fire on every new bar and
+//      flood the journal.
+// CHANGED: April 2026 — broker GMT diagnostic logging
+bool   g_loggedFirstBar  = false;
 {extra_globals_block}
 {exit_globals}
 
@@ -2213,6 +2218,32 @@ int OnInit()
    g_sessionEquity   = AccountInfoDouble(ACCOUNT_EQUITY);
    g_dailyHighEquity = g_sessionEquity;
 {extra_init_block}
+
+   //--- Broker GMT-offset diagnostics
+   // WHY: Python backtester uses UTC bar timestamps; the EA's new-bar
+   //      gate uses iTime() which returns broker server time. If the
+   //      broker is not on GMT, identical rules can fire at different
+   //      bars on the two platforms. Logging the offset and the first
+   //      few bar timestamps lets us prove or rule out timezone
+   //      misalignment from the journal alone.
+   // CHANGED: April 2026 — broker GMT-offset diagnostic logging
+   {{
+      datetime _diag_srv = TimeCurrent();
+      datetime _diag_gmt = TimeGMT();
+      double   _diag_off = ((double)_diag_srv - (double)_diag_gmt) / 3600.0;
+      MqlDateTime _diag_srv_s, _diag_gmt_s;
+      TimeToStruct(_diag_srv, _diag_srv_s);
+      TimeToStruct(_diag_gmt, _diag_gmt_s);
+      Print("[GMT-DIAG] BrokerServerTime=", TimeToString(_diag_srv, TIME_DATE|TIME_MINUTES|TIME_SECONDS),
+            " GMT=",            TimeToString(_diag_gmt, TIME_DATE|TIME_MINUTES|TIME_SECONDS),
+            " OffsetHours=",    DoubleToString(_diag_off, 2),
+            " (server hour=",   _diag_srv_s.hour,
+            " gmt hour=",       _diag_gmt_s.hour, ")");
+      // Also log the configured GMT-anchored hours so the user can sanity-
+      // check that the daily reset / hard close fire on the right wall-clock.
+      Print("[GMT-DIAG] Configured GMT hours: DailyResetHourGMT=", DailyResetHourGMT,
+            " HardCloseHourGMT=", HardCloseHourGMT);
+   }}
    Print("[EA] Started. Magic=", MagicNumber, " Equity=", g_sessionEquity);
    return(INIT_SUCCEEDED);
 }}
@@ -2325,6 +2356,25 @@ void OnTick()
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    if(currentBarTime == g_lastBarTime) return;
    g_lastBarTime = currentBarTime;
+
+   //--- Broker GMT-offset diagnostic — one-shot on first new bar
+   // WHY: Logs the EXACT bar boundary the EA sees on the entry timeframe,
+   //      in both server time and GMT, so we can confirm whether the
+   //      H1 bar the EA reads as "shift=1" matches the H1 candle row
+   //      Python evaluated. Fires once per EA lifetime to avoid spam.
+   // CHANGED: April 2026 — broker GMT-offset diagnostic logging
+   if(!g_loggedFirstBar)
+   {{
+      datetime _bar_srv = currentBarTime;
+      datetime _bar_prev = iTime(_Symbol, {mql_period}, 1);
+      double   _bar_off = ((double)TimeCurrent() - (double)TimeGMT()) / 3600.0;
+      Print("[GMT-DIAG] FirstNewBar entry_tf={mql_period}",
+            " server=",       TimeToString(_bar_srv, TIME_DATE|TIME_MINUTES),
+            " server_prev=",  TimeToString(_bar_prev, TIME_DATE|TIME_MINUTES),
+            " offset_h=",     DoubleToString(_bar_off, 2),
+            " bar_seconds=",  (long)(_bar_srv - _bar_prev));
+      g_loggedFirstBar = true;
+   }}
 
    //--- Skip checks
    // WHY: SYMBOL_SPREAD returns spread in POINTS, not pips. For 5-digit
