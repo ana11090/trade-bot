@@ -2269,6 +2269,16 @@ void OnTick()
 {{
    if(g_stopForever) return;
 
+   // WHY: indicatorFailed is written to from BOTH the IndicatorExit
+   //      block (top of OnTick) and the entry-conditions block (lower
+   //      down). Declaring it once at the top of OnTick puts it in
+   //      scope for both. Previously it was declared only in the
+   //      entry-conditions block — so any IndicatorExit using the
+   //      mt5_buffer_read template (RSI/ADX/+DI/-DI etc.) failed to
+   //      compile with `undeclared identifier 'indicatorFailed'`.
+   // CHANGED: May 2026 — fix IndicatorExit compile error
+   bool indicatorFailed = false;
+
    double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
@@ -2415,10 +2425,12 @@ void OnTick()
    //--- Check entry conditions
    // WHY: Any indicator that returns EMPTY_VALUE means it's not ready or
    //      failed to read. Skip this signal entirely instead of trading on
-   //      garbage data.
+   //      garbage data. indicatorFailed is declared at top of OnTick now
+   //      so the IndicatorExit block above can also write to it.
    // CHANGED: April 2026 — short-circuit on indicator failure
+   // CHANGED: May 2026 — indicatorFailed hoisted to top of OnTick
    bool entrySignal = true;
-   bool indicatorFailed = false;
+   indicatorFailed = false;  // reset for fresh entry-condition check
 
 {regime_check_block}
 {conditions_check_block}
