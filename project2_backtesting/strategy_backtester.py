@@ -3595,14 +3595,29 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      exact strategies they want shared without dragging the whole
     #      matrix along.
     # CHANGED: April 2026 — per-rule file dump
+    # WHY (multi-TF fix): A multi-TF backtest calls run_comparison_matrix
+    #      once per entry timeframe. The original wipe-then-write logic
+    #      destroyed the previous TF's files on every call, so a
+    #      M5+M15+H1+H4+D1 run finished with only the LAST TF's results
+    #      on disk. Two changes solve this without touching the multi-TF
+    #      orchestrator: (1) filenames carry the entry_tf suffix so two
+    #      TFs cannot collide on the same path; (2) the wipe deletes
+    #      ONLY files matching the CURRENT entry TF, so a multi-TF run
+    #      accumulates all 5 timeframes' files and a single-TF re-run
+    #      replaces just that TF's slice.
+    # CHANGED: May 2026 — TF-tagged filenames + TF-scoped wipe
     _rules_dir = os.path.join(output_dir, 'rules')
+    # The current run's entry TF (used for both wipe scoping and the
+    # filename suffix). `timeframe` is in scope as the function arg.
+    _run_tf = str(timeframe)
+    _tf_suffix = f"_{_run_tf}.json"
     try:
         os.makedirs(_rules_dir, exist_ok=True)
-        # Wipe stale per-rule files from previous runs so the folder
-        # always reflects the most recent backtest. The matrix file
-        # itself is the long-term ledger; per-rule files are per-run.
+        # Wipe ONLY this TF's stale files from previous runs. Files for
+        # other TFs are left intact so a multi-TF run accumulates results
+        # across all five calls.
         for _stale in os.listdir(_rules_dir):
-            if _stale.startswith('rule_') and _stale.endswith('.json'):
+            if _stale.startswith('rule_') and _stale.endswith(_tf_suffix):
                 try:
                     os.remove(os.path.join(_rules_dir, _stale))
                 except Exception:
@@ -3621,14 +3636,19 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _rc = str(_row.get('rule_combo', ''))
                 if not _rc:
                     continue
-                # Filename: turn '#94_BUY_H1_3c_ae9f_Time_Base_dc5a' into
-                #           'rule_94_BUY_H1_3c_ae9f_Time_Base_dc5a.json'.
-                # Strip leading '#', replace any remaining filesystem-
-                # hostile characters defensively.
+                # Each row's entry_tf was patched in by the loop above
+                # (search for `if 'entry_tf' not in row: row['entry_tf']
+                # = timeframe`) so this fallback to `_run_tf` is purely
+                # defensive.
+                _row_tf = str(_row.get('entry_tf') or _run_tf)
+                # Filename: turn '#94_BUY_H1_3c_ae9f_Time_Based_dc5a' into
+                #           'rule_94_BUY_H1_3c_ae9f_Time_Based_dc5a_H1.json'.
+                # The trailing _<TF> suffix prevents multi-TF runs from
+                # overwriting each other.
                 _safe = _rc.lstrip('#')
                 for _ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
                     _safe = _safe.replace(_ch, '_')
-                _fname = f"rule_{_safe}.json"
+                _fname = f"rule_{_safe}_{_row_tf}.json"
                 _fpath = os.path.join(_rules_dir, _fname)
                 # WHY: Write the FULL row (including trades) so each
                 #      file is a self-contained record. backtest_matrix.json
@@ -3641,7 +3661,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # Per-row try/except: one bad row never aborts the whole save.
                 log.warning(f"Could not save per-rule file for "
                             f"{_row.get('rule_combo', '?')}: {_row_e}")
-        log.info(f"Saved {_written} per-rule files to {_rules_dir}")
+        log.info(f"Saved {_written} per-rule files (TF={_run_tf}) to {_rules_dir}")
 
     # ── Phase A.48: Save trades to separate file, strip from main JSON ──
     # WHY (Phase A.48): Storing full trade lists inside backtest_matrix.json
