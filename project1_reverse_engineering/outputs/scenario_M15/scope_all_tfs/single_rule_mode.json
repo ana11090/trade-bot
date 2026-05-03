@@ -5,21 +5,51 @@
   "trade_count": 1106,
   "candidate_pool": [
     {
+      "feature": "M15_lower_shadow",
+      "operator": "<",
+      "threshold": 11.826,
+      "value": 11.826,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1647
+    },
+    {
+      "feature": "M5_upper_shadow",
+      "operator": "<",
+      "threshold": 5.787,
+      "value": 5.787,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1835
+    },
+    {
       "feature": "H4_lower_shadow",
       "operator": "<",
       "threshold": 39.94,
       "value": 39.94,
-      "trade_coverage": 0.9486,
+      "trade_coverage": 0.9485,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.1979
+      "tightness": 0.198
+    },
+    {
+      "feature": "M15_volume_change",
+      "operator": "<",
+      "threshold": 0.818657,
+      "value": 0.818657,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2094
     },
     {
       "feature": "H4_upper_shadow",
       "operator": "<",
-      "threshold": 32.3205,
-      "value": 32.3205,
-      "trade_coverage": 0.9496,
+      "threshold": 32.345,
+      "value": 32.345,
+      "trade_coverage": 0.9495,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.211
@@ -27,69 +57,79 @@
     {
       "feature": "H1_candle_body",
       "operator": "<",
-      "threshold": 37.013,
-      "value": 37.013,
-      "trade_coverage": 0.9497,
+      "threshold": 37.1195,
+      "value": 37.1195,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2168
+      "tightness": 0.2148
     },
     {
       "feature": "H1_bear_power",
       "operator": ">",
-      "threshold": -58.63311,
-      "value": -58.63311,
-      "trade_coverage": 0.9497,
+      "threshold": -58.787844,
+      "value": -58.787844,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2176
+      "tightness": 0.2171
     },
     {
       "feature": "H4_mt5_macd_fast_diff",
       "operator": ">",
-      "threshold": -20.867236,
-      "value": -20.867236,
-      "trade_coverage": 0.9496,
+      "threshold": -20.879831,
+      "value": -20.879831,
+      "trade_coverage": 0.9495,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2309
-    },
-    {
-      "feature": "H4_atr_21",
-      "operator": "<",
-      "threshold": 108.542543,
-      "value": 108.542543,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.2345
     },
     {
       "feature": "H1_mt5_macd_std_diff",
       "operator": ">",
       "threshold": -10.582114,
       "value": -10.582114,
-      "trade_coverage": 0.9477,
+      "trade_coverage": 0.9475,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2338
     },
     {
-      "feature": "H1_dpo",
+      "feature": "H4_mt5_atr_21",
       "operator": "<",
-      "threshold": 33.00505,
-      "value": 33.00505,
+      "threshold": 108.793545,
+      "value": 108.793545,
+      "trade_coverage": 0.9495,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2346
+    },
+    {
+      "feature": "M15_bb_20_3_width",
+      "operator": "<",
+      "threshold": 4.772772,
+      "value": 4.772772,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2359
+      "tightness": 0.2374
+    },
+    {
+      "feature": "H1_dpo",
+      "operator": "<",
+      "threshold": 33.031075,
+      "value": 33.031075,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.237
     },
     {
       "feature": "H1_lower_shadow",
       "operator": "<",
-      "threshold": 17.269,
-      "value": 17.269,
-      "trade_coverage": 0.9497,
+      "threshold": 17.2735,
+      "value": 17.2735,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2388
@@ -99,117 +139,237 @@
       "operator": "<",
       "threshold": 55.13,
       "value": 55.13,
-      "trade_coverage": 0.9486,
+      "trade_coverage": 0.9485,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2418
+      "tightness": 0.2424
     },
     {
       "feature": "H1_macd_std_signal",
       "operator": "<",
       "threshold": 28.794522,
       "value": 28.794522,
-      "trade_coverage": 0.9487,
+      "trade_coverage": 0.9486,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2439
+      "tightness": 0.2431
+    },
+    {
+      "feature": "M5_lower_shadow",
+      "operator": "<",
+      "threshold": 4.506,
+      "value": 4.506,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.246
     },
     {
       "feature": "H1_volume_ratio_20",
       "operator": "<",
-      "threshold": 2.671793,
-      "value": 2.671793,
-      "trade_coverage": 0.9497,
+      "threshold": 2.660423,
+      "value": 2.660423,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2462
+      "tightness": 0.2473
     },
     {
-      "feature": "H1_volume_change",
+      "feature": "M15_candle_body",
       "operator": "<",
-      "threshold": 1.014774,
-      "value": 1.014774,
+      "threshold": 19.59,
+      "value": 19.59,
+      "trade_coverage": 0.9487,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2543
+    },
+    {
+      "feature": "M5_bull_power",
+      "operator": "<",
+      "threshold": 12.094497,
+      "value": 12.094497,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2586
+      "tightness": 0.2591
     },
     {
       "feature": "H4_distance_from_high",
       "operator": "<",
       "threshold": 1.567771,
       "value": 1.567771,
-      "trade_coverage": 0.9486,
+      "trade_coverage": 0.9485,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2589
+      "tightness": 0.2595
+    },
+    {
+      "feature": "H1_volume_change",
+      "operator": "<",
+      "threshold": 0.979724,
+      "value": 0.979724,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2645
+    },
+    {
+      "feature": "M5_volume_change",
+      "operator": "<",
+      "threshold": 0.475978,
+      "value": 0.475978,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2656
     },
     {
       "feature": "H1_macd_std_signal",
       "operator": ">",
-      "threshold": -24.13219,
-      "value": -24.13219,
+      "threshold": -24.216719,
+      "value": -24.216719,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2667
+    },
+    {
+      "feature": "M5_volume_ratio_20",
+      "operator": "<",
+      "threshold": 1.978368,
+      "value": 1.978368,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.268
+      "tightness": 0.2681
     },
     {
       "feature": "H1_dpo",
       "operator": ">",
-      "threshold": -27.0489,
-      "value": -27.0489,
-      "trade_coverage": 0.9497,
+      "threshold": -27.2061,
+      "value": -27.2061,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2706
     },
     {
-      "feature": "H1_upper_shadow",
-      "operator": "<",
-      "threshold": 15.66,
-      "value": 15.66,
+      "feature": "M5_mt5_macd_std",
+      "operator": ">",
+      "threshold": -9.312209,
+      "value": -9.312209,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2734
+      "tightness": 0.272
+    },
+    {
+      "feature": "H1_upper_shadow",
+      "operator": "<",
+      "threshold": 15.675,
+      "value": 15.675,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2733
     },
     {
       "feature": "H4_volume_ratio_20",
       "operator": "<",
-      "threshold": 1.797394,
-      "value": 1.797394,
-      "trade_coverage": 0.9496,
+      "threshold": 1.797741,
+      "value": 1.797741,
+      "trade_coverage": 0.9495,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2795
+      "tightness": 0.28
     },
     {
       "feature": "H1_mt5_macd_fast_diff",
       "operator": ">",
       "threshold": -8.786099,
       "value": -8.786099,
-      "trade_coverage": 0.9487,
+      "trade_coverage": 0.9486,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2801
     },
     {
+      "feature": "M5_bear_power",
+      "operator": ">",
+      "threshold": -19.314193,
+      "value": -19.314193,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2852
+    },
+    {
+      "feature": "M15_volume_ratio_20",
+      "operator": "<",
+      "threshold": 2.279916,
+      "value": 2.279916,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2847
+    },
+    {
+      "feature": "M5_candle_range",
+      "operator": "<",
+      "threshold": 18.275,
+      "value": 18.275,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2944
+    },
+    {
       "feature": "H4_mt5_macd_fast_diff",
       "operator": "<",
-      "threshold": 14.481184,
-      "value": 14.481184,
-      "trade_coverage": 0.9496,
+      "threshold": 14.491103,
+      "value": 14.491103,
+      "trade_coverage": 0.9495,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2942
     },
     {
+      "feature": "M5_dpo",
+      "operator": "<",
+      "threshold": 10.2141,
+      "value": 10.2141,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2952
+    },
+    {
+      "feature": "M15_macd_fast_diff",
+      "operator": "<",
+      "threshold": 2.695609,
+      "value": 2.695609,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2965
+    },
+    {
+      "feature": "M15_upper_shadow",
+      "operator": "<",
+      "threshold": 7.45,
+      "value": 7.45,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2969
+    },
+    {
       "feature": "H1_mt5_macd_std_diff",
       "operator": "<",
-      "threshold": 7.078765,
-      "value": 7.078765,
-      "trade_coverage": 0.9497,
+      "threshold": 7.078985,
+      "value": 7.078985,
+      "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2967
@@ -219,250 +379,90 @@
       "operator": "<",
       "threshold": 144.085912,
       "value": 144.085912,
-      "trade_coverage": 0.9486,
+      "trade_coverage": 0.9485,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.2989
+      "tightness": 0.2991
     },
     {
       "feature": "H1_distance_to_swing_low",
       "operator": "<",
       "threshold": 5.505969,
       "value": 5.505969,
-      "trade_coverage": 0.9487,
+      "trade_coverage": 0.9486,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.3016
+      "tightness": 0.3004
+    },
+    {
+      "feature": "M15_dpo",
+      "operator": "<",
+      "threshold": 14.6118,
+      "value": 14.6118,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.3006
+    },
+    {
+      "feature": "M5_mt5_macd_std",
+      "operator": "<",
+      "threshold": 5.527206,
+      "value": 5.527206,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.3028
+    },
+    {
+      "feature": "M5_dpo",
+      "operator": ">",
+      "threshold": -8.13555,
+      "value": -8.13555,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.3045
     },
     {
       "feature": "H1_bull_power",
       "operator": "<",
-      "threshold": 40.874431,
-      "value": 40.874431,
-      "trade_coverage": 0.9497,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3093
-    },
-    {
-      "feature": "H1_mt5_macd_fast_diff",
-      "operator": "<",
-      "threshold": 6.245461,
-      "value": 6.245461,
-      "trade_coverage": 0.9487,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3179
-    },
-    {
-      "feature": "H4_volume_change",
-      "operator": "<",
-      "threshold": 1.068771,
-      "value": 1.068771,
+      "threshold": 40.964597,
+      "value": 40.964597,
       "trade_coverage": 0.9496,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.3295
+      "tightness": 0.3085
     },
     {
-      "feature": "H4_roc_50",
+      "feature": "M5_williams_r_14",
       "operator": "<",
-      "threshold": 9.206194,
-      "value": 9.206194,
-      "trade_coverage": 0.9486,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3484
-    },
-    {
-      "feature": "H4_mass_index",
-      "operator": "<",
-      "threshold": 27.958599,
-      "value": 27.958599,
-      "trade_coverage": 0.9486,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3587
-    },
-    {
-      "feature": "H4_awesome_oscillator",
-      "operator": ">",
-      "threshold": -90.887294,
-      "value": -90.887294,
-      "trade_coverage": 0.9486,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3735
-    },
-    {
-      "feature": "H1_vpt",
-      "operator": "<",
-      "threshold": 3124.486853,
-      "value": 3124.486853,
-      "trade_coverage": 0.9487,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3787
-    },
-    {
-      "feature": "H1_adx_14",
-      "operator": "<",
-      "threshold": 51.175378,
-      "value": 51.175378,
+      "threshold": -14.924104,
+      "value": -14.924104,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.382
+      "tightness": 0.3094
     },
     {
-      "feature": "H4_volume_ratio_20",
+      "feature": "M15_dpo",
       "operator": ">",
-      "threshold": 0.550104,
-      "value": 0.550104,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.3903
-    },
-    {
-      "feature": "H1_plus_di",
-      "operator": "<",
-      "threshold": 36.403884,
-      "value": 36.403884,
+      "threshold": -12.6191,
+      "value": -12.6191,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.3973
+      "tightness": 0.3095
     },
     {
-      "feature": "H1_bear_power",
-      "operator": "<",
-      "threshold": 16.851281,
-      "value": 16.851281,
+      "feature": "M15_macd_fast_diff",
+      "operator": ">",
+      "threshold": -3.756499,
+      "value": -3.756499,
       "trade_coverage": 0.9497,
       "background_coverage": null,
       "background_coverage_valid": false,
-      "tightness": 0.3965
-    },
-    {
-      "feature": "H4_hour_of_day",
-      "operator": "<",
-      "threshold": 20.0,
-      "value": 20.0,
-      "trade_coverage": 0.8519,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4
-    },
-    {
-      "feature": "H1_bull_power",
-      "operator": ">",
-      "threshold": -19.651742,
-      "value": -19.651742,
-      "trade_coverage": 0.9497,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4007
-    },
-    {
-      "feature": "H1_mass_index",
-      "operator": "<",
-      "threshold": 27.318429,
-      "value": 27.318429,
-      "trade_coverage": 0.9497,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4089
-    },
-    {
-      "feature": "H4_adx_28",
-      "operator": "<",
-      "threshold": 36.534663,
-      "value": 36.534663,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4106
-    },
-    {
-      "feature": "H4_plus_di",
-      "operator": "<",
-      "threshold": 39.002401,
-      "value": 39.002401,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4106
-    },
-    {
-      "feature": "H1_hour_of_day",
-      "operator": ">",
-      "threshold": 1.0,
-      "value": 1.0,
-      "trade_coverage": 0.9241,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4211
-    },
-    {
-      "feature": "H1_cmf",
-      "operator": "<",
-      "threshold": 0.294427,
-      "value": 0.294427,
-      "trade_coverage": 0.9497,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4224
-    },
-    {
-      "feature": "H4_cmf",
-      "operator": "<",
-      "threshold": 0.34654,
-      "value": 0.34654,
-      "trade_coverage": 0.9475,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4241
-    },
-    {
-      "feature": "H4_mfi",
-      "operator": ">",
-      "threshold": 25.213599,
-      "value": 25.213599,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4319
-    },
-    {
-      "feature": "H4_cmf",
-      "operator": ">",
-      "threshold": -0.169669,
-      "value": -0.169669,
-      "trade_coverage": 0.9486,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4326
-    },
-    {
-      "feature": "H4_roc_50",
-      "operator": ">",
-      "threshold": -4.408671,
-      "value": -4.408671,
-      "trade_coverage": 0.9496,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4364
-    },
-    {
-      "feature": "H1_mass_index",
-      "operator": ">",
-      "threshold": 23.284723,
-      "value": 23.284723,
-      "trade_coverage": 0.9497,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.4454
+      "tightness": 0.313
     }
   ],
   "chosen": [],
@@ -478,9 +478,9 @@
     "max_enumerations_per_level": 5000,
     "tie_break_within_pct": 0.1,
     "dedup_correlated": true,
-    "winner_selection": "tightness"
+    "winner_selection": "coverage"
   },
   "reason": "No conjunction of 2..10 conditions reached 85% coverage. The bot may use conditions that span beyond the 46-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
-  "generated_at": "2026-04-26T21:24:15.512286",
+  "generated_at": "2026-05-03T14:27:47.962997",
   "scenario": null
 }

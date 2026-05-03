@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-27T15:50:26.739143
+Generated: 2026-05-03T14:20:09.038811
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -19,7 +19,7 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=81.3%, test=57.2%
+  Model accuracy: train=81.2%, test=57.7%
    1. M15_std_dev_20                                1.0%
    2. H1_bb_20_2_width                              0.8%
    3. H1_std_dev_20                                 0.8%
@@ -87,7 +87,7 @@ Trades analyzed: 1106 | Features: 759
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 86% vs normal: 57%
+  Anomaly win rate: 84% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

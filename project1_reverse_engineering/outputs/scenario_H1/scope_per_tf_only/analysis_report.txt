@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:39:01.103272
+Generated: 2026-05-03T14:27:53.625114
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -19,52 +19,52 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=76.7%, test=57.7%
-   1. H1_std_dev_20                                 2.6%
-   2. H1_bb_20_3_width                              2.4%
-   3. H1_bb_20_2_width                              2.2%
-   4. H1_lower_shadow                               2.0%
-   5. H1_atr_7                                      1.9%
-   6. H1_keltner_width                              1.8%
-   7. H1_mt5_atr_7                                  1.7%
-   8. H1_bb_50_2_width                              1.4%
-   9. H1_mt5_atr_21                                 1.4%
-  10. H1_atr_28                                     1.4%
+  Model accuracy: train=76.1%, test=58.6%
+   1. H1_bb_20_2_width                              3.2%
+   2. H1_bb_20_3_width                              2.7%
+   3. H1_std_dev_20                                 2.6%
+   4. H1_lower_shadow                               2.5%
+   5. H1_keltner_width                              2.2%
+   6. H1_mt5_atr_7                                  2.1%
+   7. H1_distance_from_high                         1.8%
+   8. H1_volume_ratio_20                            1.7%
+   9. H1_candle_range                               1.7%
+  10. H1_mt5_atr_100                                1.6%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 100%, 23 trades)
-    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width > 5.7814 AND H1_kst_signal > -25.334
-    Win rate: 100% | Avg pips: +577
+  RULE 1 (WIN, conf: 68%, 151 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 <= 85.2378 AND H1_volume_change <= 0.3683 AND H1_distance_to_rolling_level_618 <= 0.8274
+    Win rate: 68% | Avg pips: +264
 
-  RULE 2 (WIN, conf: 71%, 34 trades)
-    IF H1_std_dev_20 <= 6.3115 AND H1_volume_ratio_20 > 1.1603 AND H1_cmf > 0.0951
-    Win rate: 71% | Avg pips: +70
+  RULE 2 (WIN, conf: 70%, 70 trades)
+    IF H1_bb_50_2_width <= 3.2052 AND H1_bb_20_3_width > 1.0054 AND H1_ichimoku_conversion > 1921.4425 AND H1_upper_shadow <= 0.515
+    Win rate: 70% | Avg pips: +194
 
-  RULE 3 (WIN, conf: 85%, 26 trades)
-    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width > 5.7814 AND H1_kst_signal <= -25.334
-    Win rate: 85% | Avg pips: +591
+  RULE 3 (WIN, conf: 78%, 37 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range > 0.4795
+    Win rate: 78% | Avg pips: +740
 
-  RULE 4 (LOSS, conf: 70%, 23 trades)
-    IF H1_std_dev_20 > 6.3115 AND H1_bb_20_2_width <= 5.7814 AND H1_mfi <= 26.9872
-    Win rate: 30% | Avg pips: +29
+  RULE 4 (WIN, conf: 88%, 32 trades)
+    IF H1_bb_50_2_width > 3.2052 AND H1_std_dev_50 > 85.2378 AND H1_close_position_in_range <= 0.4795
+    Win rate: 88% | Avg pips: +461
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 54 trades (4.9%), WR 83%, avg +496 pips, avg dur 0min
-  'Profit cluster': 222 trades (20.1%), WR 62%, avg +241 pips, avg dur 0min
-  'Profit cluster': 595 trades (53.8%), WR 56%, avg +106 pips, avg dur 0min
-  'Profit cluster': 235 trades (21.2%), WR 56%, avg +78 pips, avg dur 0min
+  'Big winners': 51 trades (4.6%), WR 86%, avg +528 pips, avg dur 0min
+  'Profit cluster': 244 trades (22.1%), WR 62%, avg +231 pips, avg dur 0min
+  'Profit cluster': 576 trades (52.1%), WR 56%, avg +106 pips, avg dur 0min
+  'Profit cluster': 235 trades (21.2%), WR 55%, avg +74 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
     trending              : WR 62%, avg +200 pips (545 trades)
     ranging               : WR 55%, avg +94 pips (561 trades)
   volatility:
-    high                  : WR 66%, avg +230 pips (487 trades)
-    low                   : WR 52%, avg +80 pips (619 trades)
+    high                  : WR 66%, avg +231 pips (486 trades)
+    low                   : WR 52%, avg +80 pips (620 trades)
   direction:
-    above_ema200          : WR 60%, avg +167 pips (812 trades)
-    below_ema200          : WR 55%, avg +88 pips (294 trades)
+    above_ema200          : WR 60%, avg +167 pips (811 trades)
+    below_ema200          : WR 55%, avg +88 pips (295 trades)
   session:
     asian                 : WR 60%, avg +145 pips (301 trades)
     london                : WR 57%, avg +128 pips (647 trades)
@@ -87,7 +87,7 @@ Trades analyzed: 1106 | Features: 759
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 84% vs normal: 57%
+  Anomaly win rate: 82% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

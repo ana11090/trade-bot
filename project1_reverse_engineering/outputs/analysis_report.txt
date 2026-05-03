@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-27T15:50:34.745207
+Generated: 2026-05-03T14:28:48.621939
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -19,7 +19,7 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=81.3%, test=57.2%
+  Model accuracy: train=81.2%, test=57.7%
    1. M15_std_dev_20                                1.0%
    2. H1_bb_20_2_width                              0.8%
    3. H1_std_dev_20                                 0.8%
@@ -33,19 +33,27 @@ Trades analyzed: 1106 | Features: 759
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 82%, 51 trades)
-    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width > 0.4593 AND M5_mt5_macd_fast_diff <= 0.4119
-    Win rate: 82% | Avg pips: +701
+  RULE 1 (WIN, conf: 73%, 80 trades)
+    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width <= 0.4593 AND M15_distance_from_high > 0.1553 AND M5_distance_to_swing_low > 0.0333
+    Win rate: 73% | Avg pips: +302
 
-  RULE 2 (WIN, conf: 76%, 50 trades)
-    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width > 0.4593 AND M5_mt5_macd_fast_diff > 0.4119
-    Win rate: 76% | Avg pips: +339
+  RULE 2 (WIN, conf: 65%, 70 trades)
+    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width <= 0.4593 AND M15_distance_from_high <= 0.1553 AND M15_mt5_stoch_14_d > 48.2352
+    Win rate: 65% | Avg pips: +206
 
-  RULE 3 (WIN, conf: 69%, 103 trades)
-    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width <= 0.4593 AND M15_distance_from_high > 0.1553
-    Win rate: 69% | Avg pips: +252
+  RULE 3 (WIN, conf: 79%, 28 trades)
+    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width > 0.4593 AND M5_mt5_macd_fast_diff <= 0.4119 AND M5_cci_14 <= -97.1791
+    Win rate: 79% | Avg pips: +454
 
-  RULE 4 (WIN, conf: 80%, 20 trades)
+  RULE 4 (WIN, conf: 91%, 23 trades)
+    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width > 0.4593 AND M5_mt5_macd_fast_diff > 0.4119 AND H4_mass_index > 26.7926
+    Win rate: 91% | Avg pips: +572
+
+  RULE 5 (WIN, conf: 87%, 23 trades)
+    IF H1_bb_50_2_width > 3.2052 AND M5_keltner_width > 0.4593 AND M5_mt5_macd_fast_diff <= 0.4119 AND M5_cci_14 > -97.1791
+    Win rate: 87% | Avg pips: +1002
+
+  RULE 6 (WIN, conf: 80%, 20 trades)
     IF H1_bb_50_2_width <= 3.2052 AND D1_tsi <= 10.0861 AND H1_bear_power <= -18.1571
     Win rate: 80% | Avg pips: +220
 
@@ -87,7 +95,7 @@ Trades analyzed: 1106 | Features: 759
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 86% vs normal: 57%
+  Anomaly win rate: 84% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

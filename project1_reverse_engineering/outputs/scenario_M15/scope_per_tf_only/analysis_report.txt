@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-04-26T21:38:52.219145
+Generated: 2026-05-03T14:27:37.985199
 Trades analyzed: 1106 | Features: 759
 ======================================================================
 
@@ -19,52 +19,60 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=77.4%, test=59.0%
-   1. M15_std_dev_20                                2.9%
-   2. M15_mt5_atr_21                                1.8%
-   3. M15_mt5_atr_7                                 1.7%
-   4. M15_mt5_atr_28                                1.7%
-   5. M15_bb_50_2_width                             1.7%
-   6. M15_atr_7                                     1.6%
-   7. M15_atr_14                                    1.6%
-   8. M15_atr_21                                    1.6%
-   9. M15_atr_28                                    1.5%
-  10. M15_std_dev_50                                1.4%
+  Model accuracy: train=77.8%, test=54.0%
+   1. M15_std_dev_20                                3.1%
+   2. M15_bb_50_2_width                             2.3%
+   3. M15_mt5_atr_14                                2.0%
+   4. M15_mt5_atr_7                                 2.0%
+   5. M15_mt5_atr_21                                1.8%
+   6. M15_mt5_atr_100                               1.7%
+   7. M15_std_dev_50                                1.7%
+   8. M15_mt5_atr_50                                1.7%
+   9. M15_mt5_atr_28                                1.7%
+  10. M15_bb_20_2_width                             1.6%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 96%, 53 trades)
-    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 > 20.1138 AND M15_donchian_upper > 4941.26
-    Win rate: 96% | Avg pips: +629
+  RULE 1 (WIN, conf: 84%, 37 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 <= 18.967 AND M15_roc_5 <= -0.4502 AND M15_bb_20_3_width <= 2.2343
+    Win rate: 84% | Avg pips: +361
 
-  RULE 2 (WIN, conf: 73%, 222 trades)
-    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 <= 20.1138 AND M15_mt5_macd_fast_diff <= -0.6449
-    Win rate: 73% | Avg pips: +230
+  RULE 2 (WIN, conf: 78%, 37 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal <= -0.5521
+    Win rate: 78% | Avg pips: +267
 
-  RULE 3 (WIN, conf: 68%, 28 trades)
-    IF M15_std_dev_20 > 5.4025 AND M15_mt5_atr_14 > 20.1138 AND M15_donchian_upper <= 4941.26
-    Win rate: 68% | Avg pips: +357
+  RULE 3 (WIN, conf: 92%, 25 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar > 5099.1062
+    Win rate: 92% | Avg pips: +784
 
-  RULE 4 (WIN, conf: 86%, 21 trades)
-    IF M15_std_dev_20 <= 5.4025 AND M15_minus_di <= 16.5914 AND M15_day_of_week <= 2.5
-    Win rate: 86% | Avg pips: +188
+  RULE 4 (WIN, conf: 88%, 24 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal > -0.5521
+    Win rate: 88% | Avg pips: +700
+
+  RULE 5 (WIN, conf: 71%, 21 trades)
+    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index <= 23.416 AND M15_mfi <= 42.9686
+    Win rate: 71% | Avg pips: +300
+
+  RULE 6 (WIN, conf: 67%, 21 trades)
+    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index > 23.416 AND M15_plus_di <= 8.2355
+    Win rate: 67% | Avg pips: +152
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 45 trades (4.1%), WR 87%, avg +557 pips, avg dur 0min
-  'Profit cluster': 266 trades (24.1%), WR 59%, avg +175 pips, avg dur 0min
-  'Profit cluster': 498 trades (45.0%), WR 61%, avg +138 pips, avg dur 0min
-  'Profit cluster': 297 trades (26.9%), WR 49%, avg +72 pips, avg dur 0min
+  'Big winners': 46 trades (4.2%), WR 87%, avg +550 pips, avg dur 0min
+  'Profit cluster': 266 trades (24.1%), WR 63%, avg +218 pips, avg dur 0min
+  'Profit cluster': 596 trades (53.9%), WR 55%, avg +103 pips, avg dur 0min
+  'Profit cluster': 198 trades (17.9%), WR 55%, avg +85 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
     trending              : WR 62%, avg +200 pips (545 trades)
     ranging               : WR 55%, avg +94 pips (561 trades)
   volatility:
-    high                  : WR 66%, avg +230 pips (487 trades)
-    low                   : WR 52%, avg +80 pips (619 trades)
+    high                  : WR 66%, avg +231 pips (486 trades)
+    low                   : WR 52%, avg +80 pips (620 trades)
   direction:
-    above_ema200          : WR 60%, avg +167 pips (812 trades)
-    below_ema200          : WR 55%, avg +88 pips (294 trades)
+    above_ema200          : WR 60%, avg +167 pips (811 trades)
+    below_ema200          : WR 55%, avg +88 pips (295 trades)
   session:
     asian                 : WR 60%, avg +145 pips (301 trades)
     london                : WR 57%, avg +128 pips (647 trades)
@@ -86,8 +94,8 @@ Trades analyzed: 1106 | Features: 759
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  55 outlier trades (5.0%)
-  Anomaly win rate: 82% vs normal: 57%
+  56 outlier trades (5.1%)
+  Anomaly win rate: 80% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

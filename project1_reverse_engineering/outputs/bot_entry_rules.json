@@ -7,41 +7,6 @@
       "conditions": [
         {
           "feature": "D1_distance_from_high",
-          "operator": ">",
-          "value": 0.5875
-        },
-        {
-          "feature": "D1_candle_range",
-          "operator": ">",
-          "value": 34.21
-        },
-        {
-          "feature": "M5_roc_50",
-          "operator": "<=",
-          "value": 0.0897
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.718,
-      "win_rate": 0.718,
-      "coverage": 78,
-      "coverage_pct": 22.2,
-      "train_win_rate": 0.708,
-      "train_coverage": 65,
-      "overfit_gap": -0.01,
-      "is_overfit": false,
-      "avg_pips": 186.2,
-      "source": "bot_entry",
-      "entry_timeframe": "D1",
-      "action": "BUY",
-      "n_real_trades_in_rule": 245,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_distance_from_high",
           "operator": "<=",
           "value": 0.5875
         },
@@ -61,17 +26,17 @@
       "win_rate": 0.632,
       "coverage": 87,
       "coverage_pct": 24.7,
-      "train_win_rate": 0.698,
-      "train_coverage": 63,
-      "overfit_gap": 0.066,
+      "train_win_rate": 0.71,
+      "train_coverage": 62,
+      "overfit_gap": 0.077,
       "is_overfit": false,
       "avg_pips": 117.3,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
       "n_real_trades_in_rule": 174,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
     },
     {
       "conditions": [
@@ -81,32 +46,32 @@
           "value": 0.5875
         },
         {
-          "feature": "D1_candle_range",
+          "feature": "H4_distance_to_rolling_level_786",
           "operator": ">",
-          "value": 34.21
+          "value": -0.6309
         },
         {
-          "feature": "M5_roc_50",
+          "feature": "D1_candle_range",
           "operator": ">",
-          "value": 0.0897
+          "value": 24.955
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.776,
-      "win_rate": 0.776,
-      "coverage": 67,
-      "coverage_pct": 19.0,
-      "train_win_rate": 0.97,
-      "train_coverage": 33,
-      "overfit_gap": 0.194,
-      "is_overfit": true,
-      "avg_pips": 207.7,
+      "confidence": 0.721,
+      "win_rate": 0.721,
+      "coverage": 68,
+      "coverage_pct": 19.3,
+      "train_win_rate": 0.849,
+      "train_coverage": 93,
+      "overfit_gap": 0.129,
+      "is_overfit": false,
+      "avg_pips": 138.7,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 275,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "n_real_trades_in_rule": 285,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
     },
     {
       "conditions": [
@@ -140,8 +105,8 @@
       "entry_timeframe": "M15",
       "action": "BUY",
       "n_real_trades_in_rule": 63,
-      "data_source_id": "unlimited_leveraged_data",
-      "data_source_path": "c:\\Users\\anani\\my git delete\\trade-bot\\data\\sources\\unlimited_leveraged_data"
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
     }
   ],
   "per_tf_summary": [
@@ -180,7 +145,7 @@
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 3,
+      "n_rules": 2,
       "n_train": 820,
       "n_test": 352,
       "n_features": 750
