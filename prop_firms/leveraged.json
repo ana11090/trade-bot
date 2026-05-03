@@ -34,7 +34,19 @@
       "contract_size": 100,
       "swap_long_pips_per_night": -45.5,
       "swap_short_pips_per_night": -33.6,
-      "swap_source": "MT5 Symbol Specification dialog (Get Leveraged, April 2026). Swap type: in points. Long: -45.509, Short: -33.613. Wednesday triple-roll applies."
+      "swap_source": "MT5 Symbol Specification dialog (Get Leveraged, April 2026). Swap type: in points. Long: -45.509, Short: -33.613. Wednesday triple-roll applies.",
+      "sl_slippage_pips_distribution": {
+        "_source": "Calibrated May 2026 from 127 SL hits on rule BUY_M15_3c_0503_19795f05 (M5 entry, no Random Delay) over 2026-03-04 to 2026-04-08",
+        "median": 13,
+        "mean": 21,
+        "p95": 50,
+        "max": 140,
+        "samples": [
+          0, 0, 0, 0, 0, 0, 0, 4, 6, 7, 8, 8, 11, 13, 16, 21, 31, 33, 41, 49,
+          50, 137
+        ],
+        "_note": "Samples list is a representative subset for sampling. Full distribution available in the diagnostic dump from the May 2026 calibration run."
+      }
     },
     "XAGUSD": {
       "pip_value_per_lot": 5.0,

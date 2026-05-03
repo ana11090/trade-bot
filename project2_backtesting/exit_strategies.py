@@ -6,6 +6,80 @@ Used by the strategy backtester to test different exit approaches.
 # WHY: Used by _check_management_blocked for min-hold time comparisons.
 # CHANGED: April 2026 — min hold parity with MT5 EA
 import pandas as pd
+import random
+
+
+# WHY (May 2026): When a single entry-TF candle's range covers BOTH
+#      the TP and the SL line, the candle's OHLC alone can't tell us
+#      which was touched first. Default-returning TP (the prior
+#      behavior) is systematically optimistic — MT5 tick reality
+#      shows roughly 50/50 of these collisions actually go to SL.
+#      Try M1 first (already loaded for trailing-stop ambiguity);
+#      fall back to ticks if available; final fallback is pessimistic
+#      (assume SL was hit first) which avoids the optimistic bias.
+# CHANGED: May 2026 — same-candle TP/SL collision resolution
+def _resolve_tp_sl_collision(pos, candle, tp_price, sl_price, direction):
+    """Determine whether TP or SL was hit first within one candle.
+
+    Returns 'TP' or 'SL'. Caller decides what to do with the answer.
+
+    BUY: TP > entry > SL.   Iterate sub-candles in time order. The first
+         sub-candle with high >= tp wins TP; the first with low <= sl
+         wins SL.
+    SELL: TP < entry < SL.  Mirror logic: low <= tp wins TP first;
+         high >= sl wins SL first.
+
+    If neither M1 nor ticks are available, returns 'SL' (pessimistic).
+    """
+    # Try ticks first (most accurate)
+    _tick_loader = pos.get('_tick_loader')
+    _ticks = _tick_loader(candle.get('timestamp')) if _tick_loader else None
+    if _ticks is not None and len(_ticks) > 0:
+        for _, t in _ticks.iterrows():
+            # tick has 'bid' and 'ask'; use bid for BUY exit (price we'd
+            # sell at to close), ask for SELL exit (price we'd buy at).
+            try:
+                p_for_buy_exit = float(t.get('bid', t.get('price', 0)))
+                p_for_sell_exit = float(t.get('ask', t.get('price', 0)))
+            except Exception:
+                continue
+            if direction == "BUY":
+                if p_for_buy_exit <= sl_price: return 'SL'
+                if p_for_buy_exit >= tp_price: return 'TP'
+            else:  # SELL
+                if p_for_sell_exit >= sl_price: return 'SL'
+                if p_for_sell_exit <= tp_price: return 'TP'
+        # Ticks ran out without crossing — shouldn't happen if the
+        # parent candle showed a touch, but be safe
+        return 'SL'
+
+    # Fallback to M1 OHLC
+    _m1_loader = pos.get('_m1_loader')
+    _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+    if _m1_candles is not None and len(_m1_candles) > 0:
+        for _, m1 in _m1_candles.iterrows():
+            try:
+                m1_high = float(m1['high'])
+                m1_low  = float(m1['low'])
+            except Exception:
+                continue
+            if direction == "BUY":
+                m1_hit_sl = m1_low  <= sl_price
+                m1_hit_tp = m1_high >= tp_price
+            else:
+                m1_hit_sl = m1_high >= sl_price
+                m1_hit_tp = m1_low  <= tp_price
+            if m1_hit_sl and m1_hit_tp:
+                # Within ONE M1 candle both were hit. Pessimistic.
+                return 'SL'
+            if m1_hit_sl: return 'SL'
+            if m1_hit_tp: return 'TP'
+        # M1 didn't show a touch even though parent did — sub-candle
+        # gap or rounding. Pessimistic.
+        return 'SL'
+
+    # No M1, no ticks — pessimistic default
+    return 'SL'
 
 
 class ExitStrategy:
@@ -40,48 +114,40 @@ class ExitStrategy:
 
     @staticmethod
     def _resolve_sl_tp_priority(candle, sl_price, tp_price, direction):
+        """DEPRECATED: Use _resolve_tp_sl_collision instead.
+
+        Kept for backward compatibility with any external code.
         """
-        When both SL and TP could be hit in one candle, resolve the
-        ambiguity conservatively by always picking SL.
+        return "SL"  # conservative fallback
 
-        WHY: The old "closer to open = hit first" heuristic was
-             geometrically wrong. Distance from open does NOT predict
-             which level was hit first intra-bar. Without sub-bar
-             (M1) data there's no way to know. Phase 8's candle_labeler
-             fix applied the same reasoning — always pick SL on ties.
-        CHANGED: April 2026 — conservative tie-break (audit HIGH,
-                 matches candle_labeler fix)
-
-        Returns: "SL" (also for ambiguous ties), "TP", or None.
+    def _get_fill_price(self, candle, target_price, direction, is_sl=True):
         """
-        candle_high = float(candle["high"])
-        candle_low  = float(candle["low"])
+        Return actual fill price accounting for overnight/weekend gaps and SL slippage.
 
-        if direction == "BUY":
-            sl_hit = candle_low  <= sl_price
-            tp_hit = candle_high >= tp_price
-            if sl_hit and tp_hit:
-                return "SL"   # conservative: always pick SL on tie
-            if sl_hit: return "SL"
-            if tp_hit: return "TP"
-        else:  # SELL
-            sl_hit = candle_high >= sl_price
-            tp_hit = candle_low  <= tp_price
-            if sl_hit and tp_hit:
-                return "SL"   # conservative: always pick SL on tie
-            if sl_hit: return "SL"
-            if tp_hit: return "TP"
-        return None
-
-    @staticmethod
-    def _get_fill_price(candle, target_price, direction, is_sl=True):
-        """
-        Return actual fill price accounting for overnight/weekend gaps.
-        If the candle opens past the target price the real fill is at
-        candle open (which is always worse for SL, better for TP).
+        WHY (May 2026): Real MT5 SL fills slip past the stop line by a median
+             of 13 pips (mean 21, p95 50, max 140 on Get Leveraged). The old
+             code filled at exact SL price unless candle gapped. Adding
+             broker-specific slippage distribution (sampled deterministically
+             per trade via timestamp seed) makes Python match MT5 reality.
+        CHANGED: May 2026 — SL slippage distribution
         """
         candle_open = float(candle["open"])
+
         if is_sl:
+            # Apply broker SL slippage distribution if configured
+            slip_dist = getattr(self, 'sl_slippage_distribution', None)
+            if slip_dist and slip_dist.get('samples'):
+                ts = candle.get('timestamp')
+                seed = int(pd.Timestamp(ts).value % (2**31)) if ts is not None else 0
+                rng = random.Random(seed)
+                slip_pips = rng.choice(slip_dist['samples'])
+                slip_distance = slip_pips * self.pip_size
+                if direction == "BUY":
+                    target_price = target_price - slip_distance
+                else:
+                    target_price = target_price + slip_distance
+
+            # Apply gap-open logic to (potentially slipped) sl_price
             if direction == "BUY"  and candle_open < target_price:
                 return candle_open   # gapped down past SL
             if direction == "SELL" and candle_open > target_price:
@@ -174,22 +240,39 @@ class FixedSLTP(ExitStrategy):
 
         # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
         # CHANGED: April 2026 — price normalization for MT5 parity
+        # CHANGED: May 2026 — same-candle TP/SL collision resolution
         if direction == "BUY":
             sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
+            tp_touched = candle["high"] >= tp_price
+            sl_touched = candle["low"] <= sl_price
         else:  # SELL
             sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
+            tp_touched = candle["low"] <= tp_price
+            sl_touched = candle["high"] >= sl_price
 
-        result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
-        if result == "SL":
-            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-            reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
-            return {"exit_price": fill, "reason": reason}
-        if result == "TP":
+        if tp_touched and sl_touched:
+            # Same-candle collision — resolve via M1/ticks
+            _which = _resolve_tp_sl_collision(
+                pos, candle, tp_price, sl_price, direction
+            )
+            if _which == 'TP':
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "TAKE_PROFIT_GAP" if fill != tp_price else "TAKE_PROFIT"
+                return {"exit_price": fill, "reason": reason}
+            # else fall through to SL handling below
+
+        elif tp_touched:
             fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
             reason = "TAKE_PROFIT_GAP" if fill != tp_price else "TAKE_PROFIT"
             return {"exit_price": fill, "reason": reason}
+
+        if sl_touched:
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+            return {"exit_price": fill, "reason": reason}
+
         return None
 
     def describe(self):
@@ -262,23 +345,39 @@ class TrailingStop(ExitStrategy):
             fixed_sl    = entry - self.sl_pips * self.pip_size
             profit_pips = (highest - entry) / self.pip_size
 
-            # WHY (Phase A.13): tp_pips check. If price has reached the
-            #      take-profit ceiling intrabar (high crosses tp), exit
-            #      at the tp price.
-            # CHANGED: April 2026 — Phase A.13
-            if self.tp_pips is not None:
-                tp_price = entry + self.tp_pips * self.pip_size
-                if candle["high"] >= tp_price:
-                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
-                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
-
+            # WHY (May 2026): Compute effective_sl FIRST so we can
+            #      detect same-candle TP+SL collisions and resolve
+            #      them by which level was actually hit first
+            #      (M1/ticks). Previous code returned TP whenever
+            #      candle.high reached TP, ignoring the case where
+            #      candle.low also reached SL — systematic optimistic
+            #      bias that drove most Python-vs-MT5 divergence.
+            # CHANGED: May 2026 — same-candle TP/SL collision resolution
             if profit_pips >= self.activation_pips and not _mgmt_blocked:
                 trail_sl     = highest - self.trail_distance_pips * self.pip_size
                 effective_sl = max(fixed_sl, trail_sl)
             else:
                 effective_sl = fixed_sl
 
-            if candle["low"] <= effective_sl:
+            tp_price = (entry + self.tp_pips * self.pip_size) if self.tp_pips is not None else None
+            tp_touched = (tp_price is not None) and (candle["high"] >= tp_price)
+            sl_touched = candle["low"] <= effective_sl
+
+            if tp_touched and sl_touched:
+                # Same-candle collision — resolve via M1/ticks
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, effective_sl, "BUY"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+                # else fall through to SL handling below
+
+            elif tp_touched:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+
+            if sl_touched:
                 # WHY: Ambiguity — candle made a new high (trail advances) AND
                 #      the low hit the trail. With ticks, determine which happened
                 #      first. Without ticks the candle-based result stands.
@@ -337,21 +436,33 @@ class TrailingStop(ExitStrategy):
             fixed_sl    = entry + self.sl_pips * self.pip_size
             profit_pips = (entry - lowest) / self.pip_size
 
-            # WHY (Phase A.13): tp_pips for SELL.
-            # CHANGED: April 2026 — Phase A.13
-            if self.tp_pips is not None:
-                tp_price = entry - self.tp_pips * self.pip_size
-                if candle["low"] <= tp_price:
-                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
-                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
-
+            # WHY (May 2026): Same collision resolution as BUY, mirrored for SELL.
+            # CHANGED: May 2026 — same-candle TP/SL collision resolution
             if profit_pips >= self.activation_pips and not _mgmt_blocked:
                 trail_sl     = lowest + self.trail_distance_pips * self.pip_size
                 effective_sl = min(fixed_sl, trail_sl)
             else:
                 effective_sl = fixed_sl
 
-            if candle["high"] >= effective_sl:
+            tp_price = (entry - self.tp_pips * self.pip_size) if self.tp_pips is not None else None
+            tp_touched = (tp_price is not None) and (candle["low"] <= tp_price)
+            sl_touched = candle["high"] >= effective_sl
+
+            if tp_touched and sl_touched:
+                # Same-candle collision — resolve via M1/ticks
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, effective_sl, "SELL"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+                # else fall through to SL handling below
+
+            elif tp_touched:
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                return {"exit_price": fill, "reason": "TAKE_PROFIT"}
+
+            if sl_touched:
                 # WHY: Tick-aware SELL trailing ambiguity — same as BUY.
                 # CHANGED: April 2026 — tick-aware trailing ambiguity
                 _new_low_this_candle = candle["low"] < pos.get("lowest_since_entry", entry)
@@ -518,21 +629,38 @@ class ATRBased(ExitStrategy):
         sl_distance = atr * self.sl_atr_mult
         tp_distance = atr * self.tp_atr_mult
 
+        # WHY (May 2026): Same-candle TP/SL collision resolution.
+        # CHANGED: May 2026 — realistic exit simulation parity
         if direction == "BUY":
             sl_price = entry - sl_distance
             tp_price = entry + tp_distance
+            tp_touched = candle["high"] >= tp_price
+            sl_touched = candle["low"] <= sl_price
         else:
             sl_price = entry + sl_distance
             tp_price = entry - tp_distance
+            tp_touched = candle["low"] <= tp_price
+            sl_touched = candle["high"] >= sl_price
 
-        result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
-        if result == "SL":
-            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-            reason = "ATR_STOP_LOSS_GAP" if fill != sl_price else "ATR_STOP_LOSS"
-            return {"exit_price": fill, "reason": reason}
-        if result == "TP":
+        if tp_touched and sl_touched:
+            # Same-candle collision — resolve via M1/ticks
+            _which = _resolve_tp_sl_collision(
+                pos, candle, tp_price, sl_price, direction
+            )
+            if _which == 'TP':
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "ATR_TAKE_PROFIT_GAP" if fill != tp_price else "ATR_TAKE_PROFIT"
+                return {"exit_price": fill, "reason": reason}
+            # else fall through to SL handling below
+
+        elif tp_touched:
             fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
             reason = "ATR_TAKE_PROFIT_GAP" if fill != tp_price else "ATR_TAKE_PROFIT"
+            return {"exit_price": fill, "reason": reason}
+
+        if sl_touched:
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "ATR_STOP_LOSS_GAP" if fill != sl_price else "ATR_STOP_LOSS"
             return {"exit_price": fill, "reason": reason}
         return None
 
@@ -637,22 +765,39 @@ class ATRFixedSLTP(ExitStrategy):
 
         # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
         # CHANGED: April 2026 — price normalization for MT5 parity
+        # CHANGED: May 2026 — same-candle TP/SL collision resolution
         if direction == "BUY":
             sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
+            tp_touched = candle["high"] >= tp_price
+            sl_touched = candle["low"] <= sl_price
         else:
             sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
+            tp_touched = candle["low"] <= tp_price
+            sl_touched = candle["high"] >= sl_price
 
-        result = self._resolve_sl_tp_priority(candle, sl_price, tp_price, direction)
-        if result == "SL":
-            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-            reason = "ATR_FIXED_SL_GAP" if fill != sl_price else "ATR_FIXED_SL"
-            return {"exit_price": fill, "reason": reason}
-        if result == "TP":
+        if tp_touched and sl_touched:
+            # Same-candle collision — resolve via M1/ticks
+            _which = _resolve_tp_sl_collision(
+                pos, candle, tp_price, sl_price, direction
+            )
+            if _which == 'TP':
+                fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                reason = "ATR_FIXED_TP_GAP" if fill != tp_price else "ATR_FIXED_TP"
+                return {"exit_price": fill, "reason": reason}
+            # else fall through to SL handling below
+
+        elif tp_touched:
             fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
             reason = "ATR_FIXED_TP_GAP" if fill != tp_price else "ATR_FIXED_TP"
             return {"exit_price": fill, "reason": reason}
+
+        if sl_touched:
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "ATR_FIXED_SL_GAP" if fill != sl_price else "ATR_FIXED_SL"
+            return {"exit_price": fill, "reason": reason}
+
         return None
 
     def describe(self):
@@ -782,17 +927,43 @@ class ATRBreakevenTrail(ExitStrategy):
                 return {"exit_price": float(candle["close"]), "reason": reason}
 
         if direction == "BUY":
-            # Hard TP check first
-            # WHY: Normalize to pip precision matching MT5's NormalizeDouble.
-            # CHANGED: April 2026 — price normalization for MT5 parity
+            # WHY (May 2026): Check for TP/SL collision before returning TP.
+            #      Compute effective SL based on current phase, then resolve
+            #      collision if both levels touched in same candle.
+            # CHANGED: May 2026 — same-candle TP/SL collision resolution
             tp_price = self._normalize_price(entry + self._tp_price_dist, self.pip_size)
-            if candle["high"] >= tp_price:
+            tp_touched = candle["high"] >= tp_price
+
+            # Determine effective SL based on profit phase
+            profit_from_entry = highest - entry
+            if profit_from_entry >= self._trail_activation_price_dist and not _mgmt_blocked:
+                # Phase 3: Trailing
+                trail_sl = highest - self._trail_distance_price
+                effective_sl = self._normalize_price(max(trail_sl, entry), self.pip_size)
+            elif profit_from_entry >= self._be_distance_price and not _mgmt_blocked:
+                # Phase 2: Breakeven
+                effective_sl = entry
+            else:
+                # Phase 1: Initial ATR SL
+                effective_sl = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
+
+            sl_touched = candle["low"] <= effective_sl
+
+            if tp_touched and sl_touched:
+                # Same-candle collision — resolve via M1/ticks
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, effective_sl, "BUY"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
+                    return {"exit_price": fill, "reason": reason}
+                # else fall through to phase-specific SL handling below
+
+            elif tp_touched:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
                 return {"exit_price": fill, "reason": reason}
-
-            # Compute current profit from best price
-            profit_from_entry = highest - entry
 
             # WHY: Intra-candle ambiguity — both initial SL and breakeven
             #      activation are within this candle's range. Use tick data
@@ -897,14 +1068,41 @@ class ATRBreakevenTrail(ExitStrategy):
                     return {"exit_price": fill, "reason": reason}
 
         else:  # SELL
-            # Hard TP
+            # WHY (May 2026): Same collision resolution for SELL.
+            # CHANGED: May 2026 — same-candle TP/SL collision resolution
             tp_price = self._normalize_price(entry - self._tp_price_dist, self.pip_size)
-            if candle["low"] <= tp_price:
+            tp_touched = candle["low"] <= tp_price
+
+            # Determine effective SL based on profit phase
+            profit_from_entry = entry - lowest
+            if profit_from_entry >= self._trail_activation_price_dist and not _mgmt_blocked:
+                # Phase 3: Trailing
+                trail_sl = lowest + self._trail_distance_price
+                effective_sl = self._normalize_price(min(trail_sl, entry), self.pip_size)
+            elif profit_from_entry >= self._be_distance_price and not _mgmt_blocked:
+                # Phase 2: Breakeven
+                effective_sl = entry
+            else:
+                # Phase 1: Initial ATR SL
+                effective_sl = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
+
+            sl_touched = candle["high"] >= effective_sl
+
+            if tp_touched and sl_touched:
+                # Same-candle collision — resolve via M1/ticks
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, effective_sl, "SELL"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
+                    return {"exit_price": fill, "reason": reason}
+                # else fall through to phase-specific SL handling below
+
+            elif tp_touched:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 reason = "ATRBE_TP_GAP" if fill != tp_price else "ATRBE_TP"
                 return {"exit_price": fill, "reason": reason}
-
-            profit_from_entry = entry - lowest
 
             # WHY: Tick-aware breakeven ambiguity resolution for SELL.
             # CHANGED: April 2026 — tick-aware breakeven ambiguity resolution
@@ -1235,6 +1433,8 @@ class ATRTrailing(ExitStrategy):
         # CHANGED: April 2026 — min hold parity
         _trail_mgmt_blocked = self._check_management_blocked(pos, candle)
 
+        # WHY (May 2026): Same-candle TP/SL collision resolution.
+        # CHANGED: May 2026 — realistic exit simulation parity
         if direction == "BUY":
             sl_price = entry - sl_distance
             tp_price = entry + tp_distance
@@ -1245,12 +1445,26 @@ class ATRTrailing(ExitStrategy):
                 if trail_sl > sl_price:
                     sl_price = trail_sl
 
-            if candle["high"] >= tp_price:
+            tp_touched = candle["high"] >= tp_price
+            sl_touched = candle["low"] <= sl_price
+
+            if tp_touched and sl_touched:
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, sl_price, "BUY"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
+                # else fall through to SL
+
+            elif tp_touched:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
-            if candle["low"] <= sl_price:
+
+            if sl_touched:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 return {"exit_price": fill, "reason": "ATR_TRAIL_SL"}
+
         else:
             sl_price = entry + sl_distance
             tp_price = entry - tp_distance
@@ -1261,10 +1475,23 @@ class ATRTrailing(ExitStrategy):
                 if trail_sl < sl_price:
                     sl_price = trail_sl
 
-            if candle["low"] <= tp_price:
+            tp_touched = candle["low"] <= tp_price
+            sl_touched = candle["high"] >= sl_price
+
+            if tp_touched and sl_touched:
+                _which = _resolve_tp_sl_collision(
+                    pos, candle, tp_price, sl_price, "SELL"
+                )
+                if _which == 'TP':
+                    fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
+                    return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
+                # else fall through to SL
+
+            elif tp_touched:
                 fill = self._get_fill_price(candle, tp_price, direction, is_sl=False)
                 return {"exit_price": fill, "reason": "ATR_TRAIL_TP"}
-            if candle["high"] >= sl_price:
+
+            if sl_touched:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 return {"exit_price": fill, "reason": "ATR_TRAIL_SL"}
 

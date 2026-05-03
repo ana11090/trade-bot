@@ -1260,7 +1260,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # WHY: data_dir path lets the exit strategy resolve intra-candle
                  #      ambiguity using tick data when available. None = disabled.
                  # CHANGED: April 2026 — tick data for exit ambiguity resolution
-                 data_dir=None):
+                 data_dir=None,
+                 # WHY: Broker-specific SL slippage samples (pips). Passed to exit
+                 #      strategy so _get_fill_price can apply realistic slippage on
+                 #      SL fills. None = no slippage (backward compat).
+                 # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
+                 sl_slippage_distribution=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1269,6 +1274,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     Returns list of trade dicts.
     """
+    # WHY (May 2026): Wire SL slippage distribution to exit strategy so
+    #      _get_fill_price can sample realistic broker slips on SL fills.
+    # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
+    if sl_slippage_distribution is not None:
+        exit_strategy.sl_slippage_distribution = sl_slippage_distribution
+
     trades = []
     # WHY: Running balance for compound equity — updated after each trade.
     #      Clamped to 50% of starting capital as a safety floor.
