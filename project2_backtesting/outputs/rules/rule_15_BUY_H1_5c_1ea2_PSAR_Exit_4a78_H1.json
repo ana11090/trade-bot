@@ -1,0 +1,327 @@
+{
+  "rule_combo": "#15_BUY_H1_5c_1ea2_PSAR_Exit_4a78",
+  "rule_indices": [
+    14
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5525
+        },
+        {
+          "feature": "H4_adx_14",
+          "operator": "<=",
+          "value": 30.3743
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.6051
+        },
+        {
+          "feature": "H4_cci_14",
+          "operator": "<=",
+          "value": 71.4269
+        },
+        {
+          "feature": "M15_adx_28",
+          "operator": "<=",
+          "value": 21.9115
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.78,
+      "coverage": 41,
+      "coverage_pct": 4.6,
+      "win_rate": 0.22,
+      "avg_pips": 27.5,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": true,
+        "regime_strictness": "strict",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness"
+      },
+      "rules": [
+        {
+          "prediction": "LOSS",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_std_dev_50",
+              "operator": ">",
+              "value": 5.5525
+            },
+            {
+              "feature": "H4_adx_14",
+              "operator": "<=",
+              "value": 30.3743
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.6051
+            },
+            {
+              "feature": "H4_cci_14",
+              "operator": "<=",
+              "value": 71.4269
+            },
+            {
+              "feature": "M15_adx_28",
+              "operator": "<=",
+              "value": 21.9115
+            }
+          ]
+        }
+      ],
+      "regime_filter": null,
+      "saved_at": "2026-04-19T12:21:34.100103",
+      "data_source_id": "unlimited_leveraged_data",
+      "_a46_source_tag": "Saved",
+      "_original_prediction": "LOSS"
+    }
+  ],
+  "exit_strategy": "PSAR exit (H1_psar_signal), ATR SL 1.5x, TP 4.0x, settle 2 candles, max 200 candles",
+  "exit_name": "PSAR Exit",
+  "exit_class": "PSARExit",
+  "exit_params": {
+    "sl_atr_mult": 1.5,
+    "tp_atr_mult": 4.0,
+    "max_candles": 200
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 8,
+  "win_rate": 25.0,
+  "avg_pips": -1466.0,
+  "net_avg_pips": -1518.4,
+  "total_pips": -11728.0,
+  "net_total_pips": -12147.0,
+  "profit_factor": 0.36,
+  "net_profit_factor": 0.35,
+  "max_dd_pips": 14938.0,
+  "total_costs": 328.0,
+  "avg_winner": 3245.0,
+  "avg_loser": -3106.2,
+  "best_trade": 4805.0,
+  "worst_trade": -4880.0,
+  "expectancy": -1518.38,
+  "risk_reward_ratio": 1.04,
+  "std_pips": 3193.3,
+  "sharpe_ish": -0.48,
+  "max_win_streak": 1,
+  "max_loss_streak": 5,
+  "trades_per_day": 0.32,
+  "days_per_trade": 3.1,
+  "recovery_factor": -0.81,
+  "winners": 2,
+  "losers": 6,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 1,
+  "end_of_data_pct": 12.5,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 17.0,
+  "total_calendar_days": 25,
+  "total_dollar_pnl": -121.47,
+  "max_dd_dollars": 149.38,
+  "trades": [
+    {
+      "entry_time": "2026-03-04 05:00:00",
+      "exit_time": "2026-03-04 23:00:00",
+      "entry_price": 5156.93,
+      "exit_price": 5151.72,
+      "direction": "BUY",
+      "pips": -521.0,
+      "net_pips": -562.0,
+      "cost_pips": 41.0,
+      "net_profit": -5.62,
+      "lot_size": 0.01,
+      "candles_held": 17,
+      "exit_reason": "HARD_CLOSE_HOUR",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-05 01:00:00",
+      "exit_time": "2026-03-05 06:00:00",
+      "entry_price": 5172.97,
+      "exit_price": 5124.58,
+      "direction": "BUY",
+      "pips": -4839.0,
+      "net_pips": -4880.0,
+      "cost_pips": 41.0,
+      "net_profit": -48.8,
+      "lot_size": 0.01,
+      "candles_held": 5,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-05 08:00:00",
+      "exit_time": "2026-03-05 13:00:00",
+      "entry_price": 5162.24,
+      "exit_price": 5118.57,
+      "direction": "BUY",
+      "pips": -4367.0,
+      "net_pips": -4408.0,
+      "cost_pips": 41.0,
+      "net_profit": -44.08,
+      "lot_size": 0.01,
+      "candles_held": 5,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-06 06:00:00",
+      "exit_time": "2026-03-06 11:00:00",
+      "entry_price": 5117.59,
+      "exit_price": 5074.37,
+      "direction": "BUY",
+      "pips": -4322.0,
+      "net_pips": -4363.0,
+      "cost_pips": 41.0,
+      "net_profit": -43.63,
+      "lot_size": 0.01,
+      "candles_held": 5,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-06 16:00:00",
+      "exit_time": "2026-03-08 23:00:00",
+      "entry_price": 5142.0,
+      "exit_price": 5130.45,
+      "direction": "BUY",
+      "pips": -1155.0,
+      "net_pips": -1287.0,
+      "cost_pips": 41.0,
+      "net_profit": -12.87,
+      "lot_size": 0.01,
+      "candles_held": 7,
+      "exit_reason": "HARD_CLOSE_HOUR",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -91.0,
+      "swap_nights": 2
+    },
+    {
+      "entry_time": "2026-03-09 17:00:00",
+      "exit_time": "2026-03-09 23:00:00",
+      "entry_price": 5104.75,
+      "exit_price": 5153.21,
+      "direction": "BUY",
+      "pips": 4846.0,
+      "net_pips": 4805.0,
+      "cost_pips": 41.0,
+      "net_profit": 48.05,
+      "lot_size": 0.01,
+      "candles_held": 5,
+      "exit_reason": "HARD_CLOSE_HOUR",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-12 11:00:00",
+      "exit_time": "2026-03-12 13:00:00",
+      "entry_price": 5182.47,
+      "exit_price": 5151.51,
+      "direction": "BUY",
+      "pips": -3096.0,
+      "net_pips": -3137.0,
+      "cost_pips": 41.0,
+      "net_profit": -31.37,
+      "lot_size": 0.01,
+      "candles_held": 2,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-30 04:00:00",
+      "exit_time": "2026-03-30 19:00:00",
+      "entry_price": 4496.16,
+      "exit_price": 4513.42,
+      "direction": "BUY",
+      "pips": 1726.0,
+      "net_pips": 1685.0,
+      "cost_pips": 41.0,
+      "net_profit": 16.85,
+      "lot_size": 0.01,
+      "candles_held": 15,
+      "exit_reason": "END_OF_DATA",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 1,
+    "blown_count": 1,
+    "daily_breach_dates": [],
+    "total_breach_dates": [
+      "2026-03-06"
+    ],
+    "daily_safety_stops": 4,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-12"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 26,
+    "survival_rate_per_month": 0.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 8.1,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 34,
+  "signals_after_regime_filter": 34,
+  "entry_tf": "H1"
+}

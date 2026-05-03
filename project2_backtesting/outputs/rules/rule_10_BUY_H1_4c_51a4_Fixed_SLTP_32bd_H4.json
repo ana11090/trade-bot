@@ -1,0 +1,251 @@
+{
+  "rule_combo": "#10_BUY_H1_4c_51a4_Fixed_SLTP_32bd",
+  "rule_indices": [
+    9
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": ">",
+          "value": -152.2146
+        },
+        {
+          "feature": "M5_position_in_swing_range",
+          "operator": ">",
+          "value": 0.5943
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.833,
+      "coverage": 24,
+      "coverage_pct": 8.6,
+      "win_rate": 0.833,
+      "avg_pips": 293.9,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": ">",
+              "value": -152.2146
+            },
+            {
+              "feature": "M5_position_in_swing_range",
+              "operator": ">",
+              "value": 0.5943
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ],
+      "saved_at": "2026-04-19T11:56:22.119100",
+      "data_source_id": "unlimited_leveraged_data",
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "Fixed SL 150 pips / TP 300 pips / max 1000 candles",
+  "exit_name": "Fixed SL/TP",
+  "exit_class": "FixedSLTP",
+  "exit_params": {
+    "sl_pips": 150,
+    "tp_pips": 300,
+    "max_candles": 1000
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 5,
+  "win_rate": 0.0,
+  "avg_pips": -150.0,
+  "net_avg_pips": -191.0,
+  "total_pips": -750.0,
+  "net_total_pips": -955.0,
+  "profit_factor": 0.0,
+  "net_profit_factor": 0.0,
+  "max_dd_pips": 764.0,
+  "total_costs": 0,
+  "avg_winner": 0.0,
+  "avg_loser": -191.0,
+  "best_trade": -191.0,
+  "worst_trade": -191.0,
+  "expectancy": -191.0,
+  "risk_reward_ratio": 0.0,
+  "std_pips": 0.0,
+  "sharpe_ish": 0.0,
+  "max_win_streak": 0,
+  "max_loss_streak": 5,
+  "trades_per_day": 0.36,
+  "days_per_trade": 2.8,
+  "recovery_factor": -1.25,
+  "winners": 0,
+  "losers": 5,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 8.0,
+  "total_calendar_days": 14,
+  "total_dollar_pnl": -187.18,
+  "max_dd_dollars": 150.89,
+  "trades": [
+    {
+      "entry_time": "2026-03-13T04:00:00.000000000",
+      "exit_time": "2026-03-13T04:00:00.000000000",
+      "entry_price": 5115.79,
+      "exit_price": 5114.29,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "net_profit": -36.29,
+      "lot_size": 0.19,
+      "exit_reason": "STOP_LOSS",
+      "candles_held": 1,
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-16T04:00:00.000000000",
+      "exit_time": "2026-03-16T04:00:00.000000000",
+      "entry_price": 5019.3,
+      "exit_price": 5017.8,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "net_profit": -36.29,
+      "lot_size": 0.19,
+      "exit_reason": "STOP_LOSS",
+      "candles_held": 1,
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-24T04:00:00.000000000",
+      "exit_time": "2026-03-24T04:00:00.000000000",
+      "entry_price": 4347.36,
+      "exit_price": 4345.86,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "net_profit": -38.2,
+      "lot_size": 0.2,
+      "exit_reason": "STOP_LOSS",
+      "candles_held": 1,
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-25T16:00:00.000000000",
+      "exit_time": "2026-03-25T16:00:00.000000000",
+      "entry_price": 4559.08,
+      "exit_price": 4557.58,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "net_profit": -38.2,
+      "lot_size": 0.2,
+      "exit_reason": "STOP_LOSS",
+      "candles_held": 1,
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-27T04:00:00.000000000",
+      "exit_time": "2026-03-27T04:00:00.000000000",
+      "entry_price": 4437.67,
+      "exit_price": 4436.17,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "net_profit": -38.2,
+      "lot_size": 0.2,
+      "exit_reason": "STOP_LOSS",
+      "candles_held": 1,
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 1,
+    "blown_count": 1,
+    "daily_breach_dates": [],
+    "total_breach_dates": [
+      "2026-03-27"
+    ],
+    "daily_safety_stops": 0,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 14,
+    "survival_rate_per_month": 0.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 1.3,
+    "worst_total_pct": 6.4,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 5,
+  "signals_after_regime_filter": 5,
+  "entry_tf": "H4"
+}

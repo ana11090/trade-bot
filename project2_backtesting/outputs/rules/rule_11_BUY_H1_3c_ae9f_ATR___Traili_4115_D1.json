@@ -1,0 +1,191 @@
+{
+  "rule_combo": "#11_BUY_H1_3c_ae9f_ATR___Traili_4115",
+  "rule_indices": [
+    10
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "H1_candle_body",
+          "operator": ">",
+          "value": 14.94
+        },
+        {
+          "feature": "M15_plus_di",
+          "operator": "<=",
+          "value": 24.3427
+        },
+        {
+          "feature": "M15_cci_50",
+          "operator": "<=",
+          "value": -152.2146
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.667,
+      "coverage": 21,
+      "coverage_pct": 7.5,
+      "win_rate": 0.667,
+      "avg_pips": 418.1,
+      "action": "BUY",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "entry_tf": "H1",
+      "rule_combo": "Rule 7 (BUY)",
+      "scenario": "outputs",
+      "spread_pips": 2.5,
+      "commission_pips": 0.0,
+      "discovery_settings": {
+        "regime_filter_enabled": true,
+        "regime_at_discovery": true,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_candle_body",
+              "operator": ">",
+              "value": 14.94
+            },
+            {
+              "feature": "M15_plus_di",
+              "operator": "<=",
+              "value": 24.3427
+            },
+            {
+              "feature": "M15_cci_50",
+              "operator": "<=",
+              "value": -152.2146
+            }
+          ]
+        }
+      ],
+      "regime_filter": [
+        {
+          "feature": "H1_std_dev_20",
+          "direction": ">",
+          "threshold": 17.741695
+        }
+      ],
+      "saved_at": "2026-04-19T11:56:22.134661",
+      "data_source_id": "unlimited_leveraged_data",
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "SL 2.0xATR, TP 4.0xATR, trail after +50 pips (100 dist), max 1000 candles",
+  "exit_name": "ATR + Trailing",
+  "exit_class": "ATRTrailing",
+  "exit_params": {
+    "sl_atr_mult": 2.0,
+    "tp_atr_mult": 4.0,
+    "activation_pips": 50,
+    "trail_distance_pips": 100,
+    "max_candles": 1000
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 2,
+  "win_rate": 50.0,
+  "avg_pips": -1860.5,
+  "net_avg_pips": -1969.8,
+  "total_pips": -3721.0,
+  "net_total_pips": -3940.0,
+  "profit_factor": 0.61,
+  "net_profit_factor": 0.59,
+  "max_dd_pips": 9636.0,
+  "total_costs": 82.0,
+  "avg_winner": 5696.5,
+  "avg_loser": -9636.0,
+  "best_trade": 5696.5,
+  "worst_trade": -9636.0,
+  "expectancy": -1969.75,
+  "risk_reward_ratio": 0.59,
+  "std_pips": 7666.2,
+  "sharpe_ish": -0.26,
+  "max_win_streak": 1,
+  "max_loss_streak": 1,
+  "trades_per_day": 0.67,
+  "days_per_trade": 1.5,
+  "recovery_factor": -0.41,
+  "winners": 1,
+  "losers": 1,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 3.0,
+  "total_calendar_days": 3,
+  "total_dollar_pnl": -39.4,
+  "max_dd_dollars": 96.36,
+  "trades": [
+    {
+      "entry_time": "2026-03-10 00:00:00",
+      "exit_time": "2026-03-11 00:00:00",
+      "entry_price": 5139.7,
+      "exit_price": 5197.53,
+      "direction": "BUY",
+      "pips": 5783.0,
+      "net_pips": 5696.5,
+      "cost_pips": 41.0,
+      "net_profit": 56.96,
+      "lot_size": 0.01,
+      "candles_held": 1,
+      "exit_reason": "ATR_TRAIL_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    },
+    {
+      "entry_time": "2026-03-13 00:00:00",
+      "exit_time": "2026-03-15 00:00:00",
+      "entry_price": 5098.09,
+      "exit_price": 5003.05,
+      "direction": "BUY",
+      "pips": -9504.0,
+      "net_pips": -9636.0,
+      "cost_pips": 41.0,
+      "net_profit": -96.36,
+      "lot_size": 0.01,
+      "candles_held": 1,
+      "exit_reason": "ATR_TRAIL_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -91.0,
+      "swap_nights": 2
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 1,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-13"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 3,
+    "survival_rate_per_month": 100.0,
+    "total_months": 1,
+    "months_blown": 0,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 2.7,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 2,
+  "signals_after_regime_filter": 2,
+  "entry_tf": "D1"
+}
