@@ -3641,7 +3641,7 @@
       "net_profit": 81.62,
       "lot_size": 0.02,
       "candles_held": 1,
-      "exit_reason": "ATR_TRAIL_TP",
+      "exit_reason": "ATR_TRAIL_SL",
       "rule_id": 0,
       "cost_spread_pips": -37.0,
       "cost_commission_pips": -4.0,
