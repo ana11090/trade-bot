@@ -501,25 +501,72 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _data_source_path = os.path.join(project_root, 'data')
 
             # Find candle data for the selected (base) timeframe
-            candle_path = None
-            candidates = [
+            # WHY (May 2026): Old logic silently fell through 4 in-source
+            #      paths to 2 legacy paths at <project_root>/data/. When
+            #      the selected data source contained no CSVs, the legacy
+            #      file was used and the user got results computed on a
+            #      DIFFERENT broker's data with no indication. Now we
+            #      separate "in selected source" from "legacy", and if
+            #      we end up on a legacy path while a real source was
+            #      selected, we abort with a clear message.
+            # CHANGED: May 2026 — fail loud on data-source fallback
+            _in_source_paths = [
                 os.path.join(_data_source_path, f'{symbol}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, f'{symbol.upper()}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, f'{symbol.lower()}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, symbol, f'{entry_tf}.csv'),
-                # Legacy fallback
+            ]
+            _legacy_paths = [
                 os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                 os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
             ]
-            for p in candidates:
+            candle_path = None
+            _used_legacy = False
+            for p in _in_source_paths:
                 if os.path.exists(p):
                     candle_path = p
                     break
+            if candle_path is None:
+                for p in _legacy_paths:
+                    if os.path.exists(p):
+                        candle_path = p
+                        _used_legacy = True
+                        break
+
+            # If a real data source was selected (non-empty id and the
+            # configured path is NOT the bare project_root/data) and we
+            # ended up on a legacy fallback file, abort. This is the
+            # silent-mismatch case the user hit before.
+            _selected_source_is_real = bool(_data_source_id) and \
+                os.path.normpath(_data_source_path) != \
+                os.path.normpath(os.path.join(project_root, 'data'))
+            if candle_path is not None and _used_legacy and _selected_source_is_real:
+                _msg = (
+                    f"\n[DATA SOURCE ERROR] You selected '{_data_source_id}' "
+                    f"({_data_source_path}) but it contains no "
+                    f"{symbol}_{entry_tf}.csv. Backtest aborted to prevent "
+                    f"running on the wrong feed.\n"
+                    f"Searched (in order):\n"
+                    + "\n".join(f"   {p} ({'EXISTS' if os.path.exists(p) else 'missing'})"
+                                for p in _in_source_paths)
+                    + "\n\nTo fix: place the CSV files for this source in "
+                    f"{_data_source_path}\\, or pick a different data source.\n"
+                )
+                output_text.insert(tk.END, _msg)
+                output_text.see(tk.END)
+                return
+            if candle_path is not None and _used_legacy:
+                # Legacy fallback only allowed when no real source was
+                # selected (e.g., empty config). Warn but proceed.
+                output_text.insert(tk.END,
+                    f"\n[WARN] Using legacy candle path {candle_path} "
+                    f"(no data source explicitly selected).\n")
+                output_text.see(tk.END)
 
             if candle_path is None:
                 output_text.insert(tk.END, f"ERROR: {entry_tf} candle data not found!\n")
                 output_text.insert(tk.END, f"Looked in:\n")
-                for p in candidates:
+                for p in (_in_source_paths + _legacy_paths):
                     output_text.insert(tk.END, f"  {p}\n")
                 progress_label.config(text="Error: candle data not found", fg="#dc3545")
                 return
@@ -1183,8 +1230,24 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _tick_line = "M1 data available — 95%+ MT5 parity for exit resolution"
                     else:
                         _tick_line = "No tick/M1 data — using conservative exit fallback"
+                    # WHY (May 2026): Loud-on-screen audit so the user
+                    #      can see at a glance whether the configured
+                    #      source actually contains data, not just
+                    #      whether the path resolves.
+                    # CHANGED: May 2026 — data source audit banner
+                    _csv_audit = ""
+                    if _data_source_path and os.path.isdir(_data_source_path):
+                        _csvs = sorted(f for f in os.listdir(_data_source_path)
+                                      if f.lower().endswith('.csv'))
+                        _csv_audit = (f"   ↳ CSV files in source: " +
+                                     (", ".join(_csvs) or "NONE — backtest will fail with [DATA SOURCE ERROR]") +
+                                     "\n")
+                    else:
+                        _csv_audit = "   ↳ source path does not exist on disk\n"
+
                     output_text.insert(tk.END,
                         f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n"
+                        f"{_csv_audit}"
                         f"   {_tick_line}\n\n"
                     )
                 except Exception as _cfg_e:
@@ -1251,19 +1314,55 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         output_text.see(tk.END)
 
                     # Resolve candle file for this TF
-                    tf_candle_path = None
-                    for cand in [
+                    # WHY (May 2026): Same silent-fallback bug as the
+                    #      single-TF resolver above (lines ~503-516). If
+                    #      the user picked a real data source but it has
+                    #      no CSVs for this TF, the loop would silently
+                    #      use the legacy file at <project_root>/data/.
+                    #      In multi-TF runs we abort the whole run instead
+                    #      of just this TF — a partial multi-TF result
+                    #      from mixed sources is the worst possible
+                    #      outcome to debug.
+                    # CHANGED: May 2026 — fail loud on data-source fallback
+                    _tf_in_source = [
                         os.path.join(_data_source_path, f'{symbol}_{tf}.csv'),
                         os.path.join(_data_source_path, f'{symbol.upper()}_{tf}.csv'),
                         os.path.join(_data_source_path, f'{symbol.lower()}_{tf}.csv'),
                         os.path.join(_data_source_path, symbol, f'{tf}.csv'),
-                        # Legacy fallback
+                    ]
+                    _tf_legacy = [
                         os.path.join(project_root, 'data', f'{symbol}_{tf}.csv'),
                         os.path.join(project_root, 'data', symbol, f'{tf}.csv'),
-                    ]:
+                    ]
+                    tf_candle_path = None
+                    _tf_used_legacy = False
+                    for cand in _tf_in_source:
                         if os.path.exists(cand):
                             tf_candle_path = cand
                             break
+                    if tf_candle_path is None:
+                        for cand in _tf_legacy:
+                            if os.path.exists(cand):
+                                tf_candle_path = cand
+                                _tf_used_legacy = True
+                                break
+
+                    _tf_selected_is_real = bool(_data_source_id) and \
+                        os.path.normpath(_data_source_path) != \
+                        os.path.normpath(os.path.join(project_root, 'data'))
+                    if tf_candle_path is not None and _tf_used_legacy and _tf_selected_is_real:
+                        _tf_msg = (
+                            f"\n[DATA SOURCE ERROR] TF={tf}: source "
+                            f"'{_data_source_id}' has no {symbol}_{tf}.csv. "
+                            f"Multi-TF run aborted to prevent mixed-source "
+                            f"results.\nSearched:\n"
+                            + "\n".join(f"   {p} ({'EXISTS' if os.path.exists(p) else 'missing'})"
+                                        for p in _tf_in_source)
+                            + "\n"
+                        )
+                        output_text.insert(tk.END, _tf_msg)
+                        output_text.see(tk.END)
+                        return  # abort the whole multi-TF run
 
                     if tf_candle_path is None:
                         if multi_tf:
