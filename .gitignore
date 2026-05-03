@@ -29,11 +29,12 @@ project1_reverse_engineering/outputs/strategy_search_results.json
 datasets/*/candles/*.csv
 project1_reverse_engineering/outputs/smart_feature_matrix.csv
 
-# Exclude all data source CSV and tick files (too large for GitHub)
-data/sources/original/*.csv
-data/sources/xauusd_levereged_data/*.csv
-data/sources/xauusd_unlimited_levereged/*.csv
-data/sources/unlimited_leveraged_data/*.csv
+# Source CSVs are tracked via git-lfs (see .gitattributes).
+# Tick files stay excluded — Python backtester uses M1 OHLC, not ticks,
+# and per-symbol ticks are too large to be worth tracking.
+data/sources/*/ticks/
+data/sources/*/*_ticks.csv
+data/sources/*/*ticks*.csv
 xauusd/Files xauusd levereged/*.csv
 xauusd/xauusd unlimited levereged/*.csv
 # Large output files
