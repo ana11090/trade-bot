@@ -318,6 +318,18 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "Volume change on {tf}",
     }),
+    # MFI (Money Flow Index) — built-in iMFI
+    # WHY: MFI was previously unsupported, blocking rules that use it.
+    #      MT5 has iMFI() built-in with OHLCV input, period 14.
+    # CHANGED: May 2026 — add MFI mapping for EA parity
+    (r"^mfi$", {
+        "mt5_handle_var":  "int handle_mfi_{tf};",
+        "mt5_handle_init": "handle_mfi_{tf} = iMFI(NULL,{mt5_tf},14,VOLUME_TICK); if(handle_mfi_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_mfi_{tf}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.mfi(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], df_m{tv_tf}['volume'], length=14).iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MFI(14) on {tf}",
+    }),
     # Ultimate Oscillator
     (r"^ultimate_oscillator$", {
         "mt5_handle_var":  "int handle_uo_{tf};",
@@ -1837,6 +1849,50 @@ def get_mql_code(feature_name, platform='mt5'):
             'read_code':       f'MqlDateTime _dt_{var_name}; TimeToStruct(TimeCurrent(), _dt_{var_name}); double val_{var_name} = (double)_dt_{var_name}.day;',
             'custom_indicator': False,
             'description':     f'{tf} Day of Month',
+        }
+
+    # ── hour_of_day ───────────────────────────────────────────────────────────
+    # WHY: Time-of-day feature — no indicator handle needed.
+    #      Uses iTime(NULL, tf, 1) to get the bar time at shift=1,
+    #      matching SafeCopyBuf's GetBarShift convention.
+    #      Python computes this as timestamps.dt.hour (indicator_utils.py:306).
+    # CHANGED: May 2026 — add hour_of_day mapping for EA parity
+    if ind == 'hour_of_day':
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       f'MqlDateTime _dt_{var_name}; TimeToStruct(iTime(NULL,{mt5_tf},1), _dt_{var_name}); double val_{var_name} = (double)_dt_{var_name}.hour;',
+            'custom_indicator': False,
+            'description':     f'{tf} Hour of Day (from bar time at shift=1)',
+        }
+
+    # ── dpo (inline — replaces iCustom("DPO") that needs DPO.ex5) ────────────
+    # WHY: The existing DPO pattern uses iCustom("DPO") which requires
+    #      DPO.ex5 installed in MQL5/Indicators/. Most users don't have it.
+    #      DPO is simple: close shifted back by (period/2+1) minus SMA(close, period).
+    #      Implemented inline using iMA handle + CopyClose.
+    # CHANGED: May 2026 — inline DPO replaces custom indicator dependency
+    if ind == 'dpo':
+        _period = 20
+        _lookback = _period // 2 + 1   # = 11
+        _shift_close = 1 + _lookback    # = 12 (shift=1 for previous bar + lookback)
+        return {
+            'var_name':        var_name,
+            'handle_var':      f'int handle_dpo_sma_{tf};',
+            'handle_init':     f'handle_dpo_sma_{tf} = iMA(NULL,{mt5_tf},{_period},0,MODE_SMA,PRICE_CLOSE); if(handle_dpo_sma_{tf}==INVALID_HANDLE) return(INIT_FAILED);',
+            'read_code':       (
+                f'double val_{var_name} = 0.0;\n'
+                f'      {{\n'
+                f'         double _dpo_sma[1], _dpo_cl[1];\n'
+                f'         if(CopyBuffer(handle_dpo_sma_{tf},0,1,1,_dpo_sma)>0 && CopyClose(NULL,{mt5_tf},{_shift_close},1,_dpo_cl)>0)\n'
+                f'            val_{var_name} = _dpo_cl[0] - _dpo_sma[0];\n'
+                f'         else\n'
+                f'            indicatorFailed = true;\n'
+                f'      }}'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} DPO(20) inline (close[shift+11] - SMA(20)[shift], no .ex5 needed)',
         }
 
     # ── tsi ──────────────────────────────────────────────────────────────────

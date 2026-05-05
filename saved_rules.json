@@ -6541,7 +6541,7 @@
       "dd_total_pct": 6.0,
       "account_size": 10000.0,
       "regime_filter": null,
-      "status": "discovered",
+      "status": "deployed",
       "grade": "",
       "score": 0
     }

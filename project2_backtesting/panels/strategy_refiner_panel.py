@@ -1633,6 +1633,11 @@ def _export_csv(trades=None):
             w.writeheader()
             for i, t in enumerate(trades, 1):
                 row = {'#': i, **t}
+                # WHY: Vectorized backtest stores gross pips as 'pips',
+                #      non-vectorized as 'pnl_pips'. Normalize for CSV export.
+                # CHANGED: May 2026 — normalize pnl_pips field name
+                if 'pnl_pips' not in row or row.get('pnl_pips') in (None, ''):
+                    row['pnl_pips'] = row.get('pips', '')
                 w.writerow(row)
         messagebox.showinfo("Exported", f"Saved {len(trades)} trades to:\n{fp}")
     except Exception as e:

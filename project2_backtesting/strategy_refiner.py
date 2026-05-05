@@ -1105,11 +1105,15 @@ def enrich_trades(trades):
     exit_times = pd.to_datetime(
         [t.get('exit_time', '') for t in trades], errors='coerce'
     )
+    # WHY: pandas 3.x changed TimedeltaIndex.total_seconds() return type from
+    #      Float64Index (which had .iloc) to plain Index (which does not).
+    #      Use direct integer indexing [i] which works on all Index types.
+    # CHANGED: May 2026 — fix hold_minutes always 0 on pandas 3.x
     hold_secs = (exit_times - entry_times).total_seconds()
 
     for i, t in enumerate(trades):
         try:
-            hs = hold_secs.iloc[i]
+            hs = hold_secs[i]
             t['hold_minutes'] = float(hs) / 60.0 if pd.notna(hs) else 0.0
         except Exception:
             t['hold_minutes'] = 0.0
