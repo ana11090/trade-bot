@@ -106,7 +106,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 2,
@@ -215,7 +216,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 3,
@@ -304,7 +306,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 4,
@@ -403,7 +406,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 5,
@@ -512,7 +516,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 6,
@@ -611,7 +616,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 7,
@@ -660,7 +666,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 8,
@@ -769,7 +776,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 9,
@@ -878,7 +886,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 10,
@@ -987,7 +996,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 11,
@@ -1096,7 +1106,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 12,
@@ -1145,7 +1156,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 13,
@@ -1194,7 +1206,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 14,
@@ -1303,7 +1316,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 15,
@@ -1392,7 +1406,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 16,
@@ -1501,7 +1516,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 17,
@@ -1610,7 +1626,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 18,
@@ -1709,7 +1726,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 19,
@@ -1758,7 +1776,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 20,
@@ -1867,7 +1886,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 21,
@@ -1976,7 +1996,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 22,
@@ -2085,7 +2106,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 23,
@@ -2194,7 +2216,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 24,
@@ -2293,7 +2316,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 25,
@@ -2342,7 +2366,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 26,
@@ -2391,7 +2416,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 27,
@@ -2500,7 +2526,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 28,
@@ -2599,7 +2626,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 29,
@@ -2698,7 +2726,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 30,
@@ -2797,7 +2826,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 31,
@@ -2896,7 +2926,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 32,
@@ -2985,7 +3016,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 33,
@@ -3034,7 +3066,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 34,
@@ -3143,7 +3176,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 35,
@@ -3242,7 +3276,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 36,
@@ -3341,7 +3376,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 37,
@@ -3440,7 +3476,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 38,
@@ -3549,7 +3586,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 39,
@@ -3658,7 +3696,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 40,
@@ -3707,7 +3746,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 41,
@@ -3756,7 +3796,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 42,
@@ -3855,7 +3896,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 43,
@@ -3964,7 +4006,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 44,
@@ -4063,7 +4106,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 45,
@@ -4162,7 +4206,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 46,
@@ -4271,7 +4316,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 47,
@@ -4320,116 +4366,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
-  },
-  {
-    "id": 48,
-    "rule_id": "BUY_H1_4c_0506_884a4f2b",
-    "saved_at": "2026-05-06T13:12:42.448001",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf69",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_candle_body",
-          "operator": ">",
-          "value": 37.785
-        },
-        {
-          "feature": "D1_mt5_macd_fast_signal",
-          "operator": "<=",
-          "value": 135.9925
-        },
-        {
-          "feature": "H4_upper_shadow",
-          "operator": ">",
-          "value": 3.78
-        },
-        {
-          "feature": "H4_atr_band_upper",
-          "operator": ">",
-          "value": 5331.7063
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.688,
-      "coverage": 32,
-      "coverage_pct": 3.6,
-      "win_rate": 0.688,
-      "avg_pips": 482.8,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "direction": "BUY",
-      "entry_timeframe": "H1",
-      "rule_combo": "Rule 1 (BUY)",
-      "scenario": "scope_entry_plus_higher",
-      "spread_pips": 37.0,
-      "commission_pips": 4.0,
-      "leverage": 10,
-      "contract_size": 100.0,
-      "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "discovery_settings": {
-        "regime_filter_enabled": false,
-        "regime_at_discovery": false,
-        "regime_strictness": "conservative",
-        "regime_mode": "automatic",
-        "single_rule_mode_enabled": true,
-        "single_rule_mode_variant": "a",
-        "srm_dedup_correlated": true,
-        "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
-        "prop_firm_stage": "Evaluation",
-        "prop_firm_account": "10000"
-      },
-      "rules": [
-        {
-          "prediction": "WIN",
-          "action": "BUY",
-          "conditions": [
-            {
-              "feature": "D1_candle_body",
-              "operator": ">",
-              "value": 37.785
-            },
-            {
-              "feature": "D1_mt5_macd_fast_signal",
-              "operator": "<=",
-              "value": 135.9925
-            },
-            {
-              "feature": "H4_upper_shadow",
-              "operator": ">",
-              "value": 3.78
-            },
-            {
-              "feature": "H4_atr_band_upper",
-              "operator": ">",
-              "value": 5331.7063
-            }
-          ]
-        }
-      ],
-      "spread": 37.0,
-      "pip_size": 0.01,
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "status": "discovered",
-      "grade": "",
-      "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 49,
@@ -4528,7 +4466,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 50,
@@ -4627,7 +4566,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 51,
@@ -4726,7 +4666,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 52,
@@ -4835,7 +4776,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 53,
@@ -4884,7 +4826,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 54,
@@ -4933,7 +4876,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 55,
@@ -5022,7 +4966,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 56,
@@ -5131,7 +5076,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 57,
@@ -5240,7 +5186,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 58,
@@ -5349,7 +5296,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 59,
@@ -5458,7 +5406,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 60,
@@ -5567,7 +5516,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 61,
@@ -5616,7 +5566,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 62,
@@ -5665,7 +5616,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 63,
@@ -5714,7 +5666,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 64,
@@ -5823,7 +5776,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 65,
@@ -5932,7 +5886,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 66,
@@ -6031,7 +5986,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 67,
@@ -6080,7 +6036,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 68,
@@ -6129,7 +6086,8 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 69,
@@ -6178,6 +6136,7 @@
       "score": 0,
       "spread_pips": 2.5,
       "direction": "BUY"
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   }
 ]
