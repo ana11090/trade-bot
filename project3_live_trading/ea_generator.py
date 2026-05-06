@@ -2459,28 +2459,37 @@ void OnTick()
 {regime_check_block}
 {conditions_check_block}
 
-   if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
-   if(!entrySignal) return;
-
-   // WHY: UseNextBarEntry delays entry by 1 bar to match Python backtester's
-   //      entry_bar_offset=1 (legacy) mode. When false (default for new rules),
-   //      EA enters immediately = matches Python entry_bar_offset=0 (EA parity).
-   // CHANGED: May 2026 — pending signal mode for legacy parity
+   // WHY: UseNextBarEntry pending signal check must run BEFORE the
+   //      entrySignal return. On the next bar after a pending signal,
+   //      conditions may no longer be true (entrySignal=false), but we
+   //      still need to execute the stored signal from the previous bar.
+   // CHANGED: May 2026 — fix pending signal lost when conditions change on next bar
    static bool g_pendingSignal = false;
    static datetime g_pendingBar = 0;
-   if(UseNextBarEntry)
+
+   // ── Step 1: Check for a pending signal from the previous bar ──
+   if(UseNextBarEntry && g_pendingSignal)
    {{
       datetime curBar = iTime(NULL, PERIOD_M5, 0);
-      if(!g_pendingSignal)
+      if(curBar == g_pendingBar)
+         return;  // still on signal bar — keep waiting
+      // Next bar arrived — clear flag and fall through to entry
+      // (skip entrySignal/indicatorFailed checks — signal was already validated)
+      g_pendingSignal = false;
+   }}
+   else
+   {{
+      // ── Step 2: Normal signal evaluation ──
+      if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
+      if(!entrySignal) return;
+
+      // ── Step 3: If UseNextBarEntry, store signal instead of entering now ──
+      if(UseNextBarEntry)
       {{
          g_pendingSignal = true;
-         g_pendingBar = curBar;
-         return;  // signal bar — store and wait
+         g_pendingBar = iTime(NULL, PERIOD_M5, 0);
+         return;  // wait for next bar
       }}
-      if(curBar == g_pendingBar)
-         return;  // still on same bar — wait
-      // Next bar arrived — clear flag and fall through to entry
-      g_pendingSignal = false;
    }}
 
    //--- No existing position with our magic
