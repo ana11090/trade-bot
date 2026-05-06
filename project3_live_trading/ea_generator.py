@@ -1730,9 +1730,27 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      {ind_code["read_code"]}\n'
             f'      if(val_{ind_code["var_name"]} {_ind_compare} ExitThreshold)\n'
             f'      {{\n'
-            f'         {_ind_guard}CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
-            f'         Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
-            f'         // Block same-bar re-entry (match Python backtester behavior)\n'
+            f'         // WHY: Only close and log when we have a position.\n'
+            f'         //      Without this guard, Print fires on every tick\n'
+            f'         //      while the indicator stays past the threshold\n'
+            f'         //      (10k+ log lines per run). CloseAllPositions is\n'
+            f'         //      a no-op without positions, but the Print is not.\n'
+            f'         // CHANGED: May 2026 — fix indicator exit log spam (Issue C)\n'
+            f'         bool _hasExitPos = false;\n'
+            f'         for(int _ei = PositionsTotal() - 1; _ei >= 0; _ei--)\n'
+            f'         {{\n'
+            f'            ulong _et = PositionGetTicket(_ei);\n'
+            f'            if(_et > 0 && PositionGetInteger(POSITION_MAGIC) == MagicNumber\n'
+            f'               && PositionGetString(POSITION_SYMBOL) == _Symbol)\n'
+            f'            {{ _hasExitPos = true; break; }}\n'
+            f'         }}\n'
+            f'         if(_hasExitPos)\n'
+            f'         {{\n'
+            f'            {_ind_guard}CloseAllPositions("IndicatorExit_{exit_indicator}");\n'
+            f'            Print("[EA] Indicator exit: {exit_indicator} = ", val_{ind_code["var_name"]});\n'
+            f'         }}\n'
+            f'         // Block same-bar re-entry even without a position —\n'
+            f'         // prevents opening a trade the exit would immediately close.\n'
             f'         g_lastBarTime = iTime(_Symbol, {mql_period}, 0);\n'
             f'         return;\n'
             f'      }}\n'
@@ -2449,6 +2467,17 @@ void OnTick()
 
    if(UseNewsFilter && IsNewsImminent())
    {{ LogSkip("news_filter", 0); return; }}
+
+   // WHY: Block new entries during hard close hour. The hard close block
+   //      above closes existing positions when hour == HardCloseHourGMT.
+   //      Without this gate, the EA re-enters on the next M5 bar, hard
+   //      close closes it, repeat = churn every 5 min (Issue B).
+   //      Using >= so entries stay blocked for the rest of the session.
+   //      Matches Python backtester which skips signal evaluation when
+   //      candle.hour >= hard_close_hour.
+   // CHANGED: May 2026 — fix 23:xx trade explosion (Issue B)
+   if(HardCloseHourGMT >= 0 && _now_gmt.hour >= HardCloseHourGMT)
+   {{ LogSkip("hard_close_hour_block", (double)_now_gmt.hour); return; }}
 
    //--- Check entry conditions
    // WHY: Any indicator that returns EMPTY_VALUE means it's not ready or

@@ -1668,6 +1668,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if is_news_blackout(entry_time, blackout_half_window_minutes=news_blackout_minutes):
                 continue  # skip this entry
 
+        # WHY: Block entries during hard close hour. Without this, Python opens
+        #      trades at 23:xx that immediately get hard-closed — same churn as
+        #      the EA. Matches EA fix (Issue B): >= so block holds all session.
+        # CHANGED: May 2026 — block hard close hour entries (parity with EA)
+        if hard_close_hour >= 0:
+            try:
+                _entry_hour = pd.Timestamp(next_candle['timestamp']).hour
+                if _entry_hour >= hard_close_hour:
+                    continue
+            except Exception:
+                pass
+
         # Determine direction first (needed for slippage sign)
         # WHY (Phase A.30): Old code read rule_obj.get("direction", "BUY")
         #      but the field is written as "action" by every rule
@@ -2291,6 +2303,16 @@ def fast_backtest(df, ind, rules, exit_strategy,
         next_candle = df.iloc[_eb_int]
 
         entry_time  = next_candle['timestamp']
+
+        # WHY: Block entries during hard close hour — parity with EA fix (Issue B).
+        # CHANGED: May 2026 — block hard close hour entries
+        if hard_close_hour >= 0:
+            try:
+                if pd.Timestamp(entry_time).hour >= hard_close_hour:
+                    continue
+            except Exception:
+                pass
+
         entry_price = float(next_candle['open'])
 
         # WHY: Apply only slippage to entry_price. Spread paid as cost line.
