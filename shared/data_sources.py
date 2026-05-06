@@ -60,6 +60,33 @@ def _find_repo_root(filepath):
     return None
 
 
+def _ensure_lfs_tracking(repo_root):
+    """Ensure data/sources/**/*.csv is LFS-tracked in .gitattributes.
+
+    WHY: If .gitattributes is missing the tracking rule (e.g. reverted by
+         a restore commit like 19898d6), git lfs pull silently does nothing.
+         This re-adds the rule automatically so auto-pull always works.
+    CHANGED: May 2026 — self-healing LFS tracking
+    """
+    ga_path = os.path.join(repo_root, '.gitattributes')
+    required_rule = 'data/sources/**/*.csv filter=lfs diff=lfs merge=lfs -text'
+    try:
+        existing = ''
+        if os.path.exists(ga_path):
+            with open(ga_path, 'r', encoding='utf-8') as f:
+                existing = f.read()
+        if required_rule in existing:
+            return  # already tracked
+        print(f"[LFS] .gitattributes missing LFS rule for data/sources/ — adding it")
+        with open(ga_path, 'a', encoding='utf-8') as f:
+            if existing and not existing.endswith('\n'):
+                f.write('\n')
+            f.write(required_rule + '\n')
+        print(f"[LFS] Added: {required_rule}")
+    except Exception as e:
+        print(f"[LFS] Could not update .gitattributes: {e}")
+
+
 def assert_not_lfs_stub(filepath):
     """Auto-pull from LFS if file is a pointer stub. Raise if that fails.
 
@@ -78,6 +105,10 @@ def assert_not_lfs_stub(filepath):
 
     repo_root = _find_repo_root(filepath)
     if repo_root:
+        # WHY: Ensure .gitattributes has the tracking rule before pulling.
+        #      If the rule was reverted, git lfs pull silently does nothing.
+        # CHANGED: May 2026 — self-healing LFS tracking
+        _ensure_lfs_tracking(repo_root)
         import subprocess
         try:
             result = subprocess.run(
