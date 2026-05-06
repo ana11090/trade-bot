@@ -812,7 +812,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   slippage_seed=None,
                                   # WHY: Per-firm session spread multipliers. None = module default.
                                   # CHANGED: April 2026 — per-firm spread calibration
-                                  session_spread_multipliers=None):
+                                  session_spread_multipliers=None,
+                                  # WHY: entry_bar_offset controls signal-bar vs next-bar entry.
+                                  #      Must match fast_backtest/run_backtest's offset.
+                                  # CHANGED: May 2026 — pass entry_bar_offset to vectorized path
+                                  entry_bar_offset=0):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -1610,6 +1614,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             max_spread_pips=max_spread_pips,
             session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
+            entry_bar_offset=entry_bar_offset,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -2259,6 +2264,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             max_spread_pips=max_spread_pips,
             session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
+            entry_bar_offset=entry_bar_offset,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────
