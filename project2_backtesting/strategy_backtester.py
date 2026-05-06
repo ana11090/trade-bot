@@ -3354,6 +3354,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         mask = _c['timestamp'] <= _ed
         _c = _c[mask].reset_index(drop=True)
         _i = _i[mask].reset_index(drop=True)
+    log.info(f"  DEBUG: len(candles_df)={len(candles_df)}, len(indicators_df)={len(indicators_df)}, "
+             f"start_date={start_date!r}, end_date={end_date!r}, "
+             f"ts_dtype={_c['timestamp'].dtype}, ts_min={_c['timestamp'].min()}, ts_max={_c['timestamp'].max()}, "
+             f"len_after_iloc200={len(_c)}")
     log.info(f"  Pre-trimmed to {len(_c)} candles for matrix loop")
 
     matrix = []
