@@ -261,6 +261,7 @@ def generate_ea(
             direction=_dir,  # NEW: pass strategy direction (using _dir from FIX 1A)
             regime_conditions=_regime_conds,
             leverage=_ea_leverage,
+            use_next_bar=_use_next_bar,
         )
     else:
         code = _generate_tradovate(
@@ -499,7 +500,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   entry_timeframe='H1',
                   direction='BUY',
                   regime_conditions=None,
-                  leverage=0):
+                  leverage=0,
+                  # WHY: entry_bar_offset/use_next_bar controls EA UseNextBarEntry input.
+                  # CHANGED: May 2026 — pass entry timing to _generate_mt5
+                  use_next_bar=False):
     """Generate MQL5 EA code. direction must be 'BUY' or 'SELL'."""
     if direction not in ('BUY', 'SELL'):
         raise ValueError(f"_generate_mt5: direction must be BUY or SELL, got {direction!r}")
@@ -1971,8 +1975,8 @@ bool IsMinHoldMet()
     _vr.append(f"  Max spread: {max_spread_pips} pips  |  Hard close: {hard_close_hour}h GMT  |  News: {news_filter_minutes}min")
     # WHY: Show entry timing in EA verification report header.
     # CHANGED: May 2026 — entry timing diagnostic in EA header
-    _ebo_vr_label = "Signal bar (immediate)" if not _use_next_bar else "Next bar (+1, legacy)"
-    _vr.append(f"ENTRY TIMING: {_ebo_vr_label}  (UseNextBarEntry={'true' if _use_next_bar else 'false'})")
+    _ebo_vr_label = "Signal bar (immediate)" if not use_next_bar else "Next bar (+1, legacy)"
+    _vr.append(f"ENTRY TIMING: {_ebo_vr_label}  (UseNextBarEntry={'true' if use_next_bar else 'false'})")
     _vr.append("")
     _vr.append("")
     _vr.append(f"SETTINGS: {symbol}, Risk {risk_per_trade_pct}%, Account ${account_size:,.0f}, Magic {magic_number}")
@@ -2156,7 +2160,7 @@ input double MaxSpreadPips      = {max_spread_pips};         // Max spread to al
 input int    HardCloseHourGMT   = {hard_close_hour};         // Force-close all positions at this GMT hour daily (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
-input bool   UseNextBarEntry    = {_use_next_bar_str};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
+input bool   UseNextBarEntry    = {'true' if use_next_bar else 'false'};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
 input bool   UseNewsFilter      = {'true' if news_filter_minutes > 0 else 'false'};  // Skip trading around news
 input int    NewsFilterMinutes  = {news_filter_minutes};     // Minutes before/after news
 input bool   UsePropFirmMode    = true;                      // Enable prop firm safety
