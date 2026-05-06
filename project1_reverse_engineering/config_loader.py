@@ -308,6 +308,13 @@ def save(updates):
     should add them to DEFAULTS first if they want them to stick.
     Atomic via write-then-rename.
     """
+    # WHY: data_source_path is machine-specific (absolute path). If a caller
+    #      passes it, strip it before saving — data_source_id is enough and
+    #      the path is resolved at runtime via get_source_path().
+    # CHANGED: May 2026 — don't persist absolute data_source_path
+    if updates and 'data_source_path' in updates:
+        updates = dict(updates)
+        updates.pop('data_source_path', None)
     cfg = load()  # current state, including any saved overrides
     for k, v in (updates or {}).items():
         if k in DEFAULTS:

@@ -555,7 +555,10 @@ def discover_bot_entry_rules(
         for _be_r in result.get('rules', []):
             if 'data_source_id' not in _be_r:
                 _be_r['data_source_id'] = _be_ds_id
-                _be_r['data_source_path'] = _be_ds_path
+                # WHY: data_source_path is machine-specific (absolute path).
+                #      Store empty — resolved at runtime via get_source_path(id).
+                # CHANGED: May 2026 — don't store absolute path
+                _be_r['data_source_path'] = ''
     except Exception:
         pass
 

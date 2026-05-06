@@ -473,14 +473,20 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 progress_label.config(text="Error: no rules selected", fg="#dc3545")
                 return
 
-            # WHY: Data source comes from rule first, then config, then default.
-            # CHANGED: April 2026 — rule-driven data source
+            # WHY: Data source path from rule may be an absolute path from a
+            #      different machine. ALWAYS validate with os.path.isdir() before
+            #      trusting it. If invalid, resolve from data_source_id which is
+            #      machine-independent (just a folder name under data/sources/).
+            # CHANGED: May 2026 — validate data_source_path before use
             _data_source_path = ''
             _data_source_id = ''
             if selected_rules:
-                _data_source_path = selected_rules[0].get('data_source_path', '')
                 _data_source_id = selected_rules[0].get('data_source_id', '')
-                if _data_source_id and not _data_source_path:
+                _stored_path = selected_rules[0].get('data_source_path', '')
+                # Trust stored path ONLY if it exists on this machine
+                if _stored_path and os.path.isdir(_stored_path):
+                    _data_source_path = _stored_path
+                elif _data_source_id:
                     try:
                         from shared.data_sources import get_source_path
                         _data_source_path = get_source_path(_data_source_id)
@@ -501,9 +507,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _ds_mod = _ds_ilu.module_from_spec(_ds_spec)
                     _ds_spec.loader.exec_module(_ds_mod)
                     _p1_cfg = _ds_mod.load()
-                    _data_source_id   = _p1_cfg.get('data_source_id', '') or ''
-                    _data_source_path = _p1_cfg.get('data_source_path', '') or ''
-                    if _data_source_id and not _data_source_path:
+                    _data_source_id = _data_source_id or _p1_cfg.get('data_source_id', '') or ''
+                    _cfg_path = _p1_cfg.get('data_source_path', '') or ''
+                    # Same validation: trust config path only if it exists on this machine
+                    if _cfg_path and os.path.isdir(_cfg_path):
+                        _data_source_path = _cfg_path
+                    elif _data_source_id:
                         try:
                             from shared.data_sources import get_source_path
                             _data_source_path = get_source_path(_data_source_id)
@@ -1293,7 +1302,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      from backtest carry the correct data_source_id.
             # CHANGED: April 2026 — data source in run settings
             _run_settings['data_source_id']   = _data_source_id
-            _run_settings['data_source_path'] = _data_source_path
+            # WHY: data_source_path is machine-specific (absolute path).
+            #      Only data_source_id should be persisted — the path is
+            #      resolved at runtime via get_source_path(data_source_id).
+            # CHANGED: May 2026 — don't persist absolute path
+            _run_settings['data_source_path'] = ''
             print(f"[BACKTEST] Run settings: regime={_run_settings['regime_filter_enabled']}, "
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "

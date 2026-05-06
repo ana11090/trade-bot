@@ -1,11 +1,259 @@
-[
-  {
-    "id": 1,
-    "rule_id": "BUY_H1_4c_0506_837b8660",
-    "saved_at": "2026-05-06T13:10:52.332092",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+{
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_sma_50_distance",
+          "operator": ">",
+          "value": -0.0692
+        },
+        {
+          "feature": "H1_adx_28",
+          "operator": ">",
+          "value": 17.2074
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.824,
+      "coverage": 51,
+      "coverage_pct": 5.8,
+      "win_rate": 0.824,
+      "avg_pips": 414.7,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 413.8,
+      "win_rate_test": 1.0,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": "<=",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_kst_signal",
+          "operator": "<=",
+          "value": -11.7559
+        },
+        {
+          "feature": "H4_mt5_ema_20_distance",
+          "operator": "<=",
+          "value": -1.178
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.733,
+      "coverage": 30,
+      "coverage_pct": 3.4,
+      "win_rate": 0.733,
+      "avg_pips": 147.5,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 89.8,
+      "win_rate_test": 0.75,
+      "test_samples": 8,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_sma_50_distance",
+          "operator": "<=",
+          "value": -0.0692
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": ">",
+          "value": 0.875
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.688,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.688,
+      "avg_pips": 229.4,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 319.3,
+      "win_rate_test": 0.667,
+      "test_samples": 6,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": ">",
+          "value": 12.41
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.909,
+      "coverage": 22,
+      "coverage_pct": 2.5,
+      "win_rate": 0.909,
+      "avg_pips": 989.4,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 385.0,
+      "win_rate_test": 1.0,
+      "test_samples": 1,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": "<=",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_kst_signal",
+          "operator": "<=",
+          "value": -11.7559
+        },
+        {
+          "feature": "H4_mt5_ema_20_distance",
+          "operator": ">",
+          "value": -1.178
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.826,
+      "coverage": 23,
+      "coverage_pct": 2.6,
+      "win_rate": 0.826,
+      "avg_pips": 430.5,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 267.0,
+      "win_rate_test": 1.0,
+      "test_samples": 5,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "M5_adx_28",
+          "operator": ">",
+          "value": 26.2045
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.9,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.9,
+      "avg_pips": 664.0,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 108.9,
+      "win_rate_test": 0.714,
+      "test_samples": 7,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "M5_adx_28",
+          "operator": "<=",
+          "value": 26.2045
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.75,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.75,
+      "avg_pips": 383.9,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 142.8,
+      "win_rate_test": 0.5,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -105,16 +353,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 2,
-    "rule_id": "BUY_H1_4c_0506_83c0a741",
-    "saved_at": "2026-05-06T13:10:52.351681",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -214,16 +456,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 3,
-    "rule_id": "BUY_H1_2c_0506_b2724719",
-    "saved_at": "2026-05-06T13:10:52.394600",
-    "source": "Step3:scope_per_tf_only:BUY:conf91",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -303,16 +539,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 4,
-    "rule_id": "BUY_H1_3c_0506_00daa1e3",
-    "saved_at": "2026-05-06T13:10:52.457738",
-    "source": "Step3:scope_per_tf_only:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -402,16 +632,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 5,
-    "rule_id": "BUY_H1_4c_0506_4415f366",
-    "saved_at": "2026-05-06T13:10:52.541782",
-    "source": "Step3:scope_per_tf_only:BUY:conf80",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -511,16 +735,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 6,
-    "rule_id": "BUY_H1_3c_0506_fda1f835",
-    "saved_at": "2026-05-06T13:10:52.641846",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -610,16 +828,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 7,
-    "rule_id": "BUY_XX_2c_0506_0ee54daa",
-    "saved_at": "2026-05-06T13:11:01.678971",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_volume_change",
@@ -659,16 +871,10 @@
       "grade": "",
       "score": 0,
       "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 8,
-    "rule_id": "BUY_H1_4c_0506_c41a5803",
-    "saved_at": "2026-05-06T13:11:07.335784",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "direction": "BUY",
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -768,16 +974,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 9,
-    "rule_id": "BUY_H1_4c_0506_07caae6d",
-    "saved_at": "2026-05-06T13:11:07.364700",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -877,16 +1077,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 10,
-    "rule_id": "BUY_H1_4c_0506_30268f82",
-    "saved_at": "2026-05-06T13:11:07.431025",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf69",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -986,16 +1180,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 11,
-    "rule_id": "BUY_H1_4c_0506_cdade91d",
-    "saved_at": "2026-05-06T13:11:07.571504",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf83",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M5_keltner_width",
@@ -1095,114 +1283,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 12,
-    "rule_id": "BUY_XX_2c_0506_c785256e",
-    "saved_at": "2026-05-06T13:11:12.241167",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 13,
-    "rule_id": "BUY_XX_2c_0506_1ea1dd11",
-    "saved_at": "2026-05-06T13:11:21.981057",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 14,
-    "rule_id": "BUY_H1_4c_0506_4c8e2030",
-    "saved_at": "2026-05-06T13:11:29.704087",
-    "source": "Step3:scope_per_tf_only:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1302,16 +1386,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 15,
-    "rule_id": "BUY_H1_2c_0506_5c6b9d73",
-    "saved_at": "2026-05-06T13:11:29.740662",
-    "source": "Step3:scope_per_tf_only:BUY:conf96",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1391,16 +1469,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 16,
-    "rule_id": "BUY_H1_4c_0506_19358467",
-    "saved_at": "2026-05-06T13:11:29.804843",
-    "source": "Step3:scope_per_tf_only:BUY:conf72",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1500,16 +1572,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 17,
-    "rule_id": "BUY_H1_4c_0506_0525bf49",
-    "saved_at": "2026-05-06T13:11:29.917851",
-    "source": "Step3:scope_per_tf_only:BUY:conf96",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1609,16 +1675,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 18,
-    "rule_id": "BUY_H1_3c_0506_b7462cbf",
-    "saved_at": "2026-05-06T13:11:30.067845",
-    "source": "Step3:scope_per_tf_only:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1708,65 +1768,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 19,
-    "rule_id": "BUY_XX_2c_0506_8848ca51",
-    "saved_at": "2026-05-06T13:11:34.639567",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 20,
-    "rule_id": "BUY_H1_4c_0506_fc63ddea",
-    "saved_at": "2026-05-06T13:11:39.611507",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1866,16 +1871,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 21,
-    "rule_id": "BUY_H1_4c_0506_dd81dd43",
-    "saved_at": "2026-05-06T13:11:39.678321",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -1975,16 +1974,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 22,
-    "rule_id": "BUY_H1_4c_0506_61d71433",
-    "saved_at": "2026-05-06T13:11:39.728925",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf88",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -2084,16 +2077,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 23,
-    "rule_id": "BUY_H1_4c_0506_5419305b",
-    "saved_at": "2026-05-06T13:11:39.845556",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf80",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -2193,16 +2180,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 24,
-    "rule_id": "BUY_H1_3c_0506_a6d3395b",
-    "saved_at": "2026-05-06T13:11:39.978299",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -2292,114 +2273,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 25,
-    "rule_id": "BUY_XX_2c_0506_541346d4",
-    "saved_at": "2026-05-06T13:11:44.633940",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 26,
-    "rule_id": "BUY_XX_2c_0506_488720ec",
-    "saved_at": "2026-05-06T13:11:54.231778",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 27,
-    "rule_id": "BUY_H1_4c_0506_e42f3711",
-    "saved_at": "2026-05-06T13:12:00.754362",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2499,16 +2376,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 28,
-    "rule_id": "BUY_H1_3c_0506_77616d52",
-    "saved_at": "2026-05-06T13:12:00.805432",
-    "source": "Step3:scope_per_tf_only:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2598,16 +2469,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 29,
-    "rule_id": "BUY_H1_3c_0506_8a769ac3",
-    "saved_at": "2026-05-06T13:12:00.871218",
-    "source": "Step3:scope_per_tf_only:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2697,16 +2562,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 30,
-    "rule_id": "BUY_H1_3c_0506_05b69b2b",
-    "saved_at": "2026-05-06T13:12:00.988735",
-    "source": "Step3:scope_per_tf_only:BUY:conf76",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2796,16 +2655,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 31,
-    "rule_id": "BUY_H1_3c_0506_dbc1ea83",
-    "saved_at": "2026-05-06T13:12:01.152767",
-    "source": "Step3:scope_per_tf_only:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2895,16 +2748,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 32,
-    "rule_id": "BUY_H1_2c_0506_45445f26",
-    "saved_at": "2026-05-06T13:12:01.304085",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -2984,65 +2831,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 33,
-    "rule_id": "BUY_XX_2c_0506_27c47280",
-    "saved_at": "2026-05-06T13:12:05.844032",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 34,
-    "rule_id": "BUY_H1_4c_0506_41b3df88",
-    "saved_at": "2026-05-06T13:12:10.696821",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf76",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3142,16 +2934,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 35,
-    "rule_id": "BUY_H1_3c_0506_324afe4f",
-    "saved_at": "2026-05-06T13:12:10.733902",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3241,16 +3027,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 36,
-    "rule_id": "BUY_H1_3c_0506_aaadf5c7",
-    "saved_at": "2026-05-06T13:12:10.803747",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf95",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3340,16 +3120,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 37,
-    "rule_id": "BUY_H1_3c_0506_755db805",
-    "saved_at": "2026-05-06T13:12:10.946583",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3439,16 +3213,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 38,
-    "rule_id": "BUY_H1_4c_0506_c5e79c5e",
-    "saved_at": "2026-05-06T13:12:11.129150",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3548,16 +3316,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 39,
-    "rule_id": "BUY_H1_4c_0506_8eb8c145",
-    "saved_at": "2026-05-06T13:12:11.280802",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H1_std_dev_50",
@@ -3657,114 +3419,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 40,
-    "rule_id": "BUY_XX_2c_0506_0a47a13e",
-    "saved_at": "2026-05-06T13:12:15.859968",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 41,
-    "rule_id": "BUY_XX_2c_0506_0c1e8dbd",
-    "saved_at": "2026-05-06T13:12:25.889499",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 42,
-    "rule_id": "BUY_H1_3c_0506_f61ff7f3",
-    "saved_at": "2026-05-06T13:12:32.637643",
-    "source": "Step3:scope_per_tf_only:BUY:conf89",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_3_upper",
@@ -3854,16 +3512,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 43,
-    "rule_id": "BUY_H1_4c_0506_c401ef55",
-    "saved_at": "2026-05-06T13:12:32.687658",
-    "source": "Step3:scope_per_tf_only:BUY:conf79",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_3_upper",
@@ -3963,16 +3615,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 44,
-    "rule_id": "BUY_H1_3c_0506_0e5ad78e",
-    "saved_at": "2026-05-06T13:12:32.788558",
-    "source": "Step3:scope_per_tf_only:BUY:conf82",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_3_upper",
@@ -4062,16 +3708,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 45,
-    "rule_id": "BUY_H1_3c_0506_295c18dd",
-    "saved_at": "2026-05-06T13:12:32.966651",
-    "source": "Step3:scope_per_tf_only:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_3_upper",
@@ -4161,16 +3801,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 46,
-    "rule_id": "BUY_H1_4c_0506_002fb6ec",
-    "saved_at": "2026-05-06T13:12:33.138000",
-    "source": "Step3:scope_per_tf_only:BUY:conf73",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "H4_bb_20_3_upper",
@@ -4270,65 +3904,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 47,
-    "rule_id": "BUY_XX_2c_0506_4568c587",
-    "saved_at": "2026-05-06T13:12:37.726751",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 48,
-    "rule_id": "BUY_H1_4c_0506_884a4f2b",
-    "saved_at": "2026-05-06T13:12:42.448001",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf69",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -4428,16 +4007,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 49,
-    "rule_id": "BUY_H1_3c_0506_bdc8343d",
-    "saved_at": "2026-05-06T13:12:42.497243",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf95",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -4527,16 +4100,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 50,
-    "rule_id": "BUY_H1_3c_0506_b4271885",
-    "saved_at": "2026-05-06T13:12:42.587268",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf90",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -4626,16 +4193,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 51,
-    "rule_id": "BUY_H1_3c_0506_54096bdc",
-    "saved_at": "2026-05-06T13:12:42.769961",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf85",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -4725,16 +4286,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 52,
-    "rule_id": "BUY_H1_4c_0506_9a94ad63",
-    "saved_at": "2026-05-06T13:12:43.009065",
-    "source": "Step3:scope_entry_plus_higher:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -4834,114 +4389,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 53,
-    "rule_id": "BUY_XX_2c_0506_0775fcf7",
-    "saved_at": "2026-05-06T13:12:47.600614",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 54,
-    "rule_id": "BUY_XX_2c_0506_84da87bf",
-    "saved_at": "2026-05-06T13:12:57.709307",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 55,
-    "rule_id": "BUY_H1_2c_0506_1d509285",
-    "saved_at": "2026-05-06T13:13:04.405548",
-    "source": "Step3:scope_per_tf_only:BUY:conf93",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5021,16 +4472,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 56,
-    "rule_id": "BUY_H1_4c_0506_eebefadd",
-    "saved_at": "2026-05-06T13:13:04.456282",
-    "source": "Step3:scope_per_tf_only:BUY:conf68",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5130,16 +4575,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 57,
-    "rule_id": "BUY_H1_4c_0506_18b7e23a",
-    "saved_at": "2026-05-06T13:13:04.575621",
-    "source": "Step3:scope_per_tf_only:BUY:conf67",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5239,16 +4678,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 58,
-    "rule_id": "BUY_H1_4c_0506_0c3fe7c9",
-    "saved_at": "2026-05-06T13:13:04.793675",
-    "source": "Step3:scope_per_tf_only:BUY:conf88",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5348,16 +4781,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 59,
-    "rule_id": "BUY_H1_4c_0506_444e6c2e",
-    "saved_at": "2026-05-06T13:13:05.011562",
-    "source": "Step3:scope_per_tf_only:BUY:conf70",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5457,16 +4884,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 60,
-    "rule_id": "BUY_H1_4c_0506_deac6223",
-    "saved_at": "2026-05-06T13:13:05.228072",
-    "source": "Step3:scope_per_tf_only:BUY:conf65",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "D1_candle_body",
@@ -5566,163 +4987,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 61,
-    "rule_id": "BUY_XX_2c_0506_ab8aa847",
-    "saved_at": "2026-05-06T13:13:10.014001",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 62,
-    "rule_id": "BUY_XX_2c_0506_5ef7b605",
-    "saved_at": "2026-05-06T13:13:19.083220",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 63,
-    "rule_id": "BUY_XX_2c_0506_8d3b8d4e",
-    "saved_at": "2026-05-06T13:13:29.051337",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 64,
-    "rule_id": "BUY_H1_4c_0506_c9963fec",
-    "saved_at": "2026-05-06T13:13:36.050517",
-    "source": "Step3:scope_per_tf_only:BUY:conf66",
-    "notes": "",
-    "rule": {
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -5822,16 +5090,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 65,
-    "rule_id": "BUY_H1_4c_0506_09dcb3da",
-    "saved_at": "2026-05-06T13:13:36.096440",
-    "source": "Step3:scope_per_tf_only:BUY:conf76",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -5931,16 +5193,10 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 66,
-    "rule_id": "BUY_H1_3c_0506_c1b17a7c",
-    "saved_at": "2026-05-06T13:13:36.226281",
-    "source": "Step3:scope_per_tf_only:BUY:conf75",
-    "notes": "",
-    "rule": {
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    },
+    {
       "conditions": [
         {
           "feature": "M15_mt5_atr_7",
@@ -6030,154 +5286,9 @@
       "regime_filter": null,
       "status": "discovered",
       "grade": "",
-      "score": 0
-    }
-  },
-  {
-    "id": 67,
-    "rule_id": "BUY_XX_2c_0506_3811ac57",
-    "saved_at": "2026-05-06T13:13:40.981388",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
       "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
+      "_a46_source_tag": "Saved"
     }
-  },
-  {
-    "id": 68,
-    "rule_id": "BUY_XX_2c_0506_f6a70b4e",
-    "saved_at": "2026-05-06T13:13:50.224889",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  },
-  {
-    "id": 69,
-    "rule_id": "BUY_XX_2c_0506_64346bf4",
-    "saved_at": "2026-05-06T13:14:01.196553",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
-        },
-        {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
-        }
-      ],
-      "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
-      "contract_size": 100.0,
-      "pip_size": 0.01,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "leverage": 10,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
-      "status": "discovered",
-      "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
-    }
-  }
-]
+  ],
+  "discovery_method": "selected_subset"
+}

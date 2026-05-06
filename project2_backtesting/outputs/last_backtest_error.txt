@@ -1,27 +1,33 @@
-=== TK CALLBACK EXCEPTION ===
-Time:  2026-04-28T15:10:32.363599
-Type:  KeyboardInterrupt
-Error: KeyboardInterrupt()
+=== WORKER THREAD EXCEPTION ===
+Time:  2026-05-06T13:14:34.159386
+Type:  DateParseError
+Error: DateParseError('Unknown datetime string format, unable to parse: oid sha256:393517397d84371da953c2ebe5b14c2375abb836db02b7c025d74b30b4d4e0f8')
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
-    return self.func(*args)
-           ^^^^^^^^^^^^^^^^
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2389, in destroy
-    for c in list(self.children.values()): c.destroy()
-                                           ^^^^^^^^^^^
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2668, in destroy
-    for c in list(self.children.values()): c.destroy()
-                                           ^^^^^^^^^^^
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2668, in destroy
-    for c in list(self.children.values()): c.destroy()
-                                           ^^^^^^^^^^^
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2668, in destroy
-    for c in list(self.children.values()): c.destroy()
-                                           ^^^^^^^^^^^
-  [Previous line repeated 7 more times]
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2669, in destroy
-    self.tk.call('destroy', self._w)
-KeyboardInterrupt
+  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\run_backtest_panel.py", line 1402, in run_in_thread
+    tf_results = run_comparison_matrix(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project1_reverse_engineering\..\project2_backtesting\strategy_backtester.py", line 2970, in run_comparison_matrix
+    candles_df['timestamp'] = normalize_timestamp(candles_df['timestamp'])
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\shared\data_utils.py", line 25, in normalize_timestamp
+    ts = pd.to_datetime(series)
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\tools\datetimes.py", line 1040, in to_datetime
+    values = convert_listlike(arg._values, format)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\tools\datetimes.py", line 437, in _convert_listlike_datetimes
+    result, tz_parsed = objects_to_datetime64(
+                        ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\arrays\datetimes.py", line 2623, in objects_to_datetime64
+    result, tz_parsed = tslib.array_to_datetime(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/tslib.pyx", line 259, in pandas._libs.tslib.array_to_datetime
+  File "pandas/_libs/tslib.pyx", line 473, in pandas._libs.tslib.array_to_datetime
+  File "pandas/_libs/tslib.pyx", line 430, in pandas._libs.tslib.array_to_datetime
+  File "pandas/_libs/tslibs/conversion.pyx", line 658, in pandas._libs.tslibs.conversion.convert_str_to_tsobject
+  File "pandas/_libs/tslibs/parsing.pyx", line 321, in pandas._libs.tslibs.parsing.parse_datetime_string
+  File "pandas/_libs/tslibs/parsing.pyx", line 652, in pandas._libs.tslibs.parsing.dateutil_parse
+pandas._libs.tslibs.parsing.DateParseError: Unknown datetime string format, unable to parse: oid sha256:393517397d84371da953c2ebe5b14c2375abb836db02b7c025d74b30b4d4e0f8
 

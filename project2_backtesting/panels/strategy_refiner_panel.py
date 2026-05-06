@@ -2990,7 +2990,11 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 _bs_cfg = _bs_cl.load()
                 for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
                                 'contract_size', 'pip_size',
-                                'data_source_id', 'data_source_path',
+                                'data_source_id',
+                                # WHY: data_source_path excluded — it's an absolute path
+                                #      from the machine that saved the config and will be
+                                #      wrong on any other machine. data_source_id is enough.
+                                # CHANGED: May 2026 — don't embed absolute path
                                 'prop_firm_name', 'prop_firm_id',
                                 'prop_firm_leverage'):
                     _bs_val = _bs_cfg.get(_bs_key)

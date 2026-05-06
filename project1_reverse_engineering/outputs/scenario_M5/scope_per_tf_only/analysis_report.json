@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-05-03T14:26:46.145347",
+  "generated_at": "2026-05-06T13:11:01.731129",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-05-03 14:26:46",
+  "activated_at": "2026-05-06 13:11:01",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 4.1,
+  "analysis_time_s": 28.8,
   "trade_count": 1106,
   "feature_count": 759,
   "profile": {
@@ -133,372 +133,410 @@
   "feature_importance": {
     "top_20": [
       [
-        "M5_candle_range",
-        0.026335
-      ],
-      [
-        "M5_mt5_atr_50",
-        0.022367
-      ],
-      [
-        "M5_std_dev_50",
-        0.022312
-      ],
-      [
-        "M5_mt5_atr_7",
-        0.022286
-      ],
-      [
-        "M5_std_dev_20",
-        0.021224
+        "M5_mt5_atr_14",
+        0.020972
       ],
       [
         "M5_mt5_atr_28",
-        0.020989
+        0.020833
       ],
       [
-        "M5_lower_shadow",
-        0.019798
-      ],
-      [
-        "M5_mt5_atr_14",
-        0.019421
-      ],
-      [
-        "M5_mt5_atr_21",
-        0.019091
+        "M5_std_dev_50",
+        0.019261
       ],
       [
         "M5_mt5_atr_100",
-        0.017817
+        0.018381
+      ],
+      [
+        "M5_tsi",
+        0.018011
+      ],
+      [
+        "M5_mt5_atr_50",
+        0.017956
+      ],
+      [
+        "M5_candle_range",
+        0.017447
+      ],
+      [
+        "M5_aroon_down",
+        0.016966
+      ],
+      [
+        "M5_mt5_atr_7",
+        0.01669
+      ],
+      [
+        "M5_mfi",
+        0.016592
+      ],
+      [
+        "M5_distance_from_high",
+        0.016567
+      ],
+      [
+        "M5_bb_50_2_width",
+        0.016481
+      ],
+      [
+        "M5_mt5_atr_21",
+        0.014745
+      ],
+      [
+        "M5_lower_shadow",
+        0.013619
+      ],
+      [
+        "M5_dpo",
+        0.012939
+      ],
+      [
+        "M5_cci_20",
+        0.012499
+      ],
+      [
+        "M5_mt5_stoch_21_k",
+        0.01232
+      ],
+      [
+        "M5_candle_body",
+        0.012155
+      ],
+      [
+        "M5_mt5_stoch_14_d",
+        0.012102
       ],
       [
         "M5_bear_power",
-        0.015334
-      ],
-      [
-        "M5_minus_di",
-        0.013758
-      ],
-      [
-        "M5_bb_20_2_width",
-        0.013611
-      ],
-      [
-        "M5_volume_change",
-        0.013412
-      ],
-      [
-        "M5_mt5_macd_fast_signal",
-        0.013372
-      ],
-      [
-        "M5_roc_20",
-        0.013184
-      ],
-      [
-        "M5_mt5_stoch_21_d",
-        0.013038
-      ],
-      [
-        "M5_keltner_width",
-        0.012411
-      ],
-      [
-        "M5_cmf",
-        0.012305
-      ],
-      [
-        "M5_volume_ratio_20",
-        0.012278
+        0.011948
       ]
     ],
-    "train_accuracy": 0.8032,
-    "test_accuracy": 0.5811
+    "train_accuracy": 0.7896,
+    "test_accuracy": 0.6036
   },
   "rules": [
     {
       "conditions": [
         {
-          "feature": "M5_mt5_atr_14",
-          "operator": ">",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_dpo",
-          "operator": "<=",
-          "value": 14.6108
-        },
-        {
-          "feature": "M5_keltner_width",
-          "operator": ">",
-          "value": 0.7303
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.912,
-      "coverage": 34,
-      "coverage_pct": 3.8,
-      "win_rate": 0.912,
-      "avg_pips": 593.5,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M5_mt5_atr_14",
-          "operator": ">",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_dpo",
-          "operator": "<=",
-          "value": 14.6108
-        },
-        {
           "feature": "M5_keltner_width",
           "operator": "<=",
-          "value": 0.7303
+          "value": 0.6821
         },
         {
-          "feature": "M5_aroon_down",
+          "feature": "M5_mt5_stoch_14_d",
           "operator": "<=",
-          "value": 40.0
+          "value": 66.7194
+        },
+        {
+          "feature": "M5_bear_power",
+          "operator": "<=",
+          "value": -7.0379
+        },
+        {
+          "feature": "M5_mt5_macd_fast_diff",
+          "operator": ">",
+          "value": -1.5309
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.788,
-      "coverage": 33,
-      "coverage_pct": 3.7,
-      "win_rate": 0.788,
-      "avg_pips": 444.4,
+      "confidence": 0.701,
+      "coverage": 117,
+      "coverage_pct": 13.2,
+      "win_rate": 0.701,
+      "avg_pips": 246.6,
       "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
-      "action": "BUY",
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
-    },
-    {
-      "conditions": [
-        {
-          "feature": "M5_mt5_atr_14",
-          "operator": "<=",
-          "value": 9.5491
-        },
-        {
-          "feature": "M5_lower_shadow",
-          "operator": "<=",
-          "value": 0.385
-        },
-        {
-          "feature": "M5_aroon_down",
-          "operator": "<=",
-          "value": 10.0
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.697,
-      "coverage": 33,
-      "coverage_pct": 3.7,
-      "win_rate": 0.697,
-      "avg_pips": 133.3,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": 156.0,
+      "avg_pips_test": 94.2,
       "win_rate_test": 0.667,
-      "test_samples": 3,
+      "test_samples": 18,
       "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
+      "data_source_path": ""
     },
     {
       "conditions": [
         {
-          "feature": "M5_mt5_atr_14",
+          "feature": "M5_keltner_width",
           "operator": "<=",
-          "value": 9.5491
+          "value": 0.6821
         },
         {
-          "feature": "M5_lower_shadow",
+          "feature": "M5_mt5_stoch_14_d",
           "operator": ">",
-          "value": 0.385
+          "value": 66.7194
         },
         {
-          "feature": "M5_tsi",
-          "operator": "<=",
-          "value": -40.0566
-        },
-        {
-          "feature": "M5_vpt",
+          "feature": "M5_sma_50_distance",
           "operator": ">",
-          "value": -43.8769
+          "value": -0.0958
+        },
+        {
+          "feature": "M5_cmf",
+          "operator": ">",
+          "value": -0.0533
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.85,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.85,
-      "avg_pips": 379.1,
+      "confidence": 0.68,
+      "coverage": 100,
+      "coverage_pct": 11.3,
+      "win_rate": 0.68,
+      "avg_pips": 212.3,
       "_target_mode": "regression_weighted",
-      "avg_pips_test": 133.4,
-      "win_rate_test": 0.6,
-      "test_samples": 5,
+      "avg_pips_test": 424.3,
+      "win_rate_test": 0.733,
+      "test_samples": 15,
       "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
+      "data_source_path": ""
     },
     {
       "conditions": [
         {
-          "feature": "M5_mt5_atr_14",
+          "feature": "M5_keltner_width",
           "operator": ">",
-          "value": 9.5491
+          "value": 0.6821
         },
         {
-          "feature": "M5_dpo",
+          "feature": "M5_candle_body",
           "operator": ">",
-          "value": 14.6108
+          "value": 12.41
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.85,
-      "coverage": 20,
-      "coverage_pct": 2.3,
-      "win_rate": 0.85,
-      "avg_pips": 812.4,
+      "confidence": 0.909,
+      "coverage": 22,
+      "coverage_pct": 2.5,
+      "win_rate": 0.909,
+      "avg_pips": 989.4,
       "_target_mode": "regression_weighted",
-      "avg_pips_test": null,
-      "win_rate_test": null,
-      "test_samples": 0,
-      "test_skip_reason": "no_test_matches",
+      "avg_pips_test": 385.0,
+      "win_rate_test": 1.0,
+      "test_samples": 1,
+      "test_skip_reason": null,
       "action": "BUY",
       "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03"
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "M5_adx_28",
+          "operator": ">",
+          "value": 26.2045
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.9,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.9,
+      "avg_pips": 664.0,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 108.9,
+      "win_rate_test": 0.714,
+      "test_samples": 7,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "M5_sma_50_distance",
+          "operator": ">",
+          "value": -0.0958
+        },
+        {
+          "feature": "M5_cmf",
+          "operator": "<=",
+          "value": -0.0533
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.8,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.8,
+      "avg_pips": 456.9,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 314.5,
+      "win_rate_test": 0.833,
+      "test_samples": 6,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "M5_adx_28",
+          "operator": "<=",
+          "value": 26.2045
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.75,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.75,
+      "avg_pips": 383.9,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 142.8,
+      "win_rate_test": 0.5,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
     }
   ],
   "clusters": [
     {
-      "cluster_id": 0,
-      "name": "Big winners",
-      "count": 36,
-      "pct": 3.3,
-      "avg_duration_min": 0.0,
-      "avg_pips": 575.7,
-      "win_rate": 0.889,
-      "top_features": [
-        "M5_bull_power",
-        "M5_mt5_macd_std_signal",
-        "M5_kst_signal",
-        "M5_awesome_oscillator",
-        "M5_mt5_macd_std"
-      ]
-    },
-    {
-      "cluster_id": 3,
+      "cluster_id": 1,
       "name": "Profit cluster",
-      "count": 226,
-      "pct": 20.4,
+      "count": 200,
+      "pct": 18.1,
       "avg_duration_min": 0.0,
-      "avg_pips": 216.5,
-      "win_rate": 0.615,
+      "avg_pips": 290.5,
+      "win_rate": 0.725,
       "top_features": [
-        "M5_bull_power",
         "M5_distance_to_rolling_level_382",
-        "M5_distance_to_rolling_level_236",
-        "M5_mt5_macd_std_signal",
-        "M5_kst_signal"
+        "M5_mt5_macd_std_diff",
+        "M5_mt5_macd_fast_signal",
+        "M5_mt5_macd_fast",
+        "M5_awesome_oscillator"
       ]
     },
     {
       "cluster_id": 2,
       "name": "Profit cluster",
-      "count": 458,
-      "pct": 41.4,
+      "count": 178,
+      "pct": 16.1,
       "avg_duration_min": 0.0,
-      "avg_pips": 147.3,
-      "win_rate": 0.629,
+      "avg_pips": 261.5,
+      "win_rate": 0.624,
       "top_features": [
-        "M5_bull_power",
         "M5_distance_to_rolling_level_382",
+        "M5_bull_power",
         "M5_distance_to_rolling_level_236",
-        "M5_vpt",
-        "M5_price_above_cloud"
+        "M5_mt5_macd_std_diff",
+        "M5_mt5_macd_fast_signal"
       ]
     },
     {
-      "cluster_id": 1,
+      "cluster_id": 0,
       "name": "Profit cluster",
-      "count": 386,
-      "pct": 34.9,
+      "count": 327,
+      "pct": 29.6,
       "avg_duration_min": 0.0,
-      "avg_pips": 63.5,
-      "win_rate": 0.484,
+      "avg_pips": 120.7,
+      "win_rate": 0.609,
       "top_features": [
-        "M5_bull_power",
+        "M5_mt5_macd_std_diff",
+        "M5_mt5_macd_fast_diff",
         "M5_distance_to_rolling_level_382",
+        "M5_roc_10",
+        "M5_cci_14"
+      ]
+    },
+    {
+      "cluster_id": 3,
+      "name": "Mixed cluster",
+      "count": 401,
+      "pct": 36.3,
+      "avg_duration_min": 0.0,
+      "avg_pips": 43.7,
+      "win_rate": 0.476,
+      "top_features": [
+        "M5_distance_to_rolling_level_382",
+        "M5_bull_power",
         "M5_distance_to_rolling_level_236",
-        "M5_cmf",
-        "M5_tsi"
+        "M5_mt5_macd_std_diff",
+        "M5_cci_14"
       ]
     }
   ],
   "regimes": {
     "trend": {
       "trending": {
-        "count": 545,
-        "win_rate": 0.622,
-        "avg_pips": 199.5,
-        "total_pips": 108739.0
+        "count": 615,
+        "win_rate": 0.626,
+        "avg_pips": 191.9,
+        "total_pips": 117993.0
       },
       "ranging": {
-        "count": 561,
-        "win_rate": 0.547,
-        "avg_pips": 94.3,
-        "total_pips": 52926.0
+        "count": 491,
+        "win_rate": 0.532,
+        "avg_pips": 88.9,
+        "total_pips": 43672.0
       },
       "indicator_used": "H4_adx_14",
       "adx_threshold": 25.0
     },
     "volatility": {
       "high": {
-        "count": 486,
-        "win_rate": 0.66,
-        "avg_pips": 230.6,
-        "total_pips": 112086.0
+        "count": 543,
+        "win_rate": 0.645,
+        "avg_pips": 219.0,
+        "total_pips": 118942.0
       },
       "low": {
-        "count": 620,
-        "win_rate": 0.524,
-        "avg_pips": 80.0,
-        "total_pips": 49579.0
+        "count": 563,
+        "win_rate": 0.526,
+        "avg_pips": 75.9,
+        "total_pips": 42723.0
       },
       "indicator_used": "H1_atr_14",
-      "median_value": 10.57
+      "median_value": 9.86
     },
     "direction": {
       "above_ema200": {
-        "count": 811,
-        "win_rate": 0.597,
-        "avg_pips": 167.3,
-        "total_pips": 135676.0
+        "count": 866,
+        "win_rate": 0.604,
+        "avg_pips": 167.7,
+        "total_pips": 145191.0
       },
       "below_ema200": {
-        "count": 295,
-        "win_rate": 0.549,
-        "avg_pips": 88.1,
-        "total_pips": 25989.0
+        "count": 240,
+        "win_rate": 0.512,
+        "avg_pips": 68.6,
+        "total_pips": 16474.0
       },
       "indicator_used": "H4_ema_200_distance"
     },
@@ -630,97 +668,97 @@
   "anomalies": {
     "count": 56,
     "pct": 5.1,
-    "anomaly_win_rate": 0.768,
-    "normal_win_rate": 0.574,
+    "anomaly_win_rate": 0.839,
+    "normal_win_rate": 0.57,
     "top_10": [
+      {
+        "trade_id": 134,
+        "open_time": "2026-01-30 18:39:00",
+        "pips": 1683.0,
+        "is_winner": true,
+        "score": -0.683,
+        "hour": 16,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 157,
+        "open_time": "2026-01-29 00:02:00",
+        "pips": 2655.0,
+        "is_winner": true,
+        "score": -0.672,
+        "hour": 22,
+        "duration": 1.0
+      },
       {
         "trade_id": 129,
         "open_time": "2026-02-02 08:33:00",
         "pips": 564.0,
         "is_winner": true,
-        "score": -0.675,
+        "score": -0.669,
         "hour": 6,
         "duration": 0.0
       },
       {
-        "trade_id": 156,
-        "open_time": "2026-01-29 02:03:00",
-        "pips": 1045.0,
+        "trade_id": 1083,
+        "open_time": "2020-03-16 15:42:00",
+        "pips": 245.0,
         "is_winner": true,
-        "score": -0.669,
-        "hour": 0,
-        "duration": 1.0
-      },
-      {
-        "trade_id": 131,
-        "open_time": "2026-02-02 03:29:00",
-        "pips": 423.0,
-        "is_winner": true,
-        "score": -0.662,
-        "hour": 1,
-        "duration": 0.0
-      },
-      {
-        "trade_id": 145,
-        "open_time": "2026-01-30 04:46:00",
-        "pips": 768.0,
-        "is_winner": true,
-        "score": -0.658,
-        "hour": 2,
+        "score": -0.665,
+        "hour": 13,
         "duration": 3.0
       },
       {
-        "trade_id": 128,
-        "open_time": "2026-02-02 09:03:00",
-        "pips": -150.0,
-        "is_winner": false,
-        "score": -0.656,
-        "hour": 7,
+        "trade_id": 24,
+        "open_time": "2026-03-03 15:09:00",
+        "pips": 490.0,
+        "is_winner": true,
+        "score": -0.632,
+        "hour": 13,
         "duration": 0.0
       },
       {
-        "trade_id": 148,
-        "open_time": "2026-01-29 19:02:00",
-        "pips": 1257.0,
+        "trade_id": 38,
+        "open_time": "2026-03-02 00:18:00",
+        "pips": 346.0,
         "is_winner": true,
-        "score": -0.642,
-        "hour": 17,
-        "duration": 1.0
+        "score": -0.63,
+        "hour": 22,
+        "duration": 0.0
       },
       {
-        "trade_id": 149,
-        "open_time": "2026-01-29 18:56:00",
-        "pips": 417.0,
+        "trade_id": 534,
+        "open_time": "2025-04-07 02:06:00",
+        "pips": 1560.0,
         "is_winner": true,
-        "score": -0.639,
-        "hour": 16,
-        "duration": 1.0
+        "score": -0.629,
+        "hour": 0,
+        "duration": 2.0
       },
       {
-        "trade_id": 21,
-        "open_time": "2026-03-03 17:02:00",
-        "pips": 699.0,
+        "trade_id": 112,
+        "open_time": "2026-02-04 01:22:00",
+        "pips": 1470.0,
         "is_winner": true,
-        "score": -0.637,
-        "hour": 15,
-        "duration": 1.0
+        "score": -0.628,
+        "hour": 23,
+        "duration": 2.0
       },
       {
-        "trade_id": 147,
-        "open_time": "2026-01-29 19:12:00",
-        "pips": 1187.0,
+        "trade_id": 142,
+        "open_time": "2026-01-30 10:23:00",
+        "pips": 1400.0,
         "is_winner": true,
-        "score": -0.637,
-        "hour": 17,
-        "duration": 1.0
+        "score": -0.625,
+        "hour": 8,
+        "duration": 2.0
       },
       {
-        "trade_id": 111,
-        "open_time": "2026-02-04 03:19:00",
-        "pips": 420.0,
+        "trade_id": 119,
+        "open_time": "2026-02-02 23:44:00",
+        "pips": 143.0,
         "is_winner": true,
-        "score": -0.62,
-        "hour": 1,
+        "score": -0.624,
+        "hour": 21,
         "duration": 1.0
       }
     ]
@@ -729,9 +767,9 @@
     {
       "type": "filter",
       "description": "Only trade in high volatility (ATR above median)",
-      "impact": "Would improve win rate from 58% to ~66%",
-      "trades_filtered": 620,
-      "pct_filtered": 56.0
+      "impact": "Would improve win rate from 58% to ~64%",
+      "trades_filtered": 563,
+      "pct_filtered": 51.0
     }
   ],
   "regime_filter_discovery": null

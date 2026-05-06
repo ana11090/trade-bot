@@ -171,6 +171,12 @@ def resolve_data_dir(rule=None):
         ds_id = rule.get('data_source_id', '')
         if ds_path and os.path.isdir(ds_path):
             return ds_path
+        # WHY: Stored path may be from a different machine (absolute path).
+        #      Log and fall through to ID-based resolution which is portable.
+        # CHANGED: May 2026 — log stale absolute path
+        if ds_path and not os.path.isdir(ds_path):
+            print(f"[data_sources] Stored path not found: {ds_path!r} "
+                  f"— resolving from data_source_id={ds_id!r} instead")
         if ds_id:
             resolved = get_source_path(ds_id)
             if os.path.isdir(resolved):

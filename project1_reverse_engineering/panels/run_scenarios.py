@@ -542,12 +542,15 @@ def build_panel(parent):
             # Save to P1 config
             try:
                 _cfg['data_source_id'] = src['id']
-                _cfg['data_source_path'] = src['path']
+                _cfg['data_source_path'] = ''  # resolved at runtime from ID
                 # WHY: Must NOT save entire _cfg — it has stale firm name
                 #      from build time. Only save the keys that changed.
                 # CHANGED: April 2026 — fix firm overwrite bug
+                # WHY: data_source_path excluded — absolute path breaks on other machines.
+                #      data_source_id is machine-independent and sufficient.
+                # CHANGED: May 2026 — don't persist absolute path to config
                 _cl.save({'data_source_id': src['id'],
-                          'data_source_path': src['path']})
+                          'data_source_path': ''})
 
                 # WHY: Old indicator cache was built from different data.
                 #      Must delete so step2 recomputes from new source.
@@ -3462,7 +3465,9 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     _ds_src_pre  = _ui_source_map.get(_ds_name_pre, {})
                     if _ds_src_pre:
                         _pre_save['data_source_id']   = _ds_src_pre['id']
-                        _pre_save['data_source_path'] = _ds_src_pre['path']
+                        # WHY: data_source_path not saved — absolute path breaks on other machines.
+                        # CHANGED: May 2026 — don't persist absolute path
+                        _pre_save['data_source_path'] = ''
 
                 if _pre_save:
                     _pre_cl.save(_pre_save)

@@ -2544,7 +2544,10 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
         for _rpt_r in rules:
             if 'data_source_id' not in _rpt_r:
                 _rpt_r['data_source_id'] = _rpt_ds_id
-                _rpt_r['data_source_path'] = _rpt_ds_path
+                # WHY: data_source_path is machine-specific (absolute path).
+                #      Store empty — resolved at runtime via get_source_path(id).
+                # CHANGED: May 2026 — don't store absolute path in analysis_report
+                _rpt_r['data_source_path'] = ''
     except Exception:
         pass
 
