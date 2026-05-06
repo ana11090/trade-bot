@@ -1969,6 +1969,11 @@ bool IsMinHoldMet()
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
     _vr.append(f"  Max spread: {max_spread_pips} pips  |  Hard close: {hard_close_hour}h GMT  |  News: {news_filter_minutes}min")
+    # WHY: Show entry timing in EA verification report header.
+    # CHANGED: May 2026 — entry timing diagnostic in EA header
+    _ebo_vr_label = "Signal bar (immediate)" if not _use_next_bar else "Next bar (+1, legacy)"
+    _vr.append(f"ENTRY TIMING: {_ebo_vr_label}  (UseNextBarEntry={'true' if _use_next_bar else 'false'})")
+    _vr.append("")
     _vr.append("")
     _vr.append(f"SETTINGS: {symbol}, Risk {risk_per_trade_pct}%, Account ${account_size:,.0f}, Magic {magic_number}")
     _vr.append(f"  Firm: {prop_firm_name} ({stage}), DD: {dd_daily_pct}%/{dd_total_pct}%")

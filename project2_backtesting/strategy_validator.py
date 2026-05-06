@@ -539,6 +539,10 @@ def walk_forward_validate(
     min_hold_minutes=0,
     cooldown_candles=0,
     slippage_pips=0.0,
+    # WHY: A rule saved with entry_bar_offset=1 must validate with offset=1.
+    #      Hardcoding 0 would validate with different timing than the backtest.
+    # CHANGED: May 2026 — entry bar offset in walk-forward validator
+    entry_bar_offset=0,
 ):
     """
     Rule-stability test across sliding time windows.
@@ -767,6 +771,12 @@ def walk_forward_validate(
         if progress_callback:
             progress_callback(i, len(windows_schedule), f"Window {i+1}/{len(windows_schedule)}: backtesting in-sample...")
 
+        # WHY: Log entry offset during validation for diagnostic clarity.
+        # CHANGED: May 2026 — entry bar offset diagnostic in validator
+        if i == 0:
+            _ebo_label = "signal bar" if entry_bar_offset == 0 else f"+{entry_bar_offset} bar (legacy)"
+            log.info(f"  [VALIDATOR] Entry timing: {_ebo_label}")
+
         # In-sample
         in_error = None
         try:
@@ -800,9 +810,10 @@ def walk_forward_validate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
-                # WHY: Signal bar entry for walk-forward (EA parity default).
-                # CHANGED: May 2026 — entry bar offset
-                entry_bar_offset=0,
+                # WHY: Use the rule's entry_bar_offset so walk-forward results
+                #      match the original backtest entry timing.
+                # CHANGED: May 2026 — entry bar offset from rule
+                entry_bar_offset=entry_bar_offset,
             )
         except Exception as e:
             in_trades = []
@@ -863,9 +874,10 @@ def walk_forward_validate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
-                # WHY: Signal bar entry for walk-forward (EA parity default).
-                # CHANGED: May 2026 — entry bar offset
-                entry_bar_offset=0,
+                # WHY: Use the rule's entry_bar_offset so walk-forward results
+                #      match the original backtest entry timing.
+                # CHANGED: May 2026 — entry bar offset from rule
+                entry_bar_offset=entry_bar_offset,
             )
         except Exception as e:
             out_trades = []
@@ -1333,6 +1345,9 @@ def slippage_stress_test(
     session_spread_multipliers=None,
     min_hold_minutes=0,
     cooldown_candles=0,
+    # WHY: A rule saved with entry_bar_offset=1 must stress-test with offset=1.
+    # CHANGED: May 2026 — entry bar offset in slippage stress test
+    entry_bar_offset=0,
 ):
     """
     Re-run the backtest at increasing slippage levels to find where the
@@ -1400,9 +1415,10 @@ def slippage_stress_test(
                     session_spread_multipliers=session_spread_multipliers,
                     min_hold_minutes=min_hold_minutes,
                     cooldown_candles=cooldown_candles,
-                    # WHY: Signal bar entry for slippage stress test (EA parity default).
-                    # CHANGED: May 2026 — entry bar offset
-                    entry_bar_offset=0,
+                    # WHY: Use the rule's entry_bar_offset so stress test results
+                    #      match the original backtest entry timing.
+                    # CHANGED: May 2026 — entry bar offset from rule
+                    entry_bar_offset=entry_bar_offset,
                 )
                 # Apply filters if provided (max_trades_per_day, sessions, etc.)
                 if filters and run_trades:

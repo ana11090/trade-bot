@@ -2027,6 +2027,19 @@ def _start_optimization():
                     _sel_exit_desc = selected_strategy_row.get('exit_strategy', '')
                 print(f"[OPTIMIZER] Selected exit: class={_sel_exit_class!r}, name={_sel_exit_name!r}")
 
+                # WHY: Read entry_bar_offset from the loaded rule so the optimizer
+                #      produces trades with the same entry timing as the original.
+                # CHANGED: May 2026 — entry bar offset from loaded rule
+                _rule_ebo = 0
+                if selected_strategy_row:
+                    _rule_ebo = int(
+                        selected_strategy_row.get('entry_bar_offset') or
+                        selected_strategy_row.get('saved_rule', {}).get('entry_bar_offset') or
+                        0
+                    )
+                _ebo_label = "signal bar (offset=0)" if _rule_ebo == 0 else f"+1 bar (offset=1, legacy)"
+                print(f"[OPTIMIZER] Entry timing: {_ebo_label} (from loaded rule)")
+
                 from project2_backtesting.strategy_refiner import deep_optimize
                 quick_results = deep_optimize(
                     trades=current_trades,
@@ -2052,6 +2065,9 @@ def _start_optimization():
                     risk_per_trade_pct=risk_pct,
                     dd_daily_limit=_cfg_dd_daily,
                     dd_total_limit=_cfg_dd_total,
+                    # WHY: Pass entry_bar_offset so candidates inherit the rule's timing.
+                    # CHANGED: May 2026 — entry bar offset from loaded rule
+                    entry_bar_offset=_rule_ebo,
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -2219,6 +2235,9 @@ def _start_optimization():
                     min_hold_minutes=_opt_firm['min_hold_minutes'],
                     cooldown_candles=_opt_firm['cooldown_candles'],
                     slippage_pips=_opt_firm['slippage_pips'],
+                    # WHY: Pass entry_bar_offset so new trades use same timing as original rule.
+                    # CHANGED: May 2026 — entry bar offset from loaded rule
+                    entry_bar_offset=_rule_ebo,
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")

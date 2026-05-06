@@ -435,7 +435,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _stop_button.config(state=tk.NORMAL, text="⏹ Stop")
         output_text.delete(1.0, tk.END)
         output_text.insert(tk.END, "=== BACKTEST STARTED ===\n\n")
-        output_text.insert(tk.END, "Entry: next candle open (no look-ahead bias)\n\n")
+        # WHY: Show which entry timing mode(s) are active for diagnostic clarity.
+        # CHANGED: May 2026 — dynamic entry timing label
+        _ebo_modes = []
+        if _ebo_signal_bar_var and _ebo_signal_bar_var.get():
+            _ebo_modes.append("Signal bar (offset=0, EA parity)")
+        if _ebo_next_bar_var and _ebo_next_bar_var.get():
+            _ebo_modes.append("Next bar (offset=1, legacy)")
+        if not _ebo_modes:
+            _ebo_modes.append("Signal bar (offset=0, EA parity)")
+        output_text.insert(tk.END, f"Entry timing: {' + '.join(_ebo_modes)}\n\n")
         output_text.see(tk.END)
 
         ui(lambda: _set_progress(progress_bar, step_label, 5, "Loading data and rules..."))

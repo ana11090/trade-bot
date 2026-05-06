@@ -839,6 +839,10 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
     #      average. Both paths now agree on the same distribution.
     # CHANGED: April 2026 — slippage symmetry fix
     _vect_slip_rng = random.Random(slippage_seed)
+    # WHY: Log entry_bar_offset when non-default so it's visible in traces.
+    # CHANGED: May 2026 — entry bar offset diagnostic
+    if entry_bar_offset != 0:
+        log.info(f"  [fast_backtest] entry_bar_offset={entry_bar_offset} (legacy +1 bar mode)")
 
     # WHY: Normalize SL/TP prices to MT5's symbol-digits precision,
     #      matching MT5's NormalizeDouble on order placement. The slow
@@ -3301,6 +3305,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     log.info(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "
              f"x {len(entry_bar_offsets)} entry offset(s) "
              f"= {total} combinations  |  spread={spread_pips} pips  commission={commission_pips} pips")
+    # WHY: Log entry bar offsets so it's visible in the console which mode is running.
+    # CHANGED: May 2026 — entry bar offset diagnostic
+    _ebo_labels = {0: "Signal bar (immediate)", 1: "Next bar (+1, legacy)"}
+    _ebo_str = ", ".join(_ebo_labels.get(o, f"offset={o}") for o in entry_bar_offsets)
+    log.info(f"Entry timing: {_ebo_str}")
 
     # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
     # WHY: run_backtest copies DataFrames on every call and re-applies date filters.

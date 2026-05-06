@@ -1641,6 +1641,10 @@ def deep_optimize(
     risk_per_trade_pct=1.0,
     dd_daily_limit=5.0,
     dd_total_limit=10.0,
+    # WHY: entry_bar_offset from the loaded rule — optimizer candidates must
+    #      inherit the same entry timing the rule was backtested with.
+    # CHANGED: May 2026 — entry bar offset in optimizer
+    entry_bar_offset=0,
 ):
     """
     Deep optimization starting from existing trades.
@@ -1963,6 +1967,13 @@ def deep_optimize(
             improvements_found=sum(1 for c in candidates if c['score'] > base_score),
         )
 
+    # WHY: Candidates inherit the rule's entry_bar_offset so saved rules
+    #      from the optimizer carry the correct offset for EA generation.
+    # CHANGED: May 2026 — preserve entry bar offset in optimizer candidates
+    for _c in candidates:
+        if 'entry_bar_offset' not in _c:
+            _c['entry_bar_offset'] = entry_bar_offset
+
     return candidates  # return ALL — panel handles filtering/display
 
 
@@ -1999,6 +2010,10 @@ def deep_optimize_generate(
     min_hold_minutes=0,
     cooldown_candles=0,
     slippage_pips=0.0,
+    # WHY: entry_bar_offset from the loaded rule — optimizer must produce
+    #      trades with the same entry timing the rule was backtested with.
+    # CHANGED: May 2026 — entry bar offset in deep optimizer
+    entry_bar_offset=0,
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -2318,9 +2333,10 @@ def deep_optimize_generate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
-                # WHY: Always signal bar for deep optimizer (EA parity default).
-                # CHANGED: May 2026 — entry bar offset
-                entry_bar_offset=0,
+                # WHY: Use the rule's entry_bar_offset so optimizer results
+                #      match the original backtest entry timing.
+                # CHANGED: May 2026 — entry bar offset from loaded rule
+                entry_bar_offset=entry_bar_offset,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,
