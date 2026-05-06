@@ -1402,6 +1402,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             log.warning(f"Failed to compute SMART features: {e}")
 
     # ── VECTORIZED: build entry signal mask ──────────────────────────────────
+    # WHY: When entry_bar_offset=0 (signal bar entry), Python enters at bar N.
+    #      To avoid look-ahead, conditions must evaluate bar N-1's data —
+    #      matching the EA's shift=1 (SafeCopyBuf reads previous completed bar).
+    #      shift(1) moves each row's indicator values down by 1: row N now
+    #      contains bar N-1's values. Row 0 becomes NaN → no signal fires there,
+    #      which is correct (no previous bar to evaluate at the very first bar).
+    #      When entry_bar_offset=1 (legacy), Python enters at bar N+1 and
+    #      evaluates bar N's completed data — bar N is fully known at N+1's
+    #      open, so no shift is needed.
+    # CHANGED: May 2026 — indicator shift for look-ahead prevention
+    if entry_bar_offset == 0:
+        ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
@@ -2062,6 +2074,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
     # WHY: This is the only part that changes between iterations —
     #      different threshold values produce different masks.
     #      Everything else (indicator values, candle data) is identical.
+    # WHY: When entry_bar_offset=0 (signal bar entry), Python enters at bar N.
+    #      To avoid look-ahead, conditions must evaluate bar N-1's data —
+    #      matching the EA's shift=1 (SafeCopyBuf reads previous completed bar).
+    #      See run_backtest comment above for full explanation.
+    # CHANGED: May 2026 — indicator shift for look-ahead prevention
+    if entry_bar_offset == 0:
+        ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
