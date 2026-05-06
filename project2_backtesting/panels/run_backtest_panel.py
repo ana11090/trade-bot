@@ -545,13 +545,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             ]
             candle_path = None
             _used_legacy = False
+            from shared.data_sources import is_lfs_pointer
             for p in _in_source_paths:
                 if os.path.exists(p):
+                    # WHY: os.path.exists returns True for LFS stubs (real 132-byte files).
+                    # CHANGED: May 2026 — LFS stub detection
+                    if is_lfs_pointer(p):
+                        output_text.insert(tk.END,
+                            f"\n[LFS ERROR] {os.path.basename(p)} is a git-lfs pointer stub.\n"
+                            f"Run 'git lfs pull' in the repo to download real data.\n")
+                        output_text.see(tk.END)
+                        return
                     candle_path = p
                     break
             if candle_path is None:
                 for p in _legacy_paths:
                     if os.path.exists(p):
+                        if is_lfs_pointer(p):
+                            output_text.insert(tk.END,
+                                f"\n[LFS ERROR] {os.path.basename(p)} is a git-lfs pointer stub.\n"
+                                f"Run 'git lfs pull' in the repo to download real data.\n")
+                            output_text.see(tk.END)
+                            return
                         candle_path = p
                         _used_legacy = True
                         break
@@ -1363,13 +1378,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     ]
                     tf_candle_path = None
                     _tf_used_legacy = False
+                    from shared.data_sources import is_lfs_pointer
                     for cand in _tf_in_source:
                         if os.path.exists(cand):
+                            # WHY: LFS stubs exist on disk but contain no real data.
+                            # CHANGED: May 2026 — LFS stub detection in multi-TF loop
+                            if is_lfs_pointer(cand):
+                                output_text.insert(tk.END,
+                                    f"\n[LFS ERROR] {os.path.basename(cand)} is a git-lfs pointer stub.\n"
+                                    f"Run 'git lfs pull' in the repo to download real data.\n")
+                                output_text.see(tk.END)
+                                return
                             tf_candle_path = cand
                             break
                     if tf_candle_path is None:
                         for cand in _tf_legacy:
                             if os.path.exists(cand):
+                                if is_lfs_pointer(cand):
+                                    output_text.insert(tk.END,
+                                        f"\n[LFS ERROR] {os.path.basename(cand)} is a git-lfs pointer stub.\n"
+                                        f"Run 'git lfs pull' in the repo to download real data.\n")
+                                    output_text.see(tk.END)
+                                    return
                                 tf_candle_path = cand
                                 _tf_used_legacy = True
                                 break

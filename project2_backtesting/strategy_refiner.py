@@ -2065,6 +2065,8 @@ def deep_optimize_generate(
         FixedSLTP, TrailingStop,
     )
 
+    from shared.data_sources import assert_not_lfs_stub
+    assert_not_lfs_stub(candles_path)
     candles_df = pd.read_csv(candles_path)
     ts_col = candles_df.columns[0]
     candles_df['timestamp'] = pd.to_datetime(candles_df[ts_col]).astype('datetime64[ns]')

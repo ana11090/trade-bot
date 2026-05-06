@@ -151,6 +151,8 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                 _tick_cache[cache_key] = None
             else:
                 try:
+                    from shared.data_sources import assert_not_lfs_stub
+                    assert_not_lfs_stub(tick_path)
                     # WHY: float32 is enough for prices and halves memory vs float64.
                     tick_df = pd.read_csv(
                         tick_path,
@@ -206,6 +208,8 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
             _m1_cache[data_dir] = None
         else:
             try:
+                from shared.data_sources import assert_not_lfs_stub
+                assert_not_lfs_stub(m1_path)
                 m1_df = pd.read_csv(m1_path, dtype={
                     'open': 'float32', 'high': 'float32',
                     'low': 'float32', 'close': 'float32',
@@ -551,7 +555,8 @@ def _load_tf_indicators(tf, data_dir, needed_indicators=None):
     else:
         compute_groups = None
         log.info(f"  {tf}: computing all indicators from {csv_path} ...")
-
+    from shared.data_sources import assert_not_lfs_stub
+    assert_not_lfs_stub(csv_path)
     candles = pd.read_csv(csv_path, encoding='utf-8-sig')
 
     # Auto-detect timestamp column
@@ -2954,6 +2959,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     data_dir     = os.path.dirname(candles_path)
 
     log.info(f"\nLoading candle data: {candles_path}")
+    # WHY: LFS pointer stubs crash pd.read_csv with cryptic datetime parse errors.
+    # CHANGED: May 2026 — permanent LFS stub detection with auto-pull
+    from shared.data_sources import assert_not_lfs_stub
+    assert_not_lfs_stub(candles_path)
     candles_df = pd.read_csv(candles_path, encoding='utf-8-sig')
 
     # Auto-detect timestamp column

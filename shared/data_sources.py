@@ -29,6 +29,91 @@ _LEGACY_SOURCE_NAMES = (
 # CHANGED: April 2026 — per-key warning suppression
 _WARNED_KEYS: set = set()
 
+def is_lfs_pointer(filepath):
+    """Return True if filepath is a git-lfs pointer stub (not real data).
+
+    WHY: LFS pointer stubs are ~130-byte text files containing a SHA256
+         hash. pd.read_csv on them crashes with cryptic datetime parse
+         errors. Detect early via size + magic string.
+    CHANGED: May 2026 — permanent LFS stub detection
+    """
+    try:
+        if os.path.getsize(filepath) > 512:
+            return False
+        with open(filepath, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+        return first_line.startswith('version https://git-lfs.github.com')
+    except Exception:
+        return False
+
+
+def _find_repo_root(filepath):
+    """Walk up from filepath to find the directory containing .git."""
+    d = os.path.dirname(os.path.abspath(filepath))
+    for _ in range(20):
+        if os.path.isdir(os.path.join(d, '.git')):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
+
+
+def assert_not_lfs_stub(filepath):
+    """Auto-pull from LFS if file is a pointer stub. Raise if that fails.
+
+    WHY: When the repo is cloned on a new machine, CSV files are 132-byte
+         LFS pointer stubs. Instead of crashing with a cryptic datetime
+         parse error, detect the stub and auto-run 'git lfs pull' to
+         download real data automatically on first use.
+    CHANGED: May 2026 — permanent LFS auto-pull on first use
+    """
+    if not is_lfs_pointer(filepath):
+        return  # real file, nothing to do
+
+    filename = os.path.basename(filepath)
+    size = os.path.getsize(filepath)
+    print(f"[LFS] {filename} is a pointer stub ({size} bytes) — attempting auto-pull...")
+
+    repo_root = _find_repo_root(filepath)
+    if repo_root:
+        import subprocess
+        try:
+            result = subprocess.run(
+                ['git', 'lfs', 'pull'],
+                cwd=repo_root,
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode == 0 and not is_lfs_pointer(filepath):
+                print(f"[LFS] Auto-pull successful — {filename} is now real data "
+                      f"({os.path.getsize(filepath):,} bytes)")
+                return  # fixed — continue normally
+            _err_detail = result.stderr.strip() or result.stdout.strip() or '(no output)'
+            print(f"[LFS] git lfs pull finished but {filename} is still a stub. "
+                  f"Output: {_err_detail}")
+        except FileNotFoundError:
+            print("[LFS] 'git' or 'git lfs' not found on this machine.")
+            print("[LFS] Install git-lfs: https://git-lfs.com")
+        except subprocess.TimeoutExpired:
+            print("[LFS] git lfs pull timed out (>10 min). Check your network.")
+        except Exception as e:
+            print(f"[LFS] Auto-pull failed: {e}")
+    else:
+        print(f"[LFS] Could not find .git directory above {filepath}")
+
+    raise ValueError(
+        f"\n[LFS ERROR] {filename} is a git-lfs pointer "
+        f"stub ({size} bytes), not real data.\n"
+        f"Full path: {filepath}\n\n"
+        f"Auto-pull failed. Fix manually:\n"
+        f"   cd {repo_root or os.path.dirname(filepath)}\n"
+        f"   git lfs install\n"
+        f"   git lfs pull\n\n"
+        f"This downloads the actual CSV files (~270 MB) from GitHub."
+    )
+
+
 def get_sources_dir():
     """Return path to data/sources/."""
     os.makedirs(_SOURCES_DIR, exist_ok=True)
