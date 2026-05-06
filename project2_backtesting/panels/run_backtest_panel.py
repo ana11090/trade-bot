@@ -545,15 +545,23 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             ]
             candle_path = None
             _used_legacy = False
-            from shared.data_sources import is_lfs_pointer
+            from shared.data_sources import is_lfs_pointer, assert_not_lfs_stub
             for p in _in_source_paths:
                 if os.path.exists(p):
-                    # WHY: os.path.exists returns True for LFS stubs (real 132-byte files).
-                    # CHANGED: May 2026 — LFS stub detection
+                    # WHY: Auto-pull LFS stubs instead of just showing an error.
+                    #      assert_not_lfs_stub runs 'git lfs pull' automatically
+                    #      on first detection so the user never has to do it manually.
+                    # CHANGED: May 2026 — auto-pull LFS in panel
                     if is_lfs_pointer(p):
                         output_text.insert(tk.END,
-                            f"\n[LFS ERROR] {os.path.basename(p)} is a git-lfs pointer stub.\n"
-                            f"Run 'git lfs pull' in the repo to download real data.\n")
+                            f"\n⏳ {os.path.basename(p)} is an LFS stub — downloading real data...\n"
+                            f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                        output_text.see(tk.END)
+                        output_text.update_idletasks()
+                    try:
+                        assert_not_lfs_stub(p)
+                    except ValueError as _lfs_err:
+                        output_text.insert(tk.END, str(_lfs_err) + "\n")
                         output_text.see(tk.END)
                         return
                     candle_path = p
@@ -563,8 +571,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     if os.path.exists(p):
                         if is_lfs_pointer(p):
                             output_text.insert(tk.END,
-                                f"\n[LFS ERROR] {os.path.basename(p)} is a git-lfs pointer stub.\n"
-                                f"Run 'git lfs pull' in the repo to download real data.\n")
+                                f"\n⏳ {os.path.basename(p)} is an LFS stub — downloading real data...\n"
+                                f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                            output_text.see(tk.END)
+                            output_text.update_idletasks()
+                        try:
+                            assert_not_lfs_stub(p)
+                        except ValueError as _lfs_err:
+                            output_text.insert(tk.END, str(_lfs_err) + "\n")
                             output_text.see(tk.END)
                             return
                         candle_path = p
@@ -1378,15 +1392,21 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     ]
                     tf_candle_path = None
                     _tf_used_legacy = False
-                    from shared.data_sources import is_lfs_pointer
+                    from shared.data_sources import is_lfs_pointer, assert_not_lfs_stub
                     for cand in _tf_in_source:
                         if os.path.exists(cand):
-                            # WHY: LFS stubs exist on disk but contain no real data.
-                            # CHANGED: May 2026 — LFS stub detection in multi-TF loop
+                            # WHY: Auto-pull LFS stubs instead of just showing an error.
+                            # CHANGED: May 2026 — auto-pull LFS in multi-TF loop
                             if is_lfs_pointer(cand):
                                 output_text.insert(tk.END,
-                                    f"\n[LFS ERROR] {os.path.basename(cand)} is a git-lfs pointer stub.\n"
-                                    f"Run 'git lfs pull' in the repo to download real data.\n")
+                                    f"\n⏳ {os.path.basename(cand)} is an LFS stub — downloading real data...\n"
+                                    f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                                output_text.see(tk.END)
+                                output_text.update_idletasks()
+                            try:
+                                assert_not_lfs_stub(cand)
+                            except ValueError as _lfs_err:
+                                output_text.insert(tk.END, str(_lfs_err) + "\n")
                                 output_text.see(tk.END)
                                 return
                             tf_candle_path = cand
@@ -1396,8 +1416,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             if os.path.exists(cand):
                                 if is_lfs_pointer(cand):
                                     output_text.insert(tk.END,
-                                        f"\n[LFS ERROR] {os.path.basename(cand)} is a git-lfs pointer stub.\n"
-                                        f"Run 'git lfs pull' in the repo to download real data.\n")
+                                        f"\n⏳ {os.path.basename(cand)} is an LFS stub — downloading real data...\n"
+                                        f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                                    output_text.see(tk.END)
+                                    output_text.update_idletasks()
+                                try:
+                                    assert_not_lfs_stub(cand)
+                                except ValueError as _lfs_err:
+                                    output_text.insert(tk.END, str(_lfs_err) + "\n")
                                     output_text.see(tk.END)
                                     return
                                 tf_candle_path = cand
