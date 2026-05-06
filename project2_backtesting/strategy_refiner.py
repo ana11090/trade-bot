@@ -2318,6 +2318,9 @@ def deep_optimize_generate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
+                # WHY: Always signal bar for deep optimizer (EA parity default).
+                # CHANGED: May 2026 — entry bar offset
+                entry_bar_offset=0,
             )
         except Exception as e:
             # WHY (Phase 36 Fix 4): Old code used `except Exception: return None`,

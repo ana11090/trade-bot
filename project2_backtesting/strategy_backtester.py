@@ -882,15 +882,19 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         rule_id   = int(signal_rule_ids.loc[sig_idx])
         entry_pos = index_positions.get(sig_idx, 0)
+        # WHY: _eb = entry bar position. offset=0 enters at signal bar (matches EA),
+        #      offset=1 enters at next bar (legacy behavior).
+        # CHANGED: May 2026 — configurable entry bar offset for EA parity
+        _eb = entry_pos + entry_bar_offset
 
-        if entry_pos + 1 >= len(df):
+        if _eb >= len(df):
             continue
 
         # WHY (Phase A.42): Enforce max trades per calendar day.
         # CHANGED: April 2026 — Phase A.42
         if _a42_limit > 0:
             try:
-                _a42_day = str(pd.Timestamp(all_times[entry_pos + 1]).date())
+                _a42_day = str(pd.Timestamp(all_times[_eb]).date())
                 if _a42_daily_counts.get(_a42_day, 0) >= _a42_limit:
                     continue
             except Exception:
@@ -904,12 +908,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # CHANGED: April 2026 — add news blackout check (audit HIGH)
         if news_blackout_minutes > 0:
             from project2_backtesting.news_calendar import is_news_blackout
-            entry_time_check = pd.Timestamp(all_times[entry_pos + 1])
+            entry_time_check = pd.Timestamp(all_times[_eb])
             # CHANGED: April 2026 — keyword arg with renamed param (Phase 21 Fix 6)
             if is_news_blackout(entry_time_check, blackout_half_window_minutes=news_blackout_minutes):
                 continue
 
-        entry_price = all_opens[entry_pos + 1]
+        entry_price = all_opens[_eb]
 
         # WHY: Per-entry random slippage — same uniform(0, max) distribution
         #      as the slow path. Constant slippage was 2× too pessimistic.
@@ -935,7 +939,7 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # CHANGED: April 2026 — max spread filter in vectorized path
         if max_spread_pips > 0 and variable_spread:
             _entry_spread = _get_session_spread(
-                all_times[entry_pos + 1], spread_pips, variable_spread,
+                all_times[_eb], spread_pips, variable_spread,
                 multipliers=session_spread_multipliers,
             )
             if _entry_spread > max_spread_pips:
@@ -943,12 +947,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             # Bid-anchored entry — only slippage added, not spread.
             # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
             if direction == "BUY":
-                entry_price = all_opens[entry_pos + 1] + _slip_this_entry * pip_size
+                entry_price = all_opens[_eb] + _slip_this_entry * pip_size
             else:
-                entry_price = all_opens[entry_pos + 1] - _slip_this_entry * pip_size
+                entry_price = all_opens[_eb] - _slip_this_entry * pip_size
             _spread_for_cost = _entry_spread   # use session spread for cost
 
-        entry_time = all_times[entry_pos + 1]
+        entry_time = all_times[_eb]
 
         # WHY: Normalize entry/SL/TP to MT5 symbol-digits precision
         #      (NormalizeDouble parity). Sub-pip dust on raw floats causes
@@ -965,11 +969,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
 
         # WHY: Old code set start two positions after the signal, skipping
         #      the entry candle entirely. But entry happens at the OPEN of
-        #      (entry_pos + 1), and same-bar SL/TP hits happen within
-        #      that same candle's high/low range. Starting at +2 misses
-        #      those — fast scalp exits were reported one bar too late.
+        #      _eb, and same-bar SL/TP hits happen within that same candle's
+        #      high/low range. Starting at +2 misses those — fast scalp exits
+        #      were reported one bar too late.
         # CHANGED: April 2026 — start scan at entry candle (audit HIGH)
-        start = entry_pos + 1
+        start = _eb
         if start >= len(df):
             continue
 
@@ -1265,7 +1269,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      strategy so _get_fill_price can apply realistic slippage on
                  #      SL fills. None = no slippage (backward compat).
                  # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
-                 sl_slippage_distribution=None):
+                 sl_slippage_distribution=None,
+                 # WHY: entry_bar_offset — see fast_backtest.
+                 # CHANGED: May 2026 — configurable entry bar offset
+                 entry_bar_offset=0):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1614,10 +1621,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         rule_id       = int(signal_rule_ids.loc[sig_idx])
         entry_pos_int = index_positions.get(sig_idx, 0)
 
-        # Enter at the NEXT candle's open to avoid look-ahead bias
-        if entry_pos_int + 1 >= len(df):
+        # WHY: _eb_int = entry bar position. offset=0 = signal bar, offset=1 = next bar.
+        # CHANGED: May 2026 — configurable entry bar offset
+        _eb_int = entry_pos_int + entry_bar_offset
+        if _eb_int >= len(df):
             continue
-        next_candle = df.iloc[entry_pos_int + 1]
+        next_candle = df.iloc[_eb_int]
 
         # WHY (Phase A.42): Enforce max trades per calendar day.
         # CHANGED: April 2026 — Phase A.42
@@ -1862,8 +1871,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             # entry_pos_int. We need the indicator columns to read ATR.
             try:
                 _entry_for_sizing = {}
-                if 0 <= entry_pos_int + 1 < len(ind):
-                    _ind_idx_entry = ind.index[entry_pos_int + 1]
+                if 0 <= _eb_int < len(ind):
+                    _ind_idx_entry = ind.index[_eb_int]
                     _entry_for_sizing = dict(ind.loc[_ind_idx_entry])
             except Exception:
                 _entry_for_sizing = {}
@@ -2013,7 +2022,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY: Seed the slippage RNG so fast_backtest agrees with
                   #      run_backtest on the same seed. None = unseeded.
                   # CHANGED: April 2026 — slippage symmetry fix
-                  slippage_seed=None):
+                  slippage_seed=None,
+                  # WHY: entry_bar_offset=0 enters at signal bar (matches EA
+                  #      behavior — EA enters immediately when conditions pass).
+                  #      entry_bar_offset=1 enters at next bar (legacy behavior,
+                  #      prevents any possible look-ahead on the signal bar's close).
+                  # CHANGED: May 2026 — configurable entry bar offset for EA parity
+                  entry_bar_offset=0):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2238,9 +2253,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 continue
 
         entry_pos_int = index_positions.get(sig_idx, 0)
-        if entry_pos_int + 1 >= len(df):
+        # WHY: _eb_int = entry bar position. offset=0 enters at signal bar, offset=1 next bar.
+        # CHANGED: May 2026 — configurable entry bar offset for EA parity
+        _eb_int = entry_pos_int + entry_bar_offset
+        if _eb_int >= len(df):
             continue
-        next_candle = df.iloc[entry_pos_int + 1]
+        next_candle = df.iloc[_eb_int]
 
         entry_time  = next_candle['timestamp']
         entry_price = float(next_candle['open'])
@@ -2258,7 +2276,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      called per-candle and returns None until an exit triggers.
         #      They DON'T have a single check_exit() method.
         # CHANGED: April 2026 — match actual exit strategy interface
-        future_candles = df.iloc[entry_pos_int + 1:]
+        future_candles = df.iloc[_eb_int:]
 
         # WHY: Exit strategies (TimeBased, ATRBased, etc.) read candles_held and
         #      current_pnl_pips to decide when to exit. Without these fields,
@@ -2394,7 +2412,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             #      of combos) is unaffected.
             # CHANGED: April 2026 — Code Audit Fix
             candle = future_candles.iloc[ci]
-            _future_abs_idx = entry_pos_int + 1 + ci
+            _future_abs_idx = _eb_int + ci
             if _future_abs_idx < len(ind):
                 try:
                     _ind_idx = ind.index[_future_abs_idx]
@@ -2602,8 +2620,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
         trades.append(trade)
 
         # Mark occupied candles and update cooldown tracker
-        occupied_until_idx = df.index[min(entry_pos_int + 1 + exit_idx, len(df) - 1)]
-        _last_exit_pos_fbt = min(entry_pos_int + 1 + exit_idx, len(df) - 1)
+        occupied_until_idx = df.index[min(_eb_int + exit_idx, len(df) - 1)]
+        _last_exit_pos_fbt = min(_eb_int + exit_idx, len(df) - 1)
 
     if _skipped_count > 0:
         # CHANGED: April 2026 — Phase 35 Fix 1b — updated limit reference
@@ -2890,7 +2908,12 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      Patched onto each management-style exit before the run.
                           #      0 = disabled (backward compat).
                           # CHANGED: April 2026 — min hold parity with MT5 EA
-                          min_hold_minutes=0):
+                          min_hold_minutes=0,
+                          # WHY: List of entry bar offsets to test. Each produces
+                          #      separate matrix rows (like exit strategies do).
+                          #      Default [0] = signal bar entry only (matches EA).
+                          # CHANGED: May 2026 — dual-offset backtest support
+                          entry_bar_offsets=None):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -3269,8 +3292,14 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         f"{len(rule_combos)} total combos after expansion"
     )
 
-    total = len(rule_combos) * len(exit_strategies)
+    # WHY: Normalize entry_bar_offsets — default to [0] (signal bar / EA parity).
+    # CHANGED: May 2026 — dual-offset backtest support
+    if entry_bar_offsets is None or not entry_bar_offsets:
+        entry_bar_offsets = [0]
+
+    total = len(rule_combos) * len(exit_strategies) * len(entry_bar_offsets)
     log.info(f"\nTesting {len(rule_combos)} rule combos x {len(exit_strategies)} exit strategies "
+             f"x {len(entry_bar_offsets)} entry offset(s) "
              f"= {total} combinations  |  spread={spread_pips} pips  commission={commission_pips} pips")
 
     # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
@@ -3313,132 +3342,146 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             _was_stopped = True
             break
         for exit_strat in exit_strategies:
-            if _stop_requested.is_set():
-                _was_stopped = True
-                break
-            count += 1
+            # WHY: Inner loop over entry bar offsets — each offset produces a
+            #      separate matrix row (like exit strategies do). Default [0].
+            # CHANGED: May 2026 — dual-offset backtest support
+            for _ebo in entry_bar_offsets:
+                if _stop_requested.is_set():
+                    _was_stopped = True
+                    break
+                count += 1
 
-            # WHY (Phase A.30): Use the combo's per-direction value
-            #      instead of the matrix-level `direction` default.
-            #      Old code passed `direction=direction` for every
-            #      combo, which forced every rule to BUY because the
-            #      matrix-level default is "BUY" and the panel never
-            #      overrides it. Each combo now carries its own
-            #      direction set by the per-direction expansion
-            #      above, so a "Rule 3 (SELL)" combo actually opens
-            #      SELL trades and "Rule 3 (BUY)" actually opens BUY
-            #      trades.
-            # CHANGED: April 2026 — Phase A.30
-            _a30_combo_direction = combo.get("direction", direction)
+                # WHY (Phase A.30): Use the combo's per-direction value
+                #      instead of the matrix-level `direction` default.
+                #      Old code passed `direction=direction` for every
+                #      combo, which forced every rule to BUY because the
+                #      matrix-level default is "BUY" and the panel never
+                #      overrides it. Each combo now carries its own
+                #      direction set by the per-direction expansion
+                #      above, so a "Rule 3 (SELL)" combo actually opens
+                #      SELL trades and "Rule 3 (BUY)" actually opens BUY
+                #      trades.
+                # CHANGED: April 2026 — Phase A.30
+                _a30_combo_direction = combo.get("direction", direction)
 
-            trades = fast_backtest(
-                df=_c, ind=_i,
-                rules=combo["rules"], exit_strategy=exit_strat,
-                direction=_a30_combo_direction,
-                pip_size=pip_size,
-                spread_pips=spread_pips, commission_pips=commission_pips,
-                slippage_pips=slippage_pips,
-                account_size=account_size,
-                risk_per_trade_pct=risk_per_trade_pct,
-                default_sl_pips=default_sl_pips,
-                pip_value_per_lot=pip_value_per_lot,
-                # WHY (Phase A.42): Enforce daily trade limit per user setting.
-                # CHANGED: April 2026 — Phase A.42
-                max_trades_per_day=max_trades_per_day,
-                # WHY (leverage): Pass margin constraints through.
-                # CHANGED: April 2026 — margin-aware lot sizing
-                leverage=leverage, contract_size=contract_size,
-                compound_equity=compound_equity,
-                hard_close_hour=hard_close_hour,
-                cooldown_candles=cooldown_candles,
-                # WHY: Pass variable spread through from matrix config.
-                # CHANGED: April 2026 — session-based variable spread model
-                variable_spread=variable_spread,
-                max_spread_pips=max_spread_pips,
-                # WHY: Per-firm spread profile from matrix config.
-                # CHANGED: April 2026 — per-firm spread calibration
-                session_spread_multipliers=session_spread_multipliers,
-                # WHY: data_dir enables tick-aware exit ambiguity resolution.
-                #      Already derived from candles_path above.
-                # CHANGED: April 2026 — tick data for exit ambiguity resolution
-                data_dir=data_dir,
-                # WHY: Per-firm asymmetric swap passed from matrix config.
-                # CHANGED: April 2026 — asymmetric swap
-                swap_long_pips_per_night=swap_long_pips_per_night,
-                swap_short_pips_per_night=swap_short_pips_per_night,
-            )
-            stats = compute_stats(trades)
+                trades = fast_backtest(
+                    df=_c, ind=_i,
+                    rules=combo["rules"], exit_strategy=exit_strat,
+                    direction=_a30_combo_direction,
+                    pip_size=pip_size,
+                    spread_pips=spread_pips, commission_pips=commission_pips,
+                    slippage_pips=slippage_pips,
+                    account_size=account_size,
+                    risk_per_trade_pct=risk_per_trade_pct,
+                    default_sl_pips=default_sl_pips,
+                    pip_value_per_lot=pip_value_per_lot,
+                    # WHY (Phase A.42): Enforce daily trade limit per user setting.
+                    # CHANGED: April 2026 — Phase A.42
+                    max_trades_per_day=max_trades_per_day,
+                    # WHY (leverage): Pass margin constraints through.
+                    # CHANGED: April 2026 — margin-aware lot sizing
+                    leverage=leverage, contract_size=contract_size,
+                    compound_equity=compound_equity,
+                    hard_close_hour=hard_close_hour,
+                    cooldown_candles=cooldown_candles,
+                    # WHY: Pass variable spread through from matrix config.
+                    # CHANGED: April 2026 — session-based variable spread model
+                    variable_spread=variable_spread,
+                    max_spread_pips=max_spread_pips,
+                    # WHY: Per-firm spread profile from matrix config.
+                    # CHANGED: April 2026 — per-firm spread calibration
+                    session_spread_multipliers=session_spread_multipliers,
+                    # WHY: data_dir enables tick-aware exit ambiguity resolution.
+                    #      Already derived from candles_path above.
+                    # CHANGED: April 2026 — tick data for exit ambiguity resolution
+                    data_dir=data_dir,
+                    # WHY: Per-firm asymmetric swap passed from matrix config.
+                    # CHANGED: April 2026 — asymmetric swap
+                    swap_long_pips_per_night=swap_long_pips_per_night,
+                    swap_short_pips_per_night=swap_short_pips_per_night,
+                    # WHY: Pass current offset so the right entry bar is used.
+                    # CHANGED: May 2026 — entry bar offset
+                    entry_bar_offset=_ebo,
+                )
+                stats = compute_stats(trades)
 
-            # WHY: combo["name"] is "BUY_D1_4c_a670 (BUY)" — same prefix repeats
-            #      for every exit strategy on the same rule, which looks like
-            #      non-unique IDs. Extract just the short rule hash (a670) and
-            #      combine with the exit name so each combo reads "a670_Fixed_SLTP_c296".
-            # CHANGED: April 2026 — short unique ID per rule×exit combo
-            _exit_tag = (exit_strat.name
-                .replace(' ', '_').replace('/', '').replace('-', '_')
-                .replace('+', '_').replace('(', '').replace(')', ''))[:12]
-            _exit_hash = hashlib.md5(
-                (exit_strat.name + str(exit_strat.params)).encode()
-            ).hexdigest()[:4]
-            _rule_combo_id = f'#{combo_idx}_' + combo["name"].split(' ')[0] + '_' + _exit_tag + '_' + _exit_hash
+                # WHY: combo["name"] is "BUY_D1_4c_a670 (BUY)" — same prefix repeats
+                #      for every exit strategy on the same rule, which looks like
+                #      non-unique IDs. Extract just the short rule hash (a670) and
+                #      combine with the exit name so each combo reads "a670_Fixed_SLTP_c296".
+                # CHANGED: April 2026 — short unique ID per rule×exit combo
+                _exit_tag = (exit_strat.name
+                    .replace(' ', '_').replace('/', '').replace('-', '_')
+                    .replace('+', '_').replace('(', '').replace(')', ''))[:12]
+                _exit_hash = hashlib.md5(
+                    (exit_strat.name + str(exit_strat.params)).encode()
+                ).hexdigest()[:4]
+                _rule_combo_id = f'#{combo_idx}_' + combo["name"].split(' ')[0] + '_' + _exit_tag + '_' + _exit_hash
+                # WHY: Append suffix when running both offsets so rows are distinguishable.
+                # CHANGED: May 2026 — offset tag in combo label
+                if len(entry_bar_offsets) > 1 and _ebo == 1:
+                    _rule_combo_id = _rule_combo_id + '_+1bar'
 
-            result = {
-                "rules":        combo["rules"],        # actual rule conditions for validator
-                "rule_combo":   _rule_combo_id,
-                "rule_indices": combo["indices"],
-                # WHY: Direction was only embedded in rule_combo name string
-                #      like "(BUY)". Downstream tools parsed the name to guess
-                #      direction — fragile. Now saved explicitly.
-                # CHANGED: April 2026 — explicit direction in result
-                "direction":    _a30_combo_direction,
-                "exit_strategy": exit_strat.describe(),
-                "exit_name":    exit_strat.name,
-                "exit_class":   type(exit_strat).__name__,
-                "exit_params":  exit_strat.params,
-                "stats":        stats,
-                "trades":       trades,
-                "signals_before_regime_filter": getattr(fast_backtest, '_last_sig_before', 0),
-                "signals_after_regime_filter":  getattr(fast_backtest, '_last_sig_after', 0),
-            }
-            matrix.append(result)
-
-            # Call progress callback with result dict (backward compatible)
-            if progress_callback:
-                # WHY (Phase A.5 hotfix): old code passed bare `stats` as the
-                #      4th arg. stats contains the performance metrics the
-                #      panel reads for per-combo lines (total_trades,
-                #      win_rate, net_total_pips, net_profit_factor) but it
-                #      does NOT contain rule_combo, exit_name, exit_class —
-                #      those live on the outer `result` dict. The panel's
-                #      _update_best() reads b['rule_combo'] and b['exit_name']
-                #      to render the "🏆 best so far" label, and crashed with
-                #      KeyError: 'rule_combo' on every tick that produced
-                #      trades. Pass a merged dict: flatten stats at top level
-                #      (so the panel's existing reads still work) and add the
-                #      three identity fields needed by _update_best().
-                # CHANGED: April 2026 — Phase A.5 — merge identity + stats
-                # WHY (Phase A.38b): Carry regime filter signal counts into
-                #      the progress payload so the Run Backtest panel can
-                #      show "N trades (M before filter)". Read from the
-                #      function-attribute stash fast_backtest wrote above.
-                # CHANGED: April 2026 — Phase A.38b
-                _a38b_sig_before = getattr(fast_backtest, '_last_sig_before', 0)
-                _a38b_sig_after  = getattr(fast_backtest, '_last_sig_after',  0)
-                _progress_payload = {
-                    **stats,
-                    'rule_combo': _rule_combo_id,
-                    'exit_name':  exit_strat.name,
-                    'exit_class': type(exit_strat).__name__,
-                    'signals_before_regime_filter': _a38b_sig_before,
-                    'signals_after_regime_filter':  _a38b_sig_after,
+                result = {
+                    "rules":        combo["rules"],        # actual rule conditions for validator
+                    "rule_combo":   _rule_combo_id,
+                    "rule_indices": combo["indices"],
+                    # WHY: Direction was only embedded in rule_combo name string
+                    #      like "(BUY)". Downstream tools parsed the name to guess
+                    #      direction — fragile. Now saved explicitly.
+                    # CHANGED: April 2026 — explicit direction in result
+                    "direction":    _a30_combo_direction,
+                    "exit_strategy": exit_strat.describe(),
+                    "exit_name":    exit_strat.name,
+                    "exit_class":   type(exit_strat).__name__,
+                    "exit_params":  exit_strat.params,
+                    "stats":        stats,
+                    "trades":       trades,
+                    # WHY: Store offset so refiner/UI can see which mode produced this row.
+                    # CHANGED: May 2026 — offset metadata in matrix row
+                    "entry_bar_offset": _ebo,
+                    "signals_before_regime_filter": getattr(fast_backtest, '_last_sig_before', 0),
+                    "signals_after_regime_filter":  getattr(fast_backtest, '_last_sig_after', 0),
                 }
-                _unique_name = _progress_payload['rule_combo']
-                try:
-                    progress_callback(count, total, _unique_name, _progress_payload)
-                except TypeError:
-                    progress_callback(count, total, _unique_name)
-            elif count % 10 == 0 or count == total:
-                log.info(f"  [{count}/{total}] {_progress_payload['rule_combo']}")
+                matrix.append(result)
+
+                # Call progress callback with result dict (backward compatible)
+                if progress_callback:
+                    # WHY (Phase A.5 hotfix): old code passed bare `stats` as the
+                    #      4th arg. stats contains the performance metrics the
+                    #      panel reads for per-combo lines (total_trades,
+                    #      win_rate, net_total_pips, net_profit_factor) but it
+                    #      does NOT contain rule_combo, exit_name, exit_class —
+                    #      those live on the outer `result` dict. The panel's
+                    #      _update_best() reads b['rule_combo'] and b['exit_name']
+                    #      to render the "🏆 best so far" label, and crashed with
+                    #      KeyError: 'rule_combo' on every tick that produced
+                    #      trades. Pass a merged dict: flatten stats at top level
+                    #      (so the panel's existing reads still work) and add the
+                    #      three identity fields needed by _update_best().
+                    # CHANGED: April 2026 — Phase A.5 — merge identity + stats
+                    # WHY (Phase A.38b): Carry regime filter signal counts into
+                    #      the progress payload so the Run Backtest panel can
+                    #      show "N trades (M before filter)". Read from the
+                    #      function-attribute stash fast_backtest wrote above.
+                    # CHANGED: April 2026 — Phase A.38b
+                    _a38b_sig_before = getattr(fast_backtest, '_last_sig_before', 0)
+                    _a38b_sig_after  = getattr(fast_backtest, '_last_sig_after',  0)
+                    _progress_payload = {
+                        **stats,
+                        'rule_combo': _rule_combo_id,
+                        'exit_name':  exit_strat.name,
+                        'exit_class': type(exit_strat).__name__,
+                        'signals_before_regime_filter': _a38b_sig_before,
+                        'signals_after_regime_filter':  _a38b_sig_after,
+                    }
+                    _unique_name = _progress_payload['rule_combo']
+                    try:
+                        progress_callback(count, total, _unique_name, _progress_payload)
+                    except TypeError:
+                        progress_callback(count, total, _unique_name)
+                elif count % 10 == 0 or count == total:
+                    log.info(f"  [{count}/{total}] {_rule_combo_id}")
 
     # WHY: Old sort by net_total_pips alone ranks a 10k-trade marginal-edge
     #      strategy above a 100-trade high-expectancy one. Users aiming at

@@ -209,6 +209,11 @@ _t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
 # CHANGED: April 2026 — T2b-fix — opt-in stability gate
 _t2b_stability_var        = None  # BooleanVar: run walk-forward on top rows
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
+# WHY: Entry bar offset checkboxes — signal bar (offset=0, matches EA) and/or
+#      next bar (offset=1, legacy). When both checked, both run in one pass.
+# CHANGED: May 2026 — entry bar offset toggle for EA parity
+_ebo_signal_bar_var       = None  # BooleanVar: test offset=0 (signal bar, EA parity)
+_ebo_next_bar_var         = None  # BooleanVar: test offset=1 (next bar, legacy)
 # WHY: Optional date-range overrides for the backtest. When filled they
 #      override _cfg_bt_start/_cfg_bt_end (which come from saved config).
 #      Empty = test the full data range (pre-existing behavior).
@@ -1421,6 +1426,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # WHY: Min hold gates management exits — matches EA MinHoldMinutes.
                         # CHANGED: April 2026 — min hold parity with MT5 EA
                         min_hold_minutes=_cfg_min_hold if _a48_use_cfg else 0,
+                        # WHY: Build offset list from checkboxes. At least one must be selected.
+                        # CHANGED: May 2026 — entry bar offset toggle
+                        entry_bar_offsets=[o for o, v in [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
+                                           if v is not None and v.get()] or [0],
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -3810,6 +3819,54 @@ def build_panel(parent):
         text=f"    OFF = use defaults (spread=2.5, commission=0, no account sizing)\n"
              f"    ON  = read from Configuration panel\n"
              f"{_a48_preview}",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Entry timing (EA parity) ──────────────────────────────────────────────
+    # WHY: Python backtester historically entered at bar N+1 after signal bar N.
+    #      The MT5 EA enters immediately at bar N. Checking "Signal bar" uses
+    #      offset=0 (matches EA). Checking both runs offset=0 and offset=1 in
+    #      one pass and produces paired matrix rows for direct comparison.
+    # CHANGED: May 2026 — entry bar offset toggle for EA parity
+    global _ebo_signal_bar_var, _ebo_next_bar_var
+
+    _ebo_frame = tk.Frame(panel, bg="white", pady=6)
+    _ebo_frame.pack(fill="x", padx=20)
+
+    tk.Label(
+        _ebo_frame,
+        text="⏱ Entry timing",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+        fg="#333",
+    ).pack(anchor="w")
+
+    _ebo_signal_bar_var = tk.BooleanVar(value=True)
+    _ebo_next_bar_var   = tk.BooleanVar(value=False)
+
+    _ebo_cb_frame = tk.Frame(_ebo_frame, bg="white")
+    _ebo_cb_frame.pack(anchor="w")
+    tk.Checkbutton(
+        _ebo_cb_frame,
+        text="Signal bar (EA parity — enters at bar N)",
+        variable=_ebo_signal_bar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(side="left", padx=(0, 16))
+    tk.Checkbutton(
+        _ebo_cb_frame,
+        text="Next bar (+1, legacy — enters at bar N+1)",
+        variable=_ebo_next_bar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(side="left")
+
+    tk.Label(
+        _ebo_frame,
+        text="    Check both to run both modes and compare side-by-side (+1bar suffix on next-bar rows)",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",

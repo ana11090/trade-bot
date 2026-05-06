@@ -102,7 +102,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 2,
@@ -207,7 +208,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 3,
@@ -312,7 +314,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 4,
@@ -417,7 +420,8 @@
       "status": "deployed",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 5,
@@ -484,7 +488,8 @@
       "grade": "",
       "score": 0,
       "spread_pips": 2.5
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 6,
@@ -551,7 +556,8 @@
       "grade": "",
       "score": 0,
       "spread_pips": 2.5
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 8,
@@ -650,7 +656,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 9,
@@ -759,7 +766,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 10,
@@ -858,7 +866,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 11,
@@ -967,7 +976,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 12,
@@ -1056,7 +1066,8 @@
       "status": "deployed",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 13,
@@ -1165,7 +1176,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 14,
@@ -1274,7 +1286,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 15,
@@ -1383,7 +1396,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 16,
@@ -1492,7 +1506,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 17,
@@ -1601,7 +1616,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 18,
@@ -1710,7 +1726,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 19,
@@ -1819,7 +1836,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 20,
@@ -1918,7 +1936,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 21,
@@ -2027,7 +2046,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 22,
@@ -2126,7 +2146,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 23,
@@ -2225,7 +2246,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 24,
@@ -2334,7 +2356,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 25,
@@ -2443,7 +2466,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 26,
@@ -2552,7 +2576,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 27,
@@ -2661,7 +2686,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 28,
@@ -2770,7 +2796,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 29,
@@ -2879,7 +2906,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 30,
@@ -2978,7 +3006,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 31,
@@ -3087,7 +3116,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 32,
@@ -3196,7 +3226,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 33,
@@ -3295,7 +3326,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 34,
@@ -3394,7 +3426,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 35,
@@ -3503,7 +3536,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 36,
@@ -3612,7 +3646,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 37,
@@ -3721,7 +3756,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 38,
@@ -3830,7 +3866,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 39,
@@ -3929,7 +3966,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 40,
@@ -4038,7 +4076,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 41,
@@ -4127,7 +4166,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 42,
@@ -4236,7 +4276,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 43,
@@ -4335,7 +4376,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 44,
@@ -4444,7 +4486,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 45,
@@ -4553,7 +4596,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 46,
@@ -4662,7 +4706,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 47,
@@ -4771,7 +4816,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 48,
@@ -4880,7 +4926,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 49,
@@ -4979,7 +5026,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 50,
@@ -5078,7 +5126,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 51,
@@ -5177,7 +5226,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 52,
@@ -5276,7 +5326,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 53,
@@ -5385,7 +5436,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 54,
@@ -5474,7 +5526,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 55,
@@ -5583,7 +5636,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 56,
@@ -5692,7 +5746,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 57,
@@ -5801,7 +5856,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 58,
@@ -5900,7 +5956,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 59,
@@ -5999,7 +6056,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 60,
@@ -6108,7 +6166,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 61,
@@ -6217,7 +6276,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 62,
@@ -6326,7 +6386,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 63,
@@ -6435,7 +6496,8 @@
       "status": "discovered",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 64,
@@ -6544,6 +6606,7 @@
       "status": "deployed",
       "grade": "",
       "score": 0
-    }
+    },
+    "data_source_id": "unlimited_leveraged_data"
   }
 ]

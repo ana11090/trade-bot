@@ -800,6 +800,9 @@ def walk_forward_validate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
+                # WHY: Signal bar entry for walk-forward (EA parity default).
+                # CHANGED: May 2026 — entry bar offset
+                entry_bar_offset=0,
             )
         except Exception as e:
             in_trades = []
@@ -860,6 +863,9 @@ def walk_forward_validate(
                 min_hold_minutes=min_hold_minutes,
                 cooldown_candles=cooldown_candles,
                 slippage_pips=slippage_pips,
+                # WHY: Signal bar entry for walk-forward (EA parity default).
+                # CHANGED: May 2026 — entry bar offset
+                entry_bar_offset=0,
             )
         except Exception as e:
             out_trades = []
@@ -1394,6 +1400,9 @@ def slippage_stress_test(
                     session_spread_multipliers=session_spread_multipliers,
                     min_hold_minutes=min_hold_minutes,
                     cooldown_candles=cooldown_candles,
+                    # WHY: Signal bar entry for slippage stress test (EA parity default).
+                    # CHANGED: May 2026 — entry bar offset
+                    entry_bar_offset=0,
                 )
                 # Apply filters if provided (max_trades_per_day, sessions, etc.)
                 if filters and run_trades:
