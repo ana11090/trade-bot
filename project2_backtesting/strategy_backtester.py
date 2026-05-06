@@ -1281,7 +1281,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  sl_slippage_distribution=None,
                  # WHY: entry_bar_offset — see fast_backtest.
                  # CHANGED: May 2026 — configurable entry bar offset
-                 entry_bar_offset=0):
+                 entry_bar_offset=0,
+                 # WHY: entry_tf identifies which TF columns need shift(1).
+                 #      Higher-TF columns are already look-ahead-safe from
+                 #      build_multi_tf_indicators' timestamp forward-shift.
+                 #      None = shift all columns (backward compat).
+                 # CHANGED: May 2026 — selective shift for mixed-TF parity
+                 entry_tf=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1410,15 +1416,30 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     # WHY: When entry_bar_offset=0 (signal bar entry), Python enters at bar N.
     #      To avoid look-ahead, conditions must evaluate bar N-1's data —
     #      matching the EA's shift=1 (SafeCopyBuf reads previous completed bar).
-    #      shift(1) moves each row's indicator values down by 1: row N now
-    #      contains bar N-1's values. Row 0 becomes NaN → no signal fires there,
-    #      which is correct (no previous bar to evaluate at the very first bar).
-    #      When entry_bar_offset=1 (legacy), Python enters at bar N+1 and
-    #      evaluates bar N's completed data — bar N is fully known at N+1's
-    #      open, so no shift is needed.
-    # CHANGED: May 2026 — indicator shift for look-ahead prevention
+    #
+    #      SELECTIVE SHIFT: Only entry-TF columns (and lower) get shifted.
+    #      Higher-TF columns (H1_xxx on M5 entry, etc.) are ALREADY
+    #      look-ahead-safe because build_multi_tf_indicators shifts their
+    #      timestamps forward by one bar duration before merge_asof.
+    #      Shifting them again delays them by one extra entry-TF bar,
+    #      causing divergence at every higher-TF boundary.
+    #      When entry_tf is None (backward compat), shifts all columns.
+    # CHANGED: May 2026 — selective shift for mixed-TF EA parity
     if entry_bar_offset == 0:
-        ind = ind.shift(1)
+        if entry_tf is not None:
+            _TF_MIN = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60,
+                       'H4': 240, 'D1': 1440, 'W1': 10080}
+            _entry_min = _TF_MIN.get(entry_tf, 60)
+            _higher_prefixes = tuple(
+                tf + '_' for tf, mins in _TF_MIN.items() if mins > _entry_min
+            )
+            _no_shift = [c for c in ind.columns if c.startswith(_higher_prefixes)]
+            _to_shift = [c for c in ind.columns if c not in _no_shift]
+            if _to_shift:
+                ind = ind.copy()
+                ind[_to_shift] = ind[_to_shift].shift(1)
+        else:
+            ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
@@ -2062,7 +2083,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   #      entry_bar_offset=1 enters at next bar (legacy behavior,
                   #      prevents any possible look-ahead on the signal bar's close).
                   # CHANGED: May 2026 — configurable entry bar offset for EA parity
-                  entry_bar_offset=0):
+                  entry_bar_offset=0,
+                  # WHY: entry_tf — see run_backtest. None = shift all (backward compat).
+                  # CHANGED: May 2026 — selective shift for mixed-TF parity
+                  entry_tf=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2092,13 +2116,25 @@ def fast_backtest(df, ind, rules, exit_strategy,
     # WHY: This is the only part that changes between iterations —
     #      different threshold values produce different masks.
     #      Everything else (indicator values, candle data) is identical.
-    # WHY: When entry_bar_offset=0 (signal bar entry), Python enters at bar N.
-    #      To avoid look-ahead, conditions must evaluate bar N-1's data —
-    #      matching the EA's shift=1 (SafeCopyBuf reads previous completed bar).
-    #      See run_backtest comment above for full explanation.
-    # CHANGED: May 2026 — indicator shift for look-ahead prevention
+    # WHY: Selective shift — see run_backtest for full explanation.
+    #      Only entry-TF columns get shifted; higher-TF columns are
+    #      already look-ahead-safe from build_multi_tf_indicators.
+    # CHANGED: May 2026 — selective shift for mixed-TF EA parity
     if entry_bar_offset == 0:
-        ind = ind.shift(1)
+        if entry_tf is not None:
+            _TF_MIN = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60,
+                       'H4': 240, 'D1': 1440, 'W1': 10080}
+            _entry_min = _TF_MIN.get(entry_tf, 60)
+            _higher_prefixes = tuple(
+                tf + '_' for tf, mins in _TF_MIN.items() if mins > _entry_min
+            )
+            _no_shift = [c for c in ind.columns if c.startswith(_higher_prefixes)]
+            _to_shift = [c for c in ind.columns if c not in _no_shift]
+            if _to_shift:
+                ind = ind.copy()
+                ind[_to_shift] = ind[_to_shift].shift(1)
+        else:
+            ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
@@ -3467,6 +3503,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # WHY: Pass current offset so the right entry bar is used.
                     # CHANGED: May 2026 — entry bar offset
                     entry_bar_offset=_ebo,
+                    # WHY: Selective shift needs entry_tf to know which
+                    #      columns are higher-TF (already look-ahead-safe).
+                    # CHANGED: May 2026 — selective shift for mixed-TF parity
+                    entry_tf=timeframe,
                 )
                 stats = compute_stats(trades)
 
