@@ -2927,6 +2927,11 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     _stage_var.get() if _stage_var else 'Evaluation',
                     project_root
                 ),
+                # WHY: entry_bar_offset records which timing mode produced these trades.
+                #      EA generator reads this to set UseNextBarEntry accordingly.
+                #      0 = signal bar (EA parity, new default). 1 = next bar (legacy).
+                # CHANGED: May 2026 — save entry bar offset with rule
+                'entry_bar_offset': int(_strat.get('entry_bar_offset', 0)) if _strat else 0,
             }
             for rule in _save_rules:
                 if rule.get('prediction') == 'WIN':

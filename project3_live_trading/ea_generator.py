@@ -121,6 +121,14 @@ def generate_ea(
               f"If this is a SELL strategy, the generated EA will trade the wrong side!")
     print(f"[EA GEN] Direction: {_dir}")
 
+    # WHY: entry_bar_offset from saved rule determines EA entry timing.
+    #      0 = signal bar (immediate, EA parity, new default).
+    #      1 = next bar (legacy, matches Python offset=1 backtest mode).
+    # CHANGED: May 2026 — EA entry timing from saved rule
+    _entry_bar_offset = int(strategy.get('entry_bar_offset', 0))
+    _use_next_bar     = (_entry_bar_offset == 1)
+    _use_next_bar_str = 'true' if _use_next_bar else 'false'
+
     validation = strategy.get('validation', {})
     grade       = validation.get('grade', 'N/A')
     score       = validation.get('score', 0)
@@ -2143,6 +2151,7 @@ input double MaxSpreadPips      = {max_spread_pips};         // Max spread to al
 input int    HardCloseHourGMT   = {hard_close_hour};         // Force-close all positions at this GMT hour daily (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
+input bool   UseNextBarEntry    = {_use_next_bar_str};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
 input bool   UseNewsFilter      = {'true' if news_filter_minutes > 0 else 'false'};  // Skip trading around news
 input int    NewsFilterMinutes  = {news_filter_minutes};     // Minutes before/after news
 input bool   UsePropFirmMode    = true;                      // Enable prop firm safety
@@ -2447,6 +2456,27 @@ void OnTick()
 
    if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
    if(!entrySignal) return;
+
+   // WHY: UseNextBarEntry delays entry by 1 bar to match Python backtester's
+   //      entry_bar_offset=1 (legacy) mode. When false (default for new rules),
+   //      EA enters immediately = matches Python entry_bar_offset=0 (EA parity).
+   // CHANGED: May 2026 — pending signal mode for legacy parity
+   static bool g_pendingSignal = false;
+   static datetime g_pendingBar = 0;
+   if(UseNextBarEntry)
+   {{
+      datetime curBar = iTime(NULL, PERIOD_M5, 0);
+      if(!g_pendingSignal)
+      {{
+         g_pendingSignal = true;
+         g_pendingBar = curBar;
+         return;  // signal bar — store and wait
+      }}
+      if(curBar == g_pendingBar)
+         return;  // still on same bar — wait
+      // Next bar arrived — clear flag and fall through to entry
+      g_pendingSignal = false;
+   }}
 
    //--- No existing position with our magic
    // WHY: PositionSelectByTicket(0) always fails — ticket 0 doesn't exist.
