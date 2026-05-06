@@ -844,10 +844,6 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
     #      average. Both paths now agree on the same distribution.
     # CHANGED: April 2026 — slippage symmetry fix
     _vect_slip_rng = random.Random(slippage_seed)
-    # WHY: Log entry_bar_offset when non-default so it's visible in traces.
-    # CHANGED: May 2026 — entry bar offset diagnostic
-    if entry_bar_offset != 0:
-        log.info(f"  [fast_backtest] entry_bar_offset={entry_bar_offset} (legacy +1 bar mode)")
 
     # WHY: Normalize SL/TP prices to MT5's symbol-digits precision,
     #      matching MT5's NormalizeDouble on order placement. The slow
