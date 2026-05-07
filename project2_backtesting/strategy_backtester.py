@@ -672,7 +672,7 @@ def build_multi_tf_indicators(data_dir, entry_timestamps, required_indicators=No
                         'D1': 1440, 'W1': 10080}
             entry_minutes = _TF_MIN.get(entry_tf, 60)
             tf_minutes = _TF_MIN.get(tf, 60)
-            if tf_minutes > entry_minutes:
+            if tf_minutes != entry_minutes:
                 tf_ind = tf_ind.copy()
                 tf_ind['timestamp'] = tf_ind['timestamp'] + pd.Timedelta(minutes=tf_minutes)
 
@@ -1453,8 +1453,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if _to_shift:
                 ind = ind.copy()
                 ind[_to_shift] = ind[_to_shift].shift(1)
-            else:
-                ind = ind.shift(1)  # no entry-TF columns found, shift all
+            # else: no entry-TF columns in this rule — all columns are
+            # from other TFs, already look-ahead-safe from the timestamp
+            # shift in build_multi_tf_indicators. No additional shift.
         else:
             ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
@@ -2199,8 +2200,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             if _to_shift:
                 ind = ind.copy()
                 ind[_to_shift] = ind[_to_shift].shift(1)
-            else:
-                ind = ind.shift(1)
+            # else: no entry-TF columns — see run_backtest comment.
         else:
             ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
