@@ -540,11 +540,26 @@ def _auto_fill_risk(strat_data):
         except Exception:
             pass
 
-    # Stage
+    # Stage — read from rule first, then run_settings, then P1 config
+    # WHY: The rule carries prop_firm_stage ("Evaluation" or "Funded").
+    #      run_settings.stage is always empty because the backtest panel
+    #      never stores it. Without this, the Stage dropdown keeps its
+    #      previous value — generating funded rules in evaluation EAs.
+    # CHANGED: May 2026 — auto-select stage from rule
     stage = rs.get('stage', '')
+    if not stage:
+        _af_rules = strat_data.get('rules', [])
+        for _af_r in _af_rules:
+            _af_s = _af_r.get('prop_firm_stage', '')
+            if _af_s:
+                stage = _af_s
+                break
+    if not stage:
+        stage = strat_data.get('prop_firm_stage', '')
     if stage and _ea_stage_var:
         try:
             _ea_stage_var.set(stage)
+            print(f"[EA GEN] Stage auto-set: {stage}")
         except Exception:
             pass
 
