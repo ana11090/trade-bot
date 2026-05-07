@@ -1898,6 +1898,34 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
                 output_text.see(tk.END)
 
+                # WHY: "Generate EA" shortcut — navigates to EA Generator panel
+                #      with the best result pre-selected. No manual matching needed.
+                # CHANGED: May 2026 — Generate EA from backtest results
+                if all_matrix:
+                    _best = all_matrix[0]
+                    _best_idx = _best.get('_matrix_index',
+                                  next((i for i, r in enumerate(all_matrix) if r is _best), 0))
+                    _best_label = f"{_best.get('rule_combo', '?')} × {_best.get('exit_name', '?')}"
+                    def _jump_to_ea(_idx=_best_idx):
+                        import state as _jmp_state
+                        import sidebar as _jmp_sidebar
+                        _jmp_state.pending_ea_strategy_index[0] = _idx
+                        _jmp_sidebar.show_panel('p3_generator')
+                    if state.window:
+                        def _add_ea_btn():
+                            _ea_btn = tk.Button(
+                                output_text,
+                                text=f"⚡ Generate EA  →  {_best_label}",
+                                font=("Segoe UI", 10, "bold"),
+                                bg="#28a745", fg="white", cursor="hand2",
+                                relief="flat", padx=10, pady=4,
+                                command=_jump_to_ea,
+                            )
+                            output_text.window_create(tk.END, window=_ea_btn)
+                            output_text.insert(tk.END, "\n")
+                            output_text.see(tk.END)
+                        state.window.after(0, _add_ea_btn)
+
                 # WHY: Update status of saved rules to 'backtested' after successful backtest
                 # CHANGED: April 2026 — lifecycle status tracking
                 try:

@@ -1456,6 +1456,28 @@ def build_panel(parent):
                         _strategy_var.set(_fs['label'])
                         break
 
+            # WHY: Auto-select strategy when navigating from backtest results.
+            # CHANGED: May 2026 — auto-select EA strategy
+            _pending_idx = None
+            try:
+                import state as _ea_state
+                _pending_idx = _ea_state.pending_ea_strategy_index[0]
+                if _pending_idx is not None:
+                    _ea_state.pending_ea_strategy_index[0] = None
+            except Exception:
+                pass
+            if _pending_idx is not None:
+                _target_iid = str(_pending_idx)
+                if _target_iid in _strat_tree_p3.get_children():
+                    _strat_tree_p3.selection_set(_target_iid)
+                    _strat_tree_p3.see(_target_iid)
+                    _selected_strat_iid = _target_iid
+                    for _ps in _strategies:
+                        if str(_ps.get('index', '')) == _target_iid:
+                            _strategy_var.set(_ps['label'])
+                            break
+                    print(f"[EA GEN] Auto-selected strategy at matrix index {_pending_idx}")
+
             # ── Event handlers (bind only on first creation) ──────────
             if not has_existing_tree:
                 def _on_p3_select(event=None):
