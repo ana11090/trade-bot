@@ -698,27 +698,35 @@ INDICATOR_PATTERNS = [
     #      Keltner middle = EMA(20), so we normalize by EMA.
     # CHANGED: April 2026 — fix keltner_width scale (audit bug family #7)
     (r"^keltner_width$", {
-        "mt5_handle_var":  "int handle_ema_{tf}_20_kc; int handle_atr_{tf}_10_kc;",
+        # WHY: Python ta.KeltnerChannel defaults to original_version=True,
+        #      which uses SMA(typical_price, 20) as middle and
+        #      SMA(high-low, 20) for the channel width — NOT ATR.
+        #      Old EA used 4*ATR(10)/EMA(close,20)*100, which is the
+        #      modern Keltner formula and produces completely different
+        #      values. Thresholds were calibrated against the Python
+        #      original formula, so the EA must match it exactly.
+        # CHANGED: May 2026 — match Python original_version=True formula
+        "mt5_handle_var":  "int handle_sma_tp_{tf}_20_kc;",
         "mt5_handle_init": (
-            "handle_ema_{tf}_20_kc = iMA(NULL,{mt5_tf},20,0,MODE_EMA,PRICE_CLOSE); "
-            "handle_atr_{tf}_10_kc = iATR(NULL,{mt5_tf},10); "
-            "if(handle_ema_{tf}_20_kc==INVALID_HANDLE || handle_atr_{tf}_10_kc==INVALID_HANDLE) return(INIT_FAILED);"
+            "handle_sma_tp_{tf}_20_kc = iMA(NULL,{mt5_tf},20,0,MODE_SMA,PRICE_TYPICAL); "
+            "if(handle_sma_tp_{tf}_20_kc==INVALID_HANDLE) return(INIT_FAILED);"
         ),
-        # WHY: Old template declared val_{var} inside the else{} block,
-        #      making it invisible to the condition check on the next line.
-        #      Same root cause as the bb_width scope bug.
-        # CHANGED: April 2026 — fix keltner_width scope bug (undeclared identifier)
         "mt5_buffer_read": (
             "double val_{var} = 0.0; "
-            "double _tmp_ema = SafeCopyBuf(handle_ema_{tf}_20_kc, 0, {mt5_tf}); "
-            "double _tmp_atr = SafeCopyBuf(handle_atr_{tf}_10_kc, 0, {mt5_tf}); "
-            "if(_tmp_ema == EMPTY_VALUE || _tmp_atr == EMPTY_VALUE || _tmp_ema <= 0) { indicatorFailed = true; } "
-            "else { val_{var} = (_tmp_atr * 4.0) / _tmp_ema * 100.0; }  "
-            "// Keltner width % = (upper - lower) / middle × 100 = (4 × ATR) / EMA × 100"
+            "double _kc_mid = SafeCopyBuf(handle_sma_tp_{tf}_20_kc, 0, {mt5_tf}); "
+            "if(_kc_mid == EMPTY_VALUE || _kc_mid <= 0) {{ indicatorFailed = true; }} "
+            "else {{ "
+            "  double _kc_sum_hl = 0; "
+            "  for(int _ki = 1; _ki <= 20; _ki++) "
+            "    _kc_sum_hl += iHigh(NULL,{mt5_tf},_ki) - iLow(NULL,{mt5_tf},_ki); "
+            "  double _kc_range_avg = _kc_sum_hl / 20.0; "
+            "  val_{var} = (2.0 * _kc_range_avg) / _kc_mid * 100.0; "
+            "}}  "
+            "// Keltner width % (original version) = 2×SMA(H-L,20) / SMA(TP,20) × 100"
         ),
-        "tradovate_code":  "((ta.atr(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],10).iloc[-1] * 4) / max(ta.ema(df_m{tv_tf}['close'],20).iloc[-1], 1e-6) * 100)",
+        "tradovate_code":  "ta.volatility.KeltnerChannel(df_m{tv_tf}['high'],df_m{tv_tf}['low'],df_m{tv_tf}['close'],window=20).keltner_channel_wband().iloc[-1]",
         "custom_indicator_mt5": False,
-        "description": "Keltner Channel width as % of middle on {tf}",
+        "description": "Keltner Channel width as % of middle on {tf} (original version)",
     }),
 ]
 
