@@ -1460,10 +1460,9 @@ def build_panel(parent):
             # CHANGED: May 2026 — auto-select EA strategy
             _pending_idx = None
             try:
-                import state as _ea_state
-                _pending_idx = _ea_state.pending_ea_strategy_index[0]
+                _pending_idx = state.pending_ea_strategy_index[0]
                 if _pending_idx is not None:
-                    _ea_state.pending_ea_strategy_index[0] = None
+                    state.pending_ea_strategy_index[0] = None
             except Exception:
                 pass
             if _pending_idx is not None:
