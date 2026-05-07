@@ -2503,7 +2503,7 @@ void OnTick()
    // ── Step 1: Check for a pending signal from the previous bar ──
    if(UseNextBarEntry && g_pendingSignal)
    {{
-      datetime curBar = iTime(NULL, PERIOD_M5, 0);
+      datetime curBar = iTime(NULL, {mql_period}, 0);
       if(curBar == g_pendingBar)
          return;  // still on signal bar — keep waiting
       // Next bar arrived — clear flag and fall through to entry
@@ -2520,7 +2520,7 @@ void OnTick()
       if(UseNextBarEntry)
       {{
          g_pendingSignal = true;
-         g_pendingBar = iTime(NULL, PERIOD_M5, 0);
+         g_pendingBar = iTime(NULL, {mql_period}, 0);
          return;  // wait for next bar
       }}
    }}

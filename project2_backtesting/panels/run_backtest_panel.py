@@ -1561,8 +1561,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      EvalDailyDDAlert / EvalTotalDDAlert behavior.
                         #      0 = disabled (no config or safety stops OFF).
                         # CHANGED: May 2026 — DD circuit breaker
-                        dd_daily_alert_pct=_cfg_dd_daily_alert if (use_safety and _a48_use_cfg) else 0.0,
-                        dd_total_alert_pct=_cfg_dd_total_alert if (use_safety and _a48_use_cfg) else 0.0,
+                        dd_daily_alert_pct=_cfg_dd_daily_alert if _a48_use_cfg else 0.0,
+                        dd_total_alert_pct=_cfg_dd_total_alert if _a48_use_cfg else 0.0,
                         dd_daily_reset_hour=_cfg_dd_reset_hour,
                     )
 
