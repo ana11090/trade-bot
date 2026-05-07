@@ -1114,6 +1114,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         except Exception:
                             pass
 
+                    # WHY: DD alert thresholds — initialized to 0 (disabled).
+                    #      Populated from firm JSON below when stage matches.
+                    # CHANGED: May 2026 — DD circuit breaker
+                    _cfg_dd_daily_alert = 0.0
+                    _cfg_dd_total_alert = 0.0
+                    _cfg_dd_reset_hour = 20
+
                     # WHY: Read per-firm asymmetric swap from the firm JSON.
                     #      Firm display name is already resolved above.
                     #      _cfg_symbol is set earlier from rule/config.
@@ -1163,6 +1170,39 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _firm_hard_close = _pf_data.get('hard_close_hour_gmt')
                                     if _firm_hard_close is not None:
                                         _cfg_hard_close = int(_firm_hard_close)
+                                    # WHY: Read DD alert thresholds from firm's
+                                    #      trading_rules based on prop_firm_stage.
+                                    #      Eval uses 2.7%/5.7%, funded uses 2.5%/5.5%.
+                                    #      These are the bot's safety thresholds —
+                                    #      the EA stops trading at these levels to
+                                    #      protect against hitting the firm's hard
+                                    #      limits (3%/6%).
+                                    # CHANGED: May 2026 — DD alert from firm JSON
+                                    _rule_stage = (_first_rule.get('prop_firm_stage', '') or '').lower()
+                                    for _tr in _pf_data.get('trading_rules', []):
+                                        _tr_stage = (_tr.get('stage', '') or '').lower()
+                                        _tr_params = _tr.get('parameters', {})
+                                        if _rule_stage == _tr_stage:
+                                            _cfg_dd_daily_alert = float(_tr_params.get('daily_dd_alert_pct', 0))
+                                            _cfg_dd_total_alert = float(_tr_params.get('total_dd_alert_pct', 0))
+                                            break
+                                    # Daily DD reset hour from firm mechanics
+                                    _dd_mech = _pf_data.get('drawdown_mechanics', {})
+                                    _dd_daily_cfg = _dd_mech.get('daily_dd', {})
+                                    _dd_reset_time = _dd_daily_cfg.get('reset_time', '')
+                                    _dd_reset_tz = _dd_daily_cfg.get('reset_timezone', 'UTC')
+                                    if _dd_reset_time:
+                                        try:
+                                            _rh = int(_dd_reset_time.split(':')[0])
+                                            if 'GMT+' in _dd_reset_tz:
+                                                _off = int(_dd_reset_tz.split('+')[1])
+                                                _rh = (_rh - _off) % 24
+                                            elif 'GMT-' in _dd_reset_tz:
+                                                _off = int(_dd_reset_tz.split('-')[1])
+                                                _rh = (_rh + _off) % 24
+                                            _cfg_dd_reset_hour = _rh
+                                        except Exception:
+                                            pass
                                     _swap_loaded = True
                                     break
                             except Exception:
@@ -1188,6 +1228,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             print(f"[BACKTEST] Hard close: {_hc_str} ({_firm_display} firm)")
                         elif not _swap_loaded:
                             print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
+                        # WHY: Show DD alert thresholds being applied.
+                        # CHANGED: May 2026 — DD circuit breaker diagnostic
+                        if _swap_loaded and _cfg_dd_daily_alert > 0:
+                            _firm_stage = (_first_rule.get('prop_firm_stage', '') or 'unknown')
+                            print(f"[BACKTEST] DD alerts: daily={_cfg_dd_daily_alert}% "
+                                  f"total={_cfg_dd_total_alert}% "
+                                  f"reset_hour={_cfg_dd_reset_hour}h GMT "
+                                  f"(stage={_firm_stage})")
                     except Exception as _swap_e:
                         print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
 
@@ -1508,6 +1556,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: May 2026 — entry bar offset toggle
                         entry_bar_offsets=[o for o, v in [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
                                            if v is not None and v.get()] or [0],
+                        # WHY: DD circuit breaker — stop generating trades when
+                        #      daily/total DD alert threshold is hit. Matches EA's
+                        #      EvalDailyDDAlert / EvalTotalDDAlert behavior.
+                        #      0 = disabled (no config or safety stops OFF).
+                        # CHANGED: May 2026 — DD circuit breaker
+                        dd_daily_alert_pct=_cfg_dd_daily_alert if (use_safety and _a48_use_cfg) else 0.0,
+                        dd_total_alert_pct=_cfg_dd_total_alert if (use_safety and _a48_use_cfg) else 0.0,
+                        dd_daily_reset_hour=_cfg_dd_reset_hour,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

@@ -1287,7 +1287,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      build_multi_tf_indicators' timestamp forward-shift.
                  #      None = shift all columns (backward compat).
                  # CHANGED: May 2026 — selective shift for mixed-TF parity
-                 entry_tf=None):
+                 entry_tf=None,
+                 # WHY: DD circuit breaker — see fast_backtest.
+                 # CHANGED: May 2026 — DD circuit breaker
+                 dd_daily_alert_pct=0.0,
+                 dd_total_alert_pct=0.0,
+                 dd_daily_reset_hour=20):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1307,6 +1312,17 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     #      Clamped to 50% of starting capital as a safety floor.
     # CHANGED: April 2026 — equity-tracking lot sizing
     _running_balance = float(account_size) if account_size is not None else None
+
+    # WHY: DD circuit breaker state — see fast_backtest for full explanation.
+    # CHANGED: May 2026 — DD circuit breaker
+    _dd_enabled = (dd_daily_alert_pct > 0 or dd_total_alert_pct > 0) and account_size
+    _dd_daily_halted = False
+    _dd_total_halted = False
+    _dd_daily_pnl_dollars = 0.0
+    _dd_balance = float(account_size) if account_size else 0.0
+    _dd_ref_equity = float(account_size) if account_size else 0.0
+    _dd_hwm = float(account_size) if account_size else 0.0
+    _dd_current_day = None
 
     # WHY: Infer candle duration once per call for tick window sizing.
     #      Median of first 10 gaps is robust against weekend/session gaps.
@@ -1681,6 +1697,24 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             except Exception:
                 pass
 
+        # WHY: DD circuit breaker — check if halted, and detect daily reset.
+        # CHANGED: May 2026 — DD circuit breaker
+        if _dd_enabled:
+            try:
+                _dd_ts = pd.Timestamp(next_candle['timestamp'])
+                _dd_date = _dd_ts.date()
+                _dd_post_reset = _dd_ts.hour >= dd_daily_reset_hour
+                _dd_day_key = (_dd_date, _dd_post_reset)
+                if _dd_current_day is not None and _dd_day_key != _dd_current_day:
+                    _dd_daily_halted = False
+                    _dd_daily_pnl_dollars = 0.0
+                    _dd_ref_equity = _dd_balance if _dd_balance > 0 else float(account_size)
+                _dd_current_day = _dd_day_key
+            except Exception:
+                pass
+            if _dd_total_halted or _dd_daily_halted:
+                continue
+
         # News blackout filter
         if news_blackout_minutes > 0:
             from project2_backtesting.news_calendar import is_news_blackout
@@ -2035,6 +2069,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "cost_swap_pips":       round(float(swap_cost_pips), 1),
         })
 
+        # WHY: DD circuit breaker — update daily/total P&L and check thresholds.
+        # CHANGED: May 2026 — DD circuit breaker
+        if _dd_enabled:
+            _dd_balance += dollar_pnl
+            if _dd_balance > _dd_hwm:
+                _dd_hwm = _dd_balance
+            _dd_daily_pnl_dollars += dollar_pnl
+            if dd_daily_alert_pct > 0 and _dd_ref_equity > 0 and _dd_daily_pnl_dollars < 0:
+                if abs(_dd_daily_pnl_dollars) / _dd_ref_equity * 100 >= dd_daily_alert_pct:
+                    _dd_daily_halted = True
+            if dd_total_alert_pct > 0 and float(account_size) > 0:
+                if (_dd_hwm - _dd_balance) / float(account_size) * 100 >= dd_total_alert_pct:
+                    _dd_total_halted = True
+
     return trades
 
 
@@ -2086,7 +2134,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   entry_bar_offset=0,
                   # WHY: entry_tf — see run_backtest. None = shift all (backward compat).
                   # CHANGED: May 2026 — selective shift for mixed-TF parity
-                  entry_tf=None):
+                  entry_tf=None,
+                  # WHY: DD circuit breaker. When > 0, the trade loop tracks daily
+                  #      and total P&L and skips entries when the alert threshold
+                  #      is crossed. Matches EA's EvalDailyDDAlert / EvalTotalDDAlert.
+                  #      0 = disabled (backward compat).
+                  # CHANGED: May 2026 — DD circuit breaker
+                  dd_daily_alert_pct=0.0,
+                  dd_total_alert_pct=0.0,
+                  dd_daily_reset_hour=20):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2108,6 +2164,19 @@ def fast_backtest(df, ind, rules, exit_strategy,
     # CHANGED: April 2026 — equity-tracking lot sizing
     _running_balance = float(account_size) if account_size is not None else None
     _skipped_count = 0   # FIX 12E: track SANE_PIP_LIMIT skips
+
+    # WHY: DD circuit breaker state. Tracks daily P&L in dollars and halts
+    #      entries when the alert threshold is crossed. Resets at dd_daily_reset_hour.
+    #      _dd_hwm tracks high water mark for trailing total DD.
+    # CHANGED: May 2026 — DD circuit breaker
+    _dd_enabled = (dd_daily_alert_pct > 0 or dd_total_alert_pct > 0) and account_size
+    _dd_daily_halted = False
+    _dd_total_halted = False
+    _dd_daily_pnl_dollars = 0.0
+    _dd_balance = float(account_size) if account_size else 0.0
+    _dd_ref_equity = float(account_size) if account_size else 0.0
+    _dd_hwm = float(account_size) if account_size else 0.0
+    _dd_current_day = None
 
     if len(df) == 0:
         return trades
@@ -2348,6 +2417,24 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     continue
             except Exception:
                 pass
+
+        # WHY: DD circuit breaker — check if halted, and detect daily reset.
+        # CHANGED: May 2026 — DD circuit breaker
+        if _dd_enabled:
+            try:
+                _dd_ts = pd.Timestamp(entry_time)
+                _dd_date = _dd_ts.date()
+                _dd_post_reset = _dd_ts.hour >= dd_daily_reset_hour
+                _dd_day_key = (_dd_date, _dd_post_reset)
+                if _dd_current_day is not None and _dd_day_key != _dd_current_day:
+                    _dd_daily_halted = False
+                    _dd_daily_pnl_dollars = 0.0
+                    _dd_ref_equity = _dd_balance if _dd_balance > 0 else float(account_size)
+                _dd_current_day = _dd_day_key
+            except Exception:
+                pass
+            if _dd_total_halted or _dd_daily_halted:
+                continue
 
         entry_price = float(next_candle['open'])
 
@@ -2707,6 +2794,20 @@ def fast_backtest(df, ind, rules, exit_strategy,
         }
         trades.append(trade)
 
+        # WHY: DD circuit breaker — update daily/total P&L and check thresholds.
+        # CHANGED: May 2026 — DD circuit breaker
+        if _dd_enabled:
+            _dd_balance += net_profit
+            if _dd_balance > _dd_hwm:
+                _dd_hwm = _dd_balance
+            _dd_daily_pnl_dollars += net_profit
+            if dd_daily_alert_pct > 0 and _dd_ref_equity > 0 and _dd_daily_pnl_dollars < 0:
+                if abs(_dd_daily_pnl_dollars) / _dd_ref_equity * 100 >= dd_daily_alert_pct:
+                    _dd_daily_halted = True
+            if dd_total_alert_pct > 0 and float(account_size) > 0:
+                if (_dd_hwm - _dd_balance) / float(account_size) * 100 >= dd_total_alert_pct:
+                    _dd_total_halted = True
+
         # Mark occupied candles and update cooldown tracker
         occupied_until_idx = df.index[min(_eb_int + exit_idx, len(df) - 1)]
         _last_exit_pos_fbt = min(_eb_int + exit_idx, len(df) - 1)
@@ -3001,7 +3102,15 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      separate matrix rows (like exit strategies do).
                           #      Default [0] = signal bar entry only (matches EA).
                           # CHANGED: May 2026 — dual-offset backtest support
-                          entry_bar_offsets=None):
+                          entry_bar_offsets=None,
+                          # WHY: DD circuit breaker thresholds. When > 0, fast_backtest
+                          #      stops entering trades when daily/total DD crosses
+                          #      the alert percentage. Matches EA's EvalDailyDDAlert.
+                          #      0 = disabled (backward compat).
+                          # CHANGED: May 2026 — DD circuit breaker
+                          dd_daily_alert_pct=0.0,
+                          dd_total_alert_pct=0.0,
+                          dd_daily_reset_hour=20):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -3507,6 +3616,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     #      columns are higher-TF (already look-ahead-safe).
                     # CHANGED: May 2026 — selective shift for mixed-TF parity
                     entry_tf=timeframe,
+                    # WHY: DD circuit breaker — stop entries on DD alert.
+                    # CHANGED: May 2026 — DD circuit breaker
+                    dd_daily_alert_pct=dd_daily_alert_pct,
+                    dd_total_alert_pct=dd_total_alert_pct,
+                    dd_daily_reset_hour=dd_daily_reset_hour,
                 )
                 stats = compute_stats(trades)
 
