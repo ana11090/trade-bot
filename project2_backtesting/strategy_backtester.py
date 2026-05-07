@@ -1433,27 +1433,28 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     #      To avoid look-ahead, conditions must evaluate bar N-1's data —
     #      matching the EA's shift=1 (SafeCopyBuf reads previous completed bar).
     #
-    #      SELECTIVE SHIFT: Only entry-TF columns (and lower) get shifted.
-    #      Higher-TF columns (H1_xxx on M5 entry, etc.) are ALREADY
+    #      SELECTIVE SHIFT: Only ENTRY-TF columns get shifted.
+    #      ALL other TF columns (both higher AND lower) are ALREADY
     #      look-ahead-safe because build_multi_tf_indicators shifts their
     #      timestamps forward by one bar duration before merge_asof.
-    #      Shifting them again delays them by one extra entry-TF bar,
-    #      causing divergence at every higher-TF boundary.
+    #      - Higher TF (H1_xxx on M5 entry): forward-shift = 60 min
+    #      - Lower TF (M5_xxx on H1 entry): forward-shift = 5 min,
+    #        then merge_asof picks the last completed M5 bar
+    #      Shifting either again delays them by one extra entry-TF bar.
+    #      SMART_/REGIME_ features derive from mixed TFs — shift them.
     #      When entry_tf is None (backward compat), shifts all columns.
     # CHANGED: May 2026 — selective shift for mixed-TF EA parity
     if entry_bar_offset == 0:
         if entry_tf is not None:
-            _TF_MIN = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60,
-                       'H4': 240, 'D1': 1440, 'W1': 10080}
-            _entry_min = _TF_MIN.get(entry_tf, 60)
-            _higher_prefixes = tuple(
-                tf + '_' for tf, mins in _TF_MIN.items() if mins > _entry_min
-            )
-            _no_shift = [c for c in ind.columns if c.startswith(_higher_prefixes)]
-            _to_shift = [c for c in ind.columns if c not in _no_shift]
+            _entry_prefix = entry_tf + '_'
+            _to_shift = [c for c in ind.columns
+                         if c.startswith(_entry_prefix)
+                         or c.startswith(('SMART_', 'REGIME_'))]
             if _to_shift:
                 ind = ind.copy()
                 ind[_to_shift] = ind[_to_shift].shift(1)
+            else:
+                ind = ind.shift(1)  # no entry-TF columns found, shift all
         else:
             ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
@@ -2186,22 +2187,20 @@ def fast_backtest(df, ind, rules, exit_strategy,
     #      different threshold values produce different masks.
     #      Everything else (indicator values, candle data) is identical.
     # WHY: Selective shift — see run_backtest for full explanation.
-    #      Only entry-TF columns get shifted; higher-TF columns are
+    #      Only entry-TF columns get shifted; all other TF columns are
     #      already look-ahead-safe from build_multi_tf_indicators.
     # CHANGED: May 2026 — selective shift for mixed-TF EA parity
     if entry_bar_offset == 0:
         if entry_tf is not None:
-            _TF_MIN = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60,
-                       'H4': 240, 'D1': 1440, 'W1': 10080}
-            _entry_min = _TF_MIN.get(entry_tf, 60)
-            _higher_prefixes = tuple(
-                tf + '_' for tf, mins in _TF_MIN.items() if mins > _entry_min
-            )
-            _no_shift = [c for c in ind.columns if c.startswith(_higher_prefixes)]
-            _to_shift = [c for c in ind.columns if c not in _no_shift]
+            _entry_prefix = entry_tf + '_'
+            _to_shift = [c for c in ind.columns
+                         if c.startswith(_entry_prefix)
+                         or c.startswith(('SMART_', 'REGIME_'))]
             if _to_shift:
                 ind = ind.copy()
                 ind[_to_shift] = ind[_to_shift].shift(1)
+            else:
+                ind = ind.shift(1)
         else:
             ind = ind.shift(1)
     signal_mask     = pd.Series(False, index=ind.index)
