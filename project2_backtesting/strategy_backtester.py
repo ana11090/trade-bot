@@ -2208,6 +2208,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     # ── DIAGNOSTIC: indicator value dump for parity debugging ──
     # REMOVE after parity is confirmed.
+    _diag_rule_name = ''
+    if rules:
+        _diag_rule_name = rules[0].get('rule_id', rules[0].get('_rule_combo', ''))
     _diag_bars = [
         '2026-03-05 11:00', '2026-03-06 18:00', '2026-03-09 00:00',
         '2026-03-11 19:00', '2026-03-12 10:00',
@@ -2215,33 +2218,39 @@ def fast_backtest(df, ind, rules, exit_strategy,
     _diag_cols = [c for c in ind.columns if any(
         x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28']
     )]
-    try:
-        import os as _diag_os
-        _diag_path = _diag_os.path.join(
-            _diag_os.path.dirname(_diag_os.path.abspath(__file__)),
-            'outputs', 'diag_indicator_values.txt')
-        with open(_diag_path, 'w') as _df:
-            _df.write("DIAGNOSTIC: Indicator values at test bars\n")
-            _df.write(f"Columns found: {_diag_cols}\n")
-            _df.write(f"entry_tf: {entry_tf}\n")
-            _df.write(f"ind shape: {ind.shape}\n")
-            _df.write(f"df shape: {df.shape}\n\n")
-            for _db in _diag_bars:
-                _db_ts = pd.Timestamp(_db)
-                _mask = df['timestamp'] == _db_ts
-                _idx = df.index[_mask]
-                if len(_idx) > 0:
-                    _i = _idx[0]
-                    _df.write(f"Bar {_db}:\n")
-                    for _dc in sorted(_diag_cols):
-                        _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
-                        _df.write(f"  {_dc:>30s} = {_val}\n")
-                    _df.write("\n")
-                else:
-                    _df.write(f"Bar {_db}: NOT FOUND\n\n")
-        print(f"[DIAG] Written to {_diag_path}")
-    except Exception as _de:
-        print(f"[DIAG] Failed: {_de}")
+    if _diag_cols:
+        try:
+            import os as _diag_os
+            _diag_path = _diag_os.path.join(
+                _diag_os.path.dirname(_diag_os.path.abspath(__file__)),
+                'outputs', 'diag_indicator_values.txt')
+            with open(_diag_path, 'a') as _df:  # APPEND mode
+                _df.write(f"\n{'='*60}\n")
+                _df.write(f"Rule: {_diag_rule_name}\n")
+                _df.write(f"entry_tf: {entry_tf}  direction: {direction}\n")
+                _df.write(f"exit: {exit_strategy.__class__.__name__ if exit_strategy else '?'}\n")
+                _df.write(f"ind columns ({len(ind.columns)}): {sorted(_diag_cols)}\n")
+                _df.write(f"df rows: {len(df)}  ind rows: {len(ind)}\n\n")
+                _found_any = False
+                for _db in _diag_bars:
+                    _db_ts = pd.Timestamp(_db)
+                    _mask = df['timestamp'] == _db_ts
+                    _idx = df.index[_mask]
+                    if len(_idx) > 0:
+                        _i = _idx[0]
+                        _df.write(f"Bar {_db}:\n")
+                        for _dc in sorted(_diag_cols):
+                            _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
+                            _df.write(f"  {_dc:>30s} = {_val}\n")
+                        _df.write("\n")
+                        _found_any = True
+                    else:
+                        _df.write(f"Bar {_db}: NOT FOUND in df\n")
+                if not _found_any:
+                    _df.write("NO BARS MATCHED — check timestamps\n")
+                    _df.write(f"First 5 df timestamps: {list(df['timestamp'].head())}\n")
+        except Exception as _de:
+            print(f"[DIAG] ERROR: {_de}")
     # ── END DIAGNOSTIC ──
 
     # WHY (Phase A.24): same numpy-based mask building as run_backtest
@@ -3544,6 +3553,17 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     _ebo_labels = {0: "Signal bar (immediate)", 1: "Next bar (+1, legacy)"}
     _ebo_str = ", ".join(_ebo_labels.get(o, f"offset={o}") for o in entry_bar_offsets)
     log.info(f"Entry timing: {_ebo_str}")
+
+    # Clear diagnostic file at start of each matrix run
+    try:
+        import os as _dclear_os
+        _dclear_path = _dclear_os.path.join(
+            _dclear_os.path.dirname(_dclear_os.path.abspath(__file__)),
+            'outputs', 'diag_indicator_values.txt')
+        with open(_dclear_path, 'w') as _dcf:
+            _dcf.write("Diagnostic run started\n")
+    except Exception:
+        pass
 
     # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
     # WHY: run_backtest copies DataFrames on every call and re-applies date filters.
