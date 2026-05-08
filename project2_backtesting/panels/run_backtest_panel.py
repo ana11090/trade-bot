@@ -1179,13 +1179,24 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     #      limits (3%/6%).
                                     # CHANGED: May 2026 — DD alert from firm JSON
                                     _rule_stage = (_first_rule.get('prop_firm_stage', '') or '').lower()
+                                    # WHY: Scan ALL matching-stage rules to find
+                                    #      daily_dd_alert_pct and emergency_total_dd_pct.
+                                    #      Evaluation has NO total halt (alert only).
+                                    #      Funded halts at emergency_total_dd_pct (5.0%),
+                                    #      NOT at total_dd_alert_pct (5.5%).
+                                    # CHANGED: May 2026 — stage-aware DD thresholds
                                     for _tr in _pf_data.get('trading_rules', []):
                                         _tr_stage = (_tr.get('stage', '') or '').lower()
                                         _tr_params = _tr.get('parameters', {})
                                         if _rule_stage == _tr_stage:
-                                            _cfg_dd_daily_alert = float(_tr_params.get('daily_dd_alert_pct', 0))
-                                            _cfg_dd_total_alert = float(_tr_params.get('total_dd_alert_pct', 0))
-                                            break
+                                            if 'daily_dd_alert_pct' in _tr_params:
+                                                _cfg_dd_daily_alert = float(
+                                                    _tr_params['daily_dd_alert_pct'])
+                                            # Total halt: ONLY from emergency_total_dd_pct
+                                            # (funded). Evaluation has no total halt.
+                                            if 'emergency_total_dd_pct' in _tr_params:
+                                                _cfg_dd_total_alert = float(
+                                                    _tr_params['emergency_total_dd_pct'])
                                     # Daily DD reset hour from firm mechanics
                                     _dd_mech = _pf_data.get('drawdown_mechanics', {})
                                     _dd_daily_cfg = _dd_mech.get('daily_dd', {})
