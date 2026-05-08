@@ -2207,8 +2207,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
     # ── DIAGNOSTIC: indicator value dump for parity debugging ──
-    # WHY: Compare Python indicator values against EA journal values
-    #      at specific bars to find where computation diverges.
     # REMOVE after parity is confirmed.
     _diag_bars = [
         '2026-03-05 11:00', '2026-03-06 18:00', '2026-03-09 00:00',
@@ -2217,21 +2215,33 @@ def fast_backtest(df, ind, rules, exit_strategy,
     _diag_cols = [c for c in ind.columns if any(
         x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28']
     )]
-    if _diag_cols and 'timestamp' in df.columns:
-        print("\n[DIAG] ═══ Indicator values at test bars ═══")
-        for _db in _diag_bars:
-            _db_ts = pd.Timestamp(_db)
-            _mask = df['timestamp'] == _db_ts
-            _idx = df.index[_mask]
-            if len(_idx) > 0:
-                _i = _idx[0]
-                print(f"\n[DIAG] Bar {_db}:")
-                for _dc in sorted(_diag_cols):
-                    _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
-                    print(f"  {_dc:>30s} = {_val}")
-            else:
-                print(f"\n[DIAG] Bar {_db}: NOT FOUND in candle data")
-        print("[DIAG] ═══════════════════════════════════════\n")
+    try:
+        import os as _diag_os
+        _diag_path = _diag_os.path.join(
+            _diag_os.path.dirname(_diag_os.path.abspath(__file__)),
+            'outputs', 'diag_indicator_values.txt')
+        with open(_diag_path, 'w') as _df:
+            _df.write("DIAGNOSTIC: Indicator values at test bars\n")
+            _df.write(f"Columns found: {_diag_cols}\n")
+            _df.write(f"entry_tf: {entry_tf}\n")
+            _df.write(f"ind shape: {ind.shape}\n")
+            _df.write(f"df shape: {df.shape}\n\n")
+            for _db in _diag_bars:
+                _db_ts = pd.Timestamp(_db)
+                _mask = df['timestamp'] == _db_ts
+                _idx = df.index[_mask]
+                if len(_idx) > 0:
+                    _i = _idx[0]
+                    _df.write(f"Bar {_db}:\n")
+                    for _dc in sorted(_diag_cols):
+                        _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
+                        _df.write(f"  {_dc:>30s} = {_val}\n")
+                    _df.write("\n")
+                else:
+                    _df.write(f"Bar {_db}: NOT FOUND\n\n")
+        print(f"[DIAG] Written to {_diag_path}")
+    except Exception as _de:
+        print(f"[DIAG] Failed: {_de}")
     # ── END DIAGNOSTIC ──
 
     # WHY (Phase A.24): same numpy-based mask building as run_backtest
