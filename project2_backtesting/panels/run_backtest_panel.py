@@ -1410,6 +1410,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             else:
                 tfs_to_test = [entry_tf]
 
+            # Clear diagnostic file once before all TF runs
+            try:
+                _diag_clear_path = os.path.join(
+                    project_root, 'project2_backtesting',
+                    'outputs', 'diag_indicator_values.txt')
+                with open(_diag_clear_path, 'w') as _dcf:
+                    _dcf.write("Diagnostic run started\n")
+            except Exception:
+                pass
+
             capture = io.StringIO()
             with contextlib.redirect_stdout(capture):
                 sys.path.insert(0, project_root)

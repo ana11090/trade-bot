@@ -3554,17 +3554,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     _ebo_str = ", ".join(_ebo_labels.get(o, f"offset={o}") for o in entry_bar_offsets)
     log.info(f"Entry timing: {_ebo_str}")
 
-    # Clear diagnostic file at start of each matrix run
-    try:
-        import os as _dclear_os
-        _dclear_path = _dclear_os.path.join(
-            _dclear_os.path.dirname(_dclear_os.path.abspath(__file__)),
-            'outputs', 'diag_indicator_values.txt')
-        with open(_dclear_path, 'w') as _dcf:
-            _dcf.write("Diagnostic run started\n")
-    except Exception:
-        pass
-
     # ── Pre-trim once: apply date filter + skip warmup rows ──────────────────
     # WHY: run_backtest copies DataFrames on every call and re-applies date filters.
     #      Pre-trimming once saves len(rule_combos)*len(exit_strategies) copies.
