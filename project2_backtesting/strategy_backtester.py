@@ -2206,6 +2206,34 @@ def fast_backtest(df, ind, rules, exit_strategy,
     signal_mask     = pd.Series(False, index=ind.index)
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
+    # ── DIAGNOSTIC: indicator value dump for parity debugging ──
+    # WHY: Compare Python indicator values against EA journal values
+    #      at specific bars to find where computation diverges.
+    # REMOVE after parity is confirmed.
+    _diag_bars = [
+        '2026-03-05 11:00', '2026-03-06 18:00', '2026-03-09 00:00',
+        '2026-03-11 19:00', '2026-03-12 10:00',
+    ]
+    _diag_cols = [c for c in ind.columns if any(
+        x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28']
+    )]
+    if _diag_cols and 'timestamp' in df.columns:
+        print("\n[DIAG] ═══ Indicator values at test bars ═══")
+        for _db in _diag_bars:
+            _db_ts = pd.Timestamp(_db)
+            _mask = df['timestamp'] == _db_ts
+            _idx = df.index[_mask]
+            if len(_idx) > 0:
+                _i = _idx[0]
+                print(f"\n[DIAG] Bar {_db}:")
+                for _dc in sorted(_diag_cols):
+                    _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
+                    print(f"  {_dc:>30s} = {_val}")
+            else:
+                print(f"\n[DIAG] Bar {_db}: NOT FOUND in candle data")
+        print("[DIAG] ═══════════════════════════════════════\n")
+    # ── END DIAGNOSTIC ──
+
     # WHY (Phase A.24): same numpy-based mask building as run_backtest
     #      to avoid _indexed_same crashes. See run_backtest WHY block
     #      for full rationale — applies identically here.

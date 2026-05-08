@@ -851,6 +851,19 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     conditions_check_block = '\n'.join(condition_checks)
 
+    # Build diagnostic print args from all condition variable names
+    import re as _re_diag
+    _diag_seen = set()
+    _diag_vars = []
+    for _cc in condition_checks:
+        for _vm in _re_diag.findall(r'val_([a-z0-9_]+)', _cc):
+            if _vm not in _diag_seen:
+                _diag_seen.add(_vm)
+                _diag_vars.append(_vm)
+    diag_print_args = ''.join(
+        f'" {v}=", DoubleToString(val_{v}, 4),\n            ' for v in _diag_vars
+    ).rstrip(',\n            ')
+
     # ══════════════════════════════════════════════════════════════════════
     # RULES-DRIVEN MQL5 CODE GENERATION
     # WHY: Each trading_rule in the JSON produces specific MQL5 code.
@@ -2513,6 +2526,10 @@ void OnTick()
    else
    {{
       // ── Step 2: Normal signal evaluation ──
+      // DIAGNOSTIC: log indicator values per bar for parity comparison — REMOVE after confirmed
+      Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
+            {diag_print_args}
+            " signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
       if(!entrySignal) return;
 
