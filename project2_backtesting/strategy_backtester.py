@@ -2216,7 +2216,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
         '2026-03-11 19:00', '2026-03-12 10:00',
     ]
     _diag_cols = [c for c in ind.columns if any(
-        x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28']
+        x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28',
+                          'plus_di', 'minus_di']
     )]
     if _diag_cols:
         try:

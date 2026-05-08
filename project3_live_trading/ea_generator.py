@@ -863,9 +863,32 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # Each entry ends with ", " so it connects to the next arg (" signal=").
     # If _diag_vars is empty, diag_print_args is '' and the trailing comma
     # after TimeToString() connects directly to " signal=".
+    # Build main indicator print args from condition variables
     diag_print_args = ''.join(
         f'" {v}=", DoubleToString(val_{v}, 4), ' for v in _diag_vars
     )
+    # Build +DI/-DI reads for any ADX handles in scope — appended after main args
+    # WHY: ADX intermediates (+DI/-DI) narrow down where Python/MT5 diverge.
+    # CHANGED: May 2026 — ADX diagnostic intermediates
+    _diag_adx_reads = ''
+    _diag_adx_args  = ''
+    _adx_seen = set()
+    for _vm in _diag_vars:
+        import re as _re2
+        _am = _re2.match(r'^([a-z0-9]+)_mt5_adx_(\d+)$', _vm)
+        if _am and _vm not in _adx_seen:
+            _adx_seen.add(_vm)
+            _tf_lc, _p = _am.group(1).upper(), _am.group(2)
+            _hv = f'handle_adx_{_tf_lc}_{_p}'
+            _period_str = '{' + f'mql_period' + '}'
+            _diag_adx_reads += (
+                f'double val_{_vm}_pdi = SafeCopyBuf({_hv}, 1, PERIOD_{_tf_lc});\n'
+                f'      double val_{_vm}_mdi = SafeCopyBuf({_hv}, 2, PERIOD_{_tf_lc});\n      '
+            )
+            _diag_adx_args += (
+                f'" {_vm}_pdi=", DoubleToString(val_{_vm}_pdi, 4), '
+                f'" {_vm}_mdi=", DoubleToString(val_{_vm}_mdi, 4), '
+            )
 
     # ══════════════════════════════════════════════════════════════════════
     # RULES-DRIVEN MQL5 CODE GENERATION
@@ -2530,8 +2553,8 @@ void OnTick()
    {{
       // ── Step 2: Normal signal evaluation ──
       // DIAGNOSTIC: log indicator values per bar for parity comparison — REMOVE after confirmed
-      Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
-            {diag_print_args}" signal=", entrySignal, " indFail=", indicatorFailed);
+      {diag_adx_reads}Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
+            {diag_print_args}{diag_adx_args}" signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
       if(!entrySignal) return;
 

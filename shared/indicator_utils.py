@@ -279,8 +279,10 @@ def compute_all_indicators(candles_df, prefix=""):
     #      Same pattern as mt5_stoch alongside stoch.
     # CHANGED: May 2026 — MT5-parity ADX as parallel indicator
     for period in [14, 28]:
-        _adx_v, _, _ = _mt5_adx(candles_df['high'], candles_df['low'], candles_df['close'], period)
+        _adx_v, _pdi_v, _mdi_v = _mt5_adx(candles_df['high'], candles_df['low'], candles_df['close'], period)
         indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
+        indicators[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
+        indicators[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
 
     # GROUP I — Stochastic Oscillator (4 features)
     for period in [14, 21]:
@@ -867,8 +869,10 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     # CHANGED: May 2026 — MT5-parity ADX as parallel indicator
     if only is None or 'mt5_adx' in only or 'adx' in only:
         for period in [14, 28]:
-            _adx_v, _, _ = _mt5_adx(df['high'], df['low'], df['close'], period)
+            _adx_v, _pdi_v, _mdi_v = _mt5_adx(df['high'], df['low'], df['close'], period)
             indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
+            indicators[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
+            indicators[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
 
     # GROUP I — Stochastic
     if only is None or 'stoch' in only:
