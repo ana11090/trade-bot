@@ -75,6 +75,19 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "MT5-compat RSI({p}) on {tf}",
     }),
+    # MT5-parity ADX — maps to same iADX handle; only Python side differs
+    # WHY: ta library ADX diverges from iADX by ~2x (different smoothing).
+    #      mt5_adx_{period} uses Wilder's method to match iADX exactly.
+    #      Same pattern as mt5_stoch alongside stoch.
+    # CHANGED: May 2026 — MT5-parity ADX mapping
+    (r"^mt5_adx_(\d+)$", {
+        "mt5_handle_var":  "int handle_adx_{tf}_{p};",
+        "mt5_handle_init": "handle_adx_{tf}_{p} = iADX(NULL,{mt5_tf},{p}); if(handle_adx_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['ADX_{p}'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-parity ADX({p}) on {tf}",
+    }),
     # ADX
     (r"^adx_(\d+)$", {
         "mt5_handle_var":  "int handle_adx_{tf}_{p};",

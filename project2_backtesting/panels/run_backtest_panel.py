@@ -1411,14 +1411,30 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 tfs_to_test = [entry_tf]
 
             # Clear diagnostic file once before all TF runs
+            # WHY: Store resolved path so we can show it in the output later.
+            # CHANGED: May 2026 — diagnostic file link in panel
+            _diag_file_path = os.path.join(
+                project_root, 'project2_backtesting',
+                'outputs', 'diag_indicator_values.txt')
             try:
-                _diag_clear_path = os.path.join(
-                    project_root, 'project2_backtesting',
-                    'outputs', 'diag_indicator_values.txt')
-                with open(_diag_clear_path, 'w') as _dcf:
+                with open(_diag_file_path, 'w') as _dcf:
                     _dcf.write("Diagnostic run started\n")
             except Exception:
-                pass
+                _diag_file_path = ''
+
+            # WHY: Auto-remap adx_ → mt5_adx_ for MT5 prop firms so rules
+            #      discovered on MT5 use Wilder-smoothed ADX for EA parity.
+            # CHANGED: May 2026 — auto-remap adx to mt5_adx for MT5 firms
+            _is_mt5_firm = (
+                _pf_data.get('platform', '').lower() == 'mt5'
+                if '_pf_data' in dir() and _pf_data else False
+            )
+            if _is_mt5_firm and selected_rules:
+                for _rule in selected_rules:
+                    for _cond in _rule.get('conditions', []):
+                        _feat = _cond.get('feature', '')
+                        if '_adx_' in _feat and 'mt5_adx' not in _feat:
+                            _cond['feature'] = _feat.replace('_adx_', '_mt5_adx_')
 
             capture = io.StringIO()
             with contextlib.redirect_stdout(capture):
@@ -1918,6 +1934,37 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
                 output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
                 output_text.see(tk.END)
+
+                # Show diagnostic file link
+                if _diag_file_path and os.path.exists(_diag_file_path):
+                    try:
+                        _diag_sz = os.path.getsize(_diag_file_path)
+                        if _diag_sz > 50:
+                            output_text.insert(tk.END,
+                                f"\n📊 Diagnostic indicator values:\n   {_diag_file_path}\n")
+                            def _open_diag(_p=_diag_file_path):
+                                try:
+                                    import subprocess, sys as _sys
+                                    if _sys.platform == 'win32':
+                                        os.startfile(_p)
+                                    elif _sys.platform == 'darwin':
+                                        subprocess.Popen(['open', _p])
+                                    else:
+                                        subprocess.Popen(['xdg-open', _p])
+                                except Exception as _e:
+                                    print(f"Could not open file: {_e}")
+                            import state as _diag_state
+                            if _diag_state.window:
+                                def _add_diag_btn():
+                                    _db = tk.Button(output_text, text="📂 Open Diagnostic File",
+                                                    command=_open_diag, font=("Segoe UI", 8),
+                                                    bg="#4a90d9", fg="white", relief=tk.FLAT,
+                                                    padx=8, pady=2, cursor="hand2")
+                                    output_text.window_create(tk.END, window=_db)
+                                    output_text.insert(tk.END, "\n")
+                                _diag_state.window.after(50, _add_diag_btn)
+                    except Exception:
+                        pass
 
                 # WHY: "Generate EA" shortcut — navigates to EA Generator panel
                 #      with the best result pre-selected. No manual matching needed.

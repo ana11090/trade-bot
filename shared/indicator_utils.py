@@ -270,12 +270,17 @@ def compute_all_indicators(candles_df, prefix=""):
     bb_50 = ta.volatility.BollingerBands(close=candles_df['close'], window=50, window_dev=2)
     indicators[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
 
-    # GROUP H — ADX (3 features)
-    # WHY: ta.trend.ADXIndicator diverges from MT5 iADX by ~2x. Use _mt5_adx.
-    # CHANGED: May 2026 — MT5-parity ADX
+    # GROUP H — ADX (3 features, ta library) + MT5-parity ADX
     for period in [14, 21, 28]:
+        adx = ta.trend.ADXIndicator(high=candles_df['high'], low=candles_df['low'], close=candles_df['close'], window=period)
+        indicators[f'{prefix}adx_{period}'] = adx.adx()
+    # WHY: ta library ADX diverges from MT5 iADX by ~2x (different smoothing).
+    #      mt5_adx uses Wilder's method matching iADX — use for MT5 prop firms.
+    #      Same pattern as mt5_stoch alongside stoch.
+    # CHANGED: May 2026 — MT5-parity ADX as parallel indicator
+    for period in [14, 28]:
         _adx_v, _, _ = _mt5_adx(candles_df['high'], candles_df['low'], candles_df['close'], period)
-        indicators[f'{prefix}adx_{period}'] = _adx_v
+        indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
 
     # GROUP I — Stochastic Oscillator (4 features)
     for period in [14, 21]:
@@ -513,12 +518,10 @@ def compute_all_indicators(candles_df, prefix=""):
     indicators[f'{prefix}support_3'] = prev_low - 2 * (prev_high - pivot)
 
     # GROUP W — DMI Components (2 features)
-    # WHY: use _mt5_adx for MT5 parity.
-    # CHANGED: May 2026 — MT5-parity ADX
-    _, _pdi_14, _mdi_14 = _mt5_adx(
-        candles_df['high'], candles_df['low'], candles_df['close'], 14)
-    indicators[f'{prefix}plus_di']  = _pdi_14
-    indicators[f'{prefix}minus_di'] = _mdi_14
+    adx_indicator = ta.trend.ADXIndicator(
+        high=candles_df['high'], low=candles_df['low'], close=candles_df['close'], window=14)
+    indicators[f'{prefix}plus_di']  = adx_indicator.adx_pos()
+    indicators[f'{prefix}minus_di'] = adx_indicator.adx_neg()
 
     # ══════════════════════════════════════════════════════════════════════════════
     # ADDITIONAL INDICATORS - Medium Priority
@@ -739,6 +742,7 @@ INDICATOR_GROUP_MAP = {
     "mt5_macd_fast": "mt5_macd",
     "mt5_macd_fast_diff": "mt5_macd",
     "mt5_stoch": "mt5_stoch",
+    "mt5_adx": "mt5_adx",
     "mt5_ema": "mt5_ema",
 }
 
@@ -854,13 +858,17 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         bb_50 = ta.volatility.BollingerBands(close=df['close'], window=50, window_dev=2)
         indicators[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
 
-    # GROUP H — ADX
-    # WHY: ta.trend.ADXIndicator diverges from MT5 iADX by ~2x. Use _mt5_adx.
-    # CHANGED: May 2026 — MT5-parity ADX
+    # GROUP H — ADX (ta library) + MT5-parity ADX
     if only is None or 'adx' in only:
         for period in [14, 21, 28]:
+            adx = ta.trend.ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=period)
+            indicators[f'{prefix}adx_{period}'] = adx.adx()
+    # WHY: mt5_adx uses Wilder's smoothing to match iADX — for MT5 prop firms.
+    # CHANGED: May 2026 — MT5-parity ADX as parallel indicator
+    if only is None or 'mt5_adx' in only or 'adx' in only:
+        for period in [14, 28]:
             _adx_v, _, _ = _mt5_adx(df['high'], df['low'], df['close'], period)
-            indicators[f'{prefix}adx_{period}'] = _adx_v
+            indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
 
     # GROUP I — Stochastic
     if only is None or 'stoch' in only:
@@ -1012,12 +1020,10 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         indicators[f'{prefix}support_3']    = pl - 2 * (ph - pivot)
 
     # GROUP W — DMI Components
-    # WHY: use _mt5_adx for MT5 parity.
-    # CHANGED: May 2026 — MT5-parity ADX
     if only is None or 'dmi' in only:
-        _, _pdi_14, _mdi_14 = _mt5_adx(df['high'], df['low'], df['close'], 14)
-        indicators[f'{prefix}plus_di']  = _pdi_14
-        indicators[f'{prefix}minus_di'] = _mdi_14
+        adx_ind = ta.trend.ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=14)
+        indicators[f'{prefix}plus_di']  = adx_ind.adx_pos()
+        indicators[f'{prefix}minus_di'] = adx_ind.adx_neg()
 
     # GROUP X — Keltner Channels
     if only is None or 'keltner' in only:
