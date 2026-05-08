@@ -1008,6 +1008,7 @@ def _update_strat_info():
                 _sr.get('prop_firm_stage', '') or
                 _ds.get('prop_firm_stage', '') or
                 _rsk.get('stage', '') or
+                _r0.get('prop_firm_stage', '') or
                 _loaded_row.get('prop_firm_stage', '')
             )
             if _rule_stage and _stage_var:
