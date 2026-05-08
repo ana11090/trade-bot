@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-07 15:34",
+  "generated_at": "2026-05-08 15:45",
   "entry_timeframe": "multi",
   "tested_timeframes": [
     "D1",
@@ -35,7 +35,7 @@
   },
   "results": [
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_016e",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_016e",
       "rule_indices": [
         0
       ],
@@ -58,7 +58,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -185,7 +185,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_195c",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_195c",
       "rule_indices": [
         0
       ],
@@ -208,7 +208,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -335,7 +335,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_4a78",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_4a78",
       "rule_indices": [
         0
       ],
@@ -358,7 +358,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -484,7 +484,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_0582",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_0582",
       "rule_indices": [
         0
       ],
@@ -507,7 +507,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -582,13 +582,14 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [],
@@ -600,7 +601,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -636,7 +637,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_2f57",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_2f57",
       "rule_indices": [
         0
       ],
@@ -659,7 +660,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -736,12 +737,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
         "avg_days_between_blows": 28,
@@ -752,7 +755,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -788,7 +791,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_6671",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_6671",
       "rule_indices": [
         0
       ],
@@ -811,7 +814,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -888,12 +891,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
         "avg_days_between_blows": 28,
@@ -904,7 +909,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -940,7 +945,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR___Traili_4115",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR___Traili_4115",
       "rule_indices": [
         0
       ],
@@ -963,7 +968,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1040,12 +1045,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
         "avg_days_between_blows": 28,
@@ -1056,7 +1063,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -1092,7 +1099,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_42ad",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_42ad",
       "rule_indices": [
         0
       ],
@@ -1115,7 +1122,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1191,12 +1198,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
         "avg_days_between_blows": 28,
@@ -1207,7 +1216,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -1243,7 +1252,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_7338",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_7338",
       "rule_indices": [
         0
       ],
@@ -1266,7 +1275,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1342,12 +1351,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
         "avg_days_between_blows": 28,
@@ -1358,7 +1369,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -1394,7 +1405,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_2a5f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_2a5f",
       "rule_indices": [
         0
       ],
@@ -1417,7 +1428,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1490,12 +1501,13 @@
         "blown_count": 0,
         "daily_breach_dates": [],
         "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 5,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [
@@ -1509,7 +1521,7 @@
         "worst_total_pct": 5.9,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -1545,7 +1557,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_c2db",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_c2db",
       "rule_indices": [
         0
       ],
@@ -1568,7 +1580,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1641,12 +1653,13 @@
         "blown_count": 0,
         "daily_breach_dates": [],
         "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 5,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [
@@ -1660,7 +1673,7 @@
         "worst_total_pct": 5.9,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -1696,7 +1709,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Indicator_Ex_c139",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Indicator_Ex_c139",
       "rule_indices": [
         0
       ],
@@ -1719,7 +1732,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1846,7 +1859,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_1775",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_1775",
       "rule_indices": [
         0
       ],
@@ -1869,7 +1882,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -1993,7 +2006,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR___Traili_4115",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR___Traili_4115",
       "rule_indices": [
         0
       ],
@@ -2016,7 +2029,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2143,7 +2156,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_dc5a",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_dc5a",
       "rule_indices": [
         0
       ],
@@ -2166,7 +2179,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2291,7 +2304,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_2f57",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_2f57",
       "rule_indices": [
         0
       ],
@@ -2314,7 +2327,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2442,7 +2455,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_42ad",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_42ad",
       "rule_indices": [
         0
       ],
@@ -2465,7 +2478,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2592,7 +2605,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_6671",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_6671",
       "rule_indices": [
         0
       ],
@@ -2615,7 +2628,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2743,7 +2756,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_7338",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_7338",
       "rule_indices": [
         0
       ],
@@ -2766,7 +2779,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2893,7 +2906,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_5921",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_5921",
       "rule_indices": [
         0
       ],
@@ -2916,7 +2929,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -2953,8 +2966,8 @@
       "win_rate": 29.4,
       "avg_pips": -48.0,
       "net_avg_pips": -89.4,
-      "total_pips": -17131.0,
-      "net_total_pips": -31904.0,
+      "total_pips": -17132.0,
+      "net_total_pips": -31906.0,
       "profit_factor": 0.55,
       "net_profit_factor": 0.34,
       "max_dd_pips": 31714.0,
@@ -2962,7 +2975,7 @@
       "avg_winner": 159.0,
       "avg_loser": -192.9,
       "best_trade": 159.0,
-      "worst_trade": -658.5,
+      "worst_trade": -659.5,
       "expectancy": -89.37,
       "risk_reward_ratio": 0.82,
       "std_pips": 162.2,
@@ -2981,37 +2994,41 @@
       "active_month_coverage": 1.0,
       "longest_dormant_days": 7.0,
       "total_calendar_days": 28,
-      "total_dollar_pnl": -6187.16,
-      "max_dd_dollars": 6152.78,
+      "total_dollar_pnl": -6187.34,
+      "max_dd_dollars": 6152.96,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 6,
+        "daily_safety_stops": 9,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
           "2026-03-25",
-          "2026-03-31"
+          "2026-03-31",
+          "2026-04-01",
+          "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3047,7 +3064,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_32bd",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_32bd",
       "rule_indices": [
         0
       ],
@@ -3070,7 +3087,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3139,32 +3156,36 @@
       "max_dd_dollars": 4435.07,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 8,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
-          "2026-03-25"
+          "2026-03-25",
+          "2026-04-01",
+          "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3200,7 +3221,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_0df9",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_0df9",
       "rule_indices": [
         0
       ],
@@ -3223,7 +3244,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3260,19 +3281,19 @@
       "win_rate": 23.2,
       "avg_pips": 0.1,
       "net_avg_pips": -41.4,
-      "total_pips": 19.0,
+      "total_pips": 18.0,
       "net_total_pips": -12992.0,
       "profit_factor": 1.0,
       "net_profit_factor": 0.72,
-      "max_dd_pips": 13068.0,
+      "max_dd_pips": 13070.0,
       "total_costs": 0,
       "avg_winner": 459.0,
       "avg_loser": -192.9,
       "best_trade": 459.0,
-      "worst_trade": -658.5,
-      "expectancy": -41.37,
+      "worst_trade": -659.5,
+      "expectancy": -41.38,
       "risk_reward_ratio": 2.38,
-      "std_pips": 276.6,
+      "std_pips": 276.7,
       "sharpe_ish": -0.15,
       "max_win_streak": 3,
       "max_loss_streak": 23,
@@ -3288,29 +3309,31 @@
       "active_month_coverage": 1.0,
       "longest_dormant_days": 7.0,
       "total_calendar_days": 28,
-      "total_dollar_pnl": -2458.85,
-      "max_dd_dollars": 2472.71,
+      "total_dollar_pnl": -2459.03,
+      "max_dd_dollars": 2472.89,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 7,
+        "daily_safety_stops": 8,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
           "2026-03-25",
           "2026-04-01",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -3318,7 +3341,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3354,7 +3377,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_0582",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_0582",
       "rule_indices": [
         0
       ],
@@ -3377,7 +3400,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3446,23 +3469,25 @@
       "max_dd_dollars": 521.97,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-18",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -3470,7 +3495,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3506,7 +3531,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_016e",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_016e",
       "rule_indices": [
         0
       ],
@@ -3529,7 +3554,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3598,23 +3623,26 @@
       "max_dd_dollars": 581.85,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -3622,7 +3650,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3658,7 +3686,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_2a5f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_2a5f",
       "rule_indices": [
         0
       ],
@@ -3681,7 +3709,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3750,30 +3778,34 @@
       "max_dd_dollars": 346.98,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 0,
-        "blown_count": 0,
+        "total_breaches": 1,
+        "blown_count": 1,
         "daily_breach_dates": [],
-        "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "total_breach_dates": [
+          "2026-03-18"
+        ],
+        "daily_safety_stops": 6,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
+          "2026-03-18",
+          "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [
           "2026-03-17"
         ],
         "avg_days_between_blows": 28,
-        "survival_rate_per_month": 100.0,
+        "survival_rate_per_month": 50.0,
         "total_months": 1,
-        "months_blown": 0,
+        "months_blown": 1,
         "worst_daily_pct": 2.7,
-        "worst_total_pct": 5.7,
+        "worst_total_pct": 8.4,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3809,7 +3841,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_1d3f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_1d3f",
       "rule_indices": [
         0
       ],
@@ -3832,7 +3864,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -3904,24 +3936,26 @@
       "max_dd_dollars": 814.48,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 6,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-18",
           "2026-03-24",
           "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -3929,7 +3963,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -3965,7 +3999,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_42d7",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
       "rule_indices": [
         0
       ],
@@ -3988,7 +4022,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4060,11 +4094,12 @@
       "max_dd_dollars": 1264.73,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-25"
         ],
         "daily_safety_stops": 7,
         "total_safety_stops": 0,
@@ -4078,7 +4113,7 @@
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 16,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -4086,7 +4121,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4122,7 +4157,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_4a78",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_4a78",
       "rule_indices": [
         0
       ],
@@ -4145,7 +4180,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4214,30 +4249,35 @@
       "max_dd_dollars": 303.62,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 0,
-        "blown_count": 0,
+        "total_breaches": 1,
+        "blown_count": 1,
         "daily_breach_dates": [],
-        "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "total_breach_dates": [
+          "2026-03-18"
+        ],
+        "daily_safety_stops": 7,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
+          "2026-03-18",
+          "2026-03-24",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [
           "2026-03-17"
         ],
         "avg_days_between_blows": 28,
-        "survival_rate_per_month": 100.0,
+        "survival_rate_per_month": 50.0,
         "total_months": 1,
-        "months_blown": 0,
+        "months_blown": 1,
         "worst_daily_pct": 2.7,
-        "worst_total_pct": 5.7,
+        "worst_total_pct": 8.4,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4273,7 +4313,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_195c",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_195c",
       "rule_indices": [
         0
       ],
@@ -4296,7 +4336,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4365,23 +4405,26 @@
       "max_dd_dollars": 581.85,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -4389,7 +4432,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4425,7 +4468,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_2f57",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_2f57",
       "rule_indices": [
         0
       ],
@@ -4448,7 +4491,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4543,7 +4586,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4579,7 +4622,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_6671",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_6671",
       "rule_indices": [
         0
       ],
@@ -4602,7 +4645,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4697,7 +4740,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4733,7 +4776,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_c2db",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_c2db",
       "rule_indices": [
         0
       ],
@@ -4756,7 +4799,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4825,30 +4868,34 @@
       "max_dd_dollars": 3031.66,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 0,
-        "blown_count": 0,
+        "total_breaches": 1,
+        "blown_count": 1,
         "daily_breach_dates": [],
-        "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "total_breach_dates": [
+          "2026-03-18"
+        ],
+        "daily_safety_stops": 6,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
+          "2026-03-18",
+          "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [
           "2026-03-17"
         ],
         "avg_days_between_blows": 28,
-        "survival_rate_per_month": 100.0,
+        "survival_rate_per_month": 50.0,
         "total_months": 1,
-        "months_blown": 0,
+        "months_blown": 1,
         "worst_daily_pct": 2.7,
-        "worst_total_pct": 5.7,
+        "worst_total_pct": 8.4,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -4884,7 +4931,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_81cf",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_81cf",
       "rule_indices": [
         0
       ],
@@ -4907,7 +4954,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -4976,30 +5023,34 @@
       "max_dd_dollars": 3076.1,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 0,
-        "blown_count": 0,
+        "total_breaches": 1,
+        "blown_count": 1,
         "daily_breach_dates": [],
-        "total_breach_dates": [],
-        "daily_safety_stops": 4,
+        "total_breach_dates": [
+          "2026-03-18"
+        ],
+        "daily_safety_stops": 6,
         "total_safety_stops": 1,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
+          "2026-03-18",
+          "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [
           "2026-03-17"
         ],
         "avg_days_between_blows": 28,
-        "survival_rate_per_month": 100.0,
+        "survival_rate_per_month": 50.0,
         "total_months": 1,
-        "months_blown": 0,
+        "months_blown": 1,
         "worst_daily_pct": 2.7,
-        "worst_total_pct": 5.7,
+        "worst_total_pct": 8.4,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5035,7 +5086,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR___Traili_4115",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR___Traili_4115",
       "rule_indices": [
         0
       ],
@@ -5058,7 +5109,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5135,12 +5186,13 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-25",
           "2026-04-02"
         ],
@@ -5153,7 +5205,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5189,7 +5241,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_1775",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_1775",
       "rule_indices": [
         0
       ],
@@ -5212,7 +5264,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5280,23 +5332,25 @@
       "max_dd_dollars": 2522.3,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -5304,7 +5358,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5340,7 +5394,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_dc5a",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_dc5a",
       "rule_indices": [
         0
       ],
@@ -5363,7 +5417,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5431,23 +5485,25 @@
       "max_dd_dollars": 2581.52,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -5455,7 +5511,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5491,7 +5547,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Indicator_Ex_c139",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Indicator_Ex_c139",
       "rule_indices": [
         0
       ],
@@ -5514,7 +5570,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5584,23 +5640,25 @@
       "max_dd_dollars": 2805.8,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
           "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -5608,7 +5666,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5644,7 +5702,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_42ad",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_42ad",
       "rule_indices": [
         0
       ],
@@ -5667,7 +5725,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5761,7 +5819,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5797,7 +5855,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_7338",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_7338",
       "rule_indices": [
         0
       ],
@@ -5820,7 +5878,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -5914,7 +5972,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -5950,7 +6008,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_5921",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_5921",
       "rule_indices": [
         0
       ],
@@ -5973,7 +6031,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6042,14 +6100,15 @@
       "max_dd_dollars": 3178.9,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 6,
+        "daily_safety_stops": 8,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
@@ -6057,18 +6116,20 @@
           "2026-03-09",
           "2026-03-24",
           "2026-03-25",
-          "2026-03-31"
+          "2026-03-31",
+          "2026-04-01",
+          "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6104,7 +6165,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_32bd",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_32bd",
       "rule_indices": [
         0
       ],
@@ -6127,7 +6188,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6164,8 +6225,8 @@
       "win_rate": 17.9,
       "avg_pips": -72.2,
       "net_avg_pips": -114.3,
-      "total_pips": -8881.0,
-      "net_total_pips": -14060.0,
+      "total_pips": -8882.0,
+      "net_total_pips": -14062.0,
       "profit_factor": 0.43,
       "net_profit_factor": 0.29,
       "max_dd_pips": 14320.0,
@@ -6173,8 +6234,8 @@
       "avg_winner": 259.0,
       "avg_loser": -195.6,
       "best_trade": 259.0,
-      "worst_trade": -658.5,
-      "expectancy": -114.31,
+      "worst_trade": -659.5,
+      "expectancy": -114.32,
       "risk_reward_ratio": 1.32,
       "std_pips": 179.2,
       "sharpe_ish": -0.64,
@@ -6192,36 +6253,39 @@
       "active_month_coverage": 1.0,
       "longest_dormant_days": 7.0,
       "total_calendar_days": 28,
-      "total_dollar_pnl": -2719.1,
-      "max_dd_dollars": 2765.72,
+      "total_dollar_pnl": -2719.28,
+      "max_dd_dollars": 2765.9,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
           "2026-03-24",
-          "2026-03-25"
+          "2026-03-25",
+          "2026-04-01",
+          "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6257,7 +6321,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_0df9",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_0df9",
       "rule_indices": [
         0
       ],
@@ -6280,7 +6344,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6316,17 +6380,17 @@
       "total_trades": 122,
       "win_rate": 17.2,
       "avg_pips": -40.8,
-      "net_avg_pips": -82.9,
-      "total_pips": -4981.0,
+      "net_avg_pips": -83.0,
+      "total_pips": -4982.0,
       "net_total_pips": -10120.0,
       "profit_factor": 0.68,
       "net_profit_factor": 0.49,
-      "max_dd_pips": 10578.0,
+      "max_dd_pips": 10580.0,
       "total_costs": 0,
       "avg_winner": 459.0,
       "avg_loser": -195.6,
       "best_trade": 459.0,
-      "worst_trade": -658.5,
+      "worst_trade": -659.5,
       "expectancy": -82.95,
       "risk_reward_ratio": 2.35,
       "std_pips": 250.7,
@@ -6345,8 +6409,8 @@
       "active_month_coverage": 1.0,
       "longest_dormant_days": 7.0,
       "total_calendar_days": 28,
-      "total_dollar_pnl": -1948.9,
-      "max_dd_dollars": 2031.52,
+      "total_dollar_pnl": -1949.08,
+      "max_dd_dollars": 2031.7,
       "breaches": {
         "daily_breaches": 0,
         "total_breaches": 2,
@@ -6354,26 +6418,28 @@
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-17",
-          "2026-04-02"
+          "2026-03-31"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-06",
           "2026-03-09",
+          "2026-03-24",
+          "2026-03-25",
           "2026-04-01",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 16,
-        "survival_rate_per_month": 0.0,
+        "avg_days_between_blows": 14,
+        "survival_rate_per_month": 50.0,
         "total_months": 1,
-        "months_blown": 2,
+        "months_blown": 1,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 7.4,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6409,7 +6475,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_0582",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_0582",
       "rule_indices": [
         0
       ],
@@ -6432,7 +6498,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6501,22 +6567,25 @@
       "max_dd_dollars": 214.06,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-04-02"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -6524,7 +6593,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6560,7 +6629,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_016e",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_016e",
       "rule_indices": [
         0
       ],
@@ -6583,7 +6652,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6658,12 +6727,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-25",
           "2026-04-02"
         ],
@@ -6676,7 +6747,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6712,7 +6783,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_2a5f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_2a5f",
       "rule_indices": [
         0
       ],
@@ -6735,7 +6806,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6810,12 +6881,14 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-24",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [],
@@ -6827,7 +6900,7 @@
         "worst_total_pct": 7.6,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -6863,7 +6936,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_1d3f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_1d3f",
       "rule_indices": [
         0
       ],
@@ -6886,7 +6959,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -6964,13 +7037,14 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-24",
           "2026-04-02"
         ],
         "total_safety_dates": [],
@@ -6982,7 +7056,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7018,7 +7092,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_42d7",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
       "rule_indices": [
         0
       ],
@@ -7041,7 +7115,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7119,12 +7193,13 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-18",
           "2026-03-24",
           "2026-04-02"
         ],
@@ -7137,7 +7212,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7173,7 +7248,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_4a78",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_4a78",
       "rule_indices": [
         0
       ],
@@ -7196,7 +7271,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7323,7 +7398,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_195c",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_195c",
       "rule_indices": [
         0
       ],
@@ -7346,7 +7421,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7421,12 +7496,14 @@
         "total_breach_dates": [
           "2026-03-09"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-25",
           "2026-04-02"
         ],
@@ -7439,7 +7516,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7475,7 +7552,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_c2db",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_c2db",
       "rule_indices": [
         0
       ],
@@ -7498,7 +7575,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7573,12 +7650,14 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-24",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [],
@@ -7590,7 +7669,7 @@
         "worst_total_pct": 7.6,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7626,7 +7705,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_81cf",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_81cf",
       "rule_indices": [
         0
       ],
@@ -7649,7 +7728,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7724,12 +7803,13 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-25",
           "2026-04-02"
         ],
         "total_safety_dates": [],
@@ -7741,7 +7821,7 @@
         "worst_total_pct": 7.9,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7777,7 +7857,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_5921",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_5921",
       "rule_indices": [
         0
       ],
@@ -7800,7 +7880,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -7869,29 +7949,31 @@
       "max_dd_dollars": 1155.55,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 2,
+        "daily_safety_stops": 3,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-09",
-          "2026-03-25"
+          "2026-03-25",
+          "2026-04-01"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 7.8,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -7927,7 +8009,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_32bd",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_32bd",
       "rule_indices": [
         0
       ],
@@ -7950,7 +8032,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8019,29 +8101,31 @@
       "max_dd_dollars": 1155.55,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 2,
+        "daily_safety_stops": 3,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-09",
-          "2026-03-25"
+          "2026-03-25",
+          "2026-04-01"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 7.8,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8077,7 +8161,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_0df9",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_0df9",
       "rule_indices": [
         0
       ],
@@ -8100,7 +8184,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8169,29 +8253,31 @@
       "max_dd_dollars": 1155.55,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 2,
-        "blown_count": 2,
+        "total_breaches": 3,
+        "blown_count": 3,
         "daily_breach_dates": [],
         "total_breach_dates": [
           "2026-03-09",
-          "2026-03-31"
+          "2026-03-25",
+          "2026-04-02"
         ],
-        "daily_safety_stops": 2,
+        "daily_safety_stops": 3,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-09",
-          "2026-03-25"
+          "2026-03-25",
+          "2026-04-01"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 22,
-        "survival_rate_per_month": 50.0,
+        "avg_days_between_blows": 12,
+        "survival_rate_per_month": 0.0,
         "total_months": 1,
-        "months_blown": 1,
+        "months_blown": 2,
         "worst_daily_pct": 2.7,
         "worst_total_pct": 7.8,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 2
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8227,7 +8313,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_1d3f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_1d3f",
       "rule_indices": [
         0
       ],
@@ -8250,7 +8336,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8328,13 +8414,15 @@
         "total_breach_dates": [
           "2026-03-18"
         ],
-        "daily_safety_stops": 6,
+        "daily_safety_stops": 8,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-09",
           "2026-03-17",
           "2026-03-18",
+          "2026-03-24",
+          "2026-03-25",
           "2026-04-01",
           "2026-04-02"
         ],
@@ -8347,7 +8435,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8383,7 +8471,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_42d7",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
       "rule_indices": [
         0
       ],
@@ -8406,7 +8494,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8478,23 +8566,26 @@
       "max_dd_dollars": 204.44,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 5,
+        "daily_safety_stops": 7,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-24",
           "2026-03-25"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -8502,7 +8593,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8538,7 +8629,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_81cf",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_81cf",
       "rule_indices": [
         0
       ],
@@ -8561,7 +8652,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8654,7 +8745,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8690,7 +8781,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_1775",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_1775",
       "rule_indices": [
         0
       ],
@@ -8713,7 +8804,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8781,22 +8872,25 @@
       "max_dd_dollars": 2356.69,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-25"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -8804,7 +8898,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8840,7 +8934,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_dc5a",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_dc5a",
       "rule_indices": [
         0
       ],
@@ -8863,7 +8957,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -8931,22 +9025,25 @@
       "max_dd_dollars": 2356.69,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 4,
+        "daily_safety_stops": 6,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
           "2026-03-09",
+          "2026-03-17",
+          "2026-03-18",
           "2026-03-25"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -8954,7 +9051,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -8990,7 +9087,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Indicator_Ex_c139",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Indicator_Ex_c139",
       "rule_indices": [
         0
       ],
@@ -9013,7 +9110,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9083,21 +9180,24 @@
       "max_dd_dollars": 2190.89,
       "breaches": {
         "daily_breaches": 0,
-        "total_breaches": 1,
-        "blown_count": 1,
+        "total_breaches": 2,
+        "blown_count": 2,
         "daily_breach_dates": [],
         "total_breach_dates": [
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-24"
         ],
-        "daily_safety_stops": 3,
+        "daily_safety_stops": 5,
         "total_safety_stops": 0,
         "daily_safety_dates": [
           "2026-03-05",
           "2026-03-06",
-          "2026-03-09"
+          "2026-03-09",
+          "2026-03-17",
+          "2026-03-18"
         ],
         "total_safety_dates": [],
-        "avg_days_between_blows": 28,
+        "avg_days_between_blows": 15,
         "survival_rate_per_month": 50.0,
         "total_months": 1,
         "months_blown": 1,
@@ -9105,7 +9205,7 @@
         "worst_total_pct": 8.1,
         "daily_dd_limit_pct": 3.0,
         "total_dd_limit_pct": 6.0,
-        "funded_protect_stops": 1
+        "funded_protect_stops": 0
       },
       "signals_before_regime_filter": 0,
       "signals_after_regime_filter": 0,
@@ -9141,7 +9241,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_5921",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_5921",
       "rule_indices": [
         0
       ],
@@ -9164,7 +9264,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9285,7 +9385,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_32bd",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_32bd",
       "rule_indices": [
         0
       ],
@@ -9308,7 +9408,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9429,7 +9529,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_0df9",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_0df9",
       "rule_indices": [
         0
       ],
@@ -9452,7 +9552,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9573,7 +9673,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_0582",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_0582",
       "rule_indices": [
         0
       ],
@@ -9596,7 +9696,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9720,7 +9820,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_016e",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_016e",
       "rule_indices": [
         0
       ],
@@ -9743,7 +9843,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -9867,7 +9967,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_2a5f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_2a5f",
       "rule_indices": [
         0
       ],
@@ -9890,7 +9990,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10013,7 +10113,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_1d3f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_1d3f",
       "rule_indices": [
         0
       ],
@@ -10036,7 +10136,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10162,7 +10262,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_42d7",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
       "rule_indices": [
         0
       ],
@@ -10185,7 +10285,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10311,7 +10411,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_4a78",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_4a78",
       "rule_indices": [
         0
       ],
@@ -10334,7 +10434,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10457,7 +10557,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_195c",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_195c",
       "rule_indices": [
         0
       ],
@@ -10480,7 +10580,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10604,7 +10704,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_2f57",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_2f57",
       "rule_indices": [
         0
       ],
@@ -10627,7 +10727,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10752,7 +10852,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_6671",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_6671",
       "rule_indices": [
         0
       ],
@@ -10775,7 +10875,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -10900,7 +11000,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_c2db",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_c2db",
       "rule_indices": [
         0
       ],
@@ -10923,7 +11023,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11046,7 +11146,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_81cf",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_81cf",
       "rule_indices": [
         0
       ],
@@ -11069,7 +11169,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11192,7 +11292,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR___Traili_4115",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR___Traili_4115",
       "rule_indices": [
         0
       ],
@@ -11215,7 +11315,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11340,7 +11440,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_1775",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_1775",
       "rule_indices": [
         0
       ],
@@ -11363,7 +11463,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11485,7 +11585,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_dc5a",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_dc5a",
       "rule_indices": [
         0
       ],
@@ -11508,7 +11608,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11630,7 +11730,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Indicator_Ex_c139",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Indicator_Ex_c139",
       "rule_indices": [
         0
       ],
@@ -11653,7 +11753,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11777,7 +11877,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_42ad",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_42ad",
       "rule_indices": [
         0
       ],
@@ -11800,7 +11900,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -11924,7 +12024,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_7338",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_7338",
       "rule_indices": [
         0
       ],
@@ -11947,7 +12047,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12071,7 +12171,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_5921",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_5921",
       "rule_indices": [
         0
       ],
@@ -12094,7 +12194,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12215,7 +12315,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_32bd",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_32bd",
       "rule_indices": [
         0
       ],
@@ -12238,7 +12338,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12359,7 +12459,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Fixed_SLTP_0df9",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Fixed_SLTP_0df9",
       "rule_indices": [
         0
       ],
@@ -12382,7 +12482,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12503,7 +12603,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_0582",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_0582",
       "rule_indices": [
         0
       ],
@@ -12526,7 +12626,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12649,7 +12749,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_016e",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_016e",
       "rule_indices": [
         0
       ],
@@ -12672,7 +12772,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12795,7 +12895,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Fixed_SL_2a5f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Fixed_SL_2a5f",
       "rule_indices": [
         0
       ],
@@ -12818,7 +12918,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -12941,7 +13041,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_1d3f",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_1d3f",
       "rule_indices": [
         0
       ],
@@ -12964,7 +13064,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13090,7 +13190,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_BE_Trail_42d7",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
       "rule_indices": [
         0
       ],
@@ -13113,7 +13213,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13239,7 +13339,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_4a78",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_4a78",
       "rule_indices": [
         0
       ],
@@ -13262,7 +13362,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13385,7 +13485,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_PSAR_Exit_195c",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_PSAR_Exit_195c",
       "rule_indices": [
         0
       ],
@@ -13408,7 +13508,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13531,7 +13631,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_2f57",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_2f57",
       "rule_indices": [
         0
       ],
@@ -13554,7 +13654,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13679,7 +13779,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Trailing_Sto_6671",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Trailing_Sto_6671",
       "rule_indices": [
         0
       ],
@@ -13702,7 +13802,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13827,7 +13927,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_c2db",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_c2db",
       "rule_indices": [
         0
       ],
@@ -13850,7 +13950,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -13973,7 +14073,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR_Only_81cf",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_Only_81cf",
       "rule_indices": [
         0
       ],
@@ -13996,7 +14096,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14119,7 +14219,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_ATR___Traili_4115",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_ATR___Traili_4115",
       "rule_indices": [
         0
       ],
@@ -14142,7 +14242,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14267,7 +14367,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_1775",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_1775",
       "rule_indices": [
         0
       ],
@@ -14290,7 +14390,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14412,7 +14512,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Time_Based_dc5a",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Time_Based_dc5a",
       "rule_indices": [
         0
       ],
@@ -14435,7 +14535,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14557,7 +14657,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Indicator_Ex_c139",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Indicator_Ex_c139",
       "rule_indices": [
         0
       ],
@@ -14580,7 +14680,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14704,7 +14804,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_42ad",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_42ad",
       "rule_indices": [
         0
       ],
@@ -14727,7 +14827,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -14851,7 +14951,7 @@
       "stability_verdict_reason": null
     },
     {
-      "rule_combo": "#1_BUY_XX_4c_344f_Hybrid_7338",
+      "rule_combo": "#1_BUY_XX_4c_cb4f_Hybrid_7338",
       "rule_indices": [
         0
       ],
@@ -14874,7 +14974,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }

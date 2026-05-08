@@ -1,0 +1,160 @@
+{
+  "rule_combo": "#1_BUY_XX_4c_cb4f_ATR_BE_Trail_42d7",
+  "rule_indices": [
+    0
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_sma_50_distance",
+          "operator": ">",
+          "value": -0.0692
+        },
+        {
+          "feature": "H1_mt5_adx_28",
+          "operator": ">",
+          "value": 17.2074
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.824,
+      "coverage": 51,
+      "coverage_pct": 5.8,
+      "win_rate": 0.824,
+      "avg_pips": 414.7,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 413.8,
+      "win_rate_test": 1.0,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3",
+      "direction": "BUY"
+    }
+  ],
+  "exit_strategy": "ATR BE Trail: SL 1.0x, BE at 0.7x, trail at 1.0x / 0.8x, TP 4.0x, max 300 candles",
+  "exit_name": "ATR BE Trail",
+  "exit_class": "ATRBreakevenTrail",
+  "exit_params": {
+    "sl_atr_mult": 1.0,
+    "breakeven_atr_mult": 0.7,
+    "trail_activation_atr_mult": 1.0,
+    "trail_atr_mult": 0.8,
+    "tp_atr_mult": 4.0,
+    "max_candles": 300
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 2,
+  "win_rate": 50.0,
+  "avg_pips": -6137.5,
+  "net_avg_pips": -6565.2,
+  "total_pips": -12275.0,
+  "net_total_pips": -13130.0,
+  "profit_factor": 0.24,
+  "net_profit_factor": 0.21,
+  "max_dd_pips": 0.0,
+  "total_costs": 82.0,
+  "avg_winner": 3442.0,
+  "avg_loser": -16572.5,
+  "best_trade": 3442.0,
+  "worst_trade": -16572.5,
+  "expectancy": -6565.25,
+  "risk_reward_ratio": 0.21,
+  "std_pips": 10007.2,
+  "sharpe_ish": -0.66,
+  "max_win_streak": 1,
+  "max_loss_streak": 1,
+  "trades_per_day": 0.12,
+  "days_per_trade": 8.0,
+  "recovery_factor": 0.0,
+  "winners": 1,
+  "losers": 1,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 16.0,
+  "total_calendar_days": 16,
+  "total_dollar_pnl": -131.3,
+  "max_dd_dollars": 0.0,
+  "trades": [
+    {
+      "entry_time": "2026-03-09 00:00:00",
+      "exit_time": "2026-03-16 00:00:00",
+      "entry_price": 5165.74,
+      "exit_price": 5004.52,
+      "direction": "BUY",
+      "pips": -16122.0,
+      "net_pips": -16572.5,
+      "cost_pips": 41.0,
+      "net_profit": -165.72,
+      "lot_size": 0.01,
+      "candles_held": 5,
+      "exit_reason": "ATRBE_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -409.5,
+      "swap_nights": 9
+    },
+    {
+      "entry_time": "2026-03-25 00:00:00",
+      "exit_time": "2026-03-31 00:00:00",
+      "entry_price": 4479.12,
+      "exit_price": 4517.59,
+      "direction": "BUY",
+      "pips": 3847.0,
+      "net_pips": 3442.0,
+      "cost_pips": 41.0,
+      "net_profit": 34.42,
+      "lot_size": 0.01,
+      "candles_held": 4,
+      "exit_reason": "ATRBE_TRAIL_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -364.0,
+      "swap_nights": 8
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 1,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-09"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 16,
+    "survival_rate_per_month": 100.0,
+    "total_months": 1,
+    "months_blown": 0,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 2.7,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "entry_tf": "D1"
+}
