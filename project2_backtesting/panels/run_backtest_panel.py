@@ -1436,6 +1436,23 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         if '_adx_' in _feat and 'mt5_adx' not in _feat:
                             _cond['feature'] = _feat.replace('_adx_', '_mt5_adx_')
 
+            # WHY: Remap just modified selected_rules in memory, but the
+            #      temp file was written at line ~780 with the original
+            #      features. Re-write so run_comparison_matrix sees the
+            #      remapped features (e.g., mt5_adx_28 instead of adx_28).
+            # CHANGED: May 2026 — re-write temp file after ADX remap
+            if _is_mt5_firm and selected_rules:
+                _remap_temp = os.path.join(
+                    project_root, 'project2_backtesting', 'outputs',
+                    '_temp_selected_rules.json')
+                try:
+                    with open(_remap_temp, 'w', encoding='utf-8') as _rf:
+                        json.dump({'rules': selected_rules,
+                                   'discovery_method': 'selected_subset'},
+                                  _rf, indent=2, default=str)
+                except Exception:
+                    pass
+
             capture = io.StringIO()
             with contextlib.redirect_stdout(capture):
                 sys.path.insert(0, project_root)
