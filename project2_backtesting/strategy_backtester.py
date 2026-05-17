@@ -1255,6 +1255,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      rules that require no overnight holds.
                  # CHANGED: April 2026 — hard close hour (backtester parity)
                  hard_close_hour=-1,
+                 # WHY: market_reopen_hour blocks entries from hard_close_hour
+                 #      through this GMT hour (wrapping midnight). E.g. close=23,
+                 #      reopen=1 blocks hours 23 and 0. -1 = disabled (backward
+                 #      compat). Fixes Python opening trades at 00:xx that MT5
+                 #      rejects as "Market closed".
+                 # CHANGED: May 2026 — market closure window (parity with MT5)
+                 market_reopen_hour=-1,
                  # WHY: cooldown_candles blocks new entries for N candles after
                  #      a trade closes. The EA's CooldownMinutes does the same.
                  #      0 = no cooldown (backward compat, pre-phase behaviour).
@@ -1565,7 +1572,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # First rule wins per candle
         new_signals = rule_mask & ~signal_mask
         signal_mask |= rule_mask
-        signal_rule_ids[new_signals] = rule_idx
+        # WHY: Use actual rule ID from saved_rules.json, not enumerate index.
+        #      When backtesting a single saved rule (e.g., ID 8), rule_idx=0
+        #      but we want trades.csv to show rule_id=8 for traceability.
+        # CHANGED: May 2026 — fix rule_id=0 bug
+        actual_rule_id = rule.get('id', rule.get('_saved_entry_id', rule.get('_saved_rule_id', rule_idx)))
+        signal_rule_ids[new_signals] = actual_rule_id
 
     # ── Phase A.38a / A.43: Regime filter gating ───────────────────────
     # WHY (Phase A.38a): If the user enabled the regime filter (A.36)
@@ -1725,15 +1737,22 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if is_news_blackout(entry_time, blackout_half_window_minutes=news_blackout_minutes):
                 continue  # skip this entry
 
-        # WHY: Block entries during hard close hour. Without this, Python opens
-        #      trades at 23:xx that immediately get hard-closed — same churn as
-        #      the EA. Matches EA fix (Issue B): >= so block holds all session.
-        # CHANGED: May 2026 — block hard close hour entries (parity with EA)
+        # WHY: Block entries during market closure window. hard_close_hour
+        #      blocks entries at >= that hour. market_reopen_hour extends the
+        #      block past midnight (e.g. close=23, reopen=1 blocks 23 and 0).
+        #      Without this, Python opens trades at 00:xx that MT5 rejects
+        #      because the market is closed.
+        # CHANGED: May 2026 — market closure window (parity with MT5)
         if hard_close_hour >= 0:
             try:
                 _entry_hour = pd.Timestamp(next_candle['timestamp']).hour
-                if _entry_hour >= hard_close_hour:
-                    continue
+                if market_reopen_hour > 0 and market_reopen_hour < hard_close_hour:
+                    # Midnight wrap: close=23, reopen=1 → block hours 23,0
+                    if _entry_hour >= hard_close_hour or _entry_hour < market_reopen_hour:
+                        continue
+                else:
+                    if _entry_hour >= hard_close_hour:
+                        continue
             except Exception:
                 pass
 
@@ -2109,6 +2128,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   #      run_backtest. Defaults maintain backward compatibility.
                   # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                   hard_close_hour=-1,
+                  # WHY: market_reopen_hour — see run_backtest. -1 = disabled.
+                  # CHANGED: May 2026 — market closure window (parity with MT5)
+                  market_reopen_hour=-1,
                   cooldown_candles=0,
                   # WHY: variable_spread / max_spread_pips — see run_backtest.
                   # CHANGED: April 2026 — session-based variable spread model
@@ -2354,7 +2376,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         new_signals = rule_mask & ~signal_mask
         signal_mask |= rule_mask
-        signal_rule_ids[new_signals] = rule_idx
+        # WHY: Use actual rule ID from saved_rules.json, not enumerate index.
+        #      When backtesting a single saved rule (e.g., ID 8), rule_idx=0
+        #      but we want trades.csv to show rule_id=8 for traceability.
+        # CHANGED: May 2026 — fix rule_id=0 bug
+        actual_rule_id = rule.get('id', rule.get('_saved_entry_id', rule.get('_saved_rule_id', rule_idx)))
+        signal_rule_ids[new_signals] = actual_rule_id
 
     # ── Phase A.38a / A.43: Regime filter gating ───────────────────────
     # WHY (Phase A.38a): Same gate as run_backtest. fast_backtest is the
@@ -2456,12 +2483,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         entry_time  = next_candle['timestamp']
 
-        # WHY: Block entries during hard close hour — parity with EA fix (Issue B).
-        # CHANGED: May 2026 — block hard close hour entries
+        # WHY: Block entries during market closure window — see run_backtest.
+        # CHANGED: May 2026 — market closure window (parity with MT5)
         if hard_close_hour >= 0:
             try:
-                if pd.Timestamp(entry_time).hour >= hard_close_hour:
-                    continue
+                _entry_hour = pd.Timestamp(entry_time).hour
+                if market_reopen_hour > 0 and market_reopen_hour < hard_close_hour:
+                    if _entry_hour >= hard_close_hour or _entry_hour < market_reopen_hour:
+                        continue
+                else:
+                    if _entry_hour >= hard_close_hour:
+                        continue
             except Exception:
                 pass
 
@@ -3124,6 +3156,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           #      to fast_backtest for full parity with the live EA.
                           # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                           hard_close_hour=-1,
+                          # WHY: market_reopen_hour — see run_backtest. -1 = disabled.
+                          # CHANGED: May 2026 — market closure window (parity with MT5)
+                          market_reopen_hour=-1,
                           cooldown_candles=0,
                           # WHY: variable_spread / max_spread_pips passed through
                           #      to fast_backtest for session-based spread model.
@@ -3640,6 +3675,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     leverage=leverage, contract_size=contract_size,
                     compound_equity=compound_equity,
                     hard_close_hour=hard_close_hour,
+                    market_reopen_hour=market_reopen_hour,
                     cooldown_candles=cooldown_candles,
                     # WHY: Pass variable spread through from matrix config.
                     # CHANGED: April 2026 — session-based variable spread model

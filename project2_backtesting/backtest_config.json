@@ -13,6 +13,7 @@
   "commission": "4.0",
   "spread": "25",
   "hard_close_hour": "23",
+  "market_reopen_hour": "1",
   "warmup_candles": "200",
   "max_one_trade": "True",
   "same_candle_sl_rule": "LOSS",

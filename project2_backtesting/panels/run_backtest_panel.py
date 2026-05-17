@@ -1045,6 +1045,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     #      live EA behaviour. -1 = disabled, 0 = no cooldown.
                     # CHANGED: April 2026 — hard close + cooldown from config
                     _cfg_hard_close  = int(float(_bt_cfg.get('hard_close_hour', -1)))
+                    _cfg_market_reopen = int(float(_bt_cfg.get('market_reopen_hour', -1)))
                     _cfg_cooldown    = int(float(_bt_cfg.get('cooldown_candles', 0)))
                     # WHY: variable_spread and max_spread_pips — session-based
                     #      spread model and max-spread entry filter.
@@ -1170,6 +1171,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _firm_hard_close = _pf_data.get('hard_close_hour_gmt')
                                     if _firm_hard_close is not None:
                                         _cfg_hard_close = int(_firm_hard_close)
+                                    # WHY: Per-firm market reopen hour. Blocks entries
+                                    #      from hard_close_hour through reopen (wraps
+                                    #      midnight). -1 = disabled.
+                                    # CHANGED: May 2026 — market closure window (MT5 parity)
+                                    _firm_market_reopen = _pf_data.get('market_reopen_hour_gmt')
+                                    if _firm_market_reopen is not None:
+                                        _cfg_market_reopen = int(_firm_market_reopen)
                                     # WHY: Read DD alert thresholds from firm's
                                     #      trading_rules based on prop_firm_stage.
                                     #      Eval uses 2.7%/5.7%, funded uses 2.5%/5.5%.
@@ -1236,7 +1244,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                   f"({_firm_display} firm)")
                         if _swap_loaded and _firm_hard_close is not None:
                             _hc_str = "disabled" if _cfg_hard_close < 0 else f"{_cfg_hard_close}h GMT"
-                            print(f"[BACKTEST] Hard close: {_hc_str} ({_firm_display} firm)")
+                            _mr_str = f", reopen={_cfg_market_reopen}h" if _cfg_market_reopen > 0 else ""
+                            print(f"[BACKTEST] Hard close: {_hc_str}{_mr_str} ({_firm_display} firm)")
                         elif not _swap_loaded:
                             print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
                         # WHY: Show DD alert thresholds being applied.
@@ -1591,6 +1600,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      using config (flag OFF = raw test, pre-phase compat).
                         # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                         hard_close_hour=_cfg_hard_close if _a48_use_cfg else -1,
+                        market_reopen_hour=_cfg_market_reopen if _a48_use_cfg else -1,
                         cooldown_candles=_cfg_cooldown if _a48_use_cfg else 0,
                         # WHY: Pass variable spread only when using config.
                         # CHANGED: April 2026 — session-based variable spread model

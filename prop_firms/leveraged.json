@@ -5,6 +5,8 @@
   "platform": "mt5",
   "hard_close_hour_gmt": 23,
   "hard_close_hour_source": "Force-close all positions at this GMT hour daily. Matches Python backtest_config.json hard_close_hour=23. Set to -1 to disable. Independent of drawdown_mechanics.daily_dd.reset_time.",
+  "market_reopen_hour_gmt": 1,
+  "market_reopen_hour_source": "Block entries from hard_close_hour_gmt until this GMT hour. Wraps midnight: close=23, reopen=1 blocks hours 23 and 0. MT5 platform rejects orders during market closure natively; this makes Python match.",
   "market_type": "forex_cfd",
   "leverage": "1:30",
   "leverage_by_instrument": {

@@ -1161,10 +1161,12 @@ def _generate():
             _res_sym = _symbol_var.get() if _symbol_var else 'XAUUSD'
             _res_spread = firm_data.get('instrument_specs', {}).get(_res_sym, {}).get('max_spread_pips_filter')
             _res_hc = firm_data.get('hard_close_hour_gmt')
+            _res_mr = firm_data.get('market_reopen_hour_gmt')
+            _mr_str = f", reopen={_res_mr}h" if _res_mr and int(_res_mr) > 0 else ""
             print(f"[EA_GEN] Spread filter: "
                   f"{_res_spread if _res_spread else (_spread_var.get() if _spread_var else '65')} pips "
                   f"({'firm' if _res_spread else 'panel'}) | "
-                  f"Hard close: {_res_hc if _res_hc is not None else (_hard_close_var.get() if _hard_close_var else '23')}h GMT "
+                  f"Hard close: {_res_hc if _res_hc is not None else (_hard_close_var.get() if _hard_close_var else '23')}h GMT{_mr_str} "
                   f"({'firm' if _res_hc is not None else 'panel'})")
         except Exception:
             pass
