@@ -99,7 +99,6 @@ _custom_filters  = []        # list of {feature, operator, value}
 _strat_info_lbl   = None
 _rule_info_lbl    = None
 _base_stats_frame = None
-_eval_info_lbl    = None
 _impact_labels    = {}       # filter_name -> tk.Label for impact text
 _results_card     = None
 _trade_list_frame = None
@@ -385,15 +384,20 @@ def _update_passrate_detail(strategy_dict):
     sim_e = None
     sim_f = None
     try:
+        # WHY: User wants a deterministic historical replay — exactly how many
+        #      of the viable historical start dates would have passed/failed.
+        #      Monte Carlo silently subsamples; sliding_window uses every
+        #      viable start.
+        # CHANGED: May 2026 — sliding window for authoritative count
         sim_e = simulate_challenge(
             trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-            account_size=int(acct), mode='monte_carlo', num_samples=100,
+            account_size=int(acct), mode='sliding_window',
             simulate_funded=False, risk_per_trade_pct=risk,
             default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
         )
         sim_f = simulate_challenge(
             trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-            account_size=int(acct), mode='monte_carlo', num_samples=100,
+            account_size=int(acct), mode='sliding_window',
             simulate_funded=True, risk_per_trade_pct=risk,
             default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
         )
@@ -406,15 +410,40 @@ def _update_passrate_detail(strategy_dict):
     lines.append(f"Firm: {rule0.get('prop_firm_name','?')}  |  Account: ${int(acct):,}  "
                  f"|  Risk: {risk}%  |  Trades: {len(trades)}")
     if sim_e is not None:
-        ep   = sim_e.eval_pass_rate * 100
         cnt  = sim_e.eval_pass_count
-        tot  = sim_e.eval_pass_count + sim_e.eval_fail_count
-        lines.append(f"🎯 EVAL  pass rate: {ep:.0f}%  ({cnt}/{tot} attempts)")
-        if sim_e.eval_pass_count > 0:
-            lines.append(f"   📅 Trading days to pass: "
-                         f"avg {sim_e.eval_avg_days_to_pass:.0f}  |  "
-                         f"fastest {sim_e.eval_min_days_to_pass:.0f}  |  "
-                         f"slowest {sim_e.eval_max_days_to_pass:.0f}")
+        flc  = sim_e.eval_fail_count
+        inc  = sim_e.eval_incomplete_count
+        decided = cnt + flc
+        starts  = decided + inc
+        ep   = sim_e.eval_pass_rate * 100
+        # WHY: Sliding-window historical replay — N is the count of viable
+        #      historical start dates (those with enough forward data). The
+        #      "incomplete" bucket holds start dates that ran out of data
+        #      before reaching pass/fail; they are excluded from the pass
+        #      rate denominator.
+        # CHANGED: May 2026 — historical-count framing
+        if inc > 0:
+            lines.append(
+                f"🎯 EVAL  {cnt} passed  |  {flc} failed  |  {inc} incomplete  "
+                f"(of {starts} historical starts)   pass rate: {ep:.0f}%"
+            )
+        else:
+            lines.append(
+                f"🎯 EVAL  {cnt} passed  |  {flc} failed  "
+                f"(of {starts} historical starts)   pass rate: {ep:.0f}%"
+            )
+        if cnt > 0:
+            lines.append(
+                f"   📅 Days to PASS:  avg {sim_e.eval_avg_days_to_pass:.0f}  |  "
+                f"min {sim_e.eval_min_days_to_pass:.0f}  |  "
+                f"max {sim_e.eval_max_days_to_pass:.0f}"
+            )
+        if flc > 0:
+            lines.append(
+                f"   📅 Days to FAIL:  avg {sim_e.eval_avg_days_to_fail:.0f}  |  "
+                f"min {sim_e.eval_min_days_to_fail:.0f}  |  "
+                f"max {sim_e.eval_max_days_to_fail:.0f}"
+            )
         lines.append(f"   📊 Avg max DD per attempt: {sim_e.eval_avg_max_dd_pct:.1f}%")
         if sim_e.eval_fail_reasons:
             reasons = "  |  ".join(
@@ -1441,280 +1470,9 @@ def _update_strat_info():
     except Exception as _e:
         print(f"[REFINER] Could not auto-fill from rule: {_e}")
 
-    # WHY: Show eval pass rate for the loaded strategy so user knows
-    #      how likely it is to pass an evaluation before optimizing.
-    # CHANGED: April 2026 — eval simulation on load
-    # FIXED: April 2026 — trailing DD, daily DD, calendar days, eval deadline
-    global _eval_info_lbl
-    if _eval_info_lbl and _base_trades and len(_base_trades) > 10:
-        try:
-            import pandas as _eval_pd
-            from datetime import datetime as _eval_dt
-
-            # ── Load firm/rule parameters ─────────────────────────────────
-            _eval_acct         = 10000.0
-            _eval_dd_total     = 6.0    # total DD limit (%)
-            _eval_dd_daily     = 5.0    # daily DD limit (%)
-            _eval_target_pct   = 6.0    # profit target (%)
-            _eval_max_cal_days = 60     # max calendar days per eval window (default no-limit = 60)
-            _eval_dd_type      = 'static'  # 'static' or 'trailing' / 'trailing_eod'
-            _eval_risk         = 1.0
-            _eval_pip_val      = 1.0
-            _eval_sl           = 150.0
-            try:
-                _loaded_idx2 = _get_selected_index()
-                for _s2 in _strategies:
-                    if _s2.get('index') == _loaded_idx2:
-                        _sr2 = _s2.get('saved_rule', {})
-                        _rs2 = _s2.get('run_settings', {})
-
-                        # ── Risk / account / pip params ────────────────────
-                        _eval_acct    = float(_sr2.get('account_size', 0) or _rs2.get('starting_capital', 0) or _s2.get('account_size', 0) or 10000)
-                        _eval_risk    = float(_sr2.get('risk_pct', 0) or _rs2.get('risk_pct', 0) or _s2.get('risk_pct', 0) or 1.0)
-                        _eval_pip_val = float(_sr2.get('pip_value_per_lot', 0) or _rs2.get('pip_value_per_lot', 0) or 1.0)
-                        _ep2 = (_sr2.get('exit_params') or _sr2.get('exit_strategy_params') or
-                                _s2.get('exit_params') or _s2.get('exit_strategy_params') or {})
-                        _eval_sl = float(
-                            _sr2.get('sl_pips', 0) or _rs2.get('sl_pips', 0) or
-                            _ep2.get('sl_pips', 0) or 0
-                        )
-
-                        # ── Eval scenario params ────────────────────────────
-                        # WHY: Try embedded eval_settings first (frozen at save
-                        #      time for this specific firm+stage). This ensures
-                        #      the eval simulation always uses the correct
-                        #      parameters for the firm the rule was designed for,
-                        #      regardless of what is currently selected in the UI.
-                        #      Fall back to re-reading the firm JSON only for old
-                        #      rules saved before eval_settings was introduced.
-                        # CHANGED: April 2026 — read frozen eval_settings from rule
-                        _es = _sr2.get('eval_settings', {})
-                        if _es:
-                            _eval_target_pct   = float(_es.get('target_pct',   _eval_target_pct))
-                            _eval_dd_total     = float(_es.get('dd_total_pct', _eval_dd_total))
-                            _eval_dd_daily     = float(_es.get('dd_daily_pct', _eval_dd_daily))
-                            _eval_dd_type      = _es.get('dd_type', _eval_dd_type)
-                            _mcd = _es.get('max_calendar_days')  # None = unlimited (Get Leveraged)
-                            _eval_max_cal_days = int(_mcd) if _mcd else 9999
-                        else:
-                            # Legacy fallback: read from firm JSON by name
-                            _eval_dd_total = float(_sr2.get('dd_total_pct', 0) or _rs2.get('dd_total_pct', 0) or _s2.get('dd_total_pct', 0) or 6.0)
-                            _eval_dd_daily = float(_sr2.get('dd_daily_pct', 0) or _rs2.get('dd_daily_pct', 0) or _s2.get('dd_daily_pct', 0) or 5.0)
-                            _eval_firm_name = _sr2.get('prop_firm_name', '') or _rs2.get('firm_name', '')
-                            if _eval_firm_name:
-                                import glob
-                                _prop_dir = os.path.join(project_root, 'prop_firms')
-                                for _fp in glob.glob(os.path.join(_prop_dir, '*.json')):
-                                    import json as _eval_json
-                                    with open(_fp, encoding='utf-8') as _ff:
-                                        _fd = _eval_json.load(_ff)
-                                    if _fd.get('firm_name') == _eval_firm_name:
-                                        _ph = _fd.get('challenges', [{}])[0].get('phases', [{}])[0]
-                                        _eval_target_pct   = float(_ph.get('profit_target_pct', _eval_target_pct))
-                                        _eval_dd_total     = float(_ph.get('max_total_drawdown_pct', _eval_dd_total))
-                                        _eval_dd_daily     = float(_ph.get('max_daily_drawdown_pct', _eval_dd_daily))
-                                        _mcd = _ph.get('max_calendar_days')
-                                        _eval_max_cal_days = int(_mcd) if _mcd else 9999
-                                        _eval_dd_type = _ph.get('drawdown_type', 'static')
-                                        break
-                        break
-            except Exception:
-                pass
-
-            # ── Derive effective SL from actual trade data if not set ────
-            # WHY: ATR-based exits have SL = sl_atr_mult × ATR (e.g. 300-600 pips),
-            #      NOT a fixed 150. Using 150 gives 3×-4× too large a lot size,
-            #      making daily P&L 3×-4× too high — min/avg/max appear 3× too fast.
-            #      Best estimate: average |net_pips| of losing trades ≈ actual SL
-            #      (losers hit their SL in the vast majority of cases).
-            # CHANGED: April 2026 — derive SL from trade data
-            if _eval_sl <= 0:
-                _losers_pips = sorted([abs(t.get('net_pips', 0) or 0)
-                                       for t in _base_trades
-                                       if (t.get('net_pips', 0) or 0) < 0])
-                if len(_losers_pips) >= 5:
-                    # WHY: Mean is skewed by gap-open outliers (a trade stopped
-                    #      at 3× normal SL inflates the average).
-                    #      Median gives the typical SL the strategy actually uses.
-                    _eval_sl = _losers_pips[len(_losers_pips) // 2]
-                else:
-                    _eval_sl = 150.0   # fallback if too few losing trades
-
-            # ── Compute $ limits ─────────────────────────────────────────
-            _eval_risk_dollars  = _eval_acct * (_eval_risk / 100)
-            _eval_lot           = max(0.01, _eval_risk_dollars / (_eval_sl * _eval_pip_val)) if _eval_sl > 0 else 0.01
-            _eval_dpp           = _eval_pip_val * _eval_lot   # $ per pip for calculated lot size
-            _eval_target_dollars = _eval_acct * (_eval_target_pct / 100)
-            _eval_dd_total_dollars = _eval_acct * (_eval_dd_total / 100)   # e.g. $600 for 6%
-            _eval_dd_daily_dollars = _eval_acct * (_eval_dd_daily / 100)   # e.g. $500 for 5%
-
-            # ── Pre-parse trade timestamps for speed ─────────────────────
-            _trade_cache = []
-            for _t in _base_trades:
-                try:
-                    _entry_ts = _eval_pd.to_datetime(_t.get('entry_time', ''))
-                    _exit_ts  = _eval_pd.to_datetime(_t.get('exit_time') or _t.get('entry_time', ''))
-                    _pips     = float(_t.get('net_pips', 0) or 0)
-                    _trade_cache.append((_entry_ts, _exit_ts, _pips))
-                except Exception:
-                    continue
-
-            # Collect all unique exit dates to drive the window loop
-            _all_exit_dates = sorted(set(str(_ex.date()) for _, _ex, _ in _trade_cache))
-
-            # ── Simulate rolling eval windows ────────────────────────────
-            # Each window = one hypothetical eval attempt starting fresh on
-            # a different date (every 7 exit-date slots), covering max_cal_days.
-            # Only trades entered ON OR AFTER the window start count.
-            _eval_days_to_target = []   # cal-days to pass for each passing window
-            _window_results      = []   # True=pass, False=fail, one entry per window
-            _total_windows       = 0
-
-            for _si in range(0, len(_all_exit_dates), 7):
-                if _si >= len(_all_exit_dates):
-                    break
-                _start_date_str = _all_exit_dates[_si]
-                _start_dt       = _eval_dt.strptime(_start_date_str, '%Y-%m-%d')
-                _total_windows += 1
-                _win_passed     = False
-
-                _win_daily = {}
-                for _entry_ts, _exit_ts, _pips in _trade_cache:
-                    if _entry_ts.date() < _start_dt.date():
-                        continue
-                    _exit_day = str(_exit_ts.date())
-                    _win_daily[_exit_day] = _win_daily.get(_exit_day, 0) + _pips * _eval_dpp
-
-                _running = 0.0
-                _peak    = 0.0
-
-                for _d in sorted(_win_daily.keys()):
-                    _cur_dt   = _eval_dt.strptime(_d, '%Y-%m-%d')
-                    _cal_days = (_cur_dt - _start_dt).days + 1
-                    if _cal_days > _eval_max_cal_days:
-                        break
-                    _day_pnl  = _win_daily[_d]
-                    _running += _day_pnl
-                    _peak     = max(_peak, _running)
-                    if _running >= _eval_target_dollars:
-                        _eval_days_to_target.append(_cal_days)
-                        _win_passed = True
-                        break
-                    if 'trailing' in _eval_dd_type:
-                        if _running <= max(-_eval_dd_total_dollars,
-                                          _peak - _eval_dd_total_dollars):
-                            break
-                    else:
-                        if _running <= -_eval_dd_total_dollars:
-                            break
-                    if _day_pnl <= -_eval_dd_daily_dollars:
-                        break
-
-                _window_results.append(_win_passed)
-
-            # ── Overall period stats ──────────────────────────────────────
-            _all_ts = ([str(_et.date()) for _et, _, _ in _trade_cache] +
-                       [str(_xt.date()) for _, _xt, _ in _trade_cache])
-            _period_start = min(_all_ts) if _all_ts else '?'
-            _period_end   = max(_all_ts) if _all_ts else '?'
-            _trading_days_n = len(set(str(_xt.date()) for _, _xt, _ in _trade_cache))
-            if _period_start != '?' and _period_end != '?':
-                _period_cal_days = (_eval_dt.strptime(_period_end,   '%Y-%m-%d') -
-                                    _eval_dt.strptime(_period_start, '%Y-%m-%d')).days
-                _period_years = _period_cal_days / 365.25
-            else:
-                _period_cal_days = 0
-                _period_years    = 0
-
-            # Failing-streak analysis: a streak = run of consecutive failed windows
-            # Streaks at the start, between passes, and at the end are all counted.
-            _fail_streaks = []
-            _cur_fail = 0
-            for _wr in _window_results:
-                if not _wr:
-                    _cur_fail += 1
-                else:
-                    _fail_streaks.append(_cur_fail)  # includes 0 (back-to-back passes)
-                    _cur_fail = 0
-            if _cur_fail > 0:
-                _fail_streaks.append(_cur_fail)   # trailing failures after last pass
-
-            # ── Build and show display ────────────────────────────────────
-            _eval_passes = len(_eval_days_to_target)
-            _eval_pr     = _eval_passes / _total_windows * 100 if _total_windows else 0
-
-            # Period line
-            _period_str = (
-                f"Period: {_period_start} – {_period_end} "
-                f"({_period_years:.1f} yrs, {_trading_days_n} trading days) | "
-                f"Evals/year: {(_total_windows / _period_years * _eval_pr / 100):.1f}"
-                if _period_years > 0 else "Period: insufficient data"
-            )
-
-            # Window explanation (always shown)
-            _window_def = (
-                f"A 'window' = 1 simulated eval attempt starting fresh on a "
-                f"different date — {_total_windows} attempts tested across the "
-                f"full backtest period, every 7 trading sessions apart"
-            )
-
-            if _eval_days_to_target and _total_windows > 0:
-                _eval_avg = sum(_eval_days_to_target) / _eval_passes
-                _eval_min = min(_eval_days_to_target)
-                _eval_max = max(_eval_days_to_target)
-
-                if _eval_passes == 1:
-                    _days_line = (
-                        f"Days to pass: {_eval_min}  "
-                        f"[only 1 window passed — Min/Max/Avg are all the same value; "
-                        f"need more trades for meaningful spread]"
-                    )
-                else:
-                    _days_line = (
-                        f"Avg: {_eval_avg:.0f} days | "
-                        f"Min: {_eval_min} days | Max: {_eval_max} days"
-                    )
-
-                # Fail-streak lines
-                if _fail_streaks:
-                    _fs_max = max(_fail_streaks)
-                    _fs_min = min(_fail_streaks)
-                    _fs_avg = sum(_fail_streaks) / len(_fail_streaks)
-                    _fs_note = ""
-                    if _fs_min == 0:
-                        _fs_note = " (0 = consecutive passes occurred)"
-                    _fail_line = (
-                        f"Fail streaks (windows failed in a row before next pass): "
-                        f"Max={_fs_max} | Avg={_fs_avg:.1f} | Min={_fs_min}{_fs_note}"
-                    )
-                else:
-                    _fail_line = "Fail streaks: n/a (no failures recorded)"
-
-                _eval_text = (
-                    f"Eval: {_eval_pr:.0f}% pass rate "
-                    f"({_eval_passes}/{_total_windows} windows) | "
-                    f"{_days_line} | "
-                    f"Target: {_eval_target_pct}% (${_eval_target_dollars:,.0f})\n"
-                    f"{_period_str}\n"
-                    f"{_fail_line}\n"
-                    f"{_window_def}"
-                )
-                _eval_info_lbl.configure(text=_eval_text, fg="#e65100")
-            else:
-                _fail_streak_len = len(_window_results)  # all windows failed
-                _eval_text = (
-                    f"Eval: 0% pass rate (0/{_total_windows} windows) — "
-                    f"never reaches {_eval_target_pct}% (${_eval_target_dollars:,.0f}) "
-                    f"within {_eval_max_cal_days} cal-days without DD breach\n"
-                    f"{_period_str}\n"
-                    f"Fail streaks: all {_total_windows} windows failed — "
-                    f"strategy does not reach target under these parameters\n"
-                    f"{_window_def}"
-                )
-                _eval_info_lbl.configure(text=_eval_text, fg="#dc3545")
-        except Exception as _eval_e:
-            print(f"[REFINER] Eval simulation error: {_eval_e}")
-            _eval_info_lbl.configure(text="", fg="#999")
+    # Block 2 (inline 270-line eval window-counter loop) removed May 2026 —
+    # the LabelFrame "🎯 Selected rule — eval & funded simulation" driven by
+    # _update_passrate_detail() is the authoritative per-rule simulation.
 
 
 def _get_current_filters():
@@ -4364,7 +4122,7 @@ def _update_breach_display(trades):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_panel(parent):
-    global _strategy_var, _strat_info_lbl, _base_stats_frame, _eval_info_lbl, _rule_info_lbl
+    global _strategy_var, _strat_info_lbl, _base_stats_frame, _rule_info_lbl
     global _min_hold_var, _max_hold_var, _max_per_day_var, _cooldown_var
     global _session_vars, _day_vars, _results_card, _trade_list_frame
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
@@ -4543,7 +4301,7 @@ def build_panel(parent):
         padx=8, pady=4)
     _passrate_detail_frame.pack(fill="x", padx=0, pady=(6, 0))
     _passrate_detail_lbl = tk.Text(_passrate_detail_frame,
-        height=7, wrap="word",
+        height=10, wrap="word",
         font=("Consolas", 9), bg=WHITE, fg=DARK,
         relief="flat", highlightthickness=0,
         cursor="arrow")
@@ -5205,9 +4963,6 @@ def build_panel(parent):
     _strat_info_lbl = tk.Label(sel_frame, text="Click Load to load a strategy.",
                                 font=("Segoe UI", 9), bg=WHITE, fg=GREY)
     _strat_info_lbl.pack(anchor="w", pady=(5, 0))
-    _eval_info_lbl = tk.Label(sel_frame, text="",
-                               font=("Segoe UI", 8, "bold"), bg=WHITE, fg="#e65100")
-    _eval_info_lbl.pack(anchor="w", pady=(2, 0))
 
     # Everything below goes inside scroll_frame (the canvas is created above,
     # right after the header, so sel_frame and the rest scroll as one page).

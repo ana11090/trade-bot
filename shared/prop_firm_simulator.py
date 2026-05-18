@@ -68,6 +68,13 @@ class SimulationSummary:
     eval_pass_count: int
     eval_fail_count: int
     eval_fail_reasons: dict
+    # WHY: Sliding-window historical replay needs symmetric fail-side timing
+    #      and a separate bucket for windows that ran out of forward data
+    #      (INSUFFICIENT_TRADES), which are not real failures.
+    # CHANGED: May 2026 — fail-side min/max, incomplete count
+    eval_min_days_to_fail: float
+    eval_max_days_to_fail: float
+    eval_incomplete_count: int
 
     # Stage 2
     funded_avg_survival_days: Optional[float]
@@ -831,11 +838,19 @@ def _aggregate(results, firm, challenge, account_size, mode,
     """Build SimulationSummary from a list of SingleSimResult."""
     import statistics as stats_mod
 
-    passes = [r for r in results if r.eval_outcome == "PASS"]
-    fails  = [r for r in results if r.eval_outcome != "PASS"]
-    total  = len(results)
+    # WHY: INSUFFICIENT_TRADES means the window ran out of forward data, not
+    #      that the strategy failed. Counting it as a fail distorts the
+    #      pass rate and the fail-reason histogram. Split it into its own
+    #      bucket; pass_rate denominator excludes it.
+    # CHANGED: May 2026 — separate incomplete from fail
+    passes     = [r for r in results if r.eval_outcome == "PASS"]
+    incomplete = [r for r in results if r.eval_outcome == "INSUFFICIENT_TRADES"]
+    fails      = [r for r in results
+                  if r.eval_outcome not in ("PASS", "INSUFFICIENT_TRADES")]
+    total          = len(results)
+    total_decided  = len(passes) + len(fails)
 
-    pass_rate    = len(passes) / total if total > 0 else 0.0
+    pass_rate    = len(passes) / total_decided if total_decided > 0 else 0.0
     fail_reasons = {}
     for r in fails:
         fail_reasons[r.eval_outcome] = fail_reasons.get(r.eval_outcome, 0) + 1
@@ -892,6 +907,9 @@ def _aggregate(results, firm, challenge, account_size, mode,
         eval_pass_count=len(passes),
         eval_fail_count=len(fails),
         eval_fail_reasons=fail_reasons,
+        eval_min_days_to_fail=round(min(days_fail), 1) if days_fail else 0,
+        eval_max_days_to_fail=round(max(days_fail), 1) if days_fail else 0,
+        eval_incomplete_count=len(incomplete),
         funded_avg_survival_days=round(_mean(f_survival), 1) if f_survival else None,
         funded_median_survival_days=round(_median(f_survival), 1) if f_survival else None,
         funded_avg_monthly_payout=round(_mean(f_monthly), 2) if f_monthly else None,
