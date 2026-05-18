@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-06T13:12:37.782938
-Trades analyzed: 1106 | Features: 759
+Generated: 2026-05-18T09:04:34.608444
+Trades analyzed: 1106 | Features: 789
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,22 +19,22 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=78.6%, test=57.7%
-   1. H4_keltner_width                              2.3%
-   2. H4_bb_20_3_width                              1.9%
-   3. H4_std_dev_20                                 1.8%
-   4. H4_candle_range                               1.8%
-   5. H4_std_dev_50                                 1.8%
-   6. H4_bb_20_2_width                              1.8%
-   7. H4_mt5_atr_14                                 1.8%
-   8. H4_adx_14                                     1.7%
-   9. H4_mt5_atr_7                                  1.7%
-  10. H4_distance_from_high                         1.6%
+  Model accuracy: train=77.3%, test=56.3%
+   1. H4_mt5_atr_7                                  2.2%
+   2. H4_keltner_width                              2.1%
+   3. H4_bb_20_2_width                              1.9%
+   4. H4_std_dev_50                                 1.7%
+   5. H4_mt5_atr_14                                 1.6%
+   6. H4_distance_from_high                         1.6%
+   7. H4_bb_20_3_width                              1.6%
+   8. H4_std_dev_20                                 1.5%
+   9. H4_mt5_adx_14                                 1.5%
+  10. H4_bull_power                                 1.5%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
   RULE 1 (WIN, conf: 89%, 36 trades)
-    IF H4_bb_20_3_upper > 5248.9226 AND H4_adx_14 > 28.2668 AND H4_bb_50_2_width <= 18.2811
+    IF H4_bb_20_3_upper > 5248.9226 AND H4_mt5_adx_14 > 28.2668 AND H4_bb_50_2_width <= 18.2811
     Win rate: 89% | Avg pips: +847
 
   RULE 2 (WIN, conf: 79%, 34 trades)
@@ -42,11 +42,11 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 79% | Avg pips: +397
 
   RULE 3 (WIN, conf: 82%, 27 trades)
-    IF H4_bb_20_3_upper > 5248.9226 AND H4_adx_14 <= 28.2668 AND H4_distance_to_rolling_level_618 <= -1.7453
+    IF H4_bb_20_3_upper > 5248.9226 AND H4_mt5_adx_14 <= 28.2668 AND H4_sma_50_distance <= -0.7311
     Win rate: 82% | Avg pips: +457
 
   RULE 4 (WIN, conf: 90%, 20 trades)
-    IF H4_bb_20_3_upper > 5248.9226 AND H4_adx_14 > 28.2668 AND H4_bb_50_2_width > 18.2811
+    IF H4_bb_20_3_upper > 5248.9226 AND H4_mt5_adx_14 > 28.2668 AND H4_bb_50_2_width > 18.2811
     Win rate: 90% | Avg pips: +450
 
   RULE 5 (WIN, conf: 73%, 22 trades)
@@ -54,10 +54,10 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 73% | Avg pips: +206
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 129 trades (11.7%), WR 75%, avg +389 pips, avg dur 0min
-  'Profit cluster': 249 trades (22.5%), WR 64%, avg +208 pips, avg dur 0min
-  'Profit cluster': 392 trades (35.4%), WR 53%, avg +84 pips, avg dur 0min
-  'Profit cluster': 336 trades (30.4%), WR 55%, avg +79 pips, avg dur 0min
+  'Big winners': 132 trades (11.9%), WR 76%, avg +402 pips, avg dur 0min
+  'Profit cluster': 248 trades (22.4%), WR 64%, avg +201 pips, avg dur 0min
+  'Profit cluster': 386 trades (34.9%), WR 53%, avg +84 pips, avg dur 0min
+  'Profit cluster': 340 trades (30.7%), WR 54%, avg +78 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -90,8 +90,8 @@ Trades analyzed: 1106 | Features: 759
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  55 outlier trades (5.0%)
-  Anomaly win rate: 86% vs normal: 57%
+  54 outlier trades (4.9%)
+  Anomaly win rate: 87% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

@@ -425,16 +425,6 @@
       "tightness": 0.3
     },
     {
-      "feature": "M15_distance_to_rolling_level_236",
-      "operator": "<",
-      "threshold": 1.692056,
-      "value": 1.692056,
-      "trade_coverage": 0.9494,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.301
-    },
-    {
       "feature": "H4_dpo",
       "operator": "<",
       "threshold": 48.996,
@@ -443,6 +433,16 @@
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.3013
+    },
+    {
+      "feature": "M15_distance_to_rolling_level_236",
+      "operator": "<",
+      "threshold": 1.692056,
+      "value": 1.692056,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.301
     },
     {
       "feature": "M5_distance_from_high",
@@ -816,6 +816,6 @@
     "dedup_correlated": true,
     "winner_selection": "coverage"
   },
-  "generated_at": "2026-05-06T13:11:44.651313",
+  "generated_at": "2026-05-18T09:03:34.954966",
   "scenario": null
 }

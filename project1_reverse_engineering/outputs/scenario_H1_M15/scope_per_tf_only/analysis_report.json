@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-05-06T13:13:41.031778",
+  "generated_at": "2026-05-18T09:05:44.597035",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-05-06 13:13:41",
+  "activated_at": "2026-05-18 09:05:44",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 9.7,
+  "analysis_time_s": 9.9,
   "trade_count": 1106,
-  "feature_count": 759,
+  "feature_count": 789,
   "profile": {
     "direction": "buy_only",
     "direction_split": {
@@ -133,87 +133,87 @@
   "feature_importance": {
     "top_20": [
       [
-        "M15_std_dev_50",
-        0.013358
-      ],
-      [
         "M15_mt5_macd_fast_diff",
-        0.013297
-      ],
-      [
-        "M15_mt5_ema_9_distance",
-        0.012578
-      ],
-      [
-        "H1_std_dev_20",
-        0.012272
-      ],
-      [
-        "M15_mt5_atr_14",
-        0.011612
-      ],
-      [
-        "M15_mt5_atr_28",
-        0.011132
-      ],
-      [
-        "M15_williams_r_14",
-        0.011106
+        0.01246
       ],
       [
         "M15_std_dev_20",
-        0.010976
-      ],
-      [
-        "M15_roc_5",
-        0.010898
-      ],
-      [
-        "M15_mt5_stoch_14_k",
-        0.010828
-      ],
-      [
-        "H1_mt5_atr_7",
-        0.010254
-      ],
-      [
-        "H1_bb_20_2_width",
-        0.010175
-      ],
-      [
-        "H1_std_dev_50",
-        0.009946
-      ],
-      [
-        "H1_keltner_width",
-        0.009641
-      ],
-      [
-        "M15_mt5_stoch_14_d",
-        0.009286
+        0.012122
       ],
       [
         "M15_bb_50_2_width",
-        0.009246
+        0.011454
       ],
       [
-        "H1_mt5_atr_28",
-        0.009127
+        "M15_mt5_atr_14",
+        0.011251
       ],
       [
-        "H1_body_to_range_ratio",
-        0.008689
+        "M15_mt5_stoch_14_d",
+        0.011165
       ],
       [
         "M15_candle_range",
-        0.008465
+        0.010974
+      ],
+      [
+        "H1_std_dev_20",
+        0.010749
+      ],
+      [
+        "H1_bb_20_2_width",
+        0.010684
       ],
       [
         "M15_mt5_atr_7",
-        0.008417
+        0.01067
+      ],
+      [
+        "M15_volume_change",
+        0.010509
+      ],
+      [
+        "M15_mt5_stoch_14_k",
+        0.010294
+      ],
+      [
+        "M15_williams_r_14",
+        0.010035
+      ],
+      [
+        "H1_keltner_width",
+        0.010028
+      ],
+      [
+        "M15_std_dev_50",
+        0.009801
+      ],
+      [
+        "M15_bear_power",
+        0.009606
+      ],
+      [
+        "M15_mt5_atr_28",
+        0.009388
+      ],
+      [
+        "M15_roc_5",
+        0.009358
+      ],
+      [
+        "M15_mt5_ema_9_distance",
+        0.009236
+      ],
+      [
+        "H1_mt5_atr_21",
+        0.009093
+      ],
+      [
+        "H1_close_position_in_range",
+        0.008897
       ]
     ],
-    "train_accuracy": 0.7817,
+    "train_accuracy": 0.7862,
     "test_accuracy": 0.6036
   },
   "rules": [
@@ -433,13 +433,13 @@
   ],
   "clusters": [
     {
-      "cluster_id": 0,
+      "cluster_id": 2,
       "name": "Big winners",
-      "count": 67,
+      "count": 68,
       "pct": 6.1,
       "avg_duration_min": 0.0,
-      "avg_pips": 528.2,
-      "win_rate": 0.866,
+      "avg_pips": 518.2,
+      "win_rate": 0.853,
       "top_features": [
         "H1_kst",
         "H1_mt5_macd_std_signal",
@@ -451,11 +451,11 @@
     {
       "cluster_id": 1,
       "name": "Profit cluster",
-      "count": 272,
-      "pct": 24.6,
+      "count": 269,
+      "pct": 24.3,
       "avg_duration_min": 0.0,
-      "avg_pips": 207.6,
-      "win_rate": 0.614,
+      "avg_pips": 211.6,
+      "win_rate": 0.621,
       "top_features": [
         "H1_kst",
         "H1_mt5_macd_std_signal",
@@ -465,13 +465,13 @@
       ]
     },
     {
-      "cluster_id": 2,
+      "cluster_id": 3,
       "name": "Profit cluster",
-      "count": 262,
-      "pct": 23.7,
+      "count": 270,
+      "pct": 24.4,
       "avg_duration_min": 0.0,
-      "avg_pips": 119.0,
-      "win_rate": 0.599,
+      "avg_pips": 114.2,
+      "win_rate": 0.589,
       "top_features": [
         "H1_kst",
         "H1_mt5_macd_std_signal",
@@ -481,13 +481,13 @@
       ]
     },
     {
-      "cluster_id": 3,
+      "cluster_id": 0,
       "name": "Profit cluster",
-      "count": 505,
-      "pct": 45.7,
+      "count": 499,
+      "pct": 45.1,
       "avg_duration_min": 0.0,
-      "avg_pips": 76.5,
-      "win_rate": 0.523,
+      "avg_pips": 77.5,
+      "win_rate": 0.525,
       "top_features": [
         "H1_kst",
         "H1_mt5_macd_std_signal",
@@ -673,52 +673,43 @@
   "anomalies": {
     "count": 56,
     "pct": 5.1,
-    "anomaly_win_rate": 0.875,
-    "normal_win_rate": 0.569,
+    "anomaly_win_rate": 0.839,
+    "normal_win_rate": 0.57,
     "top_10": [
-      {
-        "trade_id": 130,
-        "open_time": "2026-02-02 03:59:00",
-        "pips": 774.0,
-        "is_winner": true,
-        "score": -0.666,
-        "hour": 1,
-        "duration": 1.0
-      },
       {
         "trade_id": 134,
         "open_time": "2026-01-30 18:39:00",
         "pips": 1683.0,
         "is_winner": true,
-        "score": -0.662,
+        "score": -0.676,
         "hour": 16,
         "duration": 0.0
       },
       {
-        "trade_id": 131,
-        "open_time": "2026-02-02 03:29:00",
-        "pips": 423.0,
+        "trade_id": 129,
+        "open_time": "2026-02-02 08:33:00",
+        "pips": 564.0,
         "is_winner": true,
-        "score": -0.661,
-        "hour": 1,
+        "score": -0.673,
+        "hour": 6,
         "duration": 0.0
       },
       {
-        "trade_id": 133,
-        "open_time": "2026-02-02 00:57:00",
-        "pips": 1122.0,
-        "is_winner": true,
-        "score": -0.661,
-        "hour": 22,
-        "duration": 1.0
+        "trade_id": 128,
+        "open_time": "2026-02-02 09:03:00",
+        "pips": -150.0,
+        "is_winner": false,
+        "score": -0.672,
+        "hour": 7,
+        "duration": 0.0
       },
       {
-        "trade_id": 157,
-        "open_time": "2026-01-29 00:02:00",
-        "pips": 2655.0,
+        "trade_id": 130,
+        "open_time": "2026-02-02 03:59:00",
+        "pips": 774.0,
         "is_winner": true,
         "score": -0.659,
-        "hour": 22,
+        "hour": 1,
         "duration": 1.0
       },
       {
@@ -726,17 +717,17 @@
         "open_time": "2026-02-02 03:05:00",
         "pips": 1053.0,
         "is_winner": true,
-        "score": -0.658,
+        "score": -0.657,
         "hour": 1,
         "duration": 1.0
       },
       {
-        "trade_id": 129,
-        "open_time": "2026-02-02 08:33:00",
-        "pips": 564.0,
+        "trade_id": 131,
+        "open_time": "2026-02-02 03:29:00",
+        "pips": 423.0,
         "is_winner": true,
-        "score": -0.655,
-        "hour": 6,
+        "score": -0.656,
+        "hour": 1,
         "duration": 0.0
       },
       {
@@ -744,27 +735,36 @@
         "open_time": "2026-01-29 02:03:00",
         "pips": 1045.0,
         "is_winner": true,
-        "score": -0.643,
+        "score": -0.653,
         "hour": 0,
         "duration": 1.0
       },
       {
-        "trade_id": 142,
-        "open_time": "2026-01-30 10:23:00",
-        "pips": 1400.0,
+        "trade_id": 157,
+        "open_time": "2026-01-29 00:02:00",
+        "pips": 2655.0,
         "is_winner": true,
-        "score": -0.639,
-        "hour": 8,
-        "duration": 2.0
+        "score": -0.643,
+        "hour": 22,
+        "duration": 1.0
       },
       {
-        "trade_id": 118,
-        "open_time": "2026-02-03 01:50:00",
-        "pips": -150.0,
+        "trade_id": 133,
+        "open_time": "2026-02-02 00:57:00",
+        "pips": 1122.0,
+        "is_winner": true,
+        "score": -0.635,
+        "hour": 22,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 155,
+        "open_time": "2026-01-29 03:39:00",
+        "pips": -5.0,
         "is_winner": false,
-        "score": -0.638,
-        "hour": 23,
-        "duration": 0.0
+        "score": -0.635,
+        "hour": 1,
+        "duration": 1.0
       }
     ]
   },

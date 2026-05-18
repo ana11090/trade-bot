@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-06T13:11:44.673950
-Trades analyzed: 1106 | Features: 759
+Generated: 2026-05-18T09:03:34.962635
+Trades analyzed: 1106 | Features: 789
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=81.0%, test=58.1%
-   1. M15_std_dev_20                                1.1%
-   2. H1_std_dev_20                                 1.0%
-   3. M15_roc_5                                     0.9%
-   4. M15_mt5_ema_9_distance                        0.8%
-   5. M15_mt5_rsi_7                                 0.7%
-   6. M15_mt5_macd_fast_diff                        0.7%
-   7. H1_close_position_in_range                    0.7%
-   8. H1_mt5_atr_7                                  0.7%
-   9. H1_keltner_width                              0.7%
-  10. H4_bb_50_2_width                              0.7%
+  Model accuracy: train=80.0%, test=59.5%
+   1. M15_mt5_atr_14                                1.0%
+   2. M15_mt5_macd_fast_diff                        0.9%
+   3. M15_std_dev_20                                0.8%
+   4. M15_roc_5                                     0.8%
+   5. M15_mt5_stoch_14_k                            0.8%
+   6. H4_std_dev_20                                 0.7%
+   7. H1_std_dev_20                                 0.7%
+   8. M15_mt5_ema_9_distance                        0.7%
+   9. M15_mt5_atr_100                               0.7%
+  10. M15_mt5_atr_21                                0.7%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -54,7 +54,7 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 88% | Avg pips: +748
 
   RULE 6 (WIN, conf: 80%, 20 trades)
-    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range <= 44.81 AND M15_candle_body > 7.95 AND H1_bb_20_3_width > 7.2385
+    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range <= 44.81 AND M15_candle_body > 7.95 AND H1_bb_20_2_width > 4.8256
     Win rate: 80% | Avg pips: +424
 
   RULE 7 (WIN, conf: 73%, 22 trades)
@@ -62,10 +62,10 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 73% | Avg pips: +232
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 104 trades (9.4%), WR 81%, avg +435 pips, avg dur 0min
-  'Profit cluster': 263 trades (23.8%), WR 62%, avg +203 pips, avg dur 0min
-  'Profit cluster': 344 trades (31.1%), WR 57%, avg +94 pips, avg dur 0min
-  'Profit cluster': 395 trades (35.7%), WR 52%, avg +77 pips, avg dur 0min
+  'Big winners': 56 trades (5.1%), WR 86%, avg +522 pips, avg dur 0min
+  'Profit cluster': 292 trades (26.4%), WR 63%, avg +221 pips, avg dur 0min
+  'Profit cluster': 333 trades (30.1%), WR 57%, avg +95 pips, avg dur 0min
+  'Profit cluster': 425 trades (38.4%), WR 53%, avg +85 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -99,7 +99,7 @@ Trades analyzed: 1106 | Features: 759
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 88% vs normal: 57%
+  Anomaly win rate: 84% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

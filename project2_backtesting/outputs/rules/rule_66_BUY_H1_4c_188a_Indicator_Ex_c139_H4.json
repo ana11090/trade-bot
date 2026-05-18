@@ -1,0 +1,240 @@
+{
+  "rule_combo": "#66_BUY_H1_4c_188a_Indicator_Ex_c139",
+  "rule_indices": [
+    65
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_candle_body",
+          "operator": "<=",
+          "value": 37.785
+        },
+        {
+          "feature": "D1_tsi",
+          "operator": ">",
+          "value": 10.1609
+        },
+        {
+          "feature": "D1_mt5_ema_9_distance",
+          "operator": "<=",
+          "value": -0.2462
+        },
+        {
+          "feature": "D1_mt5_macd_fast",
+          "operator": ">",
+          "value": 5.0096
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.885,
+      "coverage": 26,
+      "coverage_pct": 2.9,
+      "win_rate": 0.885,
+      "avg_pips": 301.3,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": -25.2,
+      "win_rate_test": 0.25,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "scope_per_tf_only",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "D1_candle_body",
+              "operator": "<=",
+              "value": 37.785
+            },
+            {
+              "feature": "D1_tsi",
+              "operator": ">",
+              "value": 10.1609
+            },
+            {
+              "feature": "D1_mt5_ema_9_distance",
+              "operator": "<=",
+              "value": -0.2462
+            },
+            {
+              "feature": "D1_mt5_macd_fast",
+              "operator": ">",
+              "value": 5.0096
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "SL 150 pips, exit when H1_mt5_rsi_14 above 70, max 500 candles",
+  "exit_name": "Indicator Exit",
+  "exit_class": "IndicatorExit",
+  "exit_params": {
+    "sl_pips": 150,
+    "exit_indicator": "H1_mt5_rsi_14",
+    "exit_threshold": 70,
+    "max_candles": 500
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 3,
+  "win_rate": 0.0,
+  "avg_pips": -1921.0,
+  "net_avg_pips": -1962.0,
+  "total_pips": -5763.0,
+  "net_total_pips": -5886.0,
+  "profit_factor": 0.0,
+  "net_profit_factor": 0.0,
+  "max_dd_pips": 5695.0,
+  "total_costs": 123.0,
+  "avg_winner": 0.0,
+  "avg_loser": -1962.0,
+  "best_trade": -191.0,
+  "worst_trade": -5504.0,
+  "expectancy": -1962.0,
+  "risk_reward_ratio": 0.0,
+  "std_pips": 2504.6,
+  "sharpe_ish": -0.78,
+  "max_win_streak": 0,
+  "max_loss_streak": 3,
+  "trades_per_day": 3.0,
+  "days_per_trade": 0.3,
+  "recovery_factor": -1.03,
+  "winners": 0,
+  "losers": 3,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 1,
+  "total_dollar_pnl": -1114.52,
+  "max_dd_dollars": 1080.14,
+  "trades": [
+    {
+      "entry_time": "2026-03-05 00:00:00",
+      "exit_time": "2026-03-05 04:00:00",
+      "entry_price": 5152.7,
+      "exit_price": 5151.2,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "cost_pips": 41.0,
+      "net_profit": -34.38,
+      "lot_size": 0.18,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-05 08:00:00",
+      "exit_time": "2026-03-05 12:00:00",
+      "entry_price": 5148.55,
+      "exit_price": 5147.05,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -191.0,
+      "cost_pips": 41.0,
+      "net_profit": -34.38,
+      "lot_size": 0.18,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-03-05 16:00:00",
+      "exit_time": "2026-03-05 20:00:00",
+      "entry_price": 5117.7,
+      "exit_price": 5063.07,
+      "direction": "BUY",
+      "pips": -5463.0,
+      "net_pips": -5504.0,
+      "cost_pips": 41.0,
+      "net_profit": -1045.76,
+      "lot_size": 0.19,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 1,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-05"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 1,
+    "survival_rate_per_month": 100.0,
+    "total_months": 1,
+    "months_blown": 0,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 2.7,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "entry_tf": "H4"
+}

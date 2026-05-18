@@ -1,0 +1,318 @@
+{
+  "rule_combo": "#73_Top_Time_Based_1775",
+  "rule_indices": [
+    0,
+    1,
+    2
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_sma_50_distance",
+          "operator": ">",
+          "value": -0.0692
+        },
+        {
+          "feature": "H1_mt5_adx_28",
+          "operator": ">",
+          "value": 17.2074
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.824,
+      "coverage": 51,
+      "coverage_pct": 5.8,
+      "win_rate": 0.824,
+      "avg_pips": 414.7,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 413.8,
+      "win_rate_test": 1.0,
+      "test_samples": 4,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3",
+      "direction": "BUY"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": "<=",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_kst_signal",
+          "operator": "<=",
+          "value": -11.7559
+        },
+        {
+          "feature": "H4_mt5_ema_20_distance",
+          "operator": "<=",
+          "value": -1.178
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.733,
+      "coverage": 30,
+      "coverage_pct": 3.4,
+      "win_rate": 0.733,
+      "avg_pips": 147.5,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 89.8,
+      "win_rate_test": 0.75,
+      "test_samples": 8,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3",
+      "direction": "BUY"
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_sma_50_distance",
+          "operator": "<=",
+          "value": -0.0692
+        },
+        {
+          "feature": "M5_upper_shadow",
+          "operator": ">",
+          "value": 0.875
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.688,
+      "coverage": 32,
+      "coverage_pct": 3.6,
+      "win_rate": 0.688,
+      "avg_pips": 229.4,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 319.3,
+      "win_rate_test": 0.667,
+      "test_samples": 6,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "Step3",
+      "direction": "BUY"
+    }
+  ],
+  "exit_strategy": "SL 150 pips, close after 6 candles",
+  "exit_name": "Time-Based",
+  "exit_class": "TimeBased",
+  "exit_params": {
+    "sl_pips": 150,
+    "max_candles": 6
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 6,
+  "win_rate": 16.7,
+  "avg_pips": 231.3,
+  "net_avg_pips": 8.3,
+  "total_pips": 1388.0,
+  "net_total_pips": 50.0,
+  "profit_factor": 1.04,
+  "net_profit_factor": 1.0,
+  "max_dd_pips": 31477.0,
+  "total_costs": 246.0,
+  "avg_winner": 31854.5,
+  "avg_loser": -6360.9,
+  "best_trade": 31854.5,
+  "worst_trade": -17741.5,
+  "expectancy": 8.33,
+  "risk_reward_ratio": 5.01,
+  "std_pips": 15471.5,
+  "sharpe_ish": 0.0,
+  "max_win_streak": 1,
+  "max_loss_streak": 5,
+  "trades_per_day": 0.26,
+  "days_per_trade": 3.8,
+  "recovery_factor": 0.0,
+  "winners": 1,
+  "losers": 5,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 9.0,
+  "total_calendar_days": 23,
+  "total_dollar_pnl": 267.09,
+  "max_dd_dollars": 6041.58,
+  "trades": [
+    {
+      "entry_time": "2026-03-04 00:00:00",
+      "exit_time": "2026-03-05 00:00:00",
+      "entry_price": 5111.73,
+      "exit_price": 5110.23,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -327.5,
+      "cost_pips": 41.0,
+      "net_profit": -62.23,
+      "lot_size": 0.19,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS",
+      "rule_id": 1,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-09 00:00:00",
+      "exit_time": "2026-03-10 00:00:00",
+      "entry_price": 5165.74,
+      "exit_price": 5128.4,
+      "direction": "BUY",
+      "pips": -3734.0,
+      "net_pips": -3820.5,
+      "cost_pips": 41.0,
+      "net_profit": -687.69,
+      "lot_size": 0.18,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    },
+    {
+      "entry_time": "2026-03-18 00:00:00",
+      "exit_time": "2026-03-19 00:00:00",
+      "entry_price": 5001.04,
+      "exit_price": 4825.4,
+      "direction": "BUY",
+      "pips": -17564.0,
+      "net_pips": -17741.5,
+      "cost_pips": 41.0,
+      "net_profit": -3370.89,
+      "lot_size": 0.19,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 2,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-23 00:00:00",
+      "exit_time": "2026-03-24 00:00:00",
+      "entry_price": 4475.88,
+      "exit_price": 4380.87,
+      "direction": "BUY",
+      "pips": -9501.0,
+      "net_pips": -9587.5,
+      "cost_pips": 41.0,
+      "net_profit": -1917.5,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 1,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    },
+    {
+      "entry_time": "2026-03-25 00:00:00",
+      "exit_time": "2026-03-26 00:00:00",
+      "entry_price": 4479.12,
+      "exit_price": 4477.62,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -327.5,
+      "cost_pips": 41.0,
+      "net_profit": -65.5,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-27 00:00:00",
+      "exit_time": "2026-04-07 00:00:00",
+      "entry_price": 4387.32,
+      "exit_price": 4712.19,
+      "direction": "BUY",
+      "pips": 32487.0,
+      "net_pips": 31854.5,
+      "cost_pips": 41.0,
+      "net_profit": 6370.9,
+      "lot_size": 0.2,
+      "candles_held": 6,
+      "exit_reason": "TIME_EXIT",
+      "rule_id": 2,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -591.5,
+      "swap_nights": 13
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 1,
+    "blown_count": 1,
+    "daily_breach_dates": [],
+    "total_breach_dates": [
+      "2026-03-18"
+    ],
+    "daily_safety_stops": 3,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-09",
+      "2026-03-18",
+      "2026-03-23"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 23,
+    "survival_rate_per_month": 0.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 7.6,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "entry_tf": "D1"
+}

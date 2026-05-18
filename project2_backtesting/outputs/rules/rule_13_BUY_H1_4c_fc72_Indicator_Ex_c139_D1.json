@@ -1,0 +1,283 @@
+{
+  "rule_combo": "#13_BUY_H1_4c_fc72_Indicator_Ex_c139",
+  "rule_indices": [
+    12
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": ">",
+          "value": 66.7194
+        },
+        {
+          "feature": "M5_sma_50_distance",
+          "operator": ">",
+          "value": -0.0958
+        },
+        {
+          "feature": "M5_cmf",
+          "operator": ">",
+          "value": -0.0533
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.68,
+      "coverage": 100,
+      "coverage_pct": 11.3,
+      "win_rate": 0.68,
+      "avg_pips": 212.3,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 424.3,
+      "win_rate_test": 0.733,
+      "test_samples": 15,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 2 (BUY)",
+      "scenario": "scope_per_tf_only",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_keltner_width",
+              "operator": "<=",
+              "value": 0.6821
+            },
+            {
+              "feature": "M5_mt5_stoch_14_d",
+              "operator": ">",
+              "value": 66.7194
+            },
+            {
+              "feature": "M5_sma_50_distance",
+              "operator": ">",
+              "value": -0.0958
+            },
+            {
+              "feature": "M5_cmf",
+              "operator": ">",
+              "value": -0.0533
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "SL 150 pips, exit when H1_mt5_rsi_14 above 70, max 500 candles",
+  "exit_name": "Indicator Exit",
+  "exit_class": "IndicatorExit",
+  "exit_params": {
+    "sl_pips": 150,
+    "exit_indicator": "H1_mt5_rsi_14",
+    "exit_threshold": 70,
+    "max_candles": 500
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 5,
+  "win_rate": 0.0,
+  "avg_pips": -8297.0,
+  "net_avg_pips": -8456.3,
+  "total_pips": -41485.0,
+  "net_total_pips": -42282.0,
+  "profit_factor": 0.0,
+  "net_profit_factor": 0.0,
+  "max_dd_pips": 38461.0,
+  "total_costs": 205.0,
+  "avg_winner": 0.0,
+  "avg_loser": -8456.3,
+  "best_trade": -327.5,
+  "worst_trade": -18517.5,
+  "expectancy": -8456.3,
+  "risk_reward_ratio": 0.0,
+  "std_pips": 7979.1,
+  "sharpe_ish": -1.06,
+  "max_win_streak": 0,
+  "max_loss_streak": 5,
+  "trades_per_day": 0.17,
+  "days_per_trade": 6.0,
+  "recovery_factor": -1.1,
+  "winners": 0,
+  "losers": 5,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 0.5,
+  "longest_dormant_days": 14.0,
+  "total_calendar_days": 30,
+  "total_dollar_pnl": -8202.48,
+  "max_dd_dollars": 7514.79,
+  "trades": [
+    {
+      "entry_time": "2026-03-09 00:00:00",
+      "exit_time": "2026-03-10 00:00:00",
+      "entry_price": 5165.74,
+      "exit_price": 5128.4,
+      "direction": "BUY",
+      "pips": -3734.0,
+      "net_pips": -3820.5,
+      "cost_pips": 41.0,
+      "net_profit": -687.69,
+      "lot_size": 0.18,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -45.5,
+      "swap_nights": 1
+    },
+    {
+      "entry_time": "2026-03-18 00:00:00",
+      "exit_time": "2026-03-19 00:00:00",
+      "entry_price": 5001.04,
+      "exit_price": 4825.4,
+      "direction": "BUY",
+      "pips": -17564.0,
+      "net_pips": -17741.5,
+      "cost_pips": 41.0,
+      "net_profit": -3370.89,
+      "lot_size": 0.19,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-20 00:00:00",
+      "exit_time": "2026-03-23 00:00:00",
+      "entry_price": 4659.27,
+      "exit_price": 4475.87,
+      "direction": "BUY",
+      "pips": -18340.0,
+      "net_pips": -18517.5,
+      "cost_pips": 41.0,
+      "net_profit": -3703.5,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-25 00:00:00",
+      "exit_time": "2026-03-26 00:00:00",
+      "entry_price": 4479.12,
+      "exit_price": 4477.62,
+      "direction": "BUY",
+      "pips": -150.0,
+      "net_pips": -327.5,
+      "cost_pips": 41.0,
+      "net_profit": -65.5,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-04-08 00:00:00",
+      "exit_time": "2026-04-09 00:00:00",
+      "entry_price": 4744.52,
+      "exit_price": 4727.55,
+      "direction": "BUY",
+      "pips": -1697.0,
+      "net_pips": -1874.5,
+      "cost_pips": 41.0,
+      "net_profit": -374.9,
+      "lot_size": 0.2,
+      "candles_held": 1,
+      "exit_reason": "STOP_LOSS_GAP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 1,
+    "blown_count": 1,
+    "daily_breach_dates": [],
+    "total_breach_dates": [
+      "2026-03-20"
+    ],
+    "daily_safety_stops": 4,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-09",
+      "2026-03-18",
+      "2026-03-20",
+      "2026-04-08"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 30,
+    "survival_rate_per_month": 50.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 8.1,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "entry_tf": "D1"
+}

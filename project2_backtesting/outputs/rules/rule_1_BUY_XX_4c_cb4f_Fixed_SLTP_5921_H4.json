@@ -147,8 +147,8 @@
     {
       "entry_time": "2026-03-25T04:00:00.000000",
       "exit_time": "2026-03-25T04:00:00.000000",
-      "entry_price": 4595.03,
-      "exit_price": 4593.53,
+      "entry_price": 4595.02,
+      "exit_price": 4593.52,
       "direction": "BUY",
       "pips": -150.0,
       "net_pips": -191.0,

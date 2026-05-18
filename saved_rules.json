@@ -1,8 +1,8 @@
 [
   {
     "id": 1,
-    "rule_id": "BUY_H1_4c_0506_837b8660",
-    "saved_at": "2026-05-06T13:10:52.332092",
+    "rule_id": "BUY_H1_4c_0518_bc476cf4",
+    "saved_at": "2026-05-18T08:56:17.230316",
     "source": "Step3:scope_per_tf_only:BUY:conf70",
     "notes": "",
     "rule": {
@@ -97,7 +97,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -111,8 +111,8 @@
   },
   {
     "id": 2,
-    "rule_id": "BUY_H1_4c_0506_83c0a741",
-    "saved_at": "2026-05-06T13:10:52.351681",
+    "rule_id": "BUY_H1_4c_0518_3ac3e523",
+    "saved_at": "2026-05-18T08:56:17.254721",
     "source": "Step3:scope_per_tf_only:BUY:conf68",
     "notes": "",
     "rule": {
@@ -207,7 +207,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -221,8 +221,8 @@
   },
   {
     "id": 3,
-    "rule_id": "BUY_H1_2c_0506_b2724719",
-    "saved_at": "2026-05-06T13:10:52.394600",
+    "rule_id": "BUY_H1_2c_0518_8ee126e2",
+    "saved_at": "2026-05-18T08:56:17.302187",
     "source": "Step3:scope_per_tf_only:BUY:conf91",
     "notes": "",
     "rule": {
@@ -297,7 +297,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -311,8 +311,8 @@
   },
   {
     "id": 4,
-    "rule_id": "BUY_H1_3c_0506_00daa1e3",
-    "saved_at": "2026-05-06T13:10:52.457738",
+    "rule_id": "BUY_H1_3c_0518_05acfab6",
+    "saved_at": "2026-05-18T08:56:17.376505",
     "source": "Step3:scope_per_tf_only:BUY:conf90",
     "notes": "",
     "rule": {
@@ -328,7 +328,7 @@
           "value": 12.41
         },
         {
-          "feature": "M5_adx_28",
+          "feature": "M5_mt5_adx_28",
           "operator": ">",
           "value": 26.2045
         }
@@ -387,7 +387,7 @@
               "value": 12.41
             },
             {
-              "feature": "M5_adx_28",
+              "feature": "M5_mt5_adx_28",
               "operator": ">",
               "value": 26.2045
             }
@@ -397,7 +397,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -411,8 +411,8 @@
   },
   {
     "id": 5,
-    "rule_id": "BUY_H1_4c_0506_4415f366",
-    "saved_at": "2026-05-06T13:10:52.541782",
+    "rule_id": "BUY_H1_4c_0518_e33b1b43",
+    "saved_at": "2026-05-18T08:56:17.446290",
     "source": "Step3:scope_per_tf_only:BUY:conf80",
     "notes": "",
     "rule": {
@@ -507,7 +507,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -521,8 +521,8 @@
   },
   {
     "id": 6,
-    "rule_id": "BUY_H1_3c_0506_fda1f835",
-    "saved_at": "2026-05-06T13:10:52.641846",
+    "rule_id": "BUY_H1_3c_0518_52cabd0e",
+    "saved_at": "2026-05-18T08:56:17.505761",
     "source": "Step3:scope_per_tf_only:BUY:conf75",
     "notes": "",
     "rule": {
@@ -538,7 +538,7 @@
           "value": 12.41
         },
         {
-          "feature": "M5_adx_28",
+          "feature": "M5_mt5_adx_28",
           "operator": "<=",
           "value": 26.2045
         }
@@ -597,7 +597,7 @@
               "value": 12.41
             },
             {
-              "feature": "M5_adx_28",
+              "feature": "M5_mt5_adx_28",
               "operator": "<=",
               "value": 26.2045
             }
@@ -607,7 +607,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -621,8 +621,8 @@
   },
   {
     "id": 7,
-    "rule_id": "BUY_XX_2c_0506_0ee54daa",
-    "saved_at": "2026-05-06T13:11:01.678971",
+    "rule_id": "BUY_XX_2c_0518_f784d6c3",
+    "saved_at": "2026-05-18T08:56:25.797895",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -653,7 +653,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -671,8 +671,8 @@
   },
   {
     "id": 8,
-    "rule_id": "BUY_H1_4c_0506_c41a5803",
-    "saved_at": "2026-05-06T13:11:07.335784",
+    "rule_id": "BUY_H1_4c_0518_4309cb23",
+    "saved_at": "2026-05-18T08:56:32.428636",
     "source": "Step3:scope_entry_plus_higher:BUY:conf82",
     "notes": "",
     "rule": {
@@ -693,7 +693,7 @@
           "value": -0.0692
         },
         {
-          "feature": "H1_adx_28",
+          "feature": "H1_mt5_adx_28",
           "operator": ">",
           "value": 17.2074
         }
@@ -757,7 +757,7 @@
               "value": -0.0692
             },
             {
-              "feature": "H1_adx_28",
+              "feature": "H1_mt5_adx_28",
               "operator": ">",
               "value": 17.2074
             }
@@ -767,7 +767,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -781,8 +781,8 @@
   },
   {
     "id": 9,
-    "rule_id": "BUY_H1_4c_0506_07caae6d",
-    "saved_at": "2026-05-06T13:11:07.364700",
+    "rule_id": "BUY_H1_4c_0518_84c16dc8",
+    "saved_at": "2026-05-18T08:56:32.460548",
     "source": "Step3:scope_entry_plus_higher:BUY:conf73",
     "notes": "",
     "rule": {
@@ -877,7 +877,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -891,8 +891,8 @@
   },
   {
     "id": 10,
-    "rule_id": "BUY_H1_4c_0506_30268f82",
-    "saved_at": "2026-05-06T13:11:07.431025",
+    "rule_id": "BUY_H1_4c_0518_1b3c41dc",
+    "saved_at": "2026-05-18T08:56:32.523714",
     "source": "Step3:scope_entry_plus_higher:BUY:conf69",
     "notes": "",
     "rule": {
@@ -987,7 +987,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1001,8 +1001,8 @@
   },
   {
     "id": 11,
-    "rule_id": "BUY_H1_4c_0506_cdade91d",
-    "saved_at": "2026-05-06T13:11:07.571504",
+    "rule_id": "BUY_H1_4c_0518_b3746d60",
+    "saved_at": "2026-05-18T08:56:32.657419",
     "source": "Step3:scope_entry_plus_higher:BUY:conf83",
     "notes": "",
     "rule": {
@@ -1097,7 +1097,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1111,58 +1111,208 @@
   },
   {
     "id": 12,
-    "rule_id": "BUY_XX_2c_0506_c785256e",
-    "saved_at": "2026-05-06T13:11:12.241167",
-    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "rule_id": "BUY_H1_3c_0518_0ce819c7",
+    "saved_at": "2026-05-18T08:56:32.790501",
+    "source": "Step3:scope_entry_plus_higher:BUY:conf90",
     "notes": "",
     "rule": {
       "conditions": [
         {
-          "feature": "D1_volume_change",
-          "operator": "<",
-          "value": 31.238346
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
         },
         {
-          "feature": "H4_lower_shadow",
-          "operator": "<",
-          "value": 41.15
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "H1_mt5_adx_28_plus_di",
+          "operator": ">",
+          "value": 12.7748
         }
       ],
       "prediction": "WIN",
-      "win_rate": 0.0,
-      "avg_pips": 0.0,
-      "coverage": 976,
-      "confidence": 0.8825,
-      "tightness_product": 0.00331,
-      "pip_value_per_lot": 1.0,
-      "spread": 37.0,
+      "confidence": 0.9,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.9,
+      "avg_pips": 653.0,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 137.8,
+      "win_rate_test": 0.667,
+      "test_samples": 9,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 6 (BUY)",
+      "scenario": "scope_entry_plus_higher",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
       "contract_size": 100.0,
-      "pip_size": 0.01,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
       "data_source_id": "levereged_2026.05.03",
       "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "prop_firm_name": "Get Leveraged",
-      "prop_firm_id": "leveraged",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_keltner_width",
+              "operator": ">",
+              "value": 0.6821
+            },
+            {
+              "feature": "M5_candle_body",
+              "operator": "<=",
+              "value": 12.41
+            },
+            {
+              "feature": "H1_mt5_adx_28_plus_di",
+              "operator": ">",
+              "value": 12.7748
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
-      "leverage": 10,
       "account_size": 10000.0,
       "regime_filter": null,
-      "rule_combo": "BUY | volume_change+lower_shadow",
       "status": "discovered",
       "grade": "",
-      "score": 0,
-      "spread_pips": 2.5,
-      "direction": "BUY"
+      "score": 0
     },
     "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 13,
-    "rule_id": "BUY_XX_2c_0506_1ea1dd11",
-    "saved_at": "2026-05-06T13:11:21.981057",
+    "rule_id": "BUY_H1_3c_0518_107274c7",
+    "saved_at": "2026-05-18T08:56:32.912380",
+    "source": "Step3:scope_entry_plus_higher:BUY:conf75",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": ">",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_candle_body",
+          "operator": "<=",
+          "value": 12.41
+        },
+        {
+          "feature": "H1_mt5_adx_28_plus_di",
+          "operator": "<=",
+          "value": 12.7748
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.75,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.75,
+      "avg_pips": 394.8,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 46.5,
+      "win_rate_test": 0.5,
+      "test_samples": 2,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 7 (BUY)",
+      "scenario": "scope_entry_plus_higher",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_keltner_width",
+              "operator": ">",
+              "value": 0.6821
+            },
+            {
+              "feature": "M5_candle_body",
+              "operator": "<=",
+              "value": 12.41
+            },
+            {
+              "feature": "H1_mt5_adx_28_plus_di",
+              "operator": "<=",
+              "value": 12.7748
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 14,
+    "rule_id": "BUY_XX_2c_0518_3db90128",
+    "saved_at": "2026-05-18T08:56:39.029221",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -1193,7 +1343,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1210,10 +1360,246 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 14,
-    "rule_id": "BUY_H1_4c_0506_4c8e2030",
-    "saved_at": "2026-05-06T13:11:29.704087",
-    "source": "Step3:scope_per_tf_only:BUY:conf65",
+    "id": 15,
+    "rule_id": "BUY_XX_2c_0518_62412138",
+    "saved_at": "2026-05-18T08:56:50.768165",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "value": 41.15
+        }
+      ],
+      "prediction": "WIN",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 976,
+      "confidence": 0.8825,
+      "tightness_product": 0.00331,
+      "pip_value_per_lot": 1.0,
+      "spread": 37.0,
+      "contract_size": 100.0,
+      "pip_size": 0.01,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "leverage": 10,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "rule_combo": "BUY | volume_change+lower_shadow",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "spread_pips": 2.5,
+      "direction": "BUY"
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 16,
+    "rule_id": "BUY_D1_3c_0518_4fa69876",
+    "saved_at": "2026-05-18T09:03:10.312797",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.945
+        },
+        {
+          "feature": "D1_cci_20",
+          "operator": ">",
+          "value": -55.2707
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.632,
+      "win_rate": 0.632,
+      "coverage": 87,
+      "coverage_pct": 24.7,
+      "train_win_rate": 0.71,
+      "train_coverage": 62,
+      "overfit_gap": 0.077,
+      "is_overfit": false,
+      "avg_pips": 117.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "n_real_trades_in_rule": 174,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "pip_value_per_lot": 1.0,
+      "spread": 37.0,
+      "contract_size": 100.0,
+      "pip_size": 0.01,
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "leverage": 10,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "rule_combo": "BUY | distance_from_h+lower_shadow",
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "spread_pips": 2.5
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 17,
+    "rule_id": "BUY_D1_3c_0518_41bdb7ab",
+    "saved_at": "2026-05-18T09:03:10.349558",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_distance_to_rolling_level_786",
+          "operator": "<=",
+          "value": -0.6172
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 34.625
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.733,
+      "win_rate": 0.733,
+      "coverage": 75,
+      "coverage_pct": 21.3,
+      "train_win_rate": 0.739,
+      "train_coverage": 46,
+      "overfit_gap": 0.006,
+      "is_overfit": false,
+      "avg_pips": 202.6,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "n_real_trades_in_rule": 256,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "pip_value_per_lot": 1.0,
+      "spread": 37.0,
+      "contract_size": 100.0,
+      "pip_size": 0.01,
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "leverage": 10,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "rule_combo": "BUY | distance_from_h+distance_to_rol",
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "spread_pips": 2.5
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 18,
+    "rule_id": "BUY_D1_3c_0518_c2f2bb68",
+    "saved_at": "2026-05-18T09:03:10.427984",
+    "source": "Step4:?:BUY",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_distance_to_rolling_level_786",
+          "operator": ">",
+          "value": -0.6172
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 27.815
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.736,
+      "win_rate": 0.736,
+      "coverage": 72,
+      "coverage_pct": 20.5,
+      "train_win_rate": 0.861,
+      "train_coverage": 79,
+      "overfit_gap": 0.125,
+      "is_overfit": false,
+      "avg_pips": 171.4,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "n_real_trades_in_rule": 298,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "pip_value_per_lot": 1.0,
+      "spread": 37.0,
+      "contract_size": 100.0,
+      "pip_size": 0.01,
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "leverage": 10,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "rule_combo": "BUY | distance_from_h+distance_to_rol",
+      "direction": "BUY",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "spread_pips": 2.5
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 20,
+    "rule_id": "BUY_H1_4c_0518_9c8b117b",
+    "saved_at": "2026-05-18T09:03:16.676036",
+    "source": "Step3:scope_per_tf_only:BUY:conf74",
     "notes": "",
     "rule": {
       "conditions": [
@@ -1233,21 +1619,21 @@
           "value": 2.8977
         },
         {
-          "feature": "M15_adx_21",
-          "operator": ">",
-          "value": 14.463
+          "feature": "M15_mt5_adx_28_minus_di",
+          "operator": "<=",
+          "value": 19.5223
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.653,
-      "coverage": 147,
-      "coverage_pct": 16.6,
-      "win_rate": 0.653,
-      "avg_pips": 172.0,
+      "confidence": 0.744,
+      "coverage": 82,
+      "coverage_pct": 9.3,
+      "win_rate": 0.744,
+      "avg_pips": 205.4,
       "_target_mode": "regression_weighted",
-      "avg_pips_test": 235.0,
-      "win_rate_test": 0.677,
-      "test_samples": 31,
+      "avg_pips_test": 244.6,
+      "win_rate_test": 0.727,
+      "test_samples": 11,
       "test_skip_reason": null,
       "direction": "BUY",
       "entry_timeframe": "H1",
@@ -1297,9 +1683,9 @@
               "value": 2.8977
             },
             {
-              "feature": "M15_adx_21",
-              "operator": ">",
-              "value": 14.463
+              "feature": "M15_mt5_adx_28_minus_di",
+              "operator": "<=",
+              "value": 19.5223
             }
           ]
         }
@@ -1307,7 +1693,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1320,9 +1706,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 15,
-    "rule_id": "BUY_H1_2c_0506_5c6b9d73",
-    "saved_at": "2026-05-06T13:11:29.740662",
+    "id": 21,
+    "rule_id": "BUY_H1_2c_0518_2154e4a8",
+    "saved_at": "2026-05-18T09:03:16.707466",
     "source": "Step3:scope_per_tf_only:BUY:conf96",
     "notes": "",
     "rule": {
@@ -1397,7 +1783,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1410,9 +1796,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 16,
-    "rule_id": "BUY_H1_4c_0506_19358467",
-    "saved_at": "2026-05-06T13:11:29.804843",
+    "id": 22,
+    "rule_id": "BUY_H1_4c_0518_5ba0f9ac",
+    "saved_at": "2026-05-18T09:03:16.793881",
     "source": "Step3:scope_per_tf_only:BUY:conf72",
     "notes": "",
     "rule": {
@@ -1507,7 +1893,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1520,9 +1906,119 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 17,
-    "rule_id": "BUY_H1_4c_0506_0525bf49",
-    "saved_at": "2026-05-06T13:11:29.917851",
+    "id": 23,
+    "rule_id": "BUY_H1_4c_0518_ef0c5387",
+    "saved_at": "2026-05-18T09:03:16.914281",
+    "source": "Step3:scope_per_tf_only:BUY:conf77",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M15_mt5_atr_7",
+          "operator": ">",
+          "value": 15.4167
+        },
+        {
+          "feature": "M15_candle_range",
+          "operator": "<=",
+          "value": 44.81
+        },
+        {
+          "feature": "M15_candle_body",
+          "operator": ">",
+          "value": 7.95
+        },
+        {
+          "feature": "M15_day_of_week",
+          "operator": "<=",
+          "value": 1.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.771,
+      "coverage": 35,
+      "coverage_pct": 4.0,
+      "win_rate": 0.771,
+      "avg_pips": 328.1,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "scope_per_tf_only",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M15_mt5_atr_7",
+              "operator": ">",
+              "value": 15.4167
+            },
+            {
+              "feature": "M15_candle_range",
+              "operator": "<=",
+              "value": 44.81
+            },
+            {
+              "feature": "M15_candle_body",
+              "operator": ">",
+              "value": 7.95
+            },
+            {
+              "feature": "M15_day_of_week",
+              "operator": "<=",
+              "value": 1.5
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 24,
+    "rule_id": "BUY_H1_4c_0518_64b538a6",
+    "saved_at": "2026-05-18T09:03:17.053742",
     "source": "Step3:scope_per_tf_only:BUY:conf96",
     "notes": "",
     "rule": {
@@ -1617,7 +2113,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1630,9 +2126,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 18,
-    "rule_id": "BUY_H1_3c_0506_b7462cbf",
-    "saved_at": "2026-05-06T13:11:30.067845",
+    "id": 25,
+    "rule_id": "BUY_H1_3c_0518_643a975c",
+    "saved_at": "2026-05-18T09:03:17.154733",
     "source": "Step3:scope_per_tf_only:BUY:conf85",
     "notes": "",
     "rule": {
@@ -1717,7 +2213,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1730,9 +2226,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 19,
-    "rule_id": "BUY_XX_2c_0506_8848ca51",
-    "saved_at": "2026-05-06T13:11:34.639567",
+    "id": 26,
+    "rule_id": "BUY_XX_2c_0518_baad627a",
+    "saved_at": "2026-05-18T09:03:24.210792",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -1763,7 +2259,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1780,9 +2276,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 20,
-    "rule_id": "BUY_H1_4c_0506_fc63ddea",
-    "saved_at": "2026-05-06T13:11:39.611507",
+    "id": 27,
+    "rule_id": "BUY_H1_4c_0518_ab640921",
+    "saved_at": "2026-05-18T09:03:31.217548",
     "source": "Step3:scope_entry_plus_higher:BUY:conf73",
     "notes": "",
     "rule": {
@@ -1877,7 +2373,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -1890,9 +2386,119 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 21,
-    "rule_id": "BUY_H1_4c_0506_dd81dd43",
-    "saved_at": "2026-05-06T13:11:39.678321",
+    "id": 28,
+    "rule_id": "BUY_H1_4c_0518_ac72d842",
+    "saved_at": "2026-05-18T09:03:31.260415",
+    "source": "Step3:scope_entry_plus_higher:BUY:conf76",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M15_mt5_atr_7",
+          "operator": ">",
+          "value": 15.4167
+        },
+        {
+          "feature": "M15_candle_range",
+          "operator": "<=",
+          "value": 44.81
+        },
+        {
+          "feature": "M15_candle_body",
+          "operator": "<=",
+          "value": 7.95
+        },
+        {
+          "feature": "H1_lower_shadow",
+          "operator": "<=",
+          "value": 14.81
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.757,
+      "coverage": 37,
+      "coverage_pct": 4.2,
+      "win_rate": 0.757,
+      "avg_pips": 310.2,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": -44.0,
+      "win_rate_test": 0.0,
+      "test_samples": 1,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 3 (BUY)",
+      "scenario": "scope_entry_plus_higher",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M15_mt5_atr_7",
+              "operator": ">",
+              "value": 15.4167
+            },
+            {
+              "feature": "M15_candle_range",
+              "operator": "<=",
+              "value": 44.81
+            },
+            {
+              "feature": "M15_candle_body",
+              "operator": "<=",
+              "value": 7.95
+            },
+            {
+              "feature": "H1_lower_shadow",
+              "operator": "<=",
+              "value": 14.81
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 29,
+    "rule_id": "BUY_H1_4c_0518_b84450ad",
+    "saved_at": "2026-05-18T09:03:31.319658",
     "source": "Step3:scope_entry_plus_higher:BUY:conf67",
     "notes": "",
     "rule": {
@@ -1987,7 +2593,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2000,9 +2606,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 22,
-    "rule_id": "BUY_H1_4c_0506_61d71433",
-    "saved_at": "2026-05-06T13:11:39.728925",
+    "id": 30,
+    "rule_id": "BUY_H1_4c_0518_fc126e7a",
+    "saved_at": "2026-05-18T09:03:31.430742",
     "source": "Step3:scope_entry_plus_higher:BUY:conf88",
     "notes": "",
     "rule": {
@@ -2097,7 +2703,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2110,9 +2716,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 23,
-    "rule_id": "BUY_H1_4c_0506_5419305b",
-    "saved_at": "2026-05-06T13:11:39.845556",
+    "id": 31,
+    "rule_id": "BUY_H1_4c_0518_570378bf",
+    "saved_at": "2026-05-18T09:03:31.653185",
     "source": "Step3:scope_entry_plus_higher:BUY:conf80",
     "notes": "",
     "rule": {
@@ -2133,9 +2739,9 @@
           "value": 7.95
         },
         {
-          "feature": "H1_bb_20_3_width",
+          "feature": "H1_bb_20_2_width",
           "operator": ">",
-          "value": 7.2385
+          "value": 4.8256
         }
       ],
       "prediction": "WIN",
@@ -2197,9 +2803,9 @@
               "value": 7.95
             },
             {
-              "feature": "H1_bb_20_3_width",
+              "feature": "H1_bb_20_2_width",
               "operator": ">",
-              "value": 7.2385
+              "value": 4.8256
             }
           ]
         }
@@ -2207,7 +2813,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2220,9 +2826,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 24,
-    "rule_id": "BUY_H1_3c_0506_a6d3395b",
-    "saved_at": "2026-05-06T13:11:39.978299",
+    "id": 32,
+    "rule_id": "BUY_H1_3c_0518_0e6b7765",
+    "saved_at": "2026-05-18T09:03:31.880778",
     "source": "Step3:scope_entry_plus_higher:BUY:conf73",
     "notes": "",
     "rule": {
@@ -2307,7 +2913,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2320,9 +2926,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 25,
-    "rule_id": "BUY_XX_2c_0506_541346d4",
-    "saved_at": "2026-05-06T13:11:44.633940",
+    "id": 33,
+    "rule_id": "BUY_XX_2c_0518_1301acc9",
+    "saved_at": "2026-05-18T09:03:34.928425",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -2353,7 +2959,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2370,9 +2976,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 26,
-    "rule_id": "BUY_XX_2c_0506_488720ec",
-    "saved_at": "2026-05-06T13:11:54.231778",
+    "id": 34,
+    "rule_id": "BUY_XX_2c_0518_63edb1dc",
+    "saved_at": "2026-05-18T09:03:46.967776",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -2403,7 +3009,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2420,9 +3026,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 27,
-    "rule_id": "BUY_H1_4c_0506_e42f3711",
-    "saved_at": "2026-05-06T13:12:00.754362",
+    "id": 35,
+    "rule_id": "BUY_H1_4c_0518_79b53d37",
+    "saved_at": "2026-05-18T09:03:54.028697",
     "source": "Step3:scope_per_tf_only:BUY:conf66",
     "notes": "",
     "rule": {
@@ -2517,7 +3123,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2530,9 +3136,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 28,
-    "rule_id": "BUY_H1_3c_0506_77616d52",
-    "saved_at": "2026-05-06T13:12:00.805432",
+    "id": 36,
+    "rule_id": "BUY_H1_3c_0518_01fe42b3",
+    "saved_at": "2026-05-18T09:03:54.065948",
     "source": "Step3:scope_per_tf_only:BUY:conf85",
     "notes": "",
     "rule": {
@@ -2617,7 +3223,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2630,9 +3236,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 29,
-    "rule_id": "BUY_H1_3c_0506_8a769ac3",
-    "saved_at": "2026-05-06T13:12:00.871218",
+    "id": 37,
+    "rule_id": "BUY_H1_3c_0518_aecb7c2e",
+    "saved_at": "2026-05-18T09:03:54.146412",
     "source": "Step3:scope_per_tf_only:BUY:conf90",
     "notes": "",
     "rule": {
@@ -2717,7 +3323,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2730,9 +3336,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 30,
-    "rule_id": "BUY_H1_3c_0506_05b69b2b",
-    "saved_at": "2026-05-06T13:12:00.988735",
+    "id": 38,
+    "rule_id": "BUY_H1_3c_0518_a2e8e9bb",
+    "saved_at": "2026-05-18T09:03:54.295881",
     "source": "Step3:scope_per_tf_only:BUY:conf76",
     "notes": "",
     "rule": {
@@ -2817,7 +3423,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2830,9 +3436,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 31,
-    "rule_id": "BUY_H1_3c_0506_dbc1ea83",
-    "saved_at": "2026-05-06T13:12:01.152767",
+    "id": 39,
+    "rule_id": "BUY_H1_3c_0518_3ddd093f",
+    "saved_at": "2026-05-18T09:03:54.393141",
     "source": "Step3:scope_per_tf_only:BUY:conf73",
     "notes": "",
     "rule": {
@@ -2917,7 +3523,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -2930,9 +3536,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 32,
-    "rule_id": "BUY_H1_2c_0506_45445f26",
-    "saved_at": "2026-05-06T13:12:01.304085",
+    "id": 40,
+    "rule_id": "BUY_H1_2c_0518_5228fac9",
+    "saved_at": "2026-05-18T09:03:54.610089",
     "source": "Step3:scope_per_tf_only:BUY:conf70",
     "notes": "",
     "rule": {
@@ -3007,7 +3613,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3020,9 +3626,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 33,
-    "rule_id": "BUY_XX_2c_0506_27c47280",
-    "saved_at": "2026-05-06T13:12:05.844032",
+    "id": 41,
+    "rule_id": "BUY_XX_2c_0518_657213df",
+    "saved_at": "2026-05-18T09:03:59.925899",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -3053,7 +3659,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3070,9 +3676,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 34,
-    "rule_id": "BUY_H1_4c_0506_41b3df88",
-    "saved_at": "2026-05-06T13:12:10.696821",
+    "id": 42,
+    "rule_id": "BUY_H1_4c_0518_ec0a6929",
+    "saved_at": "2026-05-18T09:04:05.341102",
     "source": "Step3:scope_entry_plus_higher:BUY:conf76",
     "notes": "",
     "rule": {
@@ -3167,7 +3773,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3180,9 +3786,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 35,
-    "rule_id": "BUY_H1_3c_0506_324afe4f",
-    "saved_at": "2026-05-06T13:12:10.733902",
+    "id": 43,
+    "rule_id": "BUY_H1_3c_0518_2a5d5364",
+    "saved_at": "2026-05-18T09:04:05.383811",
     "source": "Step3:scope_entry_plus_higher:BUY:conf82",
     "notes": "",
     "rule": {
@@ -3267,7 +3873,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3280,9 +3886,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 36,
-    "rule_id": "BUY_H1_3c_0506_aaadf5c7",
-    "saved_at": "2026-05-06T13:12:10.803747",
+    "id": 44,
+    "rule_id": "BUY_H1_3c_0518_be548c23",
+    "saved_at": "2026-05-18T09:04:05.475911",
     "source": "Step3:scope_entry_plus_higher:BUY:conf95",
     "notes": "",
     "rule": {
@@ -3367,7 +3973,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3380,9 +3986,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 37,
-    "rule_id": "BUY_H1_3c_0506_755db805",
-    "saved_at": "2026-05-06T13:12:10.946583",
+    "id": 45,
+    "rule_id": "BUY_H1_3c_0518_825dd4b2",
+    "saved_at": "2026-05-18T09:04:05.615053",
     "source": "Step3:scope_entry_plus_higher:BUY:conf70",
     "notes": "",
     "rule": {
@@ -3467,7 +4073,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3480,9 +4086,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 38,
-    "rule_id": "BUY_H1_4c_0506_c5e79c5e",
-    "saved_at": "2026-05-06T13:12:11.129150",
+    "id": 46,
+    "rule_id": "BUY_H1_4c_0518_4dc3cee9",
+    "saved_at": "2026-05-18T09:04:05.795516",
     "source": "Step3:scope_entry_plus_higher:BUY:conf73",
     "notes": "",
     "rule": {
@@ -3577,7 +4183,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3590,9 +4196,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 39,
-    "rule_id": "BUY_H1_4c_0506_8eb8c145",
-    "saved_at": "2026-05-06T13:12:11.280802",
+    "id": 47,
+    "rule_id": "BUY_H1_4c_0518_f5a9e283",
+    "saved_at": "2026-05-18T09:04:05.960191",
     "source": "Step3:scope_entry_plus_higher:BUY:conf65",
     "notes": "",
     "rule": {
@@ -3687,7 +4293,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3700,9 +4306,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 40,
-    "rule_id": "BUY_XX_2c_0506_0a47a13e",
-    "saved_at": "2026-05-06T13:12:15.859968",
+    "id": 48,
+    "rule_id": "BUY_XX_2c_0518_bc42098a",
+    "saved_at": "2026-05-18T09:04:11.047598",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -3733,7 +4339,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3750,9 +4356,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 41,
-    "rule_id": "BUY_XX_2c_0506_0c1e8dbd",
-    "saved_at": "2026-05-06T13:12:25.889499",
+    "id": 49,
+    "rule_id": "BUY_XX_2c_0518_9e69a23c",
+    "saved_at": "2026-05-18T09:04:22.013779",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -3783,7 +4389,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3800,9 +4406,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 42,
-    "rule_id": "BUY_H1_3c_0506_f61ff7f3",
-    "saved_at": "2026-05-06T13:12:32.637643",
+    "id": 50,
+    "rule_id": "BUY_H1_3c_0518_53186772",
+    "saved_at": "2026-05-18T09:04:29.152348",
     "source": "Step3:scope_per_tf_only:BUY:conf89",
     "notes": "",
     "rule": {
@@ -3813,7 +4419,7 @@
           "value": 5248.9226
         },
         {
-          "feature": "H4_adx_14",
+          "feature": "H4_mt5_adx_14",
           "operator": ">",
           "value": 28.2668
         },
@@ -3872,7 +4478,7 @@
               "value": 5248.9226
             },
             {
-              "feature": "H4_adx_14",
+              "feature": "H4_mt5_adx_14",
               "operator": ">",
               "value": 28.2668
             },
@@ -3887,7 +4493,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -3900,9 +4506,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 43,
-    "rule_id": "BUY_H1_4c_0506_c401ef55",
-    "saved_at": "2026-05-06T13:12:32.687658",
+    "id": 51,
+    "rule_id": "BUY_H1_4c_0518_7d1eb973",
+    "saved_at": "2026-05-18T09:04:29.213225",
     "source": "Step3:scope_per_tf_only:BUY:conf79",
     "notes": "",
     "rule": {
@@ -3997,7 +4603,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4010,9 +4616,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 44,
-    "rule_id": "BUY_H1_3c_0506_0e5ad78e",
-    "saved_at": "2026-05-06T13:12:32.788558",
+    "id": 52,
+    "rule_id": "BUY_H1_3c_0518_811d79ec",
+    "saved_at": "2026-05-18T09:04:29.301857",
     "source": "Step3:scope_per_tf_only:BUY:conf82",
     "notes": "",
     "rule": {
@@ -4023,14 +4629,14 @@
           "value": 5248.9226
         },
         {
-          "feature": "H4_adx_14",
+          "feature": "H4_mt5_adx_14",
           "operator": "<=",
           "value": 28.2668
         },
         {
-          "feature": "H4_distance_to_rolling_level_618",
+          "feature": "H4_sma_50_distance",
           "operator": "<=",
-          "value": -1.7453
+          "value": -0.7311
         }
       ],
       "prediction": "WIN",
@@ -4082,14 +4688,14 @@
               "value": 5248.9226
             },
             {
-              "feature": "H4_adx_14",
+              "feature": "H4_mt5_adx_14",
               "operator": "<=",
               "value": 28.2668
             },
             {
-              "feature": "H4_distance_to_rolling_level_618",
+              "feature": "H4_sma_50_distance",
               "operator": "<=",
-              "value": -1.7453
+              "value": -0.7311
             }
           ]
         }
@@ -4097,7 +4703,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4110,9 +4716,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 45,
-    "rule_id": "BUY_H1_3c_0506_295c18dd",
-    "saved_at": "2026-05-06T13:12:32.966651",
+    "id": 53,
+    "rule_id": "BUY_H1_3c_0518_fedddefe",
+    "saved_at": "2026-05-18T09:04:29.445749",
     "source": "Step3:scope_per_tf_only:BUY:conf90",
     "notes": "",
     "rule": {
@@ -4123,7 +4729,7 @@
           "value": 5248.9226
         },
         {
-          "feature": "H4_adx_14",
+          "feature": "H4_mt5_adx_14",
           "operator": ">",
           "value": 28.2668
         },
@@ -4182,7 +4788,7 @@
               "value": 5248.9226
             },
             {
-              "feature": "H4_adx_14",
+              "feature": "H4_mt5_adx_14",
               "operator": ">",
               "value": 28.2668
             },
@@ -4197,7 +4803,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4210,9 +4816,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 46,
-    "rule_id": "BUY_H1_4c_0506_002fb6ec",
-    "saved_at": "2026-05-06T13:12:33.138000",
+    "id": 54,
+    "rule_id": "BUY_H1_4c_0518_a05033f5",
+    "saved_at": "2026-05-18T09:04:29.578033",
     "source": "Step3:scope_per_tf_only:BUY:conf73",
     "notes": "",
     "rule": {
@@ -4307,7 +4913,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4320,9 +4926,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 47,
-    "rule_id": "BUY_XX_2c_0506_4568c587",
-    "saved_at": "2026-05-06T13:12:37.726751",
+    "id": 55,
+    "rule_id": "BUY_XX_2c_0518_5426249e",
+    "saved_at": "2026-05-18T09:04:34.547477",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -4353,7 +4959,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4370,9 +4976,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 49,
-    "rule_id": "BUY_H1_3c_0506_bdc8343d",
-    "saved_at": "2026-05-06T13:12:42.497243",
+    "id": 57,
+    "rule_id": "BUY_H1_3c_0518_6342e9cb",
+    "saved_at": "2026-05-18T09:04:39.362773",
     "source": "Step3:scope_entry_plus_higher:BUY:conf95",
     "notes": "",
     "rule": {
@@ -4457,7 +5063,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4470,9 +5076,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 50,
-    "rule_id": "BUY_H1_3c_0506_b4271885",
-    "saved_at": "2026-05-06T13:12:42.587268",
+    "id": 58,
+    "rule_id": "BUY_H1_3c_0518_1076a91b",
+    "saved_at": "2026-05-18T09:04:39.475571",
     "source": "Step3:scope_entry_plus_higher:BUY:conf90",
     "notes": "",
     "rule": {
@@ -4557,7 +5163,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4570,9 +5176,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 51,
-    "rule_id": "BUY_H1_3c_0506_54096bdc",
-    "saved_at": "2026-05-06T13:12:42.769961",
+    "id": 59,
+    "rule_id": "BUY_H1_3c_0518_5a6eb1be",
+    "saved_at": "2026-05-18T09:04:39.629469",
     "source": "Step3:scope_entry_plus_higher:BUY:conf85",
     "notes": "",
     "rule": {
@@ -4657,7 +5263,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4670,9 +5276,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 52,
-    "rule_id": "BUY_H1_4c_0506_9a94ad63",
-    "saved_at": "2026-05-06T13:12:43.009065",
+    "id": 60,
+    "rule_id": "BUY_H1_4c_0518_abc3cb89",
+    "saved_at": "2026-05-18T09:04:39.774122",
     "source": "Step3:scope_entry_plus_higher:BUY:conf65",
     "notes": "",
     "rule": {
@@ -4767,7 +5373,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4780,9 +5386,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 54,
-    "rule_id": "BUY_XX_2c_0506_84da87bf",
-    "saved_at": "2026-05-06T13:12:57.709307",
+    "id": 61,
+    "rule_id": "BUY_XX_2c_0518_384f8ca1",
+    "saved_at": "2026-05-18T09:04:44.741825",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -4813,7 +5419,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4830,9 +5436,59 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 55,
-    "rule_id": "BUY_H1_2c_0506_1d509285",
-    "saved_at": "2026-05-06T13:13:04.405548",
+    "id": 62,
+    "rule_id": "BUY_XX_2c_0518_2544b746",
+    "saved_at": "2026-05-18T09:04:55.452747",
+    "source": "ModeA:cov88%:tight0.003:winner=coverage",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "D1_volume_change",
+          "operator": "<",
+          "value": 31.238346
+        },
+        {
+          "feature": "H4_lower_shadow",
+          "operator": "<",
+          "value": 41.15
+        }
+      ],
+      "prediction": "WIN",
+      "win_rate": 0.0,
+      "avg_pips": 0.0,
+      "coverage": 976,
+      "confidence": 0.8825,
+      "tightness_product": 0.00331,
+      "pip_value_per_lot": 1.0,
+      "spread": 37.0,
+      "contract_size": 100.0,
+      "pip_size": 0.01,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "leverage": 10,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "rule_combo": "BUY | volume_change+lower_shadow",
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "spread_pips": 2.5,
+      "direction": "BUY"
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 63,
+    "rule_id": "BUY_H1_2c_0518_cc56e637",
+    "saved_at": "2026-05-18T09:05:04.073916",
     "source": "Step3:scope_per_tf_only:BUY:conf93",
     "notes": "",
     "rule": {
@@ -4907,7 +5563,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -4920,9 +5576,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 56,
-    "rule_id": "BUY_H1_4c_0506_eebefadd",
-    "saved_at": "2026-05-06T13:13:04.456282",
+    "id": 64,
+    "rule_id": "BUY_H1_4c_0518_b965c9de",
+    "saved_at": "2026-05-18T09:05:04.129262",
     "source": "Step3:scope_per_tf_only:BUY:conf68",
     "notes": "",
     "rule": {
@@ -5017,7 +5673,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5030,9 +5686,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 57,
-    "rule_id": "BUY_H1_4c_0506_18b7e23a",
-    "saved_at": "2026-05-06T13:13:04.575621",
+    "id": 65,
+    "rule_id": "BUY_H1_4c_0518_984d459f",
+    "saved_at": "2026-05-18T09:05:04.263874",
     "source": "Step3:scope_per_tf_only:BUY:conf67",
     "notes": "",
     "rule": {
@@ -5127,7 +5783,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5140,9 +5796,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 58,
-    "rule_id": "BUY_H1_4c_0506_0c3fe7c9",
-    "saved_at": "2026-05-06T13:13:04.793675",
+    "id": 66,
+    "rule_id": "BUY_H1_4c_0518_50e65936",
+    "saved_at": "2026-05-18T09:05:04.459485",
     "source": "Step3:scope_per_tf_only:BUY:conf88",
     "notes": "",
     "rule": {
@@ -5237,7 +5893,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5250,9 +5906,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 59,
-    "rule_id": "BUY_H1_4c_0506_444e6c2e",
-    "saved_at": "2026-05-06T13:13:05.011562",
+    "id": 67,
+    "rule_id": "BUY_H1_4c_0518_c74bc2f8",
+    "saved_at": "2026-05-18T09:05:04.614479",
     "source": "Step3:scope_per_tf_only:BUY:conf70",
     "notes": "",
     "rule": {
@@ -5347,7 +6003,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5360,9 +6016,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 60,
-    "rule_id": "BUY_H1_4c_0506_deac6223",
-    "saved_at": "2026-05-06T13:13:05.228072",
+    "id": 68,
+    "rule_id": "BUY_H1_4c_0518_e8dfe75a",
+    "saved_at": "2026-05-18T09:05:04.811178",
     "source": "Step3:scope_per_tf_only:BUY:conf65",
     "notes": "",
     "rule": {
@@ -5457,7 +6113,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5470,9 +6126,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 61,
-    "rule_id": "BUY_XX_2c_0506_ab8aa847",
-    "saved_at": "2026-05-06T13:13:10.014001",
+    "id": 69,
+    "rule_id": "BUY_XX_2c_0518_be87cbaa",
+    "saved_at": "2026-05-18T09:05:10.505754",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -5503,7 +6159,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5520,9 +6176,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 62,
-    "rule_id": "BUY_XX_2c_0506_5ef7b605",
-    "saved_at": "2026-05-06T13:13:19.083220",
+    "id": 70,
+    "rule_id": "BUY_XX_2c_0518_3103d6ab",
+    "saved_at": "2026-05-18T09:05:21.643874",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -5553,7 +6209,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5570,9 +6226,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 63,
-    "rule_id": "BUY_XX_2c_0506_8d3b8d4e",
-    "saved_at": "2026-05-06T13:13:29.051337",
+    "id": 71,
+    "rule_id": "BUY_XX_2c_0518_f76e3625",
+    "saved_at": "2026-05-18T09:05:32.304794",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -5603,7 +6259,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5620,9 +6276,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 64,
-    "rule_id": "BUY_H1_4c_0506_c9963fec",
-    "saved_at": "2026-05-06T13:13:36.050517",
+    "id": 72,
+    "rule_id": "BUY_H1_4c_0518_1c0a3196",
+    "saved_at": "2026-05-18T09:05:39.296830",
     "source": "Step3:scope_per_tf_only:BUY:conf66",
     "notes": "",
     "rule": {
@@ -5717,7 +6373,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5730,119 +6386,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 65,
-    "rule_id": "BUY_H1_4c_0506_09dcb3da",
-    "saved_at": "2026-05-06T13:13:36.096440",
-    "source": "Step3:scope_per_tf_only:BUY:conf76",
-    "notes": "",
-    "rule": {
-      "conditions": [
-        {
-          "feature": "M15_mt5_atr_7",
-          "operator": ">",
-          "value": 15.4167
-        },
-        {
-          "feature": "M15_candle_range",
-          "operator": "<=",
-          "value": 44.81
-        },
-        {
-          "feature": "M15_candle_body",
-          "operator": "<=",
-          "value": 7.95
-        },
-        {
-          "feature": "H1_lower_shadow",
-          "operator": "<=",
-          "value": 14.81
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.757,
-      "coverage": 37,
-      "coverage_pct": 4.2,
-      "win_rate": 0.757,
-      "avg_pips": 310.2,
-      "_target_mode": "regression_weighted",
-      "avg_pips_test": -44.0,
-      "win_rate_test": 0.0,
-      "test_samples": 1,
-      "test_skip_reason": null,
-      "direction": "BUY",
-      "entry_timeframe": "H1",
-      "rule_combo": "Rule 3 (BUY)",
-      "scenario": "scope_per_tf_only",
-      "spread_pips": 37.0,
-      "commission_pips": 4.0,
-      "leverage": 10,
-      "contract_size": 100.0,
-      "pip_value_per_lot": 1.0,
-      "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged",
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
-      "discovery_settings": {
-        "regime_filter_enabled": false,
-        "regime_at_discovery": false,
-        "regime_strictness": "conservative",
-        "regime_mode": "automatic",
-        "single_rule_mode_enabled": true,
-        "single_rule_mode_variant": "a",
-        "srm_dedup_correlated": true,
-        "srm_winner_selection": "coverage",
-        "prop_firm_id": "leveraged",
-        "prop_firm_name": "Get Leveraged",
-        "prop_firm_stage": "Evaluation",
-        "prop_firm_account": "10000"
-      },
-      "rules": [
-        {
-          "prediction": "WIN",
-          "action": "BUY",
-          "conditions": [
-            {
-              "feature": "M15_mt5_atr_7",
-              "operator": ">",
-              "value": 15.4167
-            },
-            {
-              "feature": "M15_candle_range",
-              "operator": "<=",
-              "value": 44.81
-            },
-            {
-              "feature": "M15_candle_body",
-              "operator": "<=",
-              "value": 7.95
-            },
-            {
-              "feature": "H1_lower_shadow",
-              "operator": "<=",
-              "value": 14.81
-            }
-          ]
-        }
-      ],
-      "spread": 37.0,
-      "pip_size": 0.01,
-      "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
-      "risk_pct_firm": 0.8,
-      "dd_daily_pct": 3.0,
-      "dd_total_pct": 6.0,
-      "account_size": 10000.0,
-      "regime_filter": null,
-      "status": "discovered",
-      "grade": "",
-      "score": 0
-    },
-    "data_source_id": "unlimited_leveraged_data"
-  },
-  {
-    "id": 66,
-    "rule_id": "BUY_H1_3c_0506_c1b17a7c",
-    "saved_at": "2026-05-06T13:13:36.226281",
+    "id": 73,
+    "rule_id": "BUY_H1_3c_0518_3184ad0b",
+    "saved_at": "2026-05-18T09:05:39.370317",
     "source": "Step3:scope_per_tf_only:BUY:conf75",
     "notes": "",
     "rule": {
@@ -5927,7 +6473,7 @@
       "spread": 37.0,
       "pip_size": 0.01,
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5940,9 +6486,119 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 67,
-    "rule_id": "BUY_XX_2c_0506_3811ac57",
-    "saved_at": "2026-05-06T13:13:40.981388",
+    "id": 74,
+    "rule_id": "BUY_H1_4c_0518_e0f1efec",
+    "saved_at": "2026-05-18T09:05:39.493514",
+    "source": "Step3:scope_per_tf_only:BUY:conf80",
+    "notes": "",
+    "rule": {
+      "conditions": [
+        {
+          "feature": "M15_mt5_atr_7",
+          "operator": ">",
+          "value": 15.4167
+        },
+        {
+          "feature": "M15_candle_range",
+          "operator": "<=",
+          "value": 44.81
+        },
+        {
+          "feature": "M15_candle_body",
+          "operator": ">",
+          "value": 7.95
+        },
+        {
+          "feature": "H1_bb_20_3_width",
+          "operator": ">",
+          "value": 7.2385
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.8,
+      "coverage": 20,
+      "coverage_pct": 2.3,
+      "win_rate": 0.8,
+      "avg_pips": 423.9,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 243.0,
+      "win_rate_test": 1.0,
+      "test_samples": 1,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 6 (BUY)",
+      "scenario": "scope_per_tf_only",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M15_mt5_atr_7",
+              "operator": ">",
+              "value": 15.4167
+            },
+            {
+              "feature": "M15_candle_range",
+              "operator": "<=",
+              "value": 44.81
+            },
+            {
+              "feature": "M15_candle_body",
+              "operator": ">",
+              "value": 7.95
+            },
+            {
+              "feature": "H1_bb_20_3_width",
+              "operator": ">",
+              "value": 7.2385
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0
+    },
+    "data_source_id": "unlimited_leveraged_data"
+  },
+  {
+    "id": 75,
+    "rule_id": "BUY_XX_2c_0518_5bfa4ea6",
+    "saved_at": "2026-05-18T09:05:44.536128",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -5973,7 +6629,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -5990,9 +6646,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 68,
-    "rule_id": "BUY_XX_2c_0506_f6a70b4e",
-    "saved_at": "2026-05-06T13:13:50.224889",
+    "id": 76,
+    "rule_id": "BUY_XX_2c_0518_fdd486fb",
+    "saved_at": "2026-05-18T09:05:55.332156",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -6023,7 +6679,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,
@@ -6040,9 +6696,9 @@
     "data_source_id": "unlimited_leveraged_data"
   },
   {
-    "id": 69,
-    "rule_id": "BUY_XX_2c_0506_64346bf4",
-    "saved_at": "2026-05-06T13:14:01.196553",
+    "id": 77,
+    "rule_id": "BUY_XX_2c_0518_af26067b",
+    "saved_at": "2026-05-18T09:06:07.128531",
     "source": "ModeA:cov88%:tight0.003:winner=coverage",
     "notes": "",
     "rule": {
@@ -6073,7 +6729,7 @@
       "prop_firm_name": "Get Leveraged",
       "prop_firm_id": "leveraged",
       "prop_firm_stage": "Evaluation",
-      "risk_pct": 0.6,
+      "risk_pct": 0.3,
       "risk_pct_firm": 0.8,
       "dd_daily_pct": 3.0,
       "dd_total_pct": 6.0,

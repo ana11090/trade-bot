@@ -105,16 +105,6 @@
       "tightness": 0.2318
     },
     {
-      "feature": "H4_candle_body",
-      "operator": "<",
-      "threshold": 57.9625,
-      "value": 57.9625,
-      "trade_coverage": 0.9494,
-      "background_coverage": null,
-      "background_coverage_valid": false,
-      "tightness": 0.2343
-    },
-    {
       "feature": "M15_bear_power",
       "operator": ">",
       "threshold": -34.67692,
@@ -123,6 +113,16 @@
       "background_coverage": null,
       "background_coverage_valid": false,
       "tightness": 0.2338
+    },
+    {
+      "feature": "H4_candle_body",
+      "operator": "<",
+      "threshold": 57.9625,
+      "value": 57.9625,
+      "trade_coverage": 0.9494,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2343
     },
     {
       "feature": "H4_mt5_macd_fast_diff",
@@ -816,6 +816,6 @@
     "dedup_correlated": true,
     "winner_selection": "coverage"
   },
-  "generated_at": "2026-05-06T13:12:25.914264",
+  "generated_at": "2026-05-18T09:04:22.054083",
   "scenario": null
 }

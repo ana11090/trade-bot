@@ -159,6 +159,10 @@ _check_vars     = {}  # index -> bool (checkbox state)
 _firm_name_to_id = {}  # firm display name -> firm_id (for Monte Carlo)
 _current_run_settings = {}  # WHY: Store current strategy's run_settings for _show_estimation
                             # CHANGED: April 2026 — BUG 5 fix (pip_value from rule)
+_current_strategy_idx = None  # WHY: _show_estimation needs the idx to resolve the rule's
+                              # stored prop_firm_stage and decide which blocks to render.
+                              # CHANGED: May 2026 — render eval+funded blocks together
+                              # when the rule has no stored stage
 
 
 # Settings vars
@@ -171,6 +175,8 @@ _sims_var           = None
 _slip_levels_var    = None  # Phase 69 Fix 27: configurable slippage levels
 _mc_firm_var        = None
 _stage_var          = None
+_stage_source_lbl   = None  # WHY: Shows where _stage_var came from (rule auto-detect vs user)
+                            # CHANGED: May 2026 — auto-detect stage from rule
 
 
 def _get_slippage_levels():
@@ -466,6 +472,78 @@ def _strategy_for_iid(iid):
                 return s
         except (ValueError, TypeError):
             pass
+    return None
+
+
+def _resolve_rule_stage(idx, run_settings=None):
+    """Resolve the prop_firm_stage the rule was discovered/saved for.
+
+    WHY: The Stage dropdown defaults to "Funded" and is never auto-set
+         from the rule, so eval-discovered rules were silently validated
+         against funded payout rules (wrong simulation entirely).
+         Saved rules carry prop_firm_stage at rule.top-level and inside
+         rule.discovery_settings; backtest-matrix rows carry it in
+         run_settings. Check every known location and return a normalised
+         token the panel branches understand.
+    CHANGED: May 2026 — auto-detect stage from rule
+
+    Returns 'evaluation', 'funded', or None when the rule has no
+    recorded stage (legacy rules pre-dating the field).
+    """
+    _candidates = []
+
+    if run_settings:
+        _candidates.append(run_settings.get('prop_firm_stage'))
+
+    s = _strategy_for_iid(idx)
+    if s:
+        _candidates.append(s.get('prop_firm_stage'))
+        _candidates.append((s.get('run_settings') or {}).get('prop_firm_stage'))
+        _sr = s.get('saved_rule') or {}
+        _candidates.append(_sr.get('prop_firm_stage'))
+        _candidates.append((_sr.get('discovery_settings') or {}).get('prop_firm_stage'))
+        # WHY: backtest_matrix rows don't have prop_firm_stage in run_settings,
+        #      but every row keeps the source rule under .rules — and that rule
+        #      DOES carry prop_firm_stage at top-level + in discovery_settings.
+        #      Read it from there so we never need to re-run a backtest just
+        #      to populate this field.
+        # CHANGED: May 2026 — read stage from embedded rules
+        for _embedded in (s.get('rules') or []):
+            if not isinstance(_embedded, dict):
+                continue
+            _candidates.append(_embedded.get('prop_firm_stage'))
+            _candidates.append((_embedded.get('discovery_settings') or {}).get('prop_firm_stage'))
+            break  # first rule is enough — all rules in a row share a stage
+
+    # Saved rules live in saved_rules.json with a {rule: {...}} wrapper that
+    # the existing run_settings loader does NOT descend into, so read it
+    # directly here as a final fallback.
+    if isinstance(idx, str) and idx.startswith('saved_'):
+        try:
+            _sp = os.path.join(project_root, 'project2_backtesting',
+                               'outputs', 'saved_rules.json')
+            if os.path.exists(_sp):
+                with open(_sp, encoding='utf-8') as _f:
+                    _data = json.load(_f)
+                _ridx = int(idx.split('_', 1)[1])
+                if 0 <= _ridx < len(_data):
+                    _wrap = _data[_ridx]
+                    _r = _wrap.get('rule') or {}
+                    _candidates.append(_r.get('prop_firm_stage'))
+                    _candidates.append((_r.get('discovery_settings') or {}).get('prop_firm_stage'))
+                    _candidates.append((_wrap.get('run_settings') or {}).get('prop_firm_stage'))
+        except Exception:
+            pass
+
+    for c in _candidates:
+        if not c:
+            continue
+        n = str(c).strip().lower()
+        if n in ('evaluation', 'eval'):
+            return 'evaluation'
+        if n == 'funded':
+            return 'funded'
+
     return None
 
 
@@ -1814,7 +1892,12 @@ def _display_mc_results(mc_result):
 
 def _show_estimation(trades, parent_frame):
     """Show payout or eval estimation after validation."""
-    if not trades or len(trades) < 20:
+    # WHY: Old code skipped the estimation entirely when len(trades) < 20.
+    #      User wants the simulator to run regardless — even sparse rules
+    #      produce useful pass/fail signal. Only bail when there are
+    #      literally no trades.
+    # CHANGED: May 2026 — drop 20-trade minimum
+    if not trades:
         return
 
     try:
@@ -1859,6 +1942,13 @@ def _show_estimation(trades, parent_frame):
     daily_dd_limit = 5.0
     phase_name = "Evaluation"
 
+    # Track firm/challenge ids so the eval section can hand them to
+    # simulate_challenge (the proper multi-phase simulator).
+    firm_id_for_sim = ""
+    challenge_id_for_sim = ""
+    eval_total_dd = 10.0
+    eval_daily_dd = 5.0
+    funded_total_dd = 10.0
     try:
         import glob
         prop_dir = os.path.join(project_root, 'prop_firms')
@@ -1867,6 +1957,7 @@ def _show_estimation(trades, parent_frame):
                 fd = json.load(f)
             if fd.get('firm_name') == firm_name:
                 firm_data = fd
+                firm_id_for_sim = fd.get('firm_id', '')
 
                 # Find the challenge that has this account size
                 best_challenge = fd['challenges'][0]  # fallback to first
@@ -1877,21 +1968,30 @@ def _show_estimation(trades, parent_frame):
                         break
 
                 challenge_name = best_challenge.get('challenge_name', '?')
+                challenge_id_for_sim = best_challenge.get('challenge_id', '')
                 profit_split = best_challenge.get('funded', {}).get('profit_split_pct', 80)
 
-                # Get phase data for evaluation
+                # Phase 0 limits — used by the eval rules summary label and
+                # the funded fallback when there's no funded.max_*_drawdown.
                 phases = best_challenge.get('phases', [])
                 if phases:
                     phase = phases[0]
                     phase_name = phase.get('phase_name', 'Evaluation')
                     profit_target_pct = phase.get('profit_target_pct', 6.0)
-                    total_dd_limit = phase.get('max_total_drawdown_pct', 10.0)
-                    daily_dd_limit = phase.get('max_daily_drawdown_pct', 5.0) or 5.0
+                    eval_total_dd = phase.get('max_total_drawdown_pct', 10.0)
+                    eval_daily_dd = phase.get('max_daily_drawdown_pct', 5.0) or 5.0
 
-                # For funded stage, get DD from funded section
+                funded_total_dd = (best_challenge.get('funded', {})
+                                   .get('max_total_drawdown_pct', eval_total_dd))
+
+                # Back-compat: keep the legacy single-stage variables used
+                # further down by the funded block.
                 if stage == "funded":
-                    funded = best_challenge.get('funded', {})
-                    total_dd_limit = funded.get('max_total_drawdown_pct', total_dd_limit)
+                    total_dd_limit = funded_total_dd
+                    daily_dd_limit = eval_daily_dd
+                else:
+                    total_dd_limit = eval_total_dd
+                    daily_dd_limit = eval_daily_dd
 
                 break
     except:
@@ -1913,10 +2013,28 @@ def _show_estimation(trades, parent_frame):
 
     days_sorted = sorted(daily_pnls.keys())
 
-    # ── Frame ─────────────────────────────────────────────────────────────────
+    # ── Decide which stage block(s) to render ────────────────────────────────
+    # Rules with a stored prop_firm_stage drive their own simulation. Rules
+    # without one (most backtest-matrix rows) get BOTH blocks so the user
+    # can see eval pass-rate AND funded payout info without flipping the
+    # dropdown.
+    # CHANGED: May 2026 — dual-block estimation
+    _stored_stage_for_show = _resolve_rule_stage(_current_strategy_idx,
+                                                 _current_run_settings)
+    if _stored_stage_for_show == 'evaluation':
+        show_eval, show_funded = True, False
+        _est_title = "🎯 Eval Target Estimation"
+    elif _stored_stage_for_show == 'funded':
+        show_eval, show_funded = False, True
+        _est_title = "💰 Payout Estimation"
+    else:
+        show_eval, show_funded = True, True
+        _est_title = "🎯 Prop Firm Estimation (Eval + Funded)"
+
+    # ── Outer container ──────────────────────────────────────────────────────
     est_frame = tk.LabelFrame(parent_frame,
-        text="💰 Payout Estimation" if stage == "funded" else "🎯 Eval Target Estimation",
-        font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#4a148c" if stage == "funded" else "#e65100",
+        text=_est_title,
+        font=("Segoe UI", 10, "bold"), bg=WHITE, fg="#4a148c",
         padx=10, pady=8)
     est_frame.pack(fill="x", padx=5, pady=(10, 5))
 
@@ -1937,276 +2055,297 @@ def _show_estimation(trades, parent_frame):
         bg=WHITE, fg=AMBER, font=("Segoe UI", 8, "italic")).pack(anchor="w", pady=(0, 4))
 
     # ══════════════════════════════════════════════════════════════════════════
-    if stage == "funded":
-        # ── FUNDED: Payout estimation ─────────────────────────────────────────
-        consistency_limit = 20
-        min_profit_days_req = 3
-        min_day_threshold = acct * 0.005
-
-        if firm_data:
-            for rule in firm_data.get('trading_rules', []):
-                if rule.get('type') == 'consistency':
-                    consistency_limit = rule.get('parameters', {}).get('max_day_pct', 20)
-                elif rule.get('type') == 'min_profitable_days':
-                    min_profit_days_req = rule.get('parameters', {}).get('min_days', 3)
+    # ── FUNDED block — uses simulate_challenge(simulate_funded=True) ─────────
+    # WHY: Old inline 14-day window loop ignored DD breaches inside each
+    #      window, hardcoded the 14-day cadence (real firms use weekly /
+    #      biweekly / monthly per their funded.payout_frequency), ignored
+    #      min_payout_amount and dd_reset_on_payout, and didn't apply
+    #      trading_rules filtered by stage=='funded'. simulate_challenge
+    #      with simulate_funded=True handles all of those plus HWM-lock
+    #      trailing DD, plus the eval gate (you have to PASS eval first
+    #      to get funded — so funded survival is conditional on eval pass).
+    # CHANGED: May 2026 — funded branch uses simulate_challenge
+    if show_funded:
+        if show_eval:
+            tk.Label(est_frame, text="── Funded account simulation ──",
+                bg=WHITE, fg="#4a148c", font=("Segoe UI", 9, "bold")
+                ).pack(anchor="w", pady=(6, 2))
 
         rules_lbl = tk.Label(est_frame,
             text=f"📋 Funded rules: {profit_split}% profit split  |  "
-                 f"consistency: best day ≤{consistency_limit}% of total  |  "
-                 f"min {min_profit_days_req} profitable days  |  "
-                 f"max DD: {total_dd_limit}%",
+                 f"max DD: {funded_total_dd}%  |  "
+                 f"plus firm-specific trading_rules where stage=='funded'",
             bg=WHITE, fg="#555", font=("Segoe UI", 9))
         rules_lbl.pack(anchor="w", pady=(0, 6))
         _Tooltip(rules_lbl,
-            f"Payout rules from {firm_name}:\n"
-            f"• You keep {profit_split}% of profits\n"
-            f"• No single day can be more than {consistency_limit}% of total profit\n"
-            f"• Need at least {min_profit_days_req} profitable days per payout window\n"
-            f"• Account blows if total DD reaches {total_dd_limit}%")
+            f"Funded account simulation (post-eval-pass) from {firm_name}:\n"
+            f"• Profit split: you keep {profit_split}% of profits\n"
+            f"• Max total DD: {funded_total_dd}%\n"
+            f"• Trailing DD mechanics, HWM lock, dd_reset_on_payout,\n"
+            f"  payout_frequency, min_payout_amount — all read from the\n"
+            f"  firm JSON and applied by the proper simulator.\n"
+            f"• Survival is conditional on PASSING eval first.")
 
-        windows_total = 0
-        windows_pass = 0
-        window_profits = []
+        sim_funded = None
+        try:
+            from project2_backtesting.strategy_validator import _trades_to_df
+            from shared.prop_firm_simulator import simulate_challenge
+            _df_f = _trades_to_df(trades,
+                                  risk_per_trade_pct=risk,
+                                  default_sl_pips=sl_pips,
+                                  pip_value_per_lot=pip_value,
+                                  account_size=int(acct))
+            _sym_f = (_current_run_settings.get('symbol', 'XAUUSD')
+                      if _current_run_settings else 'XAUUSD')
+            if firm_id_for_sim and challenge_id_for_sim:
+                sim_funded = simulate_challenge(
+                    trades_df=_df_f,
+                    firm_id=firm_id_for_sim,
+                    challenge_id=challenge_id_for_sim,
+                    account_size=int(acct),
+                    mode='monte_carlo',
+                    num_samples=100,
+                    simulate_funded=True,
+                    risk_per_trade_pct=risk,
+                    default_sl_pips=sl_pips,
+                    pip_value_per_lot=pip_value,
+                    symbol=_sym_f,
+                )
+        except Exception as _fsim_err:
+            print(f"[VALIDATOR] funded simulate_challenge failed: {_fsim_err}")
+            import traceback; traceback.print_exc()
+            sim_funded = None
 
-        # WHY: Old loop used step 7 with a 14-day window, giving 50%
-        #      overlap between consecutive windows. Every trading day
-        #      was counted in ~2 windows, so avg/min/max payouts and
-        #      the annual estimate (avg_p * 365/14) were systematically
-        #      ~2x too high. Using step 14 makes windows disjoint so
-        #      each day appears in exactly one window and the 365/14
-        #      periods-per-year math becomes correct.
-        # CHANGED: April 2026 — Phase 29 Fix 3 — non-overlapping 14-day
-        #          windows (audit Part C crit #11)
-        for start_i in range(0, len(days_sorted) - 5, 14):
-            start_day = pd.to_datetime(days_sorted[start_i])
-            window = {}
-            for d in days_sorted[start_i:]:
-                if (pd.to_datetime(d) - start_day).days >= 14:
-                    break
-                window[d] = daily_pnls[d]
-
-            if not window:
-                continue
-
-            # WHY: Old code computed total_profit as sum of positive days
-            #      only (gross), then best_day / total_profit gave the
-            #      consistency ratio. Firms enforce consistency against
-            #      NET total profit — using gross-positive makes the
-            #      denominator larger and the ratio smaller, so the
-            #      check was looser than what the firm actually measures.
-            #      Same bug family as prop_firm_engine consistency check
-            #      fixed in Phase 2. Use `net` (sum of all days) as the
-            #      denominator, guarded for non-positive nets.
-            # CHANGED: April 2026 — Phase 29 Fix 4 — net total in
-            #          consistency denominator (audit Part C HIGH #80)
-            net = sum(window.values())
-            windows_total += 1
-
-            if net <= 0:
-                continue
-
-            best_day  = max(window.values())
-            best_pct  = best_day / net * 100   # consistency vs NET profit
-            prof_days = sum(1 for v in window.values() if v >= min_day_threshold)
-
-            if best_pct <= consistency_limit and prof_days >= min_profit_days_req and net > 0:
-                windows_pass += 1
-                window_profits.append(net * profit_split / 100)
-
-        if windows_total > 0 and window_profits:
-            pr = windows_pass / windows_total * 100
-            avg_p = sum(window_profits) / len(window_profits)
-            min_p = min(window_profits)
-            max_p = max(window_profits)
-            annual = avg_p * (365 / 14)
+        if sim_funded is None:
+            tk.Label(est_frame,
+                text=f"⚠ Cannot run funded simulator — firm_id={firm_id_for_sim!r}, "
+                     f"challenge_id={challenge_id_for_sim!r}. Check firm JSON / logs.",
+                bg=WHITE, fg="#e94560", font=("Segoe UI", 9, "italic"),
+                wraplength=600, justify="left").pack(anchor="w")
+        else:
+            eval_pass_rate_f = sim_funded.eval_pass_rate * 100
+            eval_pass_count  = sim_funded.eval_pass_count
+            f_avg_surv       = sim_funded.funded_avg_survival_days
+            f_med_surv       = sim_funded.funded_median_survival_days
+            f_avg_month      = sim_funded.funded_avg_monthly_payout
+            f_avg_total      = sim_funded.funded_avg_total_payouts
+            f_surv_3mo       = sim_funded.funded_survival_rate_3mo
+            f_surv_6mo       = sim_funded.funded_survival_rate_6mo
+            f_avg_count      = sim_funded.funded_avg_payout_count
 
             pr_lbl = tk.Label(est_frame,
-                text=f"✅ Pass rate: {pr:.0f}% of {windows_total} payout periods",
-                bg=WHITE, fg="#2d8a4e" if pr >= 60 else "#e67e00",
+                text=f"✅ Eval pass rate (gate): {eval_pass_rate_f:.0f}%  "
+                     f"({eval_pass_count}/{sim_funded.num_simulations} attempts)",
+                bg=WHITE, fg="#2d8a4e" if eval_pass_rate_f >= 80 else "#e67e00",
                 font=("Segoe UI", 10, "bold"))
             pr_lbl.pack(anchor="w")
             _Tooltip(pr_lbl,
-                f"We simulate {windows_total} consecutive 14-day payout windows.\n"
-                f"{windows_pass} of them pass all the rules (consistency, min days, positive P&L).\n"
-                f"Pass rate = {windows_pass}/{windows_total} = {pr:.0f}%")
+                "Funded simulation requires PASSING eval first. This is the\n"
+                "eval pass rate across 100 Monte Carlo starts. The funded\n"
+                "metrics below are computed only from attempts that passed.")
 
-            pay_lbl = tk.Label(est_frame,
-                text=f"💰 Payout per period: min ${min_p:,.0f}  |  avg ${avg_p:,.0f}  |  max ${max_p:,.0f}",
-                bg=WHITE, fg="#333", font=("Segoe UI", 9))
-            pay_lbl.pack(anchor="w", pady=(2, 0))
-            _Tooltip(pay_lbl,
-                f"From the {len(window_profits)} passing windows:\n"
-                f"• Smallest payout: ${min_p:,.0f}\n"
-                f"• Average payout: ${avg_p:,.0f}\n"
-                f"• Largest payout: ${max_p:,.0f}\n"
-                f"Payouts = net profit × {profit_split}% split")
+            if eval_pass_count > 0:
+                if f_avg_surv is not None:
+                    surv_lbl = tk.Label(est_frame,
+                        text=f"   ⏱ Funded survival: avg {f_avg_surv:.0f} days  |  "
+                             f"median {f_med_surv:.0f} days",
+                        bg=WHITE, fg="#333", font=("Segoe UI", 9))
+                    surv_lbl.pack(anchor="w", pady=(2, 0))
+                    _Tooltip(surv_lbl,
+                        f"After passing eval, the funded account lives this long\n"
+                        f"on average before the account blows (trailing DD breach)\n"
+                        f"or the trade history runs out.")
 
-            ann_lbl = tk.Label(est_frame,
-                text=f"📅 Annual estimate: ${annual:,.0f}  ({365//14} periods × ${avg_p:,.0f} avg)",
-                bg=WHITE, fg="#666", font=("Segoe UI", 9))
-            ann_lbl.pack(anchor="w", pady=(2, 0))
-            _Tooltip(ann_lbl,
-                f"If every 14-day period pays the average (${avg_p:,.0f}):\n"
-                f"~{365//14} periods per year × ${avg_p:,.0f} = ${annual:,.0f}/year\n"
-                f"This is optimistic — only {pr:.0f}% of periods pass the rules.")
-        else:
-            tk.Label(est_frame,
-                text=f"0% of payout periods pass — strategy won't generate payouts under current rules",
-                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
+                if f_avg_month is not None and f_avg_month > 0:
+                    pay_lbl = tk.Label(est_frame,
+                        text=f"   💰 Avg monthly payout: ${f_avg_month:,.0f}  |  "
+                             f"total over funded life: ${(f_avg_total or 0):,.0f}",
+                        bg=WHITE, fg="#333", font=("Segoe UI", 9))
+                    pay_lbl.pack(anchor="w", pady=(2, 0))
+                    _Tooltip(pay_lbl,
+                        f"Payouts respect firm's payout_frequency (weekly /\n"
+                        f"biweekly / monthly), profit_split ({profit_split}%),\n"
+                        f"min_payout_amount, and dd_reset_on_payout rules.")
 
-    else:
-        # ── EVALUATION: Days to reach profit target ───────────────────────────
-        target_dollars = acct * (profit_target_pct / 100)
-        total_dd_dollars = acct * (total_dd_limit / 100)
-        daily_dd_dollars = acct * (daily_dd_limit / 100)
+                if f_avg_count is not None:
+                    cnt_lbl = tk.Label(est_frame,
+                        text=f"   📊 Avg payout count: {f_avg_count:.1f}",
+                        bg=WHITE, fg="#666", font=("Segoe UI", 9))
+                    cnt_lbl.pack(anchor="w", pady=(2, 0))
+
+                if f_surv_3mo is not None or f_surv_6mo is not None:
+                    s3 = f"{f_surv_3mo*100:.0f}%" if f_surv_3mo is not None else "—"
+                    s6 = f"{f_surv_6mo*100:.0f}%" if f_surv_6mo is not None else "—"
+                    surv_rate_lbl = tk.Label(est_frame,
+                        text=f"   📈 Survival rate: 3-month {s3}  |  6-month {s6}",
+                        bg=WHITE, fg="#666", font=("Segoe UI", 9))
+                    surv_rate_lbl.pack(anchor="w", pady=(2, 0))
+                    _Tooltip(surv_rate_lbl,
+                        "Fraction of passed-eval attempts where the funded\n"
+                        "account was still alive at the 3-month and 6-month marks.")
+            else:
+                tk.Label(est_frame,
+                    text=f"   ⚠ No funded data — no attempts passed eval",
+                    bg=WHITE, fg="#e94560", font=("Segoe UI", 9, "italic")
+                    ).pack(anchor="w", pady=(2, 0))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ── EVAL block — uses shared.prop_firm_simulator.simulate_challenge ──────
+    # WHY: Old inline loop stepped every 7 days (overlapping windows that
+    #      inflated pass rate), ignored max_calendar_days, min_trading_days,
+    #      consistency rule, and Phase 2 (Verification). simulate_challenge
+    #      handles all of those plus firm-specific DD mechanics. Falls back
+    #      to a clear error label if the firm/challenge can't be resolved.
+    # CHANGED: May 2026 — eval branch uses simulate_challenge
+    if show_eval:
+        eval_total_dd_dollars = acct * (eval_total_dd / 100)
+        eval_daily_dd_dollars = acct * (eval_daily_dd / 100)
+        target_dollars        = acct * (profit_target_pct / 100)
+
+        if show_funded:
+            tk.Label(est_frame, text="── Evaluation challenge estimation ──",
+                bg=WHITE, fg="#e65100", font=("Segoe UI", 9, "bold")
+                ).pack(anchor="w", pady=(10, 2))
 
         rules_lbl = tk.Label(est_frame,
             text=f"📋 {phase_name}: make {profit_target_pct}% (${target_dollars:,.0f}) profit  "
-                 f"without losing {daily_dd_limit}% in a day (${daily_dd_dollars:,.0f}) "
-                 f"or {total_dd_limit}% total (${total_dd_dollars:,.0f})",
+                 f"without losing {eval_daily_dd}% in a day (${eval_daily_dd_dollars:,.0f}) "
+                 f"or {eval_total_dd}% total (${eval_total_dd_dollars:,.0f})",
             bg=WHITE, fg="#555", font=("Segoe UI", 9), wraplength=600, justify="left")
         rules_lbl.pack(anchor="w", pady=(0, 6))
         _Tooltip(rules_lbl,
             f"Evaluation rules from {firm_name} — {challenge_name}:\n"
             f"• Profit target: {profit_target_pct}% of ${acct:,.0f} = ${target_dollars:,.0f}\n"
-            f"• Max daily drawdown: {daily_dd_limit}% = ${daily_dd_dollars:,.0f} loss in one day\n"
-            f"• Max total drawdown: {total_dd_limit}% = ${total_dd_dollars:,.0f} total loss from peak\n"
-            f"You pass by reaching the target before hitting either DD limit.")
+            f"• Max daily drawdown: {eval_daily_dd}% = ${eval_daily_dd_dollars:,.0f}\n"
+            f"• Max total drawdown: {eval_total_dd}% = ${eval_total_dd_dollars:,.0f}\n"
+            f"Simulator enforces all phases, max_calendar_days, min_trading_days,\n"
+            f"and the firm's consistency rule.")
 
-        # Simulate attempts
-        days_to_target = []
-        blown_daily = 0
-        blown_total = 0
-        total_attempts = 0
+        sim_sw = None     # sliding_window result
+        sim_mc = None     # monte_carlo result
+        try:
+            from project2_backtesting.strategy_validator import _trades_to_df
+            from shared.prop_firm_simulator import simulate_challenge
+            _df = _trades_to_df(trades,
+                                risk_per_trade_pct=risk,
+                                default_sl_pips=sl_pips,
+                                pip_value_per_lot=pip_value,
+                                account_size=int(acct))
+            _sym = (_current_run_settings.get('symbol', 'XAUUSD')
+                    if _current_run_settings else 'XAUUSD')
+            if firm_id_for_sim and challenge_id_for_sim:
+                # WHY: sliding_window walks every trade day as a start. With
+                #      sparse trades this collapses to ~1 attempt and looks
+                #      "static" across rules. Monte Carlo resamples 100 starts
+                #      so the pass-rate distribution actually reflects rule
+                #      behaviour under different conditions. Run both so the
+                #      user sees the deterministic count AND the distribution.
+                # CHANGED: May 2026 — dual sim (sliding + MC)
+                sim_sw = simulate_challenge(
+                    trades_df=_df, firm_id=firm_id_for_sim,
+                    challenge_id=challenge_id_for_sim,
+                    account_size=int(acct), mode='sliding_window',
+                    simulate_funded=False,
+                    risk_per_trade_pct=risk, default_sl_pips=sl_pips,
+                    pip_value_per_lot=pip_value, symbol=_sym,
+                )
+                sim_mc = simulate_challenge(
+                    trades_df=_df, firm_id=firm_id_for_sim,
+                    challenge_id=challenge_id_for_sim,
+                    account_size=int(acct), mode='monte_carlo',
+                    num_samples=100, simulate_funded=False,
+                    risk_per_trade_pct=risk, default_sl_pips=sl_pips,
+                    pip_value_per_lot=pip_value, symbol=_sym,
+                )
+        except Exception as _sim_err:
+            print(f"[VALIDATOR] eval simulate_challenge failed: {_sim_err}")
+            import traceback; traceback.print_exc()
+            sim_sw = sim_mc = None
 
-        for start_i in range(0, len(days_sorted) - 5, 7):
-            running = 0
-            # WHY: Track HWM so total-DD can be measured from peak equity,
-            #      not from the start-of-attempt zero. Old code only
-            #      triggered total-DD when the cumulative P&L was negative
-            #      by the full limit — a strategy that rose to +$8k then
-            #      dropped to +$3k had running=+3000 and was never caught,
-            #      even though it lost $5k from peak (a real DD breach on
-            #      most firms). Reset peak_running to 0 at each attempt
-            #      start so peak tracking is per-attempt.
-            # CHANGED: April 2026 — Phase 29 Fix 5 — HWM-based total DD
-            #          (audit Part C crit #12)
-            peak_running = 0.0
-            day_count = 0
-            total_attempts += 1
+        def _render_sim_block(label_prefix, sim, color_pass="#2d8a4e", color_warn="#e67e00"):
+            """Render one sim summary as a block of labels."""
+            pass_rate      = sim.eval_pass_rate * 100
+            pass_count     = sim.eval_pass_count
+            fail_count     = sim.eval_fail_count
+            total_attempts = pass_count + fail_count
+            avg_d          = sim.eval_avg_days_to_pass
+            min_d          = sim.eval_min_days_to_pass
+            max_d          = sim.eval_max_days_to_pass
+            avg_dd         = sim.eval_avg_max_dd_pct
+            fail_reasons   = sim.eval_fail_reasons or {}
 
-            for d in days_sorted[start_i:]:
-                day_pnl = daily_pnls[d]
-                running += day_pnl
-                day_count += 1
-
-                # Track peak for HWM-based DD
-                if running > peak_running:
-                    peak_running = running
-
-                if running >= target_dollars:
-                    days_to_target.append(day_count)
-                    break
-
-                # Daily DD: single day loss exceeds limit
-                if day_pnl < 0 and abs(day_pnl) >= daily_dd_dollars:
-                    blown_daily += 1
-                    break
-
-                # Total DD: drawdown from peak exceeds limit (HWM-based).
-                # Old check only fired when running was negative, missing
-                # losses that stayed above zero after a winning phase.
-                drawdown_from_peak = peak_running - running
-                if drawdown_from_peak >= total_dd_dollars:
-                    blown_total += 1
-                    break
-
-        if total_attempts == 0:
             tk.Label(est_frame,
-                text="Not enough data to simulate evaluation attempts",
-                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10)).pack(anchor="w")
-        elif days_to_target:
-            pass_rate = len(days_to_target) / total_attempts * 100
-            avg_d = sum(days_to_target) / len(days_to_target)
-            total_blown = blown_daily + blown_total
-            blow_rate = total_blown / total_attempts * 100
-
-            # Pass rate
-            pr_lbl = tk.Label(est_frame,
-                text=f"✅ Pass rate: {pass_rate:.0f}% of {total_attempts} simulated attempts",
-                bg=WHITE, fg="#2d8a4e" if pass_rate >= 80 else "#e67e00",
-                font=("Segoe UI", 10, "bold"))
-            pr_lbl.pack(anchor="w")
-            _Tooltip(pr_lbl,
-                f"We start a simulated evaluation at {total_attempts} different points\n"
-                f"in your backtest data (every 7 trading days).\n\n"
-                f"Each attempt trades until it either:\n"
-                f"  ✅ Reaches ${target_dollars:,.0f} profit ({profit_target_pct}%)\n"
-                f"  💥 Hits the daily DD limit (${daily_dd_dollars:,.0f})\n"
-                f"  💥 Hits the total DD limit (${total_dd_dollars:,.0f})\n\n"
-                f"Result: {len(days_to_target)} passed, {total_blown} blown = {pass_rate:.0f}% pass rate")
-
-            # Days to target
-            days_lbl = tk.Label(est_frame,
-                text=f"📅 Trading days to reach ${target_dollars:,.0f} target: "
-                     f"avg {avg_d:.0f}  |  fastest {min(days_to_target)}  |  slowest {max(days_to_target)}",
-                bg=WHITE, fg="#333", font=("Segoe UI", 9))
-            days_lbl.pack(anchor="w", pady=(2, 0))
-            _Tooltip(days_lbl,
-                f"Of the {len(days_to_target)} successful attempts:\n"
-                f"• Average: {avg_d:.0f} trading days to make ${target_dollars:,.0f}\n"
-                f"• Fastest: reached target in just {min(days_to_target)} trading day(s)\n"
-                f"• Slowest: took {max(days_to_target)} trading days\n\n"
-                f"These are TRADING days (when the bot trades), not calendar days.")
-
-            # Blow details
-            if total_blown > 0:
-                blow_lbl = tk.Label(est_frame,
-                    text=f"💥 Blow rate: {blow_rate:.0f}%  —  "
-                         f"{blown_daily} from daily DD (≥{daily_dd_limit}%)  |  "
-                         f"{blown_total} from total DD (≥{total_dd_limit}%)",
-                    bg=WHITE, fg="#e94560" if blow_rate > 10 else "#e67e00",
-                    font=("Segoe UI", 9))
-                blow_lbl.pack(anchor="w", pady=(2, 0))
-                _Tooltip(blow_lbl,
-                    f"Out of {total_attempts} attempts, {total_blown} failed:\n"
-                    f"• {blown_daily} blew the daily DD limit ({daily_dd_limit}% = ${daily_dd_dollars:,.0f})\n"
-                    f"  → a single trading day lost more than ${daily_dd_dollars:,.0f}\n"
-                    f"• {blown_total} blew the total DD limit ({total_dd_limit}% = ${total_dd_dollars:,.0f})\n"
-                    f"  → cumulative losses exceeded ${total_dd_dollars:,.0f}")
-            else:
-                blow_lbl = tk.Label(est_frame,
-                    text=f"💥 Blow rate: 0% — no attempts hit any DD limit",
-                    bg=WHITE, fg="#2d8a4e", font=("Segoe UI", 9))
-                blow_lbl.pack(anchor="w", pady=(2, 0))
-                _Tooltip(blow_lbl,
-                    f"None of the {total_attempts} simulated attempts hit the drawdown limits.\n"
-                    f"Daily limit: {daily_dd_limit}% (${daily_dd_dollars:,.0f})\n"
-                    f"Total limit: {total_dd_limit}% (${total_dd_dollars:,.0f})")
-
-            # Expected attempts
-            if pass_rate < 100:
-                expected = 100 / max(pass_rate, 1)
-                att_lbl = tk.Label(est_frame,
-                    text=f"🔄 Expected attempts to pass: {expected:.1f}",
-                    bg=WHITE, fg="#666", font=("Segoe UI", 8))
-                att_lbl.pack(anchor="w", pady=(2, 0))
-                _Tooltip(att_lbl,
-                    f"With a {pass_rate:.0f}% pass rate, on average you'd need\n"
-                    f"{expected:.1f} attempts before passing.\n\n"
-                    f"If you fail (hit a DD limit), you restart the evaluation\n"
-                    f"from scratch with a fresh ${acct:,.0f} account.")
-        else:
-            blow_rate = (blown_daily + blown_total) / max(total_attempts, 1) * 100
-            tk.Label(est_frame,
-                text=f"❌ 0% pass rate — never reaches {profit_target_pct}% target "
-                     f"(${target_dollars:,.0f})",
-                bg=WHITE, fg="#dc3545", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-            if blown_daily > 0 or blown_total > 0:
+                text=f"{label_prefix}  Pass rate: {pass_rate:.0f}% of {total_attempts} attempts "
+                     f"({pass_count} passed, {fail_count} failed)",
+                bg=WHITE, fg=color_pass if pass_rate >= 80 else color_warn,
+                font=("Segoe UI", 10, "bold")).pack(anchor="w")
+            if pass_count > 0:
                 tk.Label(est_frame,
-                    text=f"💥 {blown_daily} daily DD blows + {blown_total} total DD blows "
-                         f"out of {total_attempts} attempts",
-                    bg=WHITE, fg="#e94560", font=("Segoe UI", 9)).pack(anchor="w")
+                    text=f"   📅 Trading days to pass: avg {avg_d:.0f}  |  "
+                         f"fastest {min_d:.0f}  |  slowest {max_d:.0f}",
+                    bg=WHITE, fg="#333", font=("Segoe UI", 9)
+                    ).pack(anchor="w", pady=(2, 0))
+            tk.Label(est_frame,
+                text=f"   📊 Avg max DD per attempt: {avg_dd:.1f}%",
+                bg=WHITE, fg="#666", font=("Segoe UI", 9)
+                ).pack(anchor="w", pady=(2, 0))
+            if fail_count > 0 and fail_reasons:
+                _reasons_str = "  |  ".join(
+                    f"{k.replace('FAIL_','').replace('_',' ').title()}: {v}"
+                    for k, v in sorted(fail_reasons.items(), key=lambda x: -x[1])
+                )
+                tk.Label(est_frame,
+                    text=f"   💥 Fail reasons: {_reasons_str}",
+                    bg=WHITE, fg="#e94560" if fail_count > pass_count else "#e67e00",
+                    font=("Segoe UI", 9)
+                    ).pack(anchor="w", pady=(2, 0))
+
+        if sim_sw is None and sim_mc is None:
+            tk.Label(est_frame,
+                text=f"⚠ Cannot run eval simulator — firm_id={firm_id_for_sim!r}, "
+                     f"challenge_id={challenge_id_for_sim!r}. Check firm JSON / logs.",
+                bg=WHITE, fg="#e94560", font=("Segoe UI", 9, "italic"),
+                wraplength=600, justify="left").pack(anchor="w")
+        else:
+            # ── Sliding-window: deterministic, one attempt per trade day ──
+            if sim_sw is not None:
+                sw_hdr = tk.Label(est_frame,
+                    text="🎯 Sliding-window  (one attempt per trade day, deterministic)",
+                    bg=WHITE, fg="#4a148c", font=("Segoe UI", 9, "bold"))
+                sw_hdr.pack(anchor="w", pady=(4, 2))
+                _Tooltip(sw_hdr,
+                    "Runs an evaluation attempt starting at every trade day in\n"
+                    "the rule's history. Each attempt is independent, no random\n"
+                    "sampling — so the result is reproducible. Useful as a sanity\n"
+                    "check but can collapse to 1-2 attempts for sparse-trade rules.")
+                _render_sim_block("✅", sim_sw)
+
+            # ── Monte Carlo: 100 random starts, varies per rule ─────────
+            if sim_mc is not None:
+                mc_hdr = tk.Label(est_frame,
+                    text="🎲 Monte Carlo  (100 random starts, distribution)",
+                    bg=WHITE, fg="#4a148c", font=("Segoe UI", 9, "bold"))
+                mc_hdr.pack(anchor="w", pady=(8, 2))
+                _Tooltip(mc_hdr,
+                    "Resamples 100 starting points across the rule's trade\n"
+                    "history. Pass rate reflects how often the rule passes\n"
+                    "under varied starting conditions — varies meaningfully\n"
+                    "per rule even when sliding-window collapses to one attempt.")
+                _render_sim_block("✅", sim_mc)
+
+            # Pick a primary pass_rate for the "expected attempts" line
+            _primary_rate = (sim_mc.eval_pass_rate * 100) if sim_mc is not None else (sim_sw.eval_pass_rate * 100)
+            if 0 < _primary_rate < 100:
+                expected = 100 / max(_primary_rate, 1)
+                att_lbl = tk.Label(est_frame,
+                    text=f"🔄 Expected attempts to pass (Monte Carlo): {expected:.1f}",
+                    bg=WHITE, fg="#666", font=("Segoe UI", 8))
+                att_lbl.pack(anchor="w", pady=(6, 0))
+                _Tooltip(att_lbl,
+                    f"With a {_primary_rate:.0f}% pass rate, on average you'd need\n"
+                    f"{expected:.1f} attempts before passing.\n\n"
+                    f"If you fail, you restart the evaluation from scratch\n"
+                    f"with a fresh ${acct:,.0f} account.")
 
     # Update scroll region
     if _scroll_canvas:
@@ -2453,22 +2592,29 @@ def _display_verdict(combined, trades=None):
               bg=GREY, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=14, pady=5).pack(side=tk.LEFT)
 
-    # Show estimation ONLY if walk-forward found real data
+    # WHY: Old code only ran the estimation when walk-forward returned
+    #      LIKELY_REAL or INCONCLUSIVE. For OVERFITTING / INSUFFICIENT_DATA /
+    #      N/A it suppressed the whole eval/funded block and showed a red
+    #      "Estimation Suppressed" card. User wants the simulator to ALWAYS
+    #      compute when a rule is loaded — even if WF flags overfitting, the
+    #      eval/funded pass-rate number is what they actually look at.
+    #      Always call _show_estimation when there are trades. If the WF
+    #      verdict is bad, show a small warning ABOVE the estimation rather
+    #      than replacing it.
+    # CHANGED: May 2026 — never hide the eval/funded estimation
     wf_verdict = verdicts.get('walk_forward', 'N/A')
-    if trades and wf_verdict in ('LIKELY_REAL', 'INCONCLUSIVE'):
+    if trades:
+        if wf_verdict in ('LIKELY_OVERFITTING', 'INSUFFICIENT_DATA', 'N/A'):
+            _wf_warn = ("Walk-forward had no trade data — pass-rate below "
+                        "is based on in-sample trades only."
+                        if wf_verdict == 'INSUFFICIENT_DATA'
+                        else "Walk-forward flagged possible overfitting — "
+                             "the pass-rate below may overstate live performance.")
+            tk.Label(_verdict_frame, text=f"⚠ {_wf_warn}",
+                bg=WHITE, fg=AMBER, font=("Segoe UI", 9, "italic"),
+                wraplength=600, justify="left"
+                ).pack(anchor="w", padx=5, pady=(8, 0))
         _show_estimation(trades, _verdict_frame)
-    elif trades and wf_verdict in ('LIKELY_OVERFITTING', 'INSUFFICIENT_DATA', 'N/A'):
-        reason = ("Walk-forward had no trade data — cannot evaluate."
-                  if wf_verdict == 'INSUFFICIENT_DATA'
-                  else "Walk-forward indicates overfitting — in-sample results unreliable.")
-        warn_frame = tk.LabelFrame(_verdict_frame,
-            text="🎯 Estimation Suppressed",
-            font=("Segoe UI", 10, "bold"), bg=WHITE, fg=RED,
-            padx=10, pady=8)
-        warn_frame.pack(fill="x", padx=5, pady=(10, 5))
-        tk.Label(warn_frame, text=reason + "\nImprove the strategy before estimating payouts.",
-            bg=WHITE, fg="#666", font=("Segoe UI", 9), wraplength=550,
-            justify="left").pack(anchor="w")
 
 
 def _nav(panel_name):
@@ -2777,7 +2923,7 @@ def _run(mode, override_idx=None, done_event=None):
     print(f"[VALIDATOR] Strategy direction: {strategy_direction}")
 
     # ── Read run_settings from strategy for leverage auto-detection ──
-    global _current_run_settings
+    global _current_run_settings, _stage_source_lbl
     _val_run_settings = {}
     try:
         if isinstance(idx, (int, str)) and not str(idx).startswith('saved_') and str(idx) != 'optimizer_latest':
@@ -2803,6 +2949,112 @@ def _run(mode, override_idx=None, done_event=None):
 
     # Store in global so _show_estimation can read pip_value from strategy
     _current_run_settings = _val_run_settings
+    # WHY: _show_estimation calls _resolve_rule_stage(idx, run_settings) to
+    #      decide whether to render eval, funded, or both blocks. It needs
+    #      the idx of the strategy we just ran.
+    # CHANGED: May 2026 — render eval+funded blocks together
+    global _current_strategy_idx
+    _current_strategy_idx = idx
+
+    # ── Sync UI vars with the rule's own settings ────────────────────────
+    # WHY: The Refiner detail panel reads settings (account, risk, sl, pip
+    #      value) from rules[0] — the rule's own intended config. The
+    #      Validator was reading them from UI vars (defaults: $100k, 1%,
+    #      150 sl, 1 pipv) unless the user manually edited them. That
+    #      33x lot-size mismatch produced different eval pass-rate numbers
+    #      between the two panels for the same rule. Pull rules[0] from
+    #      the strategy meta and overwrite the UI vars so both paths
+    #      simulate identical scenarios.
+    # CHANGED: May 2026 — sync validator UI with rule's own settings
+    try:
+        _sync_strat = _strategy_for_iid(idx)
+        _sync_rule0 = None
+        if _sync_strat:
+            _rs_list = _sync_strat.get('rules') or []
+            if _rs_list and isinstance(_rs_list[0], dict):
+                _sync_rule0 = _rs_list[0]
+            elif _sync_strat.get('saved_rule'):
+                _sync_rule0 = _sync_strat['saved_rule']
+        if _sync_rule0:
+            _sync_acct = (_sync_rule0.get('account_size')
+                          or (_val_run_settings or {}).get('starting_capital'))
+            _sync_risk = _sync_rule0.get('risk_pct')
+            _sync_sl   = ((_sync_rule0.get('exit_params') or {}).get('sl_pips'))
+            _sync_pipv = _sync_rule0.get('pip_value_per_lot')
+            if _sync_acct and _account_var:
+                _account_var.set(str(int(float(_sync_acct))))
+            if _sync_risk and _risk_var:
+                _risk_var.set(str(float(_sync_risk)))
+            if _sync_sl and _sl_var:
+                _sl_var.set(str(int(float(_sync_sl))))
+            if _sync_pipv and _pipval_var:
+                _pipval_var.set(str(float(_sync_pipv)))
+            print(f"[VALIDATOR] Synced UI from rule: acct={_sync_acct}, "
+                  f"risk={_sync_risk}, sl={_sync_sl}, pipv={_sync_pipv}")
+    except Exception as _sync_e:
+        print(f"[VALIDATOR] UI sync from rule failed: {_sync_e}")
+
+    # ── Auto-detect stage from rule (eval vs funded) ────────────────────
+    # WHY: _stage_var defaults to "Funded" and was never auto-set from the
+    #      rule. Eval-discovered rules were silently validated against
+    #      funded payout rules — wrong simulation entirely. Pull the
+    #      stage the rule was discovered/saved for and snap the dropdown
+    #      to match BEFORE any estimation runs. _stage_var.set() fires
+    #      the existing _on_val_firm_change trace, which auto-fills risk
+    #      and DD limits from the matching firm JSON section.
+    # CHANGED: May 2026 — auto-detect stage from rule
+    _rule_stage = _resolve_rule_stage(idx, _val_run_settings)
+    # WHY: Single-strategy runs reach _run on the main thread, batch runs
+    #      reach it from a worker thread. StringVar.set() fires the firm-
+    #      change trace synchronously, which touches Tk widgets — unsafe
+    #      from a worker thread. Use after(0, ...) only when off-main.
+    import threading as _stage_th
+    _on_main = _stage_th.current_thread() is _stage_th.main_thread()
+
+    def _apply_stage_ui(stage_label, lbl_text, lbl_fg):
+        if _stage_var is not None:
+            _stage_var.set(stage_label)
+        if _stage_source_lbl is not None:
+            _stage_source_lbl.config(text=lbl_text, fg=lbl_fg)
+
+    def _schedule_stage_ui(stage_label, lbl_text, lbl_fg):
+        if _on_main:
+            _apply_stage_ui(stage_label, lbl_text, lbl_fg)
+        else:
+            state.window.after(0,
+                lambda s=stage_label, t=lbl_text, c=lbl_fg:
+                _apply_stage_ui(s, t, c))
+
+    if _rule_stage and _stage_var is not None:
+        _prev_stage = _stage_var.get().lower()
+        _want_stage_label = "Evaluation" if _rule_stage == 'evaluation' else "Funded"
+        if _prev_stage != _rule_stage:
+            print(f"[VALIDATOR] Stage from rule: {_rule_stage} "
+                  f"(was '{_prev_stage}' in dropdown — overriding)")
+            _lbl_text = f"⚠ overrode dropdown '{_prev_stage}' → rule says {_rule_stage}"
+            _lbl_fg   = "#996600"
+        else:
+            print(f"[VALIDATOR] Stage from rule: {_rule_stage} (matches dropdown)")
+            _lbl_text = f"(from rule: {_rule_stage})"
+            _lbl_fg   = "#2d8a4e"
+        _schedule_stage_ui(_want_stage_label, _lbl_text, _lbl_fg)
+    elif _stage_var is not None:
+        # No prop_firm_stage on the rule — leave the dropdown exactly as
+        # the user set it. Do NOT call _stage_var.set() here: even setting
+        # to the current value retriggers _on_val_firm_change, which
+        # rewrites _risk_var, _account_var, and _val_dd_info as a side
+        # effect — that's the right behaviour for an override but a
+        # regression for a no-op.
+        _cur_stage_val = _stage_var.get()
+        print(f"[VALIDATOR] Stage: rule has no prop_firm_stage field — "
+              f"keeping dropdown '{_cur_stage_val}'")
+        if _stage_source_lbl is not None:
+            _lbl_text = f"(no rule stage — using dropdown: {_cur_stage_val})"
+            if _on_main:
+                _stage_source_lbl.config(text=_lbl_text, fg="#996600")
+            else:
+                state.window.after(0, lambda t=_lbl_text:
+                                   _stage_source_lbl.config(text=t, fg="#996600"))
 
     # ── Loud diagnostics — print everything the validator will use ──
     # WHY: 0-trade walks are silent. Without diagnostics you can't tell
@@ -3354,12 +3606,18 @@ def build_panel(parent):
         tree_frame = tk.Frame(sel_frame, bg=WHITE)
         tree_frame.pack(fill="x", pady=5)
 
-        columns = ("select", "id", "rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
+        # WHY: Stage column surfaces what kind of prop-firm account the
+        #      rule was discovered for (Eval vs Funded), so the user can
+        #      tell at a glance which simulation branch will run. Pulled
+        #      from the same resolver _run() uses to auto-set _stage_var.
+        # CHANGED: May 2026 — Stage column on the strategy grid
+        columns = ("select", "id", "stage", "rule", "exit", "trades", "wr", "pf", "net_pips", "dd", "avg_pips")
         _tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                              height=min(len(_strategies), 10), selectmode="extended")
 
         _tree.heading("select",    text="✓")
         _tree.heading("id",        text="ID")
+        _tree.heading("stage",     text="Stage")
         _tree.heading("rule",      text="Rule")
         _tree.heading("exit",      text="Exit Strategy")
         _tree.heading("trades",    text="Trades")
@@ -3371,6 +3629,7 @@ def build_panel(parent):
 
         _tree.column("select",    width=30,  anchor="center")
         _tree.column("id",        width=50,  anchor="center")
+        _tree.column("stage",     width=70,  anchor="center")
         _tree.column("rule",      width=100, anchor="w")
         _tree.column("exit",      width=130, anchor="w")
         _tree.column("trades",    width=60,  anchor="center")
@@ -3471,9 +3730,24 @@ def build_panel(parent):
                 else:
                     _display_id = f"#{idx}"
 
+                # Stage cell — pulled from the rule's recorded prop_firm_stage
+                # if present. Backtest-matrix rows don't carry the field
+                # (run_settings stores it as None), so they show "—" and the
+                # user picks the stage manually in the dropdown.
+                # CHANGED: May 2026 — Stage column on the strategy grid
+                _stage_for_row = _resolve_rule_stage(s.get('index'),
+                                                     s.get('run_settings'))
+                if _stage_for_row == 'evaluation':
+                    _stage_cell = "Eval"
+                elif _stage_for_row == 'funded':
+                    _stage_cell = "Funded"
+                else:
+                    _stage_cell = "—"
+
                 _tree.insert("", "end", iid=idx, values=(
                     check_mark,
                     _display_id,
+                    _stage_cell,
                     s.get('rule_combo', '?'),
                     s.get('exit_name', '?'),
                     trades,
@@ -3677,6 +3951,15 @@ def build_panel(parent):
     ttk.Combobox(mc_row, textvariable=_stage_var,
                  values=["Evaluation", "Funded"], width=12,
                  state="readonly").pack(side=tk.LEFT, padx=5)
+
+    # Stage-source label — populated by _run() when a rule is loaded so the
+    # user can tell at a glance whether the dropdown reflects the rule's
+    # recorded stage or just whatever was last selected manually.
+    # CHANGED: May 2026 — auto-detect stage from rule
+    global _stage_source_lbl
+    _stage_source_lbl = tk.Label(mc_row, text="", font=("Segoe UI", 8, "italic"),
+                                 bg=WHITE, fg="#888")
+    _stage_source_lbl.pack(side=tk.LEFT, padx=(4, 0))
 
     # DD info label
     _val_dd_info = tk.Label(mc_row, text="", font=("Segoe UI", 8), bg=WHITE, fg="#888")

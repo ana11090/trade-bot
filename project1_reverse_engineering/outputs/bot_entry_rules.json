@@ -2,32 +2,188 @@
   "status": "ok",
   "discovery_method": "bot_entry_v1",
   "n_trades": 1106,
-  "rules": [],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.945
+        },
+        {
+          "feature": "D1_cci_20",
+          "operator": ">",
+          "value": -55.2707
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.632,
+      "win_rate": 0.632,
+      "coverage": 87,
+      "coverage_pct": 24.7,
+      "train_win_rate": 0.71,
+      "train_coverage": 62,
+      "overfit_gap": 0.077,
+      "is_overfit": false,
+      "avg_pips": 117.3,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 174,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_distance_to_rolling_level_786",
+          "operator": "<=",
+          "value": -0.6172
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 34.625
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.733,
+      "win_rate": 0.733,
+      "coverage": 75,
+      "coverage_pct": 21.3,
+      "train_win_rate": 0.739,
+      "train_coverage": 46,
+      "overfit_gap": 0.006,
+      "is_overfit": false,
+      "avg_pips": 202.6,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 256,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_distance_to_rolling_level_786",
+          "operator": ">",
+          "value": -0.6172
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 27.815
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.736,
+      "win_rate": 0.736,
+      "coverage": 72,
+      "coverage_pct": 20.5,
+      "train_win_rate": 0.861,
+      "train_coverage": 79,
+      "overfit_gap": 0.125,
+      "is_overfit": false,
+      "avg_pips": 171.4,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 298,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M15_mt5_ema_9_distance",
+          "operator": "<=",
+          "value": -0.1304
+        },
+        {
+          "feature": "M15_mt5_macd_fast_diff",
+          "operator": "<=",
+          "value": -0.8333
+        },
+        {
+          "feature": "M5_atr_14",
+          "operator": "<=",
+          "value": 3.0123
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.833,
+      "win_rate": 0.833,
+      "coverage": 6,
+      "coverage_pct": 0.6,
+      "train_win_rate": 0.888,
+      "train_coverage": 294,
+      "overfit_gap": 0.054,
+      "is_overfit": false,
+      "avg_pips": 32.2,
+      "source": "bot_entry",
+      "entry_timeframe": "M15",
+      "action": "BUY",
+      "n_real_trades_in_rule": 287,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    }
+  ],
   "per_tf_summary": [
     {
       "tf": "M5",
-      "status": "failed",
-      "error": "Unknown datetime string format, unable to parse: oid sha256:393517397d84371da953c2ebe5b14c2375abb836db02b7c025d74b30b4d4e0f8"
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2632,
+      "n_test": 1128,
+      "n_features": 780
     },
     {
       "tf": "M15",
-      "status": "failed",
-      "error": "Unknown datetime string format, unable to parse: oid sha256:ba69dec371bafde4cddd833625caa028e15b19aaa2caa1adaf945fb6d61ba028"
+      "status": "ok",
+      "n_rules": 1,
+      "n_train": 2536,
+      "n_test": 1088,
+      "n_features": 780
     },
     {
       "tf": "H1",
-      "status": "failed",
-      "error": "Unknown datetime string format, unable to parse: oid sha256:53c1765f42a47d858db6ae31c77c1471142214e46668ce16f54200e10dcbc4ac"
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2410,
+      "n_test": 1034,
+      "n_features": 780
     },
     {
       "tf": "H4",
-      "status": "failed",
-      "error": "Unknown datetime string format, unable to parse: oid sha256:58c26ad35665e126f1199c35ed73ba9ed0467259790a36a24811e39a2790fc9e"
+      "status": "ok",
+      "n_rules": 0,
+      "n_train": 2579,
+      "n_test": 1106,
+      "n_features": 780
     },
     {
       "tf": "D1",
-      "status": "failed",
-      "error": "Unknown datetime string format, unable to parse: oid sha256:10cf2aebf66e15487ed460c20e9aa22f13f3d4814ae0823cc227884956cf96dc"
+      "status": "ok",
+      "n_rules": 3,
+      "n_train": 820,
+      "n_test": 352,
+      "n_features": 780
     }
   ],
   "params": {

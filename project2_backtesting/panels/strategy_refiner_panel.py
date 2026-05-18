@@ -65,6 +65,27 @@ _selected_strat_iid = None
 # CHANGED: April 2026 — load token to cancel stale background loads
 _load_token = 0
 
+# WHY: Eval% / Funded% columns are populated by a background thread because
+#      simulate_challenge per rule is too slow to run synchronously on grid
+#      build for 7k+ rules. Cache keyed by Treeview iid (the same value
+#      stored as `idx` at row insert) so re-filter / re-sort doesn't trigger
+#      recomputation. _pass_rate_thread holds the worker so we can mark it
+#      stale and start a fresh one when _strategies changes.
+# CHANGED: May 2026 — eval/funded pass-rate background compute
+_pass_rate_cache = {}        # iid (str) -> (eval_pct_str, funded_pct_str)
+_pass_rate_thread = None     # running worker
+_pass_rate_token = 0         # incremented to invalidate old workers
+
+# WHY: Grid filter + sort state. Tk Vars created in build_panel; module-level
+#      refs let _on_strategies_loaded read them at rebuild time.
+# CHANGED: May 2026 — refiner grid filters + sort
+_grid_filt_profitable = None  # tk.BooleanVar
+_grid_filt_min_trades = None  # tk.StringVar
+_grid_filt_min_wr     = None  # tk.StringVar
+_grid_filt_min_pf     = None  # tk.StringVar
+_grid_sort_key        = None  # str | None — strategy dict key to sort by
+_grid_sort_reverse    = True  # True = descending
+
 # Filter vars
 _min_hold_var    = None
 _max_hold_var    = None
@@ -111,6 +132,318 @@ _lock_filters_var = None
 # Cache to prevent reloading 43MB file every time panel is shown
 _strategies_cache = []
 _cache_mtime = 0
+
+
+# ── Eval% / Funded% column compute (background) ───────────────────────────────
+# WHY: Per-rule pass-rate columns. Synchronously computing simulate_challenge
+#      for 7k+ rules at grid open would block the UI for minutes. Instead,
+#      the worker walks _strategies, computes per rule, and posts updates to
+#      the Treeview via state.window.after. Cached in _pass_rate_cache by
+#      iid (str index) so re-filter / re-sort doesn't trigger recomputation.
+# CHANGED: May 2026 — eval/funded pass-rate background compute
+
+def _load_trades_for_strategy(s):
+    """Best-effort load of the trade list for one strategy dict.
+
+    Saved rules: may carry trades inline at saved_rule.trades.
+    Backtest rows: trades live in outputs/backtest_trades_<TF>.json keyed by
+    the TF-local index (count of rows with that entry_tf before this one).
+    Returns [] if nothing can be loaded.
+    """
+    src = s.get('source', '')
+    if src == 'saved':
+        _sr = s.get('saved_rule') or {}
+        _t = _sr.get('trades') or s.get('trades') or []
+        return _t if isinstance(_t, list) else []
+    # Backtest / optimizer rows
+    _inline = s.get('trades')
+    if isinstance(_inline, list) and _inline:
+        return _inline
+    try:
+        import json as _ptj
+        entry_tf = s.get('entry_tf') or s.get('entry_timeframe') or ''
+        idx_val  = s.get('index')
+        if not entry_tf or not isinstance(idx_val, int):
+            return []
+        _trades_path = os.path.join(project_root, 'project2_backtesting',
+                                    'outputs', f'backtest_trades_{entry_tf}.json')
+        if not os.path.exists(_trades_path):
+            return []
+        with open(_trades_path, encoding='utf-8') as _f:
+            _all = _ptj.load(_f)
+        # The validator computes a TF-local index by counting rows with the
+        # same entry_tf before idx_val — we don't have the full results array
+        # here, so trust the strategy dict's `tf_local_idx` if present, then
+        # fall back to scanning _strategies.
+        _local = s.get('tf_local_idx')
+        if _local is None:
+            _local = 0
+            for _other in _strategies:
+                if not isinstance(_other.get('index'), int):
+                    continue
+                if _other['index'] >= idx_val:
+                    break
+                if _other.get('entry_tf') == entry_tf:
+                    _local += 1
+        return _all.get(str(_local), []) or []
+    except Exception:
+        return []
+
+
+def _resolve_firm_challenge(rule_dict, account_size):
+    """Find (firm_id, challenge_id) for a rule by scanning prop_firms/."""
+    firm_name = (rule_dict.get('prop_firm_name')
+                 or (rule_dict.get('discovery_settings') or {}).get('prop_firm_name')
+                 or '')
+    if not firm_name:
+        return ('', '')
+    try:
+        import json as _fcj, glob as _fcg
+        for fp in _fcg.glob(os.path.join(project_root, 'prop_firms', '*.json')):
+            with open(fp, encoding='utf-8') as _f:
+                fd = _fcj.load(_f)
+            if fd.get('firm_name') != firm_name:
+                continue
+            firm_id = fd.get('firm_id', '')
+            best = (fd.get('challenges') or [{}])[0]
+            for ch in fd.get('challenges', []):
+                if int(account_size) in (ch.get('account_sizes') or []):
+                    best = ch
+                    break
+            return (firm_id, best.get('challenge_id', ''))
+    except Exception:
+        pass
+    return ('', '')
+
+
+def _kick_pass_rate_compute(tree_widget, strategies_snapshot):
+    """Spawn a background worker that fills the Eval% / Funded% cells.
+
+    Worker priority: saved rules first, then backtest/optimizer rows.
+    Skips entries already cached or that have no idx in the live tree.
+    Uses small num_samples for speed (correctness comes from per-rule
+    variation, not from large-sample precision).
+    """
+    global _pass_rate_thread, _pass_rate_token
+    _pass_rate_token += 1
+    my_token = _pass_rate_token
+
+    # Reorder: saved first (most relevant), then everything else
+    saved   = [s for s in strategies_snapshot if s.get('source') == 'saved']
+    others  = [s for s in strategies_snapshot if s.get('source') not in ('saved', 'separator')]
+    ordered = saved + others
+
+    def _set_cell(iid, eval_pct, funded_pct):
+        try:
+            if not tree_widget.exists(iid):
+                return
+            vals = list(tree_widget.item(iid, 'values'))
+            if len(vals) >= 13:
+                vals[11] = eval_pct
+                vals[12] = funded_pct
+                tree_widget.item(iid, values=vals)
+        except Exception:
+            pass
+
+    def _worker():
+        from project2_backtesting.strategy_validator import _trades_to_df
+        from shared.prop_firm_simulator import simulate_challenge
+        import time as _ptime
+        _started = _ptime.time()
+        _done = 0
+        _total = len(ordered)
+        print(f"[REFINER PASS-RATE] Worker started — {_total} rules to compute (token={my_token})")
+        for s in ordered:
+            if my_token != _pass_rate_token:
+                return  # stale — a newer compute kicked us off
+            iid = str(s.get('index', ''))
+            if not iid:
+                continue
+            if iid in _pass_rate_cache:
+                ev, fn = _pass_rate_cache[iid]
+                if state.window:
+                    state.window.after(0, lambda i=iid, e=ev, f=fn: _set_cell(i, e, f))
+                continue
+            try:
+                trades = _load_trades_for_strategy(s)
+                if not trades:
+                    _pass_rate_cache[iid] = ('—', '—')
+                    if state.window:
+                        state.window.after(0, lambda i=iid: _set_cell(i, '—', '—'))
+                    continue
+                rule0 = (s.get('rules') or [{}])[0] if s.get('rules') else (s.get('saved_rule') or {})
+                acct  = float(rule0.get('account_size', 10000) or 10000)
+                risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
+                sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+                pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+                firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
+                if not firm_id or not ch_id:
+                    _pass_rate_cache[iid] = ('—', '—')
+                    if state.window:
+                        state.window.after(0, lambda i=iid: _set_cell(i, '—', '—'))
+                    continue
+                df = _trades_to_df(trades, risk, sl, pipv, int(acct))
+                sim = simulate_challenge(
+                    trades_df=df, firm_id=firm_id, challenge_id=ch_id,
+                    account_size=int(acct), mode='monte_carlo',
+                    num_samples=20, simulate_funded=True,
+                    risk_per_trade_pct=risk, default_sl_pips=sl,
+                    pip_value_per_lot=pipv, symbol='XAUUSD',
+                )
+                if sim is None:
+                    ev_str, fn_str = '—', '—'
+                else:
+                    ev_str = f"{sim.eval_pass_rate*100:.0f}%"
+                    # Funded column = 3-month survival rate (most informative
+                    # differentiator across rules at this account/risk).
+                    if sim.funded_survival_rate_3mo is not None:
+                        fn_str = f"{sim.funded_survival_rate_3mo*100:.0f}%"
+                    else:
+                        fn_str = '—'
+                _pass_rate_cache[iid] = (ev_str, fn_str)
+                if state.window:
+                    state.window.after(0, lambda i=iid, e=ev_str, f=fn_str: _set_cell(i, e, f))
+            except Exception:
+                import traceback; traceback.print_exc()
+                _pass_rate_cache[iid] = ('err', 'err')
+                if state.window:
+                    state.window.after(0, lambda i=iid: _set_cell(i, 'err', 'err'))
+            _done += 1
+            if _done <= 5 or _done % 100 == 0 or _done == _total:
+                _el = _ptime.time() - _started
+                print(f"[REFINER PASS-RATE] {_done}/{_total}  "
+                      f"({_el:.0f}s, ~{(_total-_done)*_el/max(_done,1):.0f}s remaining)")
+        print(f"[REFINER PASS-RATE] Worker DONE — {_done}/{_total} in {_ptime.time()-_started:.0f}s")
+
+    _pass_rate_thread = threading.Thread(target=_worker, daemon=True)
+    _pass_rate_thread.start()
+
+
+_passrate_widgets = None  # set by build_panel; holds frame+label for detail render
+
+
+def _update_passrate_detail(strategy_dict):
+    """Compute and render eval/funded sim detail for a single rule.
+
+    Runs simulate_challenge twice — once for eval (simulate_funded=False) and
+    once for funded (simulate_funded=True) — and writes a multi-line summary
+    to the detail label below the refiner grid. Fast enough for a click
+    handler (~100-200ms per rule).
+    """
+    if not _passrate_widgets:
+        return
+    lbl = _passrate_widgets.get('label')
+    if lbl is None:
+        return
+
+    def _set_text(msg, fg=DARK):
+        try:
+            lbl.configure(state="normal")
+            lbl.delete("1.0", "end")
+            lbl.insert("1.0", msg)
+            lbl.configure(state="disabled", fg=fg)
+        except Exception:
+            pass
+
+    try:
+        from project2_backtesting.strategy_validator import _trades_to_df
+        from shared.prop_firm_simulator import simulate_challenge
+    except Exception as _ie:
+        _set_text(f"⚠ Simulator import failed: {_ie}", fg=RED)
+        return
+
+    trades = _load_trades_for_strategy(strategy_dict)
+    if not trades:
+        _set_text("⚠ No trade data for this rule — re-run the backtest.", fg=RED)
+        return
+
+    rule0 = ((strategy_dict.get('rules') or [{}])[0]
+             if strategy_dict.get('rules')
+             else (strategy_dict.get('saved_rule') or {}))
+    try:
+        acct = float(rule0.get('account_size', 10000) or 10000)
+        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
+        sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+    except Exception:
+        acct, risk, sl, pipv = 10000.0, 1.0, 150.0, 1.0
+
+    firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
+    if not firm_id or not ch_id:
+        _set_text(
+            f"⚠ Cannot resolve firm/challenge "
+            f"(firm_name={rule0.get('prop_firm_name')!r}, acct=${int(acct):,}).",
+            fg=RED)
+        return
+
+    df = _trades_to_df(trades, risk, sl, pipv, int(acct))
+
+    _set_text("⏳ Computing eval & funded simulation…", fg=GREY)
+    if state.window:
+        state.window.update_idletasks()
+
+    sim_e = None
+    sim_f = None
+    try:
+        sim_e = simulate_challenge(
+            trades_df=df, firm_id=firm_id, challenge_id=ch_id,
+            account_size=int(acct), mode='monte_carlo', num_samples=100,
+            simulate_funded=False, risk_per_trade_pct=risk,
+            default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
+        )
+        sim_f = simulate_challenge(
+            trades_df=df, firm_id=firm_id, challenge_id=ch_id,
+            account_size=int(acct), mode='monte_carlo', num_samples=100,
+            simulate_funded=True, risk_per_trade_pct=risk,
+            default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
+        )
+    except Exception as _se:
+        import traceback; traceback.print_exc()
+        _set_text(f"⚠ Simulator error: {_se}", fg=RED)
+        return
+
+    lines = []
+    lines.append(f"Firm: {rule0.get('prop_firm_name','?')}  |  Account: ${int(acct):,}  "
+                 f"|  Risk: {risk}%  |  Trades: {len(trades)}")
+    if sim_e is not None:
+        ep   = sim_e.eval_pass_rate * 100
+        cnt  = sim_e.eval_pass_count
+        tot  = sim_e.eval_pass_count + sim_e.eval_fail_count
+        lines.append(f"🎯 EVAL  pass rate: {ep:.0f}%  ({cnt}/{tot} attempts)")
+        if sim_e.eval_pass_count > 0:
+            lines.append(f"   📅 Trading days to pass: "
+                         f"avg {sim_e.eval_avg_days_to_pass:.0f}  |  "
+                         f"fastest {sim_e.eval_min_days_to_pass:.0f}  |  "
+                         f"slowest {sim_e.eval_max_days_to_pass:.0f}")
+        lines.append(f"   📊 Avg max DD per attempt: {sim_e.eval_avg_max_dd_pct:.1f}%")
+        if sim_e.eval_fail_reasons:
+            reasons = "  |  ".join(
+                f"{k.replace('FAIL_','').replace('_',' ').title()}: {v}"
+                for k, v in sorted(sim_e.eval_fail_reasons.items(),
+                                   key=lambda x: -x[1])
+            )
+            lines.append(f"   💥 Fail reasons: {reasons}")
+    else:
+        lines.append("🎯 EVAL  simulator returned no data")
+
+    if sim_f is not None:
+        if sim_f.funded_avg_survival_days is not None:
+            lines.append(f"💰 FUNDED survival: "
+                         f"avg {sim_f.funded_avg_survival_days:.0f} days  |  "
+                         f"median {sim_f.funded_median_survival_days:.0f} days")
+        if sim_f.funded_avg_monthly_payout is not None:
+            lines.append(f"   📈 Avg monthly payout: ${sim_f.funded_avg_monthly_payout:,.0f}  "
+                         f"|  total: ${(sim_f.funded_avg_total_payouts or 0):,.0f}")
+        if sim_f.funded_survival_rate_3mo is not None or sim_f.funded_survival_rate_6mo is not None:
+            s3 = (f"{sim_f.funded_survival_rate_3mo*100:.0f}%"
+                  if sim_f.funded_survival_rate_3mo is not None else "—")
+            s6 = (f"{sim_f.funded_survival_rate_6mo*100:.0f}%"
+                  if sim_f.funded_survival_rate_6mo is not None else "—")
+            lines.append(f"   📉 Survival rate: 3-month {s3}  |  6-month {s6}")
+    else:
+        lines.append("💰 FUNDED  simulator returned no data")
+
+    _set_text("\n".join(lines), fg=DARK)
 
 
 # WHY: Diagnose "No Trades" lookup failures by simulating the refiner's
@@ -4054,15 +4387,174 @@ def build_panel(parent):
     tk.Label(hdr, text="Optimize your strategy for prop firm challenges",
              bg=WHITE, fg=GREY, font=("Segoe UI", 11)).pack(pady=(4, 0))
 
-    # ── Strategy selector ─────────────────────────────────────────────────────
-    sel_frame = tk.Frame(panel, bg=WHITE, padx=20, pady=12)
-    sel_frame.pack(fill="x", padx=20, pady=(0, 5))
+    # ── Scrollable container ─────────────────────────────────────────────
+    # WHY: Previously sel_frame (strategy grid + detail + filters) was
+    #      packed directly to `panel`, ABOVE the scrollable canvas. As the
+    #      strategy block grew (filters row, sort row, detail panel) it
+    #      pushed the canvas off-screen and the scroll became useless.
+    #      Create the scroll canvas right after the header, parent
+    #      sel_frame INTO scroll_frame, and everything below scrolls
+    #      together as one tall page.
+    # CHANGED: May 2026 — full-page scroll: sel_frame inside scroll_frame
+    _scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
+    vscroll = tk.Scrollbar(panel, orient="vertical", command=_scroll_canvas.yview)
+    scroll_frame = tk.Frame(_scroll_canvas, bg=BG)
+
+    scroll_frame.bind("<Configure>",
+                      lambda e: _scroll_canvas.configure(
+                          scrollregion=_scroll_canvas.bbox("all")))
+    cwin = _scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    _scroll_canvas.configure(yscrollcommand=vscroll.set)
+    _scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
+    vscroll.pack(side="right", fill="y", padx=(0, 20))
+
+    # Mousewheel binding — only fires when the cursor is over this canvas
+    def _on_enter(event):
+        _scroll_canvas.bind("<MouseWheel>",
+            lambda e: _scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        _scroll_canvas.bind("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
+        _scroll_canvas.bind("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
+
+    def _on_leave(event):
+        _scroll_canvas.unbind("<MouseWheel>")
+        _scroll_canvas.unbind("<Button-4>")
+        _scroll_canvas.unbind("<Button-5>")
+
+    _scroll_canvas.bind("<Enter>", _on_enter)
+    _scroll_canvas.bind("<Leave>", _on_leave)
+    _scroll_canvas.bind("<Configure>",
+                        lambda e: _scroll_canvas.itemconfig(cwin, width=e.width))
+
+    # ── Strategy selector (now inside the scrollable area) ────────────
+    sel_frame = tk.Frame(scroll_frame, bg=WHITE, padx=20, pady=12)
+    sel_frame.pack(fill="x", padx=0, pady=(0, 5))
 
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
 
+    # ── Filter + sort controls ───────────────────────────────────────────
+    # WHY: Lets the user trim the 7k+ rule list down to what's worth looking
+    #      at: profitable rules only, minimum trade count, minimum WR/PF,
+    #      and reorder by any numeric column. State lives in module globals
+    #      so a re-filter (typing a new threshold) doesn't reload trades
+    #      from disk — _on_strategies_loaded just rebuilds the Treeview.
+    # CHANGED: May 2026 — refiner grid filters + sort
+    global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
+    global _grid_filt_min_pf, _grid_sort_key, _grid_sort_reverse
+    _grid_filt_profitable = tk.BooleanVar(value=False)
+    _grid_filt_min_trades = tk.StringVar(value="0")
+    _grid_filt_min_wr     = tk.StringVar(value="0")
+    _grid_filt_min_pf     = tk.StringVar(value="0")
+    _grid_sort_key        = None
+    _grid_sort_reverse    = True
+
+    filt_row = tk.Frame(sel_frame, bg=WHITE)
+    filt_row.pack(fill="x", pady=(0, 4))
+
+    tk.Label(filt_row, text="Filters:",
+             font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#333"
+             ).pack(side=tk.LEFT)
+
+    tk.Checkbutton(filt_row, text="Profitable only",
+                   variable=_grid_filt_profitable, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(10, 4))
+
+    tk.Label(filt_row, text="Min trades:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_min_trades, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    tk.Label(filt_row, text="Min WR%:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_min_wr, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    tk.Label(filt_row, text="Min PF:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_min_pf, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    def _apply_grid_filters():
+        # Trigger a tree rebuild by calling the loader's rebuild function.
+        # _on_strategies_loaded is defined later inside build_panel; we
+        # look it up from the panel's closure via a stored hook.
+        if _refiner_rebuild_hook[0]:
+            _refiner_rebuild_hook[0]()
+
+    def _reset_grid_filters():
+        _grid_filt_profitable.set(False)
+        _grid_filt_min_trades.set("0")
+        _grid_filt_min_wr.set("0")
+        _grid_filt_min_pf.set("0")
+        _apply_grid_filters()
+
+    tk.Button(filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
+              bg="#667eea", fg="white", relief=tk.FLAT, padx=10, pady=2,
+              cursor="hand2", command=_apply_grid_filters
+              ).pack(side=tk.LEFT, padx=(12, 2))
+    tk.Button(filt_row, text="Reset", font=("Segoe UI", 8),
+              bg="#6c757d", fg="white", relief=tk.FLAT, padx=10, pady=2,
+              cursor="hand2", command=_reset_grid_filters
+              ).pack(side=tk.LEFT, padx=2)
+
+    # Sort row
+    sort_row = tk.Frame(sel_frame, bg=WHITE)
+    sort_row.pack(fill="x", pady=(0, 4))
+    tk.Label(sort_row, text="Sort by:", font=("Segoe UI", 9),
+             bg=WHITE, fg=GREY).pack(side=tk.LEFT)
+
+    def _sort_by(key, reverse=True):
+        global _grid_sort_key, _grid_sort_reverse
+        _grid_sort_key = key
+        _grid_sort_reverse = reverse
+        _apply_grid_filters()
+
+    for label, key, rev in [
+        ("Net Pips ↓",   "net_total_pips",     True),
+        ("Win Rate ↓",   "win_rate",           True),
+        ("PF ↓",         "net_profit_factor",  True),
+        ("Trades ↓",     "total_trades",       True),
+        ("Avg Pips ↓",   "net_avg_pips",       True),
+    ]:
+        tk.Button(sort_row, text=label, font=("Segoe UI", 8),
+                  bg="#667eea", fg="white", relief=tk.FLAT,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda k=key, r=rev: _sort_by(k, r)
+                  ).pack(side=tk.LEFT, padx=(6, 0))
+
+    # Hook the rebuild action — populated below once _on_strategies_loaded
+    # is defined. Filter / sort handlers above use this list-cell to call it.
+    _refiner_rebuild_hook = [None]
+
     sel_row = tk.Frame(sel_frame, bg=WHITE)
     sel_row.pack(fill="x")
+
+    # WHY: Detail panel sits below the grid and shows the full eval/funded
+    #      simulation breakdown for the currently-selected rule. Uses a
+    #      fixed-height Text widget (not a Label) so the multi-line content
+    #      doesn't push the scrollable area below sel_frame off-screen.
+    #      The detail block stays compact; the scrollable area below it
+    #      keeps its full height regardless of how many lines we render.
+    # CHANGED: May 2026 — per-rule pass-rate detail below grid
+    #          May 2026 — fixed-height Text to preserve scroll area
+    _passrate_detail_frame = tk.LabelFrame(sel_frame,
+        text="🎯 Selected rule — eval & funded simulation",
+        font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#4a148c",
+        padx=8, pady=4)
+    _passrate_detail_frame.pack(fill="x", padx=0, pady=(6, 0))
+    _passrate_detail_lbl = tk.Text(_passrate_detail_frame,
+        height=7, wrap="word",
+        font=("Consolas", 9), bg=WHITE, fg=DARK,
+        relief="flat", highlightthickness=0,
+        cursor="arrow")
+    _passrate_detail_lbl.insert("1.0",
+        "Select a rule to see eval/funded pass rate and timing.")
+    _passrate_detail_lbl.configure(state="disabled")
+    _passrate_detail_lbl.pack(fill="x")
+    # Expose so the module-level _update_passrate_detail() helper (called from
+    # _on_tree_select) can write into the widget.
+    global _passrate_widgets
+    _passrate_widgets = {'frame': _passrate_detail_frame, 'label': _passrate_detail_lbl}
 
     # Show loading message initially
     loading_lbl = tk.Label(sel_row, text="⏳ Loading strategies...",
@@ -4114,6 +4606,24 @@ def build_panel(parent):
             #      exists to avoid "invalid command name" errors when
             #      refreshing from a click handler.
             # CHANGED: April 2026 — per-row-delete v3 bugfix
+            # WHY (column-mismatch guard): If the column set changed between
+            #      runs (added Stage / Eval% / Funded%) the existing tree
+            #      keeps the OLD column definitions and the new values just
+            #      slide off the right edge or never render. Detect the
+            #      mismatch and force a clean rebuild.
+            # CHANGED: May 2026 — force rebuild when column count differs
+            _expected_col_count = 14  # star,#,stage,rule,exit,tf,trades,wr,pf,net_pips,avg_pips,eval_pct,funded_pct,del
+            if has_existing_tree:
+                try:
+                    _existing_cols = existing_tree['columns']
+                    if len(_existing_cols) != _expected_col_count:
+                        print(f"[REFINER] Column mismatch ({len(_existing_cols)} vs {_expected_col_count}) — rebuilding tree")
+                        for widget in sel_row.winfo_children():
+                            widget.destroy()
+                        dd_container[0] = None
+                        has_existing_tree = False
+                except Exception:
+                    has_existing_tree = False
             if has_existing_tree:
                 # Reuse existing tree - just clear items
                 _strat_tree = existing_tree
@@ -4132,34 +4642,55 @@ def build_panel(parent):
                 #      that the EA generator uses the correct timeframe.
                 # CHANGED: April 2026 — per-row-delete
                 #          April 2026 — add entry TF column for verification
-                columns = ("star", "#", "rule", "exit", "tf", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
+                # WHY: Stage column shows whether the rule was discovered for
+                #      Evaluation or a Funded account. Pulled from the rule's
+                #      own prop_firm_stage field (saved_rule top-level, then
+                #      discovery_settings, then embedded rules[0] for
+                #      backtest-matrix rows). No re-run needed — the field
+                #      already exists in every JSON path.
+                # CHANGED: May 2026 — Stage column on the refiner grid
+                # WHY: Eval% / Funded% columns expose per-rule simulator pass
+                #      rates. Populated lazily by a background thread (see
+                #      _kick_pass_rate_compute below) so grid opens fast and
+                #      values fill in as they're computed. Cached in
+                #      _pass_rate_cache by rule index so re-filtering doesn't
+                #      recompute.
+                # CHANGED: May 2026 — eval/funded pass-rate columns
+                columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
+                           "net_pips", "avg_pips", "eval_pct", "funded_pct", "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
                                            selectmode="browse")
 
-                _strat_tree.heading("star",     text="⭐")
-                _strat_tree.heading("#",        text="#")
-                _strat_tree.heading("rule",     text="Rule")
-                _strat_tree.heading("exit",     text="Exit Strategy")
-                _strat_tree.heading("tf",       text="TF")
-                _strat_tree.heading("trades",   text="Trades")
-                _strat_tree.heading("wr",       text="Win Rate")
-                _strat_tree.heading("pf",       text="PF")
-                _strat_tree.heading("net_pips", text="Net Pips")
-                _strat_tree.heading("avg_pips", text="Avg Pips")
-                _strat_tree.heading("del",      text="🗑")
+                _strat_tree.heading("star",       text="⭐")
+                _strat_tree.heading("#",          text="#")
+                _strat_tree.heading("stage",      text="Stage")
+                _strat_tree.heading("rule",       text="Rule")
+                _strat_tree.heading("exit",       text="Exit Strategy")
+                _strat_tree.heading("tf",         text="TF")
+                _strat_tree.heading("trades",     text="Trades")
+                _strat_tree.heading("wr",         text="Win Rate")
+                _strat_tree.heading("pf",         text="PF")
+                _strat_tree.heading("net_pips",   text="Net Pips")
+                _strat_tree.heading("avg_pips",   text="Avg Pips")
+                _strat_tree.heading("eval_pct",   text="Eval %")
+                _strat_tree.heading("funded_pct", text="Funded %")
+                _strat_tree.heading("del",        text="🗑")
 
-                _strat_tree.column("star",     width=30,  anchor="center")
-                _strat_tree.column("#",        width=70,  anchor="center")
-                _strat_tree.column("rule",     width=160, anchor="w")
-                _strat_tree.column("exit",     width=120, anchor="w")
-                _strat_tree.column("tf",       width=45,  anchor="center")
-                _strat_tree.column("trades",   width=60,  anchor="center")
-                _strat_tree.column("wr",       width=70,  anchor="center")
-                _strat_tree.column("pf",       width=60,  anchor="center")
-                _strat_tree.column("net_pips", width=90,  anchor="e")
-                _strat_tree.column("avg_pips", width=70,  anchor="e")
-                _strat_tree.column("del",      width=40,  anchor="center")
+                _strat_tree.column("star",       width=30,  anchor="center")
+                _strat_tree.column("#",          width=70,  anchor="center")
+                _strat_tree.column("stage",      width=70,  anchor="center")
+                _strat_tree.column("rule",       width=160, anchor="w")
+                _strat_tree.column("exit",       width=120, anchor="w")
+                _strat_tree.column("tf",         width=45,  anchor="center")
+                _strat_tree.column("trades",     width=60,  anchor="center")
+                _strat_tree.column("wr",         width=70,  anchor="center")
+                _strat_tree.column("pf",         width=60,  anchor="center")
+                _strat_tree.column("net_pips",   width=90,  anchor="e")
+                _strat_tree.column("avg_pips",   width=70,  anchor="e")
+                _strat_tree.column("eval_pct",   width=65,  anchor="center")
+                _strat_tree.column("funded_pct", width=65,  anchor="center")
+                _strat_tree.column("del",        width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
                 _strat_tree.tag_configure("losing",     foreground="#dc3545")
@@ -4181,9 +4712,92 @@ def build_panel(parent):
             # WHY: Saved rules were at position 202+ (after 201 backtest rows).
             #      With 8 visible rows the user couldn't find them. Now shown first.
             # CHANGED: April 2026 — saved rules on top
-            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved']
+
+            # WHY: Compact stage resolver — reads prop_firm_stage from every
+            #      JSON location that might carry it (saved_rule top-level,
+            #      discovery_settings, embedded rules[0] for backtest rows,
+            #      run_settings). Normalises to "Eval" / "Funded" / "—".
+            #      Backtest-matrix rows store the stage inside .rules[0], so
+            #      this works without re-running any backtest.
+            # CHANGED: May 2026 — Stage column on the refiner grid
+            def _stage_cell_for(strat):
+                _src = []
+                _src.append(strat.get('prop_firm_stage'))
+                _src.append((strat.get('run_settings') or {}).get('prop_firm_stage'))
+                _sr = strat.get('saved_rule') or {}
+                _src.append(_sr.get('prop_firm_stage'))
+                _src.append((_sr.get('discovery_settings') or {}).get('prop_firm_stage'))
+                for _emb in (strat.get('rules') or []):
+                    if isinstance(_emb, dict):
+                        _src.append(_emb.get('prop_firm_stage'))
+                        _src.append((_emb.get('discovery_settings') or {}).get('prop_firm_stage'))
+                        break
+                for c in _src:
+                    if not c:
+                        continue
+                    n = str(c).strip().lower()
+                    if n in ('evaluation', 'eval'):
+                        return "Eval"
+                    if n == 'funded':
+                        return "Funded"
+                return "—"
+
+            # ── Apply filter + sort ──────────────────────────────────────
+            # WHY: Pull live filter thresholds from the Tk Vars in the toolbar
+            #      above the grid; apply them and the sort key to the rule
+            #      list before iterating. Saved rules stay pinned to the top
+            #      (they're what the user cares about most), separator stays
+            #      between them, sort/filter applies to everything.
+            # CHANGED: May 2026 — refiner grid filters + sort
+            def _strat_passes_filters(strat):
+                if strat.get('source') == 'separator':
+                    return True
+                try:
+                    min_t  = int(_grid_filt_min_trades.get() or "0") if _grid_filt_min_trades else 0
+                except Exception:
+                    min_t = 0
+                try:
+                    min_wr = float(_grid_filt_min_wr.get() or "0") if _grid_filt_min_wr else 0.0
+                except Exception:
+                    min_wr = 0.0
+                try:
+                    min_pf = float(_grid_filt_min_pf.get() or "0") if _grid_filt_min_pf else 0.0
+                except Exception:
+                    min_pf = 0.0
+                _t = int(strat.get('total_trades', strat.get('trades', 0)) or 0)
+                if _t < min_t:
+                    return False
+                _wr_raw = strat.get('win_rate', 0) or 0
+                _wr_pct = _wr_raw * 100 if _wr_raw <= 1 else _wr_raw
+                if _wr_pct < min_wr:
+                    return False
+                _pf = float(strat.get('net_profit_factor', strat.get('profit_factor', 0)) or 0)
+                if _pf < min_pf:
+                    return False
+                if _grid_filt_profitable and _grid_filt_profitable.get():
+                    _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
+                    if _net <= 0:
+                        return False
+                return True
+
+            def _sort_key_fn(strat):
+                key = _grid_sort_key
+                if not key:
+                    return 0
+                v = strat.get(key, 0) or 0
+                try:
+                    return float(v)
+                except Exception:
+                    return 0
+
+            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved'
+                           and _strat_passes_filters(s)]
             _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
-            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')
+                           and _strat_passes_filters(s)]
+            if _grid_sort_key:
+                _sr_saved.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
+                _sr_others.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
             _bt_row_n   = 0
             for s in _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
@@ -4202,7 +4816,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4228,9 +4842,12 @@ def build_panel(parent):
                         '—'
                     )
                     tag = "saved" if not is_starred else "starred"
+                    _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_saved,
-                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                        star_display, id_display, _stage_cell_for(s), rc, exit_name,
+                        entry_tf_display, int(trades), wr_s_saved,
+                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}",
+                        _ev_cached, _fn_cached, "🗑"
                     ), tags=(tag,))
                     continue
                 elif source == 'optimizer':
@@ -4255,9 +4872,12 @@ def build_panel(parent):
                     '—'
                 )
 
+                _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
                 _strat_tree.insert("", "end", iid=idx, values=(
-                    star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_str,
-                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
+                    star_display, id_display, _stage_cell_for(s), rc, exit_name,
+                    entry_tf_display, int(trades), wr_str,
+                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}",
+                    _ev_cached, _fn_cached, del_display
                 ), tags=(tag,))
 
             # Select first saved rule by default (most relevant to user)
@@ -4283,6 +4903,13 @@ def build_panel(parent):
             if not has_existing_tree:
                 dd_container[0] = _strat_tree
 
+            # Kick off background eval/funded pass-rate computation. Worker
+            # walks _strategies, runs simulate_challenge per rule, updates the
+            # Treeview cell as each result lands. Cached so re-filter / re-sort
+            # doesn't recompute. Skips rules already cached or already running.
+            # CHANGED: May 2026 — eval/funded pass-rate background compute
+            _kick_pass_rate_compute(_strat_tree, list(_strategies))
+
             def _on_tree_select(event=None):
                 global _selected_strat_iid
                 sel = _strat_tree.selection()
@@ -4295,6 +4922,8 @@ def build_panel(parent):
                             return  # ignore separator clicks
                         _selected_strat_iid = sel_idx
                         _strategy_var.set(s['label'])
+                        # CHANGED: May 2026 — populate eval/funded detail panel
+                        _update_passrate_detail(s)
                         break
 
             # WHY (per-row-delete v3): Source-dispatched delete with the
@@ -4565,6 +5194,11 @@ def build_panel(parent):
         # Schedule UI update on main thread
         panel.after(0, _on_strategies_loaded)
 
+    # Expose the rebuild hook so the filter/sort toolbar can trigger
+    # _on_strategies_loaded without re-loading strategies from disk.
+    # CHANGED: May 2026 — refiner grid filters + sort
+    _refiner_rebuild_hook[0] = _on_strategies_loaded
+
     # Start background loading
     threading.Thread(target=_load_in_background, daemon=True).start()
 
@@ -4575,38 +5209,9 @@ def build_panel(parent):
                                font=("Segoe UI", 8, "bold"), bg=WHITE, fg="#e65100")
     _eval_info_lbl.pack(anchor="w", pady=(2, 0))
 
-    # ── Scrollable area ───────────────────────────────────────────────────────
-    _scroll_canvas = tk.Canvas(panel, bg=BG, highlightthickness=0)
-    vscroll = tk.Scrollbar(panel, orient="vertical", command=_scroll_canvas.yview)
-    scroll_frame = tk.Frame(_scroll_canvas, bg=BG)
-
-    scroll_frame.bind("<Configure>",
-                      lambda e: _scroll_canvas.configure(
-                          scrollregion=_scroll_canvas.bbox("all")))
-    cwin = _scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-    _scroll_canvas.configure(yscrollcommand=vscroll.set)
-    _scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
-    vscroll.pack(side="right", fill="y", padx=(0, 20))
-
-    # Safe mousewheel binding — doesn't break other canvases
-    def _on_enter(event):
-        _scroll_canvas.bind("<MouseWheel>",
-            lambda e: _scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        # Linux
-        _scroll_canvas.bind("<Button-4>", lambda e: _scroll_canvas.yview_scroll(-3, "units"))
-        _scroll_canvas.bind("<Button-5>", lambda e: _scroll_canvas.yview_scroll(3, "units"))
-
-    def _on_leave(event):
-        _scroll_canvas.unbind("<MouseWheel>")
-        _scroll_canvas.unbind("<Button-4>")
-        _scroll_canvas.unbind("<Button-5>")
-
-    _scroll_canvas.bind("<Enter>", _on_enter)
-    _scroll_canvas.bind("<Leave>", _on_leave)
-    _scroll_canvas.bind("<Configure>",
-                        lambda e: _scroll_canvas.itemconfig(cwin, width=e.width))
-
-    # Everything below goes inside scroll_frame
+    # Everything below goes inside scroll_frame (the canvas is created above,
+    # right after the header, so sel_frame and the rest scroll as one page).
+    # CHANGED: May 2026 — full-page scroll
     sf = scroll_frame
 
     # ── MODE 1: Filters ───────────────────────────────────────────────────────

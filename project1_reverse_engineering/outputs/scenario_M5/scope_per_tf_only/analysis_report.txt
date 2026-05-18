@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-06T13:11:01.731129
-Trades analyzed: 1106 | Features: 759
+Generated: 2026-05-18T08:56:25.864604
+Trades analyzed: 1106 | Features: 789
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 759
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=79.0%, test=60.4%
-   1. M5_mt5_atr_14                                 2.1%
-   2. M5_mt5_atr_28                                 2.1%
-   3. M5_std_dev_50                                 1.9%
-   4. M5_mt5_atr_100                                1.8%
-   5. M5_tsi                                        1.8%
-   6. M5_mt5_atr_50                                 1.8%
-   7. M5_candle_range                               1.7%
-   8. M5_aroon_down                                 1.7%
-   9. M5_mt5_atr_7                                  1.7%
-  10. M5_mfi                                        1.7%
+  Model accuracy: train=78.5%, test=60.4%
+   1. M5_std_dev_50                                 2.2%
+   2. M5_mt5_atr_50                                 2.1%
+   3. M5_mt5_atr_14                                 2.0%
+   4. M5_tsi                                        1.9%
+   5. M5_mt5_atr_21                                 1.9%
+   6. M5_mt5_atr_28                                 1.8%
+   7. M5_mt5_atr_7                                  1.7%
+   8. M5_candle_range                               1.7%
+   9. M5_mt5_atr_100                                1.6%
+  10. M5_distance_from_high                         1.4%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -46,7 +46,7 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 91% | Avg pips: +989
 
   RULE 4 (WIN, conf: 90%, 20 trades)
-    IF M5_keltner_width > 0.6821 AND M5_candle_body <= 12.41 AND M5_adx_28 > 26.2045
+    IF M5_keltner_width > 0.6821 AND M5_candle_body <= 12.41 AND M5_mt5_adx_28 > 26.2045
     Win rate: 90% | Avg pips: +664
 
   RULE 5 (WIN, conf: 80%, 20 trades)
@@ -54,14 +54,14 @@ Trades analyzed: 1106 | Features: 759
     Win rate: 80% | Avg pips: +457
 
   RULE 6 (WIN, conf: 75%, 20 trades)
-    IF M5_keltner_width > 0.6821 AND M5_candle_body <= 12.41 AND M5_adx_28 <= 26.2045
+    IF M5_keltner_width > 0.6821 AND M5_candle_body <= 12.41 AND M5_mt5_adx_28 <= 26.2045
     Win rate: 75% | Avg pips: +384
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Profit cluster': 200 trades (18.1%), WR 72%, avg +290 pips, avg dur 0min
-  'Profit cluster': 178 trades (16.1%), WR 62%, avg +262 pips, avg dur 0min
-  'Profit cluster': 327 trades (29.6%), WR 61%, avg +121 pips, avg dur 0min
-  'Mixed cluster': 401 trades (36.3%), WR 48%, avg +44 pips, avg dur 0min
+  'Profit cluster': 201 trades (18.2%), WR 72%, avg +288 pips, avg dur 0min
+  'Profit cluster': 180 trades (16.3%), WR 63%, avg +263 pips, avg dur 0min
+  'Profit cluster': 325 trades (29.4%), WR 61%, avg +116 pips, avg dur 0min
+  'Mixed cluster': 400 trades (36.2%), WR 48%, avg +46 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -95,7 +95,7 @@ Trades analyzed: 1106 | Features: 759
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 84% vs normal: 57%
+  Anomaly win rate: 86% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)
