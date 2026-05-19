@@ -218,10 +218,25 @@ def _load_trades_for_strategy(s):
     return []
 
 
-def _resolve_firm_challenge(rule_dict, account_size):
-    """Find (firm_id, challenge_id) for a rule by scanning prop_firms/."""
+def _resolve_firm_challenge(rule_dict, account_size, fallback_firm_name=None):
+    """Find (firm_id, challenge_id) for a rule by scanning prop_firms/.
+
+    Resolution order for firm_name:
+      1. rule_dict['prop_firm_name']
+      2. rule_dict['discovery_settings']['prop_firm_name']
+      3. fallback_firm_name (caller-supplied, typically the strategy
+         dict's top-level prop_firm_name)
+
+    WHY: Backtest matrix saves prop_firm_name at the strategy_dict TOP
+         level (set in strategy_refiner.load_strategy_list), not inside
+         each rule's sub-dict. Without the fallback, clicking any
+         backtest row triggered "Cannot resolve firm/challenge
+         (firm_name=None)" in the eval detail panel.
+    CHANGED: May 2026 — fallback to top-level prop_firm_name
+    """
     firm_name = (rule_dict.get('prop_firm_name')
                  or (rule_dict.get('discovery_settings') or {}).get('prop_firm_name')
+                 or fallback_firm_name
                  or '')
     if not firm_name:
         return ('', '')
@@ -352,11 +367,20 @@ def _update_passrate_detail(strategy_dict):
     except Exception:
         acct, risk, sl, pipv = 10000.0, 1.0, 150.0, 1.0
 
-    firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
+    # WHY: rule0 is the first item inside strategy_dict['rules']; the
+    #      backtest matrix sets prop_firm_name on the strategy_dict
+    #      TOP level, not inside each rule. Pass the top-level value
+    #      as a fallback so the firm scan works on real backtest rows.
+    # CHANGED: May 2026 — top-level prop_firm_name fallback
+    _top_firm = (strategy_dict.get('prop_firm_name')
+                 or strategy_dict.get('firm_name'))
+    firm_id, ch_id = _resolve_firm_challenge(
+        rule0, int(acct), fallback_firm_name=_top_firm)
     if not firm_id or not ch_id:
         _set_text(
             f"⚠ Cannot resolve firm/challenge "
-            f"(firm_name={rule0.get('prop_firm_name')!r}, acct=${int(acct):,}).",
+            f"(firm_name={(rule0.get('prop_firm_name') or _top_firm)!r}, "
+            f"acct=${int(acct):,}).",
             fg=RED)
         return
 

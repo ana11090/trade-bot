@@ -167,12 +167,21 @@ def _mt5_adx(high, low, close, period):
     s_mdm = _wilder_sum_smooth(minus_dm, period)
 
     # Step 3: +DI and -DI
-    plus_di  = np.where(s_tr > 0, 100.0 * s_pdm / s_tr, 0.0)
-    minus_di = np.where(s_tr > 0, 100.0 * s_mdm / s_tr, 0.0)
+    # WHY: Same harmless-divide protection as DX below — see Step 4.
+    # CHANGED: May 2026 — silence harmless divide warning
+    with np.errstate(invalid='ignore', divide='ignore'):
+        plus_di  = np.where(s_tr > 0, 100.0 * s_pdm / s_tr, 0.0)
+        minus_di = np.where(s_tr > 0, 100.0 * s_mdm / s_tr, 0.0)
 
     # Step 4: DX
+    # WHY: np.where evaluates BOTH branches before selecting, so the
+    #      divide computes even where di_sum=0 — yielding NaN that
+    #      gets discarded but printing RuntimeWarning. Wrap in
+    #      np.errstate so numpy doesn't spam the console.
+    # CHANGED: May 2026 — silence harmless divide warning
     di_sum = plus_di + minus_di
-    dx = np.where(di_sum > 0, 100.0 * np.abs(plus_di - minus_di) / di_sum, 0.0)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        dx = np.where(di_sum > 0, 100.0 * np.abs(plus_di - minus_di) / di_sum, 0.0)
     dx[:period] = np.nan
 
     # Step 5: ADX = Wilder's smooth of DX (seed = mean of first `period` valid DX)
