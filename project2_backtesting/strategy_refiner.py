@@ -798,7 +798,25 @@ def load_strategy_list():
                     #      'results' or 'matrix' key depending on version.
                     # CHANGED: April 2026 — Phase A.48 fix
                     _all_results = data.get('results', []) or data.get('matrix', [])
+                    # WHY: Per-row run_settings is empty {} in the
+                    #      current matrix format — the real settings
+                    #      live ONCE at data['run_settings']. Use this
+                    #      as a fallback for firm_id / stage / risk_pct
+                    #      / starting_capital lookups so the grid's
+                    #      Stage column, money columns, and the panel's
+                    #      firm resolver don't all see None.
+                    # CHANGED: May 2026 — top-level run_settings fallback
+                    _top_rs = data.get('run_settings', {}) or {}
                     for i, r in enumerate(_all_results):
+                        # Merge top-level run_settings as a fallback for
+                        # each row. Per-row values win when present.
+                        _row_rs = r.get('run_settings') or {}
+                        if not _row_rs:
+                            r['run_settings'] = dict(_top_rs)
+                        else:
+                            _merged = dict(_top_rs)
+                            _merged.update(_row_rs)
+                            r['run_settings'] = _merged
                         stats = r.get('stats', r)  # stats might be nested or at top level
                         wr = stats.get('win_rate', r.get('win_rate', 0))
                         # WHY: compute_stats in strategy_backtester.py always
