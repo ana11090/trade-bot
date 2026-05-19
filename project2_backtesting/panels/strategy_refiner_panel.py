@@ -218,42 +218,59 @@ def _load_trades_for_strategy(s):
     return []
 
 
-def _resolve_firm_challenge(rule_dict, account_size, fallback_firm_name=None):
+def _resolve_firm_challenge(rule_dict, account_size,
+                             fallback_firm_name=None,
+                             fallback_firm_id=None):
     """Find (firm_id, challenge_id) for a rule by scanning prop_firms/.
 
-    Resolution order for firm_name:
-      1. rule_dict['prop_firm_name']
-      2. rule_dict['discovery_settings']['prop_firm_name']
-      3. fallback_firm_name (caller-supplied, typically the strategy
-         dict's top-level prop_firm_name)
+    Accepts either firm_name (display string like "Get Leveraged") OR
+    firm_id (slug like "leveraged"). Matches against prop_firms/*.json
+    by firm_name first; if no match, scans again matching firm_id.
 
-    WHY: Backtest matrix saves prop_firm_name at the strategy_dict TOP
-         level (set in strategy_refiner.load_strategy_list), not inside
-         each rule's sub-dict. Without the fallback, clicking any
-         backtest row triggered "Cannot resolve firm/challenge
-         (firm_name=None)" in the eval detail panel.
-    CHANGED: May 2026 — fallback to top-level prop_firm_name
+    WHY: Backtest matrix stores firm info as run_settings.firm_id, NOT
+         prop_firm_name. Earlier fallback only checked firm_name →
+         empty result → "Cannot resolve firm/challenge" in detail
+         panel. Now accepts both forms.
+    CHANGED: May 2026 — accept firm_id from run_settings
     """
     firm_name = (rule_dict.get('prop_firm_name')
                  or (rule_dict.get('discovery_settings') or {}).get('prop_firm_name')
                  or fallback_firm_name
                  or '')
-    if not firm_name:
+    firm_id_hint = (rule_dict.get('firm_id')
+                    or (rule_dict.get('discovery_settings') or {}).get('firm_id')
+                    or fallback_firm_id
+                    or '')
+    if not firm_name and not firm_id_hint:
         return ('', '')
     try:
         import json as _fcj, glob as _fcg
-        for fp in _fcg.glob(os.path.join(project_root, 'prop_firms', '*.json')):
-            with open(fp, encoding='utf-8') as _f:
-                fd = _fcj.load(_f)
-            if fd.get('firm_name') != firm_name:
-                continue
-            firm_id = fd.get('firm_id', '')
-            best = (fd.get('challenges') or [{}])[0]
-            for ch in fd.get('challenges', []):
-                if int(account_size) in (ch.get('account_sizes') or []):
-                    best = ch
+        matched = None
+        # First pass: match by firm_name
+        if firm_name:
+            for fp in _fcg.glob(os.path.join(project_root, 'prop_firms', '*.json')):
+                with open(fp, encoding='utf-8') as _f:
+                    fd = _fcj.load(_f)
+                if fd.get('firm_name') == firm_name:
+                    matched = fd
                     break
-            return (firm_id, best.get('challenge_id', ''))
+        # Second pass: match by firm_id
+        if matched is None and firm_id_hint:
+            for fp in _fcg.glob(os.path.join(project_root, 'prop_firms', '*.json')):
+                with open(fp, encoding='utf-8') as _f:
+                    fd = _fcj.load(_f)
+                if fd.get('firm_id') == firm_id_hint:
+                    matched = fd
+                    break
+        if matched is None:
+            return ('', '')
+        firm_id = matched.get('firm_id', '')
+        best = (matched.get('challenges') or [{}])[0]
+        for ch in matched.get('challenges', []):
+            if int(account_size) in (ch.get('account_sizes') or []):
+                best = ch
+                break
+        return (firm_id, best.get('challenge_id', ''))
     except Exception:
         pass
     return ('', '')
@@ -359,27 +376,48 @@ def _update_passrate_detail(strategy_dict):
     rule0 = ((strategy_dict.get('rules') or [{}])[0]
              if strategy_dict.get('rules')
              else (strategy_dict.get('saved_rule') or {}))
+    # WHY: acct/risk are saved at run_settings level in the backtest
+    #      matrix (starting_capital, risk_pct), not in each rule. Fall
+    #      back to those when rule0 is missing them.
+    # CHANGED: May 2026 — pull from run_settings as fallback
+    _rs0 = strategy_dict.get('run_settings') or {}
     try:
-        acct = float(rule0.get('account_size', 10000) or 10000)
-        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
+        acct = float(rule0.get('account_size')
+                     or _rs0.get('starting_capital')
+                     or strategy_dict.get('account_size')
+                     or 10000)
+        risk = float(rule0.get('risk_pct')
+                     or _rs0.get('risk_pct')
+                     or strategy_dict.get('risk_pct')
+                     or 1.0)
         sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+        pipv = float(rule0.get('pip_value_per_lot')
+                     or _rs0.get('pip_value_per_lot')
+                     or 1.0)
     except Exception:
         acct, risk, sl, pipv = 10000.0, 1.0, 150.0, 1.0
 
-    # WHY: rule0 is the first item inside strategy_dict['rules']; the
-    #      backtest matrix sets prop_firm_name on the strategy_dict
-    #      TOP level, not inside each rule. Pass the top-level value
-    #      as a fallback so the firm scan works on real backtest rows.
-    # CHANGED: May 2026 — top-level prop_firm_name fallback
+    # WHY: Firm info lives at multiple paths depending on the matrix
+    #      version. New rows have prop_firm_name at the top; older
+    #      rows only have run_settings.firm_id (slug "leveraged").
+    #      Try all paths and hand BOTH forms to the resolver — it
+    #      matches either firm_name OR firm_id.
+    # CHANGED: May 2026 — accept firm_id via run_settings
     _top_firm = (strategy_dict.get('prop_firm_name')
-                 or strategy_dict.get('firm_name'))
+                 or strategy_dict.get('firm_name')
+                 or _rs0.get('prop_firm_name')
+                 or _rs0.get('firm_name'))
+    _top_firm_id = (strategy_dict.get('firm_id')
+                    or _rs0.get('firm_id'))
     firm_id, ch_id = _resolve_firm_challenge(
-        rule0, int(acct), fallback_firm_name=_top_firm)
+        rule0, int(acct),
+        fallback_firm_name=_top_firm,
+        fallback_firm_id=_top_firm_id)
     if not firm_id or not ch_id:
         _set_text(
             f"⚠ Cannot resolve firm/challenge "
-            f"(firm_name={(rule0.get('prop_firm_name') or _top_firm)!r}, "
+            f"(firm_name={(_top_firm or rule0.get('prop_firm_name'))!r}, "
+            f"firm_id={(_top_firm_id or rule0.get('firm_id'))!r}, "
             f"acct=${int(acct):,}).",
             fg=RED)
         return
