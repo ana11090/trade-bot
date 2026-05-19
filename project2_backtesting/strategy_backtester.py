@@ -3196,6 +3196,17 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           breach_total_dd_limit_pct=10.0,
                           breach_daily_safety_pct=4.0,
                           breach_total_safety_pct=8.0,
+                          # WHY: Run simulate_challenge per rule at backtest
+                          #      time so the refiner grid can sort by pass
+                          #      rate without any live computation. None
+                          #      values skip the computation (legacy callers
+                          #      unchanged). When provided, each result row
+                          #      gets win_pass_passed/win_pass_total/
+                          #      win_pass_rate fields. See PARITY_TODO.md.
+                          # CHANGED: May 2026 — pass-rate at backtest time
+                          win_pass_firm_id=None,
+                          win_pass_challenge_id=None,
+                          win_pass_account_size=None,
                           # WHY (Phase A.42): max_trades_per_day=0 means no limit
                           #      (default, preserves pre-A.42 behavior). Any positive
                           #      integer limits how many trades the backtester opens
@@ -3965,6 +3976,22 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     output_dir = os.path.join(_here, 'outputs')
     os.makedirs(output_dir, exist_ok=True)
 
+    # WHY: Pre-compute per-rule eval pass rate ONCE per result row at
+    #      backtest time, so the refiner grid is instant and sortable
+    #      by Win Pass with zero live computation. simulate_challenge
+    #      runs against the rule's actual trade list using sliding-
+    #      window mode (every historical start). Failure on any rule
+    #      sets win_pass_rate=-1.0 — the grid renders that as "—".
+    # CHANGED: May 2026 — pass-rate at backtest time
+    _wp_enabled = bool(win_pass_firm_id and win_pass_challenge_id
+                       and win_pass_account_size)
+    _wp_t0 = time.time()
+    _wp_done = 0
+    if _wp_enabled:
+        log.info(f"Computing Win Pass for {len(matrix)} rules "
+                 f"(firm={win_pass_firm_id}, challenge={win_pass_challenge_id}, "
+                 f"account=${int(win_pass_account_size):,})…")
+
     summary = []
     for m in matrix:
         # Compute breach stats for this strategy
@@ -3984,6 +4011,40 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             funded_protect=funded_protect,
         )
 
+        # WHY: Win Pass — one simulate_challenge call per rule. Failure
+        #      defaults to "unknown" (-1.0) which the grid renders "—".
+        # CHANGED: May 2026 — pass-rate at backtest time
+        _wp_passed = 0
+        _wp_total  = 0
+        _wp_rate   = -1.0
+        if _wp_enabled and m.get("trades"):
+            try:
+                from project2_backtesting.strategy_validator import _trades_to_df
+                from shared.prop_firm_simulator import simulate_challenge
+                _wp_df = _trades_to_df(
+                    m["trades"], risk_per_trade_pct, default_sl_pips,
+                    pip_value_per_lot, int(win_pass_account_size),
+                )
+                _wp_sim = simulate_challenge(
+                    trades_df=_wp_df,
+                    firm_id=win_pass_firm_id,
+                    challenge_id=win_pass_challenge_id,
+                    account_size=int(win_pass_account_size),
+                    mode='sliding_window',
+                    simulate_funded=False,
+                    risk_per_trade_pct=risk_per_trade_pct,
+                    default_sl_pips=default_sl_pips,
+                    pip_value_per_lot=pip_value_per_lot,
+                    symbol='XAUUSD',
+                )
+                if _wp_sim is not None:
+                    _wp_passed = _wp_sim.eval_pass_count
+                    _wp_total  = _wp_sim.eval_pass_count + _wp_sim.eval_fail_count
+                    if _wp_total > 0:
+                        _wp_rate = _wp_sim.eval_pass_rate
+            except Exception as _wp_err:
+                log.warning(f"  [win-pass] {m.get('rule_combo','?')}: {_wp_err}")
+
         result = {
             "rule_combo":      m["rule_combo"],
             "rule_indices":    m.get("rule_indices", []),
@@ -3999,8 +4060,23 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             "breaches": breaches,
             "signals_before_regime_filter": m.get("signals_before_regime_filter", 0),
             "signals_after_regime_filter":  m.get("signals_after_regime_filter", 0),
+            # Win Pass fields — set per row so refiner can sort/filter on them.
+            "win_pass_passed": _wp_passed,
+            "win_pass_total":  _wp_total,
+            "win_pass_rate":   _wp_rate,
         }
         summary.append(result)
+
+        if _wp_enabled:
+            _wp_done += 1
+            if _wp_done % 50 == 0 or _wp_done == len(matrix):
+                _el = time.time() - _wp_t0
+                log.info(f"  [win-pass] {_wp_done}/{len(matrix)} done "
+                         f"({_el:.0f}s, ~{(len(matrix)-_wp_done)*_el/max(_wp_done,1):.0f}s left)")
+
+    if _wp_enabled:
+        log.info(f"Win Pass computation done — {len(matrix)} rules in "
+                 f"{time.time() - _wp_t0:.0f}s")
 
     # FIX 2: ensure every result row carries its entry_tf (multi-TF run tags each row)
     # WHY: downstream tools (Refiner, Validator, EA Generator) read entry_tf per-row

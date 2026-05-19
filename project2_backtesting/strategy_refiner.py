@@ -98,6 +98,98 @@ def compute_monthly_pnl(trades, account_size=100000, risk_pct=1.0, pip_value=10.
     return sorted(monthly.values(), key=lambda x: x['month'])
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Time-bucket performance aggregators
+# WHY: Lets the refiner panel show per-hour / per-DoW / per-session tables
+#      at a glance — audit view alongside the optimizer's actionable
+#      candidates. Trades come pre-enriched (see enrich_trades) so we
+#      just group on the existing fields.
+# CHANGED: May 2026 — time-bucket aggregators
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bucket_stats(trade_list, pip_to_dollar):
+    """Reduce a list of trades to {trades, wins, win_rate, pnl_pips, pnl_dollars}."""
+    n = len(trade_list)
+    if n == 0:
+        return {'trades': 0, 'wins': 0, 'win_rate': 0.0,
+                'pnl_pips': 0.0, 'pnl_dollars': 0.0}
+    wins = 0
+    pnl_pips = 0.0
+    for t in trade_list:
+        p = float(t.get('net_pips', 0) or 0)
+        pnl_pips += p
+        if p > 0:
+            wins += 1
+    return {
+        'trades':      n,
+        'wins':        wins,
+        'win_rate':    round(wins / n * 100.0, 1),
+        'pnl_pips':    round(pnl_pips, 1),
+        'pnl_dollars': round(pnl_pips * pip_to_dollar, 2),
+    }
+
+
+def _pip_to_dollar(account_size, risk_pct, pip_value, default_sl_pips):
+    """Compute $ per pip from the same lot-sizing formula compute_monthly_pnl uses.
+
+    Single source of truth — same numbers as the monthly chart.
+    """
+    sl_pips = float(default_sl_pips) if default_sl_pips and default_sl_pips > 0 else 150.0
+    risk_dollars = account_size * (risk_pct / 100.0)
+    lot_size = risk_dollars / (sl_pips * pip_value) if sl_pips * pip_value > 0 else 0.01
+    return pip_value * lot_size
+
+
+def compute_hourly_pnl(trades, account_size=100000, risk_pct=1.0,
+                       pip_value=10.0, default_sl_pips=150.0):
+    """Per-hour aggregation. Returns list of 24 dicts (one per hour 0-23).
+
+    Each dict: {hour: 0-23, trades, wins, win_rate, pnl_pips, pnl_dollars}.
+    Hours with zero trades still appear (so the table is always 24 rows).
+    """
+    p2d = _pip_to_dollar(account_size, risk_pct, pip_value, default_sl_pips)
+    buckets = {h: [] for h in range(24)}
+    for t in trades:
+        h = t.get('hour_of_day')
+        if isinstance(h, int) and 0 <= h <= 23:
+            buckets[h].append(t)
+    return [{'hour': h, **_bucket_stats(buckets[h], p2d)} for h in range(24)]
+
+
+def compute_dow_pnl(trades, account_size=100000, risk_pct=1.0,
+                    pip_value=10.0, default_sl_pips=150.0):
+    """Per-weekday aggregation. Returns list of 5 dicts (Mon-Fri).
+
+    Weekend trades (Sat/Sun, rare edge cases) are dropped.
+    """
+    p2d = _pip_to_dollar(account_size, risk_pct, pip_value, default_sl_pips)
+    DOW_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+    buckets = {d: [] for d in DOW_ORDER}
+    for t in trades:
+        d = t.get('day_abbrev')
+        if d in buckets:
+            buckets[d].append(t)
+    return [{'dow': d, **_bucket_stats(buckets[d], p2d)} for d in DOW_ORDER]
+
+
+def compute_session_pnl(trades, account_size=100000, risk_pct=1.0,
+                        pip_value=10.0, default_sl_pips=150.0):
+    """Per-session aggregation. Returns list of 3 dicts.
+
+    Session names match _get_session() in this module: Asian / London /
+    New York. Trades with session='Unknown' (failed enrichment) are
+    dropped.
+    """
+    p2d = _pip_to_dollar(account_size, risk_pct, pip_value, default_sl_pips)
+    SESSION_ORDER = ['Asian', 'London', 'New York']
+    buckets = {s: [] for s in SESSION_ORDER}
+    for t in trades:
+        s = t.get('session')
+        if s in buckets:
+            buckets[s].append(t)
+    return [{'session': s, **_bucket_stats(buckets[s], p2d)} for s in SESSION_ORDER]
+
+
 # WHY (Phase 30 Fix 1): Old signature had no pip_size parameter. The body
 #      used a sniff-from-trades inference with a hardcoded 0.01 fallback,
 #      which always fired for non-XAUUSD callers because run_backtest and
@@ -1209,6 +1301,8 @@ def apply_filters(trades, filters):
     filters keys:
         min_hold_minutes, max_hold_minutes,
         max_trades_per_day, sessions (list), days (list),
+        hours (tuple (low, high) — inclusive low, exclusive high; wraps
+                       midnight when low > high, e.g. (22, 7) = 22..23 + 0..6),
         cooldown_minutes,
         custom_filters: [{"feature": str, "operator": str, "value": float}]
 
@@ -1248,6 +1342,11 @@ def apply_filters(trades, filters):
     max_hold    = filters.get('max_hold_minutes')
     sessions    = filters.get('sessions')    # None = all
     days        = filters.get('days')        # None = all
+    # WHY: hour window — supports wrap-around for sessions like Asian late
+    #      (e.g., (22, 7) = hour >= 22 OR hour < 7). Inclusive low, exclusive
+    #      high so windows compose cleanly: (7, 12) + (12, 17) = no overlap.
+    # CHANGED: May 2026 — hours filter for optimizer hour-window sweeps
+    hours       = filters.get('hours')       # None = all; (lo, hi) tuple
     cooldown    = filters.get('cooldown_minutes')
     custom      = filters.get('custom_filters', [])
     # WHY: min_pips filter removed April 2026 — look-ahead bias.
@@ -1269,6 +1368,21 @@ def apply_filters(trades, filters):
             day_abbrevs = [d[:3] for d in days]
             if t.get('day_abbrev', 'Mon') not in day_abbrevs and t.get('day_of_week', '') not in days:
                 reason = 'day'
+        elif hours is not None:
+            _h = t.get('hour_of_day')
+            if isinstance(_h, int) and isinstance(hours, (tuple, list)) and len(hours) == 2:
+                _lo, _hi = int(hours[0]), int(hours[1])
+                if _lo <= _hi:
+                    # Normal range: [lo, hi)
+                    if not (_lo <= _h < _hi):
+                        reason = 'hour'
+                else:
+                    # Wrap-around range: [lo, 24) ∪ [0, hi)
+                    if not (_h >= _lo or _h < _hi):
+                        reason = 'hour'
+            else:
+                # Malformed — keep the trade
+                pass
         elif allowed_ids is not None and id(t) not in allowed_ids:
             reason = 'max_per_day'
         elif cooldown and last_exit_time is not None:
@@ -1787,7 +1901,8 @@ def deep_optimize(
         preset_list = [(k, v) for k, v in presets.items() if k != 'Custom']
 
     # Add risk optimization steps (approximate — actual count varies by firm)
-    total_steps = len(preset_list) + 20 + 5 + 3 + 10
+    # 20 = approx of legacy steps; +13 for new dow+hour sweeps
+    total_steps = len(preset_list) + 20 + 5 + 3 + 10 + 13
 
     # ── Apply locks ───────────────────────────────────────────────────────────
     # WHY: User explicitly told us not to touch certain parts of the strategy.
@@ -1832,15 +1947,41 @@ def deep_optimize(
             kept, _ = apply_filters(trades, {'max_trades_per_day': maxn})
             _maybe_add(f"Max {maxn} trades/day", kept, f"max {maxn}/day", {'max_trades_per_day': maxn})
 
-    # ── Step 4: Session combos ────────────────────────────────────────────────
+    # ── Step 4: Time-bucket sweeps (session, day-of-week, hour) ───────────────
+    # WHY: Strategies often have time-of-day or day-of-week edges that are
+    #      invisible at the per-rule level. Sweep each bucket type and let
+    #      the optimizer surface "Friday-only" or "Hours 7-12" as ranked
+    #      candidates, same UI flow as the other steps.
+    # CHANGED: May 2026 — extend Step 4 with DoW and hour sweeps
     session_combos = [
         (["London"],             "London only"),
         (["New York"],           "NY only"),
         (["London", "New York"], "London + NY"),
         (["Asian", "London"],    "Asian + London"),
     ]
+    # Day-of-week: individual days + common groupings
+    dow_combos = [
+        (["Mon"], "Mon only"),
+        (["Tue"], "Tue only"),
+        (["Wed"], "Wed only"),
+        (["Thu"], "Thu only"),
+        (["Fri"], "Fri only"),
+        (["Mon", "Tue", "Wed", "Thu"],        "Mon-Thu (no Fri)"),
+        (["Tue", "Wed", "Thu", "Fri"],        "Tue-Fri (no Mon)"),
+        (["Tue", "Wed", "Thu"],                "Mid-week (Tue-Thu)"),
+        (["Mon", "Tue", "Wed", "Thu", "Fri"], "All weekdays"),
+    ]
+    # Hour windows (GMT). London open at 7, NY open around 13, NY close at 22.
+    # (low, high) — inclusive low, exclusive high. Wrap-around supported.
+    hour_combos = [
+        ((7, 12),  "Hours 07-12 (London AM)"),
+        ((12, 17), "Hours 12-17 (London/NY overlap)"),
+        ((13, 21), "Hours 13-21 (NY)"),
+        ((22, 7),  "Hours 22-07 (Asian, wraps midnight)"),
+    ]
     base_step = len(preset_list) + len(hold_values) + 5
     if not lock_filters:
+        # Session sweeps
         for i, (sess, desc) in enumerate(session_combos):
             if _stop_flag.is_set():
                 break
@@ -1848,9 +1989,28 @@ def deep_optimize(
             kept, _ = apply_filters(trades, {'sessions': sess})
             _maybe_add(f"Session: {desc}", kept, f"sessions={desc}", {'sessions': sess})
 
+        # Day-of-week sweeps
+        _dow_offset = base_step + len(session_combos)
+        for i, (dows, desc) in enumerate(dow_combos):
+            if _stop_flag.is_set():
+                break
+            _report(f"Testing days: {desc}", total_steps, _dow_offset + i + 1)
+            kept, _ = apply_filters(trades, {'days': dows})
+            _maybe_add(f"DoW: {desc}", kept, f"days={desc}", {'days': dows})
+
+        # Hour-window sweeps
+        _hr_offset = _dow_offset + len(dow_combos)
+        for i, (hrange, desc) in enumerate(hour_combos):
+            if _stop_flag.is_set():
+                break
+            _report(f"Testing hours: {desc}", total_steps, _hr_offset + i + 1)
+            kept, _ = apply_filters(trades, {'hours': hrange})
+            _maybe_add(f"Hour: {desc}", kept, f"hours={hrange[0]:02d}-{hrange[1]:02d}",
+                       {'hours': hrange})
+
     # ── Step 5: Combination — hold + max/day ──────────────────────────────────
     combos = [(5, 3), (5, 5), (10, 3), (2, 5), (15, 2)]
-    base_step2 = base_step + len(session_combos)
+    base_step2 = base_step + len(session_combos) + len(dow_combos) + len(hour_combos)
     if not lock_filters:
         for i, (hold, maxd) in enumerate(combos):
             if _stop_flag.is_set():

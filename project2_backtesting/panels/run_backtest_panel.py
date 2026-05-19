@@ -1129,6 +1129,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_hwm_lock_gain_pct = None
                     _cfg_hwm_lock_level = 'starting_balance'
 
+                    # WHY: Win Pass — firm/challenge identifiers passed
+                    #      to run_comparison_matrix so each result row
+                    #      gets win_pass_passed/_total/_rate computed
+                    #      once at backtest time. None = legacy behavior
+                    #      (no Win Pass fields, grid renders "—").
+                    # CHANGED: May 2026 — pass-rate at backtest time
+                    _wp_firm_id      = None
+                    _wp_challenge_id = None
+                    _wp_account_size = None
+
                     # WHY: Read per-firm asymmetric swap from the firm JSON.
                     #      Firm display name is already resolved above.
                     #      _cfg_symbol is set earlier from rule/config.
@@ -1225,6 +1235,27 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _cfg_hwm_lock_gain_pct = _trailing_dd_cfg.get('lock_after_gain_pct')
                                     _cfg_hwm_lock_level = _trailing_dd_cfg.get(
                                         'lock_level', 'starting_balance')
+                                    # WHY: Win Pass — derive firm/challenge IDs
+                                    #      from the matched firm config so
+                                    #      run_comparison_matrix can compute
+                                    #      per-row pass rates. Account size
+                                    #      already comes from _cfg_account
+                                    #      (rule/config-driven). Fall back to
+                                    #      first challenge's first size if
+                                    #      _cfg_account is zero/missing.
+                                    # CHANGED: May 2026 — pass-rate at backtest time
+                                    try:
+                                        _wp_firm_id = _pf_data.get('firm_id')
+                                        _wp_challenges = _pf_data.get('challenges', []) or []
+                                        if _wp_challenges:
+                                            _wp_challenge_id = _wp_challenges[0].get('challenge_id')
+                                        _wp_account_size = int(_cfg_account) if _cfg_account else None
+                                        if not _wp_account_size and _wp_challenges:
+                                            _wp_sizes = _wp_challenges[0].get('account_sizes', []) or []
+                                            if _wp_sizes:
+                                                _wp_account_size = int(_wp_sizes[0])
+                                    except Exception:
+                                        pass
                                     if _dd_reset_time:
                                         try:
                                             _rh = int(_dd_reset_time.split(':')[0])
@@ -1648,6 +1679,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         use_hwm_lock=_hwm_lock_var.get() if _hwm_lock_var else False,
                         hwm_lock_gain_pct=_cfg_hwm_lock_gain_pct,
                         hwm_lock_level=_cfg_hwm_lock_level,
+                        # WHY: Win Pass — pass through firm IDs so the
+                        #      backtester runs simulate_challenge per
+                        #      rule at result-build time. See backtester
+                        #      summary loop for details.
+                        # CHANGED: May 2026 — pass-rate at backtest time
+                        win_pass_firm_id=_wp_firm_id,
+                        win_pass_challenge_id=_wp_challenge_id,
+                        win_pass_account_size=_wp_account_size,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

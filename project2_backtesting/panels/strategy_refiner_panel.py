@@ -92,6 +92,17 @@ _impact_labels    = {}       # filter_name -> tk.Label for impact text
 _results_card     = None
 _trade_list_frame = None
 _monthly_chart_canvas = None
+# WHY: Three small read-only tables under the monthly chart that show
+#      per-hour / per-day-of-week / per-session aggregates of trade P&L.
+#      Built once when build_panel runs; redrawn whenever filters change.
+# CHANGED: May 2026 — time-bucket breakdown widget
+_time_bucket_widgets = None   # dict: {'hour_text', 'dow_text', 'session_text'}
+# WHY: Module-level Treeview ref so module-scope helpers
+#      (_get_selected_indexes, _start_batch_optimization) can read the
+#      live selection. Set inside _on_strategies_loaded on every tree
+#      build/rebuild. None when no tree exists yet.
+# CHANGED: May 2026 — batch optimization
+_strat_tree_ref      = None
 _monthly_tooltip      = None
 _dd_label             = None
 _breach_label         = None
@@ -231,6 +242,25 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
 _passrate_widgets = None  # set by build_panel; holds frame+label for detail render
 
 
+def _format_win_pass(s):
+    """Format Win Pass cell from strategy dict fields set by the backtester.
+
+    The backtester writes win_pass_passed / win_pass_total / win_pass_rate
+    onto each result row at backtest time, so the refiner reads them
+    directly with zero live computation.
+
+    Returns:
+        "5/16 (31%)" when fields present and total > 0.
+        "—" when missing (legacy backtest) or no decided windows.
+    """
+    rate   = s.get('win_pass_rate', None)
+    passed = s.get('win_pass_passed', 0)
+    total  = s.get('win_pass_total', 0)
+    if rate is None or rate < 0 or total <= 0:
+        return "—"
+    return f"{passed}/{total} ({rate*100:.0f}%)"
+
+
 def _update_passrate_detail(strategy_dict):
     """Compute and render eval/funded sim detail for a single rule.
 
@@ -315,6 +345,11 @@ def _update_passrate_detail(strategy_dict):
         import traceback; traceback.print_exc()
         _set_text(f"⚠ Simulator error: {_se}", fg=RED)
         return
+
+    # Win Pass cell click-to-populate removed in May 2026 — the
+    # backtester now sets win_pass_passed/_total/_rate on each result
+    # row at backtest time, so the grid reads them directly via
+    # _format_win_pass(s) on every insert. No side-effect write here.
 
     lines = []
     lines.append(f"Firm: {rule0.get('prop_firm_name','?')}  |  Account: ${int(acct):,}  "
@@ -894,6 +929,56 @@ def _get_selected_index():
         if s['label'] == val:
             return s['index']
     return None
+
+
+def _get_selected_indexes():
+    """Get a LIST of currently-selected iids — for multi-select operations.
+
+    Returns a list of iids in selection order. Empty list if nothing
+    selected. Each iid follows the same convention as
+    _get_selected_index().
+    WHY: Treeview now uses selectmode='extended' so the user can
+         Ctrl-click multiple rules for batch optimization.
+    CHANGED: May 2026 — batch optimization
+    """
+    try:
+        if _strat_tree_ref is None:
+            return []
+        return list(_strat_tree_ref.selection())
+    except Exception:
+        return []
+
+
+def _is_discovery_only_rule(strat):
+    """Detect saved rules that came from rule-discovery (Project 1)
+    and never went through a backtest.
+
+    These rules carry fields like _target_mode, coverage, coverage_pct
+    from the discovery process, but lack the real-trade stats
+    (total_trades, net_total_pips, etc.) that backtest results have.
+    They render as 0/empty rows in the grid — useless clutter.
+
+    Heuristic: discovery signature AND zero/missing trades.
+
+    Returns True if the rule should be hidden.
+    """
+    if strat.get('source') != 'saved':
+        return False  # Only applies to saved-source rows
+    inner = strat.get('saved_rule', {}) or {}
+    has_discovery_sig = (
+        '_target_mode' in inner
+        or 'coverage_pct' in inner
+        or 'coverage' in inner
+    )
+    if not has_discovery_sig:
+        return False  # Some non-discovery saved rule — keep
+    # If it picked up real-trade stats from a backtest, keep it
+    tt = strat.get('total_trades') or inner.get('total_trades') or 0
+    try:
+        tt = int(tt)
+    except Exception:
+        tt = 0
+    return tt == 0
 
 
 def _load_selected_strategy(silent=False):
@@ -1502,6 +1587,8 @@ def _do_update():
         _update_results_card([], [])
         if _monthly_chart_canvas:
             _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, [])
+        if _time_bucket_widgets:
+            _draw_time_buckets(_time_bucket_widgets, [])
         _update_drawdown_display([])
         _update_breach_display([])
         return
@@ -1514,6 +1601,8 @@ def _do_update():
         # Update monthly chart and drawdown display
         if _monthly_chart_canvas:
             _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, kept)
+        if _time_bucket_widgets:
+            _draw_time_buckets(_time_bucket_widgets, kept)
         _update_drawdown_display(kept)
         _update_breach_display(kept)
     except Exception as e:
@@ -1711,6 +1800,257 @@ def _update_status(msg, error=False):
             state.window.after(0, lambda: _opt_status_lbl.configure(text=msg, fg=color) if _opt_status_lbl else None)
     except Exception:
         pass
+
+
+# WHY: Batch optimizer — runs deep_optimize over multiple selected rules
+#      in sequence, streaming results into the same _opt_results_frame
+#      used by single-rule mode. Tournament view at the end ranks the
+#      top candidates across all rules.
+# CHANGED: May 2026 — batch optimization
+def _start_batch_optimization():
+    global _opt_worker_running
+
+    if _opt_worker_running:
+        messagebox.showinfo("Already Running",
+                            "An optimization is already running. Wait for it to finish or click Stop.")
+        return
+
+    selected_iids = _get_selected_indexes()
+    if len(selected_iids) < 2:
+        messagebox.showinfo("Select Multiple Rules",
+                            "Select 2 or more rules in the grid (Ctrl-click) to batch-optimize.")
+        return
+
+    # Hard cap — each rule is ~30-60s of compute
+    MAX_BATCH = 50
+    if len(selected_iids) > MAX_BATCH:
+        messagebox.showwarning(
+            "Too Many Rules Selected",
+            f"You selected {len(selected_iids)} rules. Max batch size is {MAX_BATCH}.\n\n"
+            f"Each rule takes 30-60 seconds. {MAX_BATCH} rules = ~25-50 minutes.\n"
+            f"Reduce your selection or run in groups."
+        )
+        return
+
+    # Deep Explore confirmation
+    opt_mode = _opt_mode_var.get() if _opt_mode_var else "quick"
+    if opt_mode == "deep":
+        est_min = int(len(selected_iids) * 1.5)
+        if not messagebox.askyesno(
+            "Confirm Deep Explore Batch",
+            f"Deep Explore on {len(selected_iids)} rules is estimated at "
+            f"~{est_min} minutes total.\n\nContinue?"
+        ):
+            return
+
+    # Resolve iids to strategy dicts (in the order the user selected)
+    selected_strats = []
+    for iid in selected_iids:
+        for s in _strategies:
+            if str(s.get('index', '')) == str(iid) and s.get('source') != 'separator':
+                selected_strats.append(s)
+                break
+
+    if not selected_strats:
+        messagebox.showwarning("No Valid Rules",
+                               "None of the selected rows are optimizable (separator rows skipped).")
+        return
+
+    _opt_worker_running = True
+    try:
+        if _opt_start_btn:
+            _opt_start_btn.configure(state="disabled")
+        if _opt_stop_btn:
+            _opt_stop_btn.configure(state="normal")
+    except Exception:
+        pass
+
+    if _opt_status_lbl:
+        _opt_status_lbl.configure(text=f"Batch: 0/{len(selected_strats)} rules done",
+                                  fg=GREY)
+
+    # Clear previous results
+    if _opt_results_frame:
+        for w in _opt_results_frame.winfo_children():
+            w.destroy()
+
+    # Header in the results frame
+    if _opt_results_frame:
+        tk.Label(_opt_results_frame,
+                 text=f"⚙️ Batch Optimization — {len(selected_strats)} rules",
+                 font=("Segoe UI", 11, "bold"),
+                 bg=BG, fg=DARK).pack(anchor="w", padx=10, pady=(10, 4))
+
+    def _worker():
+        """Background worker — loops over selected strats, calls deep_optimize each."""
+        from project2_backtesting.strategy_refiner import (
+            deep_optimize, _stop_flag, compute_stats_summary,
+        )
+        all_candidates = []   # tournament accumulator: list of (rule_label, candidate)
+
+        try:
+            for batch_idx, strat in enumerate(selected_strats):
+                if _stop_flag.is_set():
+                    break
+
+                rule_label = strat.get('rule_combo', f'rule-{batch_idx}')
+                if _opt_status_lbl:
+                    state.window.after(0, lambda i=batch_idx, n=len(selected_strats), r=rule_label:
+                        _opt_status_lbl.configure(
+                            text=f"Batch: {i}/{n} — {r}", fg=GREY))
+
+                # Load THIS rule's trades and per-rule settings
+                try:
+                    trades = _load_trades_for_strategy(strat)
+                    if not trades:
+                        print(f"[BATCH] {rule_label}: no trades, skipping")
+                        continue
+                except Exception as _le:
+                    print(f"[BATCH] {rule_label}: load error — {_le}")
+                    continue
+
+                # Per-rule settings from the rule's own dict
+                rule0 = ((strat.get('rules') or [{}])[0]
+                         if strat.get('rules')
+                         else (strat.get('saved_rule') or {}))
+                _acct = float(rule0.get('account_size', 10000) or 10000)
+                _risk = float(rule0.get('risk_pct', 1.0) or 1.0)
+                _sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+                _pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+                _exit_class  = rule0.get('exit_class', '')
+                _exit_params = rule0.get('exit_params', {}) or {}
+                _exit_name   = rule0.get('exit_name', '')
+                _exit_desc   = rule0.get('exit_strategy', '') or rule0.get('exit_strategy_desc', '')
+
+                # Firm presets for scoring — same path single-mode uses
+                _target_data = None
+                try:
+                    from shared.prop_firm_engine import get_prop_firm_presets
+                    _presets = get_prop_firm_presets()
+                    _firm_name = (rule0.get('prop_firm_name', '') or
+                                  strat.get('prop_firm_name', ''))
+                    if _firm_name:
+                        for _pname, _pvals in _presets.items():
+                            if _pvals.get('firm_data', {}).get('firm_name') == _firm_name:
+                                _target_data = _pvals
+                                break
+                except Exception:
+                    pass
+
+                # Per-rule firm DD limits
+                _dd_daily = 5.0
+                _dd_total = 10.0
+                if _target_data:
+                    _fd = _target_data.get('firm_data', {})
+                    _trs = _fd.get('trading_rules', [])
+                    _stage = rule0.get('prop_firm_stage', 'evaluation')
+                    for _tr in _trs:
+                        if _tr.get('stage') == _stage:
+                            _tr_params = _tr.get('parameters', {})
+                            _dd_daily = float(_tr_params.get('daily_dd_alert_pct', _dd_daily))
+                            _dd_total = float(_tr_params.get('emergency_total_dd_pct', _dd_total))
+                            break
+
+                # Render the group header for this rule
+                if _opt_results_frame:
+                    state.window.after(0, lambda r=rule_label, n=len(trades):
+                        tk.Label(_opt_results_frame,
+                                 text=f"━━ {r}  ({n} trades) ━━",
+                                 font=("Segoe UI", 10, "bold"),
+                                 bg=BG, fg="#444").pack(anchor="w", padx=10, pady=(12, 4)))
+
+                # Run the optimizer for this rule
+                try:
+                    candidates = deep_optimize(
+                        trades=trades,
+                        candles_df=None,
+                        indicators_df=None,
+                        base_rules=strat.get('rules', []),
+                        exit_strategies=[],
+                        target_firm=_target_data,
+                        account_size=_acct,
+                        progress_callback=None,
+                        lock_entry=False, lock_exit=False, lock_sltp=False,
+                        lock_filters=False,
+                        exit_class=_exit_class,
+                        exit_params=_exit_params,
+                        exit_name=_exit_name,
+                        exit_strategy_desc=_exit_desc,
+                        risk_per_trade_pct=_risk,
+                        dd_daily_limit=_dd_daily,
+                        dd_total_limit=_dd_total,
+                    )
+                except Exception as _oe:
+                    print(f"[BATCH] {rule_label}: optimizer error — {_oe}")
+                    import traceback; traceback.print_exc()
+                    if _opt_results_frame:
+                        state.window.after(0, lambda r=rule_label, e=str(_oe):
+                            tk.Label(_opt_results_frame,
+                                     text=f"   ⚠ Optimizer error on {r}: {e}",
+                                     font=("Segoe UI", 9, "italic"),
+                                     bg=BG, fg=RED).pack(anchor="w", padx=20))
+                    continue
+
+                # Stream top-5 candidates per rule into results frame
+                _p2d = ((_acct * (_risk / 100.0)) / (_sl * _pipv) * _pipv
+                        if _sl * _pipv > 0 else 1.0)
+                for rank, cand in enumerate(candidates[:5], 1):
+                    _stats = cand.get('stats') or compute_stats_summary(cand.get('trades', []))
+                    if _opt_results_frame:
+                        state.window.after(0, lambda c=cand, s=_stats, r=rank, p=_p2d,
+                                                  a=_acct, rk=_risk, td=_target_data:
+                            _render_opt_card(_opt_results_frame, r, c, s, p, a,
+                                             None, None, rk, td))
+
+                # Accumulate for tournament view (tag each candidate with its source rule)
+                for cand in candidates:
+                    all_candidates.append((rule_label, cand))
+
+                if _opt_status_lbl:
+                    state.window.after(0, lambda i=batch_idx+1, n=len(selected_strats):
+                        _opt_status_lbl.configure(
+                            text=f"Batch: {i}/{n} done", fg=GREEN))
+
+            # ── Tournament view ────────────────────────────────────────
+            if all_candidates and not _stop_flag.is_set():
+                all_candidates.sort(key=lambda rc: rc[1].get('score', 0) or 0, reverse=True)
+                top_n = 20
+
+                if _opt_results_frame:
+                    state.window.after(0, lambda:
+                        tk.Label(_opt_results_frame,
+                                 text=f"🏆 Top {top_n} across all rules",
+                                 font=("Segoe UI", 11, "bold"),
+                                 bg=BG, fg="#27ae60").pack(anchor="w", padx=10, pady=(20, 4)))
+
+                for rank, (rule_label, cand) in enumerate(all_candidates[:top_n], 1):
+                    _stats = cand.get('stats') or compute_stats_summary(cand.get('trades', []))
+                    # Re-tag the candidate name so it shows which rule it came from
+                    _tagged = dict(cand)
+                    _tagged['name'] = f"[{rule_label}] {cand.get('name', '?')}"
+                    if _opt_results_frame:
+                        state.window.after(0, lambda c=_tagged, s=_stats, r=rank:
+                            _render_opt_card(_opt_results_frame, r, c, s,
+                                             1.0, 10000, None, None, 1.0, None))
+
+            if _opt_status_lbl:
+                state.window.after(0, lambda:
+                    _opt_status_lbl.configure(
+                        text=f"Batch done — {len(selected_strats)} rules, "
+                             f"{len(all_candidates)} total candidates",
+                        fg=GREEN))
+
+        finally:
+            globals()['_opt_worker_running'] = False
+            try:
+                if _opt_start_btn:
+                    state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
+                if _opt_stop_btn:
+                    state.window.after(0, lambda: _opt_stop_btn.configure(state="disabled"))
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _start_optimization():
@@ -3725,6 +4065,92 @@ def _draw_monthly_chart(canvas, tooltip, trades):
     canvas.bind("<MouseWheel>", _on_mousewheel)
 
 
+def _draw_time_buckets(widgets, trades):
+    """Refresh the three time-bucket tables (hour / DoW / session).
+
+    widgets: dict from _time_bucket_widgets (hour_text, dow_text, session_text).
+    trades:  the currently-filtered trade list.
+
+    Reads enriched fields (hour_of_day, day_abbrev, session) that
+    enrich_trades already set on each trade. Computes per-bucket
+    stats via strategy_refiner.compute_*_pnl helpers.
+    Account/risk/pip-value pulled from configuration (same source as
+    _draw_monthly_chart) so the dollar figures match the chart above.
+    """
+    from project2_backtesting.strategy_refiner import (
+        compute_hourly_pnl, compute_dow_pnl, compute_session_pnl,
+    )
+
+    # Lot-sizing inputs — same pattern as _draw_monthly_chart
+    try:
+        from project2_backtesting.panels.configuration import load_config
+        cfg = load_config()
+        _acct  = float(cfg.get('starting_capital', '100000'))
+        _risk  = float(cfg.get('risk_pct', '1.0'))
+        _pip_v = float(cfg.get('pip_value_per_lot', '1.0'))
+    except Exception:
+        _acct, _risk, _pip_v = 100000.0, 1.0, 1.0
+    _sl = 150.0   # default; not exposed in config_loader, matches monthly chart default
+
+    def _render(text_widget, rows, header_cols, row_formatter):
+        try:
+            text_widget.configure(state="normal")
+            text_widget.delete("1.0", "end")
+            text_widget.insert("end", header_cols + "\n")
+            text_widget.insert("end", "─" * len(header_cols) + "\n")
+            for r in rows:
+                text_widget.insert("end", row_formatter(r) + "\n")
+            text_widget.configure(state="disabled")
+        except Exception:
+            pass
+
+    if not trades:
+        for w in (widgets.get('hour_text'),
+                  widgets.get('dow_text'),
+                  widgets.get('session_text')):
+            if w:
+                try:
+                    w.configure(state="normal")
+                    w.delete("1.0", "end")
+                    w.insert("end", "(no trades)")
+                    w.configure(state="disabled")
+                except Exception:
+                    pass
+        return
+
+    hourly  = compute_hourly_pnl(trades, _acct, _risk, _pip_v, _sl)
+    dow     = compute_dow_pnl(trades, _acct, _risk, _pip_v, _sl)
+    session = compute_session_pnl(trades, _acct, _risk, _pip_v, _sl)
+
+    # WHY: Hide rows with too few trades — a single trade with WR 0%
+    #      or 100% is noise, not signal. 5 is a low bar that still
+    #      keeps thin-but-meaningful buckets visible.
+    # CHANGED: May 2026 — min-sample filter
+    MIN_SAMPLES = 5
+    hourly  = [r for r in hourly  if r['trades'] >= MIN_SAMPLES]
+    dow     = [r for r in dow     if r['trades'] >= MIN_SAMPLES]
+    session = [r for r in session if r['trades'] >= MIN_SAMPLES]
+
+    _render(
+        widgets.get('hour_text'),
+        hourly,
+        " Hr  │  Tr  │  WR   │   Pips   │     $",
+        lambda r: f" {r['hour']:02d}  │ {r['trades']:>3}  │ {r['win_rate']:>4.0f}% │ {r['pnl_pips']:>+7.0f} │ {r['pnl_dollars']:>+8.0f}",
+    )
+    _render(
+        widgets.get('dow_text'),
+        dow,
+        " Day │  Tr  │  WR   │   Pips   │     $",
+        lambda r: f" {r['dow']:<3} │ {r['trades']:>3}  │ {r['win_rate']:>4.0f}% │ {r['pnl_pips']:>+7.0f} │ {r['pnl_dollars']:>+8.0f}",
+    )
+    _render(
+        widgets.get('session_text'),
+        session,
+        " Session   │  Tr  │  WR   │   Pips   │     $",
+        lambda r: f" {r['session']:<9} │ {r['trades']:>3}  │ {r['win_rate']:>4.0f}% │ {r['pnl_pips']:>+7.0f} │ {r['pnl_dollars']:>+8.0f}",
+    )
+
+
 def _open_month_calendar(m_data, yr_str, day_pips, day_trades_map, parent):
     """Popup: full-month calendar with per-day P&L + trade detail panel."""
     import calendar as _cal_mod
@@ -4232,6 +4658,10 @@ def build_panel(parent):
         ("PF ↓",         "net_profit_factor",  True),
         ("Trades ↓",     "total_trades",       True),
         ("Avg Pips ↓",   "net_avg_pips",       True),
+        # WHY: win_pass_rate is set at backtest time per result row.
+        #      Legacy backtests without it sort as -1 (bottom).
+        # CHANGED: May 2026 — sortable Win Pass
+        ("Win Pass ↓",   "win_pass_rate",      True),
     ]:
         tk.Button(sort_row, text=label, font=("Segoe UI", 8),
                   bg="#667eea", fg="white", relief=tk.FLAT,
@@ -4361,12 +4791,13 @@ def build_panel(parent):
             #      slide off the right edge or never render. Detect the
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
-            # Column inventory (16): star, #, stage, rule, exit, tf, trades,
+            # Column inventory (17): star, #, stage, rule, exit, tf, trades,
             # wr, pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars,
-            # avg_pct, del. Keep this in sync with the `columns = (...)`
-            # tuple below — a stale count makes the guard destroy sel_row's
-            # children (including the Load button) on every refresh.
-            _expected_col_count = 16
+            # avg_pct, win_pass, del. Keep this in sync with the
+            # `columns = (...)` tuple below — a stale count makes the
+            # guard destroy sel_row's children (including the Load
+            # button) on every refresh.
+            _expected_col_count = 17
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4406,10 +4837,15 @@ def build_panel(parent):
                 columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
+                           "win_pass",
                            "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
-                                           selectmode="browse")
+                                           # WHY: Multi-select for batch optimization. Single-select
+                                           #      behavior preserved — selecting one row works as before.
+                                           #      Ctrl-click adds; Shift-click range-selects.
+                                           # CHANGED: May 2026 — batch optimization
+                                           selectmode="extended")
 
                 _strat_tree.heading("star",       text="⭐")
                 _strat_tree.heading("#",          text="#")
@@ -4426,15 +4862,13 @@ def build_panel(parent):
                 _strat_tree.heading("avg_pips",     text="Avg Pips")
                 _strat_tree.heading("avg_dollars",  text="Avg $")
                 _strat_tree.heading("avg_pct",      text="Avg %")
-                # WHY: Eval %/Funded % columns removed in May 2026. The
-                #      per-window detail panel below the grid is the
-                #      authoritative display for eval pass/fail counts,
-                #      per-window outcomes, days-to-pass/fail, and fail
-                #      reasons. A "Win Pass %" column was tried and
-                #      reverted — running simulate_challenge per rule
-                #      saturated the UI; the detail panel covers it.
-                # CHANGED: May 2026 — drop eval/funded grid columns
-                # CHANGED: May 2026 — Win Pass column reverted (perf)
+                # WHY: Pass rate computed once at backtest time and saved
+                #      on each result row (win_pass_passed, win_pass_total,
+                #      win_pass_rate). Refiner reads them directly — no
+                #      live simulate_challenge calls. Legacy backtest JSONs
+                #      without these fields render as "—".
+                # CHANGED: May 2026 — Win Pass at backtest time
+                _strat_tree.heading("win_pass",     text="Win Pass")
                 _strat_tree.heading("del",          text="🗑")
 
                 _strat_tree.column("star",       width=30,  anchor="center")
@@ -4452,6 +4886,7 @@ def build_panel(parent):
                 _strat_tree.column("avg_pips",     width=70,  anchor="e")
                 _strat_tree.column("avg_dollars",  width=80,  anchor="e")
                 _strat_tree.column("avg_pct",      width=70,  anchor="e")
+                _strat_tree.column("win_pass",     width=100, anchor="center")
                 _strat_tree.column("del",          width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
@@ -4469,6 +4904,12 @@ def build_panel(parent):
                 #      when creating the tree, not on every refresh.
                 # CHANGED: April 2026 — per-row-delete v3 bugfix
                 dd_container[0] = _strat_tree
+
+            # Always update module-scope ref so the batch optimizer and
+            # multi-select helpers can read selection() regardless of
+            # whether this iteration created or reused the tree.
+            # CHANGED: May 2026 — batch optimization
+            globals()['_strat_tree_ref'] = _strat_tree
 
             # Populate tree items (happens on both create and refresh)
             # WHY: Saved rules were at position 202+ (after 201 backtest rows).
@@ -4514,6 +4955,12 @@ def build_panel(parent):
             def _strat_passes_filters(strat):
                 if strat.get('source') == 'separator':
                     return True
+                # WHY: Saved rules from rule discovery (Project 1) carry
+                #      no backtest trades — every column would read 0.
+                #      Hide them until they're enriched by a real backtest.
+                # CHANGED: May 2026 — auto-hide discovery-only rules
+                if _is_discovery_only_rule(strat):
+                    return False
                 try:
                     min_t  = int(_grid_filt_min_trades.get() or "0") if _grid_filt_min_trades else 0
                 except Exception:
@@ -4552,11 +4999,21 @@ def build_panel(parent):
                 except Exception:
                     return 0
 
-            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved'
-                           and _strat_passes_filters(s)]
+            # Build saved list and count what got hidden (for diagnostic log)
+            _all_saved  = [s for s in _strategies if s.get('source') == 'saved']
+            _sr_saved   = [s for s in _all_saved if _strat_passes_filters(s)]
             _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
             _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')
                            and _strat_passes_filters(s)]
+            # WHY: One-line diagnostic so the user can see the discovery filter
+            #      is doing something. Re-run a backtest on a discovery rule
+            #      to populate total_trades and it'll show up again.
+            # CHANGED: May 2026 — discovery filter diagnostic
+            _n_discovery_hidden = sum(1 for s in _all_saved
+                                      if _is_discovery_only_rule(s))
+            if _n_discovery_hidden > 0:
+                print(f"[REFINER] {_n_discovery_hidden} discovery-only saved rules "
+                      f"hidden (no trade data). Re-run backtest to make them visible.")
             if _grid_sort_key:
                 _sr_saved.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
                 _sr_others.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
@@ -4578,7 +5035,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4616,12 +5073,18 @@ def build_panel(parent):
                         _avg_p_s  = f"{_ap:+.2f}%"
                     else:
                         _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                    # WHY: Win Pass read directly from strategy dict —
+                    #      the backtester writes win_pass_passed/_total/_rate
+                    #      onto each result row at backtest time. Legacy
+                    #      rows missing those fields render as "—".
+                    # CHANGED: May 2026 — Win Pass at backtest time
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        _format_win_pass(s),
                         "🗑"
                     ), tags=(tag,))
                     continue
@@ -4661,6 +5124,7 @@ def build_panel(parent):
                     f"{pf:.2f}",
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                    _format_win_pass(s),
                     del_display
                 ), tags=(tag,))
 
@@ -4965,6 +5429,56 @@ def build_panel(parent):
                                      relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
             diagnose_btn.pack(side=tk.LEFT, padx=(6, 0))
 
+            # ── Batch optimize button ─────────────────────────────────
+            # WHY: Run the optimizer over multiple selected rules in
+            #      sequence. Disabled when <2 rules selected so the
+            #      single-select "Load + Optimize" workflow still works
+            #      naturally on a single row.
+            # CHANGED: May 2026 — batch optimization
+            batch_opt_btn = tk.Button(sel_row, text="⚙️ Optimize Selected (0)",
+                                       command=_start_batch_optimization,
+                                       bg="#9b59b6", fg="white",
+                                       font=("Segoe UI", 9, "bold"),
+                                       relief=tk.FLAT, cursor="hand2",
+                                       padx=10, pady=4,
+                                       state=tk.DISABLED)
+            batch_opt_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            def _update_batch_btn(event=None):
+                """Update batch button label and enabled state based on selection."""
+                sel = _get_selected_indexes()
+                n = len(sel)
+                if n >= 2:
+                    batch_opt_btn.configure(
+                        text=f"⚙️ Optimize Selected ({n})",
+                        state="normal",
+                    )
+                else:
+                    batch_opt_btn.configure(
+                        text=f"⚙️ Optimize Selected ({n})",
+                        state="disabled",
+                    )
+
+            # Wire the selection event to refresh the button state.
+            # add="+" preserves any other handler already bound (e.g. detail panel).
+            _strat_tree.bind("<<TreeviewSelect>>", _update_batch_btn, add="+")
+            _update_batch_btn()
+
+            try:
+                from shared.tooltip import add_tooltip
+                add_tooltip(batch_opt_btn,
+                            "⚙️ Batch Optimization\n\n"
+                            "Select multiple rules with Ctrl-click or Shift-click,\n"
+                            "then click this button to run the optimizer on all of\n"
+                            "them in sequence.\n\n"
+                            "Each rule uses its own embedded firm/risk/exit\n"
+                            "settings. Top candidates per rule appear as cards,\n"
+                            "followed by a '🏆 Top across all rules' tournament\n"
+                            "view ranking the best candidates from the whole batch.\n\n"
+                            "Max 50 rules per batch. Each rule takes 30-60s.")
+            except Exception:
+                pass
+
     def _load_in_background():
         """Background thread: load strategies, then schedule UI update."""
         _load_strategies()
@@ -5168,6 +5682,49 @@ def build_panel(parent):
             200, lambda: _draw_monthly_chart(_monthly_chart_canvas, _monthly_tooltip, _filtered_trades)
         )
     _monthly_chart_canvas.bind("<Configure>", _on_chart_resize)
+
+    # ── Performance by time (hour / DoW / session) ────────────────────────────
+    # WHY: Quick audit of which time buckets the strategy works/fails in.
+    #      Read-only tables; for actionable filter recommendations use the
+    #      Optimizer (Deep Explore tests DoW and hour sweeps automatically).
+    # CHANGED: May 2026 — time-bucket breakdown widget
+    time_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
+    time_outer.pack(fill="x", padx=5, pady=(5, 5))
+    tk.Label(time_outer, text="🕐 Performance by time",
+             font=("Segoe UI", 10, "bold"),
+             bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
+    tk.Label(time_outer,
+             text="Hour, day-of-week, and session aggregates. "
+                  "Rows with <5 trades hidden. "
+                  "For filter recommendations, run Deep Explore.",
+             font=("Segoe UI", 8, "italic"),
+             bg=WHITE, fg=GREY).pack(anchor="w", pady=(0, 6))
+
+    _time_row = tk.Frame(time_outer, bg=WHITE)
+    _time_row.pack(fill="x")
+
+    def _make_bucket_text(parent, height=12):
+        t = tk.Text(parent, height=height, width=42, wrap="none",
+                    font=("Consolas", 9), bg=WHITE, fg=DARK,
+                    relief="flat", highlightthickness=0,
+                    cursor="arrow")
+        t.insert("1.0", "Load a strategy to see breakdown.")
+        t.configure(state="disabled")
+        return t
+
+    _hour_text    = _make_bucket_text(_time_row, height=14)
+    _dow_text     = _make_bucket_text(_time_row, height=8)
+    _session_text = _make_bucket_text(_time_row, height=8)
+    _hour_text.pack(side=tk.LEFT,    padx=(0, 8))
+    _dow_text.pack(side=tk.LEFT,     padx=(0, 8))
+    _session_text.pack(side=tk.LEFT, padx=(0, 0))
+
+    global _time_bucket_widgets
+    _time_bucket_widgets = {
+        'hour_text':    _hour_text,
+        'dow_text':     _dow_text,
+        'session_text': _session_text,
+    }
 
     # ── Drawdown Analysis ─────────────────────────────────────────────────────
     dd_outer = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
