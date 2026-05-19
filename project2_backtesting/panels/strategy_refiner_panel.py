@@ -196,46 +196,17 @@ def _resolve_firm_challenge(rule_dict, account_size):
     return ('', '')
 
 
-def _money_pct_for_strategy(strategy_dict, net_pips, avg_pips):
-    """Return (net_pct_str, avg_pct_str) — net & avg P&L as % of account.
-
-    WHY: The grid shows net/avg in pips, which doesn't tell the user
-         whether the rule actually makes money on their specific account
-         size and risk setting. Convert via the same lot-sizing logic
-         that _update_passrate_detail uses.
-    CHANGED: May 2026 — money-% columns
-    """
-    try:
-        rule0 = ((strategy_dict.get('rules') or [{}])[0]
-                 if strategy_dict.get('rules')
-                 else (strategy_dict.get('saved_rule') or {}))
-        acct = float(rule0.get('account_size', 10000) or 10000)
-        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
-        sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
-        if acct <= 0 or sl <= 0 or pipv <= 0:
-            return "—", "—"
-        lot       = (acct * (risk / 100.0)) / (sl * pipv)
-        net_dollars = float(net_pips or 0) * pipv * lot
-        avg_dollars = float(avg_pips or 0) * pipv * lot
-        net_pct   = net_dollars / acct * 100.0
-        avg_pct   = avg_dollars / acct * 100.0
-        return f"{net_pct:+.1f}%", f"{avg_pct:+.2f}%"
-    except Exception:
-        return "—", "—"
-
-
 def _money_for_strategy(strategy_dict, net_pips, avg_pips):
     """Return (net_$, net_%, avg_$, avg_%) as floats — None when unknown.
 
-    Same lot-sizing logic as _money_pct_for_strategy but returns raw
-    numbers (not formatted strings) so callers can render dollars and
-    percentages side-by-side.
+    Used by both the grid inserts (separator/saved/backtest rows) and
+    the eval detail panel (money summary line). The grid wraps the
+    returned numbers as "$+,.0f" / "+.1f%" strings; the eval panel
+    uses them directly to format the inline money line.
 
-    WHY: Eval panel needs both $ and % values in the same line. Returning
-         strings only (as _money_pct_for_strategy does) forced callers to
-         parse them. Provide a numeric API.
-    CHANGED: May 2026 — eval-panel money summary
+    WHY: Lot-sized $ and % from the same single computation — one source
+         of truth for Net/Avg P&L in account terms.
+    CHANGED: May 2026 — money helper
     """
     try:
         rule0 = ((strategy_dict.get('rules') or [{}])[0]
@@ -4374,8 +4345,8 @@ def build_panel(parent):
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
             # Column inventory (16): star, #, stage, rule, exit, tf, trades,
-            # wr, pf, net_pips, net_pct, avg_pips, avg_pct, eval_pct,
-            # funded_pct, del. Keep this in sync with the `columns = (...)`
+            # wr, pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars,
+            # avg_pct, del. Keep this in sync with the `columns = (...)`
             # tuple below — a stale count makes the guard destroy sel_row's
             # children (including the Load button) on every refresh.
             _expected_col_count = 16

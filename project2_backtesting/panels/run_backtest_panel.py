@@ -192,6 +192,7 @@ _rule_canvas   = None
 _rule_inner    = None
 _use_safety_var      = None  # BooleanVar for safety stops toggle
 _funded_protect_var  = None  # BooleanVar for funded protection simulation
+_hwm_lock_var        = None  # BooleanVar for HWM-lock parity toggle (see PARITY_TODO.md)
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -1121,6 +1122,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_dd_daily_alert = 0.0
                     _cfg_dd_total_alert = 0.0
                     _cfg_dd_reset_hour = 20
+                    # WHY: HWM-lock parameters from firm's drawdown_mechanics.
+                    #      Plumbed to run_backtest only when "Use HWM-lock"
+                    #      checkbox is checked. See PARITY_TODO.md item 1.
+                    # CHANGED: May 2026 — HWM-lock parity toggle
+                    _cfg_hwm_lock_gain_pct = None
+                    _cfg_hwm_lock_level = 'starting_balance'
 
                     # WHY: Read per-firm asymmetric swap from the firm JSON.
                     #      Firm display name is already resolved above.
@@ -1210,6 +1217,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _dd_daily_cfg = _dd_mech.get('daily_dd', {})
                                     _dd_reset_time = _dd_daily_cfg.get('reset_time', '')
                                     _dd_reset_tz = _dd_daily_cfg.get('reset_timezone', 'UTC')
+                                    # WHY: HWM-lock — same firm config path the
+                                    #      simulator reads. lock_after_gain_pct
+                                    #      is None when the firm has no lock rule.
+                                    # CHANGED: May 2026 — HWM-lock parity toggle
+                                    _trailing_dd_cfg = _dd_mech.get('trailing_dd', {})
+                                    _cfg_hwm_lock_gain_pct = _trailing_dd_cfg.get('lock_after_gain_pct')
+                                    _cfg_hwm_lock_level = _trailing_dd_cfg.get(
+                                        'lock_level', 'starting_balance')
                                     if _dd_reset_time:
                                         try:
                                             _rh = int(_dd_reset_time.split(':')[0])
@@ -1628,6 +1643,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         dd_daily_alert_pct=_cfg_dd_daily_alert if _a48_use_cfg else 0.0,
                         dd_total_alert_pct=_cfg_dd_total_alert if _a48_use_cfg else 0.0,
                         dd_daily_reset_hour=_cfg_dd_reset_hour,
+                        # WHY: HWM-lock parity toggle — see strategy_backtester.py
+                        # CHANGED: May 2026 — HWM-lock toggle
+                        use_hwm_lock=_hwm_lock_var.get() if _hwm_lock_var else False,
+                        hwm_lock_gain_pct=_cfg_hwm_lock_gain_pct,
+                        hwm_lock_level=_cfg_hwm_lock_level,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -3896,7 +3916,7 @@ def build_panel(parent):
     safety_frame = tk.Frame(panel, bg="white", pady=6)
     safety_frame.pack(fill="x", padx=20)
 
-    global _use_safety_var, _funded_protect_var
+    global _use_safety_var, _funded_protect_var, _hwm_lock_var
     use_safety_var = tk.BooleanVar(value=True)
     _use_safety_var = use_safety_var
     tk.Checkbutton(
@@ -3915,6 +3935,23 @@ def build_panel(parent):
         safety_frame,
         text="🏦 Funded Protection (stop at DD alert, wait for payout period)",
         variable=funded_protect_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
+    # WHY: HWM-lock toggle for backtester ↔ EA parity. OFF by default
+    #      preserves current trailing-HWM behavior. ON freezes the HWM
+    #      once balance hits the firm's lock_after_gain_pct threshold,
+    #      matching what the simulator and EA do in production. Use
+    #      this to A/B test how much the lock changes results before
+    #      flipping it on permanently. See PARITY_TODO.md item 1.
+    # CHANGED: May 2026 — HWM-lock parity toggle
+    hwm_lock_var = tk.BooleanVar(value=False)
+    _hwm_lock_var = hwm_lock_var
+    tk.Checkbutton(
+        safety_frame,
+        text="🔒 Use HWM-lock (match EA)",
+        variable=hwm_lock_var,
         font=("Segoe UI", 10),
         bg="white",
     ).pack(anchor="w")

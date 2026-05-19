@@ -1169,6 +1169,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      g_ddFloor = g_hwm * (1.0 - {dd_total_pct}/100.0);\n'
             f'      SaveDDState();\n'
             f'   }}')
+        # PARITY NOTE: HWM-lock logic mirrored in 3 places. Keep in sync:
+        #   - shared/prop_firm_simulator.py L289-311 (authoritative scoring).
+        #   - HERE (EA runtime in MQL5).
+        #   - project2_backtesting/strategy_backtester.py — toggled by
+        #     use_hwm_lock parameter (off by default for A/B parity testing).
+        # See PARITY_TODO.md at repo root for known divergences.
+        # CHANGED: May 2026 — parity cross-reference comment
         if lock_pct:
             extra_on_trade.append(
                 f'   // Lock-after-gain: when balance reaches +{lock_pct}%, lock DD floor\n'
@@ -1192,6 +1199,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'      g_ddFloor = g_hwm * (1.0 - {dd_total_pct}/100.0);\n'
             f'      SaveDDState();\n'
             f'   }}')
+        # PARITY NOTE: HWM-lock logic mirrored in 3 places. Keep in sync:
+        #   - shared/prop_firm_simulator.py L289-311 (authoritative scoring).
+        #   - HERE (EA runtime in MQL5).
+        #   - project2_backtesting/strategy_backtester.py — toggled by
+        #     use_hwm_lock parameter (off by default for A/B parity testing).
+        # See PARITY_TODO.md at repo root for known divergences.
+        # CHANGED: May 2026 — parity cross-reference comment
         if lock_pct:
             extra_tick_checks.insert(1,
                 f'   // Lock-after-gain: when equity reaches +{lock_pct}%, lock DD floor\n'

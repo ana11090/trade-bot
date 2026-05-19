@@ -3254,7 +3254,14 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # CHANGED: May 2026 — DD circuit breaker
                           dd_daily_alert_pct=0.0,
                           dd_total_alert_pct=0.0,
-                          dd_daily_reset_hour=20):
+                          dd_daily_reset_hour=20,
+                          # WHY: HWM-lock toggle, forwarded to fast_backtest /
+                          #      run_backtest. False default = current
+                          #      trailing-HWM behavior. See PARITY_TODO.md item 1.
+                          # CHANGED: May 2026 — HWM-lock parity toggle
+                          use_hwm_lock=False,
+                          hwm_lock_gain_pct=None,
+                          hwm_lock_level='starting_balance'):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -3766,6 +3773,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     dd_daily_alert_pct=dd_daily_alert_pct,
                     dd_total_alert_pct=dd_total_alert_pct,
                     dd_daily_reset_hour=dd_daily_reset_hour,
+                    # WHY: HWM-lock parity toggle — forwarded from panel.
+                    # CHANGED: May 2026 — HWM-lock parity toggle
+                    use_hwm_lock=use_hwm_lock,
+                    hwm_lock_gain_pct=hwm_lock_gain_pct,
+                    hwm_lock_level=hwm_lock_level,
                 )
                 stats = compute_stats(trades)
 

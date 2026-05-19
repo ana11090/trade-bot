@@ -287,6 +287,12 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
         #        'starting_balance_strict': hwm anchored higher so floor
         #            lands exactly at account_size — zero buffer.
         # CHANGED: April 2026 — honor lock_level (audit bug #1)
+        # PARITY NOTE: HWM-lock logic mirrored in 3 places. Keep in sync:
+        #   - HERE (simulator): authoritative for eval pass/fail scoring.
+        #   - project3_live_trading/ea_generator.py L1172-1208 (EA runtime).
+        #   - project2_backtesting/strategy_backtester.py — toggled by
+        #     use_hwm_lock parameter (off by default for A/B parity testing).
+        # See PARITY_TODO.md at repo root for known divergences.
         if drawdown_type in ("trailing", "trailing_eod"):
             if hwm_lock_gain_pct and not hwm_locked:
                 gain_pct = (balance - account_size) / account_size * 100.0
