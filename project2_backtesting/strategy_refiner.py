@@ -859,7 +859,26 @@ def load_strategy_list():
                             'account_size':      r.get('account_size', r.get('run_settings', {}).get('starting_capital', 0)),
                             'prop_firm_name':    r.get('prop_firm_name', r.get('run_settings', {}).get('prop_firm_name', '')),
                             'prop_firm_stage':   r.get('prop_firm_stage', r.get('run_settings', {}).get('prop_firm_stage', '')),
+                            # WHY: firm_id (slug like "leveraged") is what
+                            #      run_settings carries; the panel's firm
+                            #      resolver falls back on it when
+                            #      prop_firm_name is empty. Without this
+                            #      passthrough the grid clicks would still
+                            #      fail with "firm_name=None firm_id=None".
+                            # CHANGED: May 2026 — firm_id passthrough
+                            'firm_id':           r.get('firm_id', r.get('run_settings', {}).get('firm_id', '')),
                             'data_source_id':    r.get('data_source_id', r.get('run_settings', {}).get('data_source_id', '')),
+                            # WHY: The backtester writes win_pass_passed /
+                            #      win_pass_total / win_pass_rate on each
+                            #      result row in backtest_matrix.json.
+                            #      Without these passthrough lines they
+                            #      never reach the strategy dict, and
+                            #      _format_win_pass(s) always returns "—"
+                            #      because s.get('win_pass_rate') is None.
+                            # CHANGED: May 2026 — win_pass passthrough
+                            'win_pass_passed':   r.get('win_pass_passed'),
+                            'win_pass_total':    r.get('win_pass_total'),
+                            'win_pass_rate':     r.get('win_pass_rate'),
                             # WHY (T2b): Stability verdict + time-distribution fields
                             #      attached by the auto-stability gate in run_backtest_panel.
                             #      Expose them so View Results can render the badge.
