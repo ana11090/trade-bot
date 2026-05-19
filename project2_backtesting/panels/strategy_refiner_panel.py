@@ -228,118 +228,103 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
         return None, None, None, None
 
 
-# WHY: Per-rule window-pass-rate column. simulate_challenge in sliding-
-#      window mode is too slow to run synchronously on grid open (~100-
-#      200ms × 100+ rules = 10-20s blocking). Background worker fills
-#      cells lazily, caches results by Treeview iid. Older Eval%/Funded%
-#      columns used Monte Carlo with 20 samples; this one uses sliding
-#      window (every historical start date, no randomness) to match the
-#      detail panel below.
-# CHANGED: May 2026 — Win Pass % grid worker
-_win_pass_cache = {}        # iid (str) -> formatted "%" string
-_win_pass_thread = None     # running worker
-_win_pass_token = 0         # incremented to invalidate old workers
+# WHY: simulate_challenge per-rule is fast (~50-200ms) but adds up at
+#      100+ rules. Run in parallel with ThreadPoolExecutor — pandas/
+#      numpy operations inside _rescale_trades release the GIL, so
+#      threads actually help. Store results on the strategy dict so
+#      the existing sort/filter mechanism (which reads strat.get(key))
+#      can sort by Win Pass without any extra wiring.
+# CHANGED: May 2026 — sync parallel pass-rate precompute
+def _precompute_pass_rates(strategies_list, progress_cb=None):
+    """Compute Win Pass for every strategy, store on the dict.
 
+    Sets three fields on each strategy dict:
+      _win_pass_passed : int   number of windows that passed
+      _win_pass_total  : int   number of decided windows (pass + real fail)
+      _win_pass_rate   : float pass rate 0.0..1.0, or -1 if unknown
 
-def _kick_window_pass_compute(tree_widget, strategies_snapshot):
-    """Spawn a background worker that fills the Win Pass % column.
-
-    Worker priority: saved rules first, then backtest/optimizer rows.
-    Skips entries already cached or that have no idx in the live tree.
+    progress_cb(done, total) called on every completion (used to update
+    the loading label).
     """
-    global _win_pass_thread, _win_pass_token
-    _win_pass_token += 1
-    my_token = _win_pass_token
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    saved   = [s for s in strategies_snapshot if s.get('source') == 'saved']
-    others  = [s for s in strategies_snapshot if s.get('source') not in ('saved', 'separator')]
-    ordered = saved + others
-
-    def _set_cell(iid, win_pass):
+    def _compute_one(s):
         try:
-            if not tree_widget.exists(iid):
-                return
-            vals = list(tree_widget.item(iid, 'values'))
-            # WHY: win_pass_pct is at column index 15 (17 columns total,
-            #      indices 0..16, win_pass_pct = second-to-last before del).
-            #      Bounds check defends against future column changes.
-            # CHANGED: May 2026 — Win Pass % worker
-            if len(vals) >= 16:
-                vals[15] = win_pass
-                tree_widget.item(iid, values=vals)
+            # Skip separators
+            if s.get('source') == 'separator':
+                return s, -1, 0, 0
+            trades = _load_trades_for_strategy(s)
+            if not trades:
+                return s, -1, 0, 0
+            rule0 = ((s.get('rules') or [{}])[0]
+                     if s.get('rules')
+                     else (s.get('saved_rule') or {}))
+            acct  = float(rule0.get('account_size', 10000) or 10000)
+            risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
+            sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+            pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+            firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
+            if not firm_id or not ch_id:
+                return s, -1, 0, 0
+            from project2_backtesting.strategy_validator import _trades_to_df
+            from shared.prop_firm_simulator import simulate_challenge
+            df = _trades_to_df(trades, risk, sl, pipv, int(acct))
+            sim = simulate_challenge(
+                trades_df=df, firm_id=firm_id, challenge_id=ch_id,
+                account_size=int(acct), mode='sliding_window',
+                simulate_funded=False,
+                risk_per_trade_pct=risk, default_sl_pips=sl,
+                pip_value_per_lot=pipv, symbol='XAUUSD',
+            )
+            if sim is None:
+                return s, -1, 0, 0
+            passed = sim.eval_pass_count
+            total  = passed + sim.eval_fail_count
+            if total == 0:
+                return s, -1, 0, 0
+            return s, sim.eval_pass_rate, passed, total
         except Exception:
-            pass
+            import traceback; traceback.print_exc()
+            return s, -1, 0, 0
 
-    def _worker():
-        from project2_backtesting.strategy_validator import _trades_to_df
-        from shared.prop_firm_simulator import simulate_challenge
-        import time as _ptime
-        _started = _ptime.time()
-        _done = 0
-        _total = len(ordered)
-        print(f"[REFINER WIN-PASS] Worker started — {_total} rules (token={my_token})")
-        for s in ordered:
-            if my_token != _win_pass_token:
-                return  # stale
-            iid = str(s.get('index', ''))
-            if not iid:
-                continue
-            if iid in _win_pass_cache:
-                v = _win_pass_cache[iid]
-                if state.window:
-                    state.window.after(0, lambda i=iid, vv=v: _set_cell(i, vv))
-                continue
-            try:
-                trades = _load_trades_for_strategy(s)
-                if not trades:
-                    _win_pass_cache[iid] = '—'
-                    if state.window:
-                        state.window.after(0, lambda i=iid: _set_cell(i, '—'))
-                    continue
-                rule0 = (s.get('rules') or [{}])[0] if s.get('rules') else (s.get('saved_rule') or {})
-                acct  = float(rule0.get('account_size', 10000) or 10000)
-                risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
-                sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-                pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
-                firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
-                if not firm_id or not ch_id:
-                    _win_pass_cache[iid] = '—'
-                    if state.window:
-                        state.window.after(0, lambda i=iid: _set_cell(i, '—'))
-                    continue
-                df = _trades_to_df(trades, risk, sl, pipv, int(acct))
-                # WHY: sliding_window — every historical start date. Same
-                #      mode as the detail panel below the grid, so this
-                #      grid % matches what the user sees when they click.
-                # CHANGED: May 2026 — sliding window for grid pass-rate
-                sim = simulate_challenge(
-                    trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-                    account_size=int(acct), mode='sliding_window',
-                    simulate_funded=False,
-                    risk_per_trade_pct=risk, default_sl_pips=sl,
-                    pip_value_per_lot=pipv, symbol='XAUUSD',
-                )
-                if sim is None or (sim.eval_pass_count + sim.eval_fail_count) == 0:
-                    v = '—'
-                else:
-                    v = f"{sim.eval_pass_rate*100:.0f}%"
-                _win_pass_cache[iid] = v
-                if state.window:
-                    state.window.after(0, lambda i=iid, vv=v: _set_cell(i, vv))
-            except Exception:
-                import traceback; traceback.print_exc()
-                _win_pass_cache[iid] = 'err'
-                if state.window:
-                    state.window.after(0, lambda i=iid: _set_cell(i, 'err'))
-            _done += 1
-            if _done <= 5 or _done % 100 == 0 or _done == _total:
-                _el = _ptime.time() - _started
-                print(f"[REFINER WIN-PASS] {_done}/{_total}  "
-                      f"({_el:.0f}s, ~{(_total-_done)*_el/max(_done,1):.0f}s remaining)")
-        print(f"[REFINER WIN-PASS] Worker DONE — {_done}/{_total} in {_ptime.time()-_started:.0f}s")
+    import time as _t
+    _started = _t.time()
+    _total = len(strategies_list)
+    print(f"[REFINER PRECOMPUTE] Starting — {_total} strategies, 8 workers")
 
-    _win_pass_thread = threading.Thread(target=_worker, daemon=True)
-    _win_pass_thread.start()
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {ex.submit(_compute_one, s): s for s in strategies_list}
+        done = 0
+        for fut in as_completed(futures):
+            s, rate, passed, total = fut.result()
+            s['_win_pass_rate']   = rate
+            s['_win_pass_passed'] = passed
+            s['_win_pass_total']  = total
+            done += 1
+            if progress_cb:
+                try:
+                    progress_cb(done, _total)
+                except Exception:
+                    pass
+
+    print(f"[REFINER PRECOMPUTE] Done — {_total} strategies in "
+          f"{_t.time() - _started:.1f}s")
+
+
+def _format_win_pass(s):
+    """Format the Win Pass column cell. Reads _win_pass_* fields
+    set by _precompute_pass_rates.
+
+    Returns:
+        "5/16 (31%)" for normal cases
+        "—" for "not computed", "no trades", separator, etc.
+    """
+    rate   = s.get('_win_pass_rate', -1)
+    passed = s.get('_win_pass_passed', 0)
+    total  = s.get('_win_pass_total', 0)
+    if rate is None or rate < 0 or total <= 0:
+        return "—"
+    return f"{passed}/{total} ({rate*100:.0f}%)"
 
 
 _passrate_widgets = None  # set by build_panel; holds frame+label for detail render
@@ -515,19 +500,16 @@ def _update_passrate_detail(strategy_dict):
     else:
         lines.append("💰 FUNDED  simulator returned no data")
 
-    # WHY: Aggregate counts (3 passed | 2 failed | 7 incomplete) hide WHAT
-    #      each window actually did. List individual results so user can see
-    #      e.g. "window starting 2026-03-15 ran 12 days, reached +1.8% before
-    #      data ran out (incomplete)". Capped at 12 to keep panel compact.
-    # CHANGED: May 2026 — per-window detail
+    # WHY: Show every window. User wants the full audit of which historical
+    #      starts passed or failed. The panel already has a scrollbar
+    #      (added 2ecf7fe3) so long lists scroll.
+    # CHANGED: May 2026 — show all windows (no cap)
     if sim_e is not None and sim_e.individual_results:
         _windows = sim_e.individual_results
-        _MAX_SHOW = 12
         lines.append("")  # blank separator
         lines.append(f"📋 Per-window detail ({len(_windows)} windows):")
-        for _w in _windows[:_MAX_SHOW]:
+        for _w in _windows:
             _o = _w.eval_outcome or "?"
-            # Short outcome label for compact display
             _o_short = {
                 'PASS': '✓ PASS',
                 'FAIL_DD': '✗ Total-DD breach',
@@ -536,7 +518,7 @@ def _update_passrate_detail(strategy_dict):
                 'FAIL_CONSISTENCY': '✗ Consistency rule',
                 'INSUFFICIENT_TRADES': '… Incomplete (out of data)',
             }.get(_o, _o)
-            _sd = str(_w.start_date or '?')[:10]   # YYYY-MM-DD
+            _sd = str(_w.start_date or '?')[:10]
             _days = _w.eval_days or 0
             _prof = _w.eval_profit_pct or 0.0
             _ddp  = _w.eval_max_dd_pct or 0.0
@@ -544,9 +526,6 @@ def _update_passrate_detail(strategy_dict):
                 f"   {_sd} → {_o_short:<28}  "
                 f"{_days:>3}d  |  profit {_prof:+5.1f}%  |  maxDD {_ddp:4.1f}%"
             )
-        if len(_windows) > _MAX_SHOW:
-            lines.append(f"   … and {len(_windows) - _MAX_SHOW} more "
-                         f"(showing first {_MAX_SHOW})")
 
     _set_text("\n".join(lines), fg=DARK)
 
@@ -4352,6 +4331,11 @@ def build_panel(parent):
         ("PF ↓",         "net_profit_factor",  True),
         ("Trades ↓",     "total_trades",       True),
         ("Avg Pips ↓",   "net_avg_pips",       True),
+        # WHY: Sorts by precomputed _win_pass_rate (float 0..1, or -1
+        #      when not computable). With reverse=True, highest pass
+        #      rates appear first; "—" rows (rate=-1) sink to bottom.
+        # CHANGED: May 2026 — Win Pass sort button
+        ("Win Pass ↓",   "_win_pass_rate",     True),
     ]:
         tk.Button(sort_row, text=label, font=("Segoe UI", 8),
                   bg="#667eea", fg="white", relief=tk.FLAT,
@@ -4436,12 +4420,31 @@ def build_panel(parent):
         """Called on main thread after strategies finish loading."""
         nonlocal dd_container, star_btn_container
 
-        # WHY: Hide the loading label once strategies finish loading,
-        #      whether the result is "found strategies" (build tree) or
-        #      "no strategies" (show empty message). The loading row
-        #      itself collapses to zero height since loading_lbl was its
-        #      only child.
-        # CHANGED: May 2026 — loading label cleanup
+        # WHY: Compute pass rate for every strategy BEFORE the tree
+        #      builds so the values are on each strategy dict and the
+        #      existing sort mechanism (reads strat.get(key)) works
+        #      for the new Win Pass column. Done in parallel for speed
+        #      (~3-4x vs single-threaded). Updates the loading label
+        #      so the user sees what's happening.
+        # CHANGED: May 2026 — sync parallel pass-rate precompute
+        if _strategies:
+            def _progress(done, total):
+                # Called from worker threads — schedule UI update on main thread
+                if state.window:
+                    state.window.after(0, lambda d=done, t=total:
+                        loading_lbl.config(
+                            text=f"⏳ Computing pass rates — {d}/{t}"))
+            try:
+                _precompute_pass_rates(_strategies, progress_cb=_progress)
+            except Exception:
+                import traceback; traceback.print_exc()
+
+        # WHY: Hide the loading label after precompute completes, whether
+        #      the result is "found strategies" (build tree) or "no
+        #      strategies" (show empty message). The loading row itself
+        #      collapses to zero height since loading_lbl was its only
+        #      child.
+        # CHANGED: May 2026 — loading label cleanup (after precompute)
         try:
             loading_lbl.pack_forget()
         except Exception:
@@ -4746,18 +4749,18 @@ def build_panel(parent):
                         _avg_p_s  = f"{_ap:+.2f}%"
                     else:
                         _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
-                    # WHY: Pass rate filled by background worker (see
-                    #      _kick_window_pass_compute). Cached value used
-                    #      if available; placeholder "..." otherwise.
-                    # CHANGED: May 2026 — Win Pass % column
-                    _wp_cached = _win_pass_cache.get(idx, "...")
+                    # WHY: Pass rate precomputed in parallel by
+                    #      _precompute_pass_rates during _on_strategies_loaded;
+                    #      _format_win_pass reads the dict fields and renders
+                    #      "passed/total (pct%)" or "—".
+                    # CHANGED: May 2026 — sync precompute (replaces async worker)
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
-                        _wp_cached,
+                        _format_win_pass(s),
                         "🗑"
                     ), tags=(tag,))
                     continue
@@ -4791,14 +4794,13 @@ def build_panel(parent):
                     _avg_p_s  = f"{_ap:+.2f}%"
                 else:
                     _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
-                _wp_cached = _win_pass_cache.get(idx, "...")
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
                     entry_tf_display, int(trades), wr_str,
                     f"{pf:.2f}",
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,
-                    _wp_cached,
+                    _format_win_pass(s),
                     del_display
                 ), tags=(tag,))
 
@@ -4825,11 +4827,10 @@ def build_panel(parent):
             if not has_existing_tree:
                 dd_container[0] = _strat_tree
 
-            # WHY: Kick the background worker to fill Win Pass % cells.
-            #      Runs simulate_challenge per rule in sliding-window
-            #      mode. Each rule ~100-500ms; UI doesn't block.
-            # CHANGED: May 2026 — Win Pass % grid worker
-            _kick_window_pass_compute(_strat_tree, list(_strategies))
+            # Win Pass % cells are populated synchronously by
+            # _precompute_pass_rates before the tree is built (see top of
+            # _on_strategies_loaded). No async kick here anymore.
+            # CHANGED: May 2026 — sync precompute replaces async worker
 
             def _on_tree_select(event=None):
                 global _selected_strat_iid
