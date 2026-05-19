@@ -1072,12 +1072,13 @@ def simulate_challenge(
     date_to_idx = {d: i for i, d in enumerate(trading_dates)}
 
     # ── Build starting points ─────────────────────────────────────────────────
-    MIN_REMAINING = 10
-    valid_starts  = [d for i, d in enumerate(trading_dates)
-                     if len(trading_dates) - i >= MIN_REMAINING]
-
-    if not valid_starts:
-        return None
+    # WHY: Every trading date is a valid window start. Windows that run
+    #      out of forward data record eval_outcome="INSUFFICIENT_TRADES"
+    #      inside _single_sim, which the aggregator routes into
+    #      eval_incomplete_count. An upfront forward-trades filter would
+    #      silently drop these — the user wants the count, not silence.
+    # CHANGED: May 2026 — every trading date is a valid window start
+    valid_starts = list(trading_dates)
 
     if mode == "sliding_window":
         start_dates = valid_starts

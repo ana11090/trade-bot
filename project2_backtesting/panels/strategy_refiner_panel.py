@@ -215,6 +215,35 @@ def _resolve_firm_challenge(rule_dict, account_size):
     return ('', '')
 
 
+def _money_pct_for_strategy(strategy_dict, net_pips, avg_pips):
+    """Return (net_pct_str, avg_pct_str) — net & avg P&L as % of account.
+
+    WHY: The grid shows net/avg in pips, which doesn't tell the user
+         whether the rule actually makes money on their specific account
+         size and risk setting. Convert via the same lot-sizing logic
+         that _update_passrate_detail uses.
+    CHANGED: May 2026 — money-% columns
+    """
+    try:
+        rule0 = ((strategy_dict.get('rules') or [{}])[0]
+                 if strategy_dict.get('rules')
+                 else (strategy_dict.get('saved_rule') or {}))
+        acct = float(rule0.get('account_size', 10000) or 10000)
+        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
+        sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+        if acct <= 0 or sl <= 0 or pipv <= 0:
+            return "—", "—"
+        lot       = (acct * (risk / 100.0)) / (sl * pipv)
+        net_dollars = float(net_pips or 0) * pipv * lot
+        avg_dollars = float(avg_pips or 0) * pipv * lot
+        net_pct   = net_dollars / acct * 100.0
+        avg_pct   = avg_dollars / acct * 100.0
+        return f"{net_pct:+.1f}%", f"{avg_pct:+.2f}%"
+    except Exception:
+        return "—", "—"
+
+
 def _kick_pass_rate_compute(tree_widget, strategies_snapshot):
     """Spawn a background worker that fills the Eval% / Funded% cells.
 
@@ -4415,7 +4444,8 @@ def build_panel(parent):
                 #      recompute.
                 # CHANGED: May 2026 — eval/funded pass-rate columns
                 columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
-                           "net_pips", "avg_pips", "eval_pct", "funded_pct", "del")
+                           "net_pips", "net_pct", "avg_pips", "avg_pct",
+                           "eval_pct", "funded_pct", "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
                                            selectmode="browse")
@@ -4430,7 +4460,9 @@ def build_panel(parent):
                 _strat_tree.heading("wr",         text="Win Rate")
                 _strat_tree.heading("pf",         text="PF")
                 _strat_tree.heading("net_pips",   text="Net Pips")
+                _strat_tree.heading("net_pct",    text="Net %")
                 _strat_tree.heading("avg_pips",   text="Avg Pips")
+                _strat_tree.heading("avg_pct",    text="Avg %")
                 _strat_tree.heading("eval_pct",   text="Eval %")
                 _strat_tree.heading("funded_pct", text="Funded %")
                 _strat_tree.heading("del",        text="🗑")
@@ -4445,7 +4477,9 @@ def build_panel(parent):
                 _strat_tree.column("wr",         width=70,  anchor="center")
                 _strat_tree.column("pf",         width=60,  anchor="center")
                 _strat_tree.column("net_pips",   width=90,  anchor="e")
+                _strat_tree.column("net_pct",    width=70,  anchor="e")
                 _strat_tree.column("avg_pips",   width=70,  anchor="e")
+                _strat_tree.column("avg_pct",    width=70,  anchor="e")
                 _strat_tree.column("eval_pct",   width=65,  anchor="center")
                 _strat_tree.column("funded_pct", width=65,  anchor="center")
                 _strat_tree.column("del",        width=40,  anchor="center")
@@ -4574,7 +4608,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4601,10 +4635,11 @@ def build_panel(parent):
                     )
                     tag = "saved" if not is_starred else "starred"
                     _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
+                    _net_pct_s, _avg_pct_s = _money_pct_for_strategy(s, net, avg)
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
-                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}",
+                        f"{pf:.2f}", f"{net:+,.0f}", _net_pct_s, f"{avg:+.1f}", _avg_pct_s,
                         _ev_cached, _fn_cached, "🗑"
                     ), tags=(tag,))
                     continue
@@ -4631,10 +4666,11 @@ def build_panel(parent):
                 )
 
                 _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
+                _net_pct_b, _avg_pct_b = _money_pct_for_strategy(s, net, avg)
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
                     entry_tf_display, int(trades), wr_str,
-                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}",
+                    f"{pf:.2f}", f"{net:+,.0f}", _net_pct_b, f"{avg:+.1f}", _avg_pct_b,
                     _ev_cached, _fn_cached, del_display
                 ), tags=(tag,))
 
