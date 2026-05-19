@@ -65,17 +65,6 @@ _selected_strat_iid = None
 # CHANGED: April 2026 — load token to cancel stale background loads
 _load_token = 0
 
-# WHY: Eval% / Funded% columns are populated by a background thread because
-#      simulate_challenge per rule is too slow to run synchronously on grid
-#      build for 7k+ rules. Cache keyed by Treeview iid (the same value
-#      stored as `idx` at row insert) so re-filter / re-sort doesn't trigger
-#      recomputation. _pass_rate_thread holds the worker so we can mark it
-#      stale and start a fresh one when _strategies changes.
-# CHANGED: May 2026 — eval/funded pass-rate background compute
-_pass_rate_cache = {}        # iid (str) -> (eval_pct_str, funded_pct_str)
-_pass_rate_thread = None     # running worker
-_pass_rate_token = 0         # incremented to invalidate old workers
-
 # WHY: Grid filter + sort state. Tk Vars created in build_panel; module-level
 #      refs let _on_strategies_loaded read them at rebuild time.
 # CHANGED: May 2026 — refiner grid filters + sort
@@ -132,14 +121,6 @@ _lock_filters_var = None
 _strategies_cache = []
 _cache_mtime = 0
 
-
-# ── Eval% / Funded% column compute (background) ───────────────────────────────
-# WHY: Per-rule pass-rate columns. Synchronously computing simulate_challenge
-#      for 7k+ rules at grid open would block the UI for minutes. Instead,
-#      the worker walks _strategies, computes per rule, and posts updates to
-#      the Treeview via state.window.after. Cached in _pass_rate_cache by
-#      iid (str index) so re-filter / re-sort doesn't trigger recomputation.
-# CHANGED: May 2026 — eval/funded pass-rate background compute
 
 def _load_trades_for_strategy(s):
     """Best-effort load of the trade list for one strategy dict.
@@ -274,109 +255,6 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
         return net_dollars, net_pct, avg_dollars, avg_pct
     except Exception:
         return None, None, None, None
-
-
-def _kick_pass_rate_compute(tree_widget, strategies_snapshot):
-    """Spawn a background worker that fills the Eval% / Funded% cells.
-
-    Worker priority: saved rules first, then backtest/optimizer rows.
-    Skips entries already cached or that have no idx in the live tree.
-    Uses small num_samples for speed (correctness comes from per-rule
-    variation, not from large-sample precision).
-    """
-    global _pass_rate_thread, _pass_rate_token
-    _pass_rate_token += 1
-    my_token = _pass_rate_token
-
-    # Reorder: saved first (most relevant), then everything else
-    saved   = [s for s in strategies_snapshot if s.get('source') == 'saved']
-    others  = [s for s in strategies_snapshot if s.get('source') not in ('saved', 'separator')]
-    ordered = saved + others
-
-    def _set_cell(iid, eval_pct, funded_pct):
-        try:
-            if not tree_widget.exists(iid):
-                return
-            vals = list(tree_widget.item(iid, 'values'))
-            if len(vals) >= 13:
-                vals[11] = eval_pct
-                vals[12] = funded_pct
-                tree_widget.item(iid, values=vals)
-        except Exception:
-            pass
-
-    def _worker():
-        from project2_backtesting.strategy_validator import _trades_to_df
-        from shared.prop_firm_simulator import simulate_challenge
-        import time as _ptime
-        _started = _ptime.time()
-        _done = 0
-        _total = len(ordered)
-        print(f"[REFINER PASS-RATE] Worker started — {_total} rules to compute (token={my_token})")
-        for s in ordered:
-            if my_token != _pass_rate_token:
-                return  # stale — a newer compute kicked us off
-            iid = str(s.get('index', ''))
-            if not iid:
-                continue
-            if iid in _pass_rate_cache:
-                ev, fn = _pass_rate_cache[iid]
-                if state.window:
-                    state.window.after(0, lambda i=iid, e=ev, f=fn: _set_cell(i, e, f))
-                continue
-            try:
-                trades = _load_trades_for_strategy(s)
-                if not trades:
-                    _pass_rate_cache[iid] = ('—', '—')
-                    if state.window:
-                        state.window.after(0, lambda i=iid: _set_cell(i, '—', '—'))
-                    continue
-                rule0 = (s.get('rules') or [{}])[0] if s.get('rules') else (s.get('saved_rule') or {})
-                acct  = float(rule0.get('account_size', 10000) or 10000)
-                risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
-                sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-                pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
-                firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
-                if not firm_id or not ch_id:
-                    _pass_rate_cache[iid] = ('—', '—')
-                    if state.window:
-                        state.window.after(0, lambda i=iid: _set_cell(i, '—', '—'))
-                    continue
-                df = _trades_to_df(trades, risk, sl, pipv, int(acct))
-                sim = simulate_challenge(
-                    trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-                    account_size=int(acct), mode='monte_carlo',
-                    num_samples=20, simulate_funded=True,
-                    risk_per_trade_pct=risk, default_sl_pips=sl,
-                    pip_value_per_lot=pipv, symbol='XAUUSD',
-                )
-                if sim is None:
-                    ev_str, fn_str = '—', '—'
-                else:
-                    ev_str = f"{sim.eval_pass_rate*100:.0f}%"
-                    # Funded column = 3-month survival rate (most informative
-                    # differentiator across rules at this account/risk).
-                    if sim.funded_survival_rate_3mo is not None:
-                        fn_str = f"{sim.funded_survival_rate_3mo*100:.0f}%"
-                    else:
-                        fn_str = '—'
-                _pass_rate_cache[iid] = (ev_str, fn_str)
-                if state.window:
-                    state.window.after(0, lambda i=iid, e=ev_str, f=fn_str: _set_cell(i, e, f))
-            except Exception:
-                import traceback; traceback.print_exc()
-                _pass_rate_cache[iid] = ('err', 'err')
-                if state.window:
-                    state.window.after(0, lambda i=iid: _set_cell(i, 'err', 'err'))
-            _done += 1
-            if _done <= 5 or _done % 100 == 0 or _done == _total:
-                _el = _ptime.time() - _started
-                print(f"[REFINER PASS-RATE] {_done}/{_total}  "
-                      f"({_el:.0f}s, ~{(_total-_done)*_el/max(_done,1):.0f}s remaining)")
-        print(f"[REFINER PASS-RATE] Worker DONE — {_done}/{_total} in {_ptime.time()-_started:.0f}s")
-
-    _pass_rate_thread = threading.Thread(target=_worker, daemon=True)
-    _pass_rate_thread.start()
 
 
 _passrate_widgets = None  # set by build_panel; holds frame+label for detail render
@@ -4312,7 +4190,7 @@ def build_panel(parent):
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
     global _grid_filt_min_pf, _grid_sort_key, _grid_sort_reverse
-    _grid_filt_profitable = tk.BooleanVar(value=False)
+    _grid_filt_profitable = tk.BooleanVar(value=True)
     _grid_filt_min_trades = tk.StringVar(value="0")
     _grid_filt_min_wr     = tk.StringVar(value="0")
     _grid_filt_min_pf     = tk.StringVar(value="0")
@@ -4353,7 +4231,10 @@ def build_panel(parent):
             _refiner_rebuild_hook[0]()
 
     def _reset_grid_filters():
-        _grid_filt_profitable.set(False)
+        # Reset = restore defaults. Profitable-only is on by default —
+        # losing rules clutter the grid and are rarely what the user
+        # wants to see when refining.
+        _grid_filt_profitable.set(True)
         _grid_filt_min_trades.set("0")
         _grid_filt_min_wr.set("0")
         _grid_filt_min_pf.set("0")
@@ -4492,7 +4373,12 @@ def build_panel(parent):
             #      slide off the right edge or never render. Detect the
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
-            _expected_col_count = 14  # star,#,stage,rule,exit,tf,trades,wr,pf,net_pips,avg_pips,eval_pct,funded_pct,del
+            # Column inventory (16): star, #, stage, rule, exit, tf, trades,
+            # wr, pf, net_pips, net_pct, avg_pips, avg_pct, eval_pct,
+            # funded_pct, del. Keep this in sync with the `columns = (...)`
+            # tuple below — a stale count makes the guard destroy sel_row's
+            # children (including the Load button) on every refresh.
+            _expected_col_count = 16
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4529,16 +4415,10 @@ def build_panel(parent):
                 #      backtest-matrix rows). No re-run needed — the field
                 #      already exists in every JSON path.
                 # CHANGED: May 2026 — Stage column on the refiner grid
-                # WHY: Eval% / Funded% columns expose per-rule simulator pass
-                #      rates. Populated lazily by a background thread (see
-                #      _kick_pass_rate_compute below) so grid opens fast and
-                #      values fill in as they're computed. Cached in
-                #      _pass_rate_cache by rule index so re-filtering doesn't
-                #      recompute.
-                # CHANGED: May 2026 — eval/funded pass-rate columns
                 columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
-                           "net_pips", "net_pct", "avg_pips", "avg_pct",
-                           "eval_pct", "funded_pct", "del")
+                           "net_pips", "net_dollars", "net_pct",
+                           "avg_pips", "avg_dollars", "avg_pct",
+                           "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
                                            selectmode="browse")
@@ -4552,12 +4432,23 @@ def build_panel(parent):
                 _strat_tree.heading("trades",     text="Trades")
                 _strat_tree.heading("wr",         text="Win Rate")
                 _strat_tree.heading("pf",         text="PF")
-                _strat_tree.heading("net_pips",   text="Net Pips")
-                _strat_tree.heading("net_pct",    text="Net %")
-                _strat_tree.heading("avg_pips",   text="Avg Pips")
-                _strat_tree.heading("avg_pct",    text="Avg %")
-                _strat_tree.heading("eval_pct",   text="Eval %")
-                _strat_tree.heading("funded_pct", text="Funded %")
+                _strat_tree.heading("net_pips",     text="Net Pips")
+                _strat_tree.heading("net_dollars",  text="Net $")
+                _strat_tree.heading("net_pct",      text="Net %")
+                _strat_tree.heading("avg_pips",     text="Avg Pips")
+                _strat_tree.heading("avg_dollars",  text="Avg $")
+                _strat_tree.heading("avg_pct",      text="Avg %")
+                # WHY: Eval %/Funded % columns removed in May 2026. The
+                #      per-window detail panel below the grid is the
+                #      authoritative display for eval pass/fail counts,
+                #      per-window outcomes, days-to-pass/fail, and fail
+                #      reasons. Showing a single aggregate % in the grid
+                #      duplicated that info and used different (Monte
+                #      Carlo, 20-sample) sampling than the detail (sliding
+                #      window, all dates) — same simulator, different
+                #      numbers, confusing. Click a row to see eval/funded
+                #      simulation details in the white panel below.
+                # CHANGED: May 2026 — drop eval/funded grid columns
                 _strat_tree.heading("del",        text="🗑")
 
                 _strat_tree.column("star",       width=30,  anchor="center")
@@ -4569,13 +4460,13 @@ def build_panel(parent):
                 _strat_tree.column("trades",     width=60,  anchor="center")
                 _strat_tree.column("wr",         width=70,  anchor="center")
                 _strat_tree.column("pf",         width=60,  anchor="center")
-                _strat_tree.column("net_pips",   width=90,  anchor="e")
-                _strat_tree.column("net_pct",    width=70,  anchor="e")
-                _strat_tree.column("avg_pips",   width=70,  anchor="e")
-                _strat_tree.column("avg_pct",    width=70,  anchor="e")
-                _strat_tree.column("eval_pct",   width=65,  anchor="center")
-                _strat_tree.column("funded_pct", width=65,  anchor="center")
-                _strat_tree.column("del",        width=40,  anchor="center")
+                _strat_tree.column("net_pips",     width=90,  anchor="e")
+                _strat_tree.column("net_dollars",  width=90,  anchor="e")
+                _strat_tree.column("net_pct",      width=70,  anchor="e")
+                _strat_tree.column("avg_pips",     width=70,  anchor="e")
+                _strat_tree.column("avg_dollars",  width=80,  anchor="e")
+                _strat_tree.column("avg_pct",      width=70,  anchor="e")
+                _strat_tree.column("del",          width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
                 _strat_tree.tag_configure("losing",     foreground="#dc3545")
@@ -4727,13 +4618,25 @@ def build_panel(parent):
                         '—'
                     )
                     tag = "saved" if not is_starred else "starred"
-                    _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
-                    _net_pct_s, _avg_pct_s = _money_pct_for_strategy(s, net, avg)
+                    # WHY: Use numeric helper so $ and % come from one
+                    #      lot-sizing computation. Eval/Funded columns
+                    #      removed — click row for eval detail.
+                    # CHANGED: May 2026 — $ columns, drop eval/funded grid columns
+                    _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                    if _nd is not None:
+                        _net_d_s  = f"${_nd:+,.0f}"
+                        _avg_d_s  = f"${_ad:+,.2f}"
+                        _net_p_s  = f"{_np:+.1f}%"
+                        _avg_p_s  = f"{_ap:+.2f}%"
+                    else:
+                        _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
-                        f"{pf:.2f}", f"{net:+,.0f}", _net_pct_s, f"{avg:+.1f}", _avg_pct_s,
-                        _ev_cached, _fn_cached, "🗑"
+                        f"{pf:.2f}",
+                        f"{net:+,.0f}", _net_d_s, _net_p_s,
+                        f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        "🗑"
                     ), tags=(tag,))
                     continue
                 elif source == 'optimizer':
@@ -4758,13 +4661,21 @@ def build_panel(parent):
                     '—'
                 )
 
-                _ev_cached, _fn_cached = _pass_rate_cache.get(idx, ("...", "..."))
-                _net_pct_b, _avg_pct_b = _money_pct_for_strategy(s, net, avg)
+                _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                if _nd is not None:
+                    _net_d_s  = f"${_nd:+,.0f}"
+                    _avg_d_s  = f"${_ad:+,.2f}"
+                    _net_p_s  = f"{_np:+.1f}%"
+                    _avg_p_s  = f"{_ap:+.2f}%"
+                else:
+                    _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
                     entry_tf_display, int(trades), wr_str,
-                    f"{pf:.2f}", f"{net:+,.0f}", _net_pct_b, f"{avg:+.1f}", _avg_pct_b,
-                    _ev_cached, _fn_cached, del_display
+                    f"{pf:.2f}",
+                    f"{net:+,.0f}", _net_d_s, _net_p_s,
+                    f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                    del_display
                 ), tags=(tag,))
 
             # Select first saved rule by default (most relevant to user)
@@ -4789,13 +4700,6 @@ def build_panel(parent):
             # CHANGED: April 2026 — per-row-delete v3 bugfix
             if not has_existing_tree:
                 dd_container[0] = _strat_tree
-
-            # Kick off background eval/funded pass-rate computation. Worker
-            # walks _strategies, runs simulate_challenge per rule, updates the
-            # Treeview cell as each result lands. Cached so re-filter / re-sort
-            # doesn't recompute. Skips rules already cached or already running.
-            # CHANGED: May 2026 — eval/funded pass-rate background compute
-            _kick_pass_rate_compute(_strat_tree, list(_strategies))
 
             def _on_tree_select(event=None):
                 global _selected_strat_iid
