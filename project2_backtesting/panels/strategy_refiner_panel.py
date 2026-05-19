@@ -6485,9 +6485,24 @@ def build_panel(parent):
 
 
 def refresh():
+    """Called by the sidebar when switching to the Refiner tab.
+
+    WHY: Reads the latest backtest_matrix.json + saved_rules.json
+         (cache-invalidated by mtime sum) AND rebuilds the Treeview
+         grid so a fresh backtest's rules actually appear. Without
+         the rebuild hook call, _strategies updated silently and the
+         grid kept showing stale rows from a prior backtest.
+    CHANGED: May 2026 — rebuild grid on refresh
+    """
     global _strategies, _strategy_var
-    _load_strategies()
+    _load_strategies(force=True)
     if _strategy_var is not None and _strategies:
         labels = [s['label'] for s in _strategies]
         if _strategy_var.get() not in labels:
             _strategy_var.set(labels[0])
+    # Rebuild the Treeview so the new rules actually show up.
+    try:
+        if _refiner_rebuild_hook and _refiner_rebuild_hook[0]:
+            _refiner_rebuild_hook[0]()
+    except Exception:
+        pass
