@@ -244,6 +244,38 @@ def _money_pct_for_strategy(strategy_dict, net_pips, avg_pips):
         return "—", "—"
 
 
+def _money_for_strategy(strategy_dict, net_pips, avg_pips):
+    """Return (net_$, net_%, avg_$, avg_%) as floats — None when unknown.
+
+    Same lot-sizing logic as _money_pct_for_strategy but returns raw
+    numbers (not formatted strings) so callers can render dollars and
+    percentages side-by-side.
+
+    WHY: Eval panel needs both $ and % values in the same line. Returning
+         strings only (as _money_pct_for_strategy does) forced callers to
+         parse them. Provide a numeric API.
+    CHANGED: May 2026 — eval-panel money summary
+    """
+    try:
+        rule0 = ((strategy_dict.get('rules') or [{}])[0]
+                 if strategy_dict.get('rules')
+                 else (strategy_dict.get('saved_rule') or {}))
+        acct = float(rule0.get('account_size', 10000) or 10000)
+        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
+        sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+        if acct <= 0 or sl <= 0 or pipv <= 0:
+            return None, None, None, None
+        lot       = (acct * (risk / 100.0)) / (sl * pipv)
+        net_dollars = float(net_pips or 0) * pipv * lot
+        avg_dollars = float(avg_pips or 0) * pipv * lot
+        net_pct   = net_dollars / acct * 100.0
+        avg_pct   = avg_dollars / acct * 100.0
+        return net_dollars, net_pct, avg_dollars, avg_pct
+    except Exception:
+        return None, None, None, None
+
+
 def _kick_pass_rate_compute(tree_widget, strategies_snapshot):
     """Spawn a background worker that fills the Eval% / Funded% cells.
 
@@ -438,6 +470,25 @@ def _update_passrate_detail(strategy_dict):
     lines = []
     lines.append(f"Firm: {rule0.get('prop_firm_name','?')}  |  Account: ${int(acct):,}  "
                  f"|  Risk: {risk}%  |  Trades: {len(trades)}")
+
+    # WHY: Pip-denominated stats hide whether the rule is actually
+    #      profitable in money terms on this specific account size and
+    #      risk setting. Show both $ and % of account for net and avg.
+    # CHANGED: May 2026 — money summary line
+    try:
+        _net_pips_total = sum(float(_t.get('net_pips', 0) or 0) for _t in trades)
+        _net_pips_avg   = _net_pips_total / len(trades) if trades else 0.0
+        _n_dollars, _n_pct, _a_dollars, _a_pct = _money_for_strategy(
+            strategy_dict, _net_pips_total, _net_pips_avg)
+        if _n_dollars is not None:
+            lines.append(
+                f"   💵 Net: ${_n_dollars:+,.0f} ({_n_pct:+.1f}%)  |  "
+                f"Avg/trade: ${_a_dollars:+,.2f} ({_a_pct:+.2f}%)"
+            )
+    except Exception:
+        # Non-fatal — money line is informational; skip on any data issue.
+        pass
+
     if sim_e is not None:
         cnt  = sim_e.eval_pass_count
         flc  = sim_e.eval_fail_count
@@ -500,6 +551,39 @@ def _update_passrate_detail(strategy_dict):
             lines.append(f"   📉 Survival rate: 3-month {s3}  |  6-month {s6}")
     else:
         lines.append("💰 FUNDED  simulator returned no data")
+
+    # WHY: Aggregate counts (3 passed | 2 failed | 7 incomplete) hide WHAT
+    #      each window actually did. List individual results so user can see
+    #      e.g. "window starting 2026-03-15 ran 12 days, reached +1.8% before
+    #      data ran out (incomplete)". Capped at 12 to keep panel compact.
+    # CHANGED: May 2026 — per-window detail
+    if sim_e is not None and sim_e.individual_results:
+        _windows = sim_e.individual_results
+        _MAX_SHOW = 12
+        lines.append("")  # blank separator
+        lines.append(f"📋 Per-window detail ({len(_windows)} windows):")
+        for _w in _windows[:_MAX_SHOW]:
+            _o = _w.eval_outcome or "?"
+            # Short outcome label for compact display
+            _o_short = {
+                'PASS': '✓ PASS',
+                'FAIL_DD': '✗ Total-DD breach',
+                'FAIL_DAILY_DD': '✗ Daily-DD breach',
+                'FAIL_TIMEOUT': '✗ Timeout',
+                'FAIL_CONSISTENCY': '✗ Consistency rule',
+                'INSUFFICIENT_TRADES': '… Incomplete (out of data)',
+            }.get(_o, _o)
+            _sd = str(_w.start_date or '?')[:10]   # YYYY-MM-DD
+            _days = _w.eval_days or 0
+            _prof = _w.eval_profit_pct or 0.0
+            _ddp  = _w.eval_max_dd_pct or 0.0
+            lines.append(
+                f"   {_sd} → {_o_short:<28}  "
+                f"{_days:>3}d  |  profit {_prof:+5.1f}%  |  maxDD {_ddp:4.1f}%"
+            )
+        if len(_windows) > _MAX_SHOW:
+            lines.append(f"   … and {len(_windows) - _MAX_SHOW} more "
+                         f"(showing first {_MAX_SHOW})")
 
     _set_text("\n".join(lines), fg=DARK)
 
@@ -4329,15 +4413,24 @@ def build_panel(parent):
         font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#4a148c",
         padx=8, pady=4)
     _passrate_detail_frame.pack(fill="x", padx=0, pady=(6, 0))
-    _passrate_detail_lbl = tk.Text(_passrate_detail_frame,
-        height=10, wrap="word",
+    # WHY: With per-window detail (up to 12 rows + headers), the panel
+    #      can exceed 18 lines. Keep compact height but allow scrolling.
+    # CHANGED: May 2026 — add scrollbar
+    _passrate_detail_inner = tk.Frame(_passrate_detail_frame, bg=WHITE)
+    _passrate_detail_inner.pack(fill="x")
+    _passrate_detail_lbl = tk.Text(_passrate_detail_inner,
+        height=12, wrap="word",
         font=("Consolas", 9), bg=WHITE, fg=DARK,
         relief="flat", highlightthickness=0,
         cursor="arrow")
+    _passrate_detail_scroll = tk.Scrollbar(_passrate_detail_inner,
+        orient="vertical", command=_passrate_detail_lbl.yview)
+    _passrate_detail_lbl.configure(yscrollcommand=_passrate_detail_scroll.set)
+    _passrate_detail_scroll.pack(side="right", fill="y")
+    _passrate_detail_lbl.pack(side="left", fill="both", expand=True)
     _passrate_detail_lbl.insert("1.0",
         "Select a rule to see eval/funded pass rate and timing.")
     _passrate_detail_lbl.configure(state="disabled")
-    _passrate_detail_lbl.pack(fill="x")
     # Expose so the module-level _update_passrate_detail() helper (called from
     # _on_tree_select) can write into the widget.
     global _passrate_widgets
