@@ -211,6 +211,11 @@ _filt_trades    = None
 _strat_info_lbl  = None
 _strat_detail_lbl = None
 _prev_result_lbl = None
+# WHY: Lets the module-level refresh() trigger _rebuild_tree which
+#      lives inside build_panel as a closure. Without this hook, a
+#      fresh backtest's rules don't appear in the grid on tab switch.
+# CHANGED: May 2026 — refresh actually rebuilds the grid
+_validator_rebuild_hook = [None]
 _copy_results_btn = None
 _last_validation_result = None  # stores the last completed validation result dict
 _start_wf_btn    = None
@@ -3763,6 +3768,11 @@ def build_panel(parent):
                 checked_count = sum(1 for v in _check_vars.values() if v)
                 _selected_count.config(text=f"{checked_count} selected of {visible} shown ({len(_strategies)} total)")
 
+        # WHY: Expose _rebuild_tree to module-level refresh() so tab
+        #      switching can rebuild the grid with the freshly loaded
+        #      strategies, instead of leaving stale rows visible.
+        # CHANGED: May 2026 — refresh actually rebuilds the grid
+        _validator_rebuild_hook[0] = _rebuild_tree
         _rebuild_tree()
 
         # Checkbox click handler
@@ -4159,6 +4169,12 @@ def build_panel(parent):
 
 
 def refresh():
+    """Called by the sidebar when switching to the Validator tab.
+
+    WHY: Without rebuilding the Treeview after _load_strategies(),
+         the grid keeps showing stale rules from a prior backtest.
+    CHANGED: May 2026 — refresh actually rebuilds the grid
+    """
     global _strategies, _strategy_var
     _load_strategies()
     if _strategy_var is not None and _strategies:
@@ -4166,3 +4182,9 @@ def refresh():
         if _strategy_var.get() not in labels:
             _strategy_var.set(labels[0])
         _update_strat_info()
+    # Rebuild the Treeview so fresh-backtest rows actually appear.
+    try:
+        if _validator_rebuild_hook and _validator_rebuild_hook[0]:
+            _validator_rebuild_hook[0]()
+    except Exception:
+        pass

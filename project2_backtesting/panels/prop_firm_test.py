@@ -93,6 +93,11 @@ _results_frame     = None
 _trades_frame      = None
 _strat_info_label  = None
 _current_trades    = []        # trades for the currently selected strategy
+# WHY: Module-level reference to the Combobox so refresh() can
+#      update its values list after _load_strategies() pulls in
+#      fresh rules from a new backtest.
+# CHANGED: May 2026 — refresh updates dropdown values
+_strategy_dropdown = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -731,10 +736,17 @@ def build_panel(parent):
     else:
         _strategy_var = tk.StringVar(value=_strategies[0]['label'])
         labels = [s['label'] for s in _strategies]
+        # WHY: Hold a module-level reference so refresh() can update
+        #      values after a fresh backtest writes new rules.
+        # CHANGED: May 2026 — module-level dropdown ref
+        global _strategy_dropdown
         dropdown = ttk.Combobox(strat_frame, textvariable=_strategy_var,
                                 values=labels, state="readonly", width=100)
         dropdown.pack(anchor="w", fill="x")
         dropdown.bind("<<ComboboxSelected>>", _on_strategy_select)
+        # WHY: Store for refresh() to update values list later.
+        # CHANGED: May 2026 — module-level dropdown ref
+        _strategy_dropdown = dropdown
 
         # Refresh button
         def _refresh_strats():
@@ -967,11 +979,24 @@ def build_panel(parent):
 
 
 def refresh():
-    """Reload strategy list when panel becomes active."""
+    """Reload strategy list when panel becomes active.
+
+    WHY: Without updating the Combobox's values= list, the dropdown
+         keeps showing labels from a prior backtest even though the
+         underlying _strategies list is fresh.
+    CHANGED: May 2026 — refresh updates dropdown values
+    """
     global _strategies, _strategy_var, _strat_info_label
     _load_strategies()
     if _strategy_var is not None and _strategies:
         labels = [s['label'] for s in _strategies]
+        # Update the dropdown's value list so the user sees fresh
+        # rules instead of stale ones from a prior backtest.
+        try:
+            if _strategy_dropdown is not None:
+                _strategy_dropdown['values'] = labels
+        except Exception:
+            pass
         if _strategy_var.get() not in labels:
             _strategy_var.set(labels[0])
         _on_strategy_select()
