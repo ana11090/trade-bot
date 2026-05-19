@@ -103,6 +103,12 @@ _time_bucket_widgets = None   # dict: {'hour_text', 'dow_text', 'session_text'}
 #      build/rebuild. None when no tree exists yet.
 # CHANGED: May 2026 — batch optimization
 _strat_tree_ref      = None
+# WHY: Set of Treeview iids the user has ticked for batch optimization.
+#      Independent from the Treeview's native selection (which drives
+#      the detail panel). Survives grid rebuilds; cleared via the
+#      "✗ Clear" button next to "⚙️ Optimize Selected".
+# CHANGED: May 2026 — checkbox-based batch selection
+_batch_selected_iids = set()
 _monthly_tooltip      = None
 _dd_label             = None
 _breach_label         = None
@@ -136,10 +142,23 @@ _cache_mtime = 0
 def _load_trades_for_strategy(s):
     """Best-effort load of the trade list for one strategy dict.
 
-    Saved rules: may carry trades inline at saved_rule.trades.
-    Backtest rows: trades live in outputs/backtest_trades_<TF>.json keyed by
-    the TF-local index (count of rows with that entry_tf before this one).
+    Lookup order:
+      1. Saved rules: trades inline at saved_rule.trades.
+      2. Backtest rows: inline s['trades'] (stripped by Phase A.48
+         to keep the matrix small, so rarely present in practice).
+      3. Batch file outputs/backtest_trades_<TF>.json keyed by
+         tf_local_idx.
+      4. Per-rule file outputs/rules/rule_<rule_combo_safe>_<TF>.json.
+         The backtester always writes these (one per rule) BEFORE
+         the batch file. If the run got interrupted between the two
+         writes, only the per-rule files exist — fall back to them.
+
     Returns [] if nothing can be loaded.
+    WHY: A KeyboardInterrupt during backtest left users with 7400
+         per-rule files but no batch file, so the refiner showed
+         "No trade data" for every row despite the data being on
+         disk. Per-rule fallback fixes this.
+    CHANGED: May 2026 — per-rule file fallback
     """
     src = s.get('source', '')
     if src == 'saved':
@@ -150,35 +169,53 @@ def _load_trades_for_strategy(s):
     _inline = s.get('trades')
     if isinstance(_inline, list) and _inline:
         return _inline
+    import json as _ptj
+    entry_tf = s.get('entry_tf') or s.get('entry_timeframe') or ''
+    idx_val  = s.get('index')
+    # ── Batch file (Phase A.48 primary path) ─────────────────
     try:
-        import json as _ptj
-        entry_tf = s.get('entry_tf') or s.get('entry_timeframe') or ''
-        idx_val  = s.get('index')
-        if not entry_tf or not isinstance(idx_val, int):
-            return []
-        _trades_path = os.path.join(project_root, 'project2_backtesting',
-                                    'outputs', f'backtest_trades_{entry_tf}.json')
-        if not os.path.exists(_trades_path):
-            return []
-        with open(_trades_path, encoding='utf-8') as _f:
-            _all = _ptj.load(_f)
-        # The validator computes a TF-local index by counting rows with the
-        # same entry_tf before idx_val — we don't have the full results array
-        # here, so trust the strategy dict's `tf_local_idx` if present, then
-        # fall back to scanning _strategies.
-        _local = s.get('tf_local_idx')
-        if _local is None:
-            _local = 0
-            for _other in _strategies:
-                if not isinstance(_other.get('index'), int):
-                    continue
-                if _other['index'] >= idx_val:
-                    break
-                if _other.get('entry_tf') == entry_tf:
-                    _local += 1
-        return _all.get(str(_local), []) or []
+        if entry_tf and isinstance(idx_val, int):
+            _trades_path = os.path.join(project_root, 'project2_backtesting',
+                                        'outputs', f'backtest_trades_{entry_tf}.json')
+            if os.path.exists(_trades_path):
+                with open(_trades_path, encoding='utf-8') as _f:
+                    _all = _ptj.load(_f)
+                _local = s.get('tf_local_idx')
+                if _local is None:
+                    _local = 0
+                    for _other in _strategies:
+                        if not isinstance(_other.get('index'), int):
+                            continue
+                        if _other['index'] >= idx_val:
+                            break
+                        if _other.get('entry_tf') == entry_tf:
+                            _local += 1
+                _from_batch = _all.get(str(_local), []) or []
+                if _from_batch:
+                    return _from_batch
     except Exception:
-        return []
+        pass
+    # ── Per-rule file fallback ─────────────────────────────────────
+    # Filename convention from strategy_backtester.py rule-file write.
+    try:
+        rc = str(s.get('rule_combo', ''))
+        tf = entry_tf or 'H1'
+        if rc:
+            _safe = rc.lstrip('#')
+            for _ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+                _safe = _safe.replace(_ch, '_')
+            _per_rule_path = os.path.join(project_root, 'project2_backtesting',
+                                          'outputs', 'rules',
+                                          f'rule_{_safe}_{tf}.json')
+            if os.path.exists(_per_rule_path):
+                with open(_per_rule_path, encoding='utf-8') as _f:
+                    _data = _ptj.load(_f)
+                _t = _data.get('trades') or []
+                if isinstance(_t, list):
+                    return _t
+    except Exception:
+        pass
+    return []
 
 
 def _resolve_firm_challenge(rule_dict, account_size):
@@ -259,6 +296,14 @@ def _format_win_pass(s):
     if rate is None or rate < 0 or total <= 0:
         return "—"
     return f"{passed}/{total} ({rate*100:.0f}%)"
+
+
+def _select_glyph(iid):
+    """Return ☑ if iid is in the batch set, ☐ otherwise.
+    Empty string for separator rows.
+    CHANGED: May 2026 — checkbox-based batch selection
+    """
+    return "☑" if str(iid) in _batch_selected_iids else "☐"
 
 
 def _update_passrate_detail(strategy_dict):
@@ -932,21 +977,16 @@ def _get_selected_index():
 
 
 def _get_selected_indexes():
-    """Get a LIST of currently-selected iids — for multi-select operations.
+    """Get a LIST of iids ticked for batch optimization.
 
-    Returns a list of iids in selection order. Empty list if nothing
-    selected. Each iid follows the same convention as
-    _get_selected_index().
-    WHY: Treeview now uses selectmode='extended' so the user can
-         Ctrl-click multiple rules for batch optimization.
-    CHANGED: May 2026 — batch optimization
+    Reads from _batch_selected_iids, which the column-0 click handler
+    maintains. NOT from _strat_tree.selection() — native selection is
+    single-row and drives the detail panel.
+
+    Returns a list of iids. Empty list if nothing ticked.
+    CHANGED: May 2026 — checkbox-based batch selection
     """
-    try:
-        if _strat_tree_ref is None:
-            return []
-        return list(_strat_tree_ref.selection())
-    except Exception:
-        return []
+    return list(_batch_selected_iids)
 
 
 def _is_discovery_only_rule(strat):
@@ -1818,7 +1858,7 @@ def _start_batch_optimization():
     selected_iids = _get_selected_indexes()
     if len(selected_iids) < 2:
         messagebox.showinfo("Select Multiple Rules",
-                            "Select 2 or more rules in the grid (Ctrl-click) to batch-optimize.")
+                            "Tick the checkbox (☐ → ☑) on 2 or more rules in the grid to batch-optimize.")
         return
 
     # Hard cap — each rule is ~30-60s of compute
@@ -4791,13 +4831,14 @@ def build_panel(parent):
             #      slide off the right edge or never render. Detect the
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
-            # Column inventory (17): star, #, stage, rule, exit, tf, trades,
-            # wr, pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars,
-            # avg_pct, win_pass, del. Keep this in sync with the
-            # `columns = (...)` tuple below — a stale count makes the
-            # guard destroy sel_row's children (including the Load
+            # Column inventory (18): select, star, #, stage, rule, exit, tf,
+            # trades, wr, pf, net_pips, net_dollars, net_pct, avg_pips,
+            # avg_dollars, avg_pct, win_pass, del. `select` is the batch-
+            # optimization checkbox column at index 0. Keep in sync with
+            # the `columns = (...)` tuple below — a stale count makes
+            # the guard destroy sel_row's children (including the Load
             # button) on every refresh.
-            _expected_col_count = 17
+            _expected_col_count = 18
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4834,19 +4875,25 @@ def build_panel(parent):
                 #      backtest-matrix rows). No re-run needed — the field
                 #      already exists in every JSON path.
                 # CHANGED: May 2026 — Stage column on the refiner grid
-                columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
+                columns = ("select", "star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
                            "win_pass",
                            "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
-                                           # WHY: Multi-select for batch optimization. Single-select
-                                           #      behavior preserved — selecting one row works as before.
-                                           #      Ctrl-click adds; Shift-click range-selects.
-                                           # CHANGED: May 2026 — batch optimization
-                                           selectmode="extended")
+                                           # WHY: Back to single-select. The batch-optimize
+                                           #      selection now lives in a dedicated checkbox
+                                           #      column (☐/☑) at index 0 — see _batch_selected_iids
+                                           #      and the column-0 click handler below.
+                                           # CHANGED: May 2026 — checkbox-based batch selection
+                                           selectmode="browse")
 
+                # WHY: Checkbox column for batch optimization. Click the
+                #      cell to toggle. ☐ = not in batch; ☑ = in batch.
+                #      Separator rows show "" (no checkbox).
+                # CHANGED: May 2026 — checkbox-based batch selection
+                _strat_tree.heading("select",     text="☑")
                 _strat_tree.heading("star",       text="⭐")
                 _strat_tree.heading("#",          text="#")
                 _strat_tree.heading("stage",      text="Stage")
@@ -4871,6 +4918,7 @@ def build_panel(parent):
                 _strat_tree.heading("win_pass",     text="Win Pass")
                 _strat_tree.heading("del",          text="🗑")
 
+                _strat_tree.column("select",     width=34,  anchor="center")
                 _strat_tree.column("star",       width=30,  anchor="center")
                 _strat_tree.column("#",          width=70,  anchor="center")
                 _strat_tree.column("stage",      width=70,  anchor="center")
@@ -4893,6 +4941,58 @@ def build_panel(parent):
                 _strat_tree.tag_configure("losing",     foreground="#dc3545")
                 _strat_tree.tag_configure("saved",      foreground="#9b59b6")
                 _strat_tree.tag_configure("starred",    foreground="#f39c12")
+
+                # WHY: Click handler on column 0 (the ☐/☑ cell) toggles
+                #      batch-membership. Clicks elsewhere in the row
+                #      fall through to the default selection behavior,
+                #      which drives the detail panel as today.
+                # CHANGED: May 2026 — checkbox-based batch selection
+                # `_batch_btn_refresh` is a one-element list patched by
+                # the batch-button setup below, so the click handler can
+                # see _update_batch_btn even though it's defined later.
+                _batch_btn_refresh = [None]
+                def _on_tree_left_click(event):
+                    try:
+                        region = _strat_tree.identify_region(event.x, event.y)
+                        if region != 'cell':
+                            return  # let default selection handler fire
+                        col = _strat_tree.identify_column(event.x)
+                        if col != '#1':
+                            return  # not the select column
+                        iid = _strat_tree.identify_row(event.y)
+                        if not iid:
+                            return
+                        # Skip separator rows
+                        for s in _strategies:
+                            if str(s.get('index', '')) == str(iid):
+                                if s.get('source') == 'separator':
+                                    return
+                                break
+                        # Toggle membership
+                        global _batch_selected_iids
+                        iid_str = str(iid)
+                        if iid_str in _batch_selected_iids:
+                            _batch_selected_iids.discard(iid_str)
+                            new_glyph = "☐"
+                        else:
+                            _batch_selected_iids.add(iid_str)
+                            new_glyph = "☑"
+                        # Update cell in-place
+                        vals = list(_strat_tree.item(iid, 'values'))
+                        if vals:
+                            vals[0] = new_glyph
+                            _strat_tree.item(iid, values=vals)
+                        # Refresh the batch button label (defined later)
+                        if _batch_btn_refresh[0]:
+                            try:
+                                _batch_btn_refresh[0]()
+                            except Exception:
+                                pass
+                        return "break"  # stop propagation so default
+                                        # row-selection doesn't ALSO fire
+                    except Exception:
+                        return
+                _strat_tree.bind("<Button-1>", _on_tree_left_click, add="+")
 
                 tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
                                            command=_strat_tree.yview)
@@ -5035,7 +5135,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -5079,6 +5179,7 @@ def build_panel(parent):
                     #      rows missing those fields render as "—".
                     # CHANGED: May 2026 — Win Pass at backtest time
                     _strat_tree.insert("", "end", iid=idx, values=(
+                        _select_glyph(idx),
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}",
@@ -5119,6 +5220,7 @@ def build_panel(parent):
                 else:
                     _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
                 _strat_tree.insert("", "end", iid=idx, values=(
+                    _select_glyph(idx),
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
                     entry_tf_display, int(trades), wr_str,
                     f"{pf:.2f}",
@@ -5459,18 +5561,55 @@ def build_panel(parent):
                         state="disabled",
                     )
 
-            # Wire the selection event to refresh the button state.
-            # add="+" preserves any other handler already bound (e.g. detail panel).
-            _strat_tree.bind("<<TreeviewSelect>>", _update_batch_btn, add="+")
+            # WHY: Button refresh now fires from the column-0 click
+            #      handler (it calls _batch_btn_refresh[0]() directly).
+            #      The <<TreeviewSelect>> binding is no longer needed for
+            #      the batch button — selection state is independent of
+            #      batch membership.
+            # CHANGED: May 2026 — checkbox-based batch selection
+            try:
+                _batch_btn_refresh[0] = _update_batch_btn
+            except Exception:
+                pass
             _update_batch_btn()
+
+            # WHY: Lets the user reset batch selection in one click,
+            #      since with checkboxes there's no "click empty area
+            #      to deselect" gesture like with native Treeview
+            #      selection.
+            # CHANGED: May 2026 — checkbox-based batch selection
+            def _clear_batch_selection():
+                global _batch_selected_iids
+                if not _batch_selected_iids:
+                    return
+                _affected = list(_batch_selected_iids)
+                _batch_selected_iids = set()
+                for _iid in _affected:
+                    try:
+                        if _strat_tree.exists(_iid):
+                            _v = list(_strat_tree.item(_iid, 'values'))
+                            if _v:
+                                _v[0] = "☐"
+                                _strat_tree.item(_iid, values=_v)
+                    except Exception:
+                        pass
+                _update_batch_btn()
+
+            clear_batch_btn = tk.Button(sel_row, text="✗ Clear",
+                                         command=_clear_batch_selection,
+                                         bg="#7f8c8d", fg="white",
+                                         font=("Segoe UI", 9, "bold"),
+                                         relief=tk.FLAT, cursor="hand2",
+                                         padx=10, pady=4)
+            clear_batch_btn.pack(side=tk.LEFT, padx=(6, 0))
 
             try:
                 from shared.tooltip import add_tooltip
                 add_tooltip(batch_opt_btn,
                             "⚙️ Batch Optimization\n\n"
-                            "Select multiple rules with Ctrl-click or Shift-click,\n"
-                            "then click this button to run the optimizer on all of\n"
-                            "them in sequence.\n\n"
+                            "Click the ☐ checkbox at the left of each row\n"
+                            "to add it to the batch (becomes ☑). Click the\n"
+                            "button when you have 2+ rules ticked.\n\n"
                             "Each rule uses its own embedded firm/risk/exit\n"
                             "settings. Top candidates per rule appear as cards,\n"
                             "followed by a '🏆 Top across all rules' tournament\n"

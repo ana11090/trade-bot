@@ -3991,6 +3991,20 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         log.info(f"Computing Win Pass for {len(matrix)} rules "
                  f"(firm={win_pass_firm_id}, challenge={win_pass_challenge_id}, "
                  f"account=${int(win_pass_account_size):,})…")
+    else:
+        # WHY: When any of the three IDs is missing, the grid Win Pass
+        #      column ends up showing "—" for every row. This log line
+        #      gives the user a clear reason why, instead of silently
+        #      producing a "—" column.
+        # CHANGED: May 2026 — Win Pass DISABLED diagnostic
+        log.info(
+            f"Win Pass DISABLED for this run "
+            f"(firm_id={win_pass_firm_id}, "
+            f"challenge_id={win_pass_challenge_id}, "
+            f"account={win_pass_account_size}). "
+            f"Result rows will have win_pass_rate=-1 and the refiner "
+            f"grid will show '—'."
+        )
 
     summary = []
     for m in matrix:

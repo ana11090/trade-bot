@@ -1612,6 +1612,36 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # WHY (Phase A.48): Pass config values so the backtester
                     #      uses the user's actual spread/commission/account.
                     # CHANGED: April 2026 — Phase A.48
+                    # WHY (Win Pass diagnostic): Surface whether Win Pass
+                    #      will run on this matrix so the user can see in
+                    #      stdout why the column shows "—" if a piece is
+                    #      missing from _pf_data (firm/challenge/account).
+                    # CHANGED: May 2026 — Win Pass diagnostic print
+                    if _wp_firm_id and _wp_challenge_id and _wp_account_size:
+                        print(
+                            f"[BACKTEST] Win Pass ENABLED: "
+                            f"firm_id={_wp_firm_id}, "
+                            f"challenge_id={_wp_challenge_id}, "
+                            f"account=${int(_wp_account_size):,} — "
+                            f"rule pass-rate will be computed at "
+                            f"backtest time and saved per result row."
+                        )
+                    else:
+                        _wp_missing = []
+                        if not _wp_firm_id:
+                            _wp_missing.append("firm_id")
+                        if not _wp_challenge_id:
+                            _wp_missing.append("challenge_id")
+                        if not _wp_account_size:
+                            _wp_missing.append("account_size")
+                        print(
+                            f"[BACKTEST] Win Pass DISABLED — missing: "
+                            f"{', '.join(_wp_missing)}. Result rows will "
+                            f"have win_pass_rate=-1 and the grid Win Pass "
+                            f"column will show '—'. Configure prop firm "
+                            f"+ challenge + account size in the panel to "
+                            f"enable."
+                        )
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
