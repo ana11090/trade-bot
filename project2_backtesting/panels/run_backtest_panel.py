@@ -1441,6 +1441,27 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _run_settings['contract_size'] = _cfg_contract
             _run_settings['firm_id']       = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', '')) if _a48_use_cfg else ''
             _run_settings['firm_name']     = _firm_display if _a48_use_cfg else ''
+            # WHY: Stage drives the refiner's "Stage" column. Without
+            #      this line every backtest row shows "—" in Stage.
+            #      Read from the first rule's prop_firm_stage if present,
+            #      then fall back to the panel's current stage selection.
+            # CHANGED: May 2026 — propagate stage to matrix
+            _bt_stage = ''
+            try:
+                _first_rule = (selected_rules[0]
+                               if selected_rules else {})
+                _bt_stage = (_first_rule.get('prop_firm_stage', '')
+                             or _bt_cfg.get('prop_firm_stage', '')
+                             or '')
+                if not _bt_stage:
+                    # Last-resort: use eval if first challenge is eval,
+                    # else funded.
+                    _chs = (_cfg_firm_data.get('challenges') or [])
+                    if _chs:
+                        _bt_stage = _chs[0].get('stage', 'evaluation')
+            except Exception:
+                pass
+            _run_settings['prop_firm_stage'] = _bt_stage
             # WHY: Data source must be saved in results so saved rules
             #      from backtest carry the correct data_source_id.
             # CHANGED: April 2026 — data source in run settings
@@ -1508,8 +1529,33 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 except Exception:
                     pass
 
+            # WHY: Tee stdout to BOTH terminal AND a capture buffer so the
+            #      user can see backtest progress live. The capture buffer
+            #      is still flushed to the panel's output_text at the end
+            #      for the full run record. Old behavior swallowed all
+            #      output into the buffer, making 15-30 min runs look
+            #      frozen — users would kill the app and lose the matrix.
+            # CHANGED: May 2026 — live backtest output
+            class _TeeStream:
+                def __init__(self, *targets):
+                    self.targets = targets
+                def write(self, s):
+                    for t in self.targets:
+                        try:
+                            t.write(s)
+                        except Exception:
+                            pass
+                def flush(self):
+                    for t in self.targets:
+                        try:
+                            t.flush()
+                        except Exception:
+                            pass
+
             capture = io.StringIO()
-            with contextlib.redirect_stdout(capture):
+            _original_stdout = sys.stdout
+            sys.stdout = _TeeStream(_original_stdout, capture)
+            try:
                 sys.path.insert(0, project_root)
                 from project2_backtesting.strategy_backtester import run_comparison_matrix
 
@@ -2012,6 +2058,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             tk.END,
                             f"\n⚠️ Could not save combined results: {_save_e}\n"
                         )
+
+            finally:
+                # WHY: Restore original stdout no matter how the block
+                #      exits (success, exception, KeyboardInterrupt).
+                # CHANGED: May 2026 — live backtest output cleanup
+                sys.stdout = _original_stdout
 
             # Clean up temp file
             try:
