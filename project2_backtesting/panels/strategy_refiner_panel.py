@@ -228,6 +228,120 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
         return None, None, None, None
 
 
+# WHY: Per-rule window-pass-rate column. simulate_challenge in sliding-
+#      window mode is too slow to run synchronously on grid open (~100-
+#      200ms × 100+ rules = 10-20s blocking). Background worker fills
+#      cells lazily, caches results by Treeview iid. Older Eval%/Funded%
+#      columns used Monte Carlo with 20 samples; this one uses sliding
+#      window (every historical start date, no randomness) to match the
+#      detail panel below.
+# CHANGED: May 2026 — Win Pass % grid worker
+_win_pass_cache = {}        # iid (str) -> formatted "%" string
+_win_pass_thread = None     # running worker
+_win_pass_token = 0         # incremented to invalidate old workers
+
+
+def _kick_window_pass_compute(tree_widget, strategies_snapshot):
+    """Spawn a background worker that fills the Win Pass % column.
+
+    Worker priority: saved rules first, then backtest/optimizer rows.
+    Skips entries already cached or that have no idx in the live tree.
+    """
+    global _win_pass_thread, _win_pass_token
+    _win_pass_token += 1
+    my_token = _win_pass_token
+
+    saved   = [s for s in strategies_snapshot if s.get('source') == 'saved']
+    others  = [s for s in strategies_snapshot if s.get('source') not in ('saved', 'separator')]
+    ordered = saved + others
+
+    def _set_cell(iid, win_pass):
+        try:
+            if not tree_widget.exists(iid):
+                return
+            vals = list(tree_widget.item(iid, 'values'))
+            # WHY: win_pass_pct is at column index 15 (17 columns total,
+            #      indices 0..16, win_pass_pct = second-to-last before del).
+            #      Bounds check defends against future column changes.
+            # CHANGED: May 2026 — Win Pass % worker
+            if len(vals) >= 16:
+                vals[15] = win_pass
+                tree_widget.item(iid, values=vals)
+        except Exception:
+            pass
+
+    def _worker():
+        from project2_backtesting.strategy_validator import _trades_to_df
+        from shared.prop_firm_simulator import simulate_challenge
+        import time as _ptime
+        _started = _ptime.time()
+        _done = 0
+        _total = len(ordered)
+        print(f"[REFINER WIN-PASS] Worker started — {_total} rules (token={my_token})")
+        for s in ordered:
+            if my_token != _win_pass_token:
+                return  # stale
+            iid = str(s.get('index', ''))
+            if not iid:
+                continue
+            if iid in _win_pass_cache:
+                v = _win_pass_cache[iid]
+                if state.window:
+                    state.window.after(0, lambda i=iid, vv=v: _set_cell(i, vv))
+                continue
+            try:
+                trades = _load_trades_for_strategy(s)
+                if not trades:
+                    _win_pass_cache[iid] = '—'
+                    if state.window:
+                        state.window.after(0, lambda i=iid: _set_cell(i, '—'))
+                    continue
+                rule0 = (s.get('rules') or [{}])[0] if s.get('rules') else (s.get('saved_rule') or {})
+                acct  = float(rule0.get('account_size', 10000) or 10000)
+                risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
+                sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+                pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+                firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
+                if not firm_id or not ch_id:
+                    _win_pass_cache[iid] = '—'
+                    if state.window:
+                        state.window.after(0, lambda i=iid: _set_cell(i, '—'))
+                    continue
+                df = _trades_to_df(trades, risk, sl, pipv, int(acct))
+                # WHY: sliding_window — every historical start date. Same
+                #      mode as the detail panel below the grid, so this
+                #      grid % matches what the user sees when they click.
+                # CHANGED: May 2026 — sliding window for grid pass-rate
+                sim = simulate_challenge(
+                    trades_df=df, firm_id=firm_id, challenge_id=ch_id,
+                    account_size=int(acct), mode='sliding_window',
+                    simulate_funded=False,
+                    risk_per_trade_pct=risk, default_sl_pips=sl,
+                    pip_value_per_lot=pipv, symbol='XAUUSD',
+                )
+                if sim is None or (sim.eval_pass_count + sim.eval_fail_count) == 0:
+                    v = '—'
+                else:
+                    v = f"{sim.eval_pass_rate*100:.0f}%"
+                _win_pass_cache[iid] = v
+                if state.window:
+                    state.window.after(0, lambda i=iid, vv=v: _set_cell(i, vv))
+            except Exception:
+                import traceback; traceback.print_exc()
+                _win_pass_cache[iid] = 'err'
+                if state.window:
+                    state.window.after(0, lambda i=iid: _set_cell(i, 'err'))
+            _done += 1
+            if _done <= 5 or _done % 100 == 0 or _done == _total:
+                _el = _ptime.time() - _started
+                print(f"[REFINER WIN-PASS] {_done}/{_total}  "
+                      f"({_el:.0f}s, ~{(_total-_done)*_el/max(_done,1):.0f}s remaining)")
+        print(f"[REFINER WIN-PASS] Worker DONE — {_done}/{_total} in {_ptime.time()-_started:.0f}s")
+
+    _win_pass_thread = threading.Thread(target=_worker, daemon=True)
+    _win_pass_thread.start()
+
+
 _passrate_widgets = None  # set by build_panel; holds frame+label for detail render
 
 
@@ -4249,6 +4363,16 @@ def build_panel(parent):
     # is defined. Filter / sort handlers above use this list-cell to call it.
     _refiner_rebuild_hook = [None]
 
+    # WHY: Loading label was previously packed inside sel_row with side=LEFT,
+    #      so after the grid loaded the label sat to the LEFT of the
+    #      Treeview and never went away (_on_strategies_loaded didn't
+    #      remove it on the success path). Move it to a dedicated row
+    #      above sel_row so the grid sits in its own row and the label
+    #      can be cleared cleanly when loading completes.
+    # CHANGED: May 2026 — loading label above grid
+    loading_row = tk.Frame(sel_frame, bg=WHITE)
+    loading_row.pack(fill="x", pady=(0, 4))
+
     sel_row = tk.Frame(sel_frame, bg=WHITE)
     sel_row.pack(fill="x")
 
@@ -4288,10 +4412,12 @@ def build_panel(parent):
     global _passrate_widgets
     _passrate_widgets = {'frame': _passrate_detail_frame, 'label': _passrate_detail_lbl}
 
-    # Show loading message initially
-    loading_lbl = tk.Label(sel_row, text="⏳ Loading strategies...",
+    # Show loading message initially — in dedicated row above the grid.
+    # See loading_row above.
+    # CHANGED: May 2026 — loading label above grid
+    loading_lbl = tk.Label(loading_row, text="⏳ Loading strategies...",
                            font=("Segoe UI", 10), bg=WHITE, fg=GREY)
-    loading_lbl.pack(side=tk.LEFT)
+    loading_lbl.pack(side=tk.LEFT, padx=(2, 0))
 
     _strategy_var = tk.StringVar(value="")
     dd_container = [None]  # Use list to allow mutation in nested function
@@ -4309,6 +4435,17 @@ def build_panel(parent):
     def _on_strategies_loaded():
         """Called on main thread after strategies finish loading."""
         nonlocal dd_container, star_btn_container
+
+        # WHY: Hide the loading label once strategies finish loading,
+        #      whether the result is "found strategies" (build tree) or
+        #      "no strategies" (show empty message). The loading row
+        #      itself collapses to zero height since loading_lbl was its
+        #      only child.
+        # CHANGED: May 2026 — loading label cleanup
+        try:
+            loading_lbl.pack_forget()
+        except Exception:
+            pass
 
         # WHY (per-row-delete v3 fix): Instead of destroying and recreating
         #      the Treeview (which causes "invalid command name" errors when
@@ -4344,12 +4481,13 @@ def build_panel(parent):
             #      slide off the right edge or never render. Detect the
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
-            # Column inventory (16): star, #, stage, rule, exit, tf, trades,
+            # Column inventory (17): star, #, stage, rule, exit, tf, trades,
             # wr, pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars,
-            # avg_pct, del. Keep this in sync with the `columns = (...)`
-            # tuple below — a stale count makes the guard destroy sel_row's
-            # children (including the Load button) on every refresh.
-            _expected_col_count = 16
+            # avg_pct, win_pass_pct, del. Keep this in sync with the
+            # `columns = (...)` tuple below — a stale count makes the guard
+            # destroy sel_row's children (including the Load button) on
+            # every refresh.
+            _expected_col_count = 17
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4389,6 +4527,7 @@ def build_panel(parent):
                 columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
+                           "win_pass_pct",
                            "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
@@ -4413,14 +4552,19 @@ def build_panel(parent):
                 #      per-window detail panel below the grid is the
                 #      authoritative display for eval pass/fail counts,
                 #      per-window outcomes, days-to-pass/fail, and fail
-                #      reasons. Showing a single aggregate % in the grid
-                #      duplicated that info and used different (Monte
-                #      Carlo, 20-sample) sampling than the detail (sliding
-                #      window, all dates) — same simulator, different
-                #      numbers, confusing. Click a row to see eval/funded
-                #      simulation details in the white panel below.
+                #      reasons. A single Win Pass % column was re-added
+                #      below — sliding-window mode this time, matches the
+                #      detail panel by construction.
                 # CHANGED: May 2026 — drop eval/funded grid columns
-                _strat_tree.heading("del",        text="🗑")
+                # WHY: Single per-rule pass rate, computed by background
+                #      worker via simulate_challenge(mode='sliding_window').
+                #      Every historical start date is a window; this column
+                #      shows the fraction that passed the firm's eval rules.
+                #      Same number as the detail panel below shows when a
+                #      row is clicked.
+                # CHANGED: May 2026 — Win Pass % grid column
+                _strat_tree.heading("win_pass_pct", text="Win Pass %")
+                _strat_tree.heading("del",          text="🗑")
 
                 _strat_tree.column("star",       width=30,  anchor="center")
                 _strat_tree.column("#",          width=70,  anchor="center")
@@ -4437,6 +4581,7 @@ def build_panel(parent):
                 _strat_tree.column("avg_pips",     width=70,  anchor="e")
                 _strat_tree.column("avg_dollars",  width=80,  anchor="e")
                 _strat_tree.column("avg_pct",      width=70,  anchor="e")
+                _strat_tree.column("win_pass_pct", width=85,  anchor="center")
                 _strat_tree.column("del",          width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
@@ -4563,7 +4708,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4601,12 +4746,18 @@ def build_panel(parent):
                         _avg_p_s  = f"{_ap:+.2f}%"
                     else:
                         _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                    # WHY: Pass rate filled by background worker (see
+                    #      _kick_window_pass_compute). Cached value used
+                    #      if available; placeholder "..." otherwise.
+                    # CHANGED: May 2026 — Win Pass % column
+                    _wp_cached = _win_pass_cache.get(idx, "...")
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        _wp_cached,
                         "🗑"
                     ), tags=(tag,))
                     continue
@@ -4640,12 +4791,14 @@ def build_panel(parent):
                     _avg_p_s  = f"{_ap:+.2f}%"
                 else:
                     _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                _wp_cached = _win_pass_cache.get(idx, "...")
                 _strat_tree.insert("", "end", iid=idx, values=(
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
                     entry_tf_display, int(trades), wr_str,
                     f"{pf:.2f}",
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                    _wp_cached,
                     del_display
                 ), tags=(tag,))
 
@@ -4671,6 +4824,12 @@ def build_panel(parent):
             # CHANGED: April 2026 — per-row-delete v3 bugfix
             if not has_existing_tree:
                 dd_container[0] = _strat_tree
+
+            # WHY: Kick the background worker to fill Win Pass % cells.
+            #      Runs simulate_challenge per rule in sliding-window
+            #      mode. Each rule ~100-500ms; UI doesn't block.
+            # CHANGED: May 2026 — Win Pass % grid worker
+            _kick_window_pass_compute(_strat_tree, list(_strategies))
 
             def _on_tree_select(event=None):
                 global _selected_strat_iid
