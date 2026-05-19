@@ -228,105 +228,6 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
         return None, None, None, None
 
 
-# WHY: simulate_challenge per-rule is fast (~50-200ms) but adds up at
-#      100+ rules. Run in parallel with ThreadPoolExecutor — pandas/
-#      numpy operations inside _rescale_trades release the GIL, so
-#      threads actually help. Store results on the strategy dict so
-#      the existing sort/filter mechanism (which reads strat.get(key))
-#      can sort by Win Pass without any extra wiring.
-# CHANGED: May 2026 — sync parallel pass-rate precompute
-def _precompute_pass_rates(strategies_list, progress_cb=None):
-    """Compute Win Pass for every strategy, store on the dict.
-
-    Sets three fields on each strategy dict:
-      _win_pass_passed : int   number of windows that passed
-      _win_pass_total  : int   number of decided windows (pass + real fail)
-      _win_pass_rate   : float pass rate 0.0..1.0, or -1 if unknown
-
-    progress_cb(done, total) called on every completion (used to update
-    the loading label).
-    """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    def _compute_one(s):
-        try:
-            # Skip separators
-            if s.get('source') == 'separator':
-                return s, -1, 0, 0
-            trades = _load_trades_for_strategy(s)
-            if not trades:
-                return s, -1, 0, 0
-            rule0 = ((s.get('rules') or [{}])[0]
-                     if s.get('rules')
-                     else (s.get('saved_rule') or {}))
-            acct  = float(rule0.get('account_size', 10000) or 10000)
-            risk  = float(rule0.get('risk_pct', 1.0) or 1.0)
-            sl    = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-            pipv  = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
-            firm_id, ch_id = _resolve_firm_challenge(rule0, int(acct))
-            if not firm_id or not ch_id:
-                return s, -1, 0, 0
-            from project2_backtesting.strategy_validator import _trades_to_df
-            from shared.prop_firm_simulator import simulate_challenge
-            df = _trades_to_df(trades, risk, sl, pipv, int(acct))
-            sim = simulate_challenge(
-                trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-                account_size=int(acct), mode='sliding_window',
-                simulate_funded=False,
-                risk_per_trade_pct=risk, default_sl_pips=sl,
-                pip_value_per_lot=pipv, symbol='XAUUSD',
-            )
-            if sim is None:
-                return s, -1, 0, 0
-            passed = sim.eval_pass_count
-            total  = passed + sim.eval_fail_count
-            if total == 0:
-                return s, -1, 0, 0
-            return s, sim.eval_pass_rate, passed, total
-        except Exception:
-            import traceback; traceback.print_exc()
-            return s, -1, 0, 0
-
-    import time as _t
-    _started = _t.time()
-    _total = len(strategies_list)
-    print(f"[REFINER PRECOMPUTE] Starting — {_total} strategies, 8 workers")
-
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futures = {ex.submit(_compute_one, s): s for s in strategies_list}
-        done = 0
-        for fut in as_completed(futures):
-            s, rate, passed, total = fut.result()
-            s['_win_pass_rate']   = rate
-            s['_win_pass_passed'] = passed
-            s['_win_pass_total']  = total
-            done += 1
-            if progress_cb:
-                try:
-                    progress_cb(done, _total)
-                except Exception:
-                    pass
-
-    print(f"[REFINER PRECOMPUTE] Done — {_total} strategies in "
-          f"{_t.time() - _started:.1f}s")
-
-
-def _format_win_pass(s):
-    """Format the Win Pass column cell. Reads _win_pass_* fields
-    set by _precompute_pass_rates.
-
-    Returns:
-        "5/16 (31%)" for normal cases
-        "—" for "not computed", "no trades", separator, etc.
-    """
-    rate   = s.get('_win_pass_rate', -1)
-    passed = s.get('_win_pass_passed', 0)
-    total  = s.get('_win_pass_total', 0)
-    if rate is None or rate < 0 or total <= 0:
-        return "—"
-    return f"{passed}/{total} ({rate*100:.0f}%)"
-
-
 _passrate_widgets = None  # set by build_panel; holds frame+label for detail render
 
 
@@ -4331,11 +4232,6 @@ def build_panel(parent):
         ("PF ↓",         "net_profit_factor",  True),
         ("Trades ↓",     "total_trades",       True),
         ("Avg Pips ↓",   "net_avg_pips",       True),
-        # WHY: Sorts by precomputed _win_pass_rate (float 0..1, or -1
-        #      when not computable). With reverse=True, highest pass
-        #      rates appear first; "—" rows (rate=-1) sink to bottom.
-        # CHANGED: May 2026 — Win Pass sort button
-        ("Win Pass ↓",   "_win_pass_rate",     True),
     ]:
         tk.Button(sort_row, text=label, font=("Segoe UI", 8),
                   bg="#667eea", fg="white", relief=tk.FLAT,
@@ -4420,31 +4316,12 @@ def build_panel(parent):
         """Called on main thread after strategies finish loading."""
         nonlocal dd_container, star_btn_container
 
-        # WHY: Compute pass rate for every strategy BEFORE the tree
-        #      builds so the values are on each strategy dict and the
-        #      existing sort mechanism (reads strat.get(key)) works
-        #      for the new Win Pass column. Done in parallel for speed
-        #      (~3-4x vs single-threaded). Updates the loading label
-        #      so the user sees what's happening.
-        # CHANGED: May 2026 — sync parallel pass-rate precompute
-        if _strategies:
-            def _progress(done, total):
-                # Called from worker threads — schedule UI update on main thread
-                if state.window:
-                    state.window.after(0, lambda d=done, t=total:
-                        loading_lbl.config(
-                            text=f"⏳ Computing pass rates — {d}/{t}"))
-            try:
-                _precompute_pass_rates(_strategies, progress_cb=_progress)
-            except Exception:
-                import traceback; traceback.print_exc()
-
-        # WHY: Hide the loading label after precompute completes, whether
-        #      the result is "found strategies" (build tree) or "no
-        #      strategies" (show empty message). The loading row itself
+        # WHY: Hide the loading label as soon as strategies are loaded,
+        #      whether the result is "found strategies" (build tree) or
+        #      "no strategies" (show empty message). The loading row itself
         #      collapses to zero height since loading_lbl was its only
         #      child.
-        # CHANGED: May 2026 — loading label cleanup (after precompute)
+        # CHANGED: May 2026 — loading label cleanup
         try:
             loading_lbl.pack_forget()
         except Exception:
@@ -4484,13 +4361,12 @@ def build_panel(parent):
             #      slide off the right edge or never render. Detect the
             #      mismatch and force a clean rebuild.
             # CHANGED: May 2026 — force rebuild when column count differs
-            # Column inventory (17): star, #, stage, rule, exit, tf, trades,
+            # Column inventory (16): star, #, stage, rule, exit, tf, trades,
             # wr, pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars,
-            # avg_pct, win_pass_pct, del. Keep this in sync with the
-            # `columns = (...)` tuple below — a stale count makes the guard
-            # destroy sel_row's children (including the Load button) on
-            # every refresh.
-            _expected_col_count = 17
+            # avg_pct, del. Keep this in sync with the `columns = (...)`
+            # tuple below — a stale count makes the guard destroy sel_row's
+            # children (including the Load button) on every refresh.
+            _expected_col_count = 16
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4530,7 +4406,6 @@ def build_panel(parent):
                 columns = ("star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
-                           "win_pass_pct",
                            "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
@@ -4555,18 +4430,11 @@ def build_panel(parent):
                 #      per-window detail panel below the grid is the
                 #      authoritative display for eval pass/fail counts,
                 #      per-window outcomes, days-to-pass/fail, and fail
-                #      reasons. A single Win Pass % column was re-added
-                #      below — sliding-window mode this time, matches the
-                #      detail panel by construction.
+                #      reasons. A "Win Pass %" column was tried and
+                #      reverted — running simulate_challenge per rule
+                #      saturated the UI; the detail panel covers it.
                 # CHANGED: May 2026 — drop eval/funded grid columns
-                # WHY: Single per-rule pass rate, computed by background
-                #      worker via simulate_challenge(mode='sliding_window').
-                #      Every historical start date is a window; this column
-                #      shows the fraction that passed the firm's eval rules.
-                #      Same number as the detail panel below shows when a
-                #      row is clicked.
-                # CHANGED: May 2026 — Win Pass % grid column
-                _strat_tree.heading("win_pass_pct", text="Win Pass %")
+                # CHANGED: May 2026 — Win Pass column reverted (perf)
                 _strat_tree.heading("del",          text="🗑")
 
                 _strat_tree.column("star",       width=30,  anchor="center")
@@ -4584,7 +4452,6 @@ def build_panel(parent):
                 _strat_tree.column("avg_pips",     width=70,  anchor="e")
                 _strat_tree.column("avg_dollars",  width=80,  anchor="e")
                 _strat_tree.column("avg_pct",      width=70,  anchor="e")
-                _strat_tree.column("win_pass_pct", width=85,  anchor="center")
                 _strat_tree.column("del",          width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
@@ -4711,7 +4578,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -4749,18 +4616,12 @@ def build_panel(parent):
                         _avg_p_s  = f"{_ap:+.2f}%"
                     else:
                         _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
-                    # WHY: Pass rate precomputed in parallel by
-                    #      _precompute_pass_rates during _on_strategies_loaded;
-                    #      _format_win_pass reads the dict fields and renders
-                    #      "passed/total (pct%)" or "—".
-                    # CHANGED: May 2026 — sync precompute (replaces async worker)
                     _strat_tree.insert("", "end", iid=idx, values=(
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
                         entry_tf_display, int(trades), wr_s_saved,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
-                        _format_win_pass(s),
                         "🗑"
                     ), tags=(tag,))
                     continue
@@ -4800,7 +4661,6 @@ def build_panel(parent):
                     f"{pf:.2f}",
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,
-                    _format_win_pass(s),
                     del_display
                 ), tags=(tag,))
 
@@ -4826,11 +4686,6 @@ def build_panel(parent):
             # CHANGED: April 2026 — per-row-delete v3 bugfix
             if not has_existing_tree:
                 dd_container[0] = _strat_tree
-
-            # Win Pass % cells are populated synchronously by
-            # _precompute_pass_rates before the tree is built (see top of
-            # _on_strategies_loaded). No async kick here anymore.
-            # CHANGED: May 2026 — sync precompute replaces async worker
 
             def _on_tree_select(event=None):
                 global _selected_strat_iid
