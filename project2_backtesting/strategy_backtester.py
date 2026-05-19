@@ -1299,7 +1299,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # CHANGED: May 2026 — DD circuit breaker
                  dd_daily_alert_pct=0.0,
                  dd_total_alert_pct=0.0,
-                 dd_daily_reset_hour=20):
+                 dd_daily_reset_hour=20,
+                 # WHY: HWM-lock toggle for backtester-vs-EA parity. When
+                 #      False (default), _dd_hwm trails forever — the
+                 #      current behavior, more pessimistic than reality on
+                 #      strategies that trigger the firm's lock-at-gain
+                 #      rule. When True, _dd_hwm freezes once balance
+                 #      reaches account_size * (1 + hwm_lock_gain_pct/100)
+                 #      and the floor sits at hwm_lock_level. Matches
+                 #      _simulate_phase L289-311 and EA L1172-1208.
+                 # CHANGED: May 2026 — HWM-lock parity toggle
+                 use_hwm_lock=False,
+                 hwm_lock_gain_pct=None,
+                 hwm_lock_level='starting_balance'):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1325,6 +1337,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     _dd_enabled = (dd_daily_alert_pct > 0 or dd_total_alert_pct > 0) and account_size
     _dd_daily_halted = False
     _dd_total_halted = False
+    # WHY (HWM-lock toggle): see use_hwm_lock comment above.
+    # CHANGED: May 2026 — HWM-lock parity toggle
+    _dd_hwm_locked = False
     _dd_daily_pnl_dollars = 0.0
     _dd_balance = float(account_size) if account_size else 0.0
     _dd_ref_equity = float(account_size) if account_size else 0.0
@@ -2094,8 +2109,28 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: May 2026 — DD circuit breaker
         if _dd_enabled:
             _dd_balance += dollar_pnl
-            if _dd_balance > _dd_hwm:
-                _dd_hwm = _dd_balance
+            # PARITY NOTE: HWM-lock logic mirrors shared/prop_firm_simulator.py
+            # _simulate_phase L289-311 and project3_live_trading/ea_generator.py
+            # L1172-1208. When use_hwm_lock=False (default), this backtester
+            # is intentionally more pessimistic than the EA on firms with
+            # lock_after_gain_pct configured — it keeps trailing HWM past the
+            # lock point. Set use_hwm_lock=True to match EA behavior.
+            # See PARITY_TODO.md at repo root.
+            # CHANGED: May 2026 — HWM-lock parity toggle
+            if use_hwm_lock and hwm_lock_gain_pct and not _dd_hwm_locked:
+                _gain_pct = (_dd_balance - float(account_size)) / float(account_size) * 100.0
+                if _gain_pct >= float(hwm_lock_gain_pct):
+                    _dd_hwm_locked = True
+                    if hwm_lock_level == 'starting_balance_strict':
+                        _dd_hwm = float(account_size) * (1.0 + dd_total_alert_pct / 100.0)
+                    else:
+                        _dd_hwm = float(account_size)
+                elif _dd_balance > _dd_hwm:
+                    _dd_hwm = _dd_balance
+            elif not _dd_hwm_locked:
+                if _dd_balance > _dd_hwm:
+                    _dd_hwm = _dd_balance
+            # else: locked — _dd_hwm stays frozen
             _dd_daily_pnl_dollars += dollar_pnl
             if dd_daily_alert_pct > 0 and _dd_ref_equity > 0 and _dd_daily_pnl_dollars < 0:
                 if abs(_dd_daily_pnl_dollars) / _dd_ref_equity * 100 >= dd_daily_alert_pct:
@@ -2166,7 +2201,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # CHANGED: May 2026 — DD circuit breaker
                   dd_daily_alert_pct=0.0,
                   dd_total_alert_pct=0.0,
-                  dd_daily_reset_hour=20):
+                  dd_daily_reset_hour=20,
+                  # WHY: HWM-lock toggle for backtester-vs-EA parity.
+                  #      Default False = trail forever (current behavior).
+                  #      True = freeze HWM at lock_after_gain_pct, matching
+                  #      _simulate_phase L289-311 and EA L1172-1208.
+                  # CHANGED: May 2026 — HWM-lock parity toggle
+                  use_hwm_lock=False,
+                  hwm_lock_gain_pct=None,
+                  hwm_lock_level='starting_balance'):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2196,6 +2239,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
     _dd_enabled = (dd_daily_alert_pct > 0 or dd_total_alert_pct > 0) and account_size
     _dd_daily_halted = False
     _dd_total_halted = False
+    # WHY (HWM-lock toggle): see use_hwm_lock comment on signature.
+    # CHANGED: May 2026 — HWM-lock parity toggle
+    _dd_hwm_locked = False
     _dd_daily_pnl_dollars = 0.0
     _dd_balance = float(account_size) if account_size else 0.0
     _dd_ref_equity = float(account_size) if account_size else 0.0
@@ -2877,8 +2923,24 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: May 2026 — DD circuit breaker
         if _dd_enabled:
             _dd_balance += net_profit
-            if _dd_balance > _dd_hwm:
-                _dd_hwm = _dd_balance
+            # PARITY NOTE: HWM-lock logic mirrors shared/prop_firm_simulator.py
+            # _simulate_phase L289-311 and project3_live_trading/ea_generator.py
+            # L1172-1208. See run_backtest above and PARITY_TODO.md.
+            # CHANGED: May 2026 — HWM-lock parity toggle
+            if use_hwm_lock and hwm_lock_gain_pct and not _dd_hwm_locked:
+                _gain_pct = (_dd_balance - float(account_size)) / float(account_size) * 100.0
+                if _gain_pct >= float(hwm_lock_gain_pct):
+                    _dd_hwm_locked = True
+                    if hwm_lock_level == 'starting_balance_strict':
+                        _dd_hwm = float(account_size) * (1.0 + dd_total_alert_pct / 100.0)
+                    else:
+                        _dd_hwm = float(account_size)
+                elif _dd_balance > _dd_hwm:
+                    _dd_hwm = _dd_balance
+            elif not _dd_hwm_locked:
+                if _dd_balance > _dd_hwm:
+                    _dd_hwm = _dd_balance
+            # else: locked — _dd_hwm stays frozen
             _dd_daily_pnl_dollars += net_profit
             if dd_daily_alert_pct > 0 and _dd_ref_equity > 0 and _dd_daily_pnl_dollars < 0:
                 if abs(_dd_daily_pnl_dollars) / _dd_ref_equity * 100 >= dd_daily_alert_pct:
