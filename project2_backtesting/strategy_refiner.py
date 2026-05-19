@@ -853,28 +853,47 @@ def load_strategy_list():
                             'rules':             r.get('rules', []),
                             'rule_indices':      r.get('rule_indices'),
                             'leverage':          r.get('leverage', r.get('run_settings', {}).get('leverage', 0)),
-                            'risk_pct':          r.get('risk_pct', r.get('run_settings', {}).get('risk_pct', 0)),
+                            'risk_pct':          (r.get('risk_pct')
+                                                  or (r.get('rules') or [{}])[0].get('risk_pct')
+                                                  or r.get('run_settings', {}).get('risk_pct')
+                                                  or 0),
+                            'pip_value_per_lot': (r.get('pip_value_per_lot')
+                                                  or (r.get('rules') or [{}])[0].get('pip_value_per_lot')
+                                                  or r.get('run_settings', {}).get('pip_value_per_lot')
+                                                  or 1.0),
+                            'pip_size':          (r.get('pip_size')
+                                                  or (r.get('rules') or [{}])[0].get('pip_size')
+                                                  or 0.01),
                             'dd_daily_pct':      r.get('dd_daily_pct', r.get('run_settings', {}).get('dd_daily_pct', 0)),
                             'dd_total_pct':      r.get('dd_total_pct', r.get('run_settings', {}).get('dd_total_pct', 0)),
                             'account_size':      r.get('account_size', r.get('run_settings', {}).get('starting_capital', 0)),
-                            'prop_firm_name':    r.get('prop_firm_name', r.get('run_settings', {}).get('prop_firm_name', '')),
-                            'prop_firm_stage':   r.get('prop_firm_stage', r.get('run_settings', {}).get('prop_firm_stage', '')),
+                            'prop_firm_name':    (r.get('prop_firm_name')
+                                                  or r.get('run_settings', {}).get('prop_firm_name')
+                                                  or (r.get('rules') or [{}])[0].get('prop_firm_name')
+                                                  or ''),
+                            'prop_firm_stage':   (r.get('prop_firm_stage')
+                                                  or r.get('run_settings', {}).get('prop_firm_stage')
+                                                  or (r.get('rules') or [{}])[0].get('prop_firm_stage')
+                                                  or ''),
                             # WHY: firm_id (slug like "leveraged") is what
-                            #      run_settings carries; the panel's firm
-                            #      resolver falls back on it when
-                            #      prop_firm_name is empty. Without this
-                            #      passthrough the grid clicks would still
-                            #      fail with "firm_name=None firm_id=None".
+                            #      run_settings carries. Without this passthrough
+                            #      the firm resolver can't fall back on it.
                             # CHANGED: May 2026 — firm_id passthrough
-                            'firm_id':           r.get('firm_id', r.get('run_settings', {}).get('firm_id', '')),
+                            'firm_id':           (r.get('firm_id')
+                                                  or r.get('run_settings', {}).get('firm_id')
+                                                  or (r.get('rules') or [{}])[0].get('prop_firm_id')
+                                                  or ''),
                             'data_source_id':    r.get('data_source_id', r.get('run_settings', {}).get('data_source_id', '')),
-                            # WHY: The backtester writes win_pass_passed /
-                            #      win_pass_total / win_pass_rate on each
-                            #      result row in backtest_matrix.json.
-                            #      Without these passthrough lines they
-                            #      never reach the strategy dict, and
-                            #      _format_win_pass(s) always returns "—"
-                            #      because s.get('win_pass_rate') is None.
+                            # WHY: exit_class + exit_params live at the result row's
+                            #      TOP level (set by backtester from each exit_strategy).
+                            #      Without passthrough, money calcs default to SL=150
+                            #      and optimizer paths get empty exit configs.
+                            # CHANGED: May 2026 — exit_params/exit_class passthrough
+                            'exit_class':        r.get('exit_class', ''),
+                            'exit_params':       r.get('exit_params', {}),
+                            # WHY: Win Pass fields written by the backtester at
+                            #      result-row level. Without passthrough the grid
+                            #      column shows "—" even after a fresh backtest.
                             # CHANGED: May 2026 — win_pass passthrough
                             'win_pass_passed':   r.get('win_pass_passed'),
                             'win_pass_total':    r.get('win_pass_total'),
@@ -1089,10 +1108,30 @@ def load_strategy_list():
                         'saved_rule':        rule,  # keep the original rule for loading
                         'prop_firm_name':    rule.get('prop_firm_name', ''),
                         'prop_firm_stage':   rule.get('prop_firm_stage', ''),
+                        # WHY: firm_id needed by the panel's firm resolver
+                        #      when prop_firm_name doesn't match a JSON.
+                        # CHANGED: May 2026 — firm_id for saved rules
+                        'firm_id':           rule.get('prop_firm_id', ''),
                         'account_size':      rule.get('account_size', 0),
+                        # WHY: risk_pct + pip_value_per_lot drive the money
+                        #      columns (_money_for_strategy). Without these
+                        #      saved rules show 3x-inflated Net $ values
+                        #      because the default risk_pct=1.0 fires.
+                        # CHANGED: May 2026 — risk fields for saved rules
+                        'risk_pct':          rule.get('risk_pct', 0),
+                        'pip_value_per_lot': rule.get('pip_value_per_lot', 1.0),
+                        'pip_size':          rule.get('pip_size', 0.01),
                         'leverage':          rule.get('leverage', 0),
                         'data_source_id':    rule.get('data_source_id', ''),
                         'data_source_path':  rule.get('data_source_path', ''),
+                        # WHY: Win Pass placeholder fields so saved rules
+                        #      render "—" cleanly in the column (instead of
+                        #      blank). Will get real values if/when the user
+                        #      runs a backtest on the saved rule.
+                        # CHANGED: May 2026 — Win Pass placeholders
+                        'win_pass_passed':   None,
+                        'win_pass_total':    None,
+                        'win_pass_rate':     None,
                         'is_stale':          is_stale,
                         'stale_issues':      stale_issues,
                         # WHY (T2b): No stability data for saved rules.

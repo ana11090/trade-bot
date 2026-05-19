@@ -279,23 +279,51 @@ def _resolve_firm_challenge(rule_dict, account_size,
 def _money_for_strategy(strategy_dict, net_pips, avg_pips):
     """Return (net_$, net_%, avg_$, avg_%) as floats — None when unknown.
 
-    Used by both the grid inserts (separator/saved/backtest rows) and
-    the eval detail panel (money summary line). The grid wraps the
-    returned numbers as "$+,.0f" / "+.1f%" strings; the eval panel
-    uses them directly to format the inline money line.
+    Reads risk/account/SL/pip_value from multiple paths in priority:
+      1. rule0 (first item in strategy_dict['rules'])
+      2. strategy_dict top-level (set by load_strategy_list)
+      3. strategy_dict['run_settings'] (from backtest panel save)
+      4. strategy_dict['saved_rule'] (for saved-source rows)
+    SL specifically lives in exit_params, which is at the strategy_dict
+    TOP level for backtest rows (set by load_strategy_list), inside
+    saved_rule for saved rows, or sometimes inside rule0 for legacy data.
 
-    WHY: Lot-sized $ and % from the same single computation — one source
-         of truth for Net/Avg P&L in account terms.
-    CHANGED: May 2026 — money helper
+    WHY: Without run_settings fallback for risk_pct, money columns
+         used the default 1.0% and showed Net $ values 3x-5x too high
+         relative to the user's actual 0.3% risk. Same issue for
+         pip_value and SL — without all fallbacks, money columns lied.
+    CHANGED: May 2026 — money helper full fallback chain
     """
     try:
         rule0 = ((strategy_dict.get('rules') or [{}])[0]
                  if strategy_dict.get('rules')
                  else (strategy_dict.get('saved_rule') or {}))
-        acct = float(rule0.get('account_size', 10000) or 10000)
-        risk = float(rule0.get('risk_pct', 1.0) or 1.0)
-        sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
-        pipv = float(rule0.get('pip_value_per_lot', 1.0) or 1.0)
+        _rs  = strategy_dict.get('run_settings') or {}
+        _sr  = strategy_dict.get('saved_rule') or {}
+
+        acct = float(rule0.get('account_size')
+                     or strategy_dict.get('account_size')
+                     or _rs.get('starting_capital')
+                     or _sr.get('account_size')
+                     or 10000)
+        risk = float(rule0.get('risk_pct')
+                     or strategy_dict.get('risk_pct')
+                     or _rs.get('risk_pct')
+                     or _sr.get('risk_pct')
+                     or 1.0)
+        # exit_params lives at the strategy_dict top for backtest rows,
+        # inside saved_rule for saved rows, and sometimes inside rule0.
+        _exit_params = (strategy_dict.get('exit_params')
+                        or rule0.get('exit_params')
+                        or _sr.get('exit_params')
+                        or _sr.get('exit_strategy_params')
+                        or {})
+        sl   = float(_exit_params.get('sl_pips', 150) or 150)
+        pipv = float(rule0.get('pip_value_per_lot')
+                     or strategy_dict.get('pip_value_per_lot')
+                     or _rs.get('pip_value_per_lot')
+                     or _sr.get('pip_value_per_lot')
+                     or 1.0)
         if acct <= 0 or sl <= 0 or pipv <= 0:
             return None, None, None, None
         lot       = (acct * (risk / 100.0)) / (sl * pipv)
