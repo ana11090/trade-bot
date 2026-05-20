@@ -183,29 +183,83 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
 # CHANGED: April 2026 — M1 sub-candle loader
 
 _m1_cache = {}  # {data_dir: DataFrame or None}
+# Track which data_dirs we've already logged the resolved path for —
+# prevents log spam (one [M1] line per data_dir, not per candle).
+_m1_logged_dirs = set()
+# Track data_dirs where the loader failed — used by retry-on-stub.
+_m1_failed_dirs = set()
 
 def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
     """Load M1 sub-candles within one higher-TF candle's time window.
 
-    WHY: Fallback when tick data isn't available. M1 gives 60 data
-         points per H1 candle vs 1 OHLC summary.
-    CHANGED: April 2026 — M1 fallback for tick simulation
+    WHY (May 2026 — diagnostics): The previous implementation
+         silently fell back to parent-candle behavior when M1
+         wasn't found. Users had no way to tell the M1 fix was
+         even running. This version logs what it does, expands
+         the search path to cover both repo data layouts (M1
+         next to H4 OR M1 in repo's flat data/), and retries on
+         stub in case the user ran `git lfs pull` mid-session.
+    CHANGED: May 2026 — search-path expansion + diagnostics +
+             retry-on-stub for M1 sub-candle loader
 
     Returns DataFrame with timestamp, open, high, low, close or None.
     """
+    # Allow retry if previous attempt failed (e.g., LFS stub fixed since)
+    if data_dir in _m1_failed_dirs and data_dir in _m1_cache:
+        # Drop the failed cache so we retry the lookup
+        del _m1_cache[data_dir]
+        _m1_failed_dirs.discard(data_dir)
+
     if data_dir not in _m1_cache:
-        patterns = [
-            os.path.join(data_dir, 'M1.csv'),
-            os.path.join(data_dir, 'XAUUSD_M1.csv'),
-            os.path.join(data_dir, 'xauusd_M1.csv'),
-        ]
+        # Build candidate paths in priority order
+        candidate_paths = []
+        # 1. Files in the same folder as the candles CSV (most common case)
+        for name in ('M1.csv', 'XAUUSD_M1.csv', 'xauusd_M1.csv'):
+            candidate_paths.append(os.path.join(data_dir, name))
+        # 2. Walk up to find a 'data' folder peer (covers repo's flat
+        #    data/ layout when source folders are under data/sources/...)
+        try:
+            _walk = os.path.abspath(data_dir)
+            for _ in range(6):  # safety bound on walk depth
+                _parent = os.path.dirname(_walk)
+                if _parent == _walk:
+                    break
+                # Check ${parent}/data/<name>
+                for name in ('xauusd_M1.csv', 'XAUUSD_M1.csv', 'M1.csv'):
+                    candidate_paths.append(os.path.join(_parent, 'data', name))
+                # Check ${parent} itself if it ends in 'data'
+                if os.path.basename(_parent).lower() == 'data':
+                    for name in ('xauusd_M1.csv', 'XAUUSD_M1.csv', 'M1.csv'):
+                        candidate_paths.append(os.path.join(_parent, name))
+                _walk = _parent
+        except Exception:
+            pass
+
+        # Dedupe while preserving order
+        _seen = set()
+        candidate_paths = [p for p in candidate_paths
+                          if not (p in _seen or _seen.add(p))]
+
+        # Find the first one that exists
         m1_path = None
-        for p in patterns:
+        for p in candidate_paths:
             if os.path.exists(p):
                 m1_path = p
                 break
+
         if m1_path is None:
+            # Log the failure once per data_dir
+            if data_dir not in _m1_logged_dirs:
+                log.warning(
+                    f"[M1] No M1 CSV found for data_dir='{data_dir}'. "
+                    f"Searched {len(candidate_paths)} locations including: "
+                    f"{candidate_paths[0] if candidate_paths else '(none)'}. "
+                    f"Backtest will fall back to parent-candle SL/TP "
+                    f"detection — H4/D1 results may diverge from MT5."
+                )
+                _m1_logged_dirs.add(data_dir)
             _m1_cache[data_dir] = None
+            _m1_failed_dirs.add(data_dir)
         else:
             try:
                 from shared.data_sources import assert_not_lfs_stub
@@ -216,10 +270,20 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                 })
                 m1_df['timestamp'] = pd.to_datetime(m1_df['timestamp'])
                 _m1_cache[data_dir] = m1_df
-                log.info(f"[M1] Loaded {len(m1_df)} M1 candles from {m1_path}")
+                if data_dir not in _m1_logged_dirs:
+                    log.info(
+                        f"[M1] Loaded {len(m1_df):,} M1 candles from {m1_path}"
+                    )
+                    _m1_logged_dirs.add(data_dir)
             except Exception as _me:
-                log.warning(f"[M1] Failed to load M1 data from {m1_path}: {_me}")
+                log.warning(
+                    f"[M1] Failed to load M1 data from {m1_path}: {_me}. "
+                    f"Backtest will fall back to parent-candle SL/TP "
+                    f"detection — H4/D1 results may diverge from MT5. "
+                    f"To fix: run `git lfs pull` in the repo root."
+                )
                 _m1_cache[data_dir] = None
+                _m1_failed_dirs.add(data_dir)
 
     m1_df = _m1_cache[data_dir]
     if m1_df is None:

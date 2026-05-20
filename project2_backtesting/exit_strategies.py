@@ -9,6 +9,28 @@ import pandas as pd
 import random
 
 
+# WHY (May 2026 — diagnostics): One-shot warning when M1 sub-candle
+#      data isn't available but the parent candle DID reach SL/TP.
+#      Without this, users assume the M1 fix is running when in
+#      reality the backtest is falling back to parent-OHLC.
+# CHANGED: May 2026 — one-shot M1-unavailable warning
+_m1_fallback_warned = False
+def _warn_m1_fallback_once():
+    global _m1_fallback_warned
+    if not _m1_fallback_warned:
+        _m1_fallback_warned = True
+        try:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "[M1] M1 sub-candle loader unavailable for one or more "
+                "trades — falling back to parent-candle SL/TP detection. "
+                "H4/D1 results may diverge from MT5. Check that M1 CSV "
+                "exists and is real data (not an LFS stub)."
+            )
+        except Exception:
+            pass
+
+
 # WHY (May 2026): When a single entry-TF candle's range covers BOTH
 #      the TP and the SL line, the candle's OHLC alone can't tell us
 #      which was touched first. Default-returning TP (the prior
@@ -163,6 +185,7 @@ def _check_sl_with_subcandles(candle, sl_price, direction, pos):
             return (True, sl_price, candle.get('timestamp'))
 
     # No M1 loader / data available — trust the parent candle's range
+    _warn_m1_fallback_once()
     return (True, sl_price, candle.get('timestamp'))
 
 
@@ -209,6 +232,7 @@ def _check_tp_with_subcandles(candle, tp_price, direction, pos):
         except Exception:
             return (True, tp_price, candle.get('timestamp'))
 
+    _warn_m1_fallback_once()
     return (True, tp_price, candle.get('timestamp'))
 
 
