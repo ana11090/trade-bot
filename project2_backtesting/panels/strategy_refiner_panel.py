@@ -4938,6 +4938,32 @@ def build_panel(parent):
         font=("Segoe UI", 9, "bold"), bg=WHITE, fg="#4a148c",
         padx=8, pady=4)
     _passrate_detail_frame.pack(fill="x", padx=0, pady=(6, 0))
+
+    # WHY: Explain what the window simulation does and how it differs
+    #      from the BLOWN summary below — users see different DD
+    #      numbers in the two boxes and need to know the methodology
+    #      isn't contradicting itself.
+    # CHANGED: May 2026 — methodology tooltip
+    from shared.tooltip import add_tooltip as _add_tt
+    _add_tt(_passrate_detail_frame,
+            "🎯 Eval & Funded Simulation\n\n"
+            "Runs the EVAL CHALLENGE multiple times — once for each\n"
+            "possible start date in your backtest data. Each window\n"
+            "is a fresh attempt:\n"
+            "  • Account resets to starting balance ($10K, etc.)\n"
+            "  • Tries to hit +6% profit within 60 calendar days\n"
+            "  • Fails if daily DD (3%) or total DD (6%) is breached\n"
+            "  • Or PASSES if profit target is met\n\n"
+            "Answers the question:\n"
+            "  \"If I started this rule live RIGHT NOW, what's my\n"
+            "   chance of passing an eval?\"\n\n"
+            "Each window's 'totalDD' is the peak drawdown DURING THAT\n"
+            "WINDOW only — not across the whole backtest.\n\n"
+            "💀 The Breach Counter below answers a DIFFERENT question:\n"
+            "  \"If I traded this rule continuously (no resets),\n"
+            "   how many times would the account blow up?\"\n"
+            "Different simulator, different methodology, different\n"
+            "numbers. Both are correct for what they answer.")
     # WHY: With per-window detail (up to 12 rows + headers), the panel
     #      can exceed 18 lines. Keep compact height but allow scrolling.
     # CHANGED: May 2026 — add scrollbar
@@ -6106,17 +6132,34 @@ def build_panel(parent):
     _breach_label.pack(fill="x")
 
     from shared.tooltip import add_tooltip
+    # WHY: Tooltip now ALSO calls out the methodology difference from
+    #      the window detail above. Users were confused why a rule
+    #      showed (e.g.) Worst total DD 8.1% here AND totalDD 15.7%
+    #      in the window box. Different simulators, different scopes.
+    # CHANGED: May 2026 — methodology contrast in tooltip
     add_tooltip(_breach_label,
                 "💀 Prop Firm Breach Counter\n\n"
-                "Simulates your strategy across the full backtest period.\n"
-                "Every time drawdown exceeds the prop firm limit,\n"
-                "the account is 'blown' and restarted — just like\n"
-                "a real failed challenge.\n\n"
+                "Runs ONE CONTINUOUS simulation across all your trades\n"
+                "sequentially. When daily/total DD hits the firm limit,\n"
+                "the account 'blows' and resets — like restarting a\n"
+                "failed challenge — and the run continues to count\n"
+                "how often it would happen over the full period.\n\n"
+                "Answers the question:\n"
+                "  \"If I traded this rule for the entire backtest\n"
+                "   period without taking breaks, how many times would\n"
+                "   I blow the account?\"\n\n"
                 "Daily DD breach: lost too much in ONE day\n"
                 "Total DD breach: equity dropped too far from peak\n\n"
-                "0 blows = strategy never violated limits\n"
+                "0 blows = never violated limits\n"
                 "1-3 blows = occasional, might pass with timing\n"
-                "4+ blows = too risky for prop firms")
+                "4+ blows = too risky for prop firms\n\n"
+                "🎯 The 'Eval & funded simulation' box above answers a\n"
+                "DIFFERENT question:\n"
+                "  \"If I started a fresh eval today, would I pass?\"\n"
+                "Each window resets balance to starting capital and\n"
+                "tries to hit the profit target within the calendar\n"
+                "limit. Different simulator → different numbers.\n"
+                "Both are correct for what they answer.")
 
     # ── Trade list ────────────────────────────────────────────────────────────
     tl_hdr = tk.Frame(sf, bg=WHITE, padx=20, pady=6)
