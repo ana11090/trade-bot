@@ -358,6 +358,93 @@ def _format_win_pass(s):
     return f"{passed}/{total} ({rate*100:.0f}%)"
 
 
+def _compute_prop_score(s):
+    """Composite 0-100 score for prop-firm fitness.
+
+    Returns (score:float or None, color:str).
+    None when the rule has no win_pass data (legacy matrix row).
+
+    Formula:
+        0.60 * win_pass_rate_pct
+      + 0.20 * dd_headroom_score
+      + 0.10 * trade_frequency_score
+      + 0.10 * stability_score
+
+    WHY: Single sortable number that captures "which rule would I
+         trust to pass an eval right now". Tune the weights here.
+    CHANGED: May 2026 — Prop Score
+    """
+    import math
+    # Need Win Pass to score at all — without it we have no idea
+    # whether the rule passes the eval.
+    wp_rate = s.get('win_pass_rate')
+    if wp_rate is None or wp_rate < 0:
+        return None, GREY
+    win_pass_pts = float(wp_rate) * 100.0  # 0..100
+
+    # DD headroom — how close did worst DD come to the firm's limit?
+    # Reads from breaches dict written by backtester per row.
+    breaches = s.get('breaches') or {}
+    worst_total = float(breaches.get('worst_total_pct', 0) or 0)
+    total_limit = float(breaches.get('total_dd_limit_pct', 6.0) or 6.0)
+    if total_limit > 0:
+        dd_headroom_pts = 100.0 * max(0.0, 1.0 - (worst_total / total_limit))
+    else:
+        dd_headroom_pts = 0.0
+    # Hard penalty if there was an actual breach.
+    if (breaches.get('daily_breaches', 0) or 0) > 0:
+        dd_headroom_pts = 0.0
+    if (breaches.get('total_breaches', 0) or 0) > 0:
+        dd_headroom_pts = 0.0
+
+    # Trade frequency — period-independent. Saturates at ~0.5/day.
+    tpd = float(s.get('trades_per_day', 0) or 0)
+    trade_freq_pts = 100.0 * (1.0 - math.exp(-tpd * 5.0))
+
+    # Stability — many rules won't have this tested. Don't penalize
+    # missing data; substitute with the avg of the other three.
+    sv = s.get('stability_verdict')
+    if sv is None:
+        avg_other = (win_pass_pts + dd_headroom_pts + trade_freq_pts) / 3.0
+        stability_pts = avg_other
+    else:
+        if sv is True or (isinstance(sv, str) and sv.lower() == 'stable'):
+            stability_pts = 100.0
+        elif isinstance(sv, str) and sv.lower() == 'marginal':
+            stability_pts = 50.0
+        else:
+            stability_pts = 0.0
+
+    score = (0.60 * win_pass_pts
+             + 0.20 * dd_headroom_pts
+             + 0.10 * trade_freq_pts
+             + 0.10 * stability_pts)
+    score = max(0.0, min(100.0, score))
+
+    if score >= 70:
+        color = "#27ae60"     # green
+    elif score >= 40:
+        color = "#f39c12"     # yellow
+    else:
+        color = "#e74c3c"     # red
+    return score, color
+
+
+def _format_prop_score(s):
+    """Render the Prop Score cell text. Returns string with emoji prefix
+    for color (Treeview can't color individual cells, so the emoji
+    carries the visual signal)."""
+    score, _ = _compute_prop_score(s)
+    if score is None:
+        return "—"
+    if score >= 70:
+        return f"🟢 {score:.0f}"
+    elif score >= 40:
+        return f"🟡 {score:.0f}"
+    else:
+        return f"🔴 {score:.0f}"
+
+
 def _select_glyph(iid):
     """Return ☑ if iid is in the batch set, ☐ otherwise.
     Empty string for separator rows.
@@ -4792,6 +4879,10 @@ def build_panel(parent):
         #      Legacy backtests without it sort as -1 (bottom).
         # CHANGED: May 2026 — sortable Win Pass
         ("Win Pass ↓",   "win_pass_rate",      True),
+        # WHY: Composite Prop Score — the single number for picking
+        #      a rule to actually trade live. See _compute_prop_score.
+        # CHANGED: May 2026 — Prop Score sort
+        ("🎯 Prop Score ↓", "_prop_score_for_sort", True),
     ]:
         tk.Button(sort_row, text=label, font=("Segoe UI", 8),
                   bg="#667eea", fg="white", relief=tk.FLAT,
@@ -4928,7 +5019,10 @@ def build_panel(parent):
             # the `columns = (...)` tuple below — a stale count makes
             # the guard destroy sel_row's children (including the Load
             # button) on every refresh.
-            _expected_col_count = 18
+            # 19 cols: select, star, #, stage, rule, exit, tf, trades, wr, pf,
+            # net_pips, net_dollars, net_pct, avg_pips, avg_dollars, avg_pct,
+            # win_pass, prop_score, del.
+            _expected_col_count = 19
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -4969,6 +5063,7 @@ def build_panel(parent):
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
                            "win_pass",
+                           "prop_score",
                            "del")
                 _strat_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                            height=min(len(_strategies), 8),
@@ -5006,6 +5101,11 @@ def build_panel(parent):
                 #      without these fields render as "—".
                 # CHANGED: May 2026 — Win Pass at backtest time
                 _strat_tree.heading("win_pass",     text="Win Pass")
+                # WHY: Composite 0-100 score. See _compute_prop_score.
+                #      Color-coded via emoji prefix (Treeview can't
+                #      color individual cells).
+                # CHANGED: May 2026 — Prop Score column
+                _strat_tree.heading("prop_score",   text="Prop Score")
                 _strat_tree.heading("del",          text="🗑")
 
                 _strat_tree.column("select",     width=34,  anchor="center")
@@ -5025,6 +5125,7 @@ def build_panel(parent):
                 _strat_tree.column("avg_dollars",  width=80,  anchor="e")
                 _strat_tree.column("avg_pct",      width=70,  anchor="e")
                 _strat_tree.column("win_pass",     width=100, anchor="center")
+                _strat_tree.column("prop_score",   width=90,  anchor="center")
                 _strat_tree.column("del",          width=40,  anchor="center")
 
                 _strat_tree.tag_configure("profitable", foreground="#28a745")
@@ -5183,6 +5284,13 @@ def build_panel(parent):
                 key = _grid_sort_key
                 if not key:
                     return 0
+                # WHY: Synthetic key — Prop Score is computed on the fly
+                #      from _compute_prop_score, not stored on the dict.
+                #      Missing scores sort to bottom (treated as -1).
+                # CHANGED: May 2026 — Prop Score sort
+                if key == '_prop_score_for_sort':
+                    _ps, _ = _compute_prop_score(strat)
+                    return _ps if _ps is not None else -1.0
                 v = strat.get(key, 0) or 0
                 try:
                     return float(v)
@@ -5225,7 +5333,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
@@ -5276,6 +5384,7 @@ def build_panel(parent):
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
                         _format_win_pass(s),
+                        _format_prop_score(s),
                         "🗑"
                     ), tags=(tag,))
                     continue
@@ -5317,6 +5426,7 @@ def build_panel(parent):
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,
                     _format_win_pass(s),
+                    _format_prop_score(s),
                     del_display
                 ), tags=(tag,))
 
