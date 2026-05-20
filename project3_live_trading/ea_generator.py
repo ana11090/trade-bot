@@ -869,9 +869,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     )
     # Build +DI/-DI reads for any ADX handles in scope — appended after main args
     # WHY: ADX intermediates (+DI/-DI) narrow down where Python/MT5 diverge.
+    #      Names must match the f-string template placeholders at the
+    #      .format() site (no leading underscore — see diag_print_args).
     # CHANGED: May 2026 — ADX diagnostic intermediates
-    _diag_adx_reads = ''
-    _diag_adx_args  = ''
+    # FIXED: May 2026 — renamed from _diag_adx_* → diag_adx_* to match
+    #        the {diag_adx_reads} / {diag_adx_args} placeholders used
+    #        in the on-tick template string. Underscore prefix made
+    #        the f-string substitution raise NameError at EA generation.
+    diag_adx_reads = ''
+    diag_adx_args  = ''
     _adx_seen = set()
     for _vm in _diag_vars:
         import re as _re2
@@ -881,11 +887,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             _tf_lc, _p = _am.group(1).upper(), _am.group(2)
             _hv = f'handle_adx_{_tf_lc}_{_p}'
             _period_str = '{' + f'mql_period' + '}'
-            _diag_adx_reads += (
+            diag_adx_reads += (
                 f'double val_{_vm}_pdi = SafeCopyBuf({_hv}, 1, PERIOD_{_tf_lc});\n'
                 f'      double val_{_vm}_mdi = SafeCopyBuf({_hv}, 2, PERIOD_{_tf_lc});\n      '
             )
-            _diag_adx_args += (
+            diag_adx_args += (
                 f'" {_vm}_pdi=", DoubleToString(val_{_vm}_pdi, 4), '
                 f'" {_vm}_mdi=", DoubleToString(val_{_vm}_mdi, 4), '
             )
