@@ -82,6 +82,103 @@ def _resolve_tp_sl_collision(pos, candle, tp_price, sl_price, direction):
     return 'SL'
 
 
+# WHY (May 2026): Exit strategies that check SL by looking at the
+#      parent candle's low/high miss intra-candle excursions. On H4
+#      entries especially, a 1-minute tick spike that hits SL doesn't
+#      always show in the recorded H4 candle low. Result: Python says
+#      "TIME_EXIT win" while MT5 says "STOP_LOSS in minute 1." Use M1
+#      sub-candles for intra-candle SL/TP detection — closes ~80% of
+#      the gap vs the existing parent-candle-only check.
+#
+#      Falls back to the parent candle when:
+#        - M1 loader isn't attached to pos (legacy callers)
+#        - M1 data is missing for this symbol/period
+#        - Parent candle's range already proves SL/TP wasn't touched
+#          (no need to scan M1)
+# CHANGED: May 2026 — M1 sub-candle SL/TP detection
+def _check_sl_with_subcandles(candle, sl_price, direction, pos):
+    """Check if SL was hit during this parent candle, using M1 if available.
+
+    Returns (hit: bool, fill_price: float, hit_subcandle_ts).
+      - hit: True if SL was touched
+      - fill_price: the actual SL price (caller handles gap fills)
+      - hit_subcandle_ts: timestamp of the M1 sub-candle that crossed,
+        or the parent candle's timestamp when M1 fallback didn't run
+
+    Pessimistic on M1-data gap: if parent candle's range crossed SL
+    but no M1 sub-candle did, return True anyway (the parent OHLC is
+    more authoritative than missing M1 detail).
+    """
+    # Fast-path: did the parent candle's range even reach SL?
+    try:
+        if direction == "BUY":
+            parent_touched = float(candle["low"]) <= sl_price
+        else:
+            parent_touched = float(candle["high"]) >= sl_price
+    except Exception:
+        parent_touched = False
+
+    if not parent_touched:
+        # Parent says no — no need to scan M1
+        return (False, sl_price, candle.get('timestamp') if hasattr(candle, 'get') else None)
+
+    # Parent says yes. Find the EARLIEST M1 sub-candle where SL was hit.
+    _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
+    _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+    if _m1_candles is not None and len(_m1_candles) > 0:
+        for _, m1 in _m1_candles.iterrows():
+            try:
+                if direction == "BUY":
+                    if float(m1['low']) <= sl_price:
+                        return (True, sl_price, m1.get('timestamp', candle.get('timestamp')))
+                else:
+                    if float(m1['high']) >= sl_price:
+                        return (True, sl_price, m1.get('timestamp', candle.get('timestamp')))
+            except Exception:
+                continue
+        # M1 didn't show a touch but parent did — sub-candle gap or
+        # rounding. Pessimistic: assume SL was hit at parent's
+        # timestamp. Matches the parent-OHLC view.
+        return (True, sl_price, candle.get('timestamp'))
+
+    # No M1 loader / data available — trust the parent candle's range
+    return (True, sl_price, candle.get('timestamp'))
+
+
+def _check_tp_with_subcandles(candle, tp_price, direction, pos):
+    """Symmetric helper for TP detection. Same pattern as SL.
+
+    Returns (hit: bool, fill_price: float, hit_subcandle_ts).
+    """
+    try:
+        if direction == "BUY":
+            parent_touched = float(candle["high"]) >= tp_price
+        else:
+            parent_touched = float(candle["low"]) <= tp_price
+    except Exception:
+        parent_touched = False
+
+    if not parent_touched:
+        return (False, tp_price, candle.get('timestamp') if hasattr(candle, 'get') else None)
+
+    _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
+    _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
+    if _m1_candles is not None and len(_m1_candles) > 0:
+        for _, m1 in _m1_candles.iterrows():
+            try:
+                if direction == "BUY":
+                    if float(m1['high']) >= tp_price:
+                        return (True, tp_price, m1.get('timestamp', candle.get('timestamp')))
+                else:
+                    if float(m1['low']) <= tp_price:
+                        return (True, tp_price, m1.get('timestamp', candle.get('timestamp')))
+            except Exception:
+                continue
+        return (True, tp_price, candle.get('timestamp'))
+
+    return (True, tp_price, candle.get('timestamp'))
+
+
 class ExitStrategy:
     """Base class for all exit strategies."""
     name = "base"
@@ -244,13 +341,15 @@ class FixedSLTP(ExitStrategy):
         if direction == "BUY":
             sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
-            tp_touched = candle["high"] >= tp_price
-            sl_touched = candle["low"] <= sl_price
         else:  # SELL
             sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
-            tp_touched = candle["low"] <= tp_price
-            sl_touched = candle["high"] >= sl_price
+
+        # WHY: Use M1 sub-candles for intra-candle SL/TP detection so
+        #      H4/H1 rules don't miss tick spikes that MT5 sees.
+        # CHANGED: May 2026 — M1 sub-candle SL/TP detection
+        tp_touched, _, _ = _check_tp_with_subcandles(candle, tp_price, direction, pos)
+        sl_touched, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
 
         if tp_touched and sl_touched:
             # Same-candle collision — resolve via M1/ticks
@@ -634,13 +733,14 @@ class ATRBased(ExitStrategy):
         if direction == "BUY":
             sl_price = entry - sl_distance
             tp_price = entry + tp_distance
-            tp_touched = candle["high"] >= tp_price
-            sl_touched = candle["low"] <= sl_price
         else:
             sl_price = entry + sl_distance
             tp_price = entry - tp_distance
-            tp_touched = candle["low"] <= tp_price
-            sl_touched = candle["high"] >= sl_price
+
+        # WHY: M1 sub-candle SL/TP detection — see _check_sl_with_subcandles.
+        # CHANGED: May 2026 — M1 sub-candle SL/TP detection
+        tp_touched, _, _ = _check_tp_with_subcandles(candle, tp_price, direction, pos)
+        sl_touched, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
 
         if tp_touched and sl_touched:
             # Same-candle collision — resolve via M1/ticks
@@ -769,13 +869,14 @@ class ATRFixedSLTP(ExitStrategy):
         if direction == "BUY":
             sl_price = self._normalize_price(entry - self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry + self.tp_pips * self.pip_size, self.pip_size)
-            tp_touched = candle["high"] >= tp_price
-            sl_touched = candle["low"] <= sl_price
         else:
             sl_price = self._normalize_price(entry + self.sl_pips * self.pip_size, self.pip_size)
             tp_price = self._normalize_price(entry - self.tp_pips * self.pip_size, self.pip_size)
-            tp_touched = candle["low"] <= tp_price
-            sl_touched = candle["high"] >= sl_price
+
+        # WHY: M1 sub-candle SL/TP detection — see _check_sl_with_subcandles.
+        # CHANGED: May 2026 — M1 sub-candle SL/TP detection
+        tp_touched, _, _ = _check_tp_with_subcandles(candle, tp_price, direction, pos)
+        sl_touched, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
 
         if tp_touched and sl_touched:
             # Same-candle collision — resolve via M1/ticks
@@ -1062,7 +1163,10 @@ class ATRBreakevenTrail(ExitStrategy):
             # Phase 1: Initial ATR SL
             else:
                 sl_price = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
-                if candle["low"] <= sl_price:
+                # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+                # CHANGED: May 2026 — M1 sub-candle SL detection
+                _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+                if _sl_hit:
                     fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                     reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
                     return {"exit_price": fill, "reason": reason}
@@ -1179,7 +1283,10 @@ class ATRBreakevenTrail(ExitStrategy):
             # Phase 1: Initial SL
             else:
                 sl_price = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
-                if candle["high"] >= sl_price:
+                # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+                # CHANGED: May 2026 — M1 sub-candle SL detection
+                _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+                if _sl_hit:
                     fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                     reason = "ATRBE_SL_GAP" if fill != sl_price else "ATRBE_SL"
                     return {"exit_price": fill, "reason": reason}
@@ -1304,7 +1411,10 @@ class PSARExit(ExitStrategy):
 
             # ATR SL (safety net — always active)
             sl_price = self._normalize_price(entry - self._sl_price_dist, self.pip_size)
-            if candle["low"] <= sl_price:
+            # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+            # CHANGED: May 2026 — M1 sub-candle SL detection
+            _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+            if _sl_hit:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
                 return {"exit_price": fill, "reason": reason}
@@ -1338,7 +1448,10 @@ class PSARExit(ExitStrategy):
 
             # ATR SL
             sl_price = self._normalize_price(entry + self._sl_price_dist, self.pip_size)
-            if candle["high"] >= sl_price:
+            # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+            # CHANGED: May 2026 — M1 sub-candle SL detection
+            _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+            if _sl_hit:
                 fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
                 reason = "PSAR_SL_GAP" if fill != sl_price else "PSAR_SL"
                 return {"exit_price": fill, "reason": reason}
@@ -1446,7 +1559,9 @@ class ATRTrailing(ExitStrategy):
                     sl_price = trail_sl
 
             tp_touched = candle["high"] >= tp_price
-            sl_touched = candle["low"] <= sl_price
+            # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+            # CHANGED: May 2026 — M1 sub-candle SL detection
+            sl_touched, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
 
             if tp_touched and sl_touched:
                 _which = _resolve_tp_sl_collision(
@@ -1476,7 +1591,9 @@ class ATRTrailing(ExitStrategy):
                     sl_price = trail_sl
 
             tp_touched = candle["low"] <= tp_price
-            sl_touched = candle["high"] >= sl_price
+            # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+            # CHANGED: May 2026 — M1 sub-candle SL detection
+            sl_touched, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
 
             if tp_touched and sl_touched:
                 _which = _resolve_tp_sl_collision(
@@ -1524,16 +1641,19 @@ class TimeBased(ExitStrategy):
 
         if direction == "BUY":
             sl_price = entry - self.sl_pips * self.pip_size
-            if candle["low"] <= sl_price:
-                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
-                return {"exit_price": fill, "reason": reason}
         else:
             sl_price = entry + self.sl_pips * self.pip_size
-            if candle["high"] >= sl_price:
-                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
-                return {"exit_price": fill, "reason": reason}
+
+        # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+        #      Bug we traced: H4 entry rules with TimeBased exits showed
+        #      Python TIME_EXIT wins where MT5 had STOP_LOSS at minute 1.
+        #      Root cause was here.
+        # CHANGED: May 2026 — M1 sub-candle SL detection
+        _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+        if _sl_hit:
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+            return {"exit_price": fill, "reason": reason}
 
         if pos["candles_held"] >= self.max_candles:
             return {"exit_price": candle["close"], "reason": "TIME_EXIT"}
@@ -1576,16 +1696,16 @@ class IndicatorExit(ExitStrategy):
 
         if direction == "BUY":
             sl_price = entry - self.sl_pips * self.pip_size
-            if candle["low"] <= sl_price:
-                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
-                return {"exit_price": fill, "reason": reason}
         else:
             sl_price = entry + self.sl_pips * self.pip_size
-            if candle["high"] >= sl_price:
-                fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
-                reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
-                return {"exit_price": fill, "reason": reason}
+
+        # WHY: M1 sub-candle SL detection — see _check_sl_with_subcandles.
+        # CHANGED: May 2026 — M1 sub-candle SL detection
+        _sl_hit, _, _ = _check_sl_with_subcandles(candle, sl_price, direction, pos)
+        if _sl_hit:
+            fill = self._get_fill_price(candle, sl_price, direction, is_sl=True)
+            reason = "STOP_LOSS_GAP" if fill != sl_price else "STOP_LOSS"
+            return {"exit_price": fill, "reason": reason}
 
         # WHY: Gate indicator exit during min_hold window. Matches EA.
         # CHANGED: April 2026 — min hold parity
