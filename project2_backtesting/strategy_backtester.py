@@ -1953,7 +1953,78 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         exit_reason = None
         candles_held = 0
 
+        # WHY (May 2026 — entry-candle gap fix): Same fix as fast_backtest.
+        #      Scan M1 strictly after entry timestamp on the entry candle so
+        #      fixed-SL strategies detect intra-entry-candle SL hits that MT5
+        #      would catch via tick data. Trailing strategies excluded —
+        #      they need a full post-entry candle before extremum-based logic.
+        # CHANGED: May 2026 — entry-candle intra-candle SL/TP scan
+        from project2_backtesting.exit_strategies import (
+            _check_entry_candle_sltp,
+            TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit,
+        )
+        _entry_scan_eligible = not isinstance(
+            exit_strategy,
+            (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
+        )
+        if _entry_scan_eligible:
+            try:
+                _ec_dict = next_candle.to_dict()
+                if entry_pos_int + 1 < len(ind.index):
+                    try:
+                        _ec_idx = ind.index[entry_pos_int + 1]
+                        _ec_dict.update(ind.loc[_ec_idx].to_dict())
+                    except Exception:
+                        pass
+                _ec_sl = None
+                _ec_tp = None
+                _ec_sl_pips = getattr(exit_strategy, 'sl_pips', None) or 0
+                _ec_tp_pips = getattr(exit_strategy, 'tp_pips', None) or 0
+                if _ec_sl_pips > 0:
+                    if trade_dir == "BUY":
+                        _ec_sl = entry_price - _ec_sl_pips * pip_size
+                    else:
+                        _ec_sl = entry_price + _ec_sl_pips * pip_size
+                if _ec_tp_pips > 0:
+                    if trade_dir == "BUY":
+                        _ec_tp = entry_price + _ec_tp_pips * pip_size
+                    else:
+                        _ec_tp = entry_price - _ec_tp_pips * pip_size
+                _ec_sl = getattr(exit_strategy, '_entry_sl_price', None) or _ec_sl
+                _ec_tp = getattr(exit_strategy, '_entry_tp_price', None) or _ec_tp
+
+                if _ec_sl is not None or _ec_tp is not None:
+                    _ec_result = _check_entry_candle_sltp(
+                        _ec_dict, entry_time, _ec_sl, _ec_tp, trade_dir, pos
+                    )
+                    if _ec_result is not None:
+                        _which, _price, _hit_ts = _ec_result
+                        if _which == 'SL':
+                            exit_price  = _ec_sl
+                            exit_reason = 'STOP_LOSS_ENTRY_CANDLE'
+                        else:
+                            exit_price  = _ec_tp
+                            exit_reason = 'TAKE_PROFIT_ENTRY_CANDLE'
+                        exit_time = _hit_ts
+                        # WHY: occupied_until_idx normally tracks the
+                        #      future_idx where exit fired. For entry-candle
+                        #      exits the trade closes within the entry
+                        #      candle (df.iloc[entry_pos_int + 1]).
+                        # CHANGED: May 2026 — entry-candle exit
+                        try:
+                            occupied_until_idx = df.index[entry_pos_int + 1]
+                        except Exception:
+                            occupied_until_idx = sig_idx
+                        pos["candles_held"] = 0
+            except Exception:
+                pass
+
         for future_idx, future_candle in remaining_df.iterrows():
+            # WHY (May 2026 — entry-candle gap fix): If the entry-candle
+            #      scan above set exit_price, skip the post-entry loop.
+            # CHANGED: May 2026 — entry-candle short-circuit
+            if exit_price is not None:
+                break
             candles_held += 1
             pos["candles_held"]        = candles_held
             pos["highest_since_entry"] = max(pos["highest_since_entry"], float(future_candle["high"]))
@@ -2738,7 +2809,98 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         result = None
         exit_idx = -1
+
+        # WHY (May 2026 — entry-candle gap fix): Some exit strategies place a
+        #      static SL/TP at entry. MT5 catches intra-entry-candle SL hits
+        #      via tick data; we miss them because the main loop skips ci=0
+        #      for look-ahead-bias reasons (trailing strategies). Bridge the
+        #      gap by scanning M1 strictly AFTER entry timestamp for static
+        #      SL/TP hits. Trailing strategies are excluded — they need a
+        #      full post-entry candle before any extremum-based logic.
+        # CHANGED: May 2026 — entry-candle intra-candle SL/TP scan
+        from project2_backtesting.exit_strategies import (
+            _check_entry_candle_sltp,
+            TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit,
+        )
+        _entry_scan_eligible = not isinstance(
+            exit_strategy,
+            (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
+        )
+        if _entry_scan_eligible and _n_future > 0:
+            try:
+                _ec = future_candles.iloc[0]
+                _ec_dict = _ec.to_dict()
+                # Merge indicators for the entry candle (same as in-loop)
+                if _eb_int < len(ind.index):
+                    try:
+                        _ic_idx = ind.index[_eb_int]
+                        _ec_dict.update(ind.loc[_ic_idx].to_dict())
+                    except Exception:
+                        pass
+
+                # Resolve SL/TP prices using the exit strategy's own attributes.
+                # WHY: We can't call on_new_candle here without trailing bias,
+                #      so re-derive SL/TP from sl_pips/tp_pips (FixedSLTP,
+                #      TimeBased, IndicatorExit) or from on_entry-cached
+                #      _entry_sl_price / _entry_tp_price (ATRFixedSLTP).
+                _ec_sl = None
+                _ec_tp = None
+                _ec_sl_pips = getattr(exit_strategy, 'sl_pips', None) or 0
+                _ec_tp_pips = getattr(exit_strategy, 'tp_pips', None) or 0
+                if _ec_sl_pips > 0:
+                    if direction == "BUY":
+                        _ec_sl = entry_price - _ec_sl_pips * pip_size
+                    else:
+                        _ec_sl = entry_price + _ec_sl_pips * pip_size
+                if _ec_tp_pips > 0:
+                    if direction == "BUY":
+                        _ec_tp = entry_price + _ec_tp_pips * pip_size
+                    else:
+                        _ec_tp = entry_price - _ec_tp_pips * pip_size
+                # ATRFixedSLTP sets these in on_entry if it ran
+                _ec_sl = getattr(exit_strategy, '_entry_sl_price', None) or _ec_sl
+                _ec_tp = getattr(exit_strategy, '_entry_tp_price', None) or _ec_tp
+
+                if _ec_sl is not None or _ec_tp is not None:
+                    _ec_result = _check_entry_candle_sltp(
+                        _ec_dict, entry_time, _ec_sl, _ec_tp, direction, pos_info
+                    )
+                    if _ec_result is not None:
+                        _which, _price, _hit_ts = _ec_result
+                        # WHY: GAP fill on entry candle is rare (price would
+                        #      have to gap through SL within the entry candle
+                        #      after entry tick). Use clean SL/TP price.
+                        # CHANGED: May 2026 — entry-candle exit
+                        if _which == 'SL':
+                            result = {
+                                'exit_price': _ec_sl,
+                                'reason':     'STOP_LOSS_ENTRY_CANDLE',
+                                'exit_time':  _hit_ts,
+                            }
+                        else:
+                            result = {
+                                'exit_price': _ec_tp,
+                                'reason':     'TAKE_PROFIT_ENTRY_CANDLE',
+                                'exit_time':  _hit_ts,
+                            }
+                        exit_idx = 0  # entry candle; held 0 candles
+                        # WHY: candles_held = 0 for entry-candle exits (the
+                        #      trade closed before any full candle elapsed).
+                        # CHANGED: May 2026 — entry-candle exit
+                        pos_info['candles_held'] = 0
+                        pos_info['minutes_held'] = max(1, int((
+                            pd.Timestamp(_hit_ts) - pd.Timestamp(entry_time)
+                        ).total_seconds() / 60))
+            except Exception:
+                pass
+
         for ci in range(1, _n_future):
+            # WHY (May 2026 — entry-candle gap fix): If the entry-candle scan
+            #      above already set result, skip the post-entry loop —
+            #      exit_idx=0 will be honored by the exit_time override below.
+            # CHANGED: May 2026 — entry-candle short-circuit
+            if result is not None:
+                break
             # WHY (same-bar exit bias fix): The loop previously started at
             #      ci=0, which is future_candles.iloc[0] — the ENTRY candle
             #      itself. pos_info['highest_since_entry'] is seeded from that
@@ -2857,7 +3019,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
         exit_reason = result.get('reason', result.get('exit_reason', 'unknown'))
 
         exit_candle = future_candles.iloc[exit_idx]
-        exit_time   = exit_candle['timestamp']
+        # WHY: Entry-candle exits override exit_time to the actual M1 hit
+        #      timestamp captured by the entry-candle scan (not the entry
+        #      candle's open). Falls back to candle.timestamp for normal
+        #      post-entry-candle exits.
+        # CHANGED: May 2026 — entry-candle exit_time fidelity
+        exit_time   = result.get('exit_time', exit_candle['timestamp'])
 
         if direction == "BUY":
             pips = (exit_price - entry_price) / pip_size

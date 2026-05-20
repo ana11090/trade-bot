@@ -236,6 +236,73 @@ def _check_tp_with_subcandles(candle, tp_price, direction, pos):
     return (True, tp_price, candle.get('timestamp'))
 
 
+# WHY (May 2026 — entry-candle gap fix): The main backtest loop starts
+#      at ci=1, skipping the entry candle to avoid look-ahead bias on
+#      trailing-stop strategies. But for fixed SL/TP (TimeBased,
+#      FixedSLTP, etc.), the SL is placed at entry and CAN fire within
+#      the entry candle's remaining minutes — MT5 catches these via
+#      tick data and we missed them. This helper scans M1 sub-candles
+#      strictly AFTER the entry timestamp to detect intra-entry-candle
+#      SL/TP hits without violating look-ahead-bias rules.
+# CHANGED: May 2026 — entry-candle SL/TP scan
+def _check_entry_candle_sltp(entry_candle, entry_time, sl_price, tp_price,
+                              direction, pos):
+    """Scan M1 sub-candles from entry_time → end of entry candle.
+
+    Returns one of:
+      - None: neither SL nor TP touched after entry
+      - ('SL', sl_price, hit_ts): SL touched first
+      - ('TP', tp_price, hit_ts): TP touched first
+
+    Same-M1-candle collision is resolved conservatively (SL wins) since
+    we can't distinguish tick order from M1 OHLC alone.
+    """
+    import numpy as _np
+    _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
+    if _m1_loader is None:
+        return None
+    _m1 = _m1_loader(entry_candle.get('timestamp') if hasattr(entry_candle, 'get')
+                     else entry_candle['timestamp'])
+    if _m1 is None or len(_m1) == 0:
+        return None
+
+    try:
+        import pandas as _pd
+        _ets = _pd.Timestamp(entry_time)
+        # Filter to M1 candles strictly AFTER entry. Equality (==) means the
+        # M1 candle STARTED at entry — its bar contains pre-entry time too,
+        # so we skip it to be safe. Use > not >=.
+        _m1_after = _m1[_m1['timestamp'] > _ets]
+        if len(_m1_after) == 0:
+            return None
+
+        if direction == "BUY":
+            _sl_arr = _m1_after['low'].to_numpy(dtype=float, copy=False)
+            _tp_arr = _m1_after['high'].to_numpy(dtype=float, copy=False)
+            _sl_mask = _sl_arr <= sl_price if sl_price is not None else _np.zeros(len(_sl_arr), dtype=bool)
+            _tp_mask = _tp_arr >= tp_price if tp_price is not None else _np.zeros(len(_tp_arr), dtype=bool)
+        else:
+            _sl_arr = _m1_after['high'].to_numpy(dtype=float, copy=False)
+            _tp_arr = _m1_after['low'].to_numpy(dtype=float, copy=False)
+            _sl_mask = _sl_arr >= sl_price if sl_price is not None else _np.zeros(len(_sl_arr), dtype=bool)
+            _tp_mask = _tp_arr <= tp_price if tp_price is not None else _np.zeros(len(_tp_arr), dtype=bool)
+
+        _sl_idx = int(_np.argmax(_sl_mask)) if _sl_mask.any() else -1
+        _tp_idx = int(_np.argmax(_tp_mask)) if _tp_mask.any() else -1
+
+        if _sl_idx < 0 and _tp_idx < 0:
+            return None
+
+        _ts_col = _m1_after['timestamp']
+
+        if _sl_idx >= 0 and (_tp_idx < 0 or _sl_idx <= _tp_idx):
+            return ('SL', sl_price, _ts_col.iloc[_sl_idx])
+        else:
+            return ('TP', tp_price, _ts_col.iloc[_tp_idx])
+    except Exception:
+        return None
+
+
 class ExitStrategy:
     """Base class for all exit strategies."""
     name = "base"
