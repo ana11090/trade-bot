@@ -108,7 +108,15 @@ def _check_sl_with_subcandles(candle, sl_price, direction, pos):
     Pessimistic on M1-data gap: if parent candle's range crossed SL
     but no M1 sub-candle did, return True anyway (the parent OHLC is
     more authoritative than missing M1 detail).
+
+    WHY (May 2026 — speed fix): Old version walked M1 candles via
+         iterrows() — Python-level loop, ~10µs per row × up to 240
+         rows per H4 parent = the dominant cost of the backtest.
+         Replaced with numpy comparison on the full low/high array.
+         Same logic, ~50-100× faster on H4/D1 rules.
+    CHANGED: May 2026 — vectorized M1 scan
     """
+    import numpy as _np
     # Fast-path: did the parent candle's range even reach SL?
     try:
         if direction == "BUY":
@@ -126,20 +134,33 @@ def _check_sl_with_subcandles(candle, sl_price, direction, pos):
     _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
     _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
     if _m1_candles is not None and len(_m1_candles) > 0:
-        for _, m1 in _m1_candles.iterrows():
-            try:
-                if direction == "BUY":
-                    if float(m1['low']) <= sl_price:
-                        return (True, sl_price, m1.get('timestamp', candle.get('timestamp')))
-                else:
-                    if float(m1['high']) >= sl_price:
-                        return (True, sl_price, m1.get('timestamp', candle.get('timestamp')))
-            except Exception:
-                continue
-        # M1 didn't show a touch but parent did — sub-candle gap or
-        # rounding. Pessimistic: assume SL was hit at parent's
-        # timestamp. Matches the parent-OHLC view.
-        return (True, sl_price, candle.get('timestamp'))
+        try:
+            # Vectorize: get low/high as a numpy array once, then
+            # do the comparison on the whole array at once.
+            if direction == "BUY":
+                _prices = _m1_candles['low'].to_numpy(dtype=float, copy=False)
+                _hits   = _prices <= sl_price
+            else:
+                _prices = _m1_candles['high'].to_numpy(dtype=float, copy=False)
+                _hits   = _prices >= sl_price
+
+            if _hits.any():
+                # np.argmax on a boolean array returns the first True index
+                _hit_idx = int(_np.argmax(_hits))
+                try:
+                    _hit_ts = _m1_candles['timestamp'].iloc[_hit_idx]
+                except Exception:
+                    _hit_ts = candle.get('timestamp')
+                return (True, sl_price, _hit_ts)
+            # M1 didn't show a touch but parent did — sub-candle gap
+            # or rounding. Pessimistic: assume SL was hit at parent's
+            # timestamp. Matches the parent-OHLC view.
+            return (True, sl_price, candle.get('timestamp'))
+        except Exception:
+            # On any numpy/pandas error, fall back to the parent
+            # candle's authority — same behavior as if M1 wasn't
+            # available at all.
+            return (True, sl_price, candle.get('timestamp'))
 
     # No M1 loader / data available — trust the parent candle's range
     return (True, sl_price, candle.get('timestamp'))
@@ -149,7 +170,12 @@ def _check_tp_with_subcandles(candle, tp_price, direction, pos):
     """Symmetric helper for TP detection. Same pattern as SL.
 
     Returns (hit: bool, fill_price: float, hit_subcandle_ts).
+
+    WHY (May 2026 — speed fix): Vectorized for the same reason as
+         _check_sl_with_subcandles. Same logic, no result changes.
+    CHANGED: May 2026 — vectorized M1 scan
     """
+    import numpy as _np
     try:
         if direction == "BUY":
             parent_touched = float(candle["high"]) >= tp_price
@@ -164,17 +190,24 @@ def _check_tp_with_subcandles(candle, tp_price, direction, pos):
     _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
     _m1_candles = _m1_loader(candle.get('timestamp')) if _m1_loader else None
     if _m1_candles is not None and len(_m1_candles) > 0:
-        for _, m1 in _m1_candles.iterrows():
-            try:
-                if direction == "BUY":
-                    if float(m1['high']) >= tp_price:
-                        return (True, tp_price, m1.get('timestamp', candle.get('timestamp')))
-                else:
-                    if float(m1['low']) <= tp_price:
-                        return (True, tp_price, m1.get('timestamp', candle.get('timestamp')))
-            except Exception:
-                continue
-        return (True, tp_price, candle.get('timestamp'))
+        try:
+            if direction == "BUY":
+                _prices = _m1_candles['high'].to_numpy(dtype=float, copy=False)
+                _hits   = _prices >= tp_price
+            else:
+                _prices = _m1_candles['low'].to_numpy(dtype=float, copy=False)
+                _hits   = _prices <= tp_price
+
+            if _hits.any():
+                _hit_idx = int(_np.argmax(_hits))
+                try:
+                    _hit_ts = _m1_candles['timestamp'].iloc[_hit_idx]
+                except Exception:
+                    _hit_ts = candle.get('timestamp')
+                return (True, tp_price, _hit_ts)
+            return (True, tp_price, candle.get('timestamp'))
+        except Exception:
+            return (True, tp_price, candle.get('timestamp'))
 
     return (True, tp_price, candle.get('timestamp'))
 
