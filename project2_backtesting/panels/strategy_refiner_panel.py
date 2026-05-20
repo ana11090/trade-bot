@@ -666,6 +666,14 @@ def _update_passrate_detail(strategy_dict):
         _windows = sim_e.individual_results
         lines.append("")  # blank separator
         lines.append(f"📋 Per-window detail ({len(_windows)} windows):")
+        # WHY: "maxDD" beside a "Daily-DD breach" outcome led to
+        #      misreading — the number is the WINDOW'S running total
+        #      drawdown, not the daily loss that triggered the breach.
+        #      Renaming to "totalDD" disambiguates: it's the cumulative
+        #      peak-to-trough across the whole window. The daily loss
+        #      that triggered the breach is the firm's daily limit
+        #      (e.g. 3% for Get Leveraged).
+        # CHANGED: May 2026 — clearer column label
         for _w in _windows:
             _o = _w.eval_outcome or "?"
             _o_short = {
@@ -680,10 +688,20 @@ def _update_passrate_detail(strategy_dict):
             _days = _w.eval_days or 0
             _prof = _w.eval_profit_pct or 0.0
             _ddp  = _w.eval_max_dd_pct or 0.0
-            lines.append(
-                f"   {_sd} → {_o_short:<28}  "
-                f"{_days:>3}d  |  profit {_prof:+5.1f}%  |  maxDD {_ddp:4.1f}%"
-            )
+            # WHY: Incomplete windows ran out of forward data; their
+            #      profit/DD are partial and misleading. Suppress
+            #      those numbers and explain what happened.
+            # CHANGED: May 2026 — hide misleading partial stats
+            if _o == 'INSUFFICIENT_TRADES':
+                lines.append(
+                    f"   {_sd} → {_o_short:<28}  "
+                    f"{_days:>3}d  |  (window ran out of forward data)"
+                )
+            else:
+                lines.append(
+                    f"   {_sd} → {_o_short:<28}  "
+                    f"{_days:>3}d  |  profit {_prof:+5.1f}%  |  totalDD {_ddp:4.1f}%"
+                )
 
     _set_text("\n".join(lines), fg=DARK)
 

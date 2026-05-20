@@ -16,6 +16,14 @@ sys.path.insert(0, project_root)
 
 import state
 
+# WHY: Reuse the Refiner's composite Prop Score so both grids rank
+#      rules identically.
+# CHANGED: May 2026 — EA panel uses same Prop Score
+try:
+    from project2_backtesting.panels.strategy_refiner_panel import _compute_prop_score
+except Exception:
+    _compute_prop_score = None
+
 BG      = "#f0f2f5"
 WHITE   = "white"
 GREEN   = "#2d8a4e"
@@ -73,6 +81,18 @@ _status_lbl       = None
 _strat_tree_p3    = None   # ttk.Treeview in the strategy selector
 _selected_strat_iid = None  # iid of the currently selected row
 _on_strategies_loaded_fn = None  # reference to build_panel's _on_strategies_loaded
+
+# WHY: Match the Refiner's filter + sort UX so the EA selector grid
+#      doesn't force the user to scroll 100+ rows. Same controls,
+#      same behavior, same default (profitable-only on).
+# CHANGED: May 2026 — EA panel filter/sort parity with Refiner
+_p3_grid_filt_profitable = None   # tk.BooleanVar
+_p3_grid_filt_min_trades = None   # tk.StringVar
+_p3_grid_filt_min_wr     = None   # tk.StringVar
+_p3_grid_filt_min_pf     = None   # tk.StringVar
+_p3_grid_sort_key        = None   # str | None
+_p3_grid_sort_reverse    = True
+_p3_rebuild_hook         = [None] # populated by _on_strategies_loaded
 
 # Settings vars
 _symbol_var       = None
@@ -1287,6 +1307,87 @@ def build_panel(parent):
     tk.Label(sel_frame, text="Strategy", font=("Segoe UI", 11, "bold"),
              bg=WHITE, fg=DARK).pack(anchor="w", pady=(0, 6))
 
+    # WHY: Filter + sort toolbar above the grid — same layout as the
+    #      Refiner panel. _p3_rebuild_hook[0] is set later by
+    #      _on_strategies_loaded so the Apply button can trigger a
+    #      grid rebuild without re-fetching strategies from disk.
+    # CHANGED: May 2026 — EA panel filter/sort parity
+    global _p3_grid_filt_profitable, _p3_grid_filt_min_trades
+    global _p3_grid_filt_min_wr, _p3_grid_filt_min_pf
+    global _p3_grid_sort_key, _p3_grid_sort_reverse
+    _p3_grid_filt_profitable = tk.BooleanVar(value=True)
+    _p3_grid_filt_min_trades = tk.StringVar(value="0")
+    _p3_grid_filt_min_wr     = tk.StringVar(value="0")
+    _p3_grid_filt_min_pf     = tk.StringVar(value="0")
+    _p3_grid_sort_key        = None
+    _p3_grid_sort_reverse    = True
+
+    filt_row = tk.Frame(sel_frame, bg=WHITE)
+    filt_row.pack(fill="x", pady=(0, 4))
+    tk.Label(filt_row, text="Filters:", font=("Segoe UI", 9, "bold"),
+             bg=WHITE, fg="#333").pack(side=tk.LEFT)
+    tk.Checkbutton(filt_row, text="Profitable only",
+                   variable=_p3_grid_filt_profitable, bg=WHITE,
+                   font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(10, 4))
+    tk.Label(filt_row, text="Min trades:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_p3_grid_filt_min_trades, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+    tk.Label(filt_row, text="Min WR%:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_p3_grid_filt_min_wr, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+    tk.Label(filt_row, text="Min PF:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_p3_grid_filt_min_pf, width=5,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    def _p3_apply_grid_filters():
+        if _p3_rebuild_hook[0]:
+            _p3_rebuild_hook[0]()
+
+    def _p3_reset_grid_filters():
+        _p3_grid_filt_profitable.set(True)
+        _p3_grid_filt_min_trades.set("0")
+        _p3_grid_filt_min_wr.set("0")
+        _p3_grid_filt_min_pf.set("0")
+        _p3_apply_grid_filters()
+
+    tk.Button(filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
+              bg="#667eea", fg="white", relief=tk.FLAT, padx=10, pady=2,
+              cursor="hand2", command=_p3_apply_grid_filters
+              ).pack(side=tk.LEFT, padx=(12, 2))
+    tk.Button(filt_row, text="Reset", font=("Segoe UI", 8),
+              bg="#6c757d", fg="white", relief=tk.FLAT, padx=10, pady=2,
+              cursor="hand2", command=_p3_reset_grid_filters
+              ).pack(side=tk.LEFT, padx=2)
+
+    sort_row = tk.Frame(sel_frame, bg=WHITE)
+    sort_row.pack(fill="x", pady=(0, 4))
+    tk.Label(sort_row, text="Sort by:", font=("Segoe UI", 9),
+             bg=WHITE, fg="#6c757d").pack(side=tk.LEFT)
+
+    def _p3_sort_by(key, reverse=True):
+        global _p3_grid_sort_key, _p3_grid_sort_reverse
+        _p3_grid_sort_key = key
+        _p3_grid_sort_reverse = reverse
+        _p3_apply_grid_filters()
+
+    for label, key, rev in [
+        ("Net Pips ↓",   "net_total_pips",     True),
+        ("Win Rate ↓",   "win_rate",           True),
+        ("PF ↓",         "net_profit_factor",  True),
+        ("Trades ↓",     "total_trades",       True),
+        ("Avg Pips ↓",   "net_avg_pips",       True),
+        ("Win Pass ↓",   "win_pass_rate",      True),
+        ("🎯 Prop Score ↓", "_prop_score_for_sort", True),
+    ]:
+        tk.Button(sort_row, text=label, font=("Segoe UI", 8),
+                  bg="#667eea", fg="white", relief=tk.FLAT,
+                  padx=8, pady=2, cursor="hand2",
+                  command=lambda k=key, r=rev: _p3_sort_by(k, r)
+                  ).pack(side=tk.LEFT, padx=(6, 0))
+
     sel_row = tk.Frame(sel_frame, bg=WHITE)
     sel_row.pack(fill="x")
 
@@ -1379,10 +1480,82 @@ def build_panel(parent):
 
                 dd_container[0] = _strat_tree_p3
 
+            # ── Filter strategies before populating ───────────────────────
+            # WHY: Apply the same filter logic as the Refiner so both
+            #      grids show the same subset for the same settings.
+            #      Saved + separator always pass through (no filtering
+            #      on those — they're UI structural rows).
+            # CHANGED: May 2026 — EA panel filter parity
+            def _p3_passes_filter(strat):
+                src = strat.get('source', 'backtest')
+                if src in ('saved', 'separator'):
+                    return True
+                try:
+                    min_t = int(_p3_grid_filt_min_trades.get() or "0") if _p3_grid_filt_min_trades else 0
+                except Exception:
+                    min_t = 0
+                try:
+                    min_wr = float(_p3_grid_filt_min_wr.get() or "0") if _p3_grid_filt_min_wr else 0.0
+                except Exception:
+                    min_wr = 0.0
+                try:
+                    min_pf = float(_p3_grid_filt_min_pf.get() or "0") if _p3_grid_filt_min_pf else 0.0
+                except Exception:
+                    min_pf = 0.0
+                _t = int(strat.get('total_trades', strat.get('trades', 0)) or 0)
+                if _t < min_t:
+                    return False
+                _wr_raw = strat.get('win_rate', 0) or 0
+                _wr_pct = _wr_raw * 100 if _wr_raw <= 1 else _wr_raw
+                if _wr_pct < min_wr:
+                    return False
+                _pf = float(strat.get('net_profit_factor', strat.get('profit_factor', 0)) or 0)
+                if _pf < min_pf:
+                    return False
+                if _p3_grid_filt_profitable and _p3_grid_filt_profitable.get():
+                    _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
+                    if _net <= 0:
+                        return False
+                return True
+
+            def _p3_sort_key_fn(strat):
+                key = _p3_grid_sort_key
+                if not key:
+                    return 0
+                if key == '_prop_score_for_sort':
+                    if _compute_prop_score is None:
+                        return -1.0
+                    _ps, _ = _compute_prop_score(strat)
+                    return _ps if _ps is not None else -1.0
+                v = strat.get(key, 0) or 0
+                try:
+                    return float(v)
+                except Exception:
+                    return 0.0
+
             # ── Populate rows ─────────────────────────────────────────────
-            _sr_saved   = [s for s in _strategies if s.get('source') == 'saved']
+            _sr_saved   = [s for s in _strategies
+                           if s.get('source') == 'saved' and _p3_passes_filter(s)]
             _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
-            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')]
+            _sr_others  = [s for s in _strategies
+                           if s.get('source') not in ('saved', 'separator')
+                           and _p3_passes_filter(s)]
+
+            # Apply sort to backtest results only (saved kept in order)
+            if _p3_grid_sort_key:
+                try:
+                    _sr_others.sort(key=_p3_sort_key_fn,
+                                    reverse=_p3_grid_sort_reverse)
+                except Exception:
+                    pass
+
+            # WHY: Let the filter Apply/Reset and sort buttons trigger
+            #      a rebuild without re-loading from disk. _strategies
+            #      is already populated; we just re-iterate the filter
+            #      and re-insert rows.
+            # CHANGED: May 2026 — EA panel rebuild hook
+            _p3_rebuild_hook[0] = _on_strategies_loaded
+
             _bt_row_n   = 0
             for s in _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
