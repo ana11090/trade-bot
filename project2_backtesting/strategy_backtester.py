@@ -3568,6 +3568,20 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     candles_path = os.path.abspath(candles_path)
     data_dir     = os.path.dirname(candles_path)
 
+    # WHY (May 2026): Auto-merge fresh MT5 exports if user ran the
+    #      export_candles.mq5 script since last backtest. The merge
+    #      respects existing history (concat + dedupe by timestamp)
+    #      and invalidates indicator caches so they rebuild from
+    #      the updated data.
+    # CHANGED: May 2026 — auto-merge MT5 exports via FILE_COMMON
+    try:
+        from shared.mt5_history_merge import merge_fresh_export
+        _merged_tfs, _added = merge_fresh_export(data_dir, symbol='XAUUSD')
+        if _merged_tfs > 0:
+            log.info(f"[MT5-MERGE] Refreshed {_merged_tfs} timeframes with {_added:+,} new bars")
+    except Exception as _me:
+        log.warning(f"[MT5-MERGE] auto-merge skipped: {_me}")
+
     log.info(f"\nLoading candle data: {candles_path}")
     # WHY: LFS pointer stubs crash pd.read_csv with cryptic datetime parse errors.
     # CHANGED: May 2026 — permanent LFS stub detection with auto-pull
