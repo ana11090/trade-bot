@@ -929,6 +929,31 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # CHANGED: April 2026 — always declare payout globals
     extra_globals.append('double g_periodProfit = 0.0;  // Always declared for payout tracking')
 
+    # WHY (May 2026 — Python parity): Track the entry-TF bar where the
+    #      last position closed. The entry gate uses this to skip re-entry
+    #      on the same bar — matches Python's behavior (Python's main
+    #      loop doesn't fire a new signal on the candle where a trade
+    #      just exited via gap-out). Without this, MT5 takes ~2x the
+    #      trades of Python on chain-loss days.
+    # CHANGED: May 2026 — same-bar-as-last-exit gate
+    extra_globals.append(
+        'datetime g_lastExitEntryBarTime = 0;  '
+        '// Entry-TF bar time at last position close. '
+        'Blocks re-entry on same bar (Python parity).'
+    )
+    extra_on_trade.append(
+        '   // Record exit bar for same-bar re-entry blocking\n'
+        '   {\n'
+        '      long _dealEntry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);\n'
+        '      if(_dealEntry == DEAL_ENTRY_OUT)\n'
+        '      {\n'
+        f'         g_lastExitEntryBarTime = iTime(_Symbol, {mql_period}, 0);\n'
+        '         Print("[EXIT-BAR] recorded last exit bar = ",\n'
+        '               TimeToString(g_lastExitEntryBarTime, TIME_DATE|TIME_MINUTES));\n'
+        '      }\n'
+        '   }\n'
+    )
+
     # Track what capabilities are needed
     has_consistency     = False
     has_min_profit_days = False
@@ -2593,6 +2618,19 @@ void OnTick()
          g_pendingBar = iTime(NULL, {mql_period}, 0);
          return;  // wait for next bar
       }}
+   }}
+
+   //--- Skip entry if last position closed on this same entry-TF bar
+   // WHY (May 2026): Python's backtester doesn't fire a new entry
+   //      on the candle where a previous trade just exited via
+   //      gap-out. Without this gate, MT5 takes ~2x the trades of
+   //      Python on chain-loss days, draining the account.
+   // CHANGED: May 2026 — same-bar-as-last-exit gate for parity
+   if(g_lastExitEntryBarTime != 0
+      && iTime(_Symbol, {mql_period}, 0) == g_lastExitEntryBarTime)
+   {{
+      LogSkip("same_bar_as_last_exit", 0);
+      return;
    }}
 
    //--- No existing position with our magic

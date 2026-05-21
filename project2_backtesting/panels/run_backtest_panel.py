@@ -2089,6 +2089,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\nPartial results saved. Go to 'View Results' panel to see what completed.\n")
                 output_text.see(tk.END)
 
+                # WHY (May 2026): Even partial results need to flow
+                #      to the grids so user can review what completed.
+                # CHANGED: May 2026 — refresh-all after stop
+                try:
+                    from shared.panel_refresh import refresh_all_panels
+                    refresh_all_panels(reason='backtest_stopped')
+                except Exception as _re:
+                    output_text.insert(tk.END,
+                        f"\n⚠ refresh_all_panels failed: {_re}\n")
+
                 output_text.after(0, lambda: messagebox.showinfo(
                     "Backtest Stopped",
                     "Backtest stopped by user.\n\n"
@@ -2102,6 +2112,23 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
                 output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
                 output_text.see(tk.END)
+
+                # WHY (May 2026): Auto-refresh all grids so user sees
+                #      fresh data without manually visiting each panel.
+                #      Without this, the EA generator grid can show
+                #      pre-backtest values while the matrix file is
+                #      freshly written.
+                # CHANGED: May 2026 — refresh-all after backtest
+                try:
+                    from shared.panel_refresh import refresh_all_panels
+                    _scheduled = refresh_all_panels(reason='backtest_complete')
+                    output_text.insert(tk.END,
+                        f"\n🔄 Refreshing {_scheduled} panels with new results...\n")
+                    output_text.see(tk.END)
+                except Exception as _re:
+                    output_text.insert(tk.END,
+                        f"\n⚠ refresh_all_panels failed: {_re}\n")
+                    output_text.see(tk.END)
 
                 # Show diagnostic file link
                 if _diag_file_path and os.path.exists(_diag_file_path):
