@@ -2012,8 +2012,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                     )
                     if _ec_result is not None:
                         _which, _price, _hit_ts = _ec_result
+                        # WHY: Apply adverse slippage to SL fills only —
+                        #      matches MT5's fast-market slippage on stops.
+                        #      Same uniform(0, slippage_pips) distribution
+                        #      as the main slow-path slippage at line ~1884.
+                        # CHANGED: May 2026 — slippage on entry-candle SL
                         if _which == 'SL':
-                            exit_price  = _ec_sl
+                            _ec_slip = (_slip_rng.uniform(0, slippage_pips)
+                                        if slippage_pips and slippage_pips > 0 else 0.0)
+                            if trade_dir == "BUY":
+                                exit_price = _ec_sl - _ec_slip * pip_size
+                            else:
+                                exit_price = _ec_sl + _ec_slip * pip_size
                             exit_reason = 'STOP_LOSS_ENTRY_CANDLE'
                         else:
                             exit_price  = _ec_tp
@@ -2897,9 +2907,21 @@ def fast_backtest(df, ind, rules, exit_strategy,
                         #      have to gap through SL within the entry candle
                         #      after entry tick). Use clean SL/TP price.
                         # CHANGED: May 2026 — entry-candle exit
+                        # WHY: Apply adverse slippage to SL fills only —
+                        #      matches MT5's fast-market slippage on stops
+                        #      (e.g. trade #11 on 2026-03-24 filled 9 pips
+                        #      worse than the order price). TP exits don't
+                        #      slip in the trader's favor.
+                        # CHANGED: May 2026 — slippage on entry-candle SL
                         if _which == 'SL':
+                            _ec_slip = (_vect_slip_rng.uniform(0, slippage_pips)
+                                        if slippage_pips and slippage_pips > 0 else 0.0)
+                            if direction == "BUY":
+                                _ec_sl_fill = _ec_sl - _ec_slip * pip_size
+                            else:
+                                _ec_sl_fill = _ec_sl + _ec_slip * pip_size
                             result = {
-                                'exit_price': _ec_sl,
+                                'exit_price': _ec_sl_fill,
                                 'reason':     'STOP_LOSS_ENTRY_CANDLE',
                                 'exit_time':  _hit_ts,
                             }
