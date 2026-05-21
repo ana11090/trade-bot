@@ -2069,6 +2069,14 @@ bool IsMinHoldMet()
         _vr.append("")
     _vr.append(f"  Validation: Grade {grade} ({score}/100)")
     _vr.append(f"  Backtest: WR {base_stats.get('win_rate',0)*100:.1f}%, PF {base_stats.get('profit_factor',0):.2f}, {base_stats.get('total_pips',0):+,.0f} pips")
+    # WHY (May 2026): Document data-source dependency for ATR-based exits.
+    #      Python computes ATR from broker H1/H4 CSVs; MT5 computes from
+    #      tick-aggregated bars. Drift in those OHLC values flips rule
+    #      conditions and shifts SL/TP placement — not a code bug.
+    # CHANGED: May 2026 — ATR data-source note
+    _vr.append("  Note: ATR-based exits depend on H1 OHLC fidelity. If MT5 results")
+    _vr.append("        diverge significantly, re-export H1 data from MT5 via")
+    _vr.append("        export_candles.mq5 and re-backtest in Python.")
     # Warnings
     _vrw = []
     if not win_rules: _vrw.append("NO RULES — EA will never trade!")
@@ -2598,6 +2606,12 @@ void OnTick()
       if(_ticket > 0 && PositionGetInteger(POSITION_MAGIC) == MagicNumber
          && PositionGetString(POSITION_SYMBOL) == _Symbol)
       {{
+         // WHY (May 2026 — parity diag): Log the skip so the user can
+         //      count "signals fired while position open" in Experts tab.
+         //      Combined with actual trade count, this gives a complete
+         //      signal-vs-execution picture matching Python's total_trades.
+         // CHANGED: May 2026 — position_already_open skip log
+         LogSkip("position_already_open", 0);
          return; // already have an open position
       }}
    }}
