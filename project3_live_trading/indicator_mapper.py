@@ -1969,7 +1969,12 @@ def get_mql_code(feature_name, platform='mt5'):
     if ind == 'awesome_oscillator':
         return {
             'var_name':        var_name,
-            'handle_var':      f'handle_ao_{tf}',
+            # WHY: handle_var is the FULL declaration line (type + name + ;)
+            #      — see dpo block above for pattern. A bare name corrupted
+            #      the {handle_vars} substitution and cascaded into
+            #      g_dailyTrades being undeclared too.
+            # FIXED: May 2026 — emit `int <name>;` declaration
+            'handle_var':      f'int handle_ao_{tf};',
             'handle_init':     (
                 f'handle_ao_{tf} = iAO(NULL,{mt5_tf}); '
                 f'if(handle_ao_{tf}==INVALID_HANDLE) return(INIT_FAILED);'
