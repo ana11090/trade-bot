@@ -66,7 +66,10 @@ def resolve_firm_settings(firm_name, symbol, use_config=True):
         commission_pips            (float)
         slippage_pips              (float)
         max_spread_pips            (float)   0 = disabled
-        hard_close_hour            (int)     -1 = disabled
+        force_close_hour           (int)     -1 = disabled (overnight holds allowed)
+        no_trades_window_start_hour (int)    -1 = disabled (start of no-entry window)
+        no_trades_window_end_hour   (int)    -1 = disabled (end exclusive; wraps midnight when end<=start)
+        allow_overnight_trades     (bool)    documentation-only flag from firm JSON
         variable_spread            (bool)
         session_spread_multipliers (dict|None)
         min_hold_minutes           (int)     0 = no minimum
@@ -86,7 +89,16 @@ def resolve_firm_settings(firm_name, symbol, use_config=True):
             'commission_pips': 0.0,
             'slippage_pips': 0.0,
             'max_spread_pips': 0.0,
-            'hard_close_hour': -1,
+            'force_close_hour':              -1,
+            'no_trades_window_start_hour':   -1,
+            'no_trades_window_end_hour':     -1,
+            'allow_overnight_trades':        True,  # default: overnight allowed
+            # WHY (May 2026): Deprecated alias. Kept in the output dict
+            #      so legacy consumers reading _resolved['hard_close_hour']
+            #      don't KeyError before they migrate to the split fields.
+            #      Mirrors force_close_hour. Remove once all consumers
+            #      use the new keys.
+            'hard_close_hour':               -1,
             'variable_spread': False,
             'session_spread_multipliers': None,
             'min_hold_minutes': 0,
@@ -103,7 +115,20 @@ def resolve_firm_settings(firm_name, symbol, use_config=True):
         'commission_pips':   float(_bt.get('commission', 0.0) or 0.0),
         'slippage_pips':     float(_bt.get('slippage_pips', 0.0) or 0.0),
         'max_spread_pips':   float(_bt.get('max_spread_pips', 0) or 0),
-        'hard_close_hour':   int(float(_bt.get('hard_close_hour', -1) or -1)),
+        # WHY (May 2026): hard_close_hour was split into two concepts.
+        #      Map the legacy backtest_config key into force_close_hour
+        #      for backward compatibility. The no-trades window is NOT
+        #      derivable from backtest_config — leave it disabled when
+        #      no firm JSON applies.
+        # CHANGED: May 2026 — split hard_close into force_close + no_trades_window
+        'force_close_hour':              int(float(_bt.get('hard_close_hour', -1) or -1)),
+        'no_trades_window_start_hour':   -1,
+        'no_trades_window_end_hour':     -1,
+        'allow_overnight_trades':        True,
+        # Deprecated alias — see notes above. Mirrors force_close_hour
+        # so legacy readers (refiner/validator panels) keep working
+        # until they migrate to the split fields.
+        'hard_close_hour':               int(float(_bt.get('hard_close_hour', -1) or -1)),
         'variable_spread':   _bt.get('variable_spread', '0') == '1',
         'session_spread_multipliers': None,
         'min_hold_minutes':  0,
@@ -138,10 +163,40 @@ def resolve_firm_settings(firm_name, symbol, use_config=True):
     if _v is not None:
         out['swap_short_pips_per_night'] = float(_v)
 
-    # Top-level firm overrides
-    _v = _firm.get('hard_close_hour_gmt')
+    # WHY (May 2026): hard_close_hour_gmt was a single field conflating
+    #      "force-close at X" with "block entries from X to reopen".
+    #      Get Leveraged allows overnight holds (no force-close) but DOES
+    #      block trading 23:00–24:00. The new schema separates these.
+    #      Legacy fallback: if the firm JSON still has hard_close_hour_gmt
+    #      (other firms not yet migrated), treat it as force_close_hour
+    #      for backward compatibility.
+    # CHANGED: May 2026 — split hard_close into force_close + no_trades_window
+
+    # Force-close hour (replaces hard_close_hour_gmt semantically)
+    _v = _firm.get('force_close_hour_gmt')
     if _v is not None:
-        out['hard_close_hour'] = int(_v)
+        out['force_close_hour'] = int(_v)
+    else:
+        # Legacy fallback for firms still using hard_close_hour_gmt
+        _legacy = _firm.get('hard_close_hour_gmt')
+        if _legacy is not None:
+            out['force_close_hour'] = int(_legacy)
+    # Mirror to deprecated alias so legacy consumers don't KeyError
+    # mid-migration.
+    out['hard_close_hour'] = out['force_close_hour']
+
+    # No-trades window
+    _v = _firm.get('no_trades_window_start_hour_gmt')
+    if _v is not None:
+        out['no_trades_window_start_hour'] = int(_v)
+    _v = _firm.get('no_trades_window_end_hour_gmt')
+    if _v is not None:
+        out['no_trades_window_end_hour'] = int(_v)
+
+    # Documentation flag
+    _v = _firm.get('allow_overnight_trades')
+    if _v is not None:
+        out['allow_overnight_trades'] = bool(_v)
 
     # Min-hold from firm challenge restrictions
     try:
