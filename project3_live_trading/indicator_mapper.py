@@ -1959,6 +1959,29 @@ def get_mql_code(feature_name, platform='mt5'):
             'description':     f'{tf} OBV (On-Balance Volume, rolling {_n} bars — recalibrate threshold)',
         }
 
+    # ── awesome_oscillator (iAO) ─────────────────────────────────────────────
+    # WHY: MT5 has native iAO() — same formula as Python's ta library:
+    #      SMA(median price, 5) − SMA(median price, 34), where median = (H+L)/2.
+    #      Bill Williams' Awesome Oscillator, parameter-less.
+    #      Without this mapping, the generator falls through to the UNSUPPORTED
+    #      branch and blocks every signal with indicatorFailed=true.
+    # CHANGED: May 2026 — add AO mapping for EA generator parity
+    if ind == 'awesome_oscillator':
+        return {
+            'var_name':        var_name,
+            'handle_var':      f'handle_ao_{tf}',
+            'handle_init':     (
+                f'handle_ao_{tf} = iAO(NULL,{mt5_tf}); '
+                f'if(handle_ao_{tf}==INVALID_HANDLE) return(INIT_FAILED);'
+            ),
+            'read_code':       (
+                f'double val_{var_name} = SafeCopyBuf(handle_ao_{tf}, 0, {mt5_tf});'
+                f' if(val_{var_name} == EMPTY_VALUE) indicatorFailed = true;'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} Awesome Oscillator (iAO, SMA5-SMA34 of median price)',
+        }
+
     if template is None:
         # WHY: Some Python indicators don't have MQL5 equivalents.
         #      Generate a placeholder so the script compiles with a warning.
