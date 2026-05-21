@@ -1,0 +1,108 @@
+{
+  "rule_combo": "#9_BUY_D1_3c_721a_PSAR_Exit_195c",
+  "rule_indices": [
+    8
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": ">",
+          "value": 0.5875
+        },
+        {
+          "feature": "H4_distance_to_rolling_level_786",
+          "operator": "<=",
+          "value": -0.6172
+        },
+        {
+          "feature": "D1_candle_range",
+          "operator": ">",
+          "value": 34.625
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.733,
+      "win_rate": 0.733,
+      "coverage": 75,
+      "coverage_pct": 21.3,
+      "train_win_rate": 0.739,
+      "train_coverage": 46,
+      "overfit_gap": 0.006,
+      "is_overfit": false,
+      "avg_pips": 202.6,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 256,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "",
+      "_a46_source_tag": "BotEntry",
+      "direction": "BUY"
+    }
+  ],
+  "exit_strategy": "PSAR exit (D1_psar_signal), ATR SL 1.0x, TP 3.0x, settle 3 candles, max 150 candles",
+  "exit_name": "PSAR Exit",
+  "exit_class": "PSARExit",
+  "exit_params": {
+    "sl_atr_mult": 1.0,
+    "tp_atr_mult": 3.0,
+    "max_candles": 150
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 0,
+  "win_rate": 0,
+  "avg_pips": 0,
+  "net_avg_pips": 0,
+  "total_pips": 0,
+  "net_total_pips": 0,
+  "profit_factor": 0,
+  "net_profit_factor": 0,
+  "max_dd_pips": 0,
+  "total_costs": 0,
+  "avg_winner": 0,
+  "avg_loser": 0,
+  "best_trade": 0,
+  "worst_trade": 0,
+  "expectancy": 0,
+  "risk_reward_ratio": 0,
+  "std_pips": 0,
+  "sharpe_ish": 0,
+  "max_win_streak": 0,
+  "max_loss_streak": 0,
+  "trades_per_day": 0,
+  "days_per_trade": 0,
+  "recovery_factor": 0,
+  "winners": 0,
+  "losers": 0,
+  "breakeven": 0,
+  "active_month_coverage": 0.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 0,
+  "trades": [],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 0,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 0,
+    "survival_rate_per_month": 0,
+    "total_months": 0,
+    "months_blown": 0,
+    "worst_daily_pct": 0,
+    "worst_total_pct": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "win_pass_passed": 0,
+  "win_pass_total": 0,
+  "win_pass_rate": -1.0,
+  "entry_tf": "D1"
+}

@@ -1,0 +1,262 @@
+{
+  "rule_combo": "#22_BUY_H1_4c_c0c3_ATR_Fixed_SL_016e",
+  "rule_indices": [
+    21
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_keltner_width",
+          "operator": "<=",
+          "value": 0.6821
+        },
+        {
+          "feature": "M5_mt5_stoch_14_d",
+          "operator": "<=",
+          "value": 66.7194
+        },
+        {
+          "feature": "H1_kst_signal",
+          "operator": "<=",
+          "value": -11.7559
+        },
+        {
+          "feature": "H4_mt5_ema_20_distance",
+          "operator": ">",
+          "value": -1.178
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.826,
+      "coverage": 23,
+      "coverage_pct": 2.6,
+      "win_rate": 0.826,
+      "avg_pips": 430.5,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": 267.0,
+      "win_rate_test": 1.0,
+      "test_samples": 5,
+      "test_skip_reason": null,
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "scope_entry_plus_higher",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M5_keltner_width",
+              "operator": "<=",
+              "value": 0.6821
+            },
+            {
+              "feature": "M5_mt5_stoch_14_d",
+              "operator": "<=",
+              "value": 66.7194
+            },
+            {
+              "feature": "H1_kst_signal",
+              "operator": "<=",
+              "value": -11.7559
+            },
+            {
+              "feature": "H4_mt5_ema_20_distance",
+              "operator": ">",
+              "value": -1.178
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "_a46_source_tag": "Saved"
+    }
+  ],
+  "exit_strategy": "ATR Fixed SL 1.0x / TP 3.0x, max 200 candles",
+  "exit_name": "ATR Fixed SL/TP",
+  "exit_class": "ATRFixedSLTP",
+  "exit_params": {
+    "sl_atr_mult": 1.0,
+    "tp_atr_mult": 3.0,
+    "max_candles": 200
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 4,
+  "win_rate": 50.0,
+  "avg_pips": 3469.2,
+  "net_avg_pips": 3212.1,
+  "total_pips": 13877.0,
+  "net_total_pips": 12848.0,
+  "profit_factor": 1.97,
+  "net_profit_factor": 1.88,
+  "max_dd_pips": 6716.0,
+  "total_costs": 164.0,
+  "avg_winner": 13730.2,
+  "avg_loser": -7306.0,
+  "best_trade": 23134.0,
+  "worst_trade": -7896.5,
+  "expectancy": 3212.12,
+  "risk_reward_ratio": 1.88,
+  "std_pips": 12450.7,
+  "sharpe_ish": 0.26,
+  "max_win_streak": 2,
+  "max_loss_streak": 2,
+  "trades_per_day": 0.14,
+  "days_per_trade": 7.2,
+  "recovery_factor": 1.91,
+  "winners": 2,
+  "losers": 2,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 1,
+  "end_of_data_pct": 25.0,
+  "active_month_coverage": 0.5,
+  "longest_dormant_days": 21.0,
+  "total_calendar_days": 29,
+  "total_dollar_pnl": 128.48,
+  "max_dd_dollars": 67.16,
+  "trades": [
+    {
+      "entry_time": "2026-03-04 08:00:00",
+      "exit_time": "2026-03-05 12:00:00",
+      "entry_price": 5159.65,
+      "exit_price": 5082.46,
+      "direction": "BUY",
+      "pips": -7719.0,
+      "net_pips": -7896.5,
+      "cost_pips": 41.0,
+      "net_profit": -78.97,
+      "lot_size": 0.01,
+      "candles_held": 7,
+      "exit_reason": "ATR_FIXED_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-06 08:00:00",
+      "exit_time": "2026-03-09 00:00:00",
+      "entry_price": 5117.48,
+      "exit_price": 5052.1,
+      "direction": "BUY",
+      "pips": -6538.0,
+      "net_pips": -6715.5,
+      "cost_pips": 41.0,
+      "net_profit": -67.16,
+      "lot_size": 0.01,
+      "candles_held": 4,
+      "exit_reason": "ATR_FIXED_SL",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -136.5,
+      "swap_nights": 3
+    },
+    {
+      "entry_time": "2026-03-27 12:00:00",
+      "exit_time": "2026-03-31 20:00:00",
+      "entry_price": 4428.89,
+      "exit_price": 4662.46,
+      "direction": "BUY",
+      "pips": 23357.0,
+      "net_pips": 23134.0,
+      "cost_pips": 41.0,
+      "net_profit": 231.34,
+      "lot_size": 0.01,
+      "candles_held": 14,
+      "exit_reason": "ATR_FIXED_TP",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -182.0,
+      "swap_nights": 4
+    },
+    {
+      "entry_time": "2026-04-02 20:00:00",
+      "exit_time": "2026-04-09 00:00:00",
+      "entry_price": 4659.0,
+      "exit_price": 4706.77,
+      "direction": "BUY",
+      "pips": 4777.0,
+      "net_pips": 4326.5,
+      "cost_pips": 41.0,
+      "net_profit": 43.27,
+      "lot_size": 0.01,
+      "candles_held": 19,
+      "exit_reason": "END_OF_DATA",
+      "rule_id": 0,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": -409.5,
+      "swap_nights": 9
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 2,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-03-04",
+      "2026-03-06"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 29,
+    "survival_rate_per_month": 100.0,
+    "total_months": 1,
+    "months_blown": 0,
+    "worst_daily_pct": 2.7,
+    "worst_total_pct": 5.4,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "win_pass_passed": 2,
+  "win_pass_total": 4,
+  "win_pass_rate": 0.5,
+  "entry_tf": "H4"
+}
