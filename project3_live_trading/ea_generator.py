@@ -651,7 +651,17 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     # ATR params
     sl_atr_mult = exit_params.get('sl_atr_mult', 1.5)
     tp_atr_mult = exit_params.get('tp_atr_mult', 3.0)
-    atr_column  = exit_params.get('atr_column', 'H1_atr_14')
+    # WHY (May 2026): Python's exit_strategies.get_default_exit_strategies
+    #      sets atr_column = f'{entry_tf}_mt5_atr_14' at runtime, but the
+    #      matrix doesn't persist this field. Without a matching fallback
+    #      here, the EA reads H1 ATR while Python read H4 ATR (for an H4
+    #      entry rule), producing 2-3x mismatch in SL/TP distances.
+    # CHANGED: May 2026 — entry-TF-aware ATR column fallback (Python parity)
+    _explicit_atr_col = exit_params.get('atr_column')
+    if _explicit_atr_col:
+        atr_column = _explicit_atr_col
+    else:
+        atr_column = f'{entry_timeframe}_mt5_atr_14'
     # WHY: ATRBreakevenTrail and PSARExit need additional per-trade params.
     # CHANGED: April 2026 — new ATR exit params
     breakeven_atr_mult        = exit_params.get('breakeven_atr_mult', 1.0)
