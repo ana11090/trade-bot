@@ -1835,6 +1835,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             except Exception:
                 pass
 
+        # WHY (May 2026 — MT5 parity): Real brokers reject orders in the
+        #      first minutes after weekly market open due to no liquidity.
+        #      Mirrors MT5 strategy tester's "Market closed" rejections
+        #      seen on Asian sessions around 2026-03-19 00:05 and
+        #      2026-03-23 00:05. Block Monday 00:00 H4 entries.
+        # CHANGED: May 2026 — Monday post-open blackout
+        try:
+            _mb_ts = pd.Timestamp(next_candle['timestamp'])
+            if _mb_ts.weekday() == 0 and _mb_ts.hour == 0:
+                continue
+        except Exception:
+            pass
+
         # Determine direction first (needed for slippage sign)
         # WHY (Phase A.30): Old code read rule_obj.get("direction", "BUY")
         #      but the field is written as "action" by every rule
@@ -2677,6 +2690,19 @@ def fast_backtest(df, ind, rules, exit_strategy,
                         continue
             except Exception:
                 pass
+
+        # WHY (May 2026 — MT5 parity): Real brokers reject orders in the
+        #      first minutes after weekly market open due to no liquidity.
+        #      Mirrors MT5 strategy tester's "Market closed" rejections
+        #      seen on Asian sessions around 2026-03-19 00:05 and
+        #      2026-03-23 00:05. Block Monday 00:00 H4 entries.
+        # CHANGED: May 2026 — Monday post-open blackout
+        try:
+            _mb_ts = pd.Timestamp(entry_time)
+            if _mb_ts.weekday() == 0 and _mb_ts.hour == 0:
+                continue
+        except Exception:
+            pass
 
         # WHY: DD circuit breaker — check if halted, and detect daily reset.
         # CHANGED: May 2026 — DD circuit breaker
