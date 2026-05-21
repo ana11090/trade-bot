@@ -1888,6 +1888,52 @@ def get_mql_code(feature_name, platform='mt5'):
             'description':     f'{tf} Hour of Day (from bar time at shift=1)',
         }
 
+    # ── is_asian_session / is_london_session / is_ny_session / is_late_session ──
+    # WHY: Python defines sessions by GMT hour of the bar timestamp:
+    #      asian  = 00:00-06:59 UTC
+    #      london = 07:00-11:59 UTC
+    #      ny     = 12:00-20:59 UTC
+    #      late   = 21:00-23:59 UTC (Sydney open)
+    #      Without these mappings, rules using session features fall through
+    #      to UNSUPPORTED and the EA blocks every signal.
+    #      iTime(NULL, tf, 1) returns the BAR time in BROKER server time,
+    #      so we must convert to GMT before hour-check. MT5 has no direct
+    #      iTime-in-GMT call, so we use TimeGMT()/TimeCurrent() ratio to
+    #      compute the offset and subtract it from the bar time.
+    # CHANGED: May 2026 — add session mappings for EA generator parity
+    _SESSION_HOUR_RANGES = {
+        'is_asian_session':  (0, 6),
+        'is_london_session': (7, 11),
+        'is_ny_session':     (12, 20),
+        'is_late_session':   (21, 23),
+    }
+    if ind in _SESSION_HOUR_RANGES:
+        h_lo, h_hi = _SESSION_HOUR_RANGES[ind]
+        # WHY: iTime returns broker server time. Compute broker→GMT offset
+        #      from TimeCurrent vs TimeGMT (in seconds), subtract from bar
+        #      time, then take .hour.
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       (
+                f'double val_{var_name} = 0.0;\n'
+                f'      {{\n'
+                f'         datetime _bar_srv_{var_name} = iTime(NULL,{mt5_tf},1);\n'
+                f'         long _srv_gmt_off_{var_name} = (long)(TimeCurrent() - TimeGMT());\n'
+                # WHY: Explicit (datetime) cast — MQL5's `datetime - long`
+                #      yields `long`; assigning to datetime triggers a
+                #      "possible loss of data" warning without the cast.
+                f'         datetime _bar_gmt_{var_name} = (datetime)(_bar_srv_{var_name} - _srv_gmt_off_{var_name});\n'
+                f'         MqlDateTime _dt_{var_name};\n'
+                f'         TimeToStruct(_bar_gmt_{var_name}, _dt_{var_name});\n'
+                f'         val_{var_name} = (_dt_{var_name}.hour >= {h_lo} && _dt_{var_name}.hour <= {h_hi}) ? 1.0 : 0.0;\n'
+                f'      }}'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} {ind} (1.0 when bar GMT hour in [{h_lo}, {h_hi}])',
+        }
+
     # ── dpo (inline — replaces iCustom("DPO") that needs DPO.ex5) ────────────
     # WHY: The existing DPO pattern uses iCustom("DPO") which requires
     #      DPO.ex5 installed in MQL5/Indicators/. Most users don't have it.
