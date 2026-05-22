@@ -327,29 +327,22 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
         #        2. rule's avg_sl_distance_pips (ATR exits — actual SL used)
         #        3. 150 (last-resort fallback, same as old behavior)
         # CHANGED: May 2026 — ATR-aware SL for $ stat display
+        # WHY (May 2026): SL precedence for ATR-aware $ stat display.
+        #      1. exit_params.sl_pips (FixedSLTP, Trailing, Hybrid, IndicatorExit)
+        #      2. rule's avg_sl_distance_pips (ATR exits — actual SL used at backtest)
+        #      3. 150 (last-resort fallback)
+        # CHANGED: May 2026 — ATR-aware SL for $ stat display
         _explicit_sl = _exit_params.get('sl_pips')
         if _explicit_sl and float(_explicit_sl) > 0:
             sl = float(_explicit_sl)
-            _sl_source = f"exit_params.sl_pips={_explicit_sl}"
         else:
-            _avg_sl_r0 = rule0.get('avg_sl_distance_pips')
-            _avg_sl_sd = strategy_dict.get('avg_sl_distance_pips')
-            _avg_sl_sr = _sr.get('avg_sl_distance_pips')
-            _avg_sl = _avg_sl_r0 or _avg_sl_sd or _avg_sl_sr
+            _avg_sl = (rule0.get('avg_sl_distance_pips')
+                       or strategy_dict.get('avg_sl_distance_pips')
+                       or _sr.get('avg_sl_distance_pips'))
             if _avg_sl and float(_avg_sl) > 0:
                 sl = float(_avg_sl)
-                _sl_source = f"avg_sl_distance_pips={_avg_sl} (rule0={_avg_sl_r0}, sd={_avg_sl_sd}, sr={_avg_sl_sr})"
             else:
                 sl = 150.0
-                _sl_source = f"FALLBACK 150 (rule0={_avg_sl_r0}, sd={_avg_sl_sd}, sr={_avg_sl_sr}, exit_params keys={list(_exit_params.keys())})"
-
-        # WHY (May 2026 - DEBUG): One-line audit of what SL the money calc used.
-        #      Helps diagnose why ATR rules show $20K when MT5 shows $1.2K.
-        #      Remove this print after the issue is resolved.
-        # CHANGED: May 2026 - lot-sizing debug
-        _rc = strategy_dict.get('rule_combo', '?')
-        if 'ATR' in str(strategy_dict.get('exit_name', '')) or 'ATR' in _rc:
-            print(f"[$-CALC] {_rc[:50]}: sl={sl} pips, src={_sl_source}")
         pipv = float(rule0.get('pip_value_per_lot')
                      or strategy_dict.get('pip_value_per_lot')
                      or _rs.get('pip_value_per_lot')
