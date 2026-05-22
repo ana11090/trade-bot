@@ -704,10 +704,19 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
                     def _flush(_lines=_lines_to_flush, _pct=_cur_pct, _lbl=_cur_label):
                         try:
-                            # Limit text widget to last 500 lines to prevent slowdown
+                            # WHY (May 2026): The old 500-line cap silently
+                            #      deleted backtest setup output ([FIRM],
+                            #      [BACKTEST], [SIMULATOR], indicator-build
+                            #      banner). Users couldn't see the beginning
+                            #      of any run with >600 progress lines.
+                            #      Raise the cap to 50,000 — Tk handles that
+                            #      smoothly and a typical 1440-combo backtest
+                            #      emits ~3000 progress lines.
+                            # CHANGED: May 2026 — preserve early setup lines
                             _line_count = int(output_text.index('end-1c').split('.')[0])
-                            if _line_count > 600:
-                                output_text.delete("1.0", f"{_line_count - 500}.0")
+                            if _line_count > 50000:
+                                # Keep last 40000 lines; only trim when absurdly long
+                                output_text.delete("1.0", f"{_line_count - 40000}.0")
 
                             progress_bar['value'] = _pct
                             step_label.config(text=_lbl)

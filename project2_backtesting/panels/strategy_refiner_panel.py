@@ -4988,13 +4988,17 @@ def build_panel(parent):
             "   how many times would the account blow up?\"\n"
             "Different simulator, different methodology, different\n"
             "numbers. Both are correct for what they answer.")
-    # WHY: With per-window detail (up to 12 rows + headers), the panel
-    #      can exceed 18 lines. Keep compact height but allow scrolling.
-    # CHANGED: May 2026 — add scrollbar
+    # WHY (May 2026): The previous height=12 + scrollbar combo hid
+    #      content from users who didn't realize they needed to scroll.
+    #      A typical rule with 10+ historical windows produces 22-28
+    #      lines of diagnostic. Raise to 22 so most rules show all
+    #      content without scrolling; keep the scrollbar for rules
+    #      with many windows (e.g. multi-year backtest = 50+ windows).
+    # CHANGED: May 2026 — show more diagnostic content by default
     _passrate_detail_inner = tk.Frame(_passrate_detail_frame, bg=WHITE)
-    _passrate_detail_inner.pack(fill="x")
+    _passrate_detail_inner.pack(fill="both", expand=True)
     _passrate_detail_lbl = tk.Text(_passrate_detail_inner,
-        height=12, wrap="word",
+        height=22, wrap="word",
         font=("Consolas", 9), bg=WHITE, fg=DARK,
         relief="flat", highlightthickness=0,
         cursor="arrow")
