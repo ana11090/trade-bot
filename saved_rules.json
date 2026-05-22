@@ -6749,7 +6749,7 @@
     "id": 78,
     "rule_id": "#40_BUY_H1_4c_e7eb_ATR_Only_81cf",
     "saved_at": "2026-05-22T15:00:00",
-    "source": "MT5 parity test — verified against broker tick data",
+    "source": "MT5 parity test \u2014 verified against broker tick data",
     "notes": "MT5-verified candidate strategy. Profitable in both Python and MT5 backtests. Get Leveraged $10K eval, Jan-Apr 2026.",
     "rule": {
       "conditions": [
@@ -6791,7 +6791,8 @@
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
       "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged"
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "unlimited_leveraged_data"
     },
     "mt5_verification": {
       "verified_at": "2026-05-22",
@@ -6821,17 +6822,18 @@
         "win_rate_pct": 80.0,
         "profit_factor": 3.86,
         "net_pips": 103824,
-        "notes": "Same first 7 trades. Diverges at trade #8 — Python's loser held 42 days, MT5's same-entry trade hit TP early in 22 days. MT5 then took 6 more trades while Python was locked in the losing position. Both profitable, both PF > 2.5 — same strategy edge, different paths."
+        "notes": "Same first 7 trades. Diverges at trade #8 \u2014 Python's loser held 42 days, MT5's same-entry trade hit TP early in 22 days. MT5 then took 6 more trades while Python was locked in the losing position. Both profitable, both PF > 2.5 \u2014 same strategy edge, different paths."
       }
     },
     "stage": "MT5_Verified",
-    "starred": true
+    "starred": true,
+    "data_source_id": "unlimited_leveraged_data"
   },
   {
     "id": 79,
     "rule_id": "#25_BUY_D1_3c_0408_Indicator_Ex_c139",
     "saved_at": "2026-05-22T15:00:00",
-    "source": "MT5 parity test — failed pre-fix, awaiting retest",
+    "source": "MT5 parity test \u2014 failed pre-fix, awaiting retest",
     "notes": "Candidate strategy that showed strong Python results but diverged badly in MT5 due to same-bar re-entry behavior. Fix written (same_bar_as_last_exit_gate.md) but not yet verified. Re-test in MT5 after applying that fix before considering this strategy production-ready.",
     "rule": {
       "conditions": [
@@ -6869,7 +6871,8 @@
       "contract_size": 100.0,
       "pip_value_per_lot": 1.0,
       "prop_firm_id": "leveraged",
-      "prop_firm_name": "Get Leveraged"
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "unlimited_leveraged_data"
     },
     "mt5_verification": {
       "verified_at": null,
@@ -6877,14 +6880,14 @@
       "broker": "Get Leveraged",
       "symbol": "XAUUSD",
       "date_range": "2026-01-01 to 2026-04-09",
-      "blocker": "Same-bar re-entry divergence — Python skips entries on bars where a previous trade just exited via gap-out SL; MT5 doesn't, leading to ~2x trades and account drain. Fix in same_bar_as_last_exit_gate.md.",
+      "blocker": "Same-bar re-entry divergence \u2014 Python skips entries on bars where a previous trade just exited via gap-out SL; MT5 doesn't, leading to ~2x trades and account drain. Fix in same_bar_as_last_exit_gate.md.",
       "last_test_pre_fix": {
         "trades": 69,
         "win_rate_pct": 4.35,
         "profit_factor": 0.29,
         "net_profit_usd": -1939.0,
         "max_drawdown_pct": 22.74,
-        "note": "Failed — same-bar re-entry caused chain losses and DD breach"
+        "note": "Failed \u2014 same-bar re-entry caused chain losses and DD breach"
       },
       "python_comparison_pre_fix": {
         "trades": 39,
@@ -6896,6 +6899,7 @@
       }
     },
     "stage": "Awaiting_MT5_Retest",
-    "starred": true
+    "starred": true,
+    "data_source_id": "unlimited_leveraged_data"
   }
 ]
