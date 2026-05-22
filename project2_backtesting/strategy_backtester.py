@@ -3184,11 +3184,28 @@ def fast_backtest(df, ind, rules, exit_strategy,
             except Exception:
                 pass
 
-        # WHY: Same as Fix 7B — prefer actual exit_strategy.sl_pips over
-        #      the default. See Fix 7B comment for full explanation.
-        # CHANGED: April 2026 — use actual sl_pips (audit Family #2)
-        _actual_sl = getattr(exit_strategy, 'sl_pips', None)
-        _sl_for_sizing = float(_actual_sl) if _actual_sl else float(default_sl_pips)
+        # WHY (May 2026): Use the ATR-aware helper that also handles
+        #      Hybrid/Trailing/IndicatorExit. The OLD code here only
+        #      read exit_strategy.sl_pips, which is None for every ATR
+        #      exit (ATRBased, ATRTrailing, ATRBreakevenTrail, PSARExit).
+        #      Result: every ATR exit sized against 150 pips → 20x
+        #      oversized lots → matrix dollar P&L inflated 20x. The
+        #      helper checks sl_pips first, then ATR×mult from the
+        #      entry candle, then falls back to default. Same behavior
+        #      as run_backtest path now.
+        # CHANGED: May 2026 — wire fast_backtest into T1b helper
+        # Build entry candle dict for the helper to read atr_column from.
+        # entry_pos_int is the entry-signal candle index in ind.
+        try:
+            _entry_for_sizing = {}
+            if 0 <= entry_pos_int < len(ind):
+                _ind_idx_entry = ind.index[entry_pos_int]
+                _entry_for_sizing = dict(ind.loc[_ind_idx_entry])
+        except Exception:
+            _entry_for_sizing = {}
+        _sl_for_sizing = _expected_sl_pips_for_exit(
+            exit_strategy, _entry_for_sizing, pip_size, default_sl_pips
+        )
 
         lot_size = 0.01
         if account_size and risk_per_trade_pct > 0:
