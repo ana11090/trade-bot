@@ -858,6 +858,17 @@ def load_strategy_list():
                             'net_avg_pips':      stats.get('net_avg_pips', stats.get('avg_pips', r.get('avg_pips', 0))),
                             'net_profit_factor': stats.get('net_profit_factor', r.get('net_profit_factor', 0)),
                             'max_dd_pips':       stats.get('max_dd_pips', r.get('max_dd_pips', 0)),
+                            # WHY (May 2026): The lot-sizing fix writes
+                            #      avg_sl_distance_pips and avg_lot_size
+                            #      to the matrix at backtest time. Pass
+                            #      them through to the panel so
+                            #      _money_for_strategy can compute ATR
+                            #      exits' $ stats correctly. Without
+                            #      this passthrough, ATR exits fall
+                            #      back to sl=150 → $ inflated 20×.
+                            # CHANGED: May 2026 — propagate sizing fields
+                            'avg_sl_distance_pips': stats.get('avg_sl_distance_pips', r.get('avg_sl_distance_pips')),
+                            'avg_lot_size':         stats.get('avg_lot_size',         r.get('avg_lot_size')),
                             'spread_pips':       r.get('spread_pips', 25.0),
                             'commission_pips':   r.get('commission_pips', 0.0),
                             'entry_tf':          r.get('entry_tf', ''),
@@ -1120,6 +1131,15 @@ def load_strategy_list():
                         'net_avg_pips':      rule.get('avg_pips', 0),
                         'net_profit_factor': rule.get('net_profit_factor', 0),
                         'max_dd_pips':       rule.get('max_dd_pips', 0),
+                        # WHY (May 2026): Saved rules may have these from
+                        #      a previous backtest run that wrote them
+                        #      into the matrix. None when the rule was
+                        #      discovered without a backtest — the
+                        #      panel's _money_for_strategy fallback
+                        #      handles None correctly.
+                        # CHANGED: May 2026 — propagate sizing fields
+                        'avg_sl_distance_pips': rule.get('avg_sl_distance_pips'),
+                        'avg_lot_size':         rule.get('avg_lot_size'),
                         'spread_pips':       25.0,
                         'commission_pips':   0.0,
                         'has_trades':        False,
