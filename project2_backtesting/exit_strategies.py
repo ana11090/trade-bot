@@ -935,8 +935,19 @@ class ATRFixedSLTP(ExitStrategy):
         """Called when position opens — compute SL/TP from ATR at entry.
 
         Sets self.sl_pips and self.tp_pips in pips (not price units).
-        If ATR is missing or NaN, keeps the previous values (or defaults).
+        If ATR is missing or NaN, RESETS to safe defaults (150/300)
+        instead of leaking stale values from the previous trade.
         """
+        # WHY (May 2026 — Fix C): Reset to safe defaults BEFORE the ATR
+        #      check. Without this, a previous trade's computed sl/tp
+        #      values (e.g. sl=805, tp=1610 from ATR=4.025) silently
+        #      leak into the next trade if the next entry's ATR is NaN.
+        #      Strategy instances are reused across trades; on_entry
+        #      must fully re-initialize per-trade state.
+        # CHANGED: May 2026 — Fix C: prevent stale SL/TP state on ATR-NaN entries
+        self.sl_pips = 150
+        self.tp_pips = 300
+
         raw = candle.get(self.atr_column, None)
         if raw is None:
             self._entry_atr = None
@@ -963,8 +974,8 @@ class ATRFixedSLTP(ExitStrategy):
                     _log = get_logger(__name__)
                     _log.warning(
                         f"[ATRFixedSLTP] ATR column '{self.atr_column}' missing or "
-                        f"invalid at entry. Using fallback sl_pips={self.sl_pips}, "
-                        f"tp_pips={self.tp_pips}. (Warning shown once.)"
+                        f"invalid at entry. Reset to fail-safe defaults "
+                        f"sl_pips=150, tp_pips=300. (Warning shown once per instance.)"
                     )
                 except Exception:
                     pass
