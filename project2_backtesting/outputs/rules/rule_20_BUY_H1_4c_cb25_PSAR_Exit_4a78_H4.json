@@ -152,6 +152,8 @@
   "total_calendar_days": 48,
   "total_dollar_pnl": -42.94,
   "max_dd_dollars": 105.63,
+  "avg_sl_distance_pips": 16283.3,
+  "avg_lot_size": 0.01,
   "trades": [
     {
       "entry_time": "2026-02-03 08:00:00",
@@ -163,6 +165,7 @@
       "net_pips": -27979.0,
       "cost_pips": 41.0,
       "net_profit": -279.79,
+      "sl_distance_pips": 25299.0,
       "lot_size": 0.01,
       "candles_held": 193,
       "exit_reason": "PSAR_SL",
@@ -182,6 +185,7 @@
       "net_pips": -10563.0,
       "cost_pips": 41.0,
       "net_profit": -105.63,
+      "sl_distance_pips": 10522.0,
       "lot_size": 0.01,
       "candles_held": 2,
       "exit_reason": "PSAR_SL",
@@ -201,6 +205,7 @@
       "net_pips": 34248.0,
       "cost_pips": 41.0,
       "net_profit": 342.48,
+      "sl_distance_pips": 13029.0,
       "lot_size": 0.01,
       "candles_held": 39,
       "exit_reason": "PSAR_TP",

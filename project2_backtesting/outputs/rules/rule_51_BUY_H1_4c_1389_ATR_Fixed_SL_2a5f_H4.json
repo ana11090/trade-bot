@@ -152,6 +152,8 @@
   "total_calendar_days": 11,
   "total_dollar_pnl": 207.06,
   "max_dd_dollars": 102.67,
+  "avg_sl_distance_pips": 11373.0,
+  "avg_lot_size": 0.01,
   "trades": [
     {
       "entry_time": "2026-03-26 08:00:00",
@@ -163,6 +165,7 @@
       "net_pips": 26460.0,
       "cost_pips": 41.0,
       "net_profit": 264.6,
+      "sl_distance_pips": 13387.0,
       "lot_size": 0.01,
       "candles_held": 22,
       "exit_reason": "ATR_FIXED_TP",
@@ -182,6 +185,7 @@
       "net_pips": -10266.5,
       "cost_pips": 41.0,
       "net_profit": -102.67,
+      "sl_distance_pips": 10089.0,
       "lot_size": 0.01,
       "candles_held": 4,
       "exit_reason": "ATR_FIXED_SL",
@@ -201,6 +205,7 @@
       "net_pips": 4512.5,
       "cost_pips": 41.0,
       "net_profit": 45.13,
+      "sl_distance_pips": 10643.0,
       "lot_size": 0.01,
       "candles_held": 16,
       "exit_reason": "END_OF_DATA",
