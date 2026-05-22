@@ -5275,6 +5275,31 @@ def build_panel(parent):
                 tree_scroll.pack(side=tk.RIGHT, fill="y")
                 _strat_tree.pack(fill="x", expand=True)
 
+                # WHY (May 2026): Mouse-wheel scrolling on hover. Without
+                #      this binding, users have to grab the scrollbar
+                #      explicitly to navigate long strategy lists.
+                #      Use bind() not bind_all() so wheel events only
+                #      fire while the cursor is over the grid — doesn't
+                #      hijack scrolling for other panels.
+                # CHANGED: May 2026 — mouse-wheel scroll on hover
+                def _on_tree_mousewheel(event):
+                    # Windows / macOS: event.delta is typically +/-120 per
+                    # notch. Linux: separate Button-4 / Button-5 events
+                    # delivered without a delta. Handle all three.
+                    try:
+                        if event.num == 4:
+                            _strat_tree.yview_scroll(-3, "units")
+                        elif event.num == 5:
+                            _strat_tree.yview_scroll(3, "units")
+                        else:
+                            _strat_tree.yview_scroll(int(-1 * (event.delta / 120)) * 3, "units")
+                    except Exception:
+                        pass
+                    return "break"
+                _strat_tree.bind("<MouseWheel>", _on_tree_mousewheel, add="+")
+                _strat_tree.bind("<Button-4>",   _on_tree_mousewheel, add="+")
+                _strat_tree.bind("<Button-5>",   _on_tree_mousewheel, add="+")
+
                 # WHY (per-row-delete v3 fix): Bind event handlers only once
                 #      when creating the tree, not on every refresh.
                 # CHANGED: April 2026 — per-row-delete v3 bugfix
