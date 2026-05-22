@@ -60,12 +60,28 @@ def generate_ea(
     #      65.0 is the function-level fallback for firms without measured data.
     # CHANGED: April 2026 — per-firm spread filter via firm JSON
     max_spread_pips=65.0,
-    # WHY: Force-close positions at this GMT hour, matching Python's
-    #      hard_close_hour (strategy_backtester.py:1748-1754). Per-firm
-    #      value lives in prop_firms/<firm>.json hard_close_hour_gmt.
-    #      -1 disables. Panel passes firm value or defaults to 23.
-    # CHANGED: April 2026 — parity with Python hard_close_hour
-    hard_close_hour=23,
+    # WHY (May 2026 — Phase 2): Force-close all positions at this GMT
+    #      hour. -1 = disabled (overnight holds allowed). Per firm:
+    #      Get Leveraged = -1. From prop_firms/<firm>.json
+    #      force_close_hour_gmt via the resolver.
+    # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+    force_close_hour=-1,
+    # WHY (May 2026 — Phase 2): Block new entries during this GMT
+    #      window [start, end). Wraps midnight when end <= start
+    #      (e.g. start=23, end=0 = 23:00–24:00 only; start=23,
+    #      end=1 = {23, 0}). -1, -1 = no restriction. Per firm:
+    #      Get Leveraged = (23, 0). Existing positions are NOT
+    #      closed — that's force_close_hour.
+    # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+    no_trades_window_start_hour=-1,
+    no_trades_window_end_hour=-1,
+    # WHY (May 2026 — Phase 2): Back-compat for callers that still
+    #      pass the old single field. If the new params are at
+    #      defaults (-1) and hard_close_hour is set, derive the new
+    #      from the old preserving OLD semantics (force-close AND
+    #      entry-block at the same hour).
+    # CHANGED: May 2026 — legacy param, mapped via shim below
+    hard_close_hour=-1,
     trailing_stop=None,
     output_path=None,
     direction=None,  # NEW: 'BUY' or 'SELL' — if None, read from strategy dict
@@ -76,6 +92,20 @@ def generate_ea(
 
     Returns the code as a string. Also saves to output_path if provided.
     """
+    # WHY (May 2026 — Phase 2): Back-compat shim. The single
+    #      hard_close_hour used to do BOTH force-close at hour X AND
+    #      block entries from X to next midnight. Phase 1 split this
+    #      into two distinct firm-JSON fields. Any caller still
+    #      passing the legacy hard_close_hour gets mapped to both
+    #      new params to preserve the original behavior exactly.
+    # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+    if hard_close_hour >= 0:
+        if force_close_hour == -1:
+            force_close_hour = hard_close_hour
+        if no_trades_window_start_hour == -1:
+            no_trades_window_start_hour = hard_close_hour
+            no_trades_window_end_hour = 0  # wraps to next midnight
+
     # WHY: Reproducible magic numbers from strategy id. Old code used
     #      random.randint, so re-running generate_ea on the same strategy
     #      produced different magic numbers — confusing if user has multiple
@@ -242,7 +272,13 @@ def generate_ea(
             cooldown_minutes=cooldown_minutes,
             news_filter_minutes=news_filter_minutes,
             max_spread_pips=max_spread_pips,
-            hard_close_hour=hard_close_hour,
+            # WHY (May 2026 — Phase 2): Three split fields instead of
+            #      single hard_close_hour. The outer shim already
+            #      derived these from any legacy hard_close_hour input.
+            # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+            force_close_hour=force_close_hour,
+            no_trades_window_start_hour=no_trades_window_start_hour,
+            no_trades_window_end_hour=no_trades_window_end_hour,
             dd_daily_pct=dd_daily_pct,
             dd_total_pct=dd_total_pct,
             dd_safety_pct=dd_safety_pct,
@@ -483,15 +519,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   risk_per_trade_pct, max_trades_per_day, session_filter,
                   day_filter, min_hold_minutes, cooldown_minutes,
                   news_filter_minutes, max_spread_pips,
-                  # WHY: hard_close_hour was added to outer generate_ea()
-                  #      and passed through at line 237 to this inner func,
-                  #      but this signature was missed → TypeError on
-                  #      every EA generation. The big f-string at line ~2086
-                  #      and the verification-report append at line ~1920
-                  #      both reference {hard_close_hour} as a local — it
-                  #      must exist as a function parameter.
-                  # CHANGED: April 2026 — fix EA generation crash
-                  hard_close_hour,
+                  # WHY (May 2026 — Phase 2): Three split fields replace
+                  #      the old single hard_close_hour positional. The
+                  #      outer generate_ea() shim derives these from any
+                  #      legacy hard_close_hour input before calling here,
+                  #      so this inner function only sees the new params.
+                  # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+                  force_close_hour,
+                  no_trades_window_start_hour,
+                  no_trades_window_end_hour,
                   dd_daily_pct, dd_total_pct, dd_safety_pct, consistency_pct,
                   grade, score, base_stats, prop_firm_name,
                   stage='evaluation', trading_rules=None,
@@ -2084,7 +2120,7 @@ bool IsMinHoldMet()
         _vr.append("")
     _vr.append(f"FILTERS: max_trades/day={max_trades_per_day}, min_hold={min_hold_minutes}min, cooldown={cooldown_minutes}min")
     _vr.append(f"  Sessions: {session_comment}  |  Days: {day_comment}")
-    _vr.append(f"  Max spread: {max_spread_pips} pips  |  Hard close: {hard_close_hour}h GMT  |  News: {news_filter_minutes}min")
+    _vr.append(f"  Max spread: {max_spread_pips} pips  |  Force-close: {force_close_hour}h GMT  |  No-trades: [{no_trades_window_start_hour},{no_trades_window_end_hour})  |  News: {news_filter_minutes}min")
     # WHY: Show entry timing in EA verification report header.
     # CHANGED: May 2026 — entry timing diagnostic in EA header
     _ebo_vr_label = "Signal bar (immediate)" if not use_next_bar else "Next bar (+1, legacy)"
@@ -2277,7 +2313,9 @@ input int    Leverage           = {leverage};                // Account leverage
 input int    MaxTradesPerDay    = {max_trades_per_day};      // Max trades per day
 input int    MagicNumber        = {magic_number};            // Magic number
 input double MaxSpreadPips      = {max_spread_pips};         // Max spread to allow entry
-input int    HardCloseHourGMT   = {hard_close_hour};         // Force-close all positions at this GMT hour daily (-1=disabled)
+input int    ForceCloseHourGMT          = {force_close_hour};                 // Force-close all positions at this GMT hour (-1=disabled)
+input int    NoTradesWindowStartHourGMT = {no_trades_window_start_hour};      // Block new entries from this GMT hour, inclusive (-1=disabled)
+input int    NoTradesWindowEndHourGMT   = {no_trades_window_end_hour};        // End of no-trades window, exclusive. Wraps midnight when end<=start (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
 input bool   UseNextBarEntry    = {'true' if use_next_bar else 'false'};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
@@ -2390,7 +2428,8 @@ int OnInit()
       // Also log the configured GMT-anchored hours so the user can sanity-
       // check that the daily reset / hard close fire on the right wall-clock.
       Print("[GMT-DIAG] Configured GMT hours: DailyResetHourGMT=", DailyResetHourGMT,
-            " HardCloseHourGMT=", HardCloseHourGMT);
+            " ForceCloseHourGMT=", ForceCloseHourGMT,
+            " NoTradesWindowGMT=[", NoTradesWindowStartHourGMT, ",", NoTradesWindowEndHourGMT, ")");
    }}
    Print("[EA] Started. Magic=", MagicNumber, " Equity=", g_sessionEquity);
    return(INIT_SUCCEEDED);
@@ -2467,15 +2506,14 @@ void OnTick()
 
    if(g_stopForDay) return;
 
-   // WHY: Hard close hour — force-close all our positions when GMT hour
-   //      matches HardCloseHourGMT. Mirrors Python's hard_close_hour
-   //      (strategy_backtester.py:1748-1754) which closes all open
-   //      positions when candle.hour == hard_close_hour. Without this,
-   //      the EA holds across the boundary while Python closes — known
-   //      ~5% trade-count divergence on tested rules. Value is per-firm
-   //      from prop_firms/<firm>.json; -1 disables (live overnight holds).
-   // CHANGED: April 2026 — parity with Python hard_close_hour
-   if(HardCloseHourGMT >= 0 && _now_gmt.hour == HardCloseHourGMT)
+   // WHY (May 2026 — Phase 2): Force-close all open positions when
+   //      GMT hour == ForceCloseHourGMT. For firms that don't allow
+   //      overnight holds. When -1 (Get Leveraged), this block never
+   //      fires — trades run to their natural exit (SL/TP/indicator).
+   //      Independent of NoTradesWindow*HourGMT which only blocks
+   //      NEW entries during the window.
+   // CHANGED: May 2026 — Phase 2 of split-from-hard_close
+   if(ForceCloseHourGMT >= 0 && _now_gmt.hour == ForceCloseHourGMT)
    {{
       for(int _hci = PositionsTotal() - 1; _hci >= 0; _hci--)
       {{
@@ -2485,7 +2523,7 @@ void OnTick()
             && PositionGetString(POSITION_SYMBOL) == _Symbol)
          {{
             trade.PositionClose(_hc_ticket);
-            Print("[HARD_CLOSE_HOUR] Closed ticket=", _hc_ticket,
+            Print("[FORCE_CLOSE_HOUR] Closed ticket=", _hc_ticket,
                   " at hour=", _now_gmt.hour, " GMT");
          }}
       }}
@@ -2570,16 +2608,31 @@ void OnTick()
    if(UseNewsFilter && IsNewsImminent())
    {{ LogSkip("news_filter", 0); return; }}
 
-   // WHY: Block new entries during hard close hour. The hard close block
-   //      above closes existing positions when hour == HardCloseHourGMT.
-   //      Without this gate, the EA re-enters on the next M5 bar, hard
-   //      close closes it, repeat = churn every 5 min (Issue B).
-   //      Using >= so entries stay blocked for the rest of the session.
-   //      Matches Python backtester which skips signal evaluation when
-   //      candle.hour >= hard_close_hour.
-   // CHANGED: May 2026 — fix 23:xx trade explosion (Issue B)
-   if(HardCloseHourGMT >= 0 && _now_gmt.hour >= HardCloseHourGMT)
-   {{ LogSkip("hard_close_hour_block", (double)_now_gmt.hour); return; }}
+   // WHY (May 2026 — Phase 2): Block new entries during the firm's
+   //      no-trades window [start, end). Wraps midnight when
+   //      end <= start (e.g. start=23, end=0 = 23:00–24:00 only;
+   //      start=23, end=1 = {23, 0}; start=22, end=2 = {22, 23, 0, 1}).
+   //      Independent of ForceCloseHourGMT — entries can be blocked
+   //      without positions being closed.
+   // CHANGED: May 2026 — Phase 2 of split-from-hard_close
+   if(NoTradesWindowStartHourGMT >= 0 && NoTradesWindowEndHourGMT >= 0)
+   {{
+      bool _in_window = false;
+      if(NoTradesWindowEndHourGMT <= NoTradesWindowStartHourGMT)
+      {{
+         // Wraps midnight: blocked if hour >= start OR hour < end
+         _in_window = (_now_gmt.hour >= NoTradesWindowStartHourGMT)
+                   || (_now_gmt.hour < NoTradesWindowEndHourGMT);
+      }}
+      else
+      {{
+         // Same-day: blocked if start <= hour < end
+         _in_window = (NoTradesWindowStartHourGMT <= _now_gmt.hour
+                      && _now_gmt.hour < NoTradesWindowEndHourGMT);
+      }}
+      if(_in_window)
+      {{ LogSkip("no_trades_window", (double)_now_gmt.hour); return; }}
+   }}
 
    //--- Check entry conditions
    // WHY: Any indicator that returns EMPTY_VALUE means it's not ready or

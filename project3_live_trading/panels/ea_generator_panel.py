@@ -1151,15 +1151,32 @@ def _generate():
                               .get('max_spread_pips_filter') or 0)
                 or (float(_spread_var.get()) if _spread_var and _spread_var.get().strip() else 65.0)
             ),
-            # WHY: Per-firm hard close hour. Order of precedence:
-            #      1. firm_data.hard_close_hour_gmt
-            #      2. panel field value (user override or fallback default)
-            #      -1 disables.
-            # CHANGED: April 2026 — parity with Python hard_close_hour
-            hard_close_hour=(
-                int(firm_data['hard_close_hour_gmt'])
-                if 'hard_close_hour_gmt' in firm_data
-                else (int(_hard_close_var.get()) if _hard_close_var and _hard_close_var.get().strip() else 23)
+            # WHY (May 2026 — Phase 2): Pass the three split firm
+            #      fields. Order of precedence per field:
+            #        1. firm_data.<new_field>
+            #        2. firm_data.hard_close_hour_gmt (legacy, kept
+            #           in case any un-migrated firm JSON still has it)
+            #        3. -1 (disabled, fail-safe)
+            #      The panel's _hard_close_var override is no longer
+            #      consulted — firms own this behavior. If users need
+            #      a manual override they can edit the firm JSON.
+            # CHANGED: May 2026 — Phase 2 of split-from-hard_close
+            force_close_hour=(
+                int(firm_data['force_close_hour_gmt'])
+                if firm_data.get('force_close_hour_gmt') is not None
+                else (int(firm_data['hard_close_hour_gmt'])
+                      if firm_data.get('hard_close_hour_gmt') is not None
+                      else -1)
+            ),
+            no_trades_window_start_hour=(
+                int(firm_data['no_trades_window_start_hour_gmt'])
+                if firm_data.get('no_trades_window_start_hour_gmt') is not None
+                else -1
+            ),
+            no_trades_window_end_hour=(
+                int(firm_data['no_trades_window_end_hour_gmt'])
+                if firm_data.get('no_trades_window_end_hour_gmt') is not None
+                else -1
             ),
             direction=_strat_direction,
             # WHY: Leverage from strategy rule, not firm dropdown.
@@ -1180,14 +1197,17 @@ def _generate():
         try:
             _res_sym = _symbol_var.get() if _symbol_var else 'XAUUSD'
             _res_spread = firm_data.get('instrument_specs', {}).get(_res_sym, {}).get('max_spread_pips_filter')
-            _res_hc = firm_data.get('hard_close_hour_gmt')
-            _res_mr = firm_data.get('market_reopen_hour_gmt')
-            _mr_str = f", reopen={_res_mr}h" if _res_mr and int(_res_mr) > 0 else ""
+            _res_fc = firm_data.get('force_close_hour_gmt', firm_data.get('hard_close_hour_gmt'))
+            _res_ntw_s = firm_data.get('no_trades_window_start_hour_gmt')
+            _res_ntw_e = firm_data.get('no_trades_window_end_hour_gmt')
+            _ntw_str = (f"[{_res_ntw_s},{_res_ntw_e})"
+                        if _res_ntw_s is not None and _res_ntw_e is not None
+                        else "disabled")
             print(f"[EA_GEN] Spread filter: "
                   f"{_res_spread if _res_spread else (_spread_var.get() if _spread_var else '65')} pips "
                   f"({'firm' if _res_spread else 'panel'}) | "
-                  f"Hard close: {_res_hc if _res_hc is not None else (_hard_close_var.get() if _hard_close_var else '23')}h GMT{_mr_str} "
-                  f"({'firm' if _res_hc is not None else 'panel'})")
+                  f"Force-close: {_res_fc if _res_fc is not None else 'disabled'}h GMT | "
+                  f"No-trades window: {_ntw_str}")
         except Exception:
             pass
     except Exception as e:
