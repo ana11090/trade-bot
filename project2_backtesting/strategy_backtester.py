@@ -367,7 +367,31 @@ def _expected_sl_pips_for_exit(exit_strategy, entry_candle, pip_size, default_sl
         except Exception:
             pass
 
-    # Path 3 — unknown exit shape
+    # Path 3 — unknown exit shape OR ATR column not in entry_candle
+    # WHY (May 2026): If we hit this path for an ATR exit, the matrix
+    #      will silently use default_sl_pips=150 to size — making the
+    #      $ P&L inflated by 20x for the (typical 3000+ pip ATR SL).
+    #      Log when this happens so the user sees the fallback during
+    #      backtest.
+    # CHANGED: May 2026 — visibility for sizing fallback
+    try:
+        _atr_col = getattr(exit_strategy, 'atr_column', None)
+        if _atr_col:
+            # We tried Path 2 but got nothing — entry_candle didn't have
+            # the column, or had NaN. Log this so user can debug.
+            if not getattr(exit_strategy, '_sizing_fallback_warned', False):
+                from shared.logging_setup import get_logger
+                _log = get_logger(__name__)
+                _log.warning(
+                    f"[SIZING-FALLBACK] {type(exit_strategy).__name__} "
+                    f"could not read {_atr_col} at entry — sizing against "
+                    f"default {default_sl_pips} pips. Dollar P&L will not "
+                    f"match what live MT5 would produce. (Warning shown "
+                    f"once per strategy instance.)"
+                )
+                exit_strategy._sizing_fallback_warned = True
+    except Exception:
+        pass
     return float(default_sl_pips)
 
 
@@ -1213,7 +1237,16 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             # CHANGED: April 2026 — equity-tracking lot sizing
             _sizing_equity = _running_balance if (compound_equity and _running_balance) else account_size
             risk_dollars = _sizing_equity * (risk_per_trade_pct / 100)
-            lot_size = max(0.01, round(risk_dollars / (sl_pips * pip_value_per_lot), 2))
+            # WHY (May 2026): MT5 brokers enforce a volume step (0.01 for
+            #      XAUUSD on Get Leveraged). A lot size of 0.137 cannot
+            #      be sent — broker rounds DOWN to 0.13. round(.., 2)
+            #      rounds to nearest, which OVER-sizes half the time.
+            #      Truncate DOWN to match MT5's NormalizeDouble + ORDER
+            #      step enforcement. Hardcoded 0.01; later move to firm JSON.
+            # CHANGED: May 2026 — match MT5 broker volume step
+            _broker_volume_step = 0.01
+            _raw_lot = risk_dollars / (sl_pips * pip_value_per_lot)
+            lot_size = max(0.01, int(_raw_lot / _broker_volume_step) * _broker_volume_step)
             # WHY (leverage): Cap lot_size to what the account can margin.
             #      A $10K account at 1:10 on XAUUSD (~$3300/oz, 100 oz/lot)
             #      can hold max ~0.30 lots. Without this cap the backtest
@@ -1223,7 +1256,7 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 margin_per_lot = (contract_size * entry_price) / leverage
                 max_lots_by_margin = (_sizing_equity * 0.95) / margin_per_lot
                 if lot_size > max_lots_by_margin:
-                    lot_size = max(0.01, round(max_lots_by_margin, 2))
+                    lot_size = max(0.01, int(max_lots_by_margin / _broker_volume_step) * _broker_volume_step)
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -1254,6 +1287,10 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             'pips':         round(float(pnl_pips), 1),
             'net_pips':     round(float(net_pips), 1),
             'net_profit':   round(float(net_profit), 2),
+            # WHY (May 2026): see L2253 comment. _vectorized_fixed_sltp_exits
+            #      uses sl_pips directly (passed in from caller).
+            # CHANGED: May 2026 — for ATR-aware $ stat display
+            'sl_distance_pips': float(sl_pips),
             'lot_size':     lot_size,
             'exit_reason':  exit_reason,
             'candles_held': candles_held,
@@ -2176,7 +2213,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if lot_size > 100.0:
                 log.warning(f"  [WARN] Computed lot size {lot_size:.1f} exceeds 100 — "
                             f"check account_size / risk_pct / sl_pips settings")
-            lot_size = max(0.01, lot_size)
+            # WHY (May 2026): Round DOWN to broker volume step. See
+            #      detailed comment in _vectorized_fixed_sltp_exits.
+            # CHANGED: May 2026 — match MT5 broker volume step
+            _broker_volume_step = 0.01
+            lot_size = max(0.01, int(lot_size / _broker_volume_step) * _broker_volume_step)
 
             # WHY (T1b): Make SL-aware sizing visible in the backtest log so the user
             #      can verify ATR exits are getting large _sl_for_sizing values.
@@ -2198,7 +2239,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 _margin_per_lot = (contract_size * entry_price) / leverage
                 _max_lots = (_sizing_equity * 0.95) / _margin_per_lot
                 if lot_size > _max_lots:
-                    lot_size = max(0.01, round(_max_lots, 2))
+                    # WHY (May 2026): broker volume step truncation
+                    # CHANGED: May 2026 — match MT5 broker volume step
+                    lot_size = max(0.01, int(_max_lots / _broker_volume_step) * _broker_volume_step)
             dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
 
             # WHY: Update running balance after each trade so compounding
@@ -2250,6 +2293,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "exit_reason":  exit_reason,
             "candles_held": candles_held,
             "rule_id":      rule_id,
+            # WHY (May 2026): Persist the SL distance used to size this
+            #      trade. The refiner panel needs this to compute
+            #      realistic $ stats for ATR exits (where
+            #      exit_params.sl_pips doesn't exist).
+            # CHANGED: May 2026 — for ATR-aware $ stat display
+            "sl_distance_pips": float(_sl_for_sizing) if account_size is not None else None,
             "lot_size":     lot_size,
             "dollar_pnl":   dollar_pnl,
             "swap_nights":  swap_nights,
@@ -3148,14 +3197,18 @@ def fast_backtest(df, ind, rules, exit_strategy,
             _sizing_equity = _running_balance if (compound_equity and _running_balance) else account_size
             risk_dollars = _sizing_equity * (risk_per_trade_pct / 100)
             lot_size = risk_dollars / (_sl_for_sizing * pip_value_per_lot) if _sl_for_sizing > 0 else 0.01
-            lot_size = max(0.01, round(lot_size, 2))
+            # WHY (May 2026): Round DOWN to broker volume step. See
+            #      detailed comment in _vectorized_fixed_sltp_exits.
+            # CHANGED: May 2026 — match MT5 broker volume step
+            _broker_volume_step = 0.01
+            lot_size = max(0.01, int(lot_size / _broker_volume_step) * _broker_volume_step)
             # WHY (leverage): Same margin cap as run_backtest.
             # CHANGED: April 2026 — margin-aware lot sizing
             if leverage > 0 and entry_price > 0:
                 _margin_per_lot = (contract_size * entry_price) / leverage
                 _max_lots = (_sizing_equity * 0.95) / _margin_per_lot
                 if lot_size > _max_lots:
-                    lot_size = max(0.01, round(_max_lots, 2))
+                    lot_size = max(0.01, int(_max_lots / _broker_volume_step) * _broker_volume_step)
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -3185,6 +3238,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'net_pips':     round(net_pips, 1),
             'cost_pips':    round(spread_pips + commission_pips, 1),
             'net_profit':   round(net_profit, 2),
+            # WHY (May 2026): see L2253 comment.
+            # CHANGED: May 2026 — for ATR-aware $ stat display
+            'sl_distance_pips': float(_sl_for_sizing) if account_size is not None else None,
             'lot_size':     lot_size,
             'candles_held': exit_idx,
             'exit_reason':  exit_reason,
@@ -3454,6 +3510,24 @@ def compute_stats(trades):
         # Infer account_size from first trade's lot_size + dollar_pnl (approximate)
         stats["total_dollar_pnl"] = round(float(sum(dollar_pnls)), 2)
         stats["max_dd_dollars"]   = round(float(dd_d.max()), 2)
+
+    # WHY (May 2026): Average SL distance used for sizing. Surfaces to
+    #      the refiner's $ stats so ATR exits get realistic dollar
+    #      values instead of the wrong 150-pip default.
+    # CHANGED: May 2026 — ATR-aware $ stat display
+    _sl_distances = [t.get('sl_distance_pips') for t in trades
+                     if t.get('sl_distance_pips') is not None]
+    if _sl_distances:
+        stats["avg_sl_distance_pips"] = round(
+            float(sum(_sl_distances) / len(_sl_distances)), 1
+        )
+    # Also aggregate average lot used (helpful debug stat)
+    _lot_sizes = [t.get('lot_size') for t in trades
+                  if t.get('lot_size') is not None]
+    if _lot_sizes:
+        stats["avg_lot_size"] = round(
+            float(sum(_lot_sizes) / len(_lot_sizes)), 3
+        )
 
     return stats
 

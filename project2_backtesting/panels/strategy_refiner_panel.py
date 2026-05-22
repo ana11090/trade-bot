@@ -318,7 +318,26 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
                         or _sr.get('exit_params')
                         or _sr.get('exit_strategy_params')
                         or {})
-        sl   = float(_exit_params.get('sl_pips', 150) or 150)
+        # WHY (May 2026): For ATR-based exits, exit_params has
+        #      sl_atr_mult instead of sl_pips. The matrix now persists
+        #      avg_sl_distance_pips computed at backtest time; prefer
+        #      that. Fall back to 150 only if we have nothing.
+        #      Order of precedence:
+        #        1. exit_params.sl_pips (FixedSLTP, Trailing, Hybrid, IndicatorExit)
+        #        2. rule's avg_sl_distance_pips (ATR exits — actual SL used)
+        #        3. 150 (last-resort fallback, same as old behavior)
+        # CHANGED: May 2026 — ATR-aware SL for $ stat display
+        _explicit_sl = _exit_params.get('sl_pips')
+        if _explicit_sl and float(_explicit_sl) > 0:
+            sl = float(_explicit_sl)
+        else:
+            _avg_sl = (rule0.get('avg_sl_distance_pips')
+                       or strategy_dict.get('avg_sl_distance_pips')
+                       or _sr.get('avg_sl_distance_pips'))
+            if _avg_sl and float(_avg_sl) > 0:
+                sl = float(_avg_sl)
+            else:
+                sl = 150.0
         pipv = float(rule0.get('pip_value_per_lot')
                      or strategy_dict.get('pip_value_per_lot')
                      or _rs.get('pip_value_per_lot')
@@ -326,7 +345,12 @@ def _money_for_strategy(strategy_dict, net_pips, avg_pips):
                      or 1.0)
         if acct <= 0 or sl <= 0 or pipv <= 0:
             return None, None, None, None
-        lot       = (acct * (risk / 100.0)) / (sl * pipv)
+        # WHY (May 2026): Round DOWN to broker volume step to match
+        #      what live MT5 would actually trade.
+        # CHANGED: May 2026 — broker step parity
+        _broker_step = 0.01
+        _raw_lot = (acct * (risk / 100.0)) / (sl * pipv)
+        lot = max(0.01, int(_raw_lot / _broker_step) * _broker_step)
         net_dollars = float(net_pips or 0) * pipv * lot
         avg_dollars = float(avg_pips or 0) * pipv * lot
         net_pct   = net_dollars / acct * 100.0
