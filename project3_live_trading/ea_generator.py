@@ -2354,7 +2354,8 @@ bool   g_stopForDay      = false;
 bool   g_stopForever     = false;
 bool   g_dailyResetDone  = false;   // DST-safe: prevents double-reset within same hour
 datetime g_lastTradeTime = 0;
-datetime g_lastBarTime   = 0;
+datetime g_lastBarTime         = 0;
+bool     g_hadPositionLastTick = false;
 int    g_logHandle       = INVALID_HANDLE;
 // WHY: One-shot flag for the first-bar GMT diagnostic in OnTick. Without
 //      a guard, the diagnostic Print would fire on every new bar and
@@ -2548,9 +2549,24 @@ void OnTick()
    // CHANGED: April 2026 — fix per-bar safety delay (audit bug #5)
 {extra_tick_checks_block}
 
-   //--- Check for new bar
+   //--- Check for new bar OR just-closed-position state change
+   // WHY (May 2026 — parity): Old code was a strict same-bar gate. If a
+   //      position exited mid-bar via TP/SL tick, the EA still
+   //      considered g_lastBarTime "seen" and refused to re-evaluate
+   //      signals until the NEXT new bar. This caused MT5 to skip
+   //      same-bar re-entries that Python's bar-loop catches naturally.
+   //      The result is 4-hour-late MT5 trades after every mid-bar exit
+   //      (observed M7/M8 — 5 phantom trades in March).
+   //      Fix: gate evaluation on EITHER new bar OR positions-flat
+   //      transition. When the EA had a position and now doesn't (a
+   //      tick exit just fired), force one re-evaluation on the next
+   //      tick so a fresh signal can fire.
+   // CHANGED: May 2026 — same-bar re-eval after mid-bar exit
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
-   if(currentBarTime == g_lastBarTime) return;
+   bool _newBar = (currentBarTime != g_lastBarTime);
+   bool _justFlat = (g_hadPositionLastTick && PositionsTotal() == 0);
+   g_hadPositionLastTick = (PositionsTotal() > 0);
+   if(!_newBar && !_justFlat) return;
    g_lastBarTime = currentBarTime;
 
    //--- Broker GMT-offset diagnostic — one-shot on first new bar
