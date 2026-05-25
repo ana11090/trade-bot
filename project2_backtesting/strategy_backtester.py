@@ -176,6 +176,56 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
         return None
 
 
+# WHY (May 2026): Mirrors MT5 EA's spread check at bar open. The EA reads
+#      SYMBOL_SPREAD on the first tick where the new-bar gate fires —
+#      effectively the first tick at or just after bar_open. Python
+#      must do the same: look up the FIRST tick with
+#      timestamp_ms >= bar_open_ms within a tight 5-second window.
+#      Wider window = cheating (would pick up the post-news tick where
+#      spread already normalized).
+# CHANGED: May 2026 — tick-anchored spread filter for MT5 parity
+def _spread_at_bar_open_from_ticks(data_dir, bar_open_ts, pip_size=0.01,
+                                   tolerance_seconds=5):
+    """Return (ask - bid) in pips at the FIRST tick at or just after
+    `bar_open_ts`, within a 5-second tolerance.
+
+    Returns None if:
+      - tick file for that month is unavailable
+      - no tick exists in [bar_open_ts, bar_open_ts + 5s)
+      - read error
+
+    Caller should treat None as 'no parity filter for this bar' — same
+    effective behavior as MT5 OnTick not having fired yet.
+    """
+    if not _check_ticks_available(data_dir):
+        return None
+    try:
+        ts        = pd.Timestamp(bar_open_ts)
+        year      = ts.year
+        month     = ts.month
+        cache_key = (data_dir, year, month)
+        if cache_key not in _tick_cache:
+            # Warm the per-month cache via the existing loader.
+            _load_ticks_for_candle(data_dir, bar_open_ts, 1)
+        tick_df = _tick_cache.get(cache_key)
+        if tick_df is None or len(tick_df) == 0:
+            return None
+        open_ms   = int(ts.timestamp() * 1000)
+        cutoff_ms = open_ms + int(tolerance_seconds * 1000)
+        mask = ((tick_df['timestamp_ms'] >= open_ms)
+                & (tick_df['timestamp_ms'] < cutoff_ms))
+        sl_ = tick_df.loc[mask]
+        if len(sl_) == 0:
+            return None
+        first = sl_.iloc[0]
+        spread_price = float(first['ask']) - float(first['bid'])
+        if spread_price <= 0:
+            return None
+        return spread_price / pip_size
+    except Exception:
+        return None
+
+
 # WHY: M1 candles provide intra-candle resolution without tick data.
 #      60 M1 candles per H1 bar, 12 per M5, 3 per M15. When ticks
 #      aren't available, M1 resolves most exit ambiguity. Loaded once
@@ -904,7 +954,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   # WHY: entry_bar_offset controls signal-bar vs next-bar entry.
                                   #      Must match fast_backtest/run_backtest's offset.
                                   # CHANGED: May 2026 — pass entry_bar_offset to vectorized path
-                                  entry_bar_offset=0):
+                                  entry_bar_offset=0,
+                                  # WHY (May 2026): data_dir gives access to the per-month tick
+                                  #      CSV needed for the tick-anchored MaxSpreadPips filter.
+                                  #      None = filter is disabled for this call (no parity check).
+                                  # CHANGED: May 2026 — tick-anchored spread filter
+                                  data_dir=None):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -1032,22 +1087,18 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # Default cost spread — overridden below if variable_spread is on.
         _spread_for_cost = spread_pips
 
-        # WHY: MaxSpreadPips filter — skip when expected entry spread
-        #      exceeds threshold. Mirrors EA's MaxSpreadPips check.
-        # WHY (May 2026 — parity): Old code required variable_spread=True
-        #      to fire. EA fires regardless of cost-spread modeling.
-        #      Now: fires whenever the firm has a max_spread_pips_filter
-        #      set, using session multipliers if available (so the
-        #      estimator matches what MT5 sees) and falling back to
-        #      base spread_pips otherwise.
-        # CHANGED: May 2026 — decouple from variable_spread
-        if max_spread_pips > 0:
-            _entry_spread = _get_session_spread(
-                all_times[_eb], spread_pips,
-                variable_spread=True,
-                multipliers=session_spread_multipliers,
-            ) if session_spread_multipliers else float(spread_pips)
-            if _entry_spread > max_spread_pips:
+        # WHY (May 2026): Real tick-based spread at bar open. Same instant
+        #      MT5 reads SYMBOL_SPREAD. No proxy, no session multiplier.
+        #      If no tick in [open, open+5s), filter is skipped — matches
+        #      MT5 OnTick not firing yet for that bar.
+        # CHANGED: May 2026 — tick-anchored filter (replaces session estimator)
+        if max_spread_pips > 0 and data_dir:
+            _tick_spread = _spread_at_bar_open_from_ticks(
+                data_dir, all_times[_eb],
+                pip_size=pip_size,
+                tolerance_seconds=5,
+            )
+            if _tick_spread is not None and _tick_spread > max_spread_pips:
                 continue
 
         if variable_spread:
@@ -1796,6 +1847,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
             entry_bar_offset=entry_bar_offset,
+            # CHANGED: May 2026 — tick-anchored spread filter
+            data_dir=data_dir,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -1945,20 +1998,16 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             multipliers=session_spread_multipliers,
         )
 
-        # WHY: MaxSpreadPips filter — skip entry when expected spread
-        #      is too wide. Matches MT5 EA's MaxSpreadPips check.
-        # WHY (May 2026 — parity): For the filter, always use session
-        #      multipliers (if firm provides them) so the estimate
-        #      reflects what MT5 actually sees on that bar. This is
-        #      independent of how cost is modeled.
-        # CHANGED: May 2026 — session-aware filter regardless of cost model
-        if max_spread_pips > 0:
-            _filter_spread = _get_session_spread(
-                next_candle["timestamp"], spread_pips,
-                variable_spread=True,
-                multipliers=session_spread_multipliers,
-            ) if session_spread_multipliers else float(spread_pips)
-            if _filter_spread > max_spread_pips:
+        # WHY (May 2026): Real tick-based spread at bar open. Same as
+        #      _vectorized_fixed_sltp_exits — no proxy, no estimator.
+        # CHANGED: May 2026 — tick-anchored filter (replaces session estimator)
+        if max_spread_pips > 0 and data_dir:
+            _tick_spread = _spread_at_bar_open_from_ticks(
+                data_dir, next_candle["timestamp"],
+                pip_size=pip_size,
+                tolerance_seconds=5,
+            )
+            if _tick_spread is not None and _tick_spread > max_spread_pips:
                 continue
 
         # WHY: Restore bid-anchored entry. Spread paid as a cost line in
@@ -2733,6 +2782,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
             session_spread_multipliers=session_spread_multipliers,
             slippage_seed=slippage_seed,
             entry_bar_offset=entry_bar_offset,
+            # CHANGED: May 2026 — tick-anchored spread filter
+            data_dir=data_dir,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────
@@ -2787,25 +2838,34 @@ def fast_backtest(df, ind, rules, exit_strategy,
         except Exception:
             pass
 
-        # WHY (May 2026): MaxSpreadPips filter for the non-vectorized
-        #      ATR / management path. Without this check the matrix
-        #      took entries on high-spread bars that MT5 would skip,
-        #      breaking Python/MT5 parity. EA's MaxSpreadPips check
-        #      fires regardless of cost-model toggle, so the filter
-        #      uses session multipliers always when available.
-        # CHANGED: May 2026 — fast_backtest spread-filter parity
-        if max_spread_pips > 0:
+        # WHY (May 2026): Real tick-based spread at bar open. Mirrors MT5's
+        #      SYMBOL_SPREAD read at OnTick. Skip-counter + log so user
+        #      can see the filter firing in the matrix output.
+        # CHANGED: May 2026 — tick-anchored filter (replaces session estimator)
+        if max_spread_pips > 0 and data_dir:
             try:
                 _entry_ts_for_spread = df.index[_eb_int]
             except Exception:
                 _entry_ts_for_spread = None
             if _entry_ts_for_spread is not None:
-                _filter_spread_fbt = _get_session_spread(
-                    _entry_ts_for_spread, spread_pips,
-                    variable_spread=True,
-                    multipliers=session_spread_multipliers,
-                ) if session_spread_multipliers else float(spread_pips)
-                if _filter_spread_fbt > max_spread_pips:
+                _tick_spread_fbt = _spread_at_bar_open_from_ticks(
+                    data_dir, _entry_ts_for_spread,
+                    pip_size=pip_size,
+                    tolerance_seconds=5,
+                )
+                if _tick_spread_fbt is not None and _tick_spread_fbt > max_spread_pips:
+                    _skip_count = getattr(fast_backtest, '_spread_filter_skip_count', 0)
+                    fast_backtest._spread_filter_skip_count = _skip_count + 1
+                    if _skip_count < 10:
+                        try:
+                            from shared.logging_setup import get_logger
+                            get_logger(__name__).info(
+                                f"[SPREAD-SKIP] {_entry_ts_for_spread} "
+                                f"tick {_tick_spread_fbt:.1f}p > "
+                                f"{max_spread_pips:.0f}p — skipped"
+                            )
+                        except Exception:
+                            pass
                     continue
 
         # WHY: DD circuit breaker — check if halted, and detect daily reset.
