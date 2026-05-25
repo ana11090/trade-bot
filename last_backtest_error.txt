@@ -1,5 +1,5 @@
 === TK CALLBACK EXCEPTION ===
-Time:  2026-05-08T11:58:31.235754
+Time:  2026-05-25T10:37:58.461743
 Type:  KeyboardInterrupt
 Error: KeyboardInterrupt()
 
@@ -20,7 +20,7 @@ Traceback (most recent call last):
   File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2668, in destroy
     for c in list(self.children.values()): c.destroy()
                                            ^^^^^^^^^^^
-  [Previous line repeated 5 more times]
+  [Previous line repeated 6 more times]
   File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 2669, in destroy
     self.tk.call('destroy', self._w)
 KeyboardInterrupt

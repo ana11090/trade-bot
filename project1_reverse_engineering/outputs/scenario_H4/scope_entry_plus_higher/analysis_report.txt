@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-18T09:04:44.808805
-Trades analyzed: 1106 | Features: 789
+Generated: 2026-05-25T13:02:16.795458
+Trades analyzed: 1106 | Features: 804
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 789
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=77.7%, test=55.4%
-   1. H4_keltner_width                              1.5%
-   2. H4_std_dev_50                                 1.3%
-   3. H4_std_dev_20                                 1.3%
-   4. H4_mt5_atr_7                                  1.2%
-   5. D1_std_dev_20                                 1.1%
-   6. H4_mt5_atr_14                                 1.1%
-   7. H4_bb_20_3_width                              1.1%
-   8. D1_upper_shadow                               1.1%
-   9. H4_candle_range                               1.1%
-  10. H4_close_position_in_range                    1.0%
+  Model accuracy: train=77.4%, test=58.1%
+   1. H4_keltner_width                              1.2%
+   2. H4_std_dev_20                                 1.1%
+   3. D1_upper_shadow                               1.1%
+   4. D1_mt5_atr_7                                  1.1%
+   5. H4_mt5_atr_14                                 1.0%
+   6. H4_mt5_atr_28                                 1.0%
+   7. H4_distance_from_high                         1.0%
+   8. H4_std_dev_50                                 1.0%
+   9. H4_lower_shadow                               1.0%
+  10. H4_bb_20_2_width                              1.0%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -54,10 +54,10 @@ Trades analyzed: 1106 | Features: 789
     Win rate: 65% | Avg pips: +244
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Profit cluster': 192 trades (17.4%), WR 71%, avg +273 pips, avg dur 0min
+  'Profit cluster': 189 trades (17.1%), WR 70%, avg +274 pips, avg dur 0min
   'Profit cluster': 167 trades (15.1%), WR 65%, avg +269 pips, avg dur 0min
-  'Profit cluster': 311 trades (28.1%), WR 54%, avg +86 pips, avg dur 0min
-  'Profit cluster': 436 trades (39.4%), WR 54%, avg +86 pips, avg dur 0min
+  'Profit cluster': 439 trades (39.7%), WR 54%, avg +90 pips, avg dur 0min
+  'Profit cluster': 311 trades (28.1%), WR 54%, avg +82 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
@@ -90,8 +90,8 @@ Trades analyzed: 1106 | Features: 789
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  56 outlier trades (5.1%)
-  Anomaly win rate: 84% vs normal: 57%
+  55 outlier trades (5.0%)
+  Anomaly win rate: 87% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

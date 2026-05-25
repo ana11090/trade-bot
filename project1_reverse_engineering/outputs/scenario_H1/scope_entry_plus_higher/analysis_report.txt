@@ -1,7 +1,7 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-18T09:04:11.106719
-Trades analyzed: 1106 | Features: 789
+Generated: 2026-05-25T13:01:45.651141
+Trades analyzed: 1106 | Features: 804
 ======================================================================
 
 -- ROBOT IDENTITY (auto-detected) ---------------------------------
@@ -19,17 +19,17 @@ Trades analyzed: 1106 | Features: 789
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=79.2%, test=55.4%
-   1. H1_std_dev_20                                 1.0%
+  Model accuracy: train=79.4%, test=56.3%
+   1. H1_bb_20_2_width                              1.1%
    2. H1_close_position_in_range                    1.0%
-   3. H1_keltner_width                              1.0%
-   4. H1_bb_20_3_width                              1.0%
-   5. H1_lower_shadow                               1.0%
-   6. H1_mt5_macd_fast_diff                         0.9%
-   7. D1_upper_shadow                               0.8%
-   8. H1_mt5_atr_7                                  0.8%
-   9. H1_body_to_range_ratio                        0.8%
-  10. H4_keltner_width                              0.7%
+   3. H1_bb_20_3_width                              1.0%
+   4. H1_std_dev_20                                 0.9%
+   5. H1_lower_shadow                               0.8%
+   6. H4_mt5_atr_28                                 0.8%
+   7. H4_keltner_width                              0.8%
+   8. H4_mt5_atr_7                                  0.8%
+   9. D1_upper_shadow                               0.8%
+  10. H1_body_to_range_ratio                        0.8%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
@@ -38,11 +38,11 @@ Trades analyzed: 1106 | Features: 789
     Win rate: 76% | Avg pips: +277
 
   RULE 2 (WIN, conf: 82%, 28 trades)
-    IF H1_std_dev_50 > 83.9435 AND H1_volume_ratio_20 > 0.8068 AND H4_adx_21 <= 36.6242
+    IF H1_std_dev_50 > 83.9435 AND H1_volume_ratio_20 > 0.8068 AND H4_mt5_adx_21 <= 36.6242
     Win rate: 82% | Avg pips: +649
 
   RULE 3 (WIN, conf: 95%, 20 trades)
-    IF H1_std_dev_50 > 83.9435 AND H1_volume_ratio_20 > 0.8068 AND H4_adx_21 > 36.6242
+    IF H1_std_dev_50 > 83.9435 AND H1_volume_ratio_20 > 0.8068 AND H4_mt5_adx_21 > 36.6242
     Win rate: 95% | Avg pips: +1025
 
   RULE 4 (WIN, conf: 70%, 27 trades)
@@ -99,7 +99,7 @@ Trades analyzed: 1106 | Features: 789
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 86% vs normal: 57%
+  Anomaly win rate: 84% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

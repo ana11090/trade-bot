@@ -111,7 +111,7 @@
     {
       "conditions": [
         {
-          "feature": "M15_mt5_ema_9_distance",
+          "feature": "M15_ema_9_distance",
           "operator": "<=",
           "value": -0.1304
         },
@@ -121,7 +121,7 @@
           "value": -0.8333
         },
         {
-          "feature": "M5_atr_14",
+          "feature": "M5_mt5_atr_14",
           "operator": "<=",
           "value": 3.0123
         }
@@ -151,7 +151,7 @@
       "n_rules": 0,
       "n_train": 2632,
       "n_test": 1128,
-      "n_features": 780
+      "n_features": 795
     },
     {
       "tf": "M15",
@@ -159,7 +159,7 @@
       "n_rules": 1,
       "n_train": 2536,
       "n_test": 1088,
-      "n_features": 780
+      "n_features": 795
     },
     {
       "tf": "H1",
@@ -167,7 +167,7 @@
       "n_rules": 0,
       "n_train": 2410,
       "n_test": 1034,
-      "n_features": 780
+      "n_features": 795
     },
     {
       "tf": "H4",
@@ -175,7 +175,7 @@
       "n_rules": 0,
       "n_train": 2579,
       "n_test": 1106,
-      "n_features": 780
+      "n_features": 795
     },
     {
       "tf": "D1",
@@ -183,7 +183,7 @@
       "n_rules": 3,
       "n_train": 820,
       "n_test": 352,
-      "n_features": 780
+      "n_features": 795
     }
   ],
   "params": {

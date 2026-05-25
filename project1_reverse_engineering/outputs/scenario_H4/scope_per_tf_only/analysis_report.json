@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-05-18T09:04:34.608444",
+  "generated_at": "2026-05-25T13:02:06.980712",
   "entry_timeframe": null,
   "direction": "BUY",
-  "activated_at": "2026-05-18 09:04:34",
+  "activated_at": "2026-05-25 13:02:06",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 9.8,
+  "analysis_time_s": 9.6,
   "trade_count": 1106,
-  "feature_count": 789,
+  "feature_count": 804,
   "profile": {
     "direction": "buy_only",
     "direction_split": {
@@ -133,88 +133,88 @@
   "feature_importance": {
     "top_20": [
       [
-        "H4_mt5_atr_7",
-        0.022129
-      ],
-      [
         "H4_keltner_width",
-        0.021069
+        0.019716
       ],
       [
-        "H4_bb_20_2_width",
-        0.018548
+        "H4_mt5_atr_28",
+        0.019678
       ],
       [
         "H4_std_dev_50",
-        0.016693
-      ],
-      [
-        "H4_mt5_atr_14",
-        0.016371
-      ],
-      [
-        "H4_distance_from_high",
-        0.015555
-      ],
-      [
-        "H4_bb_20_3_width",
-        0.015536
+        0.01862
       ],
       [
         "H4_std_dev_20",
-        0.014892
+        0.018618
       ],
       [
-        "H4_mt5_adx_14",
-        0.014887
-      ],
-      [
-        "H4_bull_power",
-        0.014581
-      ],
-      [
-        "H4_close_position_in_range",
-        0.014264
-      ],
-      [
-        "H4_mt5_atr_21",
-        0.014181
-      ],
-      [
-        "H4_adx_21",
-        0.014083
+        "H4_mt5_atr_7",
+        0.018255
       ],
       [
         "H4_mt5_ema_9_distance",
-        0.013917
+        0.016298
       ],
       [
-        "H4_bb_50_2_width",
-        0.013524
+        "H4_bb_20_2_width",
+        0.01592
       ],
       [
-        "H4_lower_shadow",
-        0.013191
+        "H4_close_position_in_range",
+        0.014512
       ],
       [
-        "H4_minus_di",
-        0.013035
+        "H4_mt5_atr_14",
+        0.013764
+      ],
+      [
+        "H4_bb_20_3_width",
+        0.013429
+      ],
+      [
+        "H4_mt5_atr_21",
+        0.01332
+      ],
+      [
+        "H4_bull_power",
+        0.013282
+      ],
+      [
+        "H4_mt5_atr_50",
+        0.01313
+      ],
+      [
+        "H4_mt5_adx_14",
+        0.012898
       ],
       [
         "H4_candle_range",
-        0.012878
+        0.012648
+      ],
+      [
+        "H4_lower_shadow",
+        0.012602
       ],
       [
         "H4_mt5_adx_28_minus_di",
-        0.012864
+        0.012579
       ],
       [
-        "H4_ultimate_oscillator",
-        0.012689
+        "H4_distance_from_high",
+        0.012471
+      ],
+      [
+        "H4_candle_body",
+        0.01228
+      ],
+      [
+        "H4_roc_5",
+        0.012098
       ]
     ],
-    "train_accuracy": 0.7726,
-    "test_accuracy": 0.5631
+    "train_accuracy": 0.7771,
+    "test_accuracy": 0.5766
   },
   "rules": [
     {
@@ -301,9 +301,9 @@
           "value": 28.2668
         },
         {
-          "feature": "H4_sma_50_distance",
+          "feature": "H4_distance_to_rolling_level_618",
           "operator": "<=",
-          "value": -0.7311
+          "value": -1.7453
         }
       ],
       "prediction": "WIN",
@@ -395,13 +395,13 @@
   ],
   "clusters": [
     {
-      "cluster_id": 0,
+      "cluster_id": 1,
       "name": "Big winners",
-      "count": 132,
-      "pct": 11.9,
+      "count": 129,
+      "pct": 11.7,
       "avg_duration_min": 0.0,
-      "avg_pips": 401.6,
-      "win_rate": 0.758,
+      "avg_pips": 388.8,
+      "win_rate": 0.752,
       "top_features": [
         "H4_roc_10",
         "H4_dpo",
@@ -411,13 +411,13 @@
       ]
     },
     {
-      "cluster_id": 2,
+      "cluster_id": 3,
       "name": "Profit cluster",
       "count": 248,
       "pct": 22.4,
       "avg_duration_min": 0.0,
-      "avg_pips": 201.0,
-      "win_rate": 0.637,
+      "avg_pips": 209.6,
+      "win_rate": 0.641,
       "top_features": [
         "H4_roc_10",
         "H4_dpo",
@@ -427,13 +427,13 @@
       ]
     },
     {
-      "cluster_id": 1,
+      "cluster_id": 0,
       "name": "Profit cluster",
-      "count": 386,
-      "pct": 34.9,
+      "count": 334,
+      "pct": 30.2,
       "avg_duration_min": 0.0,
-      "avg_pips": 83.9,
-      "win_rate": 0.526,
+      "avg_pips": 82.9,
+      "win_rate": 0.554,
       "top_features": [
         "H4_roc_10",
         "H4_sma_20_distance",
@@ -443,13 +443,13 @@
       ]
     },
     {
-      "cluster_id": 3,
+      "cluster_id": 2,
       "name": "Profit cluster",
-      "count": 340,
-      "pct": 30.7,
+      "count": 395,
+      "pct": 35.7,
       "avg_duration_min": 0.0,
-      "avg_pips": 77.7,
-      "win_rate": 0.544,
+      "avg_pips": 80.6,
+      "win_rate": 0.519,
       "top_features": [
         "H4_roc_10",
         "H4_sma_20_distance",
@@ -633,53 +633,17 @@
     }
   ],
   "anomalies": {
-    "count": 54,
-    "pct": 4.9,
-    "anomaly_win_rate": 0.87,
-    "normal_win_rate": 0.569,
+    "count": 56,
+    "pct": 5.1,
+    "anomaly_win_rate": 0.857,
+    "normal_win_rate": 0.57,
     "top_10": [
-      {
-        "trade_id": 153,
-        "open_time": "2026-01-29 10:59:00",
-        "pips": 65.0,
-        "is_winner": true,
-        "score": -0.659,
-        "hour": 8,
-        "duration": 0.0
-      },
-      {
-        "trade_id": 155,
-        "open_time": "2026-01-29 03:39:00",
-        "pips": -5.0,
-        "is_winner": false,
-        "score": -0.657,
-        "hour": 1,
-        "duration": 1.0
-      },
-      {
-        "trade_id": 156,
-        "open_time": "2026-01-29 02:03:00",
-        "pips": 1045.0,
-        "is_winner": true,
-        "score": -0.657,
-        "hour": 0,
-        "duration": 1.0
-      },
-      {
-        "trade_id": 157,
-        "open_time": "2026-01-29 00:02:00",
-        "pips": 2655.0,
-        "is_winner": true,
-        "score": -0.657,
-        "hour": 22,
-        "duration": 1.0
-      },
       {
         "trade_id": 128,
         "open_time": "2026-02-02 09:03:00",
         "pips": -150.0,
         "is_winner": false,
-        "score": -0.65,
+        "score": -0.675,
         "hour": 7,
         "duration": 0.0
       },
@@ -688,44 +652,80 @@
         "open_time": "2026-02-02 08:33:00",
         "pips": 564.0,
         "is_winner": true,
-        "score": -0.65,
+        "score": -0.675,
         "hour": 6,
         "duration": 0.0
       },
       {
-        "trade_id": 154,
-        "open_time": "2026-01-29 05:52:00",
-        "pips": 344.0,
+        "trade_id": 121,
+        "open_time": "2026-02-02 19:57:00",
+        "pips": 1123.0,
         "is_winner": true,
-        "score": -0.646,
-        "hour": 3,
+        "score": -0.644,
+        "hour": 17,
         "duration": 2.0
       },
       {
-        "trade_id": 150,
-        "open_time": "2026-01-29 14:47:00",
-        "pips": 205.0,
+        "trade_id": 122,
+        "open_time": "2026-02-02 19:55:00",
+        "pips": 213.0,
         "is_winner": true,
         "score": -0.644,
-        "hour": 12,
+        "hour": 17,
         "duration": 0.0
       },
       {
-        "trade_id": 151,
-        "open_time": "2026-01-29 13:58:00",
-        "pips": 205.0,
+        "trade_id": 123,
+        "open_time": "2026-02-02 19:48:00",
+        "pips": 1403.0,
         "is_winner": true,
         "score": -0.644,
-        "hour": 11,
+        "hour": 17,
+        "duration": 3.0
+      },
+      {
+        "trade_id": 124,
+        "open_time": "2026-02-02 18:15:00",
+        "pips": 144.0,
+        "is_winner": true,
+        "score": -0.644,
+        "hour": 16,
         "duration": 1.0
       },
       {
-        "trade_id": 152,
-        "open_time": "2026-01-29 13:13:00",
-        "pips": 415.0,
+        "trade_id": 153,
+        "open_time": "2026-01-29 10:59:00",
+        "pips": 65.0,
         "is_winner": true,
-        "score": -0.644,
-        "hour": 11,
+        "score": -0.643,
+        "hour": 8,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 155,
+        "open_time": "2026-01-29 03:39:00",
+        "pips": -5.0,
+        "is_winner": false,
+        "score": -0.637,
+        "hour": 1,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 156,
+        "open_time": "2026-01-29 02:03:00",
+        "pips": 1045.0,
+        "is_winner": true,
+        "score": -0.637,
+        "hour": 0,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 157,
+        "open_time": "2026-01-29 00:02:00",
+        "pips": 2655.0,
+        "is_winner": true,
+        "score": -0.637,
+        "hour": 22,
         "duration": 1.0
       }
     ]
