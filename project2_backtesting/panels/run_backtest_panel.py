@@ -413,6 +413,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     backtest_dir = os.path.join(project_root, 'project2_backtesting')
 
+    # WHY (May 2026): Refuse to start if firm config is off.
+    #      Running without it produces results that don't match MT5 and
+    #      wastes a 15-minute run. Gate on the main thread so the
+    #      messagebox renders correctly before the worker spawns.
+    # CHANGED: May 2026 — block backtest when parity settings off
+    if _a48_use_config_var is not None and not _a48_use_config_var.get():
+        import tkinter.messagebox as _mb
+        _go = _mb.askyesno(
+            "Firm config is OFF",
+            "Firm config is currently OFF.\n\n"
+            "Without it, Python will not match MT5 (no spread filter, "
+            "no swap, no hard close, etc.). The results will be misleading.\n\n"
+            "Are you sure you want to run anyway?",
+            icon="warning"
+        )
+        if not _go:
+            output_text.insert(tk.END,
+                "\n⚠️  Backtest cancelled — please check '⚙️ Use Configuration settings' "
+                "and try again.\n\n")
+            output_text.see(tk.END)
+            return
+
     def ui(fn):
         """Schedule fn on the main thread."""
         progress_bar.after(0, fn)
@@ -948,6 +970,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      None = use module default (_SESSION_SPREAD_MULTIPLIERS).
             # CHANGED: April 2026 — per-firm spread calibration
             _cfg_session_spread_multipliers = None
+            # WHY (May 2026): The parity status banner reads these even when
+            #      _a48_use_cfg is False. Hoist defaults to outer scope so
+            #      banner doesn't NameError on un-configured runs.
+            # CHANGED: May 2026 — outer-scope defaults for parity banner
+            _cfg_hard_close = -1
+            _cfg_market_reopen = -1
+            _cfg_cooldown = 0
+            _cfg_min_hold = 0
 
             if _a48_use_cfg:
                 try:
@@ -1484,6 +1514,52 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "
                   f"regime_conditions={len(_run_settings['regime_filter_conditions'])}")
+
+            # WHY (May 2026): Show user the full parity status so they
+            #      can see at a glance whether the run will match MT5.
+            #      If any critical setting is missing, flag it RED.
+            # CHANGED: May 2026 — parity status banner
+            output_text.insert(tk.END, "\n" + "═"*70 + "\n")
+            output_text.insert(tk.END, "  PYTHON ↔ MT5 PARITY STATUS\n")
+            output_text.insert(tk.END, "═"*70 + "\n")
+            _parity_lines = []
+            def _parity(label, value, ok_pred):
+                _ok = "✓" if ok_pred else "✗"
+                _parity_lines.append(f"  {_ok} {label:<32} = {value}")
+            _parity("Firm config loaded",
+                    "YES" if _a48_use_cfg else "NO (using defaults!)",
+                    _a48_use_cfg)
+            _parity("Max spread filter (pips)",
+                    f"{_cfg_max_spread:.0f}" if _cfg_max_spread > 0 else "OFF",
+                    _cfg_max_spread > 0)
+            _parity("Variable spread",
+                    "ON" if _cfg_variable_spread else "OFF",
+                    True)  # either is fine, just show state
+            _parity("Session spread multipliers",
+                    "loaded" if _cfg_session_spread_multipliers else "default (1.0x)",
+                    _cfg_session_spread_multipliers is not None)
+            _parity("Hard close hour (GMT)",
+                    f"{_cfg_hard_close}" if _cfg_hard_close != -1 else "OFF",
+                    True)  # -1 is valid for 24/7
+            _parity("Market reopen hour (GMT)",
+                    f"{_cfg_market_reopen}" if _cfg_market_reopen != -1 else "OFF",
+                    True)
+            _parity("Cooldown candles",
+                    f"{_cfg_cooldown}",
+                    True)
+            _parity("Min hold minutes",
+                    f"{_cfg_min_hold}",
+                    True)
+            _parity("Swap long (pips/night)",
+                    f"{_cfg_swap_long:+.2f}",
+                    True)
+            _parity("Swap short (pips/night)",
+                    f"{_cfg_swap_short:+.2f}",
+                    True)
+            for _line in _parity_lines:
+                output_text.insert(tk.END, _line + "\n")
+            output_text.insert(tk.END, "═"*70 + "\n\n")
+            output_text.see(tk.END)
 
             # Determine which TFs to test
             # WHY (Phase 33 Fix 9): Old list missed D1 timeframe. Some users
@@ -4241,8 +4317,40 @@ def build_panel(parent):
 
     # WHY: Firm/leverage/risk settings are useless if the user forgets
     #      to check this box. Default ON so config is always used.
+    # WHY (May 2026): The checkbox also gates max_spread_pips, swap,
+    #      hard_close, market_reopen, cooldown, session multipliers,
+    #      min_hold, and DD alerts. Without it, Python diverges from
+    #      MT5 by a lot. Make it impossible to silently turn off.
     # CHANGED: April 2026 — default to ON
+    # CHANGED: May 2026 — warn on uncheck + log to output
     _a48_use_config_var = tk.BooleanVar(value=True)
+
+    def _a48_on_toggle(*_args):
+        try:
+            if not _a48_use_config_var.get():
+                # User unchecked — show a stern warning
+                import tkinter.messagebox as _mb
+                _resp = _mb.askyesno(
+                    "Disable firm config?",
+                    "Turning OFF firm config will skip ALL parity settings:\n"
+                    "  • Max spread filter (65 pips)\n"
+                    "  • Session spread multipliers\n"
+                    "  • Asymmetric swap\n"
+                    "  • Hard close hour\n"
+                    "  • Market reopen hour\n"
+                    "  • Cooldown / min hold\n"
+                    "  • DD alerts\n\n"
+                    "Python results will NOT match MT5.\n\n"
+                    "Are you sure you want to disable firm config?",
+                    icon="warning"
+                )
+                if not _resp:
+                    # Snap it back ON
+                    _a48_use_config_var.set(True)
+        except Exception:
+            pass
+
+    _a48_use_config_var.trace_add("write", _a48_on_toggle)
 
     # Read current config values to show in the label
     _a48_preview = ""
