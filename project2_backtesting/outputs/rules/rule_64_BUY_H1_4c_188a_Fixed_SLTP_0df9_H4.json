@@ -158,8 +158,8 @@
     {
       "entry_time": "2026-03-05T00:00:00.000000",
       "exit_time": "2026-03-05T00:00:00.000000",
-      "entry_price": 5152.69,
-      "exit_price": 5151.19,
+      "entry_price": 5152.7,
+      "exit_price": 5151.2,
       "direction": "BUY",
       "pips": -150.0,
       "net_pips": -191.0,
@@ -177,8 +177,8 @@
     {
       "entry_time": "2026-03-05T04:00:00.000000",
       "exit_time": "2026-03-05T04:00:00.000000",
-      "entry_price": 5172.62,
-      "exit_price": 5171.12,
+      "entry_price": 5172.63,
+      "exit_price": 5171.13,
       "direction": "BUY",
       "pips": -150.0,
       "net_pips": -191.0,
@@ -196,8 +196,8 @@
     {
       "entry_time": "2026-03-05T08:00:00.000000",
       "exit_time": "2026-03-05T08:00:00.000000",
-      "entry_price": 5148.54,
-      "exit_price": 5147.04,
+      "entry_price": 5148.55,
+      "exit_price": 5147.05,
       "direction": "BUY",
       "pips": -150.0,
       "net_pips": -191.0,

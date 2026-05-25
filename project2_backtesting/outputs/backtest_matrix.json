@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-25 14:28",
+  "generated_at": "2026-05-25 15:31",
   "entry_timeframe": "H4",
   "max_trades_per_day": 0,
   "tested_timeframes": [
@@ -9,7 +9,7 @@
   "stopped_early": false,
   "completed_combos": 1540,
   "total_combos": 1540,
-  "elapsed_seconds": 973.1,
+  "elapsed_seconds": 989.9,
   "spread_pips": 37.0,
   "commission_pips": 4.0,
   "slippage_pips": 1.0,
