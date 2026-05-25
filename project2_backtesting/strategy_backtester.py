@@ -1032,22 +1032,36 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # Default cost spread — overridden below if variable_spread is on.
         _spread_for_cost = spread_pips
 
-        # WHY: MaxSpreadPips filter for vectorized path.
-        # CHANGED: April 2026 — max spread filter in vectorized path
-        if max_spread_pips > 0 and variable_spread:
+        # WHY: MaxSpreadPips filter — skip when expected entry spread
+        #      exceeds threshold. Mirrors EA's MaxSpreadPips check.
+        # WHY (May 2026 — parity): Old code required variable_spread=True
+        #      to fire. EA fires regardless of cost-spread modeling.
+        #      Now: fires whenever the firm has a max_spread_pips_filter
+        #      set, using session multipliers if available (so the
+        #      estimator matches what MT5 sees) and falling back to
+        #      base spread_pips otherwise.
+        # CHANGED: May 2026 — decouple from variable_spread
+        if max_spread_pips > 0:
             _entry_spread = _get_session_spread(
+                all_times[_eb], spread_pips,
+                variable_spread=True,
+                multipliers=session_spread_multipliers,
+            ) if session_spread_multipliers else float(spread_pips)
+            if _entry_spread > max_spread_pips:
+                continue
+
+        if variable_spread:
+            _entry_spread_cost = _get_session_spread(
                 all_times[_eb], spread_pips, variable_spread,
                 multipliers=session_spread_multipliers,
             )
-            if _entry_spread > max_spread_pips:
-                continue
             # Bid-anchored entry — only slippage added, not spread.
             # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
             if direction == "BUY":
                 entry_price = all_opens[_eb] + _slip_this_entry * pip_size
             else:
                 entry_price = all_opens[_eb] - _slip_this_entry * pip_size
-            _spread_for_cost = _entry_spread   # use session spread for cost
+            _spread_for_cost = _entry_spread_cost   # use session spread for cost
 
         entry_time = all_times[_eb]
 
@@ -1931,11 +1945,21 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             multipliers=session_spread_multipliers,
         )
 
-        # WHY: MaxSpreadPips filter — skip entry when spread is too wide.
-        #      Matches MT5 EA's MaxSpreadPips check.
-        # CHANGED: April 2026 — max spread filter
-        if max_spread_pips > 0 and _trade_spread > max_spread_pips:
-            continue
+        # WHY: MaxSpreadPips filter — skip entry when expected spread
+        #      is too wide. Matches MT5 EA's MaxSpreadPips check.
+        # WHY (May 2026 — parity): For the filter, always use session
+        #      multipliers (if firm provides them) so the estimate
+        #      reflects what MT5 actually sees on that bar. This is
+        #      independent of how cost is modeled.
+        # CHANGED: May 2026 — session-aware filter regardless of cost model
+        if max_spread_pips > 0:
+            _filter_spread = _get_session_spread(
+                next_candle["timestamp"], spread_pips,
+                variable_spread=True,
+                multipliers=session_spread_multipliers,
+            ) if session_spread_multipliers else float(spread_pips)
+            if _filter_spread > max_spread_pips:
+                continue
 
         # WHY: Restore bid-anchored entry. Spread paid as a cost line in
         #      net_pips below, NOT baked into entry_price. Matches MT5 EA's
@@ -2762,6 +2786,27 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 continue
         except Exception:
             pass
+
+        # WHY (May 2026): MaxSpreadPips filter for the non-vectorized
+        #      ATR / management path. Without this check the matrix
+        #      took entries on high-spread bars that MT5 would skip,
+        #      breaking Python/MT5 parity. EA's MaxSpreadPips check
+        #      fires regardless of cost-model toggle, so the filter
+        #      uses session multipliers always when available.
+        # CHANGED: May 2026 — fast_backtest spread-filter parity
+        if max_spread_pips > 0:
+            try:
+                _entry_ts_for_spread = df.index[_eb_int]
+            except Exception:
+                _entry_ts_for_spread = None
+            if _entry_ts_for_spread is not None:
+                _filter_spread_fbt = _get_session_spread(
+                    _entry_ts_for_spread, spread_pips,
+                    variable_spread=True,
+                    multipliers=session_spread_multipliers,
+                ) if session_spread_multipliers else float(spread_pips)
+                if _filter_spread_fbt > max_spread_pips:
+                    continue
 
         # WHY: DD circuit breaker — check if halted, and detect daily reset.
         # CHANGED: May 2026 — DD circuit breaker
