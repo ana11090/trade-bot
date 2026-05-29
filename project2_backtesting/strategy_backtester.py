@@ -106,17 +106,24 @@ def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=Fals
 
 _TF_MINUTES = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240, 'D1': 1440}
 _tick_cache = {}         # {(data_dir, year, month): DataFrame or None}
-_tick_available = {}     # {data_dir: bool} — cached availability check
+# NOTE (May 2026): the availability cache was REMOVED. Reading os.listdir is
+#                  a 1 ms operation. The cache caused a real bug: when
+#                  the parity banner rendered before tick files were
+#                  on disk, False got cached for the rest of the
+#                  Python process — even after the user copied ticks
+#                  in. No restart of the app window cleared it because
+#                  the process kept running. Just read the disk every
+#                  time; the cost is negligible.
 
 def _check_ticks_available(data_dir):
     """Return True if tick CSV files exist in this data source folder.
 
-    Logs ONE diagnostic line per data_dir on first call so the user
-    sees whether ticks were found and which files. Subsequent calls
-    use the cached answer silently.
+    Re-reads the disk every call. Logs once per (data_dir, result)
+    transition so the log isn't spammy but a "ticks appeared" event
+    DOES surface.
     """
-    if data_dir in _tick_available:
-        return _tick_available[data_dir]
+    if not data_dir:
+        return False
     tick_files = []
     err = None
     try:
@@ -125,28 +132,36 @@ def _check_ticks_available(data_dir):
     except Exception as e:
         err = repr(e)
     has = bool(tick_files)
-    _tick_available[data_dir] = has
-    # WHY (May 2026): Make missing tick data visible. Without ticks the
-    #      spread filter silently no-ops, which previously hid the
-    #      issue for hours.
-    # CHANGED: May 2026 — visible tick-file diagnostic
+
+    # WHY (May 2026): Log only on transition (False→True or True→False)
+    #      to avoid spamming when the parity banner re-renders. Use a
+    #      lightweight module-level dict that records LAST RESULT only,
+    #      not gated availability.
+    # CHANGED: May 2026 — disk-fresh check + transition-only logging
     try:
-        if has:
-            log.info(
-                f"[TICKS] Found {len(tick_files)} tick file(s) in {data_dir}: "
-                f"{', '.join(sorted(tick_files)[:5])}"
-                f"{' …' if len(tick_files) > 5 else ''}"
-            )
-        else:
-            log.warning(
-                f"[TICKS] NO TICK FILES FOUND in {data_dir} "
-                f"(looked for *_ticks*.csv). Spread filter will be a no-op. "
-                f"Copy ticks from MT5's MQL5/Files/ to this folder. "
-                f"Expected names like XAUUSD_ticks_2026_01.csv. "
-                f"({err if err else 'no error'})"
-            )
-    except Exception:
-        pass
+        last = _check_ticks_available._last_result.get(data_dir)
+    except AttributeError:
+        _check_ticks_available._last_result = {}
+        last = None
+    if last is not has:
+        _check_ticks_available._last_result[data_dir] = has
+        try:
+            if has:
+                log.info(
+                    f"[TICKS] Found {len(tick_files)} tick file(s) in {data_dir}: "
+                    f"{', '.join(sorted(tick_files)[:5])}"
+                    f"{' …' if len(tick_files) > 5 else ''}"
+                )
+            else:
+                log.warning(
+                    f"[TICKS] NO TICK FILES FOUND in {data_dir} "
+                    f"(looked for *_ticks*.csv). Spread filter will be a no-op. "
+                    f"Copy ticks from MT5's MQL5/Files/ to this folder. "
+                    f"Expected names like XAUUSD_ticks_2026_01.csv. "
+                    f"({err if err else 'no error'})"
+                )
+        except Exception:
+            pass
     return has
 
 def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
