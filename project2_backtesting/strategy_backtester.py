@@ -109,15 +109,44 @@ _tick_cache = {}         # {(data_dir, year, month): DataFrame or None}
 _tick_available = {}     # {data_dir: bool} — cached availability check
 
 def _check_ticks_available(data_dir):
-    """Return True if tick CSV files exist in this data source folder."""
+    """Return True if tick CSV files exist in this data source folder.
+
+    Logs ONE diagnostic line per data_dir on first call so the user
+    sees whether ticks were found and which files. Subsequent calls
+    use the cached answer silently.
+    """
     if data_dir in _tick_available:
         return _tick_available[data_dir]
+    tick_files = []
+    err = None
     try:
-        has = any('_ticks' in f and f.endswith('.csv')
-                  for f in os.listdir(data_dir))
-    except Exception:
-        has = False
+        tick_files = [f for f in os.listdir(data_dir)
+                      if '_ticks' in f and f.endswith('.csv')]
+    except Exception as e:
+        err = repr(e)
+    has = bool(tick_files)
     _tick_available[data_dir] = has
+    # WHY (May 2026): Make missing tick data visible. Without ticks the
+    #      spread filter silently no-ops, which previously hid the
+    #      issue for hours.
+    # CHANGED: May 2026 — visible tick-file diagnostic
+    try:
+        if has:
+            log.info(
+                f"[TICKS] Found {len(tick_files)} tick file(s) in {data_dir}: "
+                f"{', '.join(sorted(tick_files)[:5])}"
+                f"{' …' if len(tick_files) > 5 else ''}"
+            )
+        else:
+            log.warning(
+                f"[TICKS] NO TICK FILES FOUND in {data_dir} "
+                f"(looked for *_ticks*.csv). Spread filter will be a no-op. "
+                f"Copy ticks from MT5's MQL5/Files/ to this folder. "
+                f"Expected names like XAUUSD_ticks_2026_01.csv. "
+                f"({err if err else 'no error'})"
+            )
+    except Exception:
+        pass
     return has
 
 def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
@@ -148,7 +177,23 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                     tick_path = _candidate
                     break
             if tick_path is None:
+                # WHY (May 2026): Tick directory exists but the specific
+                #      month is missing. Show user which patterns we
+                #      tried so they know what to export from MT5.
+                # CHANGED: May 2026 — per-month tick miss diagnostic
                 _tick_cache[cache_key] = None
+                _miss_key = (data_dir, year, month, 'logged')
+                if _miss_key not in _tick_cache:
+                    _tick_cache[_miss_key] = True
+                    try:
+                        log.info(
+                            f"[TICKS] No tick file for {year:04d}-{month:02d} "
+                            f"in {data_dir} (tried {patterns[0]} and "
+                            f"{patterns[1]}). Bars in this month will skip "
+                            f"the spread filter."
+                        )
+                    except Exception:
+                        pass
             else:
                 try:
                     from shared.data_sources import assert_not_lfs_stub
@@ -3414,6 +3459,24 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: April 2026 — Phase 35 Fix 1b — updated limit reference
         log.warning(f"  [fast_backtest] Skipped {_skipped_count} trade(s) with absurd pips "
                     f"(SANE_PIP_LIMIT_SKIP=200_000). Check exit strategy for silent failures.")
+
+    # WHY (May 2026): One-line summary of spread-filter skip activity
+    #      per fast_backtest call. If skip_count is 0 when max_spread_pips
+    #      > 0, the filter never fired — investigate ticks.
+    # CHANGED: May 2026 — spread-filter summary log
+    try:
+        _final_skip_count = getattr(fast_backtest, '_spread_filter_skip_count', 0)
+        if max_spread_pips > 0:
+            log.info(
+                f"[SPREAD-FILTER] threshold={max_spread_pips:.0f}p "
+                f"data_dir={'set' if data_dir else 'None'} "
+                f"ticks_available={'yes' if (data_dir and _check_ticks_available(data_dir)) else 'no'} "
+                f"skipped={_final_skip_count} entries"
+            )
+        # Reset the counter so the next combo starts fresh.
+        fast_backtest._spread_filter_skip_count = 0
+    except Exception:
+        pass
 
     return trades
 

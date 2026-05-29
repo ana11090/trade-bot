@@ -1538,6 +1538,43 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _parity("Session spread multipliers",
                     "loaded" if _cfg_session_spread_multipliers else "default (1.0x)",
                     _cfg_session_spread_multipliers is not None)
+            # WHY (May 2026): Show whether tick files are present in
+            #      the data folder. If ✗, the spread filter is a no-op.
+            # CHANGED: May 2026 — visible tick diagnostic in banner
+            _ticks_ok = False
+            _tick_summary = "NO TICK FILES (filter disabled)"
+            try:
+                from project2_backtesting.strategy_backtester import (
+                    _check_ticks_available
+                )
+                # Use the same data_dir the backtest will use
+                _probe_dir = (_cfg_data_dir
+                              if (_a48_use_cfg and '_cfg_data_dir' in dir())
+                              else None)
+                if _probe_dir is None:
+                    # Fall back to the H4 CSV's parent dir
+                    try:
+                        _probe_dir = os.path.dirname(candle_path)
+                    except Exception:
+                        _probe_dir = None
+                if _probe_dir:
+                    _ticks_ok = _check_ticks_available(_probe_dir)
+                    if _ticks_ok:
+                        import os as _os
+                        _files = [f for f in _os.listdir(_probe_dir)
+                                  if '_ticks' in f and f.endswith('.csv')]
+                        _tick_summary = (
+                            f"{len(_files)} tick files in {_probe_dir}"
+                        )
+                    else:
+                        _tick_summary = (
+                            f"NO TICK FILES in {_probe_dir} — filter disabled"
+                        )
+            except Exception as _be:
+                _tick_summary = f"check failed: {_be}"
+            _parity("Tick bid/ask data",
+                    _tick_summary,
+                    _ticks_ok)
             _parity("Hard close hour (GMT)",
                     f"{_cfg_hard_close}" if _cfg_hard_close != -1 else "OFF",
                     True)  # -1 is valid for 24/7
