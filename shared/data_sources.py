@@ -338,11 +338,30 @@ def import_data_source(source_folder, source_id, display_name='', broker='', tim
     dest = os.path.join(get_sources_dir(), source_id)
     os.makedirs(dest, exist_ok=True)
 
+    # WHY (May 2026): Separate OHLC copy from tick copy. Tick files
+    #      (named *_ticks_*.csv or *_ticks.csv) match the OHLC
+    #      pattern *.csv, so the old loop would copy them into the
+    #      data source — which is what we want — but the panel
+    #      previously prompted the user separately for ticks and
+    #      called import_tick_data() only on explicit click. That
+    #      step was easy to forget. Now we copy OHLC first, then
+    #      automatically copy any tick files present in the same
+    #      source folder. import_tick_data() does the right thing
+    #      for both folder-of-monthlies and single-MT5-export shapes.
+    # CHANGED: May 2026 — auto-import ticks alongside OHLC
     copied = 0
+    ohlc_files = []
+    tick_files = []
     for f in os.listdir(source_folder):
-        if f.endswith('.csv'):
-            shutil.copy2(os.path.join(source_folder, f), os.path.join(dest, f))
-            copied += 1
+        if not f.endswith('.csv'):
+            continue
+        if '_ticks' in f.lower() or '_tick.' in f.lower():
+            tick_files.append(f)
+        else:
+            ohlc_files.append(f)
+    for f in ohlc_files:
+        shutil.copy2(os.path.join(source_folder, f), os.path.join(dest, f))
+        copied += 1
 
     # Save metadata
     meta = {
@@ -355,7 +374,22 @@ def import_data_source(source_folder, source_id, display_name='', broker='', tim
     with open(os.path.join(dest, '_source_info.json'), 'w') as f:
         json.dump(meta, f, indent=2)
 
-    return {'source_id': source_id, 'path': dest, 'files_copied': copied}
+    # WHY (May 2026): Auto-import ticks if present. Skip silently if
+    #      none found — many sources are OHLC-only. Errors during
+    #      tick import don't fail the OHLC import.
+    # CHANGED: May 2026 — auto-import ticks alongside OHLC
+    tick_result = None
+    if tick_files:
+        try:
+            tick_result = import_tick_data(source_folder, source_id)
+        except Exception as _te:
+            print(f"[IMPORT] Tick auto-import failed: {_te}")
+
+    result = {'source_id': source_id, 'path': dest, 'files_copied': copied}
+    if tick_result:
+        result['tick_files_copied'] = tick_result.get('tick_files_copied', 0)
+        result['tick_mode']         = tick_result.get('mode')
+    return result
 
 
 # WHY: MT5's Symbols-window export (Ctrl+U → Bars/Ticks → Export) writes

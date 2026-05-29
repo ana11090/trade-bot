@@ -7,7 +7,8 @@ __pycache__/
 *.pkl
 trade_histories/*/project1_results/scenarios/*/*.png
 
-# Tick data (too large for git - kept locally only)
+# Raw tick imports (used as input by build_candles_from_ticks.py)
+# stay excluded — they're hundreds of MB and not needed at runtime.
 xauusd/ticks/
 
 # OS files
@@ -30,11 +31,10 @@ datasets/*/candles/*.csv
 project1_reverse_engineering/outputs/smart_feature_matrix.csv
 
 # Source CSVs are tracked via git-lfs (see .gitattributes).
-# Tick files stay excluded — Python backtester uses M1 OHLC, not ticks,
-# and per-symbol ticks are too large to be worth tracking.
-data/sources/*/ticks/
-data/sources/*/*_ticks.csv
-data/sources/*/*ticks*.csv
+# Tick files INSIDE a data source ARE tracked (via LFS) so they
+# propagate across machines for the spread-filter parity. See
+# .gitattributes for the LFS rule. Previously excluded — moved to
+# May 2026 once the spread filter started needing real bid/ask.
 xauusd/Files xauusd levereged/*.csv
 xauusd/xauusd unlimited levereged/*.csv
 # Large output files
