@@ -391,7 +391,11 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
                        daily_dd_safety_pct=None, total_dd_safety_pct=None,
                        default_sl_pips=150.0,
                        funded_protect=False, payout_period_days=14,
-                       total_dd_alert_pct=None):
+                       total_dd_alert_pct=None,
+                       # Trailing-lock mechanic (None/'static' = old behavior)
+                       drawdown_type='static',
+                       hwm_lock_gain_pct=None,
+                       hwm_lock_level='starting_balance'):
     """
     Simulate equity curve, count prop firm DD breaches and safety stops.
 
@@ -410,6 +414,8 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
             'total_months': 0, 'months_blown': 0,
             'worst_daily_pct': 0, 'worst_total_pct': 0,
+            'firm_breaches_total': 0, 'safety_stops_total': 0,
+            'drawdown_type': drawdown_type, 'hwm_locked': False,
         }
 
     # WHY: Old code hardcoded sl_pips=150 (XAUUSD-only). Now from parameter.
@@ -438,6 +444,8 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             'avg_days_between_blows': 0, 'survival_rate_per_month': 0,
             'total_months': 0, 'months_blown': 0,
             'worst_daily_pct': 0, 'worst_total_pct': 0,
+            'firm_breaches_total': 0, 'safety_stops_total': 0,
+            'drawdown_type': drawdown_type, 'hwm_locked': False,
         }
 
     days = sorted(daily_pnls.keys())
@@ -467,6 +475,7 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     days_between_blows = []
     worst_daily_pct = 0.0
     worst_total_pct = 0.0
+    hwm_locked = False
 
     for day in days:
         # WHY: Funded protection — when total trailing DD hits alert level,
@@ -479,27 +488,26 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             except Exception:
                 pass
 
-        day_pnl = daily_pnls[day]
+        raw_day_pnl = daily_pnls[day]   # uncapped, real loss
 
-        # ── Apply daily safety stop (bot stops trading when threshold hit) ──
-        # WHY: If safety stop is set at 4% and the day's losses reach 4%, the
-        #      bot pauses and CAN'T lose more. Previously the simulator counted
-        #      the safety stop AND applied the full loss, which could let the day
-        #      "blow up" the account even though trading had already stopped —
-        #      logically impossible. Cap the loss at the safety threshold.
-        # CHANGED: April 2026 — cap losses at safety threshold
+        # ── Safety stop (informational; account survives) ──────────────────
+        # WHY: bot voluntarily halts here. This is NOT a breach. It must never
+        #      suppress the breach check below.
         daily_safety_triggered = False
-        if daily_dd_safety and day_pnl < 0 and abs(day_pnl) >= daily_dd_safety:
-            day_pnl = -daily_dd_safety   # cap the loss at the safety level
+        if daily_dd_safety and raw_day_pnl < 0 and abs(raw_day_pnl) >= daily_dd_safety:
             daily_safety_triggered = True
             daily_safety_dates.append(day)
 
-        if day_pnl < 0:
-            daily_pct = abs(day_pnl) / account_size * 100
+        # ── ACTUAL firm breach — measured on the RAW uncapped loss ─────────
+        # WHY: the firm kills the account at daily_dd_limit regardless of whether
+        #      our bot would have stopped at the safety line. A 36% day is a
+        #      breach even if our safety stop is 2.7%.
+        if raw_day_pnl < 0:
+            daily_pct = abs(raw_day_pnl) / account_size * 100
             worst_daily_pct = max(worst_daily_pct, daily_pct)
 
-        # Check daily breach — only possible if safety didn't trigger first
-        if not daily_safety_triggered and day_pnl < 0 and abs(day_pnl) >= daily_dd_limit:
+        daily_breach_today = (raw_day_pnl < 0 and abs(raw_day_pnl) >= daily_dd_limit)
+        if daily_breach_today:
             daily_breach_dates.append(day)
             blown_count += 1
             if last_blown_day:
@@ -511,12 +519,45 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             last_blown_day = day
             balance = account_size
             high_water = account_size
+            hwm_locked = False
             continue
 
-        balance += day_pnl
-        high_water = max(high_water, balance)
+        # If no breach: advance balance. If the safety stop fired, the bot
+        # halted at the safety line, so the realized loss for equity-curve
+        # continuation is capped at the safety threshold (models the halt).
+        # The breach decision above already used the raw loss, so this cap
+        # cannot hide a breach.
+        if daily_safety_triggered:
+            day_pnl = -daily_dd_safety
+        else:
+            day_pnl = raw_day_pnl
 
-        total_dd = high_water - balance
+        balance += day_pnl
+
+        # ── Trailing DD high-water with optional lock (firm-specific) ──────
+        # PARITY: mirrors shared/prop_firm_simulator.py L296-311 and
+        #         project3_live_trading/ea_generator.py L1256-1299.
+        if drawdown_type in ('trailing', 'trailing_eod'):
+            if hwm_lock_gain_pct and not hwm_locked:
+                gain_pct = (balance - account_size) / account_size * 100.0
+                if gain_pct >= hwm_lock_gain_pct:
+                    hwm_locked = True
+                    if hwm_lock_level == 'starting_balance_strict':
+                        # zero buffer: floor lands exactly at starting balance
+                        high_water = account_size * (1.0 + total_dd_limit_pct / 100.0)
+                    else:
+                        high_water = account_size
+                else:
+                    high_water = max(high_water, balance)
+            elif hwm_locked:
+                pass   # frozen
+            else:
+                high_water = max(high_water, balance)
+        else:
+            # static: floor is fixed at starting balance
+            high_water = account_size
+
+        total_dd = high_water - balance              # RAW, uncapped
         total_dd_pct = total_dd / account_size * 100
         worst_total_pct = max(worst_total_pct, total_dd_pct)
 
@@ -530,33 +571,13 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             except Exception:
                 pass
 
-        # ── Apply total safety stop (cap total DD at safety threshold) ───────
-        # WHY: The old code restored balance to (high_water - total_dd_safety)
-        #      when the safety trigger fired. But the trigger condition
-        #      (total_dd >= total_dd_safety) means balance was ALREADY at
-        #      or below the safety level. So restoration was always an
-        #      upward adjustment — phantom equity equal to the overshoot.
-        #      Example: high_water=$10,500, safety=$300, day's loss pushed
-        #      balance to $9,900. Restoration set balance to $10,200 → a
-        #      phantom $300 gain. Subsequent days compounded from the
-        #      phantom balance, inflating strategy performance.
-        #      Fix: leave balance at its real value. Cap total_dd for the
-        #      breach check (preserving the modeling intent that the bot
-        #      halted at the safety line and prevented a real breach).
-        #      Subsequent days continue from the real balance, which is
-        #      more conservative and more honest.
-        # CHANGED: April 2026 — remove phantom equity restoration (audit HIGH)
-        total_safety_triggered = False
+        # Total safety stop (informational; account survives)
         if total_dd_safety and total_dd >= total_dd_safety and total_dd < total_dd_limit:
-            # Do NOT restore balance — leave it at its real value.
-            # Only cap total_dd for the breach check below.
-            total_dd = total_dd_safety
-            total_dd_pct = total_dd / account_size * 100
-            total_safety_triggered = True
             total_safety_dates.append(day)
+            # do NOT restore balance, do NOT cap the breach check
 
-        # Check total breach — only possible if total safety didn't trigger
-        if not total_safety_triggered and total_dd >= total_dd_limit:
+        # ACTUAL total breach — on RAW total_dd
+        if total_dd >= total_dd_limit:
             total_breach_dates.append(day)
             blown_count += 1
             if last_blown_day:
@@ -568,6 +589,7 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
             last_blown_day = day
             balance = account_size
             high_water = account_size
+            hwm_locked = False
 
     total_days = (pd.to_datetime(days[-1]) - pd.to_datetime(days[0])).days if len(days) > 1 else 1
     total_months = max(total_days / 30, 1)
@@ -598,6 +620,10 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
         'daily_dd_limit_pct': daily_dd_limit_pct,
         'total_dd_limit_pct': total_dd_limit_pct,
         'funded_protect_stops': _payout_trades_stopped if funded_protect else 0,
+        'firm_breaches_total': len(daily_breach_dates) + len(total_breach_dates),
+        'safety_stops_total': len(daily_safety_dates) + len(total_safety_dates),
+        'drawdown_type': drawdown_type,
+        'hwm_locked': hwm_locked,
     }
 
 

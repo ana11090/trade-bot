@@ -4658,54 +4658,121 @@ def _update_breach_display(trades):
         _breach_label.config(text="No trade data", fg="#888")
         return
 
-    # WHY: Use firm-specific DD limits from rule/config, not generic 5%/10%.
-    # CHANGED: April 2026 — firm DD limits in refiner summary
-    _sum_daily_lim = 5.0
-    _sum_total_lim = 10.0
-    _sum_acct = 100000
+    # Stage-aware DD limits + safety alerts, read from firm JSON exactly like
+    # the account-info line at ~L6620.
+    from project2_backtesting.strategy_refiner import get_prop_firm_presets
+
+    _cur_stage = _stage_var.get().lower() if _stage_var else 'funded'
+
+    _sum_daily_lim = 3.0
+    _sum_total_lim = 6.0
+    _sum_acct      = 100000
+    _dd_type       = 'static'
+    _hwm_lock_gain = None
+    _hwm_lock_lvl  = 'starting_balance'
+    _daily_safety  = None
+    _total_safety  = None
+
     try:
-        import sys as _sum_sys
-        _sum_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
-        if _sum_p1_dir not in _sum_sys.path:
-            _sum_sys.path.insert(0, _sum_p1_dir)
-        import config_loader as _sum_cl
-        _sum_cfg = _sum_cl.load()
-        _sum_daily_lim = float(_sum_cfg.get('dd_daily_pct', 0)) or 5.0
-        _sum_total_lim = float(_sum_cfg.get('dd_total_pct', 0)) or 10.0
-        _sum_acct = float(_sum_cfg.get('prop_firm_account', 0)) or 100000
+        firm = _opt_target_var.get() if _opt_target_var else ""
+        presets = get_prop_firm_presets()
+        firm_data = presets.get(firm, {}).get('firm_data')
+        _challenge = firm_data['challenges'][0]
+
+        if _cur_stage in ('evaluation', 'eval'):
+            _phase = _challenge.get('phases', [{}])[0]
+            _sum_daily_lim = float(_phase.get('max_daily_drawdown_pct', 3.0))
+            _sum_total_lim = float(_phase.get('max_total_drawdown_pct', 6.0))
+            _dd_type       = _phase.get('drawdown_type', 'static')
+            _want_stage    = 'evaluation'
+            _want_type     = 'eval_settings'
+        else:
+            _funded = _challenge.get('funded', {})
+            _sum_daily_lim = float(_funded.get('max_daily_drawdown_pct', 3.0))
+            _sum_total_lim = float(_funded.get('max_total_drawdown_pct', 6.0))
+            _dd_type       = _funded.get('drawdown_type', 'static')
+            _want_stage    = 'funded'
+            _want_type     = 'funded_accumulate'
+
+        # trailing-lock mechanic (shared across stages)
+        _tdd = (firm_data.get('drawdown_mechanics', {}) or {}).get('trailing_dd', {})
+        _hwm_lock_gain = _tdd.get('lock_after_gain_pct')
+        _hwm_lock_lvl  = _tdd.get('lock_level', 'starting_balance')
+
+        # stage-specific safety alert percentages from trading_rules
+        for _r in firm_data.get('trading_rules', []):
+            if _r.get('stage') == _want_stage and _r.get('type') == _want_type:
+                _p = _r.get('parameters', {})
+                if _p.get('daily_dd_alert_pct') is not None:
+                    _daily_safety = float(_p['daily_dd_alert_pct'])
+                if _p.get('total_dd_alert_pct') is not None:
+                    _total_safety = float(_p['total_dd_alert_pct'])
+                break
+
+        sizes = _challenge.get('account_sizes', [100000])
+        try:
+            _sum_acct = float(_acct_var.get()) if _acct_var and _acct_var.get() else float(sizes[-1])
+        except Exception:
+            _sum_acct = float(sizes[-1]) if sizes else 100000
     except Exception:
         pass
-    breaches = count_dd_breaches(trades, account_size=_sum_acct,
-                                  daily_dd_limit_pct=_sum_daily_lim, total_dd_limit_pct=_sum_total_lim,
-                                  daily_dd_safety_pct=_sum_daily_lim * 0.9,
-                                  total_dd_safety_pct=_sum_total_lim * 0.95,
-                                  funded_protect=False)
 
-    blown = breaches['blown_count']
-    daily_dd_limit = breaches.get('daily_dd_limit_pct', _sum_daily_lim)
-    total_dd_limit = breaches.get('total_dd_limit_pct', _sum_total_lim)
+    breaches = count_dd_breaches(
+        trades,
+        account_size=_sum_acct,
+        daily_dd_limit_pct=_sum_daily_lim,
+        total_dd_limit_pct=_sum_total_lim,
+        daily_dd_safety_pct=_daily_safety,
+        total_dd_safety_pct=_total_safety,
+        drawdown_type=_dd_type,
+        hwm_lock_gain_pct=_hwm_lock_gain,
+        hwm_lock_level=_hwm_lock_lvl,
+        funded_protect=False,
+    )
 
-    if blown == 0:
+    _stage_label = "EVALUATION" if _cur_stage in ('evaluation', 'eval') else "FUNDED"
+    firm_breaches = breaches['blown_count']
+    safety_stops  = breaches.get('safety_stops_total', 0)
+    daily_lim = breaches.get('daily_dd_limit_pct', _sum_daily_lim)
+    total_lim = breaches.get('total_dd_limit_pct', _sum_total_lim)
+
+    # Safety line — informational, NEVER fatal
+    _dash = "\u2014"
+    _daily_saf_str = f"{_daily_safety}%" if _daily_safety else _dash
+    _total_saf_str = f"{_total_safety}%" if _total_safety else _dash
+    safety_line = (
+        f"  \U0001f6e1\ufe0f Safety stops (bot paused, account SURVIVED): {safety_stops}\n"
+        f"     daily {breaches.get('daily_safety_stops', 0)}  |  "
+        f"total {breaches.get('total_safety_stops', 0)}   "
+        f"(thresholds: {_daily_saf_str} / {_total_saf_str})\n"
+    )
+
+    if firm_breaches == 0:
         breach_text = (
-            f"  ✅ ZERO BREACHES across {breaches['total_months']} months!\n"
-            f"     Never exceeded daily {daily_dd_limit}% or total {total_dd_limit}% DD limit.\n"
-            f"     Survival rate: {breaches['survival_rate_per_month']}%"
+            f"  \u2705 [{_stage_label}] ZERO FIRM BREACHES across {breaches['total_months']} months\n"
+            f"     Never exceeded daily {daily_lim}% or total {total_lim}% firm limit.\n"
+            f"     Survival rate: {breaches['survival_rate_per_month']}%\n"
+            f"\n"
+            + safety_line
         )
         _breach_label.config(fg="#28a745")
     else:
         breach_text = (
-            f"  💀 BLOWN {blown} times in {breaches['total_months']} months\n"
+            f"  \U0001f480 [{_stage_label}] ACCOUNT BLOWN {firm_breaches} times "
+            f"in {breaches['total_months']} months\n"
             f"\n"
-            f"     Daily DD breaches (≥{daily_dd_limit}%):  {breaches['daily_breaches']} times\n"
-            f"     Total DD breaches (≥{total_dd_limit}%): {breaches['total_breaches']} times\n"
+            f"     Daily firm breaches (\u2265{daily_lim}%):  {breaches['daily_breaches']} times\n"
+            f"     Total firm breaches (\u2265{total_lim}%):  {breaches['total_breaches']} times\n"
             f"\n"
-            f"     Worst daily DD:           {breaches['worst_daily_pct']:.1f}%  (limit: {daily_dd_limit}%)\n"
-            f"     Worst total DD:           {breaches['worst_total_pct']:.1f}%  (limit: {total_dd_limit}%)\n"
+            f"     Worst daily DD:  {breaches['worst_daily_pct']:.1f}%  (limit {daily_lim}%)\n"
+            f"     Worst total DD:  {breaches['worst_total_pct']:.1f}%  (limit {total_lim}%)\n"
             f"\n"
-            f"     Avg days between blows:   {breaches['avg_days_between_blows']} days\n"
-            f"     Monthly survival rate:    {breaches['survival_rate_per_month']}%\n"
-            f"     Months with blowup:       {breaches['months_blown']} / {breaches['total_months']}\n"
+            + safety_line +
+            f"\n"
+            f"     Monthly survival rate: {breaches['survival_rate_per_month']}%\n"
+            f"     Months with blowup:    {breaches['months_blown']} / {breaches['total_months']}\n"
         )
+        _breach_label.config(fg="#dc3545")
 
         # Format blow dates as month/year
         import datetime
@@ -4719,46 +4786,11 @@ def _update_breach_display(trades):
             for d in all_blow_dates:
                 try:
                     dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
-                    month_str = dt.strftime('%B %Y')  # "October 2008"
-                    # Check if daily or total breach
+                    month_str = dt.strftime('%B %Y')
                     breach_type = "daily" if d in breaches.get('daily_breach_dates', []) else "total"
-                    breach_text += f"       • {month_str} ({breach_type} DD breach)\n"
+                    breach_text += f"       \u2022 {month_str} ({breach_type} DD breach)\n"
                 except Exception:
-                    breach_text += f"       • {d} (breach)\n"
-
-        # Add safety stops info
-        daily_safety = breaches.get('daily_safety_stops', 0)
-        total_safety = breaches.get('total_safety_stops', 0)
-        total_safety_stops = daily_safety + total_safety
-
-        if total_safety_stops > 0:
-            breach_text += f"\n\n  ⚠️ SAFETY STOPS: {total_safety_stops} times (daily:{daily_safety} total:{total_safety})\n"
-            breach_text += f"     Bot paused before firm limits — account survived\n"
-
-            # Format safety dates
-            all_safety_dates = sorted(set(
-                breaches.get('daily_safety_dates', []) +
-                breaches.get('total_safety_dates', [])
-            ))
-
-            if all_safety_dates:
-                breach_text += f"\n     Safety stop timeline:\n"
-                for d in all_safety_dates:
-                    try:
-                        dt = datetime.datetime.strptime(d[:10], '%Y-%m-%d')
-                        month_str = dt.strftime('%B %Y')
-                        # Check if daily or total safety stop
-                        stop_type = "daily" if d in breaches.get('daily_safety_dates', []) else "total"
-                        breach_text += f"       • {month_str} ({stop_type} safety limit)\n"
-                    except Exception:
-                        breach_text += f"       • {d} (safety stop)\n"
-
-        if blown <= 3:
-            breach_text += f"\n     🟡 Occasional blows — might pass with good timing"
-            _breach_label.config(fg="#e67e22")
-        else:
-            breach_text += f"\n     🔴 Too many blows — not prop-firm safe"
-            _breach_label.config(fg="#dc3545")
+                    breach_text += f"       \u2022 {d} (breach)\n"
 
     _breach_label.config(text=breach_text)
 
