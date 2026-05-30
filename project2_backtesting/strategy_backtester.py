@@ -95,6 +95,75 @@ def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=Fals
         return base_spread_pips
 
 
+# ---------------------------------------------------------------------------
+# Entry-time filter mask — gates signals by day / session / hour.
+# Used by run_backtest and fast_backtest when entry_filters is not None.
+# CHANGED: May 2026 — backtest honors optimizer day/session/hour filters
+# ---------------------------------------------------------------------------
+def _build_entry_time_mask(timestamps, entry_filters):
+    """Return a boolean numpy array — True where the candle's entry time is
+    allowed by the day/session/hour filters.  Look-ahead-free: uses only the
+    candle's own timestamp.  None/empty filter → all True.
+
+    entry_filters keys (any subset):
+      days:     list of weekday names/abbrevs, e.g. ["Mon","Tue"] or ["Monday"]
+      sessions: list of session names, subset of {"Asian","London","New York"}
+      hours:    [lo, hi] — inclusive lo, exclusive hi; wraps midnight if lo > hi
+    """
+    n = len(timestamps)
+    mask = np.ones(n, dtype=bool)
+    if not entry_filters:
+        return mask
+
+    ts = pd.to_datetime(pd.Series(timestamps))
+
+    # ── days ──────────────────────────────────────────────────────────
+    days = entry_filters.get('days')
+    if days:
+        # Normalise to 3-letter abbreviations (handles "Monday" and "Mon")
+        _abbr = {str(d)[:3].title() for d in days}
+        wd_abbr = ts.dt.day_name().str[:3]
+        mask &= wd_abbr.isin(_abbr).to_numpy()
+
+    # ── hours ── [lo, hi) inclusive lo, exclusive hi; wraps when lo > hi
+    hours = entry_filters.get('hours')
+    if hours and isinstance(hours, (list, tuple)) and len(hours) == 2:
+        lo, hi = int(hours[0]), int(hours[1])
+        h = ts.dt.hour.to_numpy()
+        if lo <= hi:
+            mask &= (h >= lo) & (h < hi)
+        else:
+            mask &= (h >= lo) | (h < hi)
+
+    # ── sessions ──────────────────────────────────────────────────────
+    # Hour→session mapping MUST match strategy_refiner._get_session()
+    # priority order:  NY (13-21) > London (7-12) > Asian (0-6, 22-23).
+    sessions = entry_filters.get('sessions')
+    if sessions:
+        sel = set()
+        for s in sessions:
+            sl = str(s).strip().lower()
+            if sl in ('new york', 'ny', 'new york session'):
+                sel.add('ny')
+            elif sl in ('london', 'london session'):
+                sel.add('london')
+            elif sl in ('asian', 'asia', 'asian session', 'tokyo'):
+                sel.add('asian')
+        if sel:
+            h = ts.dt.hour.to_numpy()
+            sess_ok = np.zeros(n, dtype=bool)
+            # Priority-based ranges matching _get_session():
+            if 'ny' in sel:
+                sess_ok |= (h >= 13) & (h < 22)
+            if 'london' in sel:
+                sess_ok |= (h >= 7) & (h < 13)
+            if 'asian' in sel:
+                sess_ok |= (h < 7) | (h >= 22)
+            mask &= sess_ok
+
+    return mask
+
+
 # WHY: Tick data resolves intra-candle exit ambiguity. When a candle's
 #      range covers both the initial SL and breakeven activation, the
 #      backtester can't know which was hit first from OHLC alone.
@@ -1537,7 +1606,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # CHANGED: May 2026 — HWM-lock parity toggle
                  use_hwm_lock=False,
                  hwm_lock_gain_pct=None,
-                 hwm_lock_level='starting_balance'):
+                 hwm_lock_level='starting_balance',
+                 # WHY: entry_filters gates entries by day/session/hour at
+                 #      signal-build time so a saved optimizer filter (e.g.
+                 #      "Monday only") is enforced on a regenerating backtest.
+                 #      None = no gate (legacy, all candles eligible).
+                 # CHANGED: May 2026 — backtest honors optimizer filters
+                 entry_filters=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1870,6 +1945,22 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             f"[A.38a/run_backtest] regime filter failed — proceeding without it: "
             f"{type(_a38a_e).__name__}: {_a38a_e}"
         )
+
+    # ── Entry-time filter gating (day / session / hour) ──────────────
+    # WHY: Optimizer filter-only improvements (e.g. "Monday only") must
+    #      gate entries at signal-build time so a regenerating backtest
+    #      reproduces the optimizer's filtered trade set.
+    # CHANGED: May 2026 — backtest honors optimizer filters
+    if entry_filters:
+        _etm = _build_entry_time_mask(df['timestamp'].to_numpy(), entry_filters)
+        _pre_ef = int(signal_mask.sum())
+        signal_mask = signal_mask & pd.Series(_etm, index=ind.index)
+        _post_ef = int(signal_mask.sum())
+        if _pre_ef > 0:
+            log.debug(
+                f"[run_backtest] entry_filters: signals {_pre_ef} -> {_post_ef} "
+                f"({_post_ef / max(_pre_ef, 1) * 100:.1f}% kept) filters={entry_filters}"
+            )
 
     signal_indices = df.index[signal_mask].tolist()
 
@@ -2549,7 +2640,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # CHANGED: May 2026 — HWM-lock parity toggle
                   use_hwm_lock=False,
                   hwm_lock_gain_pct=None,
-                  hwm_lock_level='starting_balance'):
+                  hwm_lock_level='starting_balance',
+                  # WHY: entry_filters gates entries by day/session/hour.
+                  #      None = no gate (legacy, all candles eligible).
+                  # CHANGED: May 2026 — backtest honors optimizer filters
+                  entry_filters=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2812,6 +2907,18 @@ def fast_backtest(df, ind, rules, exit_strategy,
             f"[A.38a/fast_backtest] regime filter failed — proceeding without it: "
             f"{type(_a38a_e).__name__}: {_a38a_e}"
         )
+
+    # ── Entry-time filter gating (day / session / hour) ──────────────
+    if entry_filters:
+        _etm = _build_entry_time_mask(df['timestamp'].to_numpy(), entry_filters)
+        _pre_ef = int(signal_mask.sum())
+        signal_mask = signal_mask & pd.Series(_etm, index=ind.index)
+        _post_ef = int(signal_mask.sum())
+        if _pre_ef > 0:
+            log.debug(
+                f"[fast_backtest] entry_filters: signals {_pre_ef} -> {_post_ef} "
+                f"({_post_ef / max(_pre_ef, 1) * 100:.1f}% kept) filters={entry_filters}"
+            )
 
     signal_indices = df.index[signal_mask].tolist()
 
@@ -3825,7 +3932,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # CHANGED: May 2026 — HWM-lock parity toggle
                           use_hwm_lock=False,
                           hwm_lock_gain_pct=None,
-                          hwm_lock_level='starting_balance'):
+                          hwm_lock_level='starting_balance',
+                          # WHY: entry_filters gates entries by day/session/hour.
+                          #      Forwarded to fast_backtest. None = no gate.
+                          # CHANGED: May 2026 — backtest honors optimizer filters
+                          entry_filters=None):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -4356,6 +4467,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     use_hwm_lock=use_hwm_lock,
                     hwm_lock_gain_pct=hwm_lock_gain_pct,
                     hwm_lock_level=hwm_lock_level,
+                    # WHY: Forward optimizer day/session/hour filters.
+                    # CHANGED: May 2026 — backtest honors optimizer filters
+                    entry_filters=entry_filters,
                 )
                 stats = compute_stats(trades)
 

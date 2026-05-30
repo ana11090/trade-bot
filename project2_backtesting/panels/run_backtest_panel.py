@@ -1810,6 +1810,21 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             f"+ challenge + account size in the panel to "
                             f"enable."
                         )
+                    # WHY: Saved rules carry optimizer filters (day/session/hour)
+                    #      in filters_applied. Pass them so the backtester gates
+                    #      entries at signal-build time, reproducing the optimizer's
+                    #      filtered trade set.
+                    # CHANGED: May 2026 — backtest honors optimizer filters
+                    _fa = (_first_rule.get('filters_applied') or {}) if _first_rule else {}
+                    _entry_filters = {
+                        k: _fa[k] for k in ('days', 'sessions', 'hours')
+                        if _fa.get(k)
+                    } or None
+                    if _entry_filters:
+                        output_text.insert(tk.END,
+                            f"  Entry filters from saved rule: {_entry_filters}\n")
+                        output_text.see(tk.END)
+
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -1885,6 +1900,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         win_pass_firm_id=_wp_firm_id,
                         win_pass_challenge_id=_wp_challenge_id,
                         win_pass_account_size=_wp_account_size,
+                        # WHY: Forward optimizer day/session/hour filters.
+                        # CHANGED: May 2026 — backtest honors optimizer filters
+                        entry_filters=_entry_filters,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

@@ -2223,6 +2223,34 @@ def _start_batch_optimization():
                                  font=("Segoe UI", 10, "bold"),
                                  bg=BG, fg="#444").pack(anchor="w", padx=10, pady=(12, 4)))
 
+                # Pre-compute dollar-per-pip for live cards (same formula as post-run)
+                _p2d_live = ((_acct * (_risk / 100.0)) / (_sl * _pipv) * _pipv
+                             if _sl * _pipv > 0 else 1.0)
+
+                # Live-stream: render a card every time the optimizer finds a
+                # new best. Appends to a running list (does not clear previous).
+                _live_rank = {'n': 0}
+
+                def _live_progress(new_best_candidate=None, message="", **_kw):
+                    # Only render when a full candidate is provided (new best found).
+                    if not new_best_candidate:
+                        if message and _opt_status_lbl:
+                            state.window.after(0, lambda m=message:
+                                _opt_status_lbl.configure(text=m, fg=GREY))
+                        return
+                    if _stop_flag.is_set():
+                        return
+                    _live_rank['n'] += 1
+                    _rk = _live_rank['n']
+                    _cand = new_best_candidate
+                    _st = _cand.get('stats') or compute_stats_summary(_cand.get('trades', []))
+                    if _opt_results_frame:
+                        state.window.after(0, lambda c=_cand, s=_st, r=_rk,
+                                                  p=_p2d_live, a=_acct, rk=_risk,
+                                                  td=_target_data:
+                            _render_opt_card(_opt_results_frame, r, c, s, p, a,
+                                             None, None, rk, td))
+
                 # Run the optimizer for this rule
                 try:
                     candidates = deep_optimize(
@@ -2233,7 +2261,7 @@ def _start_batch_optimization():
                         exit_strategies=[],
                         target_firm=_target_data,
                         account_size=_acct,
-                        progress_callback=None,
+                        progress_callback=_live_progress,
                         lock_entry=False, lock_exit=False, lock_sltp=False,
                         lock_filters=False,
                         exit_class=_exit_class,
@@ -2255,9 +2283,14 @@ def _start_batch_optimization():
                                      bg=BG, fg=RED).pack(anchor="w", padx=20))
                     continue
 
-                # Stream top-5 candidates per rule into results frame
-                _p2d = ((_acct * (_risk / 100.0)) / (_sl * _pipv) * _pipv
-                        if _sl * _pipv > 0 else 1.0)
+                # Final ranked top-5 (live cards already shown above during the run)
+                if _opt_results_frame and candidates:
+                    state.window.after(0, lambda r=rule_label:
+                        tk.Label(_opt_results_frame,
+                                 text=f"   ── final top 5 for {r} (ranked) ──",
+                                 font=("Segoe UI", 9, "italic"),
+                                 bg=BG, fg="#888").pack(anchor="w", padx=20, pady=(6, 2)))
+                _p2d = _p2d_live
                 for rank, cand in enumerate(candidates[:5], 1):
                     _stats = cand.get('stats') or compute_stats_summary(cand.get('trades', []))
                     if _opt_results_frame:
@@ -2358,7 +2391,7 @@ def _start_optimization():
             w.destroy()
 
     def _cb(step, total, message, current_best=None, elapsed_str="",
-            candidates_tested=0, improvements_found=0):
+            candidates_tested=0, improvements_found=0, **kwargs):
         """Update optimizer UI — called from background thread."""
         pct = int(step / max(total, 1) * 100)
 
@@ -5819,11 +5852,178 @@ def build_panel(parent):
                             pass
                         break
 
+            def _save_from_grid():
+                idx = _get_selected_index()
+                if idx is None:
+                    messagebox.showwarning("No Selection", "Select a strategy row first.")
+                    return
+                s = None
+                for _s in _strategies:
+                    if _s.get('index') == idx:
+                        s = _s
+                        break
+                if s is None:
+                    messagebox.showerror("Error", "Could not find strategy data for the selected row.")
+                    return
+                try:
+                    from shared.saved_rules import save_rule
+
+                    # Load trades via the existing helper (handles all fallback paths)
+                    trades = _load_trades_for_strategy(s)
+
+                    # Read rules from strategy dict
+                    rules = s.get('rules', [])
+                    if not isinstance(rules, list):
+                        rules = []
+
+                    # Exit strategy info
+                    exit_class = s.get('exit_class', s.get('exit_strategy', ''))
+                    exit_params = s.get('exit_params', s.get('exit_strategy_params', {}))
+                    exit_name = s.get('exit_name', '')
+
+                    # Direction from rule_combo name
+                    rc = s.get('rule_combo', '')
+                    direction = ''
+                    if '(BUY)' in rc:
+                        direction = 'BUY'
+                    elif '(SELL)' in rc:
+                        direction = 'SELL'
+
+                    # Entry timeframe
+                    entry_tf = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        ((s.get('stats') or {}).get('entry_tf')) or
+                        None
+                    )
+                    if not entry_tf:
+                        try:
+                            from project2_backtesting.panels.configuration import load_config
+                            _cfg = load_config()
+                            entry_tf = _cfg.get('winning_scenario', 'H1')
+                        except Exception:
+                            entry_tf = 'H1'
+
+                    # Win rate — normalise to percentage
+                    _wr = s.get('win_rate', 0)
+                    if isinstance(_wr, (int, float)) and 0 < _wr < 1.0:
+                        _wr = _wr * 100.0
+
+                    # Build conditions from rules
+                    conditions = []
+                    for rule in rules:
+                        if rule.get('prediction') == 'WIN':
+                            conditions.extend(rule.get('conditions', []))
+
+                    data = {
+                        'rule_combo': rc,
+                        'trades': trades,
+                        'conditions': conditions,
+                        'prediction': 'WIN',
+                        'direction': direction,
+                        'win_rate': round(_wr, 2),
+                        'avg_pips': s.get('avg_pips', 0),
+                        'total_pips': s.get('total_pips', 0),
+                        'net_total_pips': s.get('total_pips', 0),
+                        'total_trades': s.get('count', s.get('total_trades', 0)),
+                        'max_dd_pips': s.get('max_dd_pips', 0),
+                        'net_profit_factor': s.get('profit_factor', s.get('net_profit_factor', 0)),
+                        'rules': rules,
+                        'exit_class': exit_class,
+                        'exit_params': exit_params,
+                        'exit_name': exit_name,
+                        'entry_timeframe': entry_tf,
+                        'entry_bar_offset': int(s.get('entry_bar_offset', 0)),
+                        'risk_settings': {
+                            'risk_pct': float(s.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
+                            'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
+                            'firm': _opt_target_var.get() if _opt_target_var else '',
+                            'stage': _stage_var.get() if _stage_var else 'Funded',
+                        },
+                        'eval_settings': _build_eval_settings(
+                            _opt_target_var.get() if _opt_target_var else '',
+                            _stage_var.get() if _stage_var else 'Evaluation',
+                            project_root
+                        ),
+                    }
+
+                    # Embed regime conditions if active
+                    try:
+                        import sys as _sys
+                        _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                        if _p1_dir not in _sys.path:
+                            _sys.path.insert(0, _p1_dir)
+                        import config_loader as _rf_cl
+                        _rf_cfg = _rf_cl.load()
+                        if str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
+                            _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
+                            if _rf_disc_str:
+                                _rf_disc = json.loads(_rf_disc_str)
+                                if _rf_disc.get('status') == 'ok':
+                                    _rf_conds = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
+                                    data['regime_filter_conditions'] = _rf_conds
+                                    for _rule in data.get('rules', []):
+                                        _rule['regime_filter'] = _rf_conds
+                    except Exception:
+                        pass
+
+                    # Inject broker specs
+                    try:
+                        import sys as _bs_sys
+                        _bs_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                        if _bs_p1_dir not in _bs_sys.path:
+                            _bs_sys.path.insert(0, _bs_p1_dir)
+                        import config_loader as _bs_cl
+                        _bs_cfg = _bs_cl.load()
+                        for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                                        'contract_size', 'pip_size', 'data_source_id',
+                                        'prop_firm_name', 'prop_firm_id', 'prop_firm_leverage'):
+                            _bs_val = _bs_cfg.get(_bs_key)
+                            if _bs_val is not None and _bs_key not in data:
+                                try:
+                                    data[_bs_key] = float(_bs_val)
+                                except (TypeError, ValueError):
+                                    data[_bs_key] = str(_bs_val)
+                    except Exception:
+                        pass
+
+                    _n_trades = len(trades)
+                    print(f"[GRID SAVE] Saving rule from grid:")
+                    print(f"  Name:           {rc}")
+                    print(f"  Entry TF:       {entry_tf}")
+                    print(f"  Direction:      {direction}")
+                    print(f"  Rules:          {len(rules)}")
+                    print(f"  Trades:         {_n_trades}")
+                    print(f"  Exit:           {exit_name or exit_class or '?'}")
+                    print(f"  Win Rate:       {data.get('win_rate', '?')}%")
+                    print(f"  Profit Factor:  {data.get('net_profit_factor', '?')}")
+
+                    rid = save_rule(data, source=f"Grid: {rc}", notes="")
+
+                    messagebox.showinfo("Saved",
+                        f"Saved as #{rid}!\n\n"
+                        f"Entry TF:    {entry_tf}\n"
+                        f"Direction:   {direction}\n"
+                        f"Trades:      {_n_trades}\n"
+                        f"Win Rate:    {data.get('win_rate', '?')}%\n"
+                        f"PF:          {data.get('net_profit_factor', '?')}"
+                    )
+                    _load_strategies(force=True)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    messagebox.showerror("Error", f"Failed to save rule:\n{e}")
+
             star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
                                  bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
                                  relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
             star_btn.pack(side=tk.LEFT, padx=(6, 0))
             star_btn_container[0] = star_btn
+
+            save_grid_btn = tk.Button(sel_row, text="💾 Save", command=_save_from_grid,
+                                      bg="#28a745", fg="white", font=("Segoe UI", 9, "bold"),
+                                      relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            save_grid_btn.pack(side=tk.LEFT, padx=(6, 0))
 
             def _update_star_btn(*args):
                 idx = _get_selected_index()

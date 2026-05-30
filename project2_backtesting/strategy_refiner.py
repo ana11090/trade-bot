@@ -1998,6 +1998,21 @@ def deep_optimize(
                 'prop_pass_rate': None,
                 'score':          score,
             }
+            # Stream the FULL candidate so the panel can render a saveable
+            # card live during long deep-optimize runs.
+            if progress_callback:
+                try:
+                    progress_callback(
+                        step=0,
+                        total=0,
+                        message=f"New best: {name} (score {score:.1f})",
+                        current_best=best_so_far,
+                        candidates_tested=len(candidates),
+                        improvements_found=sum(1 for c in candidates if c['score'] > base_score),
+                        new_best_candidate=candidate,
+                    )
+                except Exception:
+                    pass
 
     presets = get_prop_firm_presets()
 
