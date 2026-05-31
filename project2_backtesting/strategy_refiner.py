@@ -939,6 +939,15 @@ def load_strategy_list():
                                                   or (r.get('rules') or [{}])[0].get('prop_firm_id')
                                                   or ''),
                             'data_source_id':    r.get('data_source_id', r.get('run_settings', {}).get('data_source_id', '')),
+                            # WHY: _trades_key is the backtester's GLOBAL enumerate
+                            #      index (strategy_backtester.py L4916). The panel
+                            #      loader needs it to find the correct entry in
+                            #      backtest_trades_<TF>.json after the matrix is
+                            #      re-sorted by score. trade_count is the companion
+                            #      field for validation (count must match).
+                            # CHANGED: May 2026 — _trades_key passthrough
+                            '_trades_key':       r.get('_trades_key'),
+                            'trade_count':       r.get('trade_count', 0),
                             # WHY: exit_class + exit_params live at the result row's
                             #      TOP level (set by backtester from each exit_strategy).
                             #      Without passthrough, money calcs default to SL=150

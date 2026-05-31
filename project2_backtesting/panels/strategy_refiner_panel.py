@@ -173,15 +173,46 @@ def _load_trades_for_strategy(s):
     entry_tf = s.get('entry_tf') or s.get('entry_timeframe') or ''
     idx_val  = s.get('index')
     # ── Batch file (Phase A.48 primary path) ─────────────────
+    # WHY: trades file is keyed by the backtester's GLOBAL enumerate index,
+    #      persisted on each matrix row as `_trades_key` (strategy_backtester.py
+    #      L4916). The panel re-sorts the matrix by score, so any position- or
+    #      count-based key (tf_local_idx) is unreliable. Use _trades_key first —
+    #      this mirrors the correct loader in strategy_refiner.load_trades_from_matrix.
+    # CHANGED: May 2026 — use _trades_key as primary lookup
     try:
-        if entry_tf and isinstance(idx_val, int):
+        if entry_tf:
             _trades_path = os.path.join(project_root, 'project2_backtesting',
                                         'outputs', f'backtest_trades_{entry_tf}.json')
             if os.path.exists(_trades_path):
                 with open(_trades_path, encoding='utf-8') as _f:
                     _all = _ptj.load(_f)
+
+                # Expected trade count for validation (if the row carries it).
+                _expected_ct = s.get('total_trades', s.get('trade_count'))
+                try:
+                    _expected_ct = int(_expected_ct) if _expected_ct is not None else None
+                except (TypeError, ValueError):
+                    _expected_ct = None
+
+                # ── Primary: _trades_key (survives matrix re-sort) ──
+                _tk = s.get('_trades_key')
+                if _tk is not None:
+                    _cand = _all.get(str(_tk), []) or []
+                    if _cand and (_expected_ct is None or len(_cand) == _expected_ct):
+                        return _cand
+
+                # ── Fallback A: tf_local_idx if explicitly stored on the row ──
                 _local = s.get('tf_local_idx')
-                if _local is None:
+                if _local is not None:
+                    _cand = _all.get(str(_local), []) or []
+                    if _cand and (_expected_ct is None or len(_cand) == _expected_ct):
+                        return _cand
+
+                # ── Fallback B (legacy matrices only): recompute per-TF count.
+                #     Kept for old data that predates _trades_key. Guarded by the
+                #     expected-count check so a wrong recompute can't load a
+                #     mismatched list.
+                if isinstance(idx_val, int):
                     _local = 0
                     for _other in _strategies:
                         if not isinstance(_other.get('index'), int):
@@ -190,9 +221,9 @@ def _load_trades_for_strategy(s):
                             break
                         if _other.get('entry_tf') == entry_tf:
                             _local += 1
-                _from_batch = _all.get(str(_local), []) or []
-                if _from_batch:
-                    return _from_batch
+                    _cand = _all.get(str(_local), []) or []
+                    if _cand and (_expected_ct is None or len(_cand) == _expected_ct):
+                        return _cand
     except Exception:
         pass
     # ── Per-rule file fallback ─────────────────────────────────────
