@@ -872,18 +872,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: April 2026 — Phase A.45
             _a45_combine = _a45_combine_var.get() if _a45_combine_var is not None else False
             if _a45_combine and len(selected_rules) > 1:
+                from project2_backtesting.strategy_backtester import MAX_RULE_COMBOS
                 _a45_combo_count = (2 ** len(selected_rules)) - 1
-                output_text.insert(
-                    tk.END,
-                    f"Rule combinations: ALL ({_a45_combo_count} combos from "
-                    f"{len(selected_rules)} rules)\n"
-                )
-                if len(selected_rules) >= 6:
+                if _a45_combo_count > MAX_RULE_COMBOS:
                     output_text.insert(
                         tk.END,
-                        f"⚠️  {_a45_combo_count} combos × 12 exits = "
-                        f"{_a45_combo_count * 12} backtests — this may take a while\n"
+                        f"Rule combinations: CAPPED — {len(selected_rules)} rules "
+                        f"would make ~{_a45_combo_count} combos, but only the first "
+                        f"{MAX_RULE_COMBOS} (smallest first) will run to protect "
+                        f"memory. Select fewer rules for full coverage.\n"
                     )
+                else:
+                    output_text.insert(
+                        tk.END,
+                        f"Rule combinations: ALL ({_a45_combo_count} combos from "
+                        f"{len(selected_rules)} rules)\n"
+                    )
+                    if len(selected_rules) >= 6:
+                        output_text.insert(
+                            tk.END,
+                            f"⚠️  {_a45_combo_count} combos × ~20 exits = "
+                            f"{_a45_combo_count * 20} backtests — this may take a while\n"
+                        )
             elif _a45_combine:
                 output_text.insert(tk.END, "Rule combinations: OFF (need ≥2 rules selected)\n")
                 _a45_combine = False

@@ -64,6 +64,11 @@ _SESSION_SPREAD_MULTIPLIERS = {
     'default': 1.0,    # fallback = base spread
 }
 
+# Hard ceiling on total rule combinations when combine_all_rules is ON.
+# Prevents the 2^N combinatorial explosion (N selected rules) from exhausting
+# memory and crashing the app. Individuals + combos count toward this budget.
+MAX_RULE_COMBOS = 2000
+
 def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=False,
                         multipliers=None):
     """Return spread in pips for this candle's session.
@@ -4262,12 +4267,28 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         #      Per-direction: only rules compatible with BUY/SELL are
         #      included in each directional combo.
         # CHANGED: April 2026 — Phase A.45
+        # CHANGED: May 2026 — combo cap (MAX_RULE_COMBOS) to prevent OOM
         # ═══════════════════════════════════════════════════════════════
         import itertools
+
+        # WHY: 2^N - 1 - N combinations (x2 for BUY/SELL) explodes with N. Cap the
+        #      TOTAL combo count (individuals already in rule_combos count toward
+        #      the budget). Smallest combos first → keep the most useful ones.
+        _combo_budget = MAX_RULE_COMBOS
+        _capped = False
+
         for combo_size in range(2, len(rules) + 1):
+            if _capped:
+                break
             for idx_tuple in itertools.combinations(range(len(rules)), combo_size):
+                if len(rule_combos) >= _combo_budget:
+                    _capped = True
+                    break
                 combo_label = "+".join(str(j + 1) for j in idx_tuple)
                 for _dir in ('BUY', 'SELL'):
+                    if len(rule_combos) >= _combo_budget:
+                        _capped = True
+                        break
                     _dir_rules = []
                     _dir_indices = []
                     for j in idx_tuple:
@@ -4281,6 +4302,16 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                             "indices":   _dir_indices,
                             "direction": _dir,
                         })
+
+        if _capped:
+            log.warning(
+                f"  [COMBO CAP] Reached MAX_RULE_COMBOS={MAX_RULE_COMBOS}. "
+                f"Stopped generating further combinations. "
+                f"{len(rules)} selected rules would produce "
+                f"~{2**len(rules)} total combos — only the first {MAX_RULE_COMBOS} "
+                f"(smallest combinations first) were kept. Select fewer rules for "
+                f"full coverage."
+            )
 
     elif len(rules) > 1:
         # ── Legacy combo mode (A.30): All combined, Top 3, Top 5 ──
