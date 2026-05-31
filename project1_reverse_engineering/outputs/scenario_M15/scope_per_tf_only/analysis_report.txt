@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-05-25T13:01:05.812691
+Generated: 2026-05-30T22:57:22.584785
 Trades analyzed: 1106 | Features: 804
 ======================================================================
 
@@ -19,60 +19,60 @@ Trades analyzed: 1106 | Features: 804
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=78.0%, test=59.9%
-   1. M15_std_dev_20                                2.1%
-   2. M15_mt5_macd_fast_diff                        2.0%
-   3. M15_roc_5                                     2.0%
-   4. M15_bb_50_2_width                             1.9%
-   5. M15_mt5_atr_28                                1.9%
-   6. M15_std_dev_50                                1.9%
-   7. M15_mt5_atr_7                                 1.8%
-   8. M15_volume_change                             1.8%
-   9. M15_candle_range                              1.7%
-  10. M15_mt5_atr_21                                1.6%
+  Model accuracy: train=77.7%, test=55.9%
+   1. M15_std_dev_20                                3.2%
+   2. M15_bb_50_2_width                             2.5%
+   3. M15_mt5_atr_21                                2.2%
+   4. M15_mt5_atr_7                                 2.2%
+   5. M15_mt5_atr_28                                2.2%
+   6. M15_mt5_atr_14                                1.8%
+   7. M15_std_dev_50                                1.7%
+   8. M15_mt5_atr_50                                1.7%
+   9. M15_candle_range                              1.5%
+  10. M15_mt5_atr_100                               1.5%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 74%, 82 trades)
-    IF M15_mt5_atr_7 <= 15.4167 AND M15_mt5_ema_9_distance > -0.0048 AND M15_mt5_atr_28 > 2.8977 AND M15_mt5_adx_28_minus_di <= 19.5223
-    Win rate: 74% | Avg pips: +205
+  RULE 1 (WIN, conf: 84%, 37 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 <= 18.967 AND M15_roc_5 <= -0.4502 AND M15_bb_20_3_width <= 2.2343
+    Win rate: 84% | Avg pips: +361
 
-  RULE 2 (WIN, conf: 96%, 28 trades)
-    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range > 44.81
-    Win rate: 96% | Avg pips: +911
+  RULE 2 (WIN, conf: 78%, 37 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal <= -0.5521
+    Win rate: 78% | Avg pips: +267
 
-  RULE 3 (WIN, conf: 72%, 39 trades)
-    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range <= 44.81 AND M15_candle_body <= 7.95 AND M15_awesome_oscillator > -26.5151
-    Win rate: 72% | Avg pips: +338
+  RULE 3 (WIN, conf: 92%, 25 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar > 5099.1062
+    Win rate: 92% | Avg pips: +784
 
-  RULE 4 (WIN, conf: 77%, 35 trades)
-    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range <= 44.81 AND M15_candle_body > 7.95 AND M15_day_of_week <= 1.5
-    Win rate: 77% | Avg pips: +328
+  RULE 4 (WIN, conf: 88%, 24 trades)
+    IF M15_std_dev_20 > 7.1525 AND M15_mt5_atr_28 > 18.967 AND M15_psar <= 5099.1062 AND M15_kst_signal > -0.5521
+    Win rate: 88% | Avg pips: +700
 
-  RULE 5 (WIN, conf: 96%, 23 trades)
-    IF M15_mt5_atr_7 > 15.4167 AND M15_candle_range <= 44.81 AND M15_candle_body <= 7.95 AND M15_awesome_oscillator <= -26.5151
-    Win rate: 96% | Avg pips: +738
+  RULE 5 (WIN, conf: 71%, 21 trades)
+    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index <= 23.416 AND M15_mfi <= 42.9686
+    Win rate: 71% | Avg pips: +300
 
-  RULE 6 (WIN, conf: 85%, 20 trades)
-    IF M15_mt5_atr_7 <= 15.4167 AND M15_mt5_ema_9_distance > -0.0048 AND M15_mt5_atr_28 <= 2.8977
-    Win rate: 85% | Avg pips: +280
+  RULE 6 (WIN, conf: 67%, 21 trades)
+    IF M15_std_dev_20 <= 7.1525 AND M15_mass_index > 23.416 AND M15_mt5_adx_14_plus_di <= 8.2355
+    Win rate: 67% | Avg pips: +152
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 59 trades (5.3%), WR 85%, avg +483 pips, avg dur 0min
-  'Profit cluster': 268 trades (24.2%), WR 63%, avg +221 pips, avg dur 0min
-  'Profit cluster': 240 trades (21.7%), WR 65%, avg +147 pips, avg dur 0min
-  'Profit cluster': 539 trades (48.7%), WR 51%, avg +72 pips, avg dur 0min
+  'Big winners': 46 trades (4.2%), WR 87%, avg +550 pips, avg dur 0min
+  'Profit cluster': 265 trades (24.0%), WR 63%, avg +218 pips, avg dur 0min
+  'Profit cluster': 597 trades (54.0%), WR 56%, avg +106 pips, avg dur 0min
+  'Profit cluster': 198 trades (17.9%), WR 55%, avg +77 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
-    trending              : WR 63%, avg +192 pips (615 trades)
-    ranging               : WR 53%, avg +89 pips (491 trades)
+    trending              : WR 62%, avg +200 pips (545 trades)
+    ranging               : WR 55%, avg +94 pips (561 trades)
   volatility:
-    high                  : WR 64%, avg +219 pips (543 trades)
-    low                   : WR 53%, avg +76 pips (563 trades)
+    high                  : WR 66%, avg +231 pips (486 trades)
+    low                   : WR 52%, avg +80 pips (620 trades)
   direction:
-    above_ema200          : WR 60%, avg +168 pips (866 trades)
-    below_ema200          : WR 51%, avg +69 pips (240 trades)
+    above_ema200          : WR 60%, avg +167 pips (811 trades)
+    below_ema200          : WR 55%, avg +88 pips (295 trades)
   session:
     asian                 : WR 60%, avg +145 pips (301 trades)
     london                : WR 57%, avg +128 pips (647 trades)
@@ -95,10 +95,10 @@ Trades analyzed: 1106 | Features: 804
 
 -- ANOMALIES -------------------------------------------------------
   56 outlier trades (5.1%)
-  Anomaly win rate: 79% vs normal: 57%
+  Anomaly win rate: 82% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)
-     Would improve win rate from 58% to ~64%
+     Would improve win rate from 58% to ~66%
 
 ======================================================================

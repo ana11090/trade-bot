@@ -2,3 +2,4 @@ data/_backup_old/*.csv filter=lfs diff=lfs merge=lfs -text
 # All CSVs inside data/sources — including OHLC and bid/ask ticks
 # (XAUUSD_ticks_YYYY_MM.csv). LFS handles the size.
 data/sources/**/*.csv filter=lfs diff=lfs merge=lfs -text
+project2_backtesting/outputs/backtest_matrix.json filter=lfs diff=lfs merge=lfs -text

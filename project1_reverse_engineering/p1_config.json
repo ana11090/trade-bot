@@ -4,7 +4,7 @@
   "regime_filter_discovered": "{\"status\": \"ok\", \"strictness\": \"conservative\", \"baseline\": {\"count\": 1106, \"win_rate\": 0.5840867992766727, \"expectancy\": 146.17088607594937}, \"subset\": [{\"feature\": \"M15_std_dev_20\", \"direction\": \">\", \"threshold\": 6.398861}], \"metrics\": {\"count\": 449, \"survival\": 0.406, \"win_rate\": 0.6882, \"expectancy\": 243.062, \"wr_lift\": 0.1041, \"exp_lift_rel\": 0.6629, \"train_wr\": 0.7075, \"test_wr\": 0.6111, \"score\": 1.7587}}",
   "single_rule_mode_enabled": "true",
   "single_rule_mode_variant": "a",
-  "single_rule_mode_discovered": "{\"status\": \"ok\", \"variant\": \"a\", \"trade_count\": 1106, \"chosen\": [{\"feature\": \"D1_volume_change\", \"operator\": \"<\", \"threshold\": 31.238346, \"value\": 31.238346, \"trade_coverage\": 0.9484, \"background_coverage\": null, \"background_coverage_valid\": false, \"tightness\": 0.0187}, {\"feature\": \"H4_lower_shadow\", \"operator\": \"<\", \"threshold\": 41.15, \"value\": 41.15, \"trade_coverage\": 0.9484, \"background_coverage\": null, \"background_coverage_valid\": false, \"tightness\": 0.177}], \"chosen_stats\": {\"joint_coverage\": 0.8825, \"tightness_product\": 0.00331, \"cardinality\": 2}, \"target_coverage\": 0.85}",
+  "single_rule_mode_discovered": "{\"status\": \"no_conjunction\", \"variant\": \"a\", \"reason\": \"No conjunction of 2..10 conditions reached 85% coverage. The bot may use conditions that span beyond the 46-candidate pool \\u2014 try reducing per-condition coverage or expanding the pool size.\"}",
   "srm_a_target_coverage": "0.85",
   "srm_a_dedup_correlated": "true",
   "srm_a_winner_selection": "coverage",

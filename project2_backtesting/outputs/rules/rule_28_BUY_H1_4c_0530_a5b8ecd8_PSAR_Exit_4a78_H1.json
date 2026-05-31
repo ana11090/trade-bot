@@ -1,0 +1,254 @@
+{
+  "rule_combo": "#28_BUY_H1_4c_0530_a5b8ecd8_PSAR_Exit_4a78",
+  "rule_indices": [
+    27
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "H1_bb_50_2_width",
+          "operator": ">",
+          "value": 3.2052
+        },
+        {
+          "feature": "H4_std_dev_20",
+          "operator": ">",
+          "value": 96.5374
+        },
+        {
+          "feature": "H4_obv",
+          "operator": ">",
+          "value": 4777355.0
+        },
+        {
+          "feature": "M15_mt5_adx_21_minus_di",
+          "operator": ">",
+          "value": 22.4654
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.879,
+      "coverage": 33,
+      "coverage_pct": 3.7,
+      "win_rate": 0.879,
+      "avg_pips": 609.3,
+      "_target_mode": "regression_weighted",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "direction": "BUY",
+      "entry_timeframe": "H1",
+      "rule_combo": "Rule 4 (BUY)",
+      "scenario": "scope_entry_plus_higher",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "a",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "coverage",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "H1_bb_50_2_width",
+              "operator": ">",
+              "value": 3.2052
+            },
+            {
+              "feature": "H4_std_dev_20",
+              "operator": ">",
+              "value": 96.5374
+            },
+            {
+              "feature": "H4_obv",
+              "operator": ">",
+              "value": 4777355.0
+            },
+            {
+              "feature": "M15_mt5_adx_21_minus_di",
+              "operator": ">",
+              "value": 22.4654
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "_saved_entry_id": 134,
+      "_saved_rule_id": "BUY_H1_4c_0530_a5b8ecd8"
+    }
+  ],
+  "exit_strategy": "PSAR exit (H1_psar_signal), ATR SL 1.5x, TP 4.0x, settle 2 candles, max 200 candles",
+  "exit_name": "PSAR Exit",
+  "exit_class": "PSARExit",
+  "exit_params": {
+    "sl_atr_mult": 1.5,
+    "tp_atr_mult": 4.0,
+    "max_candles": 200
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 3,
+  "win_rate": 33.3,
+  "avg_pips": -7656.3,
+  "net_avg_pips": -7697.3,
+  "total_pips": -22969.0,
+  "net_total_pips": -23092.0,
+  "profit_factor": 0.31,
+  "net_profit_factor": 0.31,
+  "max_dd_pips": 17695.0,
+  "total_costs": 123.0,
+  "avg_winner": 10312.0,
+  "avg_loser": -16702.0,
+  "best_trade": 10312.0,
+  "worst_trade": -17695.0,
+  "expectancy": -7697.33,
+  "risk_reward_ratio": 0.62,
+  "std_pips": 12760.3,
+  "sharpe_ish": -0.6,
+  "max_win_streak": 1,
+  "max_loss_streak": 2,
+  "trades_per_day": 3.0,
+  "days_per_trade": 0.3,
+  "recovery_factor": -1.31,
+  "winners": 1,
+  "losers": 2,
+  "breakeven": 0,
+  "min_hold_violations": 0,
+  "end_of_data_trades": 0,
+  "end_of_data_pct": 0.0,
+  "active_month_coverage": 1.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 1,
+  "total_dollar_pnl": -230.92,
+  "max_dd_dollars": 176.95,
+  "avg_sl_distance_pips": 17064.3,
+  "avg_lot_size": 0.01,
+  "trades": [
+    {
+      "entry_time": "2026-02-02 01:00:00",
+      "exit_time": "2026-02-02 03:00:00",
+      "entry_price": 4827.99,
+      "exit_price": 4671.31,
+      "direction": "BUY",
+      "pips": -15668.0,
+      "net_pips": -15709.0,
+      "cost_pips": 41.0,
+      "net_profit": -157.09,
+      "sl_distance_pips": 15668.0,
+      "lot_size": 0.01,
+      "candles_held": 2,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 134,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-02-02 04:00:00",
+      "exit_time": "2026-02-02 07:00:00",
+      "entry_price": 4736.69,
+      "exit_price": 4560.15,
+      "direction": "BUY",
+      "pips": -17654.0,
+      "net_pips": -17695.0,
+      "cost_pips": 41.0,
+      "net_profit": -176.95,
+      "sl_distance_pips": 17654.0,
+      "lot_size": 0.01,
+      "candles_held": 3,
+      "exit_reason": "PSAR_SL",
+      "rule_id": 134,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    },
+    {
+      "entry_time": "2026-02-02 08:00:00",
+      "exit_time": "2026-02-02 23:00:00",
+      "entry_price": 4549.11,
+      "exit_price": 4652.64,
+      "direction": "BUY",
+      "pips": 10353.0,
+      "net_pips": 10312.0,
+      "cost_pips": 41.0,
+      "net_profit": 103.12,
+      "sl_distance_pips": 17871.0,
+      "lot_size": 0.01,
+      "candles_held": 15,
+      "exit_reason": "HARD_CLOSE_HOUR",
+      "rule_id": 134,
+      "cost_spread_pips": -37.0,
+      "cost_commission_pips": -4.0,
+      "cost_swap_pips": 0.0,
+      "swap_nights": 0
+    }
+  ],
+  "breaches": {
+    "daily_breaches": 1,
+    "total_breaches": 0,
+    "blown_count": 1,
+    "daily_breach_dates": [
+      "2026-02-02"
+    ],
+    "total_breach_dates": [],
+    "daily_safety_stops": 1,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [
+      "2026-02-02"
+    ],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 1,
+    "survival_rate_per_month": 0.0,
+    "total_months": 1,
+    "months_blown": 1,
+    "worst_daily_pct": 153.9,
+    "worst_total_pct": 0.0,
+    "daily_dd_limit_pct": 3.0,
+    "total_dd_limit_pct": 6.0,
+    "funded_protect_stops": 0,
+    "firm_breaches_total": 1,
+    "safety_stops_total": 1,
+    "drawdown_type": "static",
+    "hwm_locked": false
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "win_pass_passed": 0,
+  "win_pass_total": 1,
+  "win_pass_rate": 0.0,
+  "entry_tf": "H1"
+}

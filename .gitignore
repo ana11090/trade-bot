@@ -39,3 +39,4 @@ xauusd/Files xauusd levereged/*.csv
 xauusd/xauusd unlimited levereged/*.csv
 # Large output files
 project2_backtesting/outputs/backtest_trades_*.json
+nul

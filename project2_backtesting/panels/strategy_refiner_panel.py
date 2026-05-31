@@ -1715,9 +1715,22 @@ def _update_strat_info():
                 _info_parts = []
                 if _rule_firm:
                     _info_parts.append(f"Firm: {_rule_firm}")
-                    for _fv in firm_options:
+                    # WHY: firm_options is a panel-build local (L6690) and is NOT
+                    #      visible in _update_strat_info — referencing it raised
+                    #      NameError, which aborted the label update and left the
+                    #      PREVIOUS rule's info on screen. Build the list locally.
+                    try:
+                        from project2_backtesting.strategy_refiner import get_prop_firm_presets
+                        _fopts = ["None — maximize pips"] + [
+                            _n for _n in sorted(get_prop_firm_presets().keys())
+                            if _n != "Custom"
+                        ]
+                    except Exception:
+                        _fopts = []
+                    for _fv in _fopts:
                         if _rule_firm.lower() in str(_fv).lower():
-                            _opt_target_var.set(str(_fv))
+                            if _opt_target_var is not None:
+                                _opt_target_var.set(str(_fv))
                             break
                 if _rule_stage:
                     _info_parts.append(f"Stage: {_rule_stage}")
