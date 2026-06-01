@@ -2121,6 +2121,9 @@ def _export_csv(trades=None):
 _opt_target_var    = None
 _stage_var         = None
 _opt_mode_var      = None
+# WHY: Tracks what the optimizer is trying to achieve — wins or min DD.
+# CHANGED: June 2026 — optimize_goal radio
+_opt_goal_var      = None
 _acct_var          = None
 _risk_var          = None
 
@@ -2340,6 +2343,7 @@ def _start_batch_optimization():
                         risk_per_trade_pct=_risk,
                         dd_daily_limit=_dd_daily,
                         dd_total_limit=_dd_total,
+                        optimize_goal=_opt_goal_var.get() if _opt_goal_var else "wins",
                     )
                 except Exception as _oe:
                     print(f"[BATCH] {rule_label}: optimizer error — {_oe}")
@@ -2822,6 +2826,9 @@ def _start_optimization():
                     # WHY: Pass entry_bar_offset so candidates inherit the rule's timing.
                     # CHANGED: May 2026 — entry bar offset from loaded rule
                     entry_bar_offset=_rule_ebo,
+                    # WHY: Goal controls what _score_trades maximizes.
+                    # CHANGED: June 2026 — optimize_goal from UI
+                    optimize_goal=_opt_goal_var.get() if _opt_goal_var else "wins",
                 )
                 all_candidates.extend(quick_results)
                 print(f"[OPTIMIZER] Quick mode found {len(quick_results)} candidates")
@@ -2992,6 +2999,9 @@ def _start_optimization():
                     # WHY: Pass entry_bar_offset so new trades use same timing as original rule.
                     # CHANGED: May 2026 — entry bar offset from loaded rule
                     entry_bar_offset=_rule_ebo,
+                    # WHY: Goal controls what _score_trades maximizes.
+                    # CHANGED: June 2026 — optimize_goal from UI
+                    optimize_goal=_opt_goal_var.get() if _opt_goal_var else "wins",
                 )
                 all_candidates.extend(generate_results)
                 print(f"[OPTIMIZER] Deep Explore found {len(generate_results)} candidates")
@@ -3228,6 +3238,156 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
             dd_label.bind("<Leave>", _hide_tooltip)
     except Exception as e:
         # Silently skip if breach calculation fails
+        pass
+
+    # ── Per-window eval simulation ─────────────────────────────────────────
+    # WHY: The DD breach summary tells you how many breaches happened across
+    #      ALL trades, but not whether a strategy would have PASSED an actual
+    #      prop firm eval window. The per-window sim runs simulate_challenge
+    #      on the candidate's trades (sliding window, same as the refiner
+    #      panel) and shows the outcome + totalDD for each window — identical
+    #      to what the "Selected rule" panel shows when you click a grid row.
+    # CHANGED: June 2026 — per-window eval sim in optimizer cards
+    try:
+        from project2_backtesting.strategy_validator import _trades_to_df
+        from shared.prop_firm_simulator import simulate_challenge
+
+        _oc_trades = cand.get('trades', [])
+        # Need firm_id and challenge_id from firm_data
+        _oc_firm_id = None
+        _oc_ch_id   = None
+        if firm_data:
+            _oc_firm_id = firm_data.get('firm_id', '')
+            _chs = firm_data.get('challenges', [])
+            _oc_ch_id = _chs[0].get('challenge_id', '') if _chs else ''
+
+        if _oc_trades and _oc_firm_id and _oc_ch_id:
+            _oc_sl   = 150.0
+            _oc_pipv = 1.0
+            # Try to get sl_pips and pip_value from candidate
+            try:
+                _ep = cand.get('exit_params') or {}
+                _oc_sl   = float(_ep.get('sl_pips', 150) or 150)
+                _oc_pipv = float(cand.get('pip_value_per_lot', 1.0) or 1.0)
+            except Exception:
+                pass
+
+            _oc_df  = _trades_to_df(_oc_trades, risk, _oc_sl, _oc_pipv, int(acct))
+            _oc_sim = simulate_challenge(
+                trades_df=_oc_df,
+                firm_id=_oc_firm_id,
+                challenge_id=_oc_ch_id,
+                account_size=int(acct),
+                mode='sliding_window',
+                simulate_funded=False,
+                risk_per_trade_pct=risk,
+                default_sl_pips=_oc_sl,
+                pip_value_per_lot=_oc_pipv,
+                symbol='XAUUSD',
+            )
+
+            if _oc_sim and _oc_sim.individual_results:
+                _oc_wins = _oc_sim.individual_results
+
+                # ── Outcome label map (same as refiner panel) ──
+                _oc_outcome_map = {
+                    'PASS':                  '✓ PASS',
+                    'FAIL_DD':               '✗ Total-DD breach',
+                    'FAIL_DAILY_DD':         '✗ Daily-DD breach',
+                    'FAIL_TIMEOUT':          '✗ Timeout',
+                    'FAIL_CONSISTENCY':      '✗ Consistency rule',
+                    'INSUFFICIENT_TRADES':   '… Incomplete',
+                }
+
+                _oc_passed = sum(1 for w in _oc_wins
+                                 if (w.eval_outcome or '') == 'PASS')
+                _oc_total  = len(_oc_wins)
+                _oc_rate   = _oc_passed / _oc_total * 100 if _oc_total else 0
+
+                # ── Collapsible container ──
+                _oc_expanded = [False]  # mutable flag for closure
+
+                _oc_outer = tk.Frame(card, bg=card_bg)
+                _oc_outer.pack(fill="x", pady=(4, 0))
+
+                # Header row (always visible) — click to toggle
+                _oc_hdr_bg = "#e8f5e9" if _oc_rate >= 50 else "#fff3e0" if _oc_rate > 0 else "#ffebee"
+                _oc_hdr_fg = "#2e7d32" if _oc_rate >= 50 else "#e65100" if _oc_rate > 0 else "#c62828"
+
+                _oc_hdr = tk.Frame(_oc_outer, bg=_oc_hdr_bg, padx=8, pady=4,
+                                   cursor="hand2")
+                _oc_hdr.pack(fill="x")
+
+                _oc_hdr_lbl = tk.Label(
+                    _oc_hdr,
+                    text=(f"▶ 📋 Eval windows: {_oc_passed}/{_oc_total} PASS "
+                          f"({_oc_rate:.0f}%)  — click to expand"),
+                    font=("Segoe UI", 8, "bold"),
+                    bg=_oc_hdr_bg, fg=_oc_hdr_fg,
+                    cursor="hand2",
+                )
+                _oc_hdr_lbl.pack(anchor="w")
+
+                # Detail frame (hidden by default)
+                _oc_detail = tk.Frame(_oc_outer, bg="#fafafa",
+                                      highlightbackground="#ccc",
+                                      highlightthickness=1)
+                # NOT packed yet — only shown when expanded
+
+                # Build the window lines inside detail frame
+                for _ow in _oc_wins:
+                    _o  = _ow.eval_outcome or "?"
+                    _os = _oc_outcome_map.get(_o, _o)
+                    _sd = str(_ow.start_date or '?')[:10]
+                    _od = _ow.eval_days or 0
+                    _op = _ow.eval_profit_pct or 0.0
+                    _dd = _ow.eval_max_dd_pct  or 0.0
+
+                    if _o == 'INSUFFICIENT_TRADES':
+                        _line = (f"   {_sd} → {_os:<24}  "
+                                 f"{_od:>3}d  |  (out of data)")
+                    else:
+                        _line = (f"   {_sd} → {_os:<24}  "
+                                 f"{_od:>3}d  |  profit {_op:+5.1f}%"
+                                 f"  |  totalDD {_dd:4.1f}%")
+
+                    _row_fg = ("#2e7d32" if _o == 'PASS'
+                               else "#c62828" if _o not in ('INSUFFICIENT_TRADES',)
+                               else "#888")
+                    tk.Label(_oc_detail, text=_line,
+                             font=("Courier New", 8),
+                             bg="#fafafa", fg=_row_fg,
+                             anchor="w").pack(fill="x", padx=6, pady=1)
+
+                # Toggle function
+                def _oc_toggle(
+                    hdr_lbl=_oc_hdr_lbl,
+                    detail=_oc_detail,
+                    expanded=_oc_expanded,
+                    hdr=_oc_hdr,
+                    hdr_bg=_oc_hdr_bg, hdr_fg=_oc_hdr_fg,
+                    passed=_oc_passed, total=_oc_total, rate=_oc_rate,
+                ):
+                    if expanded[0]:
+                        detail.pack_forget()
+                        hdr_lbl.configure(
+                            text=(f"▶ 📋 Eval windows: {passed}/{total} PASS "
+                                  f"({rate:.0f}%)  — click to expand")
+                        )
+                        expanded[0] = False
+                    else:
+                        detail.pack(fill="x")
+                        hdr_lbl.configure(
+                            text=(f"▼ 📋 Eval windows: {passed}/{total} PASS "
+                                  f"({rate:.0f}%)  — click to collapse")
+                        )
+                        expanded[0] = True
+
+                _oc_hdr.bind("<Button-1>", lambda e: _oc_toggle())
+                _oc_hdr_lbl.bind("<Button-1>", lambda e: _oc_toggle())
+
+    except Exception:
+        # Silently skip — sim failure must never crash card rendering
         pass
 
     # Stage-specific estimation (Payout for Funded, Target for Evaluation)
@@ -5081,7 +5241,7 @@ def build_panel(parent):
     global _monthly_chart_canvas, _monthly_tooltip, _dd_label, _breach_label
     global _opt_progress_frame, _opt_results_frame, _opt_live_labels
     global _opt_status_lbl, _opt_start_btn, _opt_stop_btn, _opt_target_var, _stage_var
-    global _scroll_canvas, _opt_mode_var, _acct_var, _risk_var
+    global _scroll_canvas, _opt_mode_var, _opt_goal_var, _acct_var, _risk_var
 
     # WHY (Phase A.49 fix): Loading strategies synchronously freezes the UI
     #      when backtest_matrix.json is large (44MB+). Load asynchronously
@@ -6936,6 +7096,47 @@ def build_panel(parent):
              "Re-runs backtests with each modification. Slower but finds NEW trade setups.",
         font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT)
     deep_desc.pack(fill="x", padx=(24, 0), pady=(0, 5))
+
+    # ── Optimization Goal (separate from mode) ────────────────
+    # WHY: The existing modes control HOW to search (filter vs generate).
+    #      This section controls WHAT to optimize for. Separating them lets
+    #      the user combine Quick mode + Min DD goal, or Deep + Min DD, etc.
+    # CHANGED: June 2026 — optimization goal selector
+    goal_frame = tk.LabelFrame(modes_frame, text="Optimization Goal",
+                               font=("Segoe UI", 9, "bold"), bg=BG, fg=DARK,
+                               padx=10, pady=6)
+    goal_frame.pack(fill="x", pady=(8, 0))
+
+    _opt_goal_var = tk.StringVar(value="wins")
+
+    wins_goal_rb = tk.Radiobutton(goal_frame,
+        text="🏆 Better Wins — maximize win rate, profit factor, consistency (default)",
+        variable=_opt_goal_var,
+        value="wins",
+        font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
+        selectcolor=BG, activebackground=BG, anchor="w")
+    wins_goal_rb.pack(fill="x", pady=(0, 2))
+
+    tk.Label(goal_frame,
+        text="Ranks candidates by win rate, profit factor, and trade consistency.\n"
+             "Best for: improving a strategy's overall performance.",
+        font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT
+    ).pack(fill="x", padx=(24, 0), pady=(0, 6))
+
+    dd_goal_rb = tk.Radiobutton(goal_frame,
+        text="📉 Minimize DD — find filters that reduce daily & total drawdown",
+        variable=_opt_goal_var,
+        value="min_dd",
+        font=("Segoe UI", 9, "bold"), bg=BG, fg="#333",
+        selectcolor=BG, activebackground=BG, anchor="w")
+    dd_goal_rb.pack(fill="x", pady=(0, 2))
+
+    tk.Label(goal_frame,
+        text="Ranks candidates by how much headroom they leave before hitting\n"
+             "the firm's daily DD and total DD limits. Strategy must remain profitable.\n"
+             "Best for: strategies that pass WR/PF but keep breaching DD limits.",
+        font=("Segoe UI", 8), bg=BG, fg="#888", justify=tk.LEFT
+    ).pack(fill="x", padx=(24, 0), pady=(0, 2))
 
     # ── Add hover tooltips with full details ──────────────────
     from shared.tooltip import add_tooltip

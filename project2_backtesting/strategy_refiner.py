@@ -1679,9 +1679,17 @@ def stop_optimization():
 
 
 def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
-                  sl_pips=None, risk_pct=None, dd_daily_limit=5.0, dd_total_limit=10.0):
+                  sl_pips=None, risk_pct=None, dd_daily_limit=5.0, dd_total_limit=10.0,
+                  optimize_goal="wins"):
     """
     Score trades for prop firm suitability.
+
+    optimize_goal:
+      "wins"   — default: maximise win rate, PF, consistency (existing behaviour)
+      "min_dd" — minimise daily and total drawdown; still requires profitability
+    WHY: Users whose strategies are profitable but keep hitting DD limits need a
+         way to find filter combinations that reduce exposure, not just improve WR.
+    CHANGED: June 2026 — optimize_goal parameter
 
     stage="evaluation": maximize profit speed, ignore consistency
     stage="funded": maximize consistency + survival, penalize spiky days
@@ -1859,6 +1867,71 @@ def _score_trades(trades, target_firm=None, stage="funded", account_size=100000,
                             score -= 5
                     # else: no losing trades, no trailing-DD penalty
 
+    # ── DD-minimization goal — override score when optimize_goal="min_dd" ──
+    # WHY: When the user wants to minimize DD rather than maximize wins, the
+    #      standard score (which rewards WR/PF) fights the goal. Instead,
+    #      compute a score that rewards keeping both daily and total DD as far
+    #      below the firm limits as possible, while still requiring profitability.
+    # CHANGED: June 2026 — min_dd goal scoring
+    if optimize_goal == "min_dd":
+        if not trades or len(trades) < 5:
+            return -999.0
+        # Must still be net-profitable — no point reducing DD on a loser
+        _dd_net = [t.get('net_pips', 0) for t in trades]
+        if sum(_dd_net) <= 0:
+            return -999.0
+        # Compute dollar values (same block as above)
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            _cfg_dd = load_config()
+            _sl_dd  = float(sl_pips) if sl_pips is not None else float(_cfg_dd.get('default_sl_pips', 150))
+            _pv_dd  = float(_cfg_dd.get('pip_value_per_lot', 1.0))
+            _rp_dd  = float(risk_pct) if risk_pct is not None else float(_cfg_dd.get('risk_pct', 1.0))
+        except Exception:
+            _sl_dd, _pv_dd, _rp_dd = (float(sl_pips) if sl_pips else 150.0), 1.0, 1.0
+        _risk_usd_dd = account_size * (_rp_dd / 100)
+        _lot_dd      = max(0.01, _risk_usd_dd / (_sl_dd * _pv_dd)) if (_sl_dd * _pv_dd) > 0 else 0.01
+        _dpp_dd      = _pv_dd * _lot_dd  # dollars per pip
+
+        # Max total DD %
+        _cum_dd = np.cumsum(_dd_net)
+        _peak_dd = np.maximum.accumulate(_cum_dd)
+        _max_dd_pips = float(np.max(_peak_dd - _cum_dd)) if len(_cum_dd) > 0 else 0.0
+        _total_dd_pct = (_max_dd_pips * _dpp_dd / account_size) * 100
+
+        # Worst single-day DD %
+        _daily_pnls_dd = {}
+        for _t in trades:
+            try:
+                _day_dd = str(pd.to_datetime(_t['entry_time']).date())
+            except Exception:
+                continue
+            _daily_pnls_dd[_day_dd] = _daily_pnls_dd.get(_day_dd, 0) + _t.get('net_pips', 0)
+        _worst_day_pips = abs(min(_daily_pnls_dd.values())) if _daily_pnls_dd else 0.0
+        _daily_dd_pct   = (_worst_day_pips * _dpp_dd / account_size) * 100
+
+        # Headroom score: how much room is left before hitting the firm limits?
+        # Higher headroom = better. Score = 100 - (dd_pct / limit_pct * 100)
+        _total_headroom  = max(0.0, dd_total_limit - _total_dd_pct)
+        _daily_headroom  = max(0.0, dd_daily_limit - _daily_dd_pct)
+        _total_pct_used  = min(_total_dd_pct / dd_total_limit, 1.0) * 100  # 0–100
+        _daily_pct_used  = min(_daily_dd_pct  / dd_daily_limit,  1.0) * 100  # 0–100
+
+        # Base score: reward headroom (lower DD = higher score)
+        score = (100 - _total_pct_used) * 0.55 + (100 - _daily_pct_used) * 0.45
+
+        # Small bonus for still being profitable (up to +10)
+        _wr_dd = sum(1 for p in _dd_net if p > 0) / len(_dd_net)
+        score += _wr_dd * 10
+
+        # Hard penalty if we're already over a limit
+        if _total_dd_pct > dd_total_limit:
+            score -= (_total_dd_pct - dd_total_limit) * 10
+        if _daily_dd_pct > dd_daily_limit:
+            score -= (_daily_dd_pct - dd_daily_limit) * 10
+
+        return round(score, 2)
+
     return round(score, 2)
 
 
@@ -1895,6 +1968,11 @@ def deep_optimize(
     #      inherit the same entry timing the rule was backtested with.
     # CHANGED: May 2026 — entry bar offset in optimizer
     entry_bar_offset=0,
+    # WHY: Controls what the optimizer is trying to minimize/maximize.
+    #      "wins"   = default (maximize win rate, PF, consistency)
+    #      "min_dd" = minimize daily and total drawdown
+    # CHANGED: June 2026 — optimize_goal parameter
+    optimize_goal="wins",
 ):
     """
     Deep optimization starting from existing trades.
@@ -1945,7 +2023,8 @@ def deep_optimize(
     base_stats  = compute_stats_summary(trades)
     base_score  = _score_trades(trades, target_firm_data, stage, account_size,
                                 sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
-                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
+                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit,
+                                optimize_goal=optimize_goal)
     best_so_far = {
         'name':           'Base (no changes)',
         'trades':         len(trades),
@@ -1983,7 +2062,8 @@ def deep_optimize(
         # CHANGED: April 2026 — pass per-strategy sl_pips (audit family #2)
         score = _score_trades(kept_trades, target_firm_data, stage, account_size,
                               sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
-                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
+                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit,
+                              optimize_goal=optimize_goal)
         candidate = {
             'name':             name,
             'rules':            base_rules,
@@ -2227,7 +2307,8 @@ def deep_optimize(
 
             _r_score = _score_trades(_risk_trades, target_firm_data, stage, account_size,
                                      sl_pips=_base_sl_pips, risk_pct=_rp if _rp else risk_per_trade_pct,
-                                     dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
+                                     dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit,
+                                     optimize_goal=optimize_goal)
             if _r_score > -900:
                 _r_stats = compute_stats_summary(_risk_trades)
                 _r_candidate = {
@@ -2325,6 +2406,9 @@ def deep_optimize_generate(
     #      trades with the same entry timing the rule was backtested with.
     # CHANGED: May 2026 — entry bar offset in deep optimizer
     entry_bar_offset=0,
+    # WHY: Controls what the optimizer is trying to minimize/maximize.
+    # CHANGED: June 2026 — optimize_goal parameter
+    optimize_goal="wins",
 ):
     """
     Deep optimization — modifies rules and re-runs backtests to find NEW trades.
@@ -2577,7 +2661,8 @@ def deep_optimize_generate(
     base_stats = compute_stats_summary(trades)
     base_score = _score_trades(trades, target_firm_data, stage, account_size,
                                 sl_pips=_base_sl_pips, risk_pct=risk_per_trade_pct,
-                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
+                                dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit,
+                                optimize_goal=optimize_goal)
     best_so_far = {
         'name':           'Base (original)',
         'trades':         len(trades),
@@ -2697,7 +2782,8 @@ def deep_optimize_generate(
             _exit_sl_pips = None
         score = _score_trades(final_trades, target_firm_data, stage, account_size,
                               sl_pips=_exit_sl_pips, risk_pct=risk_per_trade_pct,
-                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit)
+                              dd_daily_limit=dd_daily_limit, dd_total_limit=dd_total_limit,
+                              optimize_goal=optimize_goal)
 
         exit_name = exit_strat.name if hasattr(exit_strat, 'name') else str(exit_strat)
         exit_desc = exit_strat.describe() if hasattr(exit_strat, 'describe') else exit_name
