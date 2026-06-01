@@ -922,8 +922,13 @@ def load_strategy_list():
                             'dd_daily_pct':      r.get('dd_daily_pct', r.get('run_settings', {}).get('dd_daily_pct', 0)),
                             'dd_total_pct':      r.get('dd_total_pct', r.get('run_settings', {}).get('dd_total_pct', 0)),
                             'account_size':      r.get('account_size', r.get('run_settings', {}).get('starting_capital', 0)),
+                            # WHY: run_settings saves firm as 'firm_name' (no prop_ prefix).
+                            #      Without checking that key, rows backtested without config
+                            #      lose their firm and the refiner shows the resolver error.
+                            # CHANGED: June 2026 — also read run_settings.firm_name
                             'prop_firm_name':    (r.get('prop_firm_name')
                                                   or r.get('run_settings', {}).get('prop_firm_name')
+                                                  or r.get('run_settings', {}).get('firm_name')
                                                   or (r.get('rules') or [{}])[0].get('prop_firm_name')
                                                   or ''),
                             'prop_firm_stage':   (r.get('prop_firm_stage')

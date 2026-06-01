@@ -496,6 +496,8 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p2_prop.pack(fill="x")
     btn_p2_saved = _sub_btn(project2_extras, "💾 Saved Rules", lambda: show_panel("p2_saved"))
     btn_p2_saved.pack(fill="x")
+    btn_p2_myrules = _sub_btn(project2_extras, "★ My Rules", lambda: show_panel("p2_myrules"))
+    btn_p2_myrules.pack(fill="x")
     btn_p2_playground = _sub_btn(project2_extras, "🎮 Strategy Playground", lambda: show_panel("p2_playground"))
     btn_p2_playground.pack(fill="x")
 
@@ -507,6 +509,7 @@ def build_sidebar(window, canvas, refresh_map):
         "p2_validator": btn_p2_validator,
         "p2_prop_test": btn_p2_prop,
         "p2_saved":     btn_p2_saved,
+        "p2_myrules":   btn_p2_myrules,
         "p2_playground": btn_p2_playground,
     }
 

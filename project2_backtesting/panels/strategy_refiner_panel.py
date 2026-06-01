@@ -3777,6 +3777,179 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               bg="#28a745", fg="white", font=("Segoe UI", 8, "bold"),
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
 
+    def _save_to_my_rules(r=rules_snap, f=filters_snap, n=strategy_name, s=stats_snap, c=cand, t=trades_snap):
+        try:
+            from shared.my_rules import save_rule as my_save_rule
+
+            idx = _get_selected_index()
+            exit_class = ''
+            exit_params = {}
+            exit_name = ''
+            _base_rules = []
+            _base_direction = ''
+            _trades_to_save = list(t) if t else []
+            _strat = {}
+
+            if not _trades_to_save and idx is not None:
+                try:
+                    from project2_backtesting.strategy_refiner import load_trades_for_strategy
+                    loaded_trades = load_trades_for_strategy(idx)
+                    if loaded_trades:
+                        _trades_to_save = list(loaded_trades)
+                except Exception:
+                    pass
+
+            if idx is not None:
+                try:
+                    matrix_path = os.path.join(project_root, 'project2_backtesting',
+                                               'outputs', 'backtest_matrix.json')
+                    if os.path.exists(matrix_path):
+                        import json as _json
+                        with open(matrix_path) as _mf:
+                            _matrix = _json.load(_mf)
+                        _results = _matrix.get('results', []) or _matrix.get('matrix', [])
+                        if isinstance(idx, int) and idx < len(_results):
+                            _strat = _results[idx]
+                        elif isinstance(idx, str) and idx.isdigit() and int(idx) < len(_results):
+                            _strat = _results[int(idx)]
+                        else:
+                            _strat = {}
+                        if _strat:
+                            exit_class = _strat.get('exit_class', _strat.get('exit_strategy', ''))
+                            exit_params = _strat.get('exit_params', _strat.get('exit_strategy_params', {}))
+                            exit_name = _strat.get('exit_name', '')
+                            _base_rules = _strat.get('rules', [])
+                            _combo = _strat.get('rule_combo', '')
+                            if '(BUY)' in _combo:
+                                _base_direction = 'BUY'
+                            elif '(SELL)' in _combo:
+                                _base_direction = 'SELL'
+                except Exception:
+                    pass
+
+            entry_tf = None
+            if _strat:
+                entry_tf = (
+                    _strat.get('entry_tf') or
+                    _strat.get('entry_timeframe') or
+                    ((_strat.get('stats') or {}).get('entry_tf')) or
+                    None
+                )
+            if not entry_tf:
+                try:
+                    from project2_backtesting.panels.configuration import load_config
+                    _cfg = load_config()
+                    entry_tf = _cfg.get('winning_scenario', 'H1')
+                except Exception:
+                    entry_tf = 'H1'
+
+            _save_rules = list(r) if r else list(_base_rules)
+            _wr = s.get('win_rate', 0)
+            if isinstance(_wr, (int, float)) and 0 < _wr < 1.0:
+                _wr = _wr * 100.0
+
+            data = {
+                'rule_combo': n,
+                'trades': _trades_to_save,
+                'conditions': [],
+                'prediction': 'WIN',
+                'win_rate': round(_wr, 2),
+                'avg_pips': s.get('avg_pips', 0),
+                'total_pips': s.get('total_pips', 0),
+                'net_total_pips': s.get('total_pips', 0),
+                'total_trades': s.get('count', 0),
+                'max_dd_pips': s.get('max_dd_pips', 0),
+                'net_profit_factor': s.get('profit_factor', 0),
+                'optimized_rules': _save_rules,
+                'rules': _save_rules,
+                'filters_applied': f,
+                'exit_class': exit_class,
+                'exit_params': exit_params,
+                'exit_name': exit_name,
+                'entry_timeframe': entry_tf,
+                'direction': _base_direction,
+                'original_rule_id': _strat.get('rule_id', '') if _strat else '',
+                'original_rule_combo': _strat.get('rule_combo', '') if _strat else '',
+                'backtest_strategy_index': idx if idx is not None else -1,
+                'optimization_applied': True if (f or len(r) != len(_base_rules)) else False,
+                'regime_filter_conditions': [],
+                'risk_settings': {
+                    'risk_pct': float(c.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
+                    'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
+                    'firm': _opt_target_var.get() if _opt_target_var else '',
+                    'stage': _stage_var.get() if _stage_var else 'Funded',
+                },
+                'eval_settings': _build_eval_settings(
+                    _opt_target_var.get() if _opt_target_var else '',
+                    _stage_var.get() if _stage_var else 'Evaluation',
+                    project_root
+                ),
+                'entry_bar_offset': int(_strat.get('entry_bar_offset', 0)) if _strat else 0,
+            }
+            for rule in _save_rules:
+                if rule.get('prediction') == 'WIN':
+                    data['conditions'].extend(rule.get('conditions', []))
+
+            # Embed regime conditions
+            try:
+                import sys as _sys
+                _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                if _p1_dir not in _sys.path:
+                    _sys.path.insert(0, _p1_dir)
+                import config_loader as _rf_cl
+                _rf_cfg = _rf_cl.load()
+                if str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
+                    _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
+                    if _rf_disc_str:
+                        _rf_disc = json.loads(_rf_disc_str)
+                        if _rf_disc.get('status') == 'ok':
+                            _rf_conds = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
+                            data['regime_filter_conditions'] = _rf_conds
+                            for _rule in data.get('optimized_rules', []):
+                                _rule['regime_filter'] = _rf_conds
+                            for _rule in data.get('rules', []):
+                                _rule['regime_filter'] = _rf_conds
+            except Exception:
+                pass
+
+            # Inject broker specs
+            try:
+                import sys as _bs_sys
+                _bs_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                if _bs_p1_dir not in _bs_sys.path:
+                    _bs_sys.path.insert(0, _bs_p1_dir)
+                import config_loader as _bs_cl
+                _bs_cfg = _bs_cl.load()
+                for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                                'contract_size', 'pip_size', 'data_source_id',
+                                'prop_firm_name', 'prop_firm_id', 'prop_firm_leverage'):
+                    _bs_val = _bs_cfg.get(_bs_key)
+                    if _bs_val is not None and _bs_key not in data:
+                        try:
+                            data[_bs_key] = float(_bs_val)
+                        except (TypeError, ValueError):
+                            data[_bs_key] = str(_bs_val)
+            except Exception:
+                pass
+
+            rid = my_save_rule(data, source=f"Optimizer: {n}", notes=str(f))
+            messagebox.showinfo("★ My Rules",
+                f"Saved to My Rules as #{rid}!\n\n"
+                f"Entry TF:    {entry_tf}\n"
+                f"Direction:   {data.get('direction', '?')}\n"
+                f"Trades:      {len(_trades_to_save)}\n"
+                f"Win Rate:    {data.get('win_rate', '?')}%\n"
+                f"PF:          {data.get('net_profit_factor', '?')}"
+            )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to save to My Rules:\n{e}")
+
+    tk.Button(btn, text="★ My Rules", command=_save_to_my_rules,
+              bg="#f5c518", fg="#333", font=("Segoe UI", 8, "bold"),
+              relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
+
     def _playground(r=rules_snap):
         try:
             import json
@@ -6068,6 +6241,145 @@ def build_panel(parent):
                                       bg="#28a745", fg="white", font=("Segoe UI", 9, "bold"),
                                       relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
             save_grid_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            def _save_to_my_rules_from_grid():
+                idx = _get_selected_index()
+                if idx is None:
+                    messagebox.showwarning("No Selection", "Select a strategy row first.")
+                    return
+                s = None
+                for _s in _strategies:
+                    if _s.get('index') == idx:
+                        s = _s
+                        break
+                if s is None:
+                    messagebox.showerror("Error", "Could not find strategy data for the selected row.")
+                    return
+                try:
+                    from shared.my_rules import save_rule as my_save_rule
+
+                    trades = _load_trades_for_strategy(s)
+                    rules = s.get('rules', [])
+                    if not isinstance(rules, list):
+                        rules = []
+                    exit_class = s.get('exit_class', s.get('exit_strategy', ''))
+                    exit_params = s.get('exit_params', s.get('exit_strategy_params', {}))
+                    exit_name = s.get('exit_name', '')
+                    rc = s.get('rule_combo', '')
+                    direction = ''
+                    if '(BUY)' in rc:
+                        direction = 'BUY'
+                    elif '(SELL)' in rc:
+                        direction = 'SELL'
+                    entry_tf = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        ((s.get('stats') or {}).get('entry_tf')) or
+                        None
+                    )
+                    if not entry_tf:
+                        try:
+                            from project2_backtesting.panels.configuration import load_config
+                            _cfg = load_config()
+                            entry_tf = _cfg.get('winning_scenario', 'H1')
+                        except Exception:
+                            entry_tf = 'H1'
+                    _wr = s.get('win_rate', 0)
+                    if isinstance(_wr, (int, float)) and 0 < _wr < 1.0:
+                        _wr = _wr * 100.0
+                    conditions = []
+                    for rule in rules:
+                        if rule.get('prediction') == 'WIN':
+                            conditions.extend(rule.get('conditions', []))
+
+                    data = {
+                        'rule_combo': rc,
+                        'trades': trades,
+                        'conditions': conditions,
+                        'prediction': 'WIN',
+                        'direction': direction,
+                        'win_rate': round(_wr, 2),
+                        'avg_pips': s.get('avg_pips', 0),
+                        'total_pips': s.get('total_pips', 0),
+                        'net_total_pips': s.get('total_pips', 0),
+                        'total_trades': s.get('count', s.get('total_trades', 0)),
+                        'max_dd_pips': s.get('max_dd_pips', 0),
+                        'net_profit_factor': s.get('profit_factor', s.get('net_profit_factor', 0)),
+                        'rules': rules,
+                        'exit_class': exit_class,
+                        'exit_params': exit_params,
+                        'exit_name': exit_name,
+                        'entry_timeframe': entry_tf,
+                        'entry_bar_offset': int(s.get('entry_bar_offset', 0)),
+                        'risk_settings': {
+                            'risk_pct': float(s.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
+                            'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
+                            'firm': _opt_target_var.get() if _opt_target_var else '',
+                            'stage': _stage_var.get() if _stage_var else 'Funded',
+                        },
+                        'eval_settings': _build_eval_settings(
+                            _opt_target_var.get() if _opt_target_var else '',
+                            _stage_var.get() if _stage_var else 'Evaluation',
+                            project_root
+                        ),
+                    }
+                    # Embed regime conditions if active
+                    try:
+                        import sys as _sys
+                        _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                        if _p1_dir not in _sys.path:
+                            _sys.path.insert(0, _p1_dir)
+                        import config_loader as _rf_cl
+                        _rf_cfg = _rf_cl.load()
+                        if str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
+                            _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
+                            if _rf_disc_str:
+                                _rf_disc = json.loads(_rf_disc_str)
+                                if _rf_disc.get('status') == 'ok':
+                                    _rf_conds = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
+                                    data['regime_filter_conditions'] = _rf_conds
+                                    for _rule in data.get('rules', []):
+                                        _rule['regime_filter'] = _rf_conds
+                    except Exception:
+                        pass
+                    # Inject broker specs
+                    try:
+                        import sys as _bs_sys
+                        _bs_p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
+                        if _bs_p1_dir not in _bs_sys.path:
+                            _bs_sys.path.insert(0, _bs_p1_dir)
+                        import config_loader as _bs_cl
+                        _bs_cfg = _bs_cl.load()
+                        for _bs_key in ('pip_value_per_lot', 'spread', 'commission_per_lot',
+                                        'contract_size', 'pip_size', 'data_source_id',
+                                        'prop_firm_name', 'prop_firm_id', 'prop_firm_leverage'):
+                            _bs_val = _bs_cfg.get(_bs_key)
+                            if _bs_val is not None and _bs_key not in data:
+                                try:
+                                    data[_bs_key] = float(_bs_val)
+                                except (TypeError, ValueError):
+                                    data[_bs_key] = str(_bs_val)
+                    except Exception:
+                        pass
+
+                    rid = my_save_rule(data, source=f"Grid: {rc}", notes="")
+                    messagebox.showinfo("★ My Rules",
+                        f"Saved to My Rules as #{rid}!\n\n"
+                        f"Entry TF:    {entry_tf}\n"
+                        f"Direction:   {direction}\n"
+                        f"Trades:      {len(trades)}\n"
+                        f"Win Rate:    {data.get('win_rate', '?')}%\n"
+                        f"PF:          {data.get('net_profit_factor', '?')}"
+                    )
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    messagebox.showerror("Error", f"Failed to save to My Rules:\n{e}")
+
+            my_rules_grid_btn = tk.Button(sel_row, text="★ My Rules", command=_save_to_my_rules_from_grid,
+                                          bg="#f5c518", fg="#333", font=("Segoe UI", 9, "bold"),
+                                          relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+            my_rules_grid_btn.pack(side=tk.LEFT, padx=(6, 0))
 
             def _update_star_btn(*args):
                 idx = _get_selected_index()

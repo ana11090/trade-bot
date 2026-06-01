@@ -1206,6 +1206,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                 with open(_pf_file, 'r', encoding='utf-8') as _pf_fh:
                                     _pf_data = json.load(_pf_fh)
                                 if _pf_data.get('firm_name', '') == _firm_display.split(' (')[0]:
+                                    _cfg_firm_data = _pf_data
                                     _sym_up = _cfg_symbol.upper() if _cfg_symbol else 'XAUUSD'
                                     _sym_spec = _pf_data.get('instrument_specs', {}).get(_sym_up, {})
                                     _cfg_swap_long  = float(_sym_spec.get('swap_long_pips_per_night', 0) or 0)
@@ -1488,8 +1489,32 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: April 2026 — leverage flows through the pipeline
             _run_settings['leverage']      = _cfg_leverage
             _run_settings['contract_size'] = _cfg_contract
-            _run_settings['firm_id']       = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', '')) if _a48_use_cfg else ''
-            _run_settings['firm_name']     = _firm_display if _a48_use_cfg else ''
+            # WHY: Always persist firm_id and firm_name regardless of
+            #      _a48_use_cfg. When cfg is off or failed, fall back to
+            #      the rule's own prop_firm_name / firm_id so the refiner's
+            #      firm resolver can still find the matching prop_firms JSON.
+            # CHANGED: June 2026 — firm info persisted even when cfg disabled
+            _run_settings_firm_id = ''
+            _run_settings_firm_name = ''
+            if _a48_use_cfg:
+                _run_settings_firm_id   = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', ''))
+                # Strip stage suffix — _firm_display may be "FTMO (evaluation)"
+                # but run_settings needs the clean name for resolver matching.
+                _run_settings_firm_name = _firm_display.split(' (')[0] if _firm_display else ''
+            if not _run_settings_firm_id:
+                # Fallback: read from the first selected rule
+                try:
+                    _fb_rule = selected_rules[0] if selected_rules else {}
+                    _run_settings_firm_id   = (_fb_rule.get('firm_id')
+                                               or _fb_rule.get('prop_firm_id')
+                                               or _bt_cfg.get('firm_id', ''))
+                    if not _run_settings_firm_name:
+                        _run_settings_firm_name = (_fb_rule.get('prop_firm_name')
+                                                   or _bt_cfg.get('firm_name', ''))
+                except Exception:
+                    pass
+            _run_settings['firm_id']   = _run_settings_firm_id
+            _run_settings['firm_name'] = _run_settings_firm_name
             # WHY: Stage drives the refiner's "Stage" column. Without
             #      this line every backtest row shows "—" in Stage.
             #      Read from the first rule's prop_firm_stage if present,

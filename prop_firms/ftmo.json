@@ -17,7 +17,7 @@
     {
       "challenge_id": "ftmo_2step_standard",
       "challenge_name": "FTMO 2-Step Standard",
-      "description": "Classic 2-phase evaluation. Phase 1: 10% target. Phase 2: 5% target. Static drawdown from balance or equity (whichever is higher at start of day).",
+      "description": "Classic 2-phase evaluation. Phase 1: 10% target. Phase 2: 5% target. Static max loss (90% of initial). Daily loss limit off midnight CET balance.",
       "phases": [
         {
           "phase_number": 1,
@@ -26,7 +26,9 @@
           "max_daily_drawdown_pct": 5.0,
           "max_total_drawdown_pct": 10.0,
           "drawdown_type": "static",
-          "drawdown_basis": "balance_or_equity_higher",
+          "drawdown_basis": "balance_at_midnight",
+          "daily_reset_time": "00:00",
+          "daily_reset_timezone": "CET",
           "min_trading_days": 4,
           "max_calendar_days": null,
           "consistency_rule_pct": null,
@@ -39,7 +41,9 @@
           "max_daily_drawdown_pct": 5.0,
           "max_total_drawdown_pct": 10.0,
           "drawdown_type": "static",
-          "drawdown_basis": "balance_or_equity_higher",
+          "drawdown_basis": "balance_at_midnight",
+          "daily_reset_time": "00:00",
+          "daily_reset_timezone": "CET",
           "min_trading_days": 4,
           "max_calendar_days": null,
           "consistency_rule_pct": null,
@@ -52,6 +56,9 @@
         "max_daily_drawdown_pct": 5.0,
         "max_total_drawdown_pct": 10.0,
         "drawdown_type": "static",
+        "drawdown_basis": "balance_at_midnight",
+        "daily_reset_time": "00:00",
+        "daily_reset_timezone": "CET",
         "profit_target_pct": null,
         "consistency_rule_pct": null,
         "payout_frequency": "biweekly",
@@ -145,6 +152,51 @@
           "200000": 1080
         },
         "fee_refundable": true
+      }
+    }
+  ],
+
+  "drawdown_mechanics": {
+    "_comment": "FTMO 2-Step. Static max loss (90% of initial). Daily loss floats off midnight CET balance.",
+    "trailing_dd": {
+      "type": "static",
+      "description": "Max Loss is a STATIC floor at 90% of initial capital. No trailing, no lock.",
+      "basis": "initial_balance",
+      "breach_check": "equity",
+      "lock_after_gain_pct": null,
+      "lock_level": null
+    },
+    "daily_dd": {
+      "type": "balance_at_midnight",
+      "description": "Daily loss limit = balance at 00:00 CET minus 5% of initial capital. Recalculated each day at 00:00 CET off that day's opening balance. First day uses initial capital.",
+      "reference": "midnight_balance_minus_5pct_initial",
+      "reset_time": "00:00",
+      "reset_timezone": "CET"
+    }
+  },
+
+  "trading_rules": [
+    {
+      "stage": "evaluation",
+      "type": "eval_settings",
+      "name": "Evaluation — Challenge (10%) then Verification (5%)",
+      "parameters": {
+        "risk_pct_range": [0.5, 1.5],
+        "max_trades_per_day_range": [3, 5],
+        "daily_dd_alert_pct": 4.7,
+        "total_dd_alert_pct": 9.7
+      }
+    },
+    {
+      "stage": "funded",
+      "type": "funded_accumulate",
+      "name": "Funded — FTMO Account",
+      "parameters": {
+        "risk_pct": 0.5,
+        "daily_dd_alert_pct": 4.7,
+        "total_dd_alert_pct": 9.7,
+        "emergency_total_dd_pct": 9.0,
+        "news_allowed": true
       }
     }
   ]

@@ -32,6 +32,7 @@ from project2_backtesting.panels import (
     strategy_refiner_panel as p2_refiner,
     strategy_validator_panel as p2_validator,
     saved_rules_panel as p2_saved,
+    my_rules_panel as p2_myrules,
     strategy_playground as p2_playground,
 )
 from project3_live_trading.panels import (
@@ -274,6 +275,7 @@ _POPOUT_CONFIG = {
     "p2_refiner":        {"title": "Strategy Refiner",    "builder": p2_refiner.build_panel},
     "p2_validator":      {"title": "Strategy Validator",  "builder": p2_validator.build_panel},
     "p2_saved":          {"title": "Saved Rules",         "builder": p2_saved.build_panel},
+    "p2_myrules":        {"title": "My Rules",            "builder": p2_myrules.build_panel},
     "p2_playground":     {"title": "Strategy Playground", "builder": p2_playground.build_panel},
     "p3_generator":      {"title": "EA Generator",        "builder": p3_generator.build_panel},
     "p3_monitor":        {"title": "Live Monitor",        "builder": p3_monitor.build_panel},
@@ -309,6 +311,7 @@ state.panel_builders = {
     "p2_refiner":        _make_builder(lambda: p2_refiner.build_panel(content), "p2_refiner"),
     "p2_validator":      _make_builder(lambda: p2_validator.build_panel(content), "p2_validator"),
     "p2_saved":          _make_builder(lambda: p2_saved.build_panel(content), "p2_saved"),
+    "p2_myrules":        _make_builder(lambda: p2_myrules.build_panel(content), "p2_myrules"),
     "p2_playground":     _make_builder(lambda: p2_playground.build_panel(content), "p2_playground"),
     "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content), "p3_generator"),
     "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content), "p3_monitor"),
@@ -340,6 +343,7 @@ refresh_map = {
     "p2_refiner":    p2_refiner.refresh,
     "p2_validator":  p2_validator.refresh,
     "p2_saved":      p2_saved.refresh,
+    "p2_myrules":    p2_myrules.refresh,
     "p2_playground": p2_playground.refresh,
     "p3_generator":  p3_generator.refresh,
     "p3_monitor":    p3_monitor.refresh,
