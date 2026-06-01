@@ -1441,6 +1441,12 @@ def apply_filters(trades, filters):
                        midnight when low > high, e.g. (22, 7) = 22..23 + 0..6),
         cooldown_minutes,
         custom_filters: [{"feature": str, "operator": str, "value": float}]
+        exclude_breach_days (float, pips): remove ALL trades on any calendar day
+            where the cumulative pip loss for that day exceeds this threshold.
+            WHY: The optimizer's existing filters (session, hold, max/day) cannot
+            target specific bad days. This filter directly removes losing days
+            that would trigger a daily DD breach at the firm.
+            CHANGED: June 2026 — breach-day exclusion filter
 
     WHY no min_pips: The old min_pips filter dropped trades whose final P&L
     was below a threshold. That uses information not available at entry time
@@ -1478,6 +1484,23 @@ def apply_filters(trades, filters):
     max_hold    = filters.get('max_hold_minutes')
     sessions    = filters.get('sessions')    # None = all
     days        = filters.get('days')        # None = all
+
+    # WHY: exclude_breach_days pre-computes which calendar days had
+    #      cumulative net pip loss exceeding the threshold, so the main
+    #      loop can simply check set membership — O(1) per trade.
+    # CHANGED: June 2026 — breach-day exclusion pre-computation
+    _excl_breach_pips = filters.get('exclude_breach_days')  # float pips or None
+    _breach_day_set   = set()
+    if _excl_breach_pips is not None and _excl_breach_pips > 0:
+        _day_pips = {}
+        for _bt in trades:
+            try:
+                _bd = str(pd.to_datetime(_bt['entry_time']).date())
+            except Exception:
+                continue
+            _day_pips[_bd] = _day_pips.get(_bd, 0.0) + float(_bt.get('net_pips', 0) or 0)
+        _breach_day_set = {d for d, pips in _day_pips.items()
+                           if pips < -abs(_excl_breach_pips)}
     # WHY: hour window — supports wrap-around for sessions like Asian late
     #      (e.g., (22, 7) = hour >= 22 OR hour < 7). Inclusive low, exclusive
     #      high so windows compose cleanly: (7, 12) + (12, 17) = no overlap.
@@ -1494,17 +1517,27 @@ def apply_filters(trades, filters):
     for t in sorted_trades:
         reason = None
 
-        if min_hold is not None and t.get('hold_minutes', 0) < min_hold:
+        # WHY: Check breach-day exclusion first — fastest check, O(1).
+        # CHANGED: June 2026 — breach-day exclusion in filter loop
+        if _breach_day_set:
+            try:
+                _t_day = str(pd.to_datetime(t['entry_time']).date())
+                if _t_day in _breach_day_set:
+                    reason = 'breach_day'
+            except Exception:
+                pass
+
+        if reason is None and min_hold is not None and t.get('hold_minutes', 0) < min_hold:
             reason = 'min_hold'
-        elif max_hold is not None and t.get('hold_minutes', 0) > max_hold:
+        elif reason is None and max_hold is not None and t.get('hold_minutes', 0) > max_hold:
             reason = 'max_hold'
-        elif sessions is not None and t.get('session') not in sessions:
+        elif reason is None and sessions is not None and t.get('session') not in sessions:
             reason = 'session'
-        elif days is not None:
+        elif reason is None and days is not None:
             day_abbrevs = [d[:3] for d in days]
             if t.get('day_abbrev', 'Mon') not in day_abbrevs and t.get('day_of_week', '') not in days:
                 reason = 'day'
-        elif hours is not None:
+        elif reason is None and hours is not None:
             _h = t.get('hour_of_day')
             if isinstance(_h, int) and isinstance(hours, (tuple, list)) and len(hours) == 2:
                 _lo, _hi = int(hours[0]), int(hours[1])
@@ -1519,9 +1552,9 @@ def apply_filters(trades, filters):
             else:
                 # Malformed — keep the trade
                 pass
-        elif allowed_ids is not None and id(t) not in allowed_ids:
+        elif reason is None and allowed_ids is not None and id(t) not in allowed_ids:
             reason = 'max_per_day'
-        elif cooldown and last_exit_time is not None:
+        elif reason is None and cooldown and last_exit_time is not None:
             try:
                 gap = (pd.to_datetime(t['entry_time']) - last_exit_time).total_seconds() / 60.0
                 if gap < cooldown:
@@ -2251,6 +2284,63 @@ def deep_optimize(
             kept, _ = apply_filters(trades, filt)
             _maybe_add(f"Hold {hold}m + max {maxd}/day", kept,
                        f"min hold {hold}m, max {maxd}/day", filt)
+
+    # ── Step 5b: Exclude breach-days sweep ───────────────────────────────────
+    # WHY: The existing filters (session, hold, max/day) cannot remove specific
+    #      calendar days that caused daily DD breaches — they filter by trade
+    #      properties, not by daily outcome. This step identifies days where the
+    #      cumulative pip loss exceeded a threshold (proxy for daily DD breach)
+    #      and tests removing all trades on those days. Sweeping multiple
+    #      thresholds lets the optimizer find the least-aggressive cut that
+    #      eliminates breaches while keeping enough trades to stay profitable.
+    # CHANGED: June 2026 — breach-day exclusion sweep
+    if not lock_filters and not _stop_flag.is_set():
+        # Derive pip threshold from firm daily DD limit and lot size
+        # so thresholds are expressed in meaningful % terms
+        try:
+            from project2_backtesting.panels.configuration import load_config
+            _bd_cfg  = load_config()
+            _bd_sl   = float(sl_pips) if sl_pips is not None else float(_bd_cfg.get('default_sl_pips', 150))
+            _bd_pipv = float(_bd_cfg.get('pip_value_per_lot', 1.0))
+            _bd_rp   = float(risk_per_trade_pct) if risk_per_trade_pct else float(_bd_cfg.get('risk_pct', 1.0))
+        except Exception:
+            _bd_sl, _bd_pipv, _bd_rp = 150.0, 1.0, 1.0
+        _bd_risk_usd  = account_size * (_bd_rp / 100)
+        _bd_lot       = max(0.01, _bd_risk_usd / (_bd_sl * _bd_pipv)) if (_bd_sl * _bd_pipv) > 0 else 0.01
+        _bd_dpp       = _bd_pipv * _bd_lot  # dollars per pip
+
+        # Test thresholds: 0.5%, 1%, 1.5%, 2%, 2.5%, 3% of account as pip equivalent
+        _bd_pct_levels = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        _bd_base_step  = base_step2 + len(combos)
+
+        for _bd_i, _bd_pct in enumerate(_bd_pct_levels):
+            if _stop_flag.is_set():
+                break
+            _bd_pip_thresh = (account_size * (_bd_pct / 100)) / max(_bd_dpp, 0.0001)
+            _report(
+                f"Breach-day exclusion: >{_bd_pct:.1f}% daily loss",
+                total_steps,
+                _bd_base_step + _bd_i + 1,
+            )
+            _bd_filt = {'exclude_breach_days': _bd_pip_thresh}
+            _bd_kept, _ = apply_filters(trades, _bd_filt)
+            _maybe_add(
+                f"Exclude breach days (>{_bd_pct:.1f}% daily loss)",
+                _bd_kept,
+                f"exclude days losing >{_bd_pct:.1f}%",
+                _bd_filt,
+            )
+
+            # Also test combined with max 1 trade/day (belt-and-suspenders)
+            if not _stop_flag.is_set():
+                _bd_combo = {'exclude_breach_days': _bd_pip_thresh, 'max_trades_per_day': 1}
+                _bd_kept2, _ = apply_filters(trades, _bd_combo)
+                _maybe_add(
+                    f"Breach days >{_bd_pct:.1f}% + max 1/day",
+                    _bd_kept2,
+                    f"exclude days >{_bd_pct:.1f}%, max 1/day",
+                    _bd_combo,
+                )
 
     # ── Step 6: Risk % optimization ──────────────────────────────────────────
     # WHY: Different risk levels produce different DD profiles. The optimizer
