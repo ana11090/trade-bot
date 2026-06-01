@@ -272,8 +272,29 @@ def _resolve_firm_challenge(rule_dict, account_size,
                     or (rule_dict.get('discovery_settings') or {}).get('firm_id')
                     or fallback_firm_id
                     or '')
+    # WHY: When both inputs are empty (e.g. backtest run with no firm in
+    #      config), fall back to the P1 config before giving up.
+    #      P1 config always has prop_firm_name from the last Run Scenarios
+    #      session, so this avoids the "Cannot resolve firm/challenge" error
+    #      for rows where firm data was never saved into run_settings.
+    # CHANGED: June 2026 — P1 config fallback when firm inputs are empty
     if not firm_name and not firm_id_hint:
-        return ('', '')
+        try:
+            import sys as _rfc_sys
+            import importlib.util as _rfc_ilu
+            _rfc_p1_path = os.path.join(project_root,
+                'project1_reverse_engineering', 'config_loader.py')
+            if os.path.exists(_rfc_p1_path):
+                _rfc_spec = _rfc_ilu.spec_from_file_location('_rfc_cl', _rfc_p1_path)
+                _rfc_mod = _rfc_ilu.module_from_spec(_rfc_spec)
+                _rfc_spec.loader.exec_module(_rfc_mod)
+                _rfc_cfg = _rfc_mod.load()
+                firm_name    = _rfc_cfg.get('prop_firm_name', '') or ''
+                firm_id_hint = _rfc_cfg.get('prop_firm_id', '') or _rfc_cfg.get('firm_id', '') or ''
+        except Exception:
+            pass
+        if not firm_name and not firm_id_hint:
+            return ('', '')
     try:
         import json as _fcj, glob as _fcg
         matched = None

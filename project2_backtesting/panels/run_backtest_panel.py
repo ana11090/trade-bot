@@ -1502,7 +1502,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 # but run_settings needs the clean name for resolver matching.
                 _run_settings_firm_name = _firm_display.split(' (')[0] if _firm_display else ''
             if not _run_settings_firm_id:
-                # Fallback: read from the first selected rule
+                # Fallback 1: read from the first selected rule
                 try:
                     _fb_rule = selected_rules[0] if selected_rules else {}
                     _run_settings_firm_id   = (_fb_rule.get('firm_id')
@@ -1511,6 +1511,26 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     if not _run_settings_firm_name:
                         _run_settings_firm_name = (_fb_rule.get('prop_firm_name')
                                                    or _bt_cfg.get('firm_name', ''))
+                except Exception:
+                    pass
+            if not _run_settings_firm_id and not _run_settings_firm_name:
+                # WHY: Fallback 2 — P1 config. If neither the backtest config
+                #      nor the selected rule has firm data, read the P1 config
+                #      which always carries the firm from the last Run Scenarios
+                #      session. This prevents saving empty strings into
+                #      run_settings and triggering the refiner resolver error.
+                # CHANGED: June 2026 — P1 config as final firm fallback
+                try:
+                    import importlib.util as _p1fi_ilu
+                    _p1fi_path = os.path.join(project_root,
+                        'project1_reverse_engineering', 'config_loader.py')
+                    if os.path.exists(_p1fi_path):
+                        _p1fi_spec = _p1fi_ilu.spec_from_file_location('_p1fi_cl', _p1fi_path)
+                        _p1fi_mod = _p1fi_ilu.module_from_spec(_p1fi_spec)
+                        _p1fi_spec.loader.exec_module(_p1fi_mod)
+                        _p1fi_cfg = _p1fi_mod.load()
+                        _run_settings_firm_name = _p1fi_cfg.get('prop_firm_name', '') or ''
+                        _run_settings_firm_id   = _p1fi_cfg.get('prop_firm_id', '') or _p1fi_cfg.get('firm_id', '') or ''
                 except Exception:
                     pass
             _run_settings['firm_id']   = _run_settings_firm_id
