@@ -68,10 +68,14 @@ _load_token = 0
 # WHY: Grid filter + sort state. Tk Vars created in build_panel; module-level
 #      refs let _on_strategies_loaded read them at rebuild time.
 # CHANGED: May 2026 — refiner grid filters + sort
-_grid_filt_profitable = None  # tk.BooleanVar
-_grid_filt_min_trades = None  # tk.StringVar
-_grid_filt_min_wr     = None  # tk.StringVar
-_grid_filt_min_pf     = None  # tk.StringVar
+_grid_filt_profitable  = None  # tk.BooleanVar
+_grid_filt_min_trades  = None  # tk.StringVar
+_grid_filt_min_wr      = None  # tk.StringVar
+_grid_filt_min_pf      = None  # tk.StringVar
+# WHY: Filter on win_pass_total (denominator of "1/4 (25%)") so the user
+#      can hide rows with too few eval windows to be statistically meaningful.
+# CHANGED: June 2026 — Min Windows filter
+_grid_filt_min_windows = None  # tk.StringVar
 _grid_sort_key        = None  # str | None — strategy dict key to sort by
 _grid_sort_reverse    = True  # True = descending
 
@@ -5147,13 +5151,16 @@ def build_panel(parent):
     #      from disk — _on_strategies_loaded just rebuilds the Treeview.
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
-    global _grid_filt_min_pf, _grid_sort_key, _grid_sort_reverse
-    _grid_filt_profitable = tk.BooleanVar(value=True)
-    _grid_filt_min_trades = tk.StringVar(value="0")
-    _grid_filt_min_wr     = tk.StringVar(value="0")
-    _grid_filt_min_pf     = tk.StringVar(value="0")
-    _grid_sort_key        = None
-    _grid_sort_reverse    = True
+    global _grid_filt_min_pf, _grid_filt_min_windows, _grid_sort_key, _grid_sort_reverse
+    _grid_filt_profitable  = tk.BooleanVar(value=True)
+    _grid_filt_min_trades  = tk.StringVar(value="0")
+    _grid_filt_min_wr      = tk.StringVar(value="0")
+    _grid_filt_min_pf      = tk.StringVar(value="0")
+    # WHY: win_pass_total filter — hide rows with too few eval windows.
+    # CHANGED: June 2026 — Min Windows filter
+    _grid_filt_min_windows = tk.StringVar(value="0")
+    _grid_sort_key         = None
+    _grid_sort_reverse     = True
 
     filt_row = tk.Frame(sel_frame, bg=WHITE)
     filt_row.pack(fill="x", pady=(0, 4))
@@ -5181,6 +5188,14 @@ def build_panel(parent):
     tk.Entry(filt_row, textvariable=_grid_filt_min_pf, width=5,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
+    # WHY: Win Pass denominator filter — e.g. "4" hides rows showing
+    #      1/2 or 1/3 (only 2-3 windows tested) and shows 1/4, 3/4 etc.
+    # CHANGED: June 2026 — Min Windows filter widget
+    tk.Label(filt_row, text="Min Windows:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_min_windows, width=4,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
     def _apply_grid_filters():
         # Trigger a tree rebuild by calling the loader's rebuild function.
         # _on_strategies_loaded is defined later inside build_panel; we
@@ -5196,6 +5211,9 @@ def build_panel(parent):
         _grid_filt_min_trades.set("0")
         _grid_filt_min_wr.set("0")
         _grid_filt_min_pf.set("0")
+        # WHY: Reset Min Windows with the rest of the filters.
+        # CHANGED: June 2026 — Min Windows filter reset
+        _grid_filt_min_windows.set("0")
         _apply_grid_filters()
 
     tk.Button(filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
@@ -5669,6 +5687,15 @@ def build_panel(parent):
                     min_pf = float(_grid_filt_min_pf.get() or "0") if _grid_filt_min_pf else 0.0
                 except Exception:
                     min_pf = 0.0
+                # WHY: win_pass_total is the denominator in "1/4 (25%)".
+                #      Filter hides rows with fewer windows than the threshold.
+                #      Rows with no win_pass data (total=0) are hidden when
+                #      min_windows > 0 — they're inconclusive anyway.
+                # CHANGED: June 2026 — Min Windows filter logic
+                try:
+                    min_windows = int(_grid_filt_min_windows.get() or "0") if _grid_filt_min_windows else 0
+                except Exception:
+                    min_windows = 0
                 _t = int(strat.get('total_trades', strat.get('trades', 0)) or 0)
                 if _t < min_t:
                     return False
@@ -5679,6 +5706,10 @@ def build_panel(parent):
                 _pf = float(strat.get('net_profit_factor', strat.get('profit_factor', 0)) or 0)
                 if _pf < min_pf:
                     return False
+                if min_windows > 0:
+                    _wp_total = int(strat.get('win_pass_total') or 0)
+                    if _wp_total < min_windows:
+                        return False
                 if _grid_filt_profitable and _grid_filt_profitable.get():
                     _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
                     if _net <= 0:
