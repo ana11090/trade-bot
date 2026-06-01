@@ -3686,7 +3686,12 @@ def build_panel(parent):
         _xgb_new = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'xgboost_result.json')
         _xgb_old = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'discovery_xgboost.json')
         p1_xgboost = _xgb_new if os.path.exists(_xgb_new) else _xgb_old
-        saved_path = os.path.join(project_root, 'saved_rules.json')
+        saved_path    = os.path.join(project_root, 'saved_rules.json')
+        # WHY: my_rules.json holds rules the user explicitly saved via the
+        #      ★ My Rules button. Same list format as saved_rules.json.
+        #      Must appear in the dropdown so they can be backtested directly.
+        # CHANGED: June 2026 — My Rules source
+        my_rules_path = os.path.join(project_root, 'my_rules.json')
 
         if os.path.exists(p1_report):
             try:
@@ -3729,6 +3734,18 @@ def build_panel(parent):
                     d = json.load(f)
                 rules = d.get('rules', [])
                 sources.append((f"Bot Entry Rules ({len(rules)} rules, all TFs)", p1_bot_entry))
+            except Exception:
+                pass
+
+        # WHY: My Rules (manual saves via ★ button) — same list format as
+        #      saved_rules.json. Show even when empty so the user can see it
+        #      exists; only hide if the file itself is missing.
+        # CHANGED: June 2026 — My Rules source entry
+        if os.path.exists(my_rules_path):
+            try:
+                with open(my_rules_path, encoding='utf-8') as f:
+                    d = json.load(f)
+                sources.append((f"★ My Rules ({len(d)} rules)", my_rules_path))
             except Exception:
                 pass
 
@@ -3860,6 +3877,11 @@ def build_panel(parent):
                     return 'Step3'
                 if 'Bot Entry' in lbl:
                     return 'BotEntry'
+                # WHY: Check My Rules before generic Saved check so it gets
+                #      its own tag instead of falling through to 'Saved'.
+                # CHANGED: June 2026 — My Rules tag
+                if 'My Rules' in lbl:
+                    return 'MyRule'
                 if 'Saved' in lbl or 'Bookmarked' in lbl:
                     return 'Saved'
                 if 'XGBoost' in lbl:
