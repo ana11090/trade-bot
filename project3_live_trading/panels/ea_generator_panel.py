@@ -329,6 +329,74 @@ def _get_strategy_data(idx):
             import traceback; traceback.print_exc()
         return {}
 
+    # ── My Rules ──────────────────────────────────────────────────────────
+    # WHY: My Rules rows have idx="my_rules_N". Previously fell through to
+    #      the integer branch which threw ValueError and returned {} — so
+    #      _auto_fill_risk got an empty dict and never set firm/stage/account.
+    # CHANGED: June 2026 — my_rules_ branch in _get_strategy_data
+    if isinstance(idx, str) and idx.startswith('my_rules_'):
+        try:
+            rule_id_str = idx[len('my_rules_'):]
+            rule_id = int(rule_id_str) if rule_id_str.isdigit() else rule_id_str
+            my_rules_path = os.path.join(project_root, 'my_rules.json')
+            if os.path.exists(my_rules_path):
+                with open(my_rules_path, 'r', encoding='utf-8') as _mrf:
+                    _mr_data = json.load(_mrf)
+                for _mre in _mr_data:
+                    if str(_mre.get('id', '')) == str(rule_id):
+                        rule = _mre.get('rule', {})
+                        result = dict(rule)
+                        # Normalise rules list
+                        if not result.get('rules') or not any(
+                                r.get('conditions') for r in result.get('rules', [])):
+                            opt = result.get('optimized_rules', [])
+                            if opt and any(r.get('conditions') for r in opt):
+                                result['rules'] = opt
+                        if not result.get('rules') or not any(
+                                r.get('conditions') for r in result.get('rules', [])):
+                            conds = result.get('conditions', [])
+                            if conds:
+                                result['rules'] = [{'prediction': 'WIN', 'conditions': conds}]
+                        # Normalise exit_params
+                        if not result.get('exit_params') and result.get('exit_strategy_params'):
+                            result['exit_params'] = result['exit_strategy_params']
+                        if not result.get('exit_strategy_params') and result.get('exit_params'):
+                            result['exit_strategy_params'] = result['exit_params']
+                        if not result.get('entry_tf'):
+                            result['entry_tf'] = result.get('entry_timeframe', '')
+                        # Auto-fill risk/firm/stage from risk_settings
+                        _rs = result.get('risk_settings', {})
+                        if _rs:
+                            if _rs.get('risk_pct') and _risk_var:
+                                _risk_var.set(str(_rs['risk_pct']))
+                            if _rs.get('account_size') and _ea_account_var:
+                                try:
+                                    _ea_account_var.set(str(int(_rs['account_size'])))
+                                except (ValueError, TypeError):
+                                    pass
+                            if _rs.get('firm') and _firm_var:
+                                try:
+                                    _firm_var.set(_rs['firm'])
+                                except Exception:
+                                    pass
+                            _stage_raw = _rs.get('stage', '')
+                            if _stage_raw and _ea_stage_var:
+                                # Normalise: "evaluation" → "Evaluation"
+                                _stage_display = _stage_raw.capitalize()
+                                try:
+                                    _ea_stage_var.set(_stage_display)
+                                except Exception:
+                                    pass
+                        print(f"[EA GEN] Loaded my_rules #{rule_id}: "
+                              f"firm={_rs.get('firm','?')} "
+                              f"stage={_rs.get('stage','?')} "
+                              f"acct={_rs.get('account_size','?')}")
+                        return result
+        except Exception as _mre:
+            print(f"[EA GEN] Error loading my_rules {idx}: {_mre}")
+            import traceback; traceback.print_exc()
+        return {}
+
     # ── Optimizer latest ──
     if isinstance(idx, str) and idx == 'optimizer_latest':
         try:
