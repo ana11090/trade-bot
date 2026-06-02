@@ -2609,6 +2609,35 @@ def build_panel(parent):
               bg="#6c757d", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT)
 
+    # WHY: broker_profile.mq5 queries the terminal for pip value, spread,
+    #      trading-session schedule, GMT offset — everything the backtester
+    #      and EA need to be calibrated to this prop firm's broker.
+    # CHANGED: June 2026 — Broker Profile download + apply UI
+    def _download_broker_profile():
+        _src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'templates', 'broker_profile.mq5')
+        if not os.path.exists(_src):
+            messagebox.showerror("Not Found", f"broker_profile.mq5 not found:\n{_src}")
+            return
+        _dst = filedialog.asksaveasfilename(
+            title="Save Broker Profile Script", defaultextension=".mq5",
+            filetypes=[("MQL5 Script", "*.mq5"), ("All files", "*.*")],
+            initialfile="broker_profile.mq5")
+        if _dst:
+            shutil.copy2(_src, _dst)
+            messagebox.showinfo("Saved",
+                f"Saved to:\n{_dst}\n\n"
+                "1. Copy to MT5 -> MQL5/Scripts/\n"
+                "2. Compile (F7), attach to your symbol's chart\n"
+                "3. (optional) set SpreadSampleSeconds=3600 to measure session spread\n"
+                "4. Copy the Experts-tab output between the BEGIN/END markers\n"
+                "5. Paste it below and click 'Apply to <firm>'")
+
+    tk.Button(step1_btn_row, text="\U0001f4e1 Download Broker Profile",
+              command=_download_broker_profile,
+              bg="#764ba2", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=(8, 0))
+
     _test_script_text = tk.Text(step1_section, height=10, font=("Consolas", 7),
                                  bg="#1a1a2a", fg="#e0e0e0", wrap="none", state="disabled")
     _test_script_text.pack(fill="x", pady=(4, 6))
@@ -2636,6 +2665,80 @@ def build_panel(parent):
     )
     tk.Label(inst_frame, text=instructions, font=("Segoe UI", 8),
              bg=inst_bg, fg=MIDGREY, justify="left", anchor="w").pack(anchor="w")
+
+    # ── Broker Profile: paste + apply ────────────────────────────────────────
+    # WHY: After running broker_profile.mq5, user pastes the output here.
+    #      Clicking Apply writes broker-specific values (pip value, spread,
+    #      session gaps, leverage) into the selected firm JSON and
+    #      backtest_config.json so both the backtester and EA are calibrated.
+    # CHANGED: June 2026 — Broker Profile paste/apply UI
+    prof_sec = tk.Frame(sf, bg=WHITE, padx=20, pady=10)
+    prof_sec.pack(fill="x", padx=5, pady=(5, 0))
+    tk.Label(prof_sec, text="Calibrate selected prop firm to your broker",
+             font=("Segoe UI", 10, "bold"), bg=WHITE, fg=GREEN).pack(anchor="w")
+    tk.Label(prof_sec,
+             text="Paste the broker_profile.mq5 output (BEGIN\u2026END block):",
+             font=("Segoe UI", 8), bg=WHITE, fg=MIDGREY).pack(anchor="w", pady=(2, 2))
+
+    _prof_paste = tk.Text(prof_sec, height=6, font=("Consolas", 8),
+                          bg="#1a1a2a", fg="#e0e0e0", insertbackground="white", wrap="none")
+    _prof_paste.pack(fill="x", pady=(0, 4))
+
+    _prof_result = tk.Label(prof_sec, text="", font=("Segoe UI", 8),
+                            bg=WHITE, fg=DARK, justify="left", anchor="w")
+
+    def _apply_broker_profile(dry=False):
+        blob = _prof_paste.get("1.0", "end-1c")
+        if not blob.strip():
+            messagebox.showinfo("Nothing pasted", "Paste the script output first.")
+            return
+        firm_name = _firm_var.get() if _firm_var else None
+        if not firm_name or firm_name == 'Custom':
+            messagebox.showerror("Select a firm",
+                "Pick a real prop firm (not Custom) before applying a broker profile.")
+            return
+        try:
+            from shared.broker_profile import apply_profile
+            summary = apply_profile(blob, firm_name, dry_run=dry)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            messagebox.showerror("Apply failed", str(e))
+            return
+        ntw = summary.get('no_trades_window_gmt')
+        _nl = "\n"
+        _prefix = ("DRY-RUN \u2014 not written" + _nl) if dry else ""
+        msg = (_prefix
+               + f"Firm: {firm_name}" + _nl
+               + f"Symbol: {summary['symbol']}  Broker: {summary['broker']}" + _nl
+               + f"pip_value/lot: {summary['pip_value_per_lot']}  "
+               + f"spread: {summary['typical_spread']}p  lev: 1:{summary['leverage']}" + _nl
+               + f"GMT offset: {summary['gmt_offset']:+.1f}h  "
+               + f"no-trades window GMT: [{ntw[0]},{ntw[1]})")
+        _prof_result.configure(text=msg, fg=GREEN if not dry else AMBER)
+        _prof_result.pack(anchor="w", pady=(4, 0))
+        if not dry:
+            # refresh in-memory firm data so a subsequent Generate uses new values
+            try:
+                global _FIRMS
+                _FIRMS = _load_firms()
+                _on_firm_change()
+            except Exception:
+                pass
+            messagebox.showinfo("Applied",
+                f"Calibrated {firm_name} to your broker.\n"
+                "Re-run the backtest and regenerate the EA \u2014 both now use the broker's "
+                "real pip value, spread, leverage, and no-trades window.")
+
+    _prof_btnrow = tk.Frame(prof_sec, bg=WHITE)
+    _prof_btnrow.pack(fill="x")
+    tk.Button(_prof_btnrow, text="Preview (dry-run)",
+              command=lambda: _apply_broker_profile(dry=True),
+              bg=MIDGREY, fg="white", font=("Segoe UI", 9), relief=tk.FLAT,
+              cursor="hand2", padx=10, pady=4).pack(side=tk.LEFT)
+    tk.Button(_prof_btnrow, text="Apply to selected firm",
+              command=lambda: _apply_broker_profile(dry=False),
+              bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT,
+              cursor="hand2", padx=12, pady=4).pack(side=tk.LEFT, padx=(8, 0))
 
     # ── Step 2: Full EA ────────────────────────────────────────────────────────
     step2_section = tk.Frame(sf, bg=WHITE, padx=20, pady=12)
