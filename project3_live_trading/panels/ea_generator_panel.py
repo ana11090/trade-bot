@@ -90,6 +90,9 @@ _p3_grid_filt_profitable = None   # tk.BooleanVar
 _p3_grid_filt_min_trades = None   # tk.StringVar
 _p3_grid_filt_min_wr     = None   # tk.StringVar
 _p3_grid_filt_min_pf     = None   # tk.StringVar
+# WHY: Source dropdown — same as Strategy Refiner.
+# CHANGED: June 2026 — source dropdown for EA panel
+_p3_source_var           = None   # tk.StringVar (display label)
 _p3_grid_sort_key        = None   # str | None
 _p3_grid_sort_reverse    = True
 _p3_rebuild_hook         = [None] # populated by _on_strategies_loaded
@@ -1334,11 +1337,15 @@ def build_panel(parent):
     # CHANGED: May 2026 — EA panel filter/sort parity
     global _p3_grid_filt_profitable, _p3_grid_filt_min_trades
     global _p3_grid_filt_min_wr, _p3_grid_filt_min_pf
-    global _p3_grid_sort_key, _p3_grid_sort_reverse
+    global _p3_source_var, _p3_grid_sort_key, _p3_grid_sort_reverse
     _p3_grid_filt_profitable = tk.BooleanVar(value=True)
     _p3_grid_filt_min_trades = tk.StringVar(value="0")
     _p3_grid_filt_min_wr     = tk.StringVar(value="0")
     _p3_grid_filt_min_pf     = tk.StringVar(value="0")
+    # WHY: Source dropdown — controls which pool the grid shows.
+    # CHANGED: June 2026 — source dropdown
+    _p3_source_var           = tk.StringVar(value="All sources")
+    _p3_source_var._internal = "all"
     _p3_grid_sort_key        = None
     _p3_grid_sort_reverse    = True
 
@@ -1362,6 +1369,34 @@ def build_panel(parent):
     tk.Entry(filt_row, textvariable=_p3_grid_filt_min_pf, width=5,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
+    # WHY: Source dropdown — mirrors the Strategy Refiner Show: selector.
+    # CHANGED: June 2026 — source dropdown widget
+    _p3_src_display_map = {
+        "All sources":        "all",
+        "Backtest results":   "backtest",
+        "★ My Rules":         "my_rules",
+        "💾 Saved/Bookmarked": "saved",
+    }
+    tk.Label(filt_row, text="Show:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(14, 2))
+    _p3_src_combo = ttk.Combobox(
+        filt_row,
+        textvariable=_p3_source_var,
+        values=list(_p3_src_display_map.keys()),
+        state="readonly",
+        width=16,
+        font=("Segoe UI", 8),
+    )
+    _p3_src_combo.pack(side=tk.LEFT)
+
+    def _p3_on_source_selected(*_):
+        chosen = _p3_source_var.get()
+        _p3_source_var._internal = _p3_src_display_map.get(chosen, "all")
+        if _p3_rebuild_hook[0]:
+            _p3_rebuild_hook[0]()
+
+    _p3_src_combo.bind("<<ComboboxSelected>>", _p3_on_source_selected)
+
     def _p3_apply_grid_filters():
         if _p3_rebuild_hook[0]:
             _p3_rebuild_hook[0]()
@@ -1371,6 +1406,9 @@ def build_panel(parent):
         _p3_grid_filt_min_trades.set("0")
         _p3_grid_filt_min_wr.set("0")
         _p3_grid_filt_min_pf.set("0")
+        if _p3_source_var:
+            _p3_source_var.set("All sources")
+            _p3_source_var._internal = "all"
         _p3_apply_grid_filters()
 
     tk.Button(filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
@@ -1508,7 +1546,9 @@ def build_panel(parent):
             # CHANGED: May 2026 — EA panel filter parity
             def _p3_passes_filter(strat):
                 src = strat.get('source', 'backtest')
-                if src in ('saved', 'separator'):
+                # WHY: my_rules and saved rows use the same pass-through logic.
+                # CHANGED: June 2026 — my_rules pass-through
+                if src in ('saved', 'my_rules', 'separator'):
                     return True
                 try:
                     min_t = int(_p3_grid_filt_min_trades.get() or "0") if _p3_grid_filt_min_trades else 0
@@ -1554,14 +1594,26 @@ def build_panel(parent):
                     return 0.0
 
             # ── Populate rows ─────────────────────────────────────────────
-            _sr_saved   = [s for s in _strategies
-                           if s.get('source') == 'saved' and _p3_passes_filter(s)]
-            _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
-            _sr_others  = [s for s in _strategies
-                           if s.get('source') not in ('saved', 'separator')
-                           and _p3_passes_filter(s)]
+            # WHY: Source dropdown filters which pool is shown.
+            # CHANGED: June 2026 — source dropdown filtering
+            _p3_src_key      = getattr(_p3_source_var, '_internal', 'all') if _p3_source_var else 'all'
+            _p3_show_backtest = _p3_src_key in ('all', 'backtest')
+            _p3_show_my_rules = _p3_src_key in ('all', 'my_rules')
+            _p3_show_saved    = _p3_src_key in ('all', 'saved')
 
-            # Apply sort to backtest results only (saved kept in order)
+            _sr_saved    = [s for s in _strategies
+                            if s.get('source') == 'saved'
+                            and _p3_show_saved and _p3_passes_filter(s)]
+            _sr_my_rules = [s for s in _strategies
+                            if s.get('source') == 'my_rules'
+                            and _p3_show_my_rules and _p3_passes_filter(s)]
+            _sr_sep      = [s for s in _strategies if s.get('source') == 'separator']
+            _sr_others   = [s for s in _strategies
+                            if s.get('source') not in ('saved', 'my_rules', 'separator')
+                            and _p3_show_backtest
+                            and _p3_passes_filter(s)]
+
+            # Apply sort to backtest results only (saved/my_rules kept in order)
             if _p3_grid_sort_key:
                 try:
                     _sr_others.sort(key=_p3_sort_key_fn,
@@ -1577,7 +1629,7 @@ def build_panel(parent):
             _p3_rebuild_hook[0] = _on_strategies_loaded
 
             _bt_row_n   = 0
-            for s in _sr_saved + _sr_sep + _sr_others:
+            for s in _sr_my_rules + _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
                 rc       = s.get('rule_combo', '?')
                 exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
@@ -1595,6 +1647,34 @@ def build_panel(parent):
                 if source == 'separator':
                     _strat_tree_p3.insert("", "end", iid=idx, values=(
                         "", "", "── Backtest Results ──", "", "", "", "", "", "", "", ""), tags=("separator",))
+                    continue
+                elif source == 'my_rules':
+                    # WHY: My Rules rows — same shape as saved, own insert+continue.
+                    # CHANGED: June 2026 — my_rules row render in EA panel
+                    numeric_id = s.get('id', '')
+                    id_display = f"★ #{numeric_id}"
+                    _sr_dict  = s.get('saved_rule', {})
+                    _sr_dir   = _sr_dict.get('direction', _sr_dict.get('action', ''))
+                    _sr_conds = [c.get('feature', '') for c in _sr_dict.get('conditions', [])]
+                    _sr_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                    if _sr_exit in ('', 'Default', '?'):
+                        _sr_exit = _sr_dict.get('exit_class', _sr_dict.get('exit_name', ''))
+                    rc = (_sr_dir + ' | ' if _sr_dir else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _sr_conds
+                    )
+                    exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
+                    wr_s_my = str(round(wr * 100 if wr <= 1 else wr, 1)) + '%'
+                    entry_tf_display = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        (s.get('stats', {}) or {}).get('entry_tf') or
+                        '—'
+                    )
+                    tag = 'saved' if not is_starred else 'starred'
+                    _strat_tree_p3.insert("", "end", iid=idx, values=(
+                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_my,
+                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                    ), tags=(tag,))
                     continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
