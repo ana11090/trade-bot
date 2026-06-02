@@ -1325,13 +1325,78 @@ def _load_selected_strategy(silent=False):
 
     CHANGED: April 2026 — saved rules match to matrix by name
     """
-    global _base_trades, _filtered_trades, _load_token
+    global _base_trades, _filtered_trades, _load_token, _loaded_row
     # Increment token so any in-flight background thread knows it's stale.
     _load_token += 1
     my_token = _load_token
 
     idx = _get_selected_index()
     if idx is None:
+        return
+
+    # ── My Rules: load embedded trades directly ───────────────────────────
+    # WHY: My Rules rows have index="my_rules_N". Their trades are embedded
+    #      in my_rules.json under rule['trades'] — no matrix match needed.
+    #      Load them directly, same as the saved-rule embedded-trades path.
+    # CHANGED: June 2026 — my_rules loading branch
+    if isinstance(idx, str) and idx.startswith('my_rules_'):
+        _mr_strategy = None
+        for s in _strategies:
+            if s.get('index') == idx:
+                _mr_strategy = s
+                break
+
+        if not _mr_strategy:
+            if not silent:
+                messagebox.showwarning("No Data", "My Rules entry not found.")
+            return
+
+        # Set _loaded_row so the refiner panel shows the right rule info
+        _loaded_row = _mr_strategy
+
+        _mr_rule      = _mr_strategy.get('saved_rule', {})
+        _mr_trades    = _mr_rule.get('trades', [])
+        _mr_filters   = _mr_rule.get('filters_applied')
+
+        if not _mr_trades:
+            if not silent:
+                messagebox.showwarning(
+                    "No Trades",
+                    "This My Rules entry has no embedded trades.\n"
+                    "Run a backtest on this rule first to load trades."
+                )
+            return
+
+        _strat_info_lbl.configure(
+            text=f"⏳ Loading {len(_mr_trades)} trades from My Rules #{_mr_strategy.get('id')}…",
+            fg="#e67e22"
+        )
+
+        def _do_load_my_rules(_raw=_mr_trades, _filters=_mr_filters, _tok=my_token):
+            global _base_trades, _filtered_trades
+            try:
+                from project2_backtesting.strategy_refiner import enrich_trades, apply_filters
+                _enriched = enrich_trades(list(_raw))
+                if _load_token != _tok:
+                    return
+                _base_trades     = _enriched
+                _filtered_trades = list(_base_trades)
+                if _filters:
+                    try:
+                        kept, _ = apply_filters(_base_trades, _filters)
+                        _filtered_trades = list(kept)
+                    except Exception:
+                        pass
+                if state.window:
+                    state.window.after(0, _update_strat_info)
+                    state.window.after(50, _schedule_update)
+            except Exception as _e:
+                import traceback; traceback.print_exc()
+                if state.window:
+                    state.window.after(0, lambda: messagebox.showerror("Load Error", str(_e)))
+
+        import threading
+        threading.Thread(target=_do_load_my_rules, daemon=True).start()
         return
 
     # ── Saved rule: find matching strategy in backtest matrix ─────────────
@@ -1379,7 +1444,6 @@ def _load_selected_strategy(silent=False):
         # CHANGED: April 2026 — saved rule is source of truth
         for _sr_s in _strategies:
             if _sr_s.get('index') == idx:
-                global _loaded_row
                 _loaded_row = _sr_s
                 break
 
