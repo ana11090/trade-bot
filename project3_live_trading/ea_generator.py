@@ -1094,11 +1094,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         if _am and _vm not in _adx_seen:
             _adx_seen.add(_vm)
             _tf_lc, _p = _am.group(1).upper(), _am.group(2)
-            _hv = f'handle_adx_{_tf_lc}_{_p}'
-            _period_str = '{' + f'mql_period' + '}'
+            # CHANGED: June 2026 — ADX moved to custom Mt5ADX(); the old
+            #          handle_adx_{tf}_{p} no longer exists. Read +DI/-DI from
+            #          Mt5ADX(mode=1/2) at the same shift as the rule read so
+            #          the DIAG matches what was evaluated.
             diag_adx_reads += (
-                f'double val_{_vm}_pdi = SafeCopyBuf({_hv}, 1, PERIOD_{_tf_lc});\n'
-                f'      double val_{_vm}_mdi = SafeCopyBuf({_hv}, 2, PERIOD_{_tf_lc});\n      '
+                f'double val_{_vm}_pdi = Mt5ADX(PERIOD_{_tf_lc}, {_p}, GetBarShift(PERIOD_{_tf_lc}), 1);\n'
+                f'      double val_{_vm}_mdi = Mt5ADX(PERIOD_{_tf_lc}, {_p}, GetBarShift(PERIOD_{_tf_lc}), 2);\n      '
             )
             diag_adx_args += (
                 f'" {_vm}_pdi=", DoubleToString(val_{_vm}_pdi, 4), '
