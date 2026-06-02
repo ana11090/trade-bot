@@ -315,32 +315,33 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": True,
         "description": "Aroon on {tf} (custom indicator)",
     }),
-    # WHY: aroon_indicator = AroonUp(14) - AroonDown(14).
-    #      Python: ta.trend.AroonIndicator(high, low, window=14).aroon_indicator()
-    #              = ((14 - bars_since_high) / 14 * 100) - ((14 - bars_since_low) / 14 * 100)
-    #      MT5: iHighest/iLowest return the offset (bars back) of the extreme within
-    #           a window of period+1 bars starting at GetBarShift(tf).
+    # WHY: aroon_indicator = AroonUp(25) - AroonDown(25).
+    #      Python: ta.trend.AroonIndicator(high, low, window=25).aroon_indicator()
+    #              = ((25 - bars_since_high) / 25 * 100) - ((25 - bars_since_low) / 25 * 100)
+    #      Period is 25 — matches shared/indicator_utils.py which uses window=25.
+    #      Previous code used period=14 (from old iCustom call) — WRONG, caused
+    #      different values and too many trades (condition passed on too many bars).
+    #      MT5: iHighest/iLowest with count=26 (period+1) scan 25 completed bars.
     #      No custom indicator file needed — pure built-in MT5 functions.
-    #      No handle required — handle_var and handle_init left empty.
-    # CHANGED: June 2026 — native iHighest/iLowest implementation (no Aroon.ex5 dependency)
+    # CHANGED: June 2026 — fix period 14→25 to match Python window=25
     (r"^aroon_indicator$", {
         "mt5_handle_var":  "",
         "mt5_handle_init": "",
         "mt5_buffer_read": (
-            "int _aroon_hi_{var} = iHighest(_Symbol, {mt5_tf}, MODE_HIGH, 15, GetBarShift({mt5_tf})); "
-            "int _aroon_lo_{var} = iLowest (_Symbol, {mt5_tf}, MODE_LOW,  15, GetBarShift({mt5_tf})); "
+            "int _aroon_hi_{var} = iHighest(_Symbol, {mt5_tf}, MODE_HIGH, 26, GetBarShift({mt5_tf})); "
+            "int _aroon_lo_{var} = iLowest (_Symbol, {mt5_tf}, MODE_LOW,  26, GetBarShift({mt5_tf})); "
             "double val_{var} = (_aroon_hi_{var} < 0 || _aroon_lo_{var} < 0) ? EMPTY_VALUE "
-            ": (((14.0 - (double)_aroon_hi_{var}) / 14.0 * 100.0) "
-            "- ((14.0 - (double)_aroon_lo_{var}) / 14.0 * 100.0)); "
+            ": (((25.0 - (double)_aroon_hi_{var}) / 25.0 * 100.0) "
+            "- ((25.0 - (double)_aroon_lo_{var}) / 25.0 * 100.0)); "
             "if(val_{var} == EMPTY_VALUE) indicatorFailed = true;"
         ),
         "tradovate_code": (
             "ta.trend.AroonIndicator("
-            "df_m{tv_tf}['high'], df_m{tv_tf}['low'], window=14"
+            "df_m{tv_tf}['high'], df_m{tv_tf}['low'], window=25"
             ").aroon_indicator().iloc[-1]"
         ),
         "custom_indicator_mt5": False,
-        "description": "Aroon Indicator (up-down, period=14) on {tf} — native iHighest/iLowest",
+        "description": "Aroon Indicator (up-down, period=25) on {tf} — native iHighest/iLowest",
     }),
     # Bears Power
     (r"^bear_power$", {
