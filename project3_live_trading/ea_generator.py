@@ -779,25 +779,81 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             mql = get_mql_code(feat, 'mt5')
             var_n = mql['var_name']
             cond_expr = _mql_condition_expr(f'val_{var_n}', op, param_name)
+            # WHY: Some templates (e.g. std_dev) use Python f-string escapes
+            #      {{/}} that the .replace()-based sub() helper leaves intact —
+            #      they need to become single {/} in the final MQL5 output.
+            # CHANGED: June 2026 — brace unescape on read_code (Section B fix)
+            _read_clean = mql["read_code"].replace('{{', '{').replace('}}', '}')
             condition_checks.append(
                 f'   // Condition {ci}: {feat} {op} {cond.get("value", 0):.4f}\n'
-                f'   {mql["read_code"]}\n'
+                f'   {_read_clean}\n'
                 f'   if(!({cond_expr})) entrySignal = false;\n'
             )
     else:
-        # Multiple rules — OR between rules, AND within each
+        # WHY (Section B, June 2026): Old emission wrapped each rule in
+        #   if(!entrySignal) { read indicators; check conditions; }
+        # Two problems:
+        #   1. Short-circuit: once Rule 1 fires entrySignal=true, later rules'
+        #      indicator reads never run — diagnostic state is partial and
+        #      val_X declared inside one block is out of scope for the DIAG
+        #      Print after the block.
+        #   2. An earlier rule's NaN indicator set indicatorFailed=true and
+        #      skipped the whole bar even when a LATER rule would have matched
+        #      with all-valid inputs. Python evaluates every rule independently
+        #      (NaN in one rule's indicator only fails that rule).
+        # Fix: read each distinct indicator ONCE at function scope; track a
+        # per-indicator ok_<var> flag; build each rule as pure boolean algebra
+        # over val_X / ok_X; flag indicator_not_ready only when NO rule was
+        # evaluable (i.e. every rule has at least one invalid input).
+        # CHANGED: June 2026 — unique reads + per-rule boolean eval
+
+        # 1. Collect unique features across all rules (dedup by var_name)
+        _seen_var_names = set()
+        _unique_features = []  # list of (var_name, read_code)
+        for _rule in win_rules:
+            for _cond in _rule.get('conditions', []):
+                _feat = _cond['feature']
+                _mql_u = get_mql_code(_feat, 'mt5')
+                _vn = _mql_u['var_name']
+                if _vn not in _seen_var_names:
+                    _seen_var_names.add(_vn)
+                    _unique_features.append((_vn, _mql_u['read_code']))
+
         condition_checks.append(
-            f'   // {len(win_rules)} rules combined with OR logic\n'
-            f'   entrySignal = false;\n'
+            f'   // {len(win_rules)} rules combined with OR logic (Section B emission)\n'
+            f'   //   read each distinct indicator once, then evaluate branches\n'
+            f'   //   as pure boolean algebra over val_X / ok_X. Matches Python\n'
+            f'   //   NaN-aware per-branch semantics.\n'
         )
+
+        # 2. Emit unique reads, each preceded by a per-indicator ok flag.
+        #    The read_code from indicator_mapper normally sets
+        #    `indicatorFailed = true` on EMPTY_VALUE. We rewrite that to set
+        #    `ok_<var> = false` instead so we can per-rule it.
+        # WHY (brace unescape): some templates (e.g. std_dev) use Python f-string
+        #      escapes {{/}} in their mt5_buffer_read string. indicator_mapper's
+        #      sub() helper uses plain .replace() — it does NOT process those
+        #      escapes — so they appear LITERALLY as {{/}} in the consumed value.
+        #      Convert them back to single {/} at consumption (matches the
+        #      pre-existing single-rule path's intent for those indicators).
+        for _vn, _rc in _unique_features:
+            _rc_clean = _rc.replace('{{', '{').replace('}}', '}')
+            _rc_rewritten = _rc_clean.replace('indicatorFailed = true', f'ok_{_vn} = false')
+            condition_checks.append(
+                f'   bool ok_{_vn} = true;\n'
+                f'   {_rc_rewritten}\n'
+            )
+
+        # 3. Build each rule as a single boolean expression
+        _all_rule_names = []
+        _all_branch_ok_names = []
         for ri, rule in enumerate(win_rules, 1):
             conds = rule.get('conditions', [])
             if not conds:
                 continue
-            condition_checks.append(
-                f'   if(!entrySignal) {{ // Rule {ri} ({len(conds)} conditions)\n'
-                f'      bool rule{ri} = true;\n'
-            )
+            _ok_parts = []
+            _cond_parts = []
+            _seen_ok_for_rule = set()
             for ci, cond in enumerate(conds, 1):
                 feat = cond['feature']
                 op   = cond.get('operator', '>')
@@ -805,15 +861,31 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 param_name = f"Rule{ri}_Cond{ci}_{safe_name[:20]}"
                 mql = get_mql_code(feat, 'mt5')
                 var_n = mql['var_name']
-                cond_expr = _mql_condition_expr(f'val_{var_n}', op, param_name)
-                condition_checks.append(
-                    f'      {mql["read_code"]}\n'
-                    f'      if(!({cond_expr})) rule{ri} = false;\n'
-                )
+                if var_n not in _seen_ok_for_rule:
+                    _seen_ok_for_rule.add(var_n)
+                    _ok_parts.append(f'ok_{var_n}')
+                _cond_parts.append('(' + _mql_condition_expr(f'val_{var_n}', op, param_name) + ')')
+            _branch_ok_name = f'rule{ri}_ok'
+            _rule_name = f'rule{ri}'
+            _all_branch_ok_names.append(_branch_ok_name)
+            _all_rule_names.append(_rule_name)
             condition_checks.append(
-                f'      if(rule{ri}) entrySignal = true;\n'
-                f'   }}\n'
+                f'   // Rule {ri} ({len(conds)} conditions)\n'
+                f'   bool {_branch_ok_name} = ' + ' && '.join(_ok_parts) + ';\n'
+                f'   bool {_rule_name} = {_branch_ok_name} && ' + ' && '.join(_cond_parts) + ';\n'
             )
+
+        # 4. OR rules, set indicatorFailed only when no rule could be evaluated
+        if _all_rule_names:
+            _or_rules = ' || '.join(_all_rule_names)
+            _any_branch_ok = ' || '.join(_all_branch_ok_names)
+            condition_checks.append(
+                f'   entrySignal = ({_or_rules});\n'
+                f'   // indicator_not_ready only when NO branch could be evaluated\n'
+                f'   indicatorFailed = !({_any_branch_ok});\n'
+            )
+        else:
+            condition_checks.append('   entrySignal = false;\n')
 
     # Handle variable declarations
     # WHY: Two indicators can share the same handle declaration (e.g.
@@ -956,26 +1028,39 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     conditions_check_block = '\n'.join(condition_checks)
 
+    # WHY (Section F.3): On every fill, emit the matched rule index so trades
+    #      in the log can be matched back to Python's rule_id. Single-rule
+    #      strategies emit a fixed "1"; multi-rule build a nested ternary
+    #      over the rule_i bools. rule_i are local to OnTick (declared by the
+    #      conditions_check_block emitted above) and the [EA] opened Print
+    #      runs in the same scope.
+    # CHANGED: June 2026 — Section F.3 rule_id on [EA] fills
+    if len(win_rules) == 1:
+        _rule_id_expr = '1'
+    elif len(win_rules) >= 2:
+        # Nested ternary: rule1?1 : rule2?2 : ... : -1
+        _parts = [f'rule{ri}?{ri}' for ri in range(1, len(win_rules) + 1)]
+        _rule_id_expr = ' : '.join(_parts) + ' : -1'
+    else:
+        _rule_id_expr = '-1'
+
     # Build diagnostic print args from all condition variable names
-    # WHY: Multi-rule strategies declare val_X inside if(!entrySignal){...}
-    #      blocks — those variables are out of scope at the Print statement.
-    #      Only include val_X in diag_print_args when there is exactly one
-    #      win_rule (single-rule path declares val_X at function scope).
-    #      For multi-rule, suppress the per-indicator diagnostics to avoid
-    #      MQL5 "undeclared identifier" compile errors.
-    # CHANGED: June 2026 — suppress diag_print_args for multi-rule strategies
+    # WHY: After Section B (June 2026), val_X are declared at function scope
+    #      for BOTH single- and multi-rule paths (unique-read block emits each
+    #      indicator once at outer scope). So per-indicator DIAG values are
+    #      safe to reference regardless of rule count.
+    # CHANGED: June 2026 — multi-rule diag_print_args now safe post-Section B
     import re as _re_diag
     _diag_seen = set()
     _diag_vars = []
-    if len(win_rules) <= 1:
-        # Single rule: val_X declared at function scope — safe to reference
-        for _cc in condition_checks:
-            for _vm in _re_diag.findall(r'val_([a-z0-9_]+)', _cc):
-                if _vm not in _diag_seen:
-                    _diag_seen.add(_vm)
-                    _diag_vars.append(_vm)
-    # else: multi-rule — val_X are block-scoped inside if(!entrySignal){};
-    #       leave _diag_vars empty to avoid undeclared identifier errors.
+    for _cc in condition_checks:
+        for _vm in _re_diag.findall(r'val_([a-z0-9_]+)', _cc):
+            # Filter out _raw_X / _aroon_hi_X helpers — only keep canonical val_X
+            if _vm.startswith(('raw_', 'aroon_hi_', 'aroon_lo_', 'aroon_up_', 'aroon_dn_')):
+                continue
+            if _vm not in _diag_seen:
+                _diag_seen.add(_vm)
+                _diag_vars.append(_vm)
 
     # Each entry ends with ", " so it connects to the next arg (" signal=").
     # If _diag_vars is empty, diag_print_args is '' and the trailing comma
@@ -984,6 +1069,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     diag_print_args = ''.join(
         f'" {v}=", DoubleToString(val_{v}, 4), ' for v in _diag_vars
     )
+    # WHY (Section F): For multi-rule, append per-rule bool result so the user
+    #      can see which branch matched. rule_i are at function scope after
+    #      Section B. Single-rule path has no rule_i (uses entrySignal directly).
+    # CHANGED: June 2026 — Section F.1 per-rule diagnostic
+    if len(win_rules) > 1:
+        for _ri in range(1, len(win_rules) + 1):
+            diag_print_args += f'" r{_ri}=", rule{_ri}, '
     # Build +DI/-DI reads for any ADX handles in scope — appended after main args
     # WHY: ADX intermediates (+DI/-DI) narrow down where Python/MT5 diverge.
     #      Names must match the f-string template placeholders at the
@@ -2678,6 +2770,17 @@ void OnTick()
             " server_prev=",  TimeToString(_bar_prev, TIME_DATE|TIME_MINUTES),
             " offset_h=",     DoubleToString(_bar_off, 2),
             " bar_seconds=",  (long)(_bar_srv - _bar_prev));
+      // WHY (Section F.2): Confirm Section A's per-TF shift wiring at runtime.
+      //      Fires once per EA lifetime alongside the GMT diag.
+      // CHANGED: June 2026 — per-TF shift diagnostic
+      Print("[SHIFT-DIAG] entryTF_shift=", GetBarShift({mql_period}),
+            " M1=",   GetBarShift(PERIOD_M1),
+            " M5=",   GetBarShift(PERIOD_M5),
+            " M15=",  GetBarShift(PERIOD_M15),
+            " M30=",  GetBarShift(PERIOD_M30),
+            " H1=",   GetBarShift(PERIOD_H1),
+            " H4=",   GetBarShift(PERIOD_H4),
+            " D1=",   GetBarShift(PERIOD_D1));
       g_loggedFirstBar = true;
    }}
 
@@ -2849,7 +2952,9 @@ void OnTick()
       g_dailyTrades++;
       g_lastTradeTime = TimeCurrent();
       LogTrade("OPEN", "{_direction_label}", lots, entryPrice, 0, 0, "entry_signal");
-      Print("[EA] {_direction_label} opened @ ", entryPrice, " lots=", lots);
+      Print("[EA] {_direction_label} opened @ ", entryPrice, " lots=", lots,
+            " bar=", TimeToString(iTime(NULL, g_entryTF, 0), TIME_DATE|TIME_MINUTES),
+            " rule=", ({_rule_id_expr}));
    }}
 }}
 
