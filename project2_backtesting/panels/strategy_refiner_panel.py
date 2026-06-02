@@ -1219,12 +1219,18 @@ def _load_strategies(force=False):
         #      the cache doesn't invalidate and the new rule doesn't
         #      appear in the dropdown until restart.
         # CHANGED: April 2026 — Phase A.48 fix
-        saved_path = os.path.join(project_root, 'saved_rules.json')
+        saved_path    = os.path.join(project_root, 'saved_rules.json')
+        # WHY: my_rules.json must also invalidate the cache when it changes —
+        #      without this the panel serves stale data until app restart.
+        # CHANGED: June 2026 — my_rules.json in cache key
+        my_rules_path = os.path.join(project_root, 'my_rules.json')
         current_mtime = 0
         if os.path.exists(backtest_path):
             current_mtime += os.path.getmtime(backtest_path)
         if os.path.exists(saved_path):
             current_mtime += os.path.getmtime(saved_path)
+        if os.path.exists(my_rules_path):
+            current_mtime += os.path.getmtime(my_rules_path)
         if not force and current_mtime == _cache_mtime and _strategies_cache:
             _strategies = _strategies_cache
             return
@@ -5914,7 +5920,15 @@ def build_panel(parent):
                         return False
                 if _grid_filt_profitable and _grid_filt_profitable.get():
                     _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
-                    if _net <= 0:
+                    # WHY: my_rules rows with 0 trades haven't been backtested —
+                    #      net_total_pips=0 means no data, not a losing rule.
+                    #      Same bypass as saved rows with 0 trades.
+                    # CHANGED: June 2026 — bypass profitable filter for unbacktested my_rules
+                    _is_unbacktested = (
+                        strat.get('source') in ('saved', 'my_rules')
+                        and int(strat.get('total_trades', 0) or 0) == 0
+                    )
+                    if not _is_unbacktested and _net <= 0:
                         return False
                 return True
 
