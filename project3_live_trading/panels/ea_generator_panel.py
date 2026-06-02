@@ -19,10 +19,21 @@ import state
 # WHY: Reuse the Refiner's composite Prop Score so both grids rank
 #      rules identically.
 # CHANGED: May 2026 — EA panel uses same Prop Score
+# WHY: Import shared grid helpers so EA panel shows identical columns to
+#      the Strategy Refiner without duplicating code.
+# CHANGED: June 2026 — shared grid helpers
 try:
-    from project2_backtesting.panels.strategy_refiner_panel import _compute_prop_score
+    from project2_backtesting.panels.strategy_refiner_panel import (
+        _compute_prop_score,
+        _format_win_pass,
+        _format_prop_score,
+        _money_for_strategy,
+    )
 except Exception:
-    _compute_prop_score = None
+    _compute_prop_score  = None
+    _format_win_pass     = lambda s: "—"
+    _format_prop_score   = lambda s: "—"
+    _money_for_strategy  = lambda *a: (None, None, None, None)
 
 BG      = "#f0f2f5"
 WHITE   = "white"
@@ -1468,7 +1479,14 @@ def build_panel(parent):
     # WHY: Entry timeframe column shows which TF the strategy was backtested on.
     #      Critical for verifying EA generator uses correct timeframe.
     # CHANGED: April 2026 — add entry TF column for verification
-    p3_columns = ("star", "#", "rule", "exit", "tf", "trades", "wr", "pf", "net_pips", "avg_pips", "del")
+    # WHY: Match Strategy Refiner columns exactly (minus the batch-select checkbox).
+    # CHANGED: June 2026 — EA grid column parity with refiner
+    p3_columns = (
+        "star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
+        "net_pips", "net_dollars", "net_pct",
+        "avg_pips", "avg_dollars", "avg_pct",
+        "win_pass", "prop_score", "del"
+    )
 
     # ── Async strategy loading ────────────────────────────────────────────
     def _on_strategies_loaded():
@@ -1500,29 +1518,43 @@ def build_panel(parent):
                                                height=min(len(_strategies), 8),
                                                selectmode="browse")
 
-                _strat_tree_p3.heading("star",     text="⭐")
-                _strat_tree_p3.heading("#",        text="#")
-                _strat_tree_p3.heading("rule",     text="Rule")
-                _strat_tree_p3.heading("exit",     text="Exit Strategy")
-                _strat_tree_p3.heading("tf",       text="TF")
-                _strat_tree_p3.heading("trades",   text="Trades")
-                _strat_tree_p3.heading("wr",       text="Win Rate")
-                _strat_tree_p3.heading("pf",       text="PF")
-                _strat_tree_p3.heading("net_pips", text="Net Pips")
-                _strat_tree_p3.heading("avg_pips", text="Avg Pips")
-                _strat_tree_p3.heading("del",      text="🗑")
+                _strat_tree_p3.heading("star",        text="⭐")
+                _strat_tree_p3.heading("#",           text="#")
+                _strat_tree_p3.heading("stage",       text="Stage")
+                _strat_tree_p3.heading("rule",        text="Rule")
+                _strat_tree_p3.heading("exit",        text="Exit Strategy")
+                _strat_tree_p3.heading("tf",          text="TF")
+                _strat_tree_p3.heading("trades",      text="Trades")
+                _strat_tree_p3.heading("wr",          text="Win Rate")
+                _strat_tree_p3.heading("pf",          text="PF")
+                _strat_tree_p3.heading("net_pips",    text="Net Pips")
+                _strat_tree_p3.heading("net_dollars", text="Net $")
+                _strat_tree_p3.heading("net_pct",     text="Net %")
+                _strat_tree_p3.heading("avg_pips",    text="Avg Pips")
+                _strat_tree_p3.heading("avg_dollars", text="Avg $")
+                _strat_tree_p3.heading("avg_pct",     text="Avg %")
+                _strat_tree_p3.heading("win_pass",    text="Win Pass")
+                _strat_tree_p3.heading("prop_score",  text="Prop Score")
+                _strat_tree_p3.heading("del",         text="🗑")
 
-                _strat_tree_p3.column("star",     width=30,  anchor="center")
-                _strat_tree_p3.column("#",        width=70,  anchor="center")
-                _strat_tree_p3.column("rule",     width=160, anchor="w")
-                _strat_tree_p3.column("exit",     width=120, anchor="w")
-                _strat_tree_p3.column("tf",       width=45,  anchor="center")
-                _strat_tree_p3.column("trades",   width=60,  anchor="center")
-                _strat_tree_p3.column("wr",       width=70,  anchor="center")
-                _strat_tree_p3.column("pf",       width=60,  anchor="center")
-                _strat_tree_p3.column("net_pips", width=90,  anchor="e")
-                _strat_tree_p3.column("avg_pips", width=70,  anchor="e")
-                _strat_tree_p3.column("del",      width=40,  anchor="center")
+                _strat_tree_p3.column("star",        width=30,  anchor="center")
+                _strat_tree_p3.column("#",           width=70,  anchor="center")
+                _strat_tree_p3.column("stage",       width=70,  anchor="center")
+                _strat_tree_p3.column("rule",        width=160, anchor="w")
+                _strat_tree_p3.column("exit",        width=120, anchor="w")
+                _strat_tree_p3.column("tf",          width=45,  anchor="center")
+                _strat_tree_p3.column("trades",      width=60,  anchor="center")
+                _strat_tree_p3.column("wr",          width=70,  anchor="center")
+                _strat_tree_p3.column("pf",          width=60,  anchor="center")
+                _strat_tree_p3.column("net_pips",    width=90,  anchor="e")
+                _strat_tree_p3.column("net_dollars", width=90,  anchor="e")
+                _strat_tree_p3.column("net_pct",     width=70,  anchor="e")
+                _strat_tree_p3.column("avg_pips",    width=70,  anchor="e")
+                _strat_tree_p3.column("avg_dollars", width=80,  anchor="e")
+                _strat_tree_p3.column("avg_pct",     width=70,  anchor="e")
+                _strat_tree_p3.column("win_pass",    width=100, anchor="center")
+                _strat_tree_p3.column("prop_score",  width=90,  anchor="center")
+                _strat_tree_p3.column("del",         width=40,  anchor="center")
 
                 _strat_tree_p3.tag_configure("saved",      foreground="#9b59b6")
                 _strat_tree_p3.tag_configure("starred",    foreground="#f39c12")
@@ -1628,6 +1660,33 @@ def build_panel(parent):
             # CHANGED: May 2026 — EA panel rebuild hook
             _p3_rebuild_hook[0] = _on_strategies_loaded
 
+            # WHY: Inline stage resolver — same logic as refiner's _stage_cell_for.
+            #      Defined here (not imported) because it's a tiny pure function
+            #      with no dependencies, and keeping it local avoids coupling
+            #      to the refiner panel's internal closure scope.
+            # CHANGED: June 2026 — stage cell for EA panel
+            def _p3_stage_cell_for(strat):
+                _src = []
+                _src.append(strat.get('prop_firm_stage'))
+                _src.append((strat.get('run_settings') or {}).get('prop_firm_stage'))
+                _sr2 = strat.get('saved_rule') or {}
+                _src.append(_sr2.get('prop_firm_stage'))
+                _src.append((_sr2.get('discovery_settings') or {}).get('prop_firm_stage'))
+                for _emb in (strat.get('rules') or []):
+                    if isinstance(_emb, dict):
+                        _src.append(_emb.get('prop_firm_stage'))
+                        _src.append((_emb.get('discovery_settings') or {}).get('prop_firm_stage'))
+                        break
+                for c in _src:
+                    if not c:
+                        continue
+                    n = str(c).strip().lower()
+                    if n in ('evaluation', 'eval'):
+                        return "Eval"
+                    if n == 'funded':
+                        return "Funded"
+                return "—"
+
             _bt_row_n   = 0
             for s in _sr_my_rules + _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
@@ -1646,7 +1705,7 @@ def build_panel(parent):
 
                 if source == 'separator':
                     _strat_tree_p3.insert("", "end", iid=idx, values=(
-                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'my_rules':
                     # WHY: My Rules rows — same shape as saved, own insert+continue.
@@ -1667,13 +1726,21 @@ def build_panel(parent):
                     entry_tf_display = (
                         s.get('entry_tf') or
                         s.get('entry_timeframe') or
-                        (s.get('stats', {}) or {}).get('entry_tf') or
-                        '—'
+                        (s.get('stats', {}) or {}).get('entry_tf') or '—'
                     )
                     tag = 'saved' if not is_starred else 'starred'
+                    _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                    _net_d_s = f"${_nd:+,.0f}" if _nd is not None else "—"
+                    _net_p_s = f"{_np:+.1f}%" if _np is not None else "—"
+                    _avg_d_s = f"${_ad:+,.2f}" if _ad is not None else "—"
+                    _avg_p_s = f"{_ap:+.2f}%" if _ap is not None else "—"
                     _strat_tree_p3.insert("", "end", iid=idx, values=(
-                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_my,
-                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                        star_display, id_display, _p3_stage_cell_for(s),
+                        rc, exit_name, entry_tf_display, int(trades), wr_s_my,
+                        f"{pf:.2f}",
+                        f"{net:+,.0f}", _net_d_s, _net_p_s,
+                        f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        _format_win_pass(s), _format_prop_score(s), "🗑"
                     ), tags=(tag,))
                     continue
                 elif source == 'saved':
@@ -1699,9 +1766,18 @@ def build_panel(parent):
                         '—'
                     )
                     tag = "saved" if not is_starred else "starred"
+                    _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                    _net_d_s = f"${_nd:+,.0f}" if _nd is not None else "—"
+                    _net_p_s = f"{_np:+.1f}%" if _np is not None else "—"
+                    _avg_d_s = f"${_ad:+,.2f}" if _ad is not None else "—"
+                    _avg_p_s = f"{_ap:+.2f}%" if _ap is not None else "—"
                     _strat_tree_p3.insert("", "end", iid=idx, values=(
-                        star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_s_saved,
-                        f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", "🗑"
+                        star_display, id_display, _p3_stage_cell_for(s),
+                        rc, exit_name, entry_tf_display, int(trades), wr_s_saved,
+                        f"{pf:.2f}",
+                        f"{net:+,.0f}", _net_d_s, _net_p_s,
+                        f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        _format_win_pass(s), _format_prop_score(s), "🗑"
                     ), tags=(tag,))
                     continue
                 elif source == 'optimizer':
@@ -1726,9 +1802,18 @@ def build_panel(parent):
                     '—'
                 )
 
+                _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                _net_d_s = f"${_nd:+,.0f}" if _nd is not None else "—"
+                _net_p_s = f"{_np:+.1f}%" if _np is not None else "—"
+                _avg_d_s = f"${_ad:+,.2f}" if _ad is not None else "—"
+                _avg_p_s = f"{_ap:+.2f}%" if _ap is not None else "—"
                 _strat_tree_p3.insert("", "end", iid=idx, values=(
-                    star_display, id_display, rc, exit_name, entry_tf_display, int(trades), wr_str,
-                    f"{pf:.2f}", f"{net:+,.0f}", f"{avg:+.1f}", del_display
+                    star_display, id_display, _p3_stage_cell_for(s),
+                    rc, exit_name, entry_tf_display, int(trades), wr_str,
+                    f"{pf:.2f}",
+                    f"{net:+,.0f}", _net_d_s, _net_p_s,
+                    f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                    _format_win_pass(s), _format_prop_score(s), del_display
                 ), tags=(tag,))
 
             # Select first saved-tagged row
