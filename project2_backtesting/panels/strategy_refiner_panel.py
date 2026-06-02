@@ -4148,6 +4148,16 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                     project_root
                 ),
                 'entry_bar_offset': int(_strat.get('entry_bar_offset', 0)) if _strat else 0,
+                # WHY: Save stage so the grid Stage column shows Eval/Funded
+                #      instead of — for My Rules rows.
+                # CHANGED: June 2026 — persist prop_firm_stage
+                'prop_firm_stage': (
+                    _strat.get('prop_firm_stage')
+                    or ((_strat.get('run_settings') or {}).get('prop_firm_stage'))
+                    or (_stage_var.get() if _stage_var else '')
+                    or ''
+                ),
+                'account_size': int(float(_acct_var.get() or 10000)) if _acct_var else 10000,
             }
             for rule in _save_rules:
                 if rule.get('prediction') == 'WIN':
@@ -6706,6 +6716,34 @@ def build_panel(parent):
                         'exit_name': exit_name,
                         'entry_timeframe': entry_tf,
                         'entry_bar_offset': int(s.get('entry_bar_offset', 0)),
+                        # WHY: Persist stage from the strategy row so the
+                        #      grid Stage column shows Eval/Funded for My Rules.
+                        #      Also persist firm name/id directly from the row
+                        #      so they don't rely solely on the P1 config fallback.
+                        # CHANGED: June 2026 — persist prop_firm_stage + firm from row
+                        'prop_firm_stage': (
+                            s.get('prop_firm_stage')
+                            or (s.get('run_settings') or {}).get('prop_firm_stage')
+                            or (s.get('saved_rule') or {}).get('prop_firm_stage')
+                            or (_stage_var.get() if _stage_var else '')
+                            or ''
+                        ),
+                        'prop_firm_name': (
+                            s.get('prop_firm_name')
+                            or (s.get('run_settings') or {}).get('prop_firm_name')
+                            or (s.get('run_settings') or {}).get('firm_name')
+                            or ''
+                        ),
+                        'prop_firm_id': (
+                            s.get('firm_id')
+                            or s.get('prop_firm_id')
+                            or (s.get('run_settings') or {}).get('firm_id')
+                            or ''
+                        ),
+                        'account_size': (
+                            s.get('account_size')
+                            or int(float(_acct_var.get() or 10000)) if _acct_var else 10000
+                        ),
                         'risk_settings': {
                             'risk_pct': float(s.get('risk_pct') or (_risk_var.get() if _risk_var else 1.0) or 1.0),
                             'account_size': int(float(_acct_var.get() or 100000)) if _acct_var else 100000,
