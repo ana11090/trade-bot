@@ -157,6 +157,53 @@ def generate_ea(
     # CHANGED: May 2026 — EA entry timing from saved rule
     _entry_bar_offset = int(strategy.get('entry_bar_offset', 0))
     _use_next_bar     = (_entry_bar_offset == 1)
+
+    # WHY: Python's CSV-based backtester reads H4 indicator values from a
+    #      pre-computed row that contains the COMPLETE bar's data — including
+    #      OHLC not yet available at bar open. This is look-ahead for same-TF
+    #      indicators (e.g. H4_mt5_adx on an H4 entry rule).
+    #
+    #      In MT5, at bar N open:
+    #        shift=0 → forming bar → EMPTY_VALUE → indFail → trade skipped
+    #        shift=1 → bar N-1 → wrong bar → wrong signals
+    #
+    #      The only correct approach: evaluate conditions at bar N CLOSE
+    #      (shift=1 = completed bar N) and enter at bar N+1 open.
+    #      That is exactly UseNextBarEntry=true.
+    #
+    #      Auto-upgrade when: entry_bar_offset=0 AND any condition's TF
+    #      equals the entry TF. If entry_bar_offset=1 it's already next-bar.
+    #      If no same-TF indicator exists, shift=1 of lower/higher TFs is
+    #      already correct and UseNextBarEntry=false is fine.
+    #
+    # CHANGED: June 2026 — auto-detect same-TF indicators → force UseNextBarEntry
+    if not _use_next_bar and _entry_bar_offset == 0:
+        _tf_rank = {
+            'M1': 1, 'M5': 5, 'M15': 15, 'M30': 30,
+            'H1': 60, 'H4': 240, 'D1': 1440, 'W1': 10080,
+        }
+        _entry_tf_upper = entry_timeframe.upper()
+        _has_same_tf_indicator = False
+        for _wr in win_rules:
+            for _cond in _wr.get('conditions', []):
+                _feat = _cond.get('feature', '')
+                # Feature name format: TF_indicator_name (e.g. H4_mt5_adx_21)
+                _cond_tf = _feat.split('_')[0].upper() if '_' in _feat else ''
+                if _cond_tf == _entry_tf_upper:
+                    _has_same_tf_indicator = True
+                    break
+            if _has_same_tf_indicator:
+                break
+        if _has_same_tf_indicator:
+            _use_next_bar = True
+            print(
+                f"[EA GEN] ⚠ Auto-upgraded to UseNextBarEntry=true: rule has "
+                f"{_entry_tf_upper} indicator(s) on a {_entry_tf_upper} entry "
+                f"(entry_bar_offset=0). Python reads these from a completed-bar "
+                f"CSV row — not replicable at bar open in live MT5. EA will check "
+                f"conditions at bar close and enter at next bar open instead."
+            )
+
     _use_next_bar_str = 'true' if _use_next_bar else 'false'
 
     validation = strategy.get('validation', {})
