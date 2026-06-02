@@ -306,7 +306,7 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "Bollinger Band({p1},{p2}) width as % of middle on {tf}",
     }),
-    # Aroon
+    # Aroon up / down (single buffer)
     (r"^aroon_(?:down|up)$", {
         "mt5_handle_var":  "int handle_aroon_{tf};",
         "mt5_handle_init": "handle_aroon_{tf} = iCustom(NULL,{mt5_tf},\"Aroon\",14); if(handle_aroon_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
@@ -314,6 +314,19 @@ INDICATOR_PATTERNS = [
         "tradovate_code":  "ta.aroon(df_m{tv_tf}['high'], df_m{tv_tf}['low'], length=14)['AROOND_14'].iloc[-1]",
         "custom_indicator_mt5": True,
         "description": "Aroon on {tf} (custom indicator)",
+    }),
+    # WHY: aroon_indicator = aroon_up - aroon_down (ta.trend.AroonIndicator.aroon_indicator()).
+    #      MT5 Aroon custom indicator: buffer 0 = Aroon Up, buffer 1 = Aroon Down.
+    #      Read both and subtract to match Python's aroon_indicator value.
+    #      Uses the same handle as aroon_up/aroon_down (shared handle_aroon_{tf}).
+    # CHANGED: June 2026 — add aroon_indicator mapping (was UNSUPPORTED, blocked Rule 2)
+    (r"^aroon_indicator$", {
+        "mt5_handle_var":  "int handle_aroon_{tf};",
+        "mt5_handle_init": "handle_aroon_{tf} = iCustom(NULL,{mt5_tf},\"Aroon\",14); if(handle_aroon_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double _aroon_up_{var} = SafeCopyBuf(handle_aroon_{tf}, 0, {mt5_tf}); double _aroon_dn_{var} = SafeCopyBuf(handle_aroon_{tf}, 1, {mt5_tf}); double val_{var} = (_aroon_up_{var} == EMPTY_VALUE || _aroon_dn_{var} == EMPTY_VALUE) ? EMPTY_VALUE : (_aroon_up_{var} - _aroon_dn_{var}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.aroon(df_m{tv_tf}['high'], df_m{tv_tf}['low'], length=14).aroon_indicator().iloc[-1]",
+        "custom_indicator_mt5": True,
+        "description": "Aroon Indicator (up-down) on {tf} (custom indicator)",
     }),
     # Bears Power
     (r"^bear_power$", {
