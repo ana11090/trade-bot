@@ -157,53 +157,15 @@ def generate_ea(
     # CHANGED: May 2026 — EA entry timing from saved rule
     _entry_bar_offset = int(strategy.get('entry_bar_offset', 0))
     _use_next_bar     = (_entry_bar_offset == 1)
-
-    # WHY: Python's CSV-based backtester reads H4 indicator values from a
-    #      pre-computed row that contains the COMPLETE bar's data — including
-    #      OHLC not yet available at bar open. This is look-ahead for same-TF
-    #      indicators (e.g. H4_mt5_adx on an H4 entry rule).
-    #
-    #      In MT5, at bar N open:
-    #        shift=0 → forming bar → EMPTY_VALUE → indFail → trade skipped
-    #        shift=1 → bar N-1 → wrong bar → wrong signals
-    #
-    #      The only correct approach: evaluate conditions at bar N CLOSE
-    #      (shift=1 = completed bar N) and enter at bar N+1 open.
-    #      That is exactly UseNextBarEntry=true.
-    #
-    #      Auto-upgrade when: entry_bar_offset=0 AND any condition's TF
-    #      equals the entry TF. If entry_bar_offset=1 it's already next-bar.
-    #      If no same-TF indicator exists, shift=1 of lower/higher TFs is
-    #      already correct and UseNextBarEntry=false is fine.
-    #
-    # CHANGED: June 2026 — auto-detect same-TF indicators → force UseNextBarEntry
-    if not _use_next_bar and _entry_bar_offset == 0:
-        _tf_rank = {
-            'M1': 1, 'M5': 5, 'M15': 15, 'M30': 30,
-            'H1': 60, 'H4': 240, 'D1': 1440, 'W1': 10080,
-        }
-        _entry_tf_upper = entry_timeframe.upper()
-        _has_same_tf_indicator = False
-        for _wr in win_rules:
-            for _cond in _wr.get('conditions', []):
-                _feat = _cond.get('feature', '')
-                # Feature name format: TF_indicator_name (e.g. H4_mt5_adx_21)
-                _cond_tf = _feat.split('_')[0].upper() if '_' in _feat else ''
-                if _cond_tf == _entry_tf_upper:
-                    _has_same_tf_indicator = True
-                    break
-            if _has_same_tf_indicator:
-                break
-        if _has_same_tf_indicator:
-            _use_next_bar = True
-            print(
-                f"[EA GEN] ⚠ Auto-upgraded to UseNextBarEntry=true: rule has "
-                f"{_entry_tf_upper} indicator(s) on a {_entry_tf_upper} entry "
-                f"(entry_bar_offset=0). Python reads these from a completed-bar "
-                f"CSV row — not replicable at bar open in live MT5. EA will check "
-                f"conditions at bar close and enter at next bar open instead."
-            )
-
+    # WHY: entry_bar_offset is the sole source of truth for UseNextBarEntry.
+    #      The auto-detect that forced UseNextBarEntry=true for same-TF
+    #      indicators has been removed. With shift=1 always (see GetBarShift),
+    #      the EA naturally fires at bar N+1 for same-TF indicator rules —
+    #      shift=1 at N+1 reads bar N (just completed), matching Python's CSV.
+    #      The pending-signal mechanism (UseNextBarEntry=true) evaluated
+    #      conditions at bar N using shift=1 = bar N-1 (wrong bar) then entered
+    #      at N+1 without re-evaluating — doubly wrong. Removed.
+    # CHANGED: June 2026 — remove auto-detect (shift=1 always handles parity)
     _use_next_bar_str = 'true' if _use_next_bar else 'false'
 
     validation = strategy.get('validation', {})
@@ -2888,21 +2850,41 @@ ENUM_TIMEFRAMES g_entryTF = {mql_period};
 //|     previous completed D1 bar. MT5 shift=1 of PERIOD_D1 = same.  |
 //|     → shift=1 (unchanged, already correct)                        |
 //|                                                                    |
-//| CHANGED: June 2026 — UseNextBarEntry-conditional, exact-TF shift  |
+//| CHANGED: June 2026 — always shift=1; shift=0 caused EMPTY_VALUE   |
+//|   on forming bars — indFail=true — trades blocked on correct bars  |
 //+------------------------------------------------------------------+
 int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
 {{
-   // UseNextBarEntry=true: signal bar is already the completed previous bar.
-   // shift=1 correct for ALL timeframes. These rules worked before — unchanged.
-   if(UseNextBarEntry)
-      return 1;
-
-   // UseNextBarEntry=false: entering at signal bar's own open.
-   // Only indicators on the EXACT same TF as the entry need shift=0.
-   // Lower-TF and higher-TF indicators are both correct with shift=1.
-   if(indicatorTF == g_entryTF)
-      return 0;
-
+   // WHY: Always read the last COMPLETED bar (shift=1).
+   //
+   //   shift=0 was tried for same-TF indicators (indicatorTF == g_entryTF)
+   //   to match Python's look-ahead read of a forming bar's indicator.
+   //   In practice, CopyBuffer(handle, buf, 0, 1) on a bar with only 1-2
+   //   ticks returns EMPTY_VALUE for multi-period indicators (ADX-14,
+   //   CCI-20, Aroon-14). This set indicatorFailed=true and blocked trades
+   //   on correct bars, while allowing trades on random bars where MT5
+   //   happened to return a value — causing 147 MT5 trades vs 43 in Python.
+   //
+   //   shift=1 is correct for every case this EA generator produces:
+   //
+   //   entry_bar_offset=0, same-TF indicator (e.g. H4 ind on H4 entry):
+   //     At bar N open: shift=1 = bar N-1 (signal=false, correct: skip).
+   //     At bar N+1 open: shift=1 = bar N (just completed = same as Python's
+   //     pre-computed CSV row) — signal fires here, 1 bar after Python.
+   //     Unavoidable: Python reads completed-bar data at bar open (look-ahead).
+   //
+   //   entry_bar_offset=0, lower-TF indicator (e.g. M15 on H4 entry):
+   //     shift=1 of M15 at H4 bar open = last closed M15 bar before entry.
+   //     Python merge_asof(backward) finds the same bar. Unchanged, correct.
+   //
+   //   entry_bar_offset=0, higher-TF indicator (e.g. D1 on H4 entry):
+   //     shift=1 of D1 = previous completed D1 bar. Python shifts D1
+   //     timestamps +1440min so merge_asof picks the same bar. Unchanged.
+   //
+   //   entry_bar_offset=1 (UseNextBarEntry=true):
+   //     All TFs: shift=1 at bar N+1 reads bar N (completed). Already worked.
+   //
+   // CHANGED: June 2026 — revert shift=0 (caused EMPTY_VALUE on forming bars)
    return 1;
 }}
 
