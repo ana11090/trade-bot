@@ -2581,6 +2581,22 @@ void OnTick()
    if(!_newBar && !_justFlat) return;
    g_lastBarTime = currentBarTime;
 
+   // WHY: Python's backtester sets occupied_until_idx when a trade exits,
+   //      blocking any new signal on the same candle. OnTradeTransaction
+   //      fires asynchronously — by the time it sets g_lastExitEntryBarTime,
+   //      OnTick has already opened a new trade. Fix: set the gate here
+   //      synchronously the moment we detect the position just closed
+   //      (_justFlat=true). This matches Python exactly: trade closes →
+   //      same bar is locked → next signal only on the next bar.
+   // CHANGED: June 2026 — synchronous same-bar gate (fixes 72 vs 43 trades)
+   if(_justFlat)
+   {{
+      g_lastExitEntryBarTime = currentBarTime;
+      Print("[EXIT-BAR] position closed mid-bar — blocking re-entry on bar ",
+            TimeToString(currentBarTime, TIME_DATE|TIME_MINUTES));
+      return;  // DO NOT re-enter on the bar we just exited
+   }}
+
    //--- Broker GMT-offset diagnostic — one-shot on first new bar
    // WHY: Logs the EXACT bar boundary the EA sees on the entry timeframe,
    //      in both server time and GMT, so we can confirm whether the
