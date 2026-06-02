@@ -898,14 +898,26 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     conditions_check_block = '\n'.join(condition_checks)
 
     # Build diagnostic print args from all condition variable names
+    # WHY: Multi-rule strategies declare val_X inside if(!entrySignal){...}
+    #      blocks — those variables are out of scope at the Print statement.
+    #      Only include val_X in diag_print_args when there is exactly one
+    #      win_rule (single-rule path declares val_X at function scope).
+    #      For multi-rule, suppress the per-indicator diagnostics to avoid
+    #      MQL5 "undeclared identifier" compile errors.
+    # CHANGED: June 2026 — suppress diag_print_args for multi-rule strategies
     import re as _re_diag
     _diag_seen = set()
     _diag_vars = []
-    for _cc in condition_checks:
-        for _vm in _re_diag.findall(r'val_([a-z0-9_]+)', _cc):
-            if _vm not in _diag_seen:
-                _diag_seen.add(_vm)
-                _diag_vars.append(_vm)
+    if len(win_rules) <= 1:
+        # Single rule: val_X declared at function scope — safe to reference
+        for _cc in condition_checks:
+            for _vm in _re_diag.findall(r'val_([a-z0-9_]+)', _cc):
+                if _vm not in _diag_seen:
+                    _diag_seen.add(_vm)
+                    _diag_vars.append(_vm)
+    # else: multi-rule — val_X are block-scoped inside if(!entrySignal){};
+    #       leave _diag_vars empty to avoid undeclared identifier errors.
+
     # Each entry ends with ", " so it connects to the next arg (" signal=").
     # If _diag_vars is empty, diag_print_args is '' and the trailing comma
     # after TimeToString() connects directly to " signal=".
