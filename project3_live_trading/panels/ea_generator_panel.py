@@ -954,6 +954,16 @@ def _auto_fill_filters(idx, strat_data):
                 list(_day_vars.values())[d - 1].set(True)
         applied.append(f"days: {days}")
 
+    # WHY: Optimizer can carry a [lo,hi) GMT hour window (filters_applied['hours']).
+    #      Surface it in the "Optimizer filters loaded" line; the actual wiring
+    #      to the generated EA happens at the build-site below where we pass
+    #      hour_filter=... to generate_ea(). No UI checkbox exists for hours —
+    #      it flows straight through to TradingHourStartGMT/EndGMT inputs.
+    # CHANGED: June 2026 — surface hours filter in panel diagnostics
+    hours = filters.get('hours')
+    if hours and isinstance(hours, (list, tuple)) and len(hours) >= 2:
+        applied.append(f"hours: [{hours[0]},{hours[1]})")
+
     if applied and _strat_info_lbl:
         current = _strat_info_lbl.cget('text')
         _strat_info_lbl.configure(
@@ -1125,6 +1135,19 @@ def _generate():
         session_filter = []
     day_filter     = [i + 1 for i, (d, var) in enumerate(_day_vars.items()) if var.get()]
 
+    # WHY: Pass-through for optimizer hour filter (filters_applied['hours']).
+    #      No UI checkbox — flows straight to TradingHourStartGMT/EndGMT inputs
+    #      on the generated EA. None / malformed → defaults disabled (-1,-1).
+    # CHANGED: June 2026 — hour_filter pass-through (Section G)
+    _hours = (strat_data.get('filters_applied') or {}).get('hours')
+    if (_hours and isinstance(_hours, (list, tuple)) and len(_hours) >= 2):
+        try:
+            hour_filter = [int(_hours[0]), int(_hours[1])]
+        except (TypeError, ValueError):
+            hour_filter = None
+    else:
+        hour_filter = None
+
     try:
         # WHY: Read exit_params from both possible key names. Include direction.
         # CHANGED: April 2026
@@ -1277,6 +1300,7 @@ def _generate():
             max_trades_per_day=int(_max_day_var.get()) if _max_day_var else 0,
             session_filter=session_filter,
             day_filter=day_filter,
+            hour_filter=hour_filter,
             cooldown_minutes=int(_cooldown_var.get()) if _cooldown_var else 0,
             min_hold_minutes=_auto_min_hold[0],
             news_filter_minutes=int(_news_min_var.get()) if _news_min_var else 0,

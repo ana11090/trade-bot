@@ -51,6 +51,13 @@ def generate_ea(
     max_trades_per_day=0,
     session_filter=None,
     day_filter=None,
+    # WHY: Optimizer rules can carry filters_applied['hours']=[lo,hi] which were
+    #      silently dropped before — generated EA traded 24h instead of the
+    #      restricted window. Also exposed as TradingHourStartGMT/EndGMT inputs
+    #      on the EA for manual override. [lo,hi) GMT, wraps midnight when hi<=lo.
+    #      Default None → -1/-1 (disabled) → Python-parity for no-session rules.
+    # CHANGED: June 2026 — hour_filter param (Sections E+G)
+    hour_filter=None,
     min_hold_minutes=0,
     cooldown_minutes=0,
     news_filter_minutes=0,
@@ -277,6 +284,7 @@ def generate_ea(
             max_trades_per_day=max_trades_per_day,
             session_filter=session_filter or [],
             day_filter=day_filter or [1, 2, 3, 4, 5],
+            hour_filter=hour_filter,
             min_hold_minutes=min_hold_minutes,
             cooldown_minutes=cooldown_minutes,
             news_filter_minutes=news_filter_minutes,
@@ -548,7 +556,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   leverage=0,
                   # WHY: entry_bar_offset/use_next_bar controls EA UseNextBarEntry input.
                   # CHANGED: May 2026 — pass entry timing to _generate_mt5
-                  use_next_bar=False):
+                  use_next_bar=False,
+                  # WHY: Optimizer hour window [lo,hi) GMT or None — wraps midnight
+                  #      when hi <= lo. Also drives TradingHourStartGMT/EndGMT inputs.
+                  # CHANGED: June 2026 — hour_filter param
+                  hour_filter=None):
     """Generate MQL5 EA code. direction must be 'BUY' or 'SELL'."""
     if direction not in ('BUY', 'SELL'):
         raise ValueError(f"_generate_mt5: direction must be BUY or SELL, got {direction!r}")
@@ -876,6 +888,40 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     else:
         session_code = 'return true; // All sessions allowed'
 
+    # WHY (Sections E + G): TradingHourStartGMT/EndGMT inputs always exist on
+    #      the EA. Default values come from the optimizer's hour_filter
+    #      (filters_applied['hours']=[lo,hi]) when present, else -1/-1 (disabled).
+    #      The user can override the inputs in MT5 for live trading. When
+    #      enabled the clamp runs BEFORE any session-specific logic, so it
+    #      applies whether or not session_filter is set. Matches Python's
+    #      _build_entry_time_mask hour mask: keep bar if lo<=h<hi; if lo>hi
+    #      it wraps midnight (h>=lo OR h<hi).
+    # CHANGED: June 2026 — optimizer hours filter + manual hour clamp
+    if hour_filter and len(hour_filter) >= 2:
+        try:
+            trading_hour_start = int(hour_filter[0])
+            trading_hour_end   = int(hour_filter[1])
+        except (TypeError, ValueError):
+            trading_hour_start = -1
+            trading_hour_end   = -1
+    else:
+        trading_hour_start = -1
+        trading_hour_end   = -1
+
+    # Note: single { / } — this string is plugged into the outer f-string as
+    #       plain text via {session_code}; outer f-string escapes apply only
+    #       to {{/}} in the template literal, not to interpolated values.
+    _hour_clamp_prologue = (
+        '   if(TradingHourStartGMT >= 0 && TradingHourEndGMT >= 0)\n'
+        '   {\n'
+        '      bool _inHrs = (TradingHourEndGMT <= TradingHourStartGMT)\n'
+        '                  ? (hour >= TradingHourStartGMT || hour < TradingHourEndGMT)\n'
+        '                  : (hour >= TradingHourStartGMT && hour < TradingHourEndGMT);\n'
+        '      if(!_inHrs) return false;\n'
+        '   }\n'
+    )
+    session_code = _hour_clamp_prologue + '   ' + session_code
+
     # ── Build dynamic day filter code ─────────────────────────────────────
     # WHY: The optimizer might find that Mon/Fri are unprofitable (news days).
     #      The EA must skip those days to preserve the edge.
@@ -1011,21 +1057,6 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         'datetime g_lastExitEntryBarTime = 0;  '
         '// Entry-TF bar time at last position close. '
         'Blocks re-entry on same bar (Python parity).'
-    )
-    # WHY: Python evaluates conditions at shift=0 (current bar from CSV).
-    #      Consecutive H4 bars at shift=0 produce different indicator values,
-    #      so a "signal run" typically only lasts 1 bar in Python.
-    #      The EA uses shift=1 (previous completed bar). After a fast exit,
-    #      bar N+1 reads bar N (entry bar) → re-signals. Bar N+2 reads bar N+1
-    #      → may still pass. The EA re-enters on many consecutive bars.
-    #      Fix: require at least one bar of signal=false after a trade closes
-    #      before allowing re-entry. This matches Python's "conditions reset"
-    #      behavior between trades.
-    # CHANGED: June 2026 — signal-gap gate for re-entry parity
-    extra_globals.append(
-        'bool g_signalGapSeen = true;  '
-        '// True when signal=false has fired since last trade close. '
-        '// Blocks re-entry until conditions reset between trades.'
     )
     extra_on_trade.append(
         '   // Record exit bar for same-bar re-entry blocking\n'
@@ -2356,6 +2387,8 @@ input double MaxSpreadPips      = {max_spread_pips};         // Max spread to al
 input int    ForceCloseHourGMT          = {force_close_hour};                 // Force-close all positions at this GMT hour (-1=disabled)
 input int    NoTradesWindowStartHourGMT = {no_trades_window_start_hour};      // Block new entries from this GMT hour, inclusive (-1=disabled)
 input int    NoTradesWindowEndHourGMT   = {no_trades_window_end_hour};        // End of no-trades window, exclusive. Wraps midnight when end<=start (-1=disabled)
+input int    TradingHourStartGMT        = {trading_hour_start};               // Optional entry window start GMT hour, inclusive (-1=disabled). Defaulted from optimizer hours filter when present.
+input int    TradingHourEndGMT          = {trading_hour_end};                 // Optional entry window end GMT hour, exclusive. Wraps midnight when end<=start (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
 input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
 input bool   UseNextBarEntry    = {'true' if use_next_bar else 'false'};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
@@ -2748,28 +2781,7 @@ void OnTick()
       {diag_adx_reads}Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
             {diag_print_args}{diag_adx_args}" signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
-      if(!entrySignal)
-      {{
-         // WHY: Record that conditions went false — this "resets" the signal
-         //      so the next true signal is genuinely new, not a continuation
-         //      of the same run. Required for re-entry parity with Python.
-         // CHANGED: June 2026 — signal-gap tracking
-         g_signalGapSeen = true;
-         return;
-      }}
-
-      // WHY: Don't re-enter while conditions are continuously true after
-      //      the last trade. Python evaluates at shift=0 so consecutive H4
-      //      bars use different data and naturally produce a signal gap.
-      //      The EA at shift=1 can read the same bar's values on consecutive
-      //      H4 bars, causing repeated entries on the same "signal cluster".
-      //      Require at least one signal=false bar since the last trade close.
-      // CHANGED: June 2026 — block re-entry until conditions reset
-      if(!g_signalGapSeen)
-      {{
-         LogSkip("no_signal_gap_since_last_trade", 0);
-         return;
-      }}
+      if(!entrySignal) return;
 
       // ── Step 3: If UseNextBarEntry, store signal instead of entering now ──
       if(UseNextBarEntry)
@@ -2836,7 +2848,6 @@ void OnTick()
 {exit_on_entry_block}
       g_dailyTrades++;
       g_lastTradeTime = TimeCurrent();
-      g_signalGapSeen = false;  // reset — require signal=false before next re-entry
       LogTrade("OPEN", "{_direction_label}", lots, entryPrice, 0, 0, "entry_signal");
       Print("[EA] {_direction_label} opened @ ", entryPrice, " lots=", lots);
    }}
@@ -2896,37 +2907,35 @@ ENUM_TIMEFRAMES g_entryTF = {mql_period};
 //+------------------------------------------------------------------+
 int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
 {{
-   // WHY: Always read the last COMPLETED bar (shift=1).
+   // WHY: Python reads multi-TF indicators with two different anchors:
+   //        Entry-TF columns: .shift(1) → bar N-1 (last completed entry bar)
+   //        Non-entry TFs:    merge_asof(backward) onto entry-bar timestamps
+   //                          = last completed bar of that TF as of entry-bar open
+   //      A single global shift cannot express both. Compute per-TF.
    //
-   //   shift=0 was tried for same-TF indicators (indicatorTF == g_entryTF)
-   //   to match Python's look-ahead read of a forming bar's indicator.
-   //   In practice, CopyBuffer(handle, buf, 0, 1) on a bar with only 1-2
-   //   ticks returns EMPTY_VALUE for multi-period indicators (ADX-14,
-   //   CCI-20, Aroon-14). This set indicatorFailed=true and blocked trades
-   //   on correct bars, while allowing trades on random bars where MT5
-   //   happened to return a value — causing 147 MT5 trades vs 43 in Python.
+   //      Entry TF: shift=1 (Python's .shift(1)).
+   //      Lower TF: iBarShift of indicatorTF containing entryBarOpen returns the
+   //        bar whose open <= entryOpen — for a lower TF this is the last bar
+   //        completed at/before the entry bar opens (matches merge_asof backward).
+   //      Higher TF: iBarShift returns the CURRENT (forming) higher bar at
+   //        entryBarOpen. Python forward-shifts those timestamps by tf_minutes,
+   //        so merge_asof picks the PREVIOUS COMPLETED higher bar. Add +1.
    //
-   //   shift=1 is correct for every case this EA generator produces:
-   //
-   //   entry_bar_offset=0, same-TF indicator (e.g. H4 ind on H4 entry):
-   //     At bar N open: shift=1 = bar N-1 (signal=false, correct: skip).
-   //     At bar N+1 open: shift=1 = bar N (just completed = same as Python's
-   //     pre-computed CSV row) — signal fires here, 1 bar after Python.
-   //     Unavoidable: Python reads completed-bar data at bar open (look-ahead).
-   //
-   //   entry_bar_offset=0, lower-TF indicator (e.g. M15 on H4 entry):
-   //     shift=1 of M15 at H4 bar open = last closed M15 bar before entry.
-   //     Python merge_asof(backward) finds the same bar. Unchanged, correct.
-   //
-   //   entry_bar_offset=0, higher-TF indicator (e.g. D1 on H4 entry):
-   //     shift=1 of D1 = previous completed D1 bar. Python shifts D1
-   //     timestamps +1440min so merge_asof picks the same bar. Unchanged.
-   //
-   //   entry_bar_offset=1 (UseNextBarEntry=true):
-   //     All TFs: shift=1 at bar N+1 reads bar N (completed). Already worked.
-   //
-   // CHANGED: June 2026 — revert shift=0 (caused EMPTY_VALUE on forming bars)
-   return 1;
+   // CHANGED: June 2026 — per-TF shift via iBarShift, anchored to entry bar open
+   if(indicatorTF == g_entryTF) return 1;  // entry TF: bar N-1
+   datetime entryBarOpen = iTime(_Symbol, g_entryTF, 0);
+   if(PeriodSeconds(indicatorTF) < PeriodSeconds(g_entryTF))
+   {{
+      // LOWER TF: last bar with open <= entry bar open
+      int sh = iBarShift(_Symbol, indicatorTF, entryBarOpen, false);
+      return (sh < 0) ? 0 : sh;
+   }}
+   else
+   {{
+      // HIGHER TF: previous COMPLETED higher bar (Python shifts ts +tf_minutes)
+      int sh = iBarShift(_Symbol, indicatorTF, entryBarOpen, false);
+      return (sh < 0) ? 1 : sh + 1;
+   }}
 }}
 
 //+------------------------------------------------------------------+
@@ -3122,8 +3131,14 @@ bool CheckSession()
 //+------------------------------------------------------------------+
 bool CheckDayFilter()
 {{
+   // WHY: Python's day mask is computed from candle timestamps which are GMT
+   //      (see _build_entry_time_mask in strategy_backtester.py). Using
+   //      TimeCurrent() (broker server time) on a non-zero-offset broker
+   //      makes the day-of-week disagree with Python near the day boundary
+   //      → a "Tue only" rule admits/forbids the wrong bars at 00:00.
+   // CHANGED: June 2026 — DoW from TimeGMT() to match Python's GMT day mask
    MqlDateTime dt;
-   TimeToStruct(TimeCurrent(), dt);
+   TimeToStruct(TimeGMT(), dt);
    int dow = dt.day_of_week;
    // Days: {day_comment}
    {day_code}
