@@ -1246,13 +1246,35 @@ def load_strategy_list():
                 })
                 for _mre in _my_rules_data:
                     _mrule  = _mre.get('rule', {})
-                    _mr_wr  = _mrule.get('win_rate', 0)
                     _mr_rid = _mre.get('id', '?')
                     _mr_dir = _mrule.get('direction', _mrule.get('action', ''))
                     _mr_exit = _mrule.get('exit_name', _mrule.get('exit_class', ''))
                     _mr_conds = _mrule.get('conditions', [])
-                    _mr_pips  = _mrule.get('net_total_pips', 0)
-                    _mr_trades = _mrule.get('total_trades', 0)
+
+                    # WHY: my_rules.json stores net_total_pips=0, win_rate=0,
+                    #      total_trades=0 at the rule level — they were never
+                    #      summed at save time. Compute from the trades list
+                    #      instead so the profitable filter and grid columns
+                    #      show real values.
+                    # CHANGED: June 2026 — compute stats from trades list
+                    _mr_trade_list = _mrule.get('trades', [])
+                    _mr_pips   = _mrule.get('net_total_pips', 0) or 0
+                    _mr_wr     = _mrule.get('win_rate', 0) or 0
+                    _mr_trades = _mrule.get('total_trades', 0) or 0
+                    _mr_pf     = _mrule.get('net_profit_factor', 0) or 0
+                    _mr_avg    = _mrule.get('avg_pips', 0) or 0
+
+                    if _mr_trade_list and (_mr_pips == 0 or _mr_trades == 0):
+                        # Compute from the trades list
+                        _mr_net_pips_list = [float(t.get('net_pips', 0) or 0) for t in _mr_trade_list]
+                        _mr_pips   = sum(_mr_net_pips_list)
+                        _mr_trades = len(_mr_net_pips_list)
+                        _mr_wins   = sum(1 for p in _mr_net_pips_list if p > 0)
+                        _mr_wr     = (_mr_wins / _mr_trades * 100) if _mr_trades > 0 else 0
+                        _mr_avg    = (_mr_pips / _mr_trades) if _mr_trades > 0 else 0
+                        _gross_win  = sum(p for p in _mr_net_pips_list if p > 0)
+                        _gross_loss = abs(sum(p for p in _mr_net_pips_list if p < 0))
+                        _mr_pf     = (_gross_win / _gross_loss) if _gross_loss > 0 else 0
                     _mr_header = f"★ #{_mr_rid}"
                     if _mr_dir:
                         _mr_header += f" {_mr_dir}"
@@ -1284,8 +1306,8 @@ def load_strategy_list():
                         'total_trades':      _mr_trades,
                         'win_rate':          _mr_wr,
                         'net_total_pips':    _mr_pips,
-                        'net_avg_pips':      _mrule.get('avg_pips', 0),
-                        'net_profit_factor': _mrule.get('net_profit_factor', 0),
+                        'net_avg_pips':      _mr_avg,
+                        'net_profit_factor': _mr_pf,
                         'max_dd_pips':       _mrule.get('max_dd_pips', 0),
                         'has_trades':        False,
                         'saved_rule':        _mrule,
