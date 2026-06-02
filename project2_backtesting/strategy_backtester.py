@@ -110,17 +110,28 @@ def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=Fals
 # ---------------------------------------------------------------------------
 def _in_no_trades_window(hour, start_hour, end_hour):
     """True if an entry at GMT `hour` falls in the firm no-trades window.
-    Window is [start, end) GMT; end==0 includes the 00:00 boundary.
-    -1 on either bound disables the window."""
-    if start_hour is None or end_hour is None or start_hour < 0 or end_hour < 0:
+
+    Window is [start, end) GMT, END EXCLUSIVE — exactly as the firm states it.
+    end==0 is a synonym for 24:00 / midnight (the exclusive upper bound), so e.g.
+    Get Leveraged's 23->0 means "23:00 up to (not including) 24:00" = ONLY hour 23.
+    The 00:00 hour is the reopen and is NOT blocked by an end of 0/24.
+    To actually block the 00:00 hour, a firm would set end=1 (blocks [start..0]).
+    Midnight-wrapping windows (start > end, e.g. 22->6) are supported.
+    -1 on either bound, or start==end, disables the window.
+    """
+    if start_hour is None or end_hour is None:
         return False
-    # Treat end==0 as midnight/24:00 AND include the 00:00 bar itself.
-    if end_hour == 0:
-        # block [start .. 23] and hour 0
-        return hour >= start_hour or hour == 0
-    if start_hour <= end_hour:
-        return start_hour <= hour < end_hour
-    return hour >= start_hour or hour < end_hour
+    if start_hour < 0 or end_hour < 0:
+        return False
+    # 0 / 24:00 / midnight are synonyms for the exclusive end bound.
+    end_norm = 24 if end_hour == 0 else end_hour
+    if start_hour == end_norm:
+        return False  # zero-width window = disabled (e.g. 0->0)
+    if start_hour < end_norm:
+        # same-day window: block [start, end)
+        return start_hour <= hour < end_norm
+    # wraps past midnight (e.g. 22->6): block [start..23] and [0..end)
+    return hour >= start_hour or hour < end_norm
 
 
 # ---------------------------------------------------------------------------
