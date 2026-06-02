@@ -6003,7 +6003,9 @@ def build_panel(parent):
                     continue
                 elif source == 'my_rules':
                     # WHY: My Rules rows render like saved rules — same data shape.
-                    # CHANGED: June 2026 — my_rules row render
+                    #      Must do its own insert+continue, otherwise falls through
+                    #      to the backtest row path with wrong id/tag/format.
+                    # CHANGED: June 2026 — my_rules row render (full insert)
                     numeric_id = s.get('id', '')
                     id_display = f"★ #{numeric_id}"
                     _sr_dict  = s.get('saved_rule', {})
@@ -6016,6 +6018,34 @@ def build_panel(parent):
                         f.split('_', 1)[1] if '_' in f else f for f in _sr_conds
                     )
                     exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
+                    wr_s_my = str(round(wr * 100 if wr <= 1 else wr, 1)) + '%'
+                    entry_tf_display = (
+                        s.get('entry_tf') or
+                        s.get('entry_timeframe') or
+                        (s.get('stats', {}) or {}).get('entry_tf') or
+                        '—'
+                    )
+                    tag = 'saved' if not is_starred else 'starred'
+                    _nd, _np, _ad, _ap = _money_for_strategy(s, net, avg)
+                    if _nd is not None:
+                        _net_d_s = f"${_nd:+,.0f}"
+                        _avg_d_s = f"${_ad:+,.2f}"
+                        _net_p_s = f"{_np:+.1f}%"
+                        _avg_p_s = f"{_ap:+.2f}%"
+                    else:
+                        _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                    _strat_tree.insert("", "end", iid=idx, values=(
+                        _select_glyph(idx),
+                        star_display, id_display, _stage_cell_for(s), rc, exit_name,
+                        entry_tf_display, int(trades), wr_s_my,
+                        f"{pf:.2f}",
+                        f"{net:+,.0f}", _net_d_s, _net_p_s,
+                        f"{avg:+.1f}", _avg_d_s, _avg_p_s,
+                        _format_win_pass(s),
+                        _format_prop_score(s),
+                        "🗑"
+                    ), tags=(tag,))
+                    continue
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
                     id_display = f"Saved #{numeric_id}"
