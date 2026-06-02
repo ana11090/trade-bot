@@ -1223,6 +1223,95 @@ def load_strategy_list():
     except Exception:
         pass
 
+    # ── Helper: compute win_pass for a My Rules entry ─────────────────────
+    def _mr_compute_win_pass(mrule):
+        """Run simulate_challenge on embedded trades and return win_pass dict.
+
+        WHY: My Rules entries have embedded trades but no win_pass stats —
+             the backtester never ran for them. This computes it on the fly
+             at load time so Win Pass and Prop Score columns show real values.
+        CHANGED: June 2026 — live win_pass for My Rules
+        """
+        _wp_default = {
+            'win_pass_passed': None,
+            'win_pass_total':  None,
+            'win_pass_rate':   None,
+        }
+        try:
+            _wp_trades = mrule.get('trades', [])
+            if not _wp_trades:
+                return _wp_default
+
+            _wp_firm_id = mrule.get('prop_firm_id', '') or mrule.get('firm_id', '')
+            if not _wp_firm_id:
+                return _wp_default
+
+            # Load firm JSON to get challenge_id and account_size
+            import glob as _wpg
+            _wp_firms_dir = os.path.join(os.path.dirname(BACKTEST_MATRIX_PATH),
+                                         '..', '..', 'prop_firms')
+            _wp_firms_dir = os.path.normpath(_wp_firms_dir)
+            _wp_firm_data = None
+            for _fp in _wpg.glob(os.path.join(_wp_firms_dir, '*.json')):
+                with open(_fp, encoding='utf-8') as _ff:
+                    _fd = json.load(_ff)
+                if _fd.get('firm_id') == _wp_firm_id:
+                    _wp_firm_data = _fd
+                    break
+            if not _wp_firm_data:
+                return _wp_default
+
+            _wp_challenges = _wp_firm_data.get('challenges', [])
+            if not _wp_challenges:
+                return _wp_default
+            _wp_ch_id = _wp_challenges[0].get('challenge_id', '')
+            if not _wp_ch_id:
+                return _wp_default
+
+            # Account size — from rule or first challenge size
+            _wp_acct = mrule.get('account_size') or 0
+            if not _wp_acct:
+                _wp_sizes = _wp_challenges[0].get('account_sizes', [10000])
+                _wp_acct  = _wp_sizes[0] if _wp_sizes else 10000
+
+            _wp_risk = mrule.get('risk_pct') or 1.0
+            _wp_sl   = mrule.get('avg_sl_distance_pips') or 150.0
+            _wp_pipv = mrule.get('pip_value_per_lot') or 1.0
+
+            from project2_backtesting.strategy_validator import _trades_to_df
+            from shared.prop_firm_simulator import simulate_challenge as _wp_sim
+
+            _wp_df = _trades_to_df(
+                _wp_trades,
+                risk_per_trade_pct=float(_wp_risk),
+                default_sl_pips=float(_wp_sl),
+                pip_value_per_lot=float(_wp_pipv),
+                account_size=int(_wp_acct),
+            )
+            _wp_result = _wp_sim(
+                trades_df=_wp_df,
+                firm_id=_wp_firm_id,
+                challenge_id=_wp_ch_id,
+                account_size=int(_wp_acct),
+                mode='sliding_window',
+                simulate_funded=False,
+                risk_per_trade_pct=float(_wp_risk),
+                default_sl_pips=float(_wp_sl),
+                pip_value_per_lot=float(_wp_pipv),
+                symbol='XAUUSD',
+            )
+            _wp_wins = _wp_result.individual_results or []
+            _wp_passed = sum(1 for w in _wp_wins if (w.eval_outcome or '') == 'PASS')
+            _wp_total  = len(_wp_wins)
+            _wp_rate   = (_wp_passed / _wp_total) if _wp_total > 0 else 0.0
+            return {
+                'win_pass_passed': _wp_passed,
+                'win_pass_total':  _wp_total,
+                'win_pass_rate':   _wp_rate,
+            }
+        except Exception:
+            return _wp_default
+
     # ── Load My Rules (manually saved via ★ button) ───────────────────────
     # WHY: my_rules.json holds rules the user explicitly saved via the ★ My
     #      Rules button. Previously never loaded into the refiner.
@@ -1316,9 +1405,13 @@ def load_strategy_list():
                         'account_size':      _mrule.get('account_size', 0),
                         'risk_pct':          _mrule.get('risk_pct', 0),
                         'pip_value_per_lot': _mrule.get('pip_value_per_lot', 1.0),
-                        'win_pass_passed':   None,
-                        'win_pass_total':    None,
-                        'win_pass_rate':     None,
+                        # WHY: Compute win_pass by running simulate_challenge on
+                        #      the embedded trades. Takes ~50ms per rule but gives
+                        #      real Win Pass and Prop Score columns in the grid.
+                        #      Falls back to None on any error (no crash on import
+                        #      failure, missing firm data, etc.)
+                        # CHANGED: June 2026 — live win_pass for My Rules
+                        **_mr_compute_win_pass(_mrule),
                         'is_stale':          False,
                         'stale_issues':      [],
                         'stability_verdict':         None,
