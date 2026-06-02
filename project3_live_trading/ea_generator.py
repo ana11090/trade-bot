@@ -2812,65 +2812,56 @@ double GetPipSize()
 ENUM_TIMEFRAMES g_entryTF = {mql_period};
 
 //+------------------------------------------------------------------+
-//| TF rank helper for GetBarShift comparison                         |
-//+------------------------------------------------------------------+
-int TFRank(ENUM_TIMEFRAMES tf)
-{{
-   switch(tf)
-   {{
-      case PERIOD_M1:  return 1;
-      case PERIOD_M5:  return 5;
-      case PERIOD_M15: return 15;
-      case PERIOD_M30: return 30;
-      case PERIOD_H1:  return 60;
-      case PERIOD_H4:  return 240;
-      case PERIOD_D1:  return 1440;
-      case PERIOD_W1:  return 10080;
-      case PERIOD_MN1: return 43200;
-      default:         return 60;
-   }}
-}}
-
-//+------------------------------------------------------------------+
-//| Calculate bar shift for indicator reads — UseNextBarEntry aware   |
+//| Calculate bar shift for indicator reads — parity with Python      |
 //|                                                                    |
-//| WHY: The correct shift depends on HOW the rule was backtested.    |
+//| Python build_multi_tf_indicators behaviour:                       |
 //|                                                                    |
 //| UseNextBarEntry=true (entry_bar_offset=1):                        |
-//|   Python fires signal on bar N, enters at bar N+1 open.           |
-//|   At entry time bar N is COMPLETED → shift=1 is correct for ALL TFs.|
-//|   These rules worked with the old shift=1. Do not change them.   |
+//|   Signal fires on bar N, entry is at bar N+1 open.               |
+//|   Bar N is completed at entry time → shift=1 is correct for ALL  |
+//|   timeframes. These rules already work — do not change.           |
 //|                                                                    |
 //| UseNextBarEntry=false (entry_bar_offset=0):                       |
-//|   Python fires signal AND enters at bar N open simultaneously.    |
-//|   Conditions are read from bar N's own indicators (shift=0 in MT5)|
-//|   for same-or-lower TF. Only HIGHER-TF indicators use shift=1    |
-//|   (Python shifts those timestamps by 1 bar in build_multi_tf so  |
-//|   merge_asof picks the previous completed higher-TF bar).         |
-//|   Old shift=1 made the EA read bar N-1 for same-TF → wrong data. |
+//|   Signal fires AND entry happens at bar N open simultaneously.    |
 //|                                                                    |
-//| CHANGED: June 2026 — UseNextBarEntry-conditional shift            |
+//|   - Indicator TF == Entry TF (e.g. H4 indicator, H4 entry):      |
+//|     Python reads bar N's indicator value. At bar N open, MT5's    |
+//|     CopyBuffer shift=0 returns the indicator just re-computed from|
+//|     bar N-1's close data — this matches Python's bar N value.    |
+//|     → shift=0                                                      |
+//|                                                                    |
+//|   - Indicator TF < Entry TF (e.g. M15 indicator, H4 entry):      |
+//|     Python merge_asof(backward, no shift) picks the last closed   |
+//|     M15 bar before entry (e.g. 03:45 for a 04:00 H4 entry).      |
+//|     MT5 shift=1 of PERIOD_M15 at that moment = same 03:45 bar.   |
+//|     → shift=1 (unchanged, already correct)                        |
+//|                                                                    |
+//|   - Indicator TF > Entry TF (e.g. D1 indicator, H4 entry):       |
+//|     Python shifts D1 timestamps +1440min so merge_asof picks the  |
+//|     previous completed D1 bar. MT5 shift=1 of PERIOD_D1 = same.  |
+//|     → shift=1 (unchanged, already correct)                        |
+//|                                                                    |
+//| CHANGED: June 2026 — UseNextBarEntry-conditional, exact-TF shift  |
 //+------------------------------------------------------------------+
 int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
 {{
-   // UseNextBarEntry=true: signal bar is the previous completed bar
-   // at entry time — shift=1 is correct for all TFs.
+   // UseNextBarEntry=true: signal bar is already the completed previous bar.
+   // shift=1 correct for ALL timeframes. These rules worked before — unchanged.
    if(UseNextBarEntry)
       return 1;
 
    // UseNextBarEntry=false: entering at signal bar's own open.
-   // Higher TF: Python shifts those timestamps forward 1 bar so
-   // merge_asof(backward) picks the previous completed bar → shift=1.
-   if(TFRank(indicatorTF) > TFRank(g_entryTF))
-      return 1;
+   // Only indicators on the EXACT same TF as the entry need shift=0.
+   // Lower-TF and higher-TF indicators are both correct with shift=1.
+   if(indicatorTF == g_entryTF)
+      return 0;
 
-   // Same or lower TF: Python reads the signal bar directly → shift=0.
-   return 0;
+   return 1;
 }}
 
 //+------------------------------------------------------------------+
-//| SafeCopyBuffer — wrapper using UseNextBarEntry-aware shift        |
-//| CHANGED: June 2026 — conditional shift via GetBarShift           |
+//| SafeCopyBuffer — wrapper using parity-correct shift               |
+//| CHANGED: June 2026 — uses GetBarShift for correct bar selection   |
 //+------------------------------------------------------------------+
 double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
 {{
