@@ -558,21 +558,78 @@ def _auto_fill_risk(strat_data):
     if risk and _risk_var:
         _risk_var.set(str(risk))
 
-    # Account size
-    acct = rs.get('account_size')
-    if acct and _ea_account_var:
+    # Account size — prefer risk_settings, then strat_data top-level
+    # WHY: My Rules entries store account_size at the top level of the rule
+    #      dict, not inside risk_settings. Without this fallback the account
+    #      dropdown keeps its previous value when loading a My Rules row.
+    # CHANGED: June 2026 — account_size fallback from strat_data
+    acct = (rs.get('account_size')
+            or strat_data.get('account_size')
+            or strat_data.get('saved_rule', {}).get('account_size'))
+    if acct:
         try:
-            _ea_account_var.set(str(int(acct)))
+            acct_int = int(float(acct))
+            if acct_int > 0 and _ea_account_var:
+                _ea_account_var.set(str(acct_int))
         except (ValueError, TypeError):
             pass
 
-    # Firm
-    firm = rs.get('firm', '')
+    # Firm — prefer risk_settings.firm, then prop_firm_name at top level
+    # WHY: risk_settings.firm holds the optimizer target label (e.g. "Get Leveraged")
+    #      but may be empty for My Rules entries. prop_firm_name is always saved
+    #      correctly at the top level. Also try prop_firm_name inside saved_rule.
+    # CHANGED: June 2026 — prop_firm_name fallback for firm dropdown
+    firm = (rs.get('firm', '')
+            or strat_data.get('prop_firm_name', '')
+            or strat_data.get('saved_rule', {}).get('prop_firm_name', ''))
     if firm and _firm_var:
+        # Verify the firm name is actually in _FIRMS before setting
+        # (avoids setting an invalid value that the Combobox rejects)
+        if firm in _FIRMS:
+            try:
+                _firm_var.set(firm)
+                print(f"[EA GEN] Firm auto-set: {firm}")
+            except Exception:
+                pass
+        else:
+            # Try case-insensitive match
+            _firm_lower = firm.lower()
+            for _k in _FIRMS:
+                if _k.lower() == _firm_lower:
+                    try:
+                        _firm_var.set(_k)
+                        print(f"[EA GEN] Firm auto-set (fuzzy): {_k}")
+                    except Exception:
+                        pass
+                    break
+
+    # WHY: After auto-setting the firm, repopulate Challenge and Account
+    #      dropdowns for the new firm. Without this they stay on the old
+    #      firm's values.
+    # CHANGED: June 2026 — repopulate challenge/account after firm auto-set
+    if firm and firm in _FIRMS:
         try:
-            _firm_var.set(firm)
-        except Exception:
-            pass
+            _fw = _FIRMS[firm]
+            _chs = _fw.get('challenges', [])
+            if _chs and _ea_challenge_var:
+                _ch_names = [c.get('challenge_name', c.get('challenge_id', '')) for c in _chs]
+                # Find the combobox widget and update its values
+                # Can't call the local _ch_dd directly, but we can set the var
+                # and update via the trace. Set the first challenge as default.
+                _ea_challenge_var.set(_ch_names[0] if _ch_names else '')
+            # Account sizes from first challenge
+            if _chs and _ea_account_var:
+                _first_ch = _chs[0]
+                _acct_sizes = _first_ch.get('account_sizes', [10000])
+                _acct_strs  = [str(a) for a in _acct_sizes]
+                # Set to saved account size if available, else first option
+                _saved_acct = str(int(float(acct))) if acct else ''
+                if _saved_acct and _saved_acct in _acct_strs:
+                    _ea_account_var.set(_saved_acct)
+                elif _acct_strs:
+                    _ea_account_var.set(_acct_strs[0])
+        except Exception as _fw_e:
+            print(f"[EA GEN] Could not repopulate challenge/account: {_fw_e}")
 
     # Stage — read from rule first, then run_settings, then P1 config
     # WHY: The rule carries prop_firm_stage ("Evaluation" or "Funded").
