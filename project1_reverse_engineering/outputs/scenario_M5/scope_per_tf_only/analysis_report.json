@@ -1,0 +1,791 @@
+{
+  "generated_at": "2026-06-01T19:12:16.370565",
+  "entry_timeframe": null,
+  "direction": "BUY",
+  "activated_at": "2026-06-01 19:12:16",
+  "discovery_method": "p1_run_scenarios",
+  "scenario": null,
+  "analysis_time_s": 11.4,
+  "trade_count": 1106,
+  "feature_count": 804,
+  "profile": {
+    "direction": "buy_only",
+    "direction_split": {
+      "Buy": 1.0
+    },
+    "trade_count": 1106,
+    "date_range": [
+      "2020-01-07",
+      "2026-03-10"
+    ],
+    "avg_duration_minutes": 3.0,
+    "duration_category": "scalper",
+    "win_rate": 0.5841,
+    "avg_win_pips": 347.0,
+    "avg_loss_pips": -136.4,
+    "reward_risk_ratio": 2.54,
+    "sl_pattern": {
+      "fixed": true,
+      "levels": 1,
+      "fixed_value_pips": 150.0,
+      "confidence": 0.88
+    },
+    "tp_pattern": {
+      "fixed": false,
+      "type": "trailing_or_indicator",
+      "cv": 1.04
+    },
+    "active_hours": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      21,
+      22,
+      23
+    ],
+    "peak_hours": [
+      12,
+      13,
+      11
+    ],
+    "sessions": [
+      "Asian",
+      "London",
+      "New York"
+    ],
+    "active_days": [
+      "Friday",
+      "Monday",
+      "Thursday",
+      "Wednesday",
+      "Tuesday"
+    ],
+    "trades_per_month_avg": 14.7,
+    "frequency_trend": "increasing",
+    "yearly_stats": [
+      {
+        "year": 2020,
+        "count": 96,
+        "win_rate": 0.677,
+        "avg_pips": 154.5,
+        "trades_per_month": 8.0
+      },
+      {
+        "year": 2021,
+        "count": 73,
+        "win_rate": 0.548,
+        "avg_pips": 96.6,
+        "trades_per_month": 6.1
+      },
+      {
+        "year": 2022,
+        "count": 105,
+        "win_rate": 0.495,
+        "avg_pips": 60.4,
+        "trades_per_month": 8.8
+      },
+      {
+        "year": 2023,
+        "count": 85,
+        "win_rate": 0.447,
+        "avg_pips": 65.1,
+        "trades_per_month": 7.1
+      },
+      {
+        "year": 2024,
+        "count": 167,
+        "win_rate": 0.491,
+        "avg_pips": 58.2,
+        "trades_per_month": 13.9
+      },
+      {
+        "year": 2025,
+        "count": 380,
+        "win_rate": 0.605,
+        "avg_pips": 128.6,
+        "trades_per_month": 31.7
+      },
+      {
+        "year": 2026,
+        "count": 200,
+        "win_rate": 0.695,
+        "avg_pips": 346.6,
+        "trades_per_month": 66.7
+      }
+    ]
+  },
+  "feature_importance": {
+    "top_20": [
+      [
+        "M5_mt5_atr_50",
+        0.027138
+      ],
+      [
+        "M5_candle_range",
+        0.023303
+      ],
+      [
+        "M5_mt5_atr_28",
+        0.023253
+      ],
+      [
+        "M5_std_dev_50",
+        0.023235
+      ],
+      [
+        "M5_mt5_atr_7",
+        0.022479
+      ],
+      [
+        "M5_mt5_atr_21",
+        0.02089
+      ],
+      [
+        "M5_std_dev_20",
+        0.020197
+      ],
+      [
+        "M5_lower_shadow",
+        0.019231
+      ],
+      [
+        "M5_bear_power",
+        0.016061
+      ],
+      [
+        "M5_mt5_atr_100",
+        0.015995
+      ],
+      [
+        "M5_mt5_macd_fast_signal",
+        0.015122
+      ],
+      [
+        "M5_mt5_adx_14_minus_di",
+        0.013407
+      ],
+      [
+        "M5_mt5_atr_14",
+        0.013339
+      ],
+      [
+        "M5_keltner_width",
+        0.013029
+      ],
+      [
+        "M5_mt5_macd_fast",
+        0.012713
+      ],
+      [
+        "M5_bb_20_3_width",
+        0.012469
+      ],
+      [
+        "M5_volume_change",
+        0.011974
+      ],
+      [
+        "M5_cci_14",
+        0.011954
+      ],
+      [
+        "M5_minus_di",
+        0.011923
+      ],
+      [
+        "M5_mt5_macd_std",
+        0.011433
+      ]
+    ],
+    "train_accuracy": 0.7885,
+    "test_accuracy": 0.5721
+  },
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_roc_20",
+          "operator": "<=",
+          "value": -0.4759
+        },
+        {
+          "feature": "M5_kst_signal",
+          "operator": ">",
+          "value": -8.3296
+        },
+        {
+          "feature": "M5_distance_from_high",
+          "operator": ">",
+          "value": 0.1118
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.938,
+      "coverage": 81,
+      "coverage_pct": 9.2,
+      "win_rate": 0.938,
+      "avg_pips": 391.8,
+      "_target_mode": "binary",
+      "avg_pips_test": 78.0,
+      "win_rate_test": 0.571,
+      "test_samples": 7,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_roc_20",
+          "operator": ">",
+          "value": -0.4759
+        },
+        {
+          "feature": "M5_mt5_atr_28",
+          "operator": "<=",
+          "value": 10.8908
+        },
+        {
+          "feature": "M5_day_of_month",
+          "operator": ">",
+          "value": 6.5
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.654,
+      "coverage": 211,
+      "coverage_pct": 23.9,
+      "win_rate": 0.654,
+      "avg_pips": 157.7,
+      "_target_mode": "binary",
+      "avg_pips_test": 42.7,
+      "win_rate_test": 0.444,
+      "test_samples": 9,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_roc_20",
+          "operator": ">",
+          "value": -0.4759
+        },
+        {
+          "feature": "M5_mt5_atr_28",
+          "operator": ">",
+          "value": 10.8908
+        },
+        {
+          "feature": "M5_distance_to_rolling_level_236",
+          "operator": "<=",
+          "value": 1.0835
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.929,
+      "coverage": 28,
+      "coverage_pct": 3.2,
+      "win_rate": 0.929,
+      "avg_pips": 537.4,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": "<=",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_mt5_adx_21_minus_di",
+          "operator": "<=",
+          "value": 22.6009
+        },
+        {
+          "feature": "M5_roc_10",
+          "operator": "<=",
+          "value": -0.0402
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.893,
+      "coverage": 28,
+      "coverage_pct": 3.2,
+      "win_rate": 0.893,
+      "avg_pips": 246.1,
+      "_target_mode": "binary",
+      "avg_pips_test": 659.5,
+      "win_rate_test": 1.0,
+      "test_samples": 2,
+      "test_skip_reason": null,
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_roc_20",
+          "operator": "<=",
+          "value": -0.4759
+        },
+        {
+          "feature": "M5_kst_signal",
+          "operator": ">",
+          "value": -8.3296
+        },
+        {
+          "feature": "M5_distance_from_high",
+          "operator": "<=",
+          "value": 0.1118
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.679,
+      "coverage": 28,
+      "coverage_pct": 3.2,
+      "win_rate": 0.679,
+      "avg_pips": 272.2,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "M5_std_dev_50",
+          "operator": ">",
+          "value": 5.5707
+        },
+        {
+          "feature": "M5_roc_20",
+          "operator": ">",
+          "value": -0.4759
+        },
+        {
+          "feature": "M5_mt5_atr_28",
+          "operator": ">",
+          "value": 10.8908
+        },
+        {
+          "feature": "M5_distance_to_rolling_level_236",
+          "operator": ">",
+          "value": 1.0835
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.696,
+      "coverage": 23,
+      "coverage_pct": 2.6,
+      "win_rate": 0.696,
+      "avg_pips": 532.7,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "action": "BUY",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 2,
+      "name": "Big winners",
+      "count": 56,
+      "pct": 5.1,
+      "avg_duration_min": 0.0,
+      "avg_pips": 522.0,
+      "win_rate": 0.893,
+      "top_features": [
+        "M5_bull_power",
+        "M5_mt5_macd_std_signal",
+        "M5_kst_signal",
+        "M5_awesome_oscillator",
+        "M5_mt5_macd_std"
+      ]
+    },
+    {
+      "cluster_id": 0,
+      "name": "Profit cluster",
+      "count": 219,
+      "pct": 19.8,
+      "avg_duration_min": 0.0,
+      "avg_pips": 224.0,
+      "win_rate": 0.621,
+      "top_features": [
+        "M5_bull_power",
+        "M5_distance_to_rolling_level_382",
+        "M5_distance_to_rolling_level_236",
+        "M5_mt5_macd_std_signal",
+        "M5_kst_signal"
+      ]
+    },
+    {
+      "cluster_id": 3,
+      "name": "Profit cluster",
+      "count": 455,
+      "pct": 41.1,
+      "avg_duration_min": 0.0,
+      "avg_pips": 127.7,
+      "win_rate": 0.604,
+      "top_features": [
+        "M5_bull_power",
+        "M5_vpt",
+        "M5_distance_to_rolling_level_236",
+        "M5_distance_to_rolling_level_382",
+        "M5_price_above_cloud"
+      ]
+    },
+    {
+      "cluster_id": 1,
+      "name": "Profit cluster",
+      "count": 376,
+      "pct": 34.0,
+      "avg_duration_min": 0.0,
+      "avg_pips": 67.2,
+      "win_rate": 0.492,
+      "top_features": [
+        "M5_bull_power",
+        "M5_distance_to_rolling_level_382",
+        "M5_distance_to_rolling_level_236",
+        "M5_cmf",
+        "M5_tsi"
+      ]
+    }
+  ],
+  "regimes": {
+    "trend": {
+      "trending": {
+        "count": 545,
+        "win_rate": 0.622,
+        "avg_pips": 199.5,
+        "total_pips": 108739.0
+      },
+      "ranging": {
+        "count": 561,
+        "win_rate": 0.547,
+        "avg_pips": 94.3,
+        "total_pips": 52926.0
+      },
+      "indicator_used": "H4_adx_14",
+      "adx_threshold": 25.0
+    },
+    "volatility": {
+      "high": {
+        "count": 486,
+        "win_rate": 0.66,
+        "avg_pips": 230.6,
+        "total_pips": 112086.0
+      },
+      "low": {
+        "count": 620,
+        "win_rate": 0.524,
+        "avg_pips": 80.0,
+        "total_pips": 49579.0
+      },
+      "indicator_used": "H1_atr_14",
+      "median_value": 10.57
+    },
+    "direction": {
+      "above_ema200": {
+        "count": 811,
+        "win_rate": 0.597,
+        "avg_pips": 167.3,
+        "total_pips": 135676.0
+      },
+      "below_ema200": {
+        "count": 295,
+        "win_rate": 0.549,
+        "avg_pips": 88.1,
+        "total_pips": 25989.0
+      },
+      "indicator_used": "H4_ema_200_distance"
+    },
+    "session": {
+      "asian": {
+        "count": 301,
+        "win_rate": 0.601,
+        "avg_pips": 145.4,
+        "total_pips": 43766.0
+      },
+      "london": {
+        "count": 647,
+        "win_rate": 0.573,
+        "avg_pips": 128.0,
+        "total_pips": 82794.0
+      },
+      "new_york": {
+        "count": 499,
+        "win_rate": 0.591,
+        "avg_pips": 148.2,
+        "total_pips": 73948.0
+      }
+    },
+    "day_of_week": {
+      "Monday": {
+        "count": 230,
+        "win_rate": 0.613,
+        "avg_pips": 165.2,
+        "total_pips": 38001.0
+      },
+      "Tuesday": {
+        "count": 196,
+        "win_rate": 0.592,
+        "avg_pips": 159.8,
+        "total_pips": 31330.0
+      },
+      "Wednesday": {
+        "count": 212,
+        "win_rate": 0.561,
+        "avg_pips": 136.4,
+        "total_pips": 28922.0
+      },
+      "Thursday": {
+        "count": 217,
+        "win_rate": 0.567,
+        "avg_pips": 116.3,
+        "total_pips": 25238.0
+      },
+      "Friday": {
+        "count": 247,
+        "win_rate": 0.583,
+        "avg_pips": 149.8,
+        "total_pips": 37009.0
+      }
+    }
+  },
+  "evolution": [
+    {
+      "period": "2020",
+      "trades": 96,
+      "months": 12,
+      "trades_per_month": 8.0,
+      "win_rate": 0.677,
+      "avg_pips": 154.5,
+      "avg_duration_min": 18.7,
+      "peak_hour": 13
+    },
+    {
+      "period": "2021",
+      "trades": 73,
+      "months": 12,
+      "trades_per_month": 6.1,
+      "win_rate": 0.548,
+      "avg_pips": 96.6,
+      "avg_duration_min": 20.9,
+      "peak_hour": 12
+    },
+    {
+      "period": "2022",
+      "trades": 105,
+      "months": 12,
+      "trades_per_month": 8.8,
+      "win_rate": 0.495,
+      "avg_pips": 60.4,
+      "avg_duration_min": 56.1,
+      "peak_hour": 11
+    },
+    {
+      "period": "2023",
+      "trades": 85,
+      "months": 12,
+      "trades_per_month": 7.1,
+      "win_rate": 0.447,
+      "avg_pips": 65.1,
+      "avg_duration_min": 28.9,
+      "peak_hour": 13
+    },
+    {
+      "period": "2024",
+      "trades": 167,
+      "months": 12,
+      "trades_per_month": 13.9,
+      "win_rate": 0.491,
+      "avg_pips": 58.2,
+      "avg_duration_min": 30.4,
+      "peak_hour": 12
+    },
+    {
+      "period": "2025",
+      "trades": 380,
+      "months": 12,
+      "trades_per_month": 31.7,
+      "win_rate": 0.605,
+      "avg_pips": 128.6,
+      "avg_duration_min": 5.2,
+      "peak_hour": 12
+    },
+    {
+      "period": "2026",
+      "trades": 200,
+      "months": 3,
+      "trades_per_month": 66.7,
+      "win_rate": 0.695,
+      "avg_pips": 346.6,
+      "avg_duration_min": 1.6,
+      "peak_hour": 15
+    }
+  ],
+  "anomalies": {
+    "count": 56,
+    "pct": 5.1,
+    "anomaly_win_rate": 0.786,
+    "normal_win_rate": 0.573,
+    "top_10": [
+      {
+        "trade_id": 129,
+        "open_time": "2026-02-02 08:33:00",
+        "pips": 564.0,
+        "is_winner": true,
+        "score": -0.729,
+        "hour": 6,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 131,
+        "open_time": "2026-02-02 03:29:00",
+        "pips": 423.0,
+        "is_winner": true,
+        "score": -0.707,
+        "hour": 1,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 156,
+        "open_time": "2026-01-29 02:03:00",
+        "pips": 1045.0,
+        "is_winner": true,
+        "score": -0.699,
+        "hour": 0,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 128,
+        "open_time": "2026-02-02 09:03:00",
+        "pips": -150.0,
+        "is_winner": false,
+        "score": -0.694,
+        "hour": 7,
+        "duration": 0.0
+      },
+      {
+        "trade_id": 145,
+        "open_time": "2026-01-30 04:46:00",
+        "pips": 768.0,
+        "is_winner": true,
+        "score": -0.68,
+        "hour": 2,
+        "duration": 3.0
+      },
+      {
+        "trade_id": 149,
+        "open_time": "2026-01-29 18:56:00",
+        "pips": 417.0,
+        "is_winner": true,
+        "score": -0.663,
+        "hour": 16,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 21,
+        "open_time": "2026-03-03 17:02:00",
+        "pips": 699.0,
+        "is_winner": true,
+        "score": -0.662,
+        "hour": 15,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 148,
+        "open_time": "2026-01-29 19:02:00",
+        "pips": 1257.0,
+        "is_winner": true,
+        "score": -0.652,
+        "hour": 17,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 132,
+        "open_time": "2026-02-02 03:05:00",
+        "pips": 1053.0,
+        "is_winner": true,
+        "score": -0.639,
+        "hour": 1,
+        "duration": 1.0
+      },
+      {
+        "trade_id": 103,
+        "open_time": "2026-02-05 05:15:00",
+        "pips": 351.0,
+        "is_winner": true,
+        "score": -0.637,
+        "hour": 3,
+        "duration": 0.0
+      }
+    ]
+  },
+  "suggestions": [
+    {
+      "type": "filter",
+      "description": "Only trade in high volatility (ATR above median)",
+      "impact": "Would improve win rate from 58% to ~66%",
+      "trades_filtered": 620,
+      "pct_filtered": 56.0
+    }
+  ],
+  "regime_filter_discovery": null
+}
