@@ -48,7 +48,7 @@ pending_backtest_auto_run  = [False]  # bool — if True, click Run Backtest aft
 #      it and auto-selects the strategy matching that index.
 # CHANGED: May 2026 — auto-select EA strategy from backtest results
 pending_ea_strategy_index  = [None]   # int | None — matrix index to auto-select in EA Generator
-PROJECT3_SUB_PANELS = {"p3_generator", "p3_monitor"}
+PROJECT3_SUB_PANELS = {"p3_generator", "p3_monitor", "p3_myrules_eas"}
 PROJECT4_SUB_PANELS = {"p4_scratch"}
 PROJECT0_EXTRA_PANELS = {"prop_explorer", "compare_histories", "lifecycle_sim"}
 submenu_open = [False]

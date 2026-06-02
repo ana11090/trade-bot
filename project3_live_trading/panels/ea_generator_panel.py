@@ -144,6 +144,14 @@ _test_script_text  = None   # ScrolledText showing generated test script
 _test_generated    = False  # True once Step 1 is done
 _step2_btn         = None   # Full EA button (only enabled after Step 1)
 
+# CHANGED: June 2026 — Rule+EA inspector window
+_last_gen_code     = None
+_last_gen_strategy = None
+_last_gen_propfirm = None
+_last_gen_stratraw = None
+_last_gen_meta     = None
+_view_rule_ea_btn  = None
+
 
 def _run_lookup_diagnostic():
     """Run lookup diagnostic — reuses the refiner panel's implementation."""
@@ -1355,6 +1363,29 @@ def _generate():
                 0
             ),
         )
+        # CHANGED: June 2026 — snapshot for the Rule+EA inspector window
+        global _last_gen_code, _last_gen_strategy, _last_gen_propfirm
+        global _last_gen_stratraw, _last_gen_meta, _view_rule_ea_btn
+        _last_gen_code     = code
+        _last_gen_strategy = strategy
+        _last_gen_propfirm = prop_firm
+        _last_gen_stratraw = strat_data
+        _last_gen_meta = {
+            'platform':  platform,
+            'entry_tf':  entry_tf,
+            'symbol':    (_symbol_var.get() if _symbol_var else 'XAUUSD'),
+            'magic':     magic,
+            'stage':     stage,
+            'firm_name': firm_name,
+            'session_filter': session_filter,
+            'day_filter':     day_filter,
+            'hour_filter':    hour_filter,
+        }
+        if _view_rule_ea_btn is not None:
+            try:
+                _view_rule_ea_btn.configure(state="normal")
+            except Exception:
+                pass
         # WHY: Show which firm/panel value resolved for spread and hard close.
         # CHANGED: April 2026 — visibility for per-firm resolution
         try:
@@ -1424,6 +1455,146 @@ def _generate():
         pass
 
 
+def _fmt_rule_summary():
+    """Format a human-readable summary of the last generated rule + prop firm context."""
+    import json as _json
+    s    = _last_gen_strategy or {}
+    pf   = _last_gen_propfirm or {}
+    raw  = _last_gen_stratraw or {}
+    meta = _last_gen_meta or {}
+    L = []; A = L.append
+    A("=" * 60); A("STRATEGY"); A("=" * 60)
+    A("Rule combo      : " + str(s.get('rule_combo') or raw.get('rule_combo') or '(unnamed)'))
+    A("Direction       : " + str(s.get('direction', '?')))
+    A("Entry timeframe : " + str(meta.get('entry_tf', '?')))
+    A("Symbol          : " + str(meta.get('symbol', '?')))
+    A("Platform        : " + str(meta.get('platform', '?')))
+    A("Exit            : " + str(s.get('exit_name', '?')))
+    _ep = s.get('exit_strategy_params') or {}
+    if _ep:
+        A("Exit params     :")
+        for k, v in _ep.items():
+            A("    " + str(k) + " = " + str(v))
+    _fa = s.get('filters_applied') or raw.get('filters_applied') or {}
+    A("Filters applied : " + str(_fa if _fa else '(none)'))
+    A("  session_filter: " + str(meta.get('session_filter')))
+    A("  day_filter    : " + str(meta.get('day_filter')))
+    A("  hour_filter   : " + str(meta.get('hour_filter')))
+    _st = s.get('stats') or {}
+    if _st:
+        A("Stats           : WR=" + str(_st.get('win_rate')) +
+          "  net_pips=" + str(_st.get('total_pips')) +
+          "  PF=" + str(_st.get('profit_factor')))
+    _rf = s.get('regime_filter_conditions') or []
+    A("Regime filter   : " + str(len(_rf)) + " condition(s)")
+    A(""); A("-" * 60); A("BRANCHES / CONDITIONS"); A("-" * 60)
+    _rules = s.get('rules') or raw.get('rules') or []
+    _win = [r for r in _rules if r.get('prediction') == 'WIN'] or _rules
+    if not _win:
+        A("(no rules found)")
+    for i, r in enumerate(_win, 1):
+        A("Branch " + str(i) + "  (prediction=" + str(r.get('prediction', '?')) +
+          ", action=" + str(r.get('action', '')) + ")")
+        for c in r.get('conditions', []):
+            A("    " + str(c.get('feature', '?')) + " " +
+              str(c.get('operator', c.get('op', '?'))) + " " + str(c.get('value', '?')))
+        if not r.get('conditions'):
+            A("    (no conditions)")
+    A(""); A("=" * 60); A("PROP FIRM"); A("=" * 60)
+    A("Firm            : " + str(pf.get('name', meta.get('firm_name', '?'))))
+    A("Stage           : " + str(pf.get('stage', meta.get('stage', '?'))))
+    A("Account size    : " + str(pf.get('account_size', '?')))
+    A("Daily DD %      : " + str(pf.get('daily_dd_pct', '?')))
+    A("Total DD %      : " + str(pf.get('total_dd_pct', '?')))
+    _fd = pf.get('firm_data') or {}
+    A("Force-close hr  : " + str(_fd.get('force_close_hour_gmt', '(n/a)')))
+    _nws = _fd.get('no_trades_window_start_hour_gmt')
+    _nwe = _fd.get('no_trades_window_end_hour_gmt')
+    if _nws is not None:
+        A("No-trades window: [" + str(_nws) + "," + str(_nwe) + ") GMT")
+    else:
+        A("No-trades window: (n/a)")
+    A("Leverage        : " + str(_fd.get('leverage', pf.get('leverage', '(n/a)'))))
+    _dm = pf.get('drawdown_mechanics') or {}
+    if _dm:
+        A("Drawdown mech.  :")
+        for k, v in _dm.items():
+            A("    " + str(k) + " = " + str(v))
+    _rs = pf.get('restrictions') or {}
+    if _rs:
+        A("Restrictions    :")
+        for k, v in _rs.items():
+            A("    " + str(k) + " = " + str(v))
+    A(""); A("=" * 60); A("RAW RULE JSON"); A("=" * 60)
+    try:
+        A(_json.dumps(raw, indent=2, default=str))
+    except Exception as _e:
+        A("(could not serialize raw rule: " + str(_e) + ")")
+    return "\n".join(L)
+
+
+def _view_rule_and_ea():
+    """Open a side-by-side window showing the complete rule and generated EA."""
+    if not _last_gen_code:
+        messagebox.showinfo("Nothing to show", "Generate an EA first (Step 2).")
+        return
+    win = tk.Toplevel(state.window if getattr(state, 'window', None) else None)
+    win.title("Rule + Generated EA")
+    win.configure(bg=BG)
+    try:
+        win.geometry("1280x800")
+    except Exception:
+        pass
+    meta = _last_gen_meta or {}
+    title = (str((_last_gen_strategy or {}).get('rule_combo') or 'Rule') + "  -  " +
+             str(meta.get('firm_name', '?')) + " / " + str(meta.get('stage', '?')) +
+             "  -  " + str(meta.get('entry_tf', '?')) + "  -  " +
+             str(meta.get('platform', '?')).upper())
+    hdr = tk.Frame(win, bg=DARK); hdr.pack(fill="x")
+    tk.Label(hdr, text=title, bg=DARK, fg="white",
+             font=("Segoe UI", 11, "bold"), padx=12, pady=8).pack(side=tk.LEFT)
+
+    paned = tk.PanedWindow(win, orient=tk.HORIZONTAL, bg=BG, sashwidth=6)
+    paned.pack(fill="both", expand=True, padx=6, pady=6)
+
+    left = tk.Frame(paned, bg=WHITE)
+    tk.Label(left, text="Complete Rule (strategy + prop firm)", bg=WHITE, fg=DARK,
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(8, 4))
+    rule_txt = tk.Text(left, font=("Consolas", 8), bg="#0f1020", fg="#d8e0ff",
+                       wrap="none", insertbackground="white")
+    ry = tk.Scrollbar(left, orient="vertical", command=rule_txt.yview)
+    rx = tk.Scrollbar(left, orient="horizontal", command=rule_txt.xview)
+    rule_txt.configure(yscrollcommand=ry.set, xscrollcommand=rx.set)
+    ry.pack(side="right", fill="y"); rx.pack(side="bottom", fill="x")
+    rule_txt.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=(0, 8))
+    rule_txt.insert("end", _fmt_rule_summary())
+    rule_txt.configure(state="disabled")
+    paned.add(left, minsize=380)
+
+    right = tk.Frame(paned, bg=WHITE)
+    rh = tk.Frame(right, bg=WHITE); rh.pack(fill="x")
+    tk.Label(rh, text="Generated EA", bg=WHITE, fg=DARK,
+             font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=8, pady=(8, 4))
+    def _copy_ea():
+        if getattr(state, 'window', None):
+            state.window.clipboard_clear()
+            state.window.clipboard_append(_last_gen_code or "")
+            messagebox.showinfo("Copied", "EA code copied to clipboard.")
+    tk.Button(rh, text="Copy EA", command=_copy_ea, bg=MIDGREY, fg="white",
+              font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2",
+              padx=10, pady=3).pack(side=tk.RIGHT, padx=8, pady=(6, 0))
+    ea_txt = tk.Text(right, font=("Consolas", 8), bg="#1a1a2a", fg="#e0e0e0",
+                     wrap="none", insertbackground="white")
+    ey = tk.Scrollbar(right, orient="vertical", command=ea_txt.yview)
+    ex = tk.Scrollbar(right, orient="horizontal", command=ea_txt.xview)
+    ea_txt.configure(yscrollcommand=ey.set, xscrollcommand=ex.set)
+    ey.pack(side="right", fill="y"); ex.pack(side="bottom", fill="x")
+    ea_txt.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=(0, 8))
+    ea_txt.insert("end", _last_gen_code or "")
+    ea_txt.configure(state="disabled")
+    paned.add(right, minsize=380)
+
+
 def _save_file():
     if not _code_text:
         return
@@ -1472,6 +1643,7 @@ def build_panel(parent):
     global _sl_var, _tp_var, _trail_var
     global _test_script_text, _step2_btn
     global _strat_tree_p3, _selected_strat_iid
+    global _view_rule_ea_btn
 
     panel = tk.Frame(parent, bg=BG)
 
@@ -1617,6 +1789,7 @@ def build_panel(parent):
     _strategy_var = tk.StringVar(value="")
     dd_container = [None]  # Use list to allow mutation in nested function
     star_btn_container = [None]  # Placeholder for star button
+    action_bar_container = [None]  # CHANGED: June 2026 — build action buttons once
 
     load_btn = tk.Button(sel_row, text="Load", command=_update_strat_info,
                          bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
@@ -1639,7 +1812,7 @@ def build_panel(parent):
 
     # ── Async strategy loading ────────────────────────────────────────────
     def _on_strategies_loaded():
-        nonlocal dd_container, star_btn_container
+        nonlocal dd_container, star_btn_container, action_bar_container
 
         existing_tree = dd_container[0] if dd_container else None
         has_existing_tree = existing_tree and hasattr(existing_tree, 'get_children')
@@ -1649,6 +1822,7 @@ def build_panel(parent):
                 for widget in sel_row.winfo_children():
                     widget.destroy()
                 dd_container[0] = None
+                action_bar_container[0] = None   # CHANGED: June 2026
             tk.Label(sel_row, text="No backtest results. Run the backtest first.",
                      font=("Segoe UI", 10, "italic"), bg=WHITE, fg=RED).pack(side=tk.LEFT)
         else:
@@ -2152,77 +2326,85 @@ def build_panel(parent):
                 _strat_tree_p3.bind("<<TreeviewSelect>>", _on_p3_select)
                 _strat_tree_p3.bind("<Button-1>", _on_tree_click, add="+")
 
-            # ── Star button ───────────────────────────────────────────
-            def _toggle_star():
-                idx = _get_selected_index()
-                if idx is None:
-                    return
-                for s in _strategies:
-                    if s.get('index') == idx:
-                        rc = s.get('rule_combo', '')
-                        es = s.get('exit_strategy', s.get('exit_name', ''))
-                        try:
-                            from shared.starred import toggle
-                            is_now_starred = toggle(rc, es)
-                            star_btn.configure(
-                                text="⭐ Starred" if is_now_starred else "☆ Star",
-                                bg="#f39c12" if is_now_starred else "#95a5a6",
-                            )
-                            _load_strategies(force=True)
-                            cur_label = None
-                            for s2 in _strategies:
-                                if s2.get('index') == idx:
-                                    cur_label = s2.get('label')
-                                    break
-                            if cur_label:
-                                _strategy_var.set(cur_label)
-                        except ImportError:
-                            pass
-                        break
+            # ── Action buttons (build ONCE, below the tree) ────────────
+            # CHANGED: June 2026 — create the action bar only when the tree is
+            #          built fresh; reuse it on rebuild so buttons don't pile up.
+            if action_bar_container[0] is None or not action_bar_container[0].winfo_exists():
+                action_bar = tk.Frame(sel_row, bg=WHITE)
+                action_bar.pack(fill="x", pady=(6, 0))
+                action_bar_container[0] = action_bar
 
-            star_btn = tk.Button(sel_row, text="☆ Star", command=_toggle_star,
-                                 bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
-                                 relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
-            star_btn.pack(side=tk.LEFT, padx=(6, 0))
-            star_btn_container[0] = star_btn
+                # ── Star button ───────────────────────────────────────
+                def _toggle_star():
+                    idx = _get_selected_index()
+                    if idx is None:
+                        return
+                    for s in _strategies:
+                        if s.get('index') == idx:
+                            rc = s.get('rule_combo', '')
+                            es = s.get('exit_strategy', s.get('exit_name', ''))
+                            try:
+                                from shared.starred import toggle
+                                is_now_starred = toggle(rc, es)
+                                star_btn.configure(
+                                    text="⭐ Starred" if is_now_starred else "☆ Star",
+                                    bg="#f39c12" if is_now_starred else "#95a5a6",
+                                )
+                                _load_strategies(force=True)
+                                cur_label = None
+                                for s2 in _strategies:
+                                    if s2.get('index') == idx:
+                                        cur_label = s2.get('label')
+                                        break
+                                if cur_label:
+                                    _strategy_var.set(cur_label)
+                            except ImportError:
+                                pass
+                            break
 
-            def _update_star_btn(*args):
-                idx = _get_selected_index()
-                if idx is None:
-                    return
-                for s in _strategies:
-                    if s.get('index') == idx:
-                        is_s = s.get('is_starred', False)
-                        star_btn.configure(
-                            text="⭐ Starred" if is_s else "☆ Star",
-                            bg="#f39c12" if is_s else "#95a5a6",
-                        )
-                        break
-
-            _strategy_var.trace_add('write', _update_star_btn)
-            _update_star_btn()
-
-            # ── Refresh button ────────────────────────────────────────
-            def _do_refresh():
-                try:
-                    _load_strategies(force=True)
-                    _on_strategies_loaded()
-                    messagebox.showinfo("Refreshed", "Strategy list reloaded from disk.")
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    messagebox.showerror("Refresh Error", str(e))
-
-            refresh_btn = tk.Button(sel_row, text="🔄 Refresh", command=_do_refresh,
-                                    bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
-                                    relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
-            refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
-
-            # ── Diagnose button ───────────────────────────────────────
-            diagnose_btn = tk.Button(sel_row, text="🔍 Diagnose", command=_run_lookup_diagnostic,
-                                     bg="#8e44ad", fg="white", font=("Segoe UI", 9, "bold"),
+                star_btn = tk.Button(action_bar, text="☆ Star", command=_toggle_star,
+                                     bg="#95a5a6", fg="white", font=("Segoe UI", 9, "bold"),
                                      relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
-            diagnose_btn.pack(side=tk.LEFT, padx=(6, 0))
+                star_btn.pack(side=tk.LEFT, padx=(6, 0))
+                star_btn_container[0] = star_btn
+
+                def _update_star_btn(*args):
+                    idx = _get_selected_index()
+                    if idx is None:
+                        return
+                    for s in _strategies:
+                        if s.get('index') == idx:
+                            is_s = s.get('is_starred', False)
+                            star_btn.configure(
+                                text="⭐ Starred" if is_s else "☆ Star",
+                                bg="#f39c12" if is_s else "#95a5a6",
+                            )
+                            break
+
+                _strategy_var.trace_add('write', _update_star_btn)
+                _update_star_btn()
+
+                # ── Refresh button ────────────────────────────────────
+                def _do_refresh():
+                    try:
+                        _load_strategies(force=True)
+                        _on_strategies_loaded()
+                        messagebox.showinfo("Refreshed", "Strategy list reloaded from disk.")
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        messagebox.showerror("Refresh Error", str(e))
+
+                refresh_btn = tk.Button(action_bar, text="🔄 Refresh", command=_do_refresh,
+                                        bg="#3498db", fg="white", font=("Segoe UI", 9, "bold"),
+                                        relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+                refresh_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+                # ── Diagnose button ───────────────────────────────────
+                diagnose_btn = tk.Button(action_bar, text="🔍 Diagnose", command=_run_lookup_diagnostic,
+                                         bg="#8e44ad", fg="white", font=("Segoe UI", 9, "bold"),
+                                         relief=tk.FLAT, cursor="hand2", padx=10, pady=4)
+                diagnose_btn.pack(side=tk.LEFT, padx=(6, 0))
 
             # Enable load button
             load_btn.configure(state=tk.NORMAL)
@@ -2813,6 +2995,14 @@ def build_panel(parent):
     tk.Button(out_hdr, text="Copy to Clipboard", command=_copy_to_clipboard,
               bg=MIDGREY, fg="white", font=("Segoe UI", 9, "bold"),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
+    # CHANGED: June 2026 — Rule+EA inspector button (enabled after generate)
+    _view_rule_ea_btn = tk.Button(out_hdr, text="View Rule + EA",
+                                  command=_view_rule_and_ea,
+                                  bg="#764ba2", fg="white",
+                                  font=("Segoe UI", 9, "bold"),
+                                  relief=tk.FLAT, cursor="hand2",
+                                  padx=10, pady=3, state="disabled")
+    _view_rule_ea_btn.pack(side=tk.RIGHT, padx=(4, 0))
 
     _code_text = tk.Text(out_frame, height=20, font=("Consolas", 8),
                           bg="#1a1a2a", fg="#e0e0e0", insertbackground="white",

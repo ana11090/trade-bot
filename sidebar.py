@@ -516,14 +516,17 @@ def build_sidebar(window, canvas, refresh_map):
     btn3 = _sidebar_btn(inner_frame, "3 - Live Trading", _toggle_project3)
     btn3.pack(fill="x")
 
-    btn_p3_generator = _sub_btn(project3_extras, "🤖 EA Generator",  lambda: show_panel("p3_generator"))
+    btn_p3_generator  = _sub_btn(project3_extras, "🤖 EA Generator",   lambda: show_panel("p3_generator"))
     btn_p3_generator.pack(fill="x")
-    btn_p3_monitor   = _sub_btn(project3_extras, "📊 Live Monitor",   lambda: show_panel("p3_monitor"))
+    btn_p3_monitor    = _sub_btn(project3_extras, "📊 Live Monitor",    lambda: show_panel("p3_monitor"))
     btn_p3_monitor.pack(fill="x")
+    btn_p3_myrules    = _sub_btn(project3_extras, "📋 My Rules & EAs",  lambda: show_panel("p3_myrules_eas"))
+    btn_p3_myrules.pack(fill="x")
 
     PROJECT3_BUTTONS = {
-        "p3_generator": btn_p3_generator,
-        "p3_monitor":   btn_p3_monitor,
+        "p3_generator":   btn_p3_generator,
+        "p3_monitor":     btn_p3_monitor,
+        "p3_myrules_eas": btn_p3_myrules,
     }
 
     btn4 = _sidebar_btn(inner_frame, "4 - Strategy Creation", _toggle_project4)

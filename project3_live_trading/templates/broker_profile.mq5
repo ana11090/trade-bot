@@ -156,7 +156,7 @@ void OnStart()
    //── Emit ONE JSON block between markers ────────────────────────────
    Print(">>>BROKER_PROFILE_BEGIN>>>");
    string j = "{";
-   j += StringFormat("\"schema\":\"broker_profile_v1\",");
+   j += "\"schema\":\"broker_profile_v1\",";
    j += StringFormat("\"symbol\":\"%s\",", sym);
    j += StringFormat("\"broker_company\":\"%s\",", company);
    j += StringFormat("\"broker_server\":\"%s\",", server);
