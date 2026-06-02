@@ -1223,6 +1223,91 @@ def load_strategy_list():
     except Exception:
         pass
 
+    # ── Load My Rules (manually saved via ★ button) ───────────────────────
+    # WHY: my_rules.json holds rules the user explicitly saved via the ★ My
+    #      Rules button. Previously never loaded into the refiner.
+    #      Loaded here with source='my_rules' so the source dropdown can filter.
+    # CHANGED: June 2026 — load my_rules.json into refiner
+    try:
+        _my_rules_path = os.path.join(
+            os.path.dirname(BACKTEST_MATRIX_PATH), '..', '..', 'my_rules.json'
+        )
+        _my_rules_path = os.path.normpath(_my_rules_path)
+        if os.path.exists(_my_rules_path):
+            with open(_my_rules_path, 'r', encoding='utf-8') as _mrf:
+                _my_rules_data = json.load(_mrf)
+            if _my_rules_data:
+                results.append({
+                    'index':        '__separator_my_rules__',
+                    'source':       'separator',
+                    'label':        '─── MY RULES (★) ──────────────────────────────────────────────────────────────',
+                    'total_trades': 0,
+                    'has_trades':   False,
+                })
+                for _mre in _my_rules_data:
+                    _mrule  = _mre.get('rule', {})
+                    _mr_wr  = _mrule.get('win_rate', 0)
+                    _mr_rid = _mre.get('id', '?')
+                    _mr_dir = _mrule.get('direction', _mrule.get('action', ''))
+                    _mr_exit = _mrule.get('exit_name', _mrule.get('exit_class', ''))
+                    _mr_conds = _mrule.get('conditions', [])
+                    _mr_pips  = _mrule.get('net_total_pips', 0)
+                    _mr_trades = _mrule.get('total_trades', 0)
+                    _mr_header = f"★ #{_mr_rid}"
+                    if _mr_dir:
+                        _mr_header += f" {_mr_dir}"
+                    _mr_header += f" ({len(_mr_conds)}c)"
+                    if _mr_exit and _mr_exit not in ('?', 'Default', ''):
+                        _mr_header += f" × {_mr_exit}"
+                    _mr_parts = [_mr_header]
+                    if _mr_trades > 0:
+                        _mr_parts.append(f"{_mr_trades}tr")
+                    if _mr_wr > 0:
+                        _mr_parts.append(f"WR {_mr_wr:.0f}%")
+                    if _mr_pips:
+                        _mr_parts.append(f"{_mr_pips:+,.0f}p")
+                    _mr_src = _mre.get('source', '')
+                    if _mr_src:
+                        _mr_parts.append(_mr_src[:20])
+                    results.append({
+                        'index':             f"my_rules_{_mr_rid}",
+                        'source':            'my_rules',
+                        'id':                _mr_rid,
+                        'rule_id':           _mr_rid,
+                        'label':             '  '.join(_mr_parts),
+                        'rule_combo':        f"My Rule #{_mr_rid}",
+                        'exit_strategy':     _mrule.get('exit_strategy', _mrule.get('exit_name', 'Default')),
+                        'exit_name':         _mrule.get('exit_name', _mrule.get('exit_class', 'Default')),
+                        'exit_class':        _mrule.get('exit_class', ''),
+                        'exit_params':       _mrule.get('exit_params', {}),
+                        'entry_tf':          _mrule.get('entry_timeframe', _mrule.get('entry_tf', '')),
+                        'total_trades':      _mr_trades,
+                        'win_rate':          _mr_wr,
+                        'net_total_pips':    _mr_pips,
+                        'net_avg_pips':      _mrule.get('avg_pips', 0),
+                        'net_profit_factor': _mrule.get('net_profit_factor', 0),
+                        'max_dd_pips':       _mrule.get('max_dd_pips', 0),
+                        'has_trades':        False,
+                        'saved_rule':        _mrule,
+                        'prop_firm_name':    _mrule.get('prop_firm_name', ''),
+                        'firm_id':           _mrule.get('prop_firm_id', ''),
+                        'account_size':      _mrule.get('account_size', 0),
+                        'risk_pct':          _mrule.get('risk_pct', 0),
+                        'pip_value_per_lot': _mrule.get('pip_value_per_lot', 1.0),
+                        'win_pass_passed':   None,
+                        'win_pass_total':    None,
+                        'win_pass_rate':     None,
+                        'is_stale':          False,
+                        'stale_issues':      [],
+                        'stability_verdict':         None,
+                        'stability_edge_held':       None,
+                        'stability_avg_degradation': None,
+                        'stability_windows_tested':  0,
+                        'stability_verdict_reason':  None,
+                    })
+    except Exception:
+        pass
+
     # ── Mark starred strategies and sort to top ───────────────────────────
     # WHY: Starred strategies appear at the top of every dropdown with ⭐ prefix.
     #      This makes it easy to find your best strategies across 36+ results.

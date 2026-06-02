@@ -76,6 +76,10 @@ _grid_filt_min_pf      = None  # tk.StringVar
 #      can hide rows with too few eval windows to be statistically meaningful.
 # CHANGED: June 2026 — Min Windows filter
 _grid_filt_min_windows = None  # tk.StringVar
+# WHY: Controls which source pool is shown in the refiner grid.
+#      Internal key: "all" | "backtest" | "my_rules" | "saved"
+# CHANGED: June 2026 — source dropdown
+_grid_source_var       = None  # tk.StringVar (display label)
 _grid_sort_key        = None  # str | None — strategy dict key to sort by
 _grid_sort_reverse    = True  # True = descending
 
@@ -5311,7 +5315,7 @@ def build_panel(parent):
     #      from disk — _on_strategies_loaded just rebuilds the Treeview.
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
-    global _grid_filt_min_pf, _grid_filt_min_windows, _grid_sort_key, _grid_sort_reverse
+    global _grid_filt_min_pf, _grid_filt_min_windows, _grid_source_var, _grid_sort_key, _grid_sort_reverse
     _grid_filt_profitable  = tk.BooleanVar(value=True)
     _grid_filt_min_trades  = tk.StringVar(value="0")
     _grid_filt_min_wr      = tk.StringVar(value="0")
@@ -5319,6 +5323,10 @@ def build_panel(parent):
     # WHY: win_pass_total filter — hide rows with too few eval windows.
     # CHANGED: June 2026 — Min Windows filter
     _grid_filt_min_windows = tk.StringVar(value="0")
+    # WHY: Source selector — controls which pool the grid shows.
+    # CHANGED: June 2026 — source dropdown
+    _grid_source_var = tk.StringVar(value="All sources")
+    _grid_source_var._internal = "all"
     _grid_sort_key         = None
     _grid_sort_reverse     = True
 
@@ -5356,6 +5364,35 @@ def build_panel(parent):
     tk.Entry(filt_row, textvariable=_grid_filt_min_windows, width=4,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
+    # WHY: Source dropdown — instantly filter grid to one source pool
+    #      without scrolling past all backtest rows to find My Rules.
+    # CHANGED: June 2026 — Show: source dropdown
+    _src_display_map = {
+        "All sources":        "all",
+        "Backtest results":   "backtest",
+        "★ My Rules":         "my_rules",
+        "💾 Saved/Bookmarked": "saved",
+    }
+    tk.Label(filt_row, text="Show:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(14, 2))
+    _src_combo = ttk.Combobox(
+        filt_row,
+        textvariable=_grid_source_var,
+        values=list(_src_display_map.keys()),
+        state="readonly",
+        width=16,
+        font=("Segoe UI", 8),
+    )
+    _src_combo.pack(side=tk.LEFT)
+
+    def _on_source_selected(*_):
+        chosen = _grid_source_var.get()
+        _grid_source_var._internal = _src_display_map.get(chosen, "all")
+        if _refiner_rebuild_hook[0]:
+            _refiner_rebuild_hook[0]()
+
+    _src_combo.bind("<<ComboboxSelected>>", _on_source_selected)
+
     def _apply_grid_filters():
         # Trigger a tree rebuild by calling the loader's rebuild function.
         # _on_strategies_loaded is defined later inside build_panel; we
@@ -5374,6 +5411,11 @@ def build_panel(parent):
         # WHY: Reset Min Windows with the rest of the filters.
         # CHANGED: June 2026 — Min Windows filter reset
         _grid_filt_min_windows.set("0")
+        # WHY: Reset source to "All sources" with the rest of the filters.
+        # CHANGED: June 2026 — source dropdown reset
+        if _grid_source_var:
+            _grid_source_var.set("All sources")
+            _grid_source_var._internal = "all"
         _apply_grid_filters()
 
     tk.Button(filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
@@ -5894,11 +5936,24 @@ def build_panel(parent):
                     return 0
 
             # Build saved list and count what got hidden (for diagnostic log)
-            _all_saved  = [s for s in _strategies if s.get('source') == 'saved']
-            _sr_saved   = [s for s in _all_saved if _strat_passes_filters(s)]
-            _sr_sep     = [s for s in _strategies if s.get('source') == 'separator']
-            _sr_others  = [s for s in _strategies if s.get('source') not in ('saved', 'separator')
-                           and _strat_passes_filters(s)]
+            # WHY: Source dropdown controls which pool is visible.
+            #      _internal stores the key; _grid_source_var holds display label.
+            # CHANGED: June 2026 — source dropdown filtering
+            _src_key = getattr(_grid_source_var, '_internal', 'all') if _grid_source_var else 'all'
+            _show_backtest = _src_key in ('all', 'backtest')
+            _show_my_rules = _src_key in ('all', 'my_rules')
+            _show_saved    = _src_key in ('all', 'saved')
+
+            _all_saved    = [s for s in _strategies if s.get('source') == 'saved']
+            _all_my_rules = [s for s in _strategies if s.get('source') == 'my_rules']
+
+            _sr_saved    = [s for s in _all_saved    if _show_saved    and _strat_passes_filters(s)]
+            _sr_my_rules = [s for s in _all_my_rules if _show_my_rules and _strat_passes_filters(s)]
+            _sr_sep      = [s for s in _strategies   if s.get('source') == 'separator']
+            _sr_others   = [s for s in _strategies
+                            if s.get('source') not in ('saved', 'my_rules', 'separator')
+                            and _show_backtest
+                            and _strat_passes_filters(s)]
             # WHY: One-line diagnostic so the user can see the discovery filter
             #      is doing something. Re-run a backtest on a discovery rule
             #      to populate total_trades and it'll show up again.
@@ -5910,9 +5965,10 @@ def build_panel(parent):
                       f"hidden (no trade data). Re-run backtest to make them visible.")
             if _grid_sort_key:
                 _sr_saved.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
+                _sr_my_rules.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
                 _sr_others.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
             _bt_row_n   = 0
-            for s in _sr_saved + _sr_sep + _sr_others:
+            for s in _sr_my_rules + _sr_saved + _sr_sep + _sr_others:
                 idx = str(s.get('index', 0))
                 rc       = s.get('rule_combo', '?')
                 exit_name = s.get('exit_name', s.get('exit_strategy', '?'))
@@ -5931,6 +5987,21 @@ def build_panel(parent):
                     _strat_tree.insert("", "end", iid=idx, values=(
                         "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
+                elif source == 'my_rules':
+                    # WHY: My Rules rows render like saved rules — same data shape.
+                    # CHANGED: June 2026 — my_rules row render
+                    numeric_id = s.get('id', '')
+                    id_display = f"★ #{numeric_id}"
+                    _sr_dict  = s.get('saved_rule', {})
+                    _sr_dir   = _sr_dict.get('direction', _sr_dict.get('action', ''))
+                    _sr_conds = [c.get('feature', '') for c in _sr_dict.get('conditions', [])]
+                    _sr_exit  = s.get('exit_name', s.get('exit_strategy', ''))
+                    if _sr_exit in ('', 'Default', '?'):
+                        _sr_exit = _sr_dict.get('exit_class', _sr_dict.get('exit_name', ''))
+                    rc = (_sr_dir + ' | ' if _sr_dir else '') + ', '.join(
+                        f.split('_', 1)[1] if '_' in f else f for f in _sr_conds
+                    )
+                    exit_name = _sr_exit if _sr_exit and _sr_exit not in ('Default', '?') else '—'
                 elif source == 'saved':
                     numeric_id = s.get('id', '')
                     id_display = f"Saved #{numeric_id}"
