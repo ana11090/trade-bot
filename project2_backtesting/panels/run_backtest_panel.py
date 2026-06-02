@@ -986,6 +986,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: May 2026 — outer-scope defaults for parity banner
             _cfg_hard_close = -1
             _cfg_market_reopen = -1
+            _firm_ntw_start = -1
+            _firm_ntw_end   = -1
             _cfg_cooldown = 0
             _cfg_min_hold = 0
 
@@ -1245,6 +1247,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     _firm_market_reopen = _pf_data.get('market_reopen_hour_gmt')
                                     if _firm_market_reopen is not None:
                                         _cfg_market_reopen = int(_firm_market_reopen)
+                                    # WHY: Per-firm no-trades window — blocks
+                                    #      entries in broker settlement hours,
+                                    #      independent of force-close. Fixes
+                                    #      backtest entering at 00:00 where MT5
+                                    #      returns "market closed".
+                                    # CHANGED: June 2026 — firm no-trades window
+                                    _firm_ntw_start = _pf_data.get('no_trades_window_start_hour_gmt', -1)
+                                    _firm_ntw_end   = _pf_data.get('no_trades_window_end_hour_gmt',   -1)
                                     # WHY: Read DD alert thresholds from firm's
                                     #      trading_rules based on prop_firm_stage.
                                     #      Eval uses 2.7%/5.7%, funded uses 2.5%/5.5%.
@@ -1958,6 +1968,10 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # WHY: Forward optimizer day/session/hour filters.
                         # CHANGED: May 2026 — backtest honors optimizer filters
                         entry_filters=_entry_filters,
+                        # WHY: Forward firm no-trades window (settlement hours).
+                        # CHANGED: June 2026 — firm no-trades window
+                        no_trades_window_start_hour=int(_firm_ntw_start) if _firm_ntw_start is not None and _a48_use_cfg else -1,
+                        no_trades_window_end_hour=int(_firm_ntw_end) if _firm_ntw_end is not None and _a48_use_cfg else -1,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

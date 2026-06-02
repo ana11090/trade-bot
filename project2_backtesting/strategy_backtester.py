@@ -101,6 +101,29 @@ def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=Fals
 
 
 # ---------------------------------------------------------------------------
+# Firm no-trades window — block entries during broker settlement hours.
+# Independent of hard_close_hour (some firms allow overnight holds but
+# forbid entries in the settlement window). end==0 is treated as including
+# the 00:00 boundary — fixes Python entering at 00:00 where MT5 returns
+# "market closed".
+# CHANGED: June 2026 — firm no-trades window (MT5 session parity)
+# ---------------------------------------------------------------------------
+def _in_no_trades_window(hour, start_hour, end_hour):
+    """True if an entry at GMT `hour` falls in the firm no-trades window.
+    Window is [start, end) GMT; end==0 includes the 00:00 boundary.
+    -1 on either bound disables the window."""
+    if start_hour is None or end_hour is None or start_hour < 0 or end_hour < 0:
+        return False
+    # Treat end==0 as midnight/24:00 AND include the 00:00 bar itself.
+    if end_hour == 0:
+        # block [start .. 23] and hour 0
+        return hour >= start_hour or hour == 0
+    if start_hour <= end_hour:
+        return start_hour <= hour < end_hour
+    return hour >= start_hour or hour < end_hour
+
+
+# ---------------------------------------------------------------------------
 # Entry-time filter mask — gates signals by day / session / hour.
 # Used by run_backtest and fast_backtest when entry_filters is not None.
 # CHANGED: May 2026 — backtest honors optimizer day/session/hour filters
@@ -1617,7 +1640,16 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      "Monday only") is enforced on a regenerating backtest.
                  #      None = no gate (legacy, all candles eligible).
                  # CHANGED: May 2026 — backtest honors optimizer filters
-                 entry_filters=None):
+                 entry_filters=None,
+                 # WHY: Firm no-trades window — block ENTRIES in [start,end) GMT,
+                 #      independent of force-close (firm allows overnight holds
+                 #      but forbids entries in its settlement window). end==0 is
+                 #      treated as 24 so the 00:00 boundary is included — fixes
+                 #      Python entering at 00:00 where MT5 returns "market closed".
+                 #      -1 = disabled (backward compat).
+                 # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
+                 no_trades_window_start_hour=-1,
+                 no_trades_window_end_hour=-1):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -2092,6 +2124,20 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 else:
                     if _entry_hour >= hard_close_hour:
                         continue
+            except Exception:
+                pass
+
+        # Firm no-trades window (independent of force-close)
+        # WHY: Some firms forbid entries in the settlement window but allow
+        #      overnight holds (force-close disabled). Without this, Python
+        #      enters at 00:00 where MT5 returns "market closed".
+        # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
+        if no_trades_window_start_hour >= 0 and no_trades_window_end_hour >= 0:
+            try:
+                _ntw_hour = pd.Timestamp(next_candle['timestamp']).hour
+                if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
+                                                    no_trades_window_end_hour):
+                    continue
             except Exception:
                 pass
 
@@ -2649,7 +2695,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY: entry_filters gates entries by day/session/hour.
                   #      None = no gate (legacy, all candles eligible).
                   # CHANGED: May 2026 — backtest honors optimizer filters
-                  entry_filters=None):
+                  entry_filters=None,
+                  # WHY: Firm no-trades window — see run_backtest.
+                  # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
+                  no_trades_window_start_hour=-1,
+                  no_trades_window_end_hour=-1):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2994,6 +3044,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 else:
                     if _entry_hour >= hard_close_hour:
                         continue
+            except Exception:
+                pass
+
+        # Firm no-trades window (independent of force-close) — see run_backtest.
+        # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
+        if no_trades_window_start_hour >= 0 and no_trades_window_end_hour >= 0:
+            try:
+                _ntw_hour = pd.Timestamp(entry_time).hour
+                if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
+                                                    no_trades_window_end_hour):
+                    continue
             except Exception:
                 pass
 
@@ -3941,7 +4002,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # WHY: entry_filters gates entries by day/session/hour.
                           #      Forwarded to fast_backtest. None = no gate.
                           # CHANGED: May 2026 — backtest honors optimizer filters
-                          entry_filters=None):
+                          entry_filters=None,
+                          # WHY: Firm no-trades window — forwarded to fast_backtest.
+                          # CHANGED: June 2026 — firm no-trades window
+                          no_trades_window_start_hour=-1,
+                          no_trades_window_end_hour=-1):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -4501,6 +4566,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # WHY: Forward optimizer day/session/hour filters.
                     # CHANGED: May 2026 — backtest honors optimizer filters
                     entry_filters=entry_filters,
+                    # WHY: Forward firm no-trades window.
+                    # CHANGED: June 2026 — firm no-trades window
+                    no_trades_window_start_hour=no_trades_window_start_hour,
+                    no_trades_window_end_hour=no_trades_window_end_hour,
                 )
                 stats = compute_stats(trades)
 

@@ -980,10 +980,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         trading_hour_start = -1
         trading_hour_end   = -1
 
-    # Note: single { / } — this string is plugged into the outer f-string as
-    #       plain text via {session_code}; outer f-string escapes apply only
-    #       to {{/}} in the template literal, not to interpolated values.
-    _hour_clamp_prologue = (
+    # WHY: Hour filter and session filter are now separate functions so the
+    #      EA logs "outside_hours" vs "outside_session" — distinct diagnostics
+    #      for the operator. Previously both were merged into CheckSession().
+    # CHANGED: June 2026 — split hour clamp into CheckHours() for honest skip labels
+    hours_code = (
         '   if(TradingHourStartGMT >= 0 && TradingHourEndGMT >= 0)\n'
         '   {\n'
         '      bool _inHrs = (TradingHourEndGMT <= TradingHourStartGMT)\n'
@@ -991,8 +992,9 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         '                  : (hour >= TradingHourStartGMT && hour < TradingHourEndGMT);\n'
         '      if(!_inHrs) return false;\n'
         '   }\n'
+        '   return true;'
     )
-    session_code = _hour_clamp_prologue + '   ' + session_code
+    # session_code is no longer prefixed with the hour clamp
 
     # ── Build dynamic day filter code ─────────────────────────────────────
     # WHY: The optimizer might find that Mon/Fri are unprofitable (news days).
@@ -2809,6 +2811,9 @@ void OnTick()
    if(TimeCurrent() - g_lastTradeTime < CooldownMinutes * 60)
    {{ LogSkip("cooldown", (TimeCurrent()-g_lastTradeTime)/60.0); return; }}
 
+   if(!CheckHours())
+   {{ LogSkip("outside_hours", 0); return; }}
+
    if(!CheckSession())
    {{ LogSkip("outside_session", 0); return; }}
 
@@ -3196,11 +3201,17 @@ double CalculateLots(double slDistance)
 
    //--- Apply broker limits with diagnostic logging
    double lots       = lotsRounded;
+   // WHY: If risk-based lots < minLot, entering at minLot would exceed the
+   //      intended risk by potentially 4-5x — a blow-up risk on prop firms
+   //      with tight DD limits. Skip the trade instead. The backtest must
+   //      apply the same rule or PnL will never reconcile.
+   // CHANGED: June 2026 — skip trade instead of forcing minLot
    if(lots < minLot)
    {{
       Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
-            " lots but minLot=", minLot, " — risking MORE than configured!");
-      lots = minLot;
+            " lots but minLot=", minLot, " — skipping trade (would exceed risk).");
+      LogSkip("lots_below_min", lotsRaw);
+      return 0.0;
    }}
    if(lots > maxLot)
    {{
@@ -3324,6 +3335,18 @@ void CloseAllPositions(string reason)
          Print("[EA] Closed position ", ticket, " reason=", reason);
       }}
    }}
+}}
+
+//+------------------------------------------------------------------+
+//| Hour filter (optimizer hours window / manual TradingHour inputs)   |
+//| CHANGED: June 2026 — split from CheckSession for honest skip label |
+//+------------------------------------------------------------------+
+bool CheckHours()
+{{
+   MqlDateTime dt;
+   TimeToStruct(TimeGMT(), dt);
+   int hour = dt.hour;
+   {hours_code}
 }}
 
 //+------------------------------------------------------------------+
