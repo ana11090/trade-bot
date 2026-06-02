@@ -2581,20 +2581,24 @@ void OnTick()
    if(!_newBar && !_justFlat) return;
    g_lastBarTime = currentBarTime;
 
-   // WHY: Python's backtester sets occupied_until_idx when a trade exits,
-   //      blocking any new signal on the same candle. OnTradeTransaction
-   //      fires asynchronously — by the time it sets g_lastExitEntryBarTime,
-   //      OnTick has already opened a new trade. Fix: set the gate here
-   //      synchronously the moment we detect the position just closed
-   //      (_justFlat=true). This matches Python exactly: trade closes →
-   //      same bar is locked → next signal only on the next bar.
-   // CHANGED: June 2026 — synchronous same-bar gate (fixes 72 vs 43 trades)
-   if(_justFlat)
+   // WHY: When UseNextBarEntry=false, Python's occupied_until_idx blocks
+   //      re-entry on the same bar a trade just closed. OnTradeTransaction
+   //      fires async — the fix sets the gate synchronously here when we
+   //      detect _justFlat, then returns. Next new bar: _newBar=true,
+   //      entry allowed again. This matches Python exactly.
+   //
+   //      When UseNextBarEntry=true the pending-signal mechanism already
+   //      handles timing correctly — no same-bar gate needed (and it would
+   //      break the pending-signal flow if applied).
+   //
+   // CHANGED: June 2026 — synchronous same-bar gate for offset=0 rules
+   if(_justFlat && !UseNextBarEntry)
    {{
       g_lastExitEntryBarTime = currentBarTime;
-      Print("[EXIT-BAR] position closed mid-bar — blocking re-entry on bar ",
-            TimeToString(currentBarTime, TIME_DATE|TIME_MINUTES));
-      return;  // DO NOT re-enter on the bar we just exited
+      Print("[EXIT-BAR] closed on bar ",
+            TimeToString(currentBarTime, TIME_DATE|TIME_MINUTES),
+            " — blocking re-entry this bar (UseNextBarEntry=false, Python parity)");
+      return;
    }}
 
    //--- Broker GMT-offset diagnostic — one-shot on first new bar
@@ -2808,23 +2812,65 @@ double GetPipSize()
 ENUM_TIMEFRAMES g_entryTF = {mql_period};
 
 //+------------------------------------------------------------------+
-//| Calculate correct bar shift for multi-timeframe indicators        |
-//| WHY: ALL timeframes use shift=1 (previous completed bar).         |
-//|      Python backtester shifts higher-TF timestamps forward so     |
-//|      merge_asof picks the last COMPLETED bar. Using shift=1 here  |
-//|      achieves the same result: iCustom reads the prior closed bar.|
-//| CHANGED: April 2026 — shift=1 for all TFs to match Python fix    |
+//| TF rank helper for GetBarShift comparison                         |
 //+------------------------------------------------------------------+
-int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
+int TFRank(ENUM_TIMEFRAMES tf)
 {{
-   return 1;
+   switch(tf)
+   {{
+      case PERIOD_M1:  return 1;
+      case PERIOD_M5:  return 5;
+      case PERIOD_M15: return 15;
+      case PERIOD_M30: return 30;
+      case PERIOD_H1:  return 60;
+      case PERIOD_H4:  return 240;
+      case PERIOD_D1:  return 1440;
+      case PERIOD_W1:  return 10080;
+      case PERIOD_MN1: return 43200;
+      default:         return 60;
+   }}
 }}
 
 //+------------------------------------------------------------------+
-//| SafeCopyBuffer — wrapper with shift=1 for all timeframes          |
-//| WHY: All indicator reads use shift=1 (previous completed bar)     |
-//|      to match the Python backtester's look-ahead prevention.      |
-//| CHANGED: April 2026 — uniform shift=1 for EA/Python parity       |
+//| Calculate bar shift for indicator reads — UseNextBarEntry aware   |
+//|                                                                    |
+//| WHY: The correct shift depends on HOW the rule was backtested.    |
+//|                                                                    |
+//| UseNextBarEntry=true (entry_bar_offset=1):                        |
+//|   Python fires signal on bar N, enters at bar N+1 open.           |
+//|   At entry time bar N is COMPLETED → shift=1 is correct for ALL TFs.|
+//|   These rules worked with the old shift=1. Do not change them.   |
+//|                                                                    |
+//| UseNextBarEntry=false (entry_bar_offset=0):                       |
+//|   Python fires signal AND enters at bar N open simultaneously.    |
+//|   Conditions are read from bar N's own indicators (shift=0 in MT5)|
+//|   for same-or-lower TF. Only HIGHER-TF indicators use shift=1    |
+//|   (Python shifts those timestamps by 1 bar in build_multi_tf so  |
+//|   merge_asof picks the previous completed higher-TF bar).         |
+//|   Old shift=1 made the EA read bar N-1 for same-TF → wrong data. |
+//|                                                                    |
+//| CHANGED: June 2026 — UseNextBarEntry-conditional shift            |
+//+------------------------------------------------------------------+
+int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
+{{
+   // UseNextBarEntry=true: signal bar is the previous completed bar
+   // at entry time — shift=1 is correct for all TFs.
+   if(UseNextBarEntry)
+      return 1;
+
+   // UseNextBarEntry=false: entering at signal bar's own open.
+   // Higher TF: Python shifts those timestamps forward 1 bar so
+   // merge_asof(backward) picks the previous completed bar → shift=1.
+   if(TFRank(indicatorTF) > TFRank(g_entryTF))
+      return 1;
+
+   // Same or lower TF: Python reads the signal bar directly → shift=0.
+   return 0;
+}}
+
+//+------------------------------------------------------------------+
+//| SafeCopyBuffer — wrapper using UseNextBarEntry-aware shift        |
+//| CHANGED: June 2026 — conditional shift via GetBarShift           |
 //+------------------------------------------------------------------+
 double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
 {{
