@@ -1012,6 +1012,21 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         '// Entry-TF bar time at last position close. '
         'Blocks re-entry on same bar (Python parity).'
     )
+    # WHY: Python evaluates conditions at shift=0 (current bar from CSV).
+    #      Consecutive H4 bars at shift=0 produce different indicator values,
+    #      so a "signal run" typically only lasts 1 bar in Python.
+    #      The EA uses shift=1 (previous completed bar). After a fast exit,
+    #      bar N+1 reads bar N (entry bar) → re-signals. Bar N+2 reads bar N+1
+    #      → may still pass. The EA re-enters on many consecutive bars.
+    #      Fix: require at least one bar of signal=false after a trade closes
+    #      before allowing re-entry. This matches Python's "conditions reset"
+    #      behavior between trades.
+    # CHANGED: June 2026 — signal-gap gate for re-entry parity
+    extra_globals.append(
+        'bool g_signalGapSeen = true;  '
+        '// True when signal=false has fired since last trade close. '
+        '// Blocks re-entry until conditions reset between trades.'
+    )
     extra_on_trade.append(
         '   // Record exit bar for same-bar re-entry blocking\n'
         '   {\n'
@@ -2733,7 +2748,28 @@ void OnTick()
       {diag_adx_reads}Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
             {diag_print_args}{diag_adx_args}" signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
-      if(!entrySignal) return;
+      if(!entrySignal)
+      {{
+         // WHY: Record that conditions went false — this "resets" the signal
+         //      so the next true signal is genuinely new, not a continuation
+         //      of the same run. Required for re-entry parity with Python.
+         // CHANGED: June 2026 — signal-gap tracking
+         g_signalGapSeen = true;
+         return;
+      }}
+
+      // WHY: Don't re-enter while conditions are continuously true after
+      //      the last trade. Python evaluates at shift=0 so consecutive H4
+      //      bars use different data and naturally produce a signal gap.
+      //      The EA at shift=1 can read the same bar's values on consecutive
+      //      H4 bars, causing repeated entries on the same "signal cluster".
+      //      Require at least one signal=false bar since the last trade close.
+      // CHANGED: June 2026 — block re-entry until conditions reset
+      if(!g_signalGapSeen)
+      {{
+         LogSkip("no_signal_gap_since_last_trade", 0);
+         return;
+      }}
 
       // ── Step 3: If UseNextBarEntry, store signal instead of entering now ──
       if(UseNextBarEntry)
@@ -2800,6 +2836,7 @@ void OnTick()
 {exit_on_entry_block}
       g_dailyTrades++;
       g_lastTradeTime = TimeCurrent();
+      g_signalGapSeen = false;  // reset — require signal=false before next re-entry
       LogTrade("OPEN", "{_direction_label}", lots, entryPrice, 0, 0, "entry_signal");
       Print("[EA] {_direction_label} opened @ ", entryPrice, " lots=", lots);
    }}
