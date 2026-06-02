@@ -169,7 +169,11 @@ def _load_trades_for_strategy(s):
     CHANGED: May 2026 — per-rule file fallback
     """
     src = s.get('source', '')
-    if src == 'saved':
+    if src in ('saved', 'my_rules'):
+        # WHY: Both saved_rules and my_rules embed trades at saved_rule['trades'].
+        #      my_rules was previously missing from this check, causing the eval
+        #      simulation to show "No trade data" despite trades being present.
+        # CHANGED: June 2026 — my_rules uses same embedded-trades path as saved
         _sr = s.get('saved_rule') or {}
         _t = _sr.get('trades') or s.get('trades') or []
         return _t if isinstance(_t, list) else []
