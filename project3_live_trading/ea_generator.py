@@ -856,11 +856,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         for sess in session_filter:
             s = sess.strip().lower()
             if s in ('london', 'london session'):
-                session_checks.append('(hour >= 7 && hour < 16)')
+                # WHY: Python _build_entry_time_mask London = h>=7 and h<13.
+                # CHANGED: June 2026 — match Python session hours
+                session_checks.append('(hour >= 7 && hour < 13)')
             elif s in ('new york', 'ny', 'new york session'):
                 session_checks.append('(hour >= 13 && hour < 22)')
             elif s in ('asian', 'asia', 'asian session', 'tokyo'):
-                session_checks.append('(hour >= 0 && hour < 8)')
+                # WHY: Python Asian = h<7 OR h>=22. Old EA used h<8 (included 07:00).
+                # CHANGED: June 2026 — match Python session hours
+                session_checks.append('(hour < 7 || hour >= 22)')
             elif s in ('sydney', 'sydney session'):
                 session_checks.append('(hour >= 22 || hour < 7)')
 
