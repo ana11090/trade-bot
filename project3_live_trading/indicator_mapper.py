@@ -75,18 +75,44 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": False,
         "description": "MT5-compat RSI({p}) on {tf}",
     }),
-    # MT5-parity ADX — maps to same iADX handle; only Python side differs
-    # WHY: ta library ADX diverges from iADX by ~2x (different smoothing).
-    #      mt5_adx_{period} uses Wilder's method to match iADX exactly.
-    #      Same pattern as mt5_stoch alongside stoch.
-    # CHANGED: May 2026 — MT5-parity ADX mapping
+    # MT5-parity ADX — custom Wilder computation (NOT iADX)
+    # WHY: iADX uses a different DI/DX smoothing than textbook Wilder — values
+    #      diverge by up to ~11 ADX points from Python's _mt5_adx. The whole
+    #      reason _mt5_adx was hand-written was to match MT5's algorithm, but
+    #      iADX itself doesn't match. Same lesson as aroon: native indicator was
+    #      wrong, replaced with custom computation. Mt5ADX() is a generated MQL5
+    #      helper that ports _mt5_adx exactly.
+    # CHANGED: June 2026 — replace iADX with custom Mt5ADX() for EA parity
     (r"^mt5_adx_(\d+)$", {
-        "mt5_handle_var":  "int handle_adx_{tf}_{p};",
-        "mt5_handle_init": "handle_adx_{tf}_{p} = iADX(NULL,{mt5_tf},{p}); if(handle_adx_{tf}_{p}==INVALID_HANDLE) return(INIT_FAILED);",
-        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_adx_{tf}_{p}, 0, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": "double val_{var} = Mt5ADX({mt5_tf}, {p}, GetBarShift({mt5_tf}), 0); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
         "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['ADX_{p}'].iloc[-1]",
         "custom_indicator_mt5": False,
-        "description": "MT5-parity ADX({p}) on {tf}",
+        "description": "MT5-parity ADX({p}) on {tf} — custom Wilder computation",
+    }),
+    # MT5-parity ADX +DI component — same Mt5ADX() helper, mode=1
+    # WHY: Python stores mt5_adx_{p}_plus_di from the same _mt5_adx call.
+    #      The EA must use the SAME custom computation, not iADX buffer 1.
+    # CHANGED: June 2026 — add mt5_adx +DI mapping via Mt5ADX()
+    (r"^mt5_adx_(\d+)_plus_di$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": "double val_{var} = Mt5ADX({mt5_tf}, {p}, GetBarShift({mt5_tf}), 1); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['DMP_{p}'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-parity +DI({p}) on {tf} — custom Wilder computation",
+    }),
+    # MT5-parity ADX -DI component — same Mt5ADX() helper, mode=2
+    # WHY: Python stores mt5_adx_{p}_minus_di from the same _mt5_adx call.
+    # CHANGED: June 2026 — add mt5_adx -DI mapping via Mt5ADX()
+    (r"^mt5_adx_(\d+)_minus_di$", {
+        "mt5_handle_var":  "",
+        "mt5_handle_init": "",
+        "mt5_buffer_read": "double val_{var} = Mt5ADX({mt5_tf}, {p}, GetBarShift({mt5_tf}), 2); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.adx(df_m{tv_tf}['high'], df_m{tv_tf}['low'], df_m{tv_tf}['close'], length={p})['DMN_{p}'].iloc[-1]",
+        "custom_indicator_mt5": False,
+        "description": "MT5-parity −DI({p}) on {tf} — custom Wilder computation",
     }),
     # ADX
     (r"^adx_(\d+)$", {

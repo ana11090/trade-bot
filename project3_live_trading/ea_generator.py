@@ -3019,9 +3019,10 @@ int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
    //      A single global shift cannot express both. Compute per-TF.
    //
    //      Entry TF: shift=1 (Python's .shift(1)).
-   //      Lower TF: iBarShift of indicatorTF containing entryBarOpen returns the
-   //        bar whose open <= entryOpen — for a lower TF this is the last bar
-   //        completed at/before the entry bar opens (matches merge_asof backward).
+   //      Lower TF: iBarShift(tf, entryBarOpen - 1) picks the last lower-TF
+   //        bar whose open is strictly before entryBarOpen. The -1s avoids
+   //        selecting the lower-TF bar that opens AT the same instant
+   //        (not yet completed). Matches Python merge_asof after forward shift.
    //      Higher TF: iBarShift returns the CURRENT (forming) higher bar at
    //        entryBarOpen. Python forward-shifts those timestamps by tf_minutes,
    //        so merge_asof picks the PREVIOUS COMPLETED higher bar. Add +1.
@@ -3031,8 +3032,16 @@ int GetBarShift(ENUM_TIMEFRAMES indicatorTF)
    datetime entryBarOpen = iTime(_Symbol, g_entryTF, 0);
    if(PeriodSeconds(indicatorTF) < PeriodSeconds(g_entryTF))
    {{
-      // LOWER TF: last bar with open <= entry bar open
-      int sh = iBarShift(_Symbol, indicatorTF, entryBarOpen, false);
+      // LOWER TF: last bar with open STRICTLY BEFORE entry bar open.
+      // WHY: iBarShift(tf, entryBarOpen) returns the bar whose open <= entryBarOpen,
+      //      which for a lower TF that opens AT the same time as the entry bar
+      //      returns the forming (not-yet-completed) bar. Python's merge_asof
+      //      after shifting timestamps forward by tf_minutes selects the last
+      //      COMPLETED bar before entry open. Subtracting 1 second forces
+      //      iBarShift to pick the previous bar (e.g., M5 03:55 instead of 04:00
+      //      for an H4 entry at 04:00).
+      // CHANGED: June 2026 — strictly-before anchor fixes one-bar-too-recent reads
+      int sh = iBarShift(_Symbol, indicatorTF, entryBarOpen - 1, false);
       return (sh < 0) ? 0 : sh;
    }}
    else
@@ -3055,6 +3064,102 @@ double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
    int copied = CopyBuffer(handle, bufNum, shift, 1, tmp);
    if(copied <= 0) return EMPTY_VALUE;
    return tmp[0];
+}}
+
+//+------------------------------------------------------------------+
+//| Custom ADX — ports Python _mt5_adx (Wilder's smoothing)           |
+//| WHY: MT5's iADX uses different DI/DX smoothing than textbook      |
+//|      Wilder — values diverge by up to ~11 ADX points from the     |
+//|      Python _mt5_adx helper. This function ports the exact         |
+//|      algorithm so EA and Python produce identical ADX/+DI/-DI.     |
+//| mode: 0=ADX, 1=+DI, 2=-DI                                        |
+//| CHANGED: June 2026 — custom Mt5ADX for EA parity (Root Cause 1)   |
+//+------------------------------------------------------------------+
+double Mt5ADX(ENUM_TIMEFRAMES tf, int period, int shift, int mode)
+{{
+   int needed = period * 4 + 10;
+   double h_buf[], l_buf[], c_buf[];
+   ArrayResize(h_buf, needed);
+   ArrayResize(l_buf, needed);
+   ArrayResize(c_buf, needed);
+   if(CopyHigh (_Symbol, tf, shift, needed, h_buf) < needed) return EMPTY_VALUE;
+   if(CopyLow  (_Symbol, tf, shift, needed, l_buf) < needed) return EMPTY_VALUE;
+   if(CopyClose(_Symbol, tf, shift, needed, c_buf) < needed) return EMPTY_VALUE;
+   // Arrays: [0]=oldest, [needed-1]=newest (target bar at 'shift')
+   int n = needed;
+
+   // Step 1: TR, +DM, -DM
+   double s_tr[], s_pdm[], s_mdm[];
+   ArrayResize(s_tr,  n); ArrayInitialize(s_tr,  0);
+   ArrayResize(s_pdm, n); ArrayInitialize(s_pdm, 0);
+   ArrayResize(s_mdm, n); ArrayInitialize(s_mdm, 0);
+   double raw_tr[], raw_pdm[], raw_mdm[];
+   ArrayResize(raw_tr,  n); ArrayInitialize(raw_tr,  0);
+   ArrayResize(raw_pdm, n); ArrayInitialize(raw_pdm, 0);
+   ArrayResize(raw_mdm, n); ArrayInitialize(raw_mdm, 0);
+   for(int i = 1; i < n; i++)
+   {{
+      double hl  = h_buf[i] - l_buf[i];
+      double hpc = MathAbs(h_buf[i] - c_buf[i-1]);
+      double lpc = MathAbs(l_buf[i] - c_buf[i-1]);
+      raw_tr[i]  = MathMax(hl, MathMax(hpc, lpc));
+      double up   = h_buf[i] - h_buf[i-1];
+      double down = l_buf[i-1] - l_buf[i];
+      raw_pdm[i]  = (up > down && up > 0)     ? up   : 0.0;
+      raw_mdm[i]  = (down > up && down > 0)   ? down : 0.0;
+   }}
+
+   // Step 2: Wilder sum-smooth (seed = sum of first `period` values, starting at index 1)
+   int seedIdx = period;  // first + period - 1 where first=1
+   if(seedIdx >= n) return EMPTY_VALUE;
+   double sum_tr = 0, sum_pdm = 0, sum_mdm = 0;
+   for(int i = 1; i <= seedIdx; i++)
+   {{ sum_tr += raw_tr[i]; sum_pdm += raw_pdm[i]; sum_mdm += raw_mdm[i]; }}
+   s_tr[seedIdx]  = sum_tr;
+   s_pdm[seedIdx] = sum_pdm;
+   s_mdm[seedIdx] = sum_mdm;
+   for(int i = seedIdx + 1; i < n; i++)
+   {{
+      s_tr[i]  = s_tr[i-1]  - s_tr[i-1]  / period + raw_tr[i];
+      s_pdm[i] = s_pdm[i-1] - s_pdm[i-1] / period + raw_pdm[i];
+      s_mdm[i] = s_mdm[i-1] - s_mdm[i-1] / period + raw_mdm[i];
+   }}
+
+   // Step 3: +DI and -DI
+   double pdi[], mdi[];
+   ArrayResize(pdi, n); ArrayInitialize(pdi, 0);
+   ArrayResize(mdi, n); ArrayInitialize(mdi, 0);
+   for(int i = seedIdx; i < n; i++)
+   {{
+      pdi[i] = (s_tr[i] > 0) ? 100.0 * s_pdm[i] / s_tr[i] : 0.0;
+      mdi[i] = (s_tr[i] > 0) ? 100.0 * s_mdm[i] / s_tr[i] : 0.0;
+   }}
+
+   // Step 4: DX
+   double dx[];
+   ArrayResize(dx, n); ArrayInitialize(dx, 0);
+   for(int i = seedIdx; i < n; i++)
+   {{
+      double di_sum = pdi[i] + mdi[i];
+      dx[i] = (di_sum > 0) ? 100.0 * MathAbs(pdi[i] - mdi[i]) / di_sum : 0.0;
+   }}
+
+   // Step 5: ADX = Wilder smooth of DX (seed = mean of first `period` DX values)
+   int adxSeed = period + period - 1;  // = 2*period - 1
+   if(adxSeed >= n) return EMPTY_VALUE;
+   double adx[];
+   ArrayResize(adx, n); ArrayInitialize(adx, 0);
+   double dx_sum = 0;
+   for(int i = period; i <= adxSeed; i++) dx_sum += dx[i];
+   adx[adxSeed] = dx_sum / period;
+   for(int i = adxSeed + 1; i < n; i++)
+      adx[i] = (adx[i-1] * (period - 1) + dx[i]) / period;
+
+   // Return requested value at target (last index = our shift)
+   int target = n - 1;
+   if(mode == 1) return pdi[target];
+   if(mode == 2) return mdi[target];
+   return adx[target];
 }}
 
 //+------------------------------------------------------------------+
