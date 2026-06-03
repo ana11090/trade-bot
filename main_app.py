@@ -23,6 +23,7 @@ from project1_reverse_engineering.panels import (
     configuration, run_scenarios, results, robot_analysis,
     strategy_builder as p1_strategy_builder,
     xgboost_panel as p1_xgboost,
+    run_history_panel as p1_run_history,
 )
 from project2_backtesting.panels import (
     configuration as p2_configuration,
@@ -269,6 +270,7 @@ _POPOUT_CONFIG = {
     "p1_analysis":       {"title": "Robot Analysis",      "builder": robot_analysis.build_panel},
     "p1_xgboost":        {"title": "P1 XGBoost",          "builder": p1_xgboost.build_panel},
     "p1_search":         {"title": "Strategy Search",     "builder": p1_strategy_builder.build_panel},
+    "p1_run_history":    {"title": "Run History",         "builder": p1_run_history.build_panel},
     "p2_config":         {"title": "P2 Configuration",    "builder": p2_configuration.build_panel},
     "p2_run":            {"title": "Run Backtest",        "builder": p2_run_backtest.build_panel},
     "p2_results":        {"title": "View Results",        "builder": p2_view_results.build_panel},
@@ -306,6 +308,7 @@ state.panel_builders = {
     "p1_analysis":       _make_builder(lambda: robot_analysis.build_panel(content), "p1_analysis"),
     "p1_xgboost":        _make_builder(lambda: p1_xgboost.build_panel(content), "p1_xgboost"),
     "p1_search":         _make_builder(lambda: p1_strategy_builder.build_panel(content), "p1_search"),
+    "p1_run_history":    _make_builder(lambda: p1_run_history.build_panel(content), "p1_run_history"),
     "p2_config":         _make_builder(lambda: p2_configuration.build_panel(content), "p2_config"),
     "p2_run":            _make_builder(lambda: p2_run_backtest.build_panel(content), "p2_run"),
     "p2_results":        _make_builder(lambda: p2_view_results.build_panel(content), "p2_results"),
@@ -339,6 +342,7 @@ refresh_map = {
     "p1_analysis": robot_analysis.refresh,
     "p1_xgboost": p1_xgboost.refresh,
     "p1_search": p1_strategy_builder.refresh,
+    "p1_run_history": p1_run_history.refresh,
     "p2_config": p2_configuration.refresh,
     "p2_run": p2_run_backtest.refresh,
     "p2_results": p2_view_results.refresh,

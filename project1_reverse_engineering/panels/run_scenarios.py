@@ -3897,6 +3897,50 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             successful = sum(1 for s in results.values() if s)
             log(f"\nCompleted: {successful}/{len(selected)} scenarios successful")
 
+            # WHY: Append this run's identity + influencing criteria to the
+            #      Run History log so the new sidebar panel can list past runs.
+            #      Pulls criteria from the live config; results from each
+            #      scenario's analysis_report.json (any scope variant) when
+            #      present. Failures here are non-fatal — they should never
+            #      block the user-facing summary.
+            # CHANGED: June 2026 — Run History recorder hook
+            try:
+                import glob as _rh_glob
+                import config_loader as _rh_cl
+                from shared.run_history import record_run
+                _rh_cfg = _rh_cl.load()
+                _rh_outputs = os.path.join("project1_reverse_engineering", "outputs")
+                _rh_results = {}
+                for _sc in selected:
+                    _rh_results[_sc] = {}
+                    # Prefer scoped path used by the modern multi-scope pipeline;
+                    # fall back to the legacy flat path. Pick whichever exists.
+                    _candidates = sorted(_rh_glob.glob(os.path.join(
+                        _rh_outputs, "scenario_" + _sc, "scope_*",
+                        "analysis_report.json")))
+                    if not _candidates:
+                        _flat = os.path.join(_rh_outputs, "scenario_" + _sc,
+                                             "analysis_report.json")
+                        _candidates = [_flat] if os.path.exists(_flat) else []
+                    if not _candidates:
+                        continue
+                    try:
+                        with open(_candidates[0], encoding="utf-8") as _fh:
+                            _rd = json.load(_fh)
+                        _rh_results[_sc] = {
+                            "trade_count": _rd.get("trade_count"),
+                            "feature_count": _rd.get("feature_count"),
+                            "rule_count": len(_rd.get("rules", []) or []),
+                            "direction": _rd.get("direction"),
+                            "entry_timeframe": _rd.get("entry_timeframe"),
+                        }
+                    except Exception:
+                        pass
+                record_run(_rh_cfg, selected, _rh_results)
+                log("[RUN] Recorded run to history.")
+            except Exception as _rh_e:
+                log("[RUN] Could not record run history: " + str(_rh_e))
+
             update_progress(f"Done: {successful}/{len(selected)} successful")
             progress_bar.after(0, lambda: pct_label.config(
                 text=f"100%  — {successful}/{len(selected)} scenarios OK"))

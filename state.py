@@ -31,7 +31,7 @@ active_panel = [None]
 panel_builders   = {}          # lazy builders: name -> callable, populated in main_app.py
 SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}
-PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_xgboost", "p1_search"}
+PROJECT1_SUB_PANELS = {"p1_config", "p1_run", "p1_results", "p1_analysis", "p1_xgboost", "p1_search", "p1_run_history"}
 PROJECT2_SUB_PANELS = {"p2_config", "p2_run", "p2_results", "p2_refiner", "p2_validator", "p2_prop_test", "p2_saved", "p2_playground"}
 
 # WHY (Phase A.40b): Cross-panel coordination for the "▶ Backtest this
