@@ -2185,7 +2185,25 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
                                         _exit_params = _cand.get('exit_params', {}) or {}
                                         _rules       = _cand.get('rules', []) or []
-                                        _direction   = _cand.get('direction', 'BUY')
+                                        # WHY: read direction from BOTH fields
+                                        #      ('direction' → 'action'). Old
+                                        #      _cand.get('direction', 'BUY')
+                                        #      silently tested a SELL candidate
+                                        #      as BUY when only 'action' was
+                                        #      present. Loud warning when
+                                        #      neither exists so a genuine
+                                        #      mis-tag is visible.
+                                        # CHANGED: June 2026 — direction fallback + loud default
+                                        _direction = (str(_cand.get('direction', '') or
+                                                          _cand.get('action', '') or '').upper().strip()
+                                                      or 'BUY')
+                                        if _direction not in ('BUY', 'SELL', 'BOTH'):
+                                            _direction = 'BUY'
+                                        if not (_cand.get('direction') or _cand.get('action')):
+                                            output_text.insert(
+                                                tk.END,
+                                                f"  [T2b] ⚠ candidate has no direction/action — "
+                                                f"defaulting to BUY (verify it isn't a SELL rule)\n")
                                         _cand_tf     = _cand.get('entry_tf', '')
 
                                         _cand_path = None

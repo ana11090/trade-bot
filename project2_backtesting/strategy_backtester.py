@@ -4360,19 +4360,38 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     def _a30_rule_directions(rule_obj):
         """Return list of directions to test for one rule.
 
-        Reads the rule's `action` field (the key step6 and the
-        Phase A.27 analyze.py both write). Defaults to ['BUY']
-        for legacy rules that have neither — preserves old
-        behavior on rule sets predating A.27.
+        Reads the rule's direction from BOTH possible fields — 'action'
+        (step6 / Phase A.27) and 'direction' (saved-rule / discovery). A SELL
+        rule whose side is only in 'direction' must NOT be silently traded as
+        BUY, which the old action-only read did.
         """
-        a = str(rule_obj.get('action', 'BUY')).upper().strip()
+        # WHY: direction has been written under 'action' AND 'direction' across
+        #      phases. Reading only 'action' meant a rule tagged just
+        #      'direction'='SELL' fell through to the BUY default and was tested
+        #      on the WRONG side. Read both; only fall back to BUY when NEITHER
+        #      field is present, and LOG it so silent mis-tagging is visible.
+        # CHANGED: June 2026 — action+direction fallback; loud on missing
+        a = str(rule_obj.get('action', '') or rule_obj.get('direction', '') or '').upper().strip()
         if a in ('BUY', 'LONG'):
             return ['BUY']
         if a in ('SELL', 'SHORT'):
             return ['SELL']
         if a in ('BOTH', 'BIDIRECTIONAL', 'EITHER'):
             return ['BUY', 'SELL']
-        # Unknown / missing → default to BUY only (matches old behavior)
+        # Neither field present (or unrecognized). Old behavior was a SILENT
+        # BUY. Keep BUY as the safe fallback so legacy rule sets still run, but
+        # LOG it loudly so a genuinely mis-tagged SELL rule is not hidden.
+        _rid = rule_obj.get('_saved_rule_id', rule_obj.get('rule_id', '?'))
+        try:
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                f"[A30] rule {_rid}: no recognizable action/direction "
+                f"(action={rule_obj.get('action')!r}, "
+                f"direction={rule_obj.get('direction')!r}) — defaulting to BUY. "
+                f"If this is a SELL rule it will be tested on the WRONG side."
+            )
+        except Exception:
+            pass
         return ['BUY']
 
     rule_combos = []
