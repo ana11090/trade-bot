@@ -211,8 +211,14 @@ def compute_all_indicators(candles_df, prefix=""):
     """
     print(f"  Computing all indicators{' with prefix: ' + prefix if prefix else ''}...")
 
-    # Create output DataFrame with same index as candles_df (integer index for proper alignment)
-    indicators = pd.DataFrame(index=candles_df.index)
+    # CHANGED: June 2026 — accumulate columns into a plain dict and build the
+    #   DataFrame ONCE at the end. Incremental _ind[col]=... on a
+    #   DataFrame fragments memory and raises pandas PerformanceWarning
+    #   (slow on wide frames; M5 produced 221 cols and took 187s).
+    #   Values are identical to the previous code.
+    # WHY: dict insertion is O(1) and avoids per-assignment reindexing.
+    _ind = {}                      # name -> Series, built once into a DataFrame
+    _ind_index = candles_df.index  # preserve the original index
 
     # Extract OHLCV arrays
     open_prices = candles_df['open'].values
@@ -223,12 +229,12 @@ def compute_all_indicators(candles_df, prefix=""):
 
     # GROUP A — RSI (5 features)
     for period in [7, 14, 21, 28, 50]:
-        indicators[f'{prefix}rsi_{period}'] = ta.momentum.RSIIndicator(close=candles_df['close'], window=period).rsi()
+        _ind[f'{prefix}rsi_{period}'] = ta.momentum.RSIIndicator(close=candles_df['close'], window=period).rsi()
 
     # GROUP B — EMA Distance (5 features)
     for period in [9, 20, 50, 100, 200]:
         ema = ta.trend.EMAIndicator(close=candles_df['close'], window=period).ema_indicator()
-        indicators[f'{prefix}ema_{period}_distance'] = ((candles_df['close'] - ema) / ema * 100)
+        _ind[f'{prefix}ema_{period}_distance'] = ((candles_df['close'] - ema) / ema * 100)
 
     # GROUP C — EMA Cross Signals (4 features)
     ema_9 = ta.trend.EMAIndicator(close=candles_df['close'], window=9).ema_indicator()
@@ -236,32 +242,32 @@ def compute_all_indicators(candles_df, prefix=""):
     ema_50 = ta.trend.EMAIndicator(close=candles_df['close'], window=50).ema_indicator()
     ema_200 = ta.trend.EMAIndicator(close=candles_df['close'], window=200).ema_indicator()
 
-    indicators[f'{prefix}ema_9_above_20'] = (ema_9 > ema_20).astype(int)
-    indicators[f'{prefix}ema_20_above_50'] = (ema_20 > ema_50).astype(int)
-    indicators[f'{prefix}ema_50_above_200'] = (ema_50 > ema_200).astype(int)
-    indicators[f'{prefix}ema_9_above_200'] = (ema_9 > ema_200).astype(int)
+    _ind[f'{prefix}ema_9_above_20'] = (ema_9 > ema_20).astype(int)
+    _ind[f'{prefix}ema_20_above_50'] = (ema_20 > ema_50).astype(int)
+    _ind[f'{prefix}ema_50_above_200'] = (ema_50 > ema_200).astype(int)
+    _ind[f'{prefix}ema_9_above_200'] = (ema_9 > ema_200).astype(int)
 
     # GROUP D — SMA Distance (3 features)
     for period in [20, 50, 200]:
         sma = ta.trend.SMAIndicator(close=candles_df['close'], window=period).sma_indicator()
-        indicators[f'{prefix}sma_{period}_distance'] = ((candles_df['close'] - sma) / sma * 100)
+        _ind[f'{prefix}sma_{period}_distance'] = ((candles_df['close'] - sma) / sma * 100)
 
     # GROUP E — MACD (6 features)
     # Standard MACD (12, 26, 9)
     macd_std = ta.trend.MACD(close=candles_df['close'], window_slow=26, window_fast=12, window_sign=9)
-    indicators[f'{prefix}macd_std'] = macd_std.macd()
-    indicators[f'{prefix}macd_std_signal'] = macd_std.macd_signal()
-    indicators[f'{prefix}macd_std_diff'] = macd_std.macd_diff()
+    _ind[f'{prefix}macd_std'] = macd_std.macd()
+    _ind[f'{prefix}macd_std_signal'] = macd_std.macd_signal()
+    _ind[f'{prefix}macd_std_diff'] = macd_std.macd_diff()
 
     # Fast MACD (5, 13, 5)
     macd_fast = ta.trend.MACD(close=candles_df['close'], window_slow=13, window_fast=5, window_sign=5)
-    indicators[f'{prefix}macd_fast'] = macd_fast.macd()
-    indicators[f'{prefix}macd_fast_signal'] = macd_fast.macd_signal()
-    indicators[f'{prefix}macd_fast_diff'] = macd_fast.macd_diff()
+    _ind[f'{prefix}macd_fast'] = macd_fast.macd()
+    _ind[f'{prefix}macd_fast_signal'] = macd_fast.macd_signal()
+    _ind[f'{prefix}macd_fast_diff'] = macd_fast.macd_diff()
 
     # GROUP F — ATR (6 features)
     for period in [7, 14, 21, 28, 50, 100]:
-        indicators[f'{prefix}atr_{period}'] = ta.volatility.AverageTrueRange(
+        _ind[f'{prefix}atr_{period}'] = ta.volatility.AverageTrueRange(
             high=candles_df['high'],
             low=candles_df['low'],
             close=candles_df['close'],
@@ -271,18 +277,18 @@ def compute_all_indicators(candles_df, prefix=""):
     # GROUP G — Bollinger Bands (5 features)
     for period, std in [(20, 2), (20, 3)]:
         bb = ta.volatility.BollingerBands(close=candles_df['close'], window=period, window_dev=std)
-        indicators[f'{prefix}bb_{period}_{std}_upper'] = bb.bollinger_hband()
-        indicators[f'{prefix}bb_{period}_{std}_lower'] = bb.bollinger_lband()
-        indicators[f'{prefix}bb_{period}_{std}_width'] = bb.bollinger_wband()
+        _ind[f'{prefix}bb_{period}_{std}_upper'] = bb.bollinger_hband()
+        _ind[f'{prefix}bb_{period}_{std}_lower'] = bb.bollinger_lband()
+        _ind[f'{prefix}bb_{period}_{std}_width'] = bb.bollinger_wband()
 
     # Additional BB width for period 50
     bb_50 = ta.volatility.BollingerBands(close=candles_df['close'], window=50, window_dev=2)
-    indicators[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
+    _ind[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
 
     # GROUP H — ADX (3 features, ta library) + MT5-parity ADX
     for period in [14, 21, 28]:
         adx = ta.trend.ADXIndicator(high=candles_df['high'], low=candles_df['low'], close=candles_df['close'], window=period)
-        indicators[f'{prefix}adx_{period}'] = adx.adx()
+        _ind[f'{prefix}adx_{period}'] = adx.adx()
     # WHY: ta library ADX diverges from MT5 iADX by ~2x (different smoothing).
     #      mt5_adx uses Wilder's method matching iADX — use for MT5 prop firms.
     #      Same pattern as mt5_stoch alongside stoch.
@@ -293,9 +299,9 @@ def compute_all_indicators(candles_df, prefix=""):
     # CHANGED: May 2026 — added period 21 (was missing, broke rules using *_mt5_adx_21)
     for period in [14, 21, 28]:
         _adx_v, _pdi_v, _mdi_v = _mt5_adx(candles_df['high'], candles_df['low'], candles_df['close'], period)
-        indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
-        indicators[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
-        indicators[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
+        _ind[f'{prefix}mt5_adx_{period}'] = _adx_v
+        _ind[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
+        _ind[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
 
     # GROUP I — Stochastic Oscillator (4 features)
     for period in [14, 21]:
@@ -306,12 +312,12 @@ def compute_all_indicators(candles_df, prefix=""):
             window=period,
             smooth_window=3
         )
-        indicators[f'{prefix}stoch_{period}_k'] = stoch.stoch()
-        indicators[f'{prefix}stoch_{period}_d'] = stoch.stoch_signal()
+        _ind[f'{prefix}stoch_{period}_k'] = stoch.stoch()
+        _ind[f'{prefix}stoch_{period}_d'] = stoch.stoch_signal()
 
     # GROUP J — CCI (3 features)
     for period in [14, 20, 50]:
-        indicators[f'{prefix}cci_{period}'] = ta.trend.CCIIndicator(
+        _ind[f'{prefix}cci_{period}'] = ta.trend.CCIIndicator(
             high=candles_df['high'],
             low=candles_df['low'],
             close=candles_df['close'],
@@ -320,7 +326,7 @@ def compute_all_indicators(candles_df, prefix=""):
 
     # GROUP K — Williams %R (2 features)
     for period in [14, 28]:
-        indicators[f'{prefix}williams_r_{period}'] = ta.momentum.WilliamsRIndicator(
+        _ind[f'{prefix}williams_r_{period}'] = ta.momentum.WilliamsRIndicator(
             high=candles_df['high'],
             low=candles_df['low'],
             close=candles_df['close'],
@@ -330,25 +336,25 @@ def compute_all_indicators(candles_df, prefix=""):
     # GROUP L — Volume Features (6 features)
     # Volume ratio to moving average
     volume_sma_20 = candles_df['volume'].rolling(window=20).mean()
-    indicators[f'{prefix}volume_ratio_20'] = candles_df['volume'] / volume_sma_20
+    _ind[f'{prefix}volume_ratio_20'] = candles_df['volume'] / volume_sma_20
 
     # Volume change
-    indicators[f'{prefix}volume_change'] = candles_df['volume'].pct_change()
+    _ind[f'{prefix}volume_change'] = candles_df['volume'].pct_change()
 
     # On-Balance Volume (OBV)
-    indicators[f'{prefix}obv'] = ta.volume.OnBalanceVolumeIndicator(
+    _ind[f'{prefix}obv'] = ta.volume.OnBalanceVolumeIndicator(
         close=candles_df['close'],
         volume=candles_df['volume']
     ).on_balance_volume()
 
     # Volume Price Trend (VPT)
-    indicators[f'{prefix}vpt'] = ta.volume.VolumePriceTrendIndicator(
+    _ind[f'{prefix}vpt'] = ta.volume.VolumePriceTrendIndicator(
         close=candles_df['close'],
         volume=candles_df['volume']
     ).volume_price_trend()
 
     # Chaikin Money Flow
-    indicators[f'{prefix}cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
+    _ind[f'{prefix}cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
         high=candles_df['high'],
         low=candles_df['low'],
         close=candles_df['close'],
@@ -357,7 +363,7 @@ def compute_all_indicators(candles_df, prefix=""):
     ).chaikin_money_flow()
 
     # Money Flow Index
-    indicators[f'{prefix}mfi'] = ta.volume.MFIIndicator(
+    _ind[f'{prefix}mfi'] = ta.volume.MFIIndicator(
         high=candles_df['high'],
         low=candles_df['low'],
         close=candles_df['close'],
@@ -366,40 +372,40 @@ def compute_all_indicators(candles_df, prefix=""):
     ).money_flow_index()
 
     # GROUP M — Price Action & Candle Structure (8 features)
-    indicators[f'{prefix}candle_body'] = abs(candles_df['close'] - candles_df['open'])
-    indicators[f'{prefix}candle_range'] = candles_df['high'] - candles_df['low']
-    indicators[f'{prefix}upper_shadow'] = candles_df['high'] - candles_df[['close', 'open']].max(axis=1)
-    indicators[f'{prefix}lower_shadow'] = candles_df[['close', 'open']].min(axis=1) - candles_df['low']
-    indicators[f'{prefix}body_to_range_ratio'] = indicators[f'{prefix}candle_body'] / indicators[f'{prefix}candle_range'].replace(0, np.nan)
-    indicators[f'{prefix}is_bullish'] = (candles_df['close'] > candles_df['open']).astype(int)
-    indicators[f'{prefix}close_position_in_range'] = (candles_df['close'] - candles_df['low']) / indicators[f'{prefix}candle_range'].replace(0, np.nan)
-    indicators[f'{prefix}distance_from_high'] = (candles_df['high'] - candles_df['close']) / candles_df['close'] * 100
+    _ind[f'{prefix}candle_body'] = abs(candles_df['close'] - candles_df['open'])
+    _ind[f'{prefix}candle_range'] = candles_df['high'] - candles_df['low']
+    _ind[f'{prefix}upper_shadow'] = candles_df['high'] - candles_df[['close', 'open']].max(axis=1)
+    _ind[f'{prefix}lower_shadow'] = candles_df[['close', 'open']].min(axis=1) - candles_df['low']
+    _ind[f'{prefix}body_to_range_ratio'] = _ind[f'{prefix}candle_body'] / _ind[f'{prefix}candle_range'].replace(0, np.nan)
+    _ind[f'{prefix}is_bullish'] = (candles_df['close'] > candles_df['open']).astype(int)
+    _ind[f'{prefix}close_position_in_range'] = (candles_df['close'] - candles_df['low']) / _ind[f'{prefix}candle_range'].replace(0, np.nan)
+    _ind[f'{prefix}distance_from_high'] = (candles_df['high'] - candles_df['close']) / candles_df['close'] * 100
 
     # GROUP N — Support & Resistance Proximity (5 features)
     # Recent swing high/low
     swing_period = 50
-    indicators[f'{prefix}swing_high_{swing_period}'] = candles_df['high'].rolling(window=swing_period).max()
-    indicators[f'{prefix}swing_low_{swing_period}'] = candles_df['low'].rolling(window=swing_period).min()
-    indicators[f'{prefix}distance_to_swing_high'] = (indicators[f'{prefix}swing_high_{swing_period}'] - candles_df['close']) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_swing_low'] = (candles_df['close'] - indicators[f'{prefix}swing_low_{swing_period}']) / candles_df['close'] * 100
+    _ind[f'{prefix}swing_high_{swing_period}'] = candles_df['high'].rolling(window=swing_period).max()
+    _ind[f'{prefix}swing_low_{swing_period}'] = candles_df['low'].rolling(window=swing_period).min()
+    _ind[f'{prefix}distance_to_swing_high'] = (_ind[f'{prefix}swing_high_{swing_period}'] - candles_df['close']) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_swing_low'] = (candles_df['close'] - _ind[f'{prefix}swing_low_{swing_period}']) / candles_df['close'] * 100
 
     # Price position within recent range
-    swing_range = indicators[f'{prefix}swing_high_{swing_period}'] - indicators[f'{prefix}swing_low_{swing_period}']
-    indicators[f'{prefix}position_in_swing_range'] = (candles_df['close'] - indicators[f'{prefix}swing_low_{swing_period}']) / swing_range.replace(0, np.nan)
+    swing_range = _ind[f'{prefix}swing_high_{swing_period}'] - _ind[f'{prefix}swing_low_{swing_period}']
+    _ind[f'{prefix}position_in_swing_range'] = (candles_df['close'] - _ind[f'{prefix}swing_low_{swing_period}']) / swing_range.replace(0, np.nan)
 
     # GROUP O — Momentum & Rate of Change (5 features)
     # WHY (Phase 76 Fix 28): roc_1 is identical to close.pct_change() —
     #      pure noise that adds in-sample overfitting. Start at period=5.
     # CHANGED: April 2026 — Phase 76 Fix 28 — skip roc_1
     for period in [5, 10, 20, 50]:
-        indicators[f'{prefix}roc_{period}'] = ((candles_df['close'] - candles_df['close'].shift(period)) / candles_df['close'].shift(period) * 100)
+        _ind[f'{prefix}roc_{period}'] = ((candles_df['close'] - candles_df['close'].shift(period)) / candles_df['close'].shift(period) * 100)
 
     # GROUP P — Session & Time Features (8 features)
     # Extract time components from timestamp
     timestamps = pd.to_datetime(candles_df['timestamp'])
-    indicators[f'{prefix}hour_of_day'] = timestamps.dt.hour
-    indicators[f'{prefix}day_of_week'] = timestamps.dt.dayofweek  # Monday=0, Sunday=6
-    indicators[f'{prefix}day_of_month'] = timestamps.dt.day
+    _ind[f'{prefix}hour_of_day'] = timestamps.dt.hour
+    _ind[f'{prefix}day_of_week'] = timestamps.dt.dayofweek  # Monday=0, Sunday=6
+    _ind[f'{prefix}day_of_month'] = timestamps.dt.day
 
     # WHY: Old code used pd.between(lo, hi) which is inclusive on both
     #      ends, and the three session ranges overlapped:
@@ -412,11 +418,11 @@ def compute_all_indicators(candles_df, prefix=""):
     #      (NY > London > Asian), matching strategy_refiner._get_session.
     # CHANGED: April 2026 — non-overlapping sessions (audit HIGH #54)
     _hr = timestamps.dt.hour
-    indicators[f'{prefix}is_asian_session']  = ((_hr >= 0) & (_hr <= 6)).astype(int)   # hours 00:00-06:59 UTC
-    indicators[f'{prefix}is_london_session'] = ((_hr >= 7) & (_hr <= 11)).astype(int)  # hours 07:00-11:59 UTC
-    indicators[f'{prefix}is_ny_session']     = ((_hr >= 12) & (_hr <= 20)).astype(int) # hours 12:00-20:59 UTC
-    indicators[f'{prefix}is_late_session']   = ((_hr >= 21) & (_hr <= 23)).astype(int) # hours 21:00-23:59 UTC (Sydney open)
-    indicators[f'{prefix}is_weekend'] = (timestamps.dt.dayofweek >= 5).astype(int)
+    _ind[f'{prefix}is_asian_session']  = ((_hr >= 0) & (_hr <= 6)).astype(int)   # hours 00:00-06:59 UTC
+    _ind[f'{prefix}is_london_session'] = ((_hr >= 7) & (_hr <= 11)).astype(int)  # hours 07:00-11:59 UTC
+    _ind[f'{prefix}is_ny_session']     = ((_hr >= 12) & (_hr <= 20)).astype(int) # hours 12:00-20:59 UTC
+    _ind[f'{prefix}is_late_session']   = ((_hr >= 21) & (_hr <= 23)).astype(int) # hours 21:00-23:59 UTC (Sydney open)
+    _ind[f'{prefix}is_weekend'] = (timestamps.dt.dayofweek >= 5).astype(int)
 
     # GROUP Q — Rolling range levels (NOT Fibonacci)
     # WHY: Old code named these distance_to_fib_236/382/500/618/786 but
@@ -431,8 +437,8 @@ def compute_all_indicators(candles_df, prefix=""):
     #      with a missing-feature error — intentional, because the old
     #      values were meaningless "Fibonacci" signals.
     # CHANGED: April 2026 — honest rename (audit MED #53)
-    rng_swing_high = indicators[f'{prefix}swing_high_{swing_period}']
-    rng_swing_low  = indicators[f'{prefix}swing_low_{swing_period}']
+    rng_swing_high = _ind[f'{prefix}swing_high_{swing_period}']
+    rng_swing_low  = _ind[f'{prefix}swing_low_{swing_period}']
     rng_range      = rng_swing_high - rng_swing_low
 
     rng_236 = rng_swing_low + 0.236 * rng_range
@@ -441,11 +447,11 @@ def compute_all_indicators(candles_df, prefix=""):
     rng_618 = rng_swing_low + 0.618 * rng_range
     rng_786 = rng_swing_low + 0.786 * rng_range
 
-    indicators[f'{prefix}distance_to_rolling_level_236'] = (candles_df['close'] - rng_236) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_rolling_level_382'] = (candles_df['close'] - rng_382) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_rolling_level_500'] = (candles_df['close'] - rng_500) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_rolling_level_618'] = (candles_df['close'] - rng_618) / candles_df['close'] * 100
-    indicators[f'{prefix}distance_to_rolling_level_786'] = (candles_df['close'] - rng_786) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_rolling_level_236'] = (candles_df['close'] - rng_236) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_rolling_level_382'] = (candles_df['close'] - rng_382) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_rolling_level_500'] = (candles_df['close'] - rng_500) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_rolling_level_618'] = (candles_df['close'] - rng_618) / candles_df['close'] * 100
+    _ind[f'{prefix}distance_to_rolling_level_786'] = (candles_df['close'] - rng_786) / candles_df['close'] * 100
 
     # ══════════════════════════════════════════════════════════════════════════════
     # ADDITIONAL INDICATORS - High Priority
@@ -459,13 +465,13 @@ def compute_all_indicators(candles_df, prefix=""):
         window2=26,
         window3=52
     )
-    indicators[f'{prefix}ichimoku_conversion'] = ichimoku.ichimoku_conversion_line()
-    indicators[f'{prefix}ichimoku_base'] = ichimoku.ichimoku_base_line()
-    indicators[f'{prefix}ichimoku_a'] = ichimoku.ichimoku_a()
-    indicators[f'{prefix}ichimoku_b'] = ichimoku.ichimoku_b()
+    _ind[f'{prefix}ichimoku_conversion'] = ichimoku.ichimoku_conversion_line()
+    _ind[f'{prefix}ichimoku_base'] = ichimoku.ichimoku_base_line()
+    _ind[f'{prefix}ichimoku_a'] = ichimoku.ichimoku_a()
+    _ind[f'{prefix}ichimoku_b'] = ichimoku.ichimoku_b()
     # Distance metrics for Ichimoku
-    indicators[f'{prefix}price_above_cloud'] = (
-        candles_df['close'].values > indicators[f'{prefix}ichimoku_a'].values
+    _ind[f'{prefix}price_above_cloud'] = (
+        candles_df['close'].values > _ind[f'{prefix}ichimoku_a'].values
     ).astype(int)
 
     # GROUP S — Parabolic SAR (2 features)
@@ -474,8 +480,8 @@ def compute_all_indicators(candles_df, prefix=""):
         low=candles_df['low'],
         close=candles_df['close']
     )
-    indicators[f'{prefix}psar'] = psar.psar()
-    indicators[f'{prefix}psar_signal'] = (candles_df['close'].values > indicators[f'{prefix}psar'].values).astype(int)
+    _ind[f'{prefix}psar'] = psar.psar()
+    _ind[f'{prefix}psar_signal'] = (candles_df['close'].values > _ind[f'{prefix}psar'].values).astype(int)
 
     # GROUP T — VWAP (1 feature)
     # VWAP = Cumulative(Price × Volume) / Cumulative(Volume)
@@ -489,9 +495,9 @@ def compute_all_indicators(candles_df, prefix=""):
     _date_group    = pd.to_datetime(candles_df['timestamp']).dt.normalize()
     _vwap_num      = (typical_price * candles_df['volume']).groupby(_date_group).cumsum()
     _vwap_den      = candles_df['volume'].groupby(_date_group).cumsum()
-    indicators[f'{prefix}vwap'] = _vwap_num / _vwap_den
-    indicators[f'{prefix}vwap_distance'] = ((candles_df['close'] - indicators[f'{prefix}vwap']) /
-                                           indicators[f'{prefix}vwap'] * 100)
+    _ind[f'{prefix}vwap'] = _vwap_num / _vwap_den
+    _ind[f'{prefix}vwap_distance'] = ((candles_df['close'] - _ind[f'{prefix}vwap']) /
+                                           _ind[f'{prefix}vwap'] * 100)
 
     # GROUP U — ATR Bands (2 features)
     # WHY: This was never a real Supertrend — Supertrend is a direction-switching
@@ -514,8 +520,8 @@ def compute_all_indicators(candles_df, prefix=""):
     basic_ub = hl_avg + (multiplier * atr_10)
     basic_lb = hl_avg - (multiplier * atr_10)
 
-    indicators[f'{prefix}atr_band_upper'] = basic_ub
-    indicators[f'{prefix}atr_band_lower'] = basic_lb
+    _ind[f'{prefix}atr_band_upper'] = basic_ub
+    _ind[f'{prefix}atr_band_lower'] = basic_lb
 
     # GROUP V — Pivot Points (7 features)
     # Classic Pivot Points calculation
@@ -524,19 +530,19 @@ def compute_all_indicators(candles_df, prefix=""):
     prev_close = candles_df['close'].shift(1)
 
     pivot = (prev_high + prev_low + prev_close) / 3
-    indicators[f'{prefix}pivot_point'] = pivot
-    indicators[f'{prefix}resistance_1'] = 2 * pivot - prev_low
-    indicators[f'{prefix}support_1'] = 2 * pivot - prev_high
-    indicators[f'{prefix}resistance_2'] = pivot + (prev_high - prev_low)
-    indicators[f'{prefix}support_2'] = pivot - (prev_high - prev_low)
-    indicators[f'{prefix}resistance_3'] = prev_high + 2 * (pivot - prev_low)
-    indicators[f'{prefix}support_3'] = prev_low - 2 * (prev_high - pivot)
+    _ind[f'{prefix}pivot_point'] = pivot
+    _ind[f'{prefix}resistance_1'] = 2 * pivot - prev_low
+    _ind[f'{prefix}support_1'] = 2 * pivot - prev_high
+    _ind[f'{prefix}resistance_2'] = pivot + (prev_high - prev_low)
+    _ind[f'{prefix}support_2'] = pivot - (prev_high - prev_low)
+    _ind[f'{prefix}resistance_3'] = prev_high + 2 * (pivot - prev_low)
+    _ind[f'{prefix}support_3'] = prev_low - 2 * (prev_high - pivot)
 
     # GROUP W — DMI Components (2 features)
     adx_indicator = ta.trend.ADXIndicator(
         high=candles_df['high'], low=candles_df['low'], close=candles_df['close'], window=14)
-    indicators[f'{prefix}plus_di']  = adx_indicator.adx_pos()
-    indicators[f'{prefix}minus_di'] = adx_indicator.adx_neg()
+    _ind[f'{prefix}plus_di']  = adx_indicator.adx_pos()
+    _ind[f'{prefix}minus_di'] = adx_indicator.adx_neg()
 
     # ══════════════════════════════════════════════════════════════════════════════
     # ADDITIONAL INDICATORS - Medium Priority
@@ -549,9 +555,9 @@ def compute_all_indicators(candles_df, prefix=""):
         close=candles_df['close'],
         window=20
     )
-    indicators[f'{prefix}keltner_upper'] = keltner.keltner_channel_hband()
-    indicators[f'{prefix}keltner_lower'] = keltner.keltner_channel_lband()
-    indicators[f'{prefix}keltner_width'] = keltner.keltner_channel_wband()
+    _ind[f'{prefix}keltner_upper'] = keltner.keltner_channel_hband()
+    _ind[f'{prefix}keltner_lower'] = keltner.keltner_channel_lband()
+    _ind[f'{prefix}keltner_width'] = keltner.keltner_channel_wband()
 
     # GROUP Y — Donchian Channels (3 features)
     donchian = ta.volatility.DonchianChannel(
@@ -560,9 +566,9 @@ def compute_all_indicators(candles_df, prefix=""):
         close=candles_df['close'],
         window=20
     )
-    indicators[f'{prefix}donchian_upper'] = donchian.donchian_channel_hband()
-    indicators[f'{prefix}donchian_lower'] = donchian.donchian_channel_lband()
-    indicators[f'{prefix}donchian_middle'] = donchian.donchian_channel_mband()
+    _ind[f'{prefix}donchian_upper'] = donchian.donchian_channel_hband()
+    _ind[f'{prefix}donchian_lower'] = donchian.donchian_channel_lband()
+    _ind[f'{prefix}donchian_middle'] = donchian.donchian_channel_mband()
 
     # GROUP Z — Aroon Indicator (3 features)
     aroon = ta.trend.AroonIndicator(
@@ -570,23 +576,23 @@ def compute_all_indicators(candles_df, prefix=""):
         low=candles_df['low'],
         window=25
     )
-    indicators[f'{prefix}aroon_up'] = aroon.aroon_up()
-    indicators[f'{prefix}aroon_down'] = aroon.aroon_down()
-    indicators[f'{prefix}aroon_indicator'] = aroon.aroon_indicator()
+    _ind[f'{prefix}aroon_up'] = aroon.aroon_up()
+    _ind[f'{prefix}aroon_down'] = aroon.aroon_down()
+    _ind[f'{prefix}aroon_indicator'] = aroon.aroon_indicator()
 
     # GROUP AA — Elder Ray (2 features)
     ema_13 = ta.trend.EMAIndicator(close=candles_df['close'], window=13).ema_indicator()
-    indicators[f'{prefix}bull_power'] = candles_df['high'] - ema_13
-    indicators[f'{prefix}bear_power'] = candles_df['low'] - ema_13
+    _ind[f'{prefix}bull_power'] = candles_df['high'] - ema_13
+    _ind[f'{prefix}bear_power'] = candles_df['low'] - ema_13
 
     # GROUP AB — TSI (True Strength Index) (2 features)
     tsi = ta.momentum.TSIIndicator(close=candles_df['close'], window_slow=25, window_fast=13)
-    indicators[f'{prefix}tsi'] = tsi.tsi()
+    _ind[f'{prefix}tsi'] = tsi.tsi()
 
     # GROUP AC — KST (Know Sure Thing) (2 features)
     kst = ta.trend.KSTIndicator(close=candles_df['close'])
-    indicators[f'{prefix}kst'] = kst.kst()
-    indicators[f'{prefix}kst_signal'] = kst.kst_sig()
+    _ind[f'{prefix}kst'] = kst.kst()
+    _ind[f'{prefix}kst_signal'] = kst.kst_sig()
 
     # GROUP AD — Ultimate Oscillator (1 feature)
     uo = ta.momentum.UltimateOscillator(
@@ -594,29 +600,29 @@ def compute_all_indicators(candles_df, prefix=""):
         low=candles_df['low'],
         close=candles_df['close']
     )
-    indicators[f'{prefix}ultimate_oscillator'] = uo.ultimate_oscillator()
+    _ind[f'{prefix}ultimate_oscillator'] = uo.ultimate_oscillator()
 
     # GROUP AE — Awesome Oscillator (1 feature)
     ao = ta.momentum.AwesomeOscillatorIndicator(
         high=candles_df['high'],
         low=candles_df['low']
     )
-    indicators[f'{prefix}awesome_oscillator'] = ao.awesome_oscillator()
+    _ind[f'{prefix}awesome_oscillator'] = ao.awesome_oscillator()
 
     # GROUP AF — Mass Index (1 feature)
     mass = ta.trend.MassIndex(
         high=candles_df['high'],
         low=candles_df['low']
     )
-    indicators[f'{prefix}mass_index'] = mass.mass_index()
+    _ind[f'{prefix}mass_index'] = mass.mass_index()
 
     # GROUP AG — DPO (Detrended Price Oscillator) (1 feature)
     dpo = ta.trend.DPOIndicator(close=candles_df['close'], window=20)
-    indicators[f'{prefix}dpo'] = dpo.dpo()
+    _ind[f'{prefix}dpo'] = dpo.dpo()
 
     # GROUP AH — Standard Deviation (2 features)
-    indicators[f'{prefix}std_dev_20'] = candles_df['close'].rolling(window=20).std()
-    indicators[f'{prefix}std_dev_50'] = candles_df['close'].rolling(window=50).std()
+    _ind[f'{prefix}std_dev_20'] = candles_df['close'].rolling(window=20).std()
+    _ind[f'{prefix}std_dev_50'] = candles_df['close'].rolling(window=50).std()
 
     # ── MT5-compatible indicators (Wilder's smoothing) ────────────────────
     # WHY: MT5 built-ins use Wilder's smoothing, not standard EMA.
@@ -624,33 +630,33 @@ def compute_all_indicators(candles_df, prefix=""):
     #      Use for prop firms running on MT5 (e.g. Get Levered).
     # CHANGED: April 2026 — MT5 indicator parity
     for period in [7, 14, 21, 28, 50]:
-        indicators[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(candles_df['close'], period)
+        _ind[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(candles_df['close'], period)
 
     for period in [7, 14, 21, 28, 50, 100]:
-        indicators[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
+        _ind[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
             candles_df['high'], candles_df['low'], candles_df['close'], period)
 
     # MT5 MACD (SMA signal line)
     _m_std, _ms_std, _md_std = _mt5_macd(candles_df['close'], 12, 26, 9)
-    indicators[f'{prefix}mt5_macd_std'] = _m_std
-    indicators[f'{prefix}mt5_macd_std_signal'] = _ms_std
-    indicators[f'{prefix}mt5_macd_std_diff'] = _md_std
+    _ind[f'{prefix}mt5_macd_std'] = _m_std
+    _ind[f'{prefix}mt5_macd_std_signal'] = _ms_std
+    _ind[f'{prefix}mt5_macd_std_diff'] = _md_std
     _m_fast, _ms_fast, _md_fast = _mt5_macd(candles_df['close'], 5, 13, 5)
-    indicators[f'{prefix}mt5_macd_fast'] = _m_fast
-    indicators[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
-    indicators[f'{prefix}mt5_macd_fast_diff'] = _md_fast
+    _ind[f'{prefix}mt5_macd_fast'] = _m_fast
+    _ind[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
+    _ind[f'{prefix}mt5_macd_fast_diff'] = _md_fast
 
     # MT5 Stochastic (SMA smoothing)
     for period in [14, 21]:
         _k, _d = _mt5_stochastic(
             candles_df['high'], candles_df['low'], candles_df['close'], period)
-        indicators[f'{prefix}mt5_stoch_{period}_k'] = _k
-        indicators[f'{prefix}mt5_stoch_{period}_d'] = _d
+        _ind[f'{prefix}mt5_stoch_{period}_k'] = _k
+        _ind[f'{prefix}mt5_stoch_{period}_d'] = _d
 
     # MT5 EMA (SMA-seeded — matches MT5 iMA with MODE_EMA)
     for period in [9, 20, 50, 100, 200]:
         mt5_ema = _mt5_ema(candles_df['close'], period)
-        indicators[f'{prefix}mt5_ema_{period}_distance'] = (
+        _ind[f'{prefix}mt5_ema_{period}_distance'] = (
             (candles_df['close'] - mt5_ema) / mt5_ema * 100)
 
     # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
@@ -660,6 +666,10 @@ def compute_all_indicators(candles_df, prefix=""):
     #      rows will remain NaN and be handled by the sentinel-based NaN
     #      fill in the downstream pipeline.
     # CHANGED: April 2026 — remove bfill leak (audit bug: indicator_utils)
+    # CHANGED: June 2026 — build the DataFrame ONCE from the accumulated dict
+    #   (see _ind = {} init above). Eliminates per-assignment fragmentation /
+    #   pandas PerformanceWarning. Values identical to the previous code.
+    indicators = pd.DataFrame(_ind, index=_ind_index)
     indicators = indicators.ffill()
 
     print(f"  Computed {len(indicators.columns)} indicators")
@@ -817,49 +827,52 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         if 'fib' in only:
             only.add('swing')   # Fibonacci needs swing_high/swing_low
 
-    indicators = pd.DataFrame(index=df.index)
+    # CHANGED: June 2026 — same dict accumulator as compute_all_indicators
+    #   (see WHY there). Build the DataFrame ONCE just before post-processing.
+    _ind = {}
+    _ind_index = df.index
 
     # GROUP A — RSI
     if only is None or 'rsi' in only:
         for period in [7, 14, 21, 28, 50]:
-            indicators[f'{prefix}rsi_{period}'] = ta.momentum.RSIIndicator(
+            _ind[f'{prefix}rsi_{period}'] = ta.momentum.RSIIndicator(
                 close=df['close'], window=period).rsi()
 
     # GROUP B+C — EMA Distance & Cross Signals
     if only is None or 'ema' in only:
         for period in [9, 20, 50, 100, 200]:
             ema = ta.trend.EMAIndicator(close=df['close'], window=period).ema_indicator()
-            indicators[f'{prefix}ema_{period}_distance'] = (df['close'] - ema) / ema * 100
+            _ind[f'{prefix}ema_{period}_distance'] = (df['close'] - ema) / ema * 100
         ema_9   = ta.trend.EMAIndicator(close=df['close'], window=9).ema_indicator()
         ema_20  = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         ema_50  = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
         ema_200 = ta.trend.EMAIndicator(close=df['close'], window=200).ema_indicator()
-        indicators[f'{prefix}ema_9_above_20']   = (ema_9  > ema_20).astype(int)
-        indicators[f'{prefix}ema_20_above_50']  = (ema_20 > ema_50).astype(int)
-        indicators[f'{prefix}ema_50_above_200'] = (ema_50 > ema_200).astype(int)
-        indicators[f'{prefix}ema_9_above_200']  = (ema_9  > ema_200).astype(int)
+        _ind[f'{prefix}ema_9_above_20']   = (ema_9  > ema_20).astype(int)
+        _ind[f'{prefix}ema_20_above_50']  = (ema_20 > ema_50).astype(int)
+        _ind[f'{prefix}ema_50_above_200'] = (ema_50 > ema_200).astype(int)
+        _ind[f'{prefix}ema_9_above_200']  = (ema_9  > ema_200).astype(int)
 
     # GROUP D — SMA Distance
     if only is None or 'sma' in only:
         for period in [20, 50, 200]:
             sma = ta.trend.SMAIndicator(close=df['close'], window=period).sma_indicator()
-            indicators[f'{prefix}sma_{period}_distance'] = (df['close'] - sma) / sma * 100
+            _ind[f'{prefix}sma_{period}_distance'] = (df['close'] - sma) / sma * 100
 
     # GROUP E — MACD
     if only is None or 'macd' in only:
         macd_std = ta.trend.MACD(close=df['close'], window_slow=26, window_fast=12, window_sign=9)
-        indicators[f'{prefix}macd_std']        = macd_std.macd()
-        indicators[f'{prefix}macd_std_signal'] = macd_std.macd_signal()
-        indicators[f'{prefix}macd_std_diff']   = macd_std.macd_diff()
+        _ind[f'{prefix}macd_std']        = macd_std.macd()
+        _ind[f'{prefix}macd_std_signal'] = macd_std.macd_signal()
+        _ind[f'{prefix}macd_std_diff']   = macd_std.macd_diff()
         macd_fast = ta.trend.MACD(close=df['close'], window_slow=13, window_fast=5, window_sign=5)
-        indicators[f'{prefix}macd_fast']        = macd_fast.macd()
-        indicators[f'{prefix}macd_fast_signal'] = macd_fast.macd_signal()
-        indicators[f'{prefix}macd_fast_diff']   = macd_fast.macd_diff()
+        _ind[f'{prefix}macd_fast']        = macd_fast.macd()
+        _ind[f'{prefix}macd_fast_signal'] = macd_fast.macd_signal()
+        _ind[f'{prefix}macd_fast_diff']   = macd_fast.macd_diff()
 
     # GROUP F — ATR
     if only is None or 'atr' in only:
         for period in [7, 14, 21, 28, 50, 100]:
-            indicators[f'{prefix}atr_{period}'] = ta.volatility.AverageTrueRange(
+            _ind[f'{prefix}atr_{period}'] = ta.volatility.AverageTrueRange(
                 high=df['high'], low=df['low'], close=df['close'], window=period
             ).average_true_range()
 
@@ -867,17 +880,17 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     if only is None or 'bb' in only:
         for period, std in [(20, 2), (20, 3)]:
             bb = ta.volatility.BollingerBands(close=df['close'], window=period, window_dev=std)
-            indicators[f'{prefix}bb_{period}_{std}_upper'] = bb.bollinger_hband()
-            indicators[f'{prefix}bb_{period}_{std}_lower'] = bb.bollinger_lband()
-            indicators[f'{prefix}bb_{period}_{std}_width'] = bb.bollinger_wband()
+            _ind[f'{prefix}bb_{period}_{std}_upper'] = bb.bollinger_hband()
+            _ind[f'{prefix}bb_{period}_{std}_lower'] = bb.bollinger_lband()
+            _ind[f'{prefix}bb_{period}_{std}_width'] = bb.bollinger_wband()
         bb_50 = ta.volatility.BollingerBands(close=df['close'], window=50, window_dev=2)
-        indicators[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
+        _ind[f'{prefix}bb_50_2_width'] = bb_50.bollinger_wband()
 
     # GROUP H — ADX (ta library) + MT5-parity ADX
     if only is None or 'adx' in only:
         for period in [14, 21, 28]:
             adx = ta.trend.ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=period)
-            indicators[f'{prefix}adx_{period}'] = adx.adx()
+            _ind[f'{prefix}adx_{period}'] = adx.adx()
     # WHY: mt5_adx uses Wilder's smoothing to match iADX — for MT5 prop firms.
     # CHANGED: May 2026 — MT5-parity ADX as parallel indicator
     if only is None or 'mt5_adx' in only or 'adx' in only:
@@ -887,9 +900,9 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         # CHANGED: May 2026 — added period 21
         for period in [14, 21, 28]:
             _adx_v, _pdi_v, _mdi_v = _mt5_adx(df['high'], df['low'], df['close'], period)
-            indicators[f'{prefix}mt5_adx_{period}'] = _adx_v
-            indicators[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
-            indicators[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
+            _ind[f'{prefix}mt5_adx_{period}'] = _adx_v
+            _ind[f'{prefix}mt5_adx_{period}_plus_di']  = _pdi_v
+            _ind[f'{prefix}mt5_adx_{period}_minus_di'] = _mdi_v
 
     # GROUP I — Stochastic
     if only is None or 'stoch' in only:
@@ -897,34 +910,34 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
             stoch = ta.momentum.StochasticOscillator(
                 high=df['high'], low=df['low'], close=df['close'],
                 window=period, smooth_window=3)
-            indicators[f'{prefix}stoch_{period}_k'] = stoch.stoch()
-            indicators[f'{prefix}stoch_{period}_d'] = stoch.stoch_signal()
+            _ind[f'{prefix}stoch_{period}_k'] = stoch.stoch()
+            _ind[f'{prefix}stoch_{period}_d'] = stoch.stoch_signal()
 
     # GROUP J — CCI
     if only is None or 'cci' in only:
         for period in [14, 20, 50]:
-            indicators[f'{prefix}cci_{period}'] = ta.trend.CCIIndicator(
+            _ind[f'{prefix}cci_{period}'] = ta.trend.CCIIndicator(
                 high=df['high'], low=df['low'], close=df['close'], window=period).cci()
 
     # GROUP K — Williams %R
     if only is None or 'williams_r' in only:
         for period in [14, 28]:
-            indicators[f'{prefix}williams_r_{period}'] = ta.momentum.WilliamsRIndicator(
+            _ind[f'{prefix}williams_r_{period}'] = ta.momentum.WilliamsRIndicator(
                 high=df['high'], low=df['low'], close=df['close'], lbp=period).williams_r()
 
     # GROUP L — Volume
     if only is None or 'volume' in only:
         vol_sma20 = df['volume'].rolling(window=20).mean()
-        indicators[f'{prefix}volume_ratio_20'] = df['volume'] / vol_sma20
-        indicators[f'{prefix}volume_change']   = df['volume'].pct_change()
-        indicators[f'{prefix}obv'] = ta.volume.OnBalanceVolumeIndicator(
+        _ind[f'{prefix}volume_ratio_20'] = df['volume'] / vol_sma20
+        _ind[f'{prefix}volume_change']   = df['volume'].pct_change()
+        _ind[f'{prefix}obv'] = ta.volume.OnBalanceVolumeIndicator(
             close=df['close'], volume=df['volume']).on_balance_volume()
-        indicators[f'{prefix}vpt'] = ta.volume.VolumePriceTrendIndicator(
+        _ind[f'{prefix}vpt'] = ta.volume.VolumePriceTrendIndicator(
             close=df['close'], volume=df['volume']).volume_price_trend()
-        indicators[f'{prefix}cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
+        _ind[f'{prefix}cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
             high=df['high'], low=df['low'], close=df['close'],
             volume=df['volume'], window=20).chaikin_money_flow()
-        indicators[f'{prefix}mfi'] = ta.volume.MFIIndicator(
+        _ind[f'{prefix}mfi'] = ta.volume.MFIIndicator(
             high=df['high'], low=df['low'], close=df['close'],
             volume=df['volume'], window=14).money_flow_index()
 
@@ -932,80 +945,80 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     if only is None or 'price_action' in only:
         candle_body  = abs(df['close'] - df['open'])
         candle_range = df['high'] - df['low']
-        indicators[f'{prefix}candle_body']             = candle_body
-        indicators[f'{prefix}candle_range']            = candle_range
-        indicators[f'{prefix}upper_shadow']            = df['high'] - df[['close', 'open']].max(axis=1)
-        indicators[f'{prefix}lower_shadow']            = df[['close', 'open']].min(axis=1) - df['low']
-        indicators[f'{prefix}body_to_range_ratio']     = candle_body / candle_range.replace(0, np.nan)
-        indicators[f'{prefix}is_bullish']              = (df['close'] > df['open']).astype(int)
-        indicators[f'{prefix}close_position_in_range'] = (df['close'] - df['low']) / candle_range.replace(0, np.nan)
-        indicators[f'{prefix}distance_from_high']      = (df['high'] - df['close']) / df['close'] * 100
+        _ind[f'{prefix}candle_body']             = candle_body
+        _ind[f'{prefix}candle_range']            = candle_range
+        _ind[f'{prefix}upper_shadow']            = df['high'] - df[['close', 'open']].max(axis=1)
+        _ind[f'{prefix}lower_shadow']            = df[['close', 'open']].min(axis=1) - df['low']
+        _ind[f'{prefix}body_to_range_ratio']     = candle_body / candle_range.replace(0, np.nan)
+        _ind[f'{prefix}is_bullish']              = (df['close'] > df['open']).astype(int)
+        _ind[f'{prefix}close_position_in_range'] = (df['close'] - df['low']) / candle_range.replace(0, np.nan)
+        _ind[f'{prefix}distance_from_high']      = (df['high'] - df['close']) / df['close'] * 100
 
     # GROUP N — Swing High/Low
     if only is None or 'swing' in only:
         sp = 50
         sw_high = df['high'].rolling(window=sp).max()
         sw_low  = df['low'].rolling(window=sp).min()
-        indicators[f'{prefix}swing_high_{sp}']       = sw_high
-        indicators[f'{prefix}swing_low_{sp}']        = sw_low
-        indicators[f'{prefix}distance_to_swing_high'] = (sw_high - df['close']) / df['close'] * 100
-        indicators[f'{prefix}distance_to_swing_low']  = (df['close'] - sw_low) / df['close'] * 100
+        _ind[f'{prefix}swing_high_{sp}']       = sw_high
+        _ind[f'{prefix}swing_low_{sp}']        = sw_low
+        _ind[f'{prefix}distance_to_swing_high'] = (sw_high - df['close']) / df['close'] * 100
+        _ind[f'{prefix}distance_to_swing_low']  = (df['close'] - sw_low) / df['close'] * 100
         swing_range = sw_high - sw_low
-        indicators[f'{prefix}position_in_swing_range'] = (
+        _ind[f'{prefix}position_in_swing_range'] = (
             df['close'] - sw_low) / swing_range.replace(0, np.nan)
 
     # GROUP O — Rate of Change
     if only is None or 'roc' in only:
         # Phase 76 Fix 28: skip roc_1 (same as above)
         for period in [5, 10, 20, 50]:
-            indicators[f'{prefix}roc_{period}'] = (
+            _ind[f'{prefix}roc_{period}'] = (
                 (df['close'] - df['close'].shift(period)) / df['close'].shift(period) * 100)
 
     # GROUP P — Session/Time
     if only is None or 'session' in only:
         ts = pd.to_datetime(df['timestamp'])
-        indicators[f'{prefix}hour_of_day']       = ts.dt.hour
-        indicators[f'{prefix}day_of_week']       = ts.dt.dayofweek
-        indicators[f'{prefix}day_of_month']      = ts.dt.day
+        _ind[f'{prefix}hour_of_day']       = ts.dt.hour
+        _ind[f'{prefix}day_of_week']       = ts.dt.dayofweek
+        _ind[f'{prefix}day_of_month']      = ts.dt.day
         # WHY: Same non-overlapping session fix as the main compute path.
         # CHANGED: April 2026 — non-overlapping sessions (audit HIGH #54)
         _hr2 = ts.dt.hour
-        indicators[f'{prefix}is_asian_session']  = ((_hr2 >= 0) & (_hr2 <= 6)).astype(int)
-        indicators[f'{prefix}is_london_session'] = ((_hr2 >= 7) & (_hr2 <= 11)).astype(int)
-        indicators[f'{prefix}is_ny_session']     = ((_hr2 >= 12) & (_hr2 <= 20)).astype(int)
-        indicators[f'{prefix}is_late_session']   = ((_hr2 >= 21) & (_hr2 <= 23)).astype(int)
-        indicators[f'{prefix}is_weekend']        = (ts.dt.dayofweek >= 5).astype(int)
+        _ind[f'{prefix}is_asian_session']  = ((_hr2 >= 0) & (_hr2 <= 6)).astype(int)
+        _ind[f'{prefix}is_london_session'] = ((_hr2 >= 7) & (_hr2 <= 11)).astype(int)
+        _ind[f'{prefix}is_ny_session']     = ((_hr2 >= 12) & (_hr2 <= 20)).astype(int)
+        _ind[f'{prefix}is_late_session']   = ((_hr2 >= 21) & (_hr2 <= 23)).astype(int)
+        _ind[f'{prefix}is_weekend']        = (ts.dt.dayofweek >= 5).astype(int)
 
     # GROUP Q — Rolling range levels (NOT Fibonacci)
     # WHY: Same honest rename as the main compute path. See audit MED #53.
     # CHANGED: April 2026 — renamed fib to rolling_level
     if only is None or 'fib' in only or 'rolling_level' in only:
         sp   = 50
-        sw_h = indicators.get(f'{prefix}swing_high_{sp}', df['high'].rolling(sp).max())
-        sw_l = indicators.get(f'{prefix}swing_low_{sp}',  df['low'].rolling(sp).min())
+        sw_h = _ind.get(f'{prefix}swing_high_{sp}', df['high'].rolling(sp).max())
+        sw_l = _ind.get(f'{prefix}swing_low_{sp}',  df['low'].rolling(sp).min())
         rng_range = sw_h - sw_l
         for level, ratio in [('236', 0.236), ('382', 0.382), ('500', 0.500),
                               ('618', 0.618), ('786', 0.786)]:
-            indicators[f'{prefix}distance_to_rolling_level_{level}'] = (
+            _ind[f'{prefix}distance_to_rolling_level_{level}'] = (
                 (df['close'] - (sw_l + ratio * rng_range)) / df['close'] * 100)
 
     # GROUP R — Ichimoku
     if only is None or 'ichimoku' in only:
         ich = ta.trend.IchimokuIndicator(
             high=df['high'], low=df['low'], window1=9, window2=26, window3=52)
-        indicators[f'{prefix}ichimoku_conversion'] = ich.ichimoku_conversion_line()
-        indicators[f'{prefix}ichimoku_base']       = ich.ichimoku_base_line()
+        _ind[f'{prefix}ichimoku_conversion'] = ich.ichimoku_conversion_line()
+        _ind[f'{prefix}ichimoku_base']       = ich.ichimoku_base_line()
         ich_a = ich.ichimoku_a()
-        indicators[f'{prefix}ichimoku_a']          = ich_a
-        indicators[f'{prefix}ichimoku_b']          = ich.ichimoku_b()
-        indicators[f'{prefix}price_above_cloud']   = (df['close'].values > ich_a.values).astype(int)
+        _ind[f'{prefix}ichimoku_a']          = ich_a
+        _ind[f'{prefix}ichimoku_b']          = ich.ichimoku_b()
+        _ind[f'{prefix}price_above_cloud']   = (df['close'].values > ich_a.values).astype(int)
 
     # GROUP S — Parabolic SAR
     if only is None or 'psar' in only:
         psar_ind = ta.trend.PSARIndicator(high=df['high'], low=df['low'], close=df['close'])
         psar_vals = psar_ind.psar()
-        indicators[f'{prefix}psar']        = psar_vals
-        indicators[f'{prefix}psar_signal'] = (df['close'].values > psar_vals.values).astype(int)
+        _ind[f'{prefix}psar']        = psar_vals
+        _ind[f'{prefix}psar_signal'] = (df['close'].values > psar_vals.values).astype(int)
 
     # GROUP T — VWAP
     # WHY: Same daily-reset fix as compute_all_indicators above.
@@ -1014,8 +1027,8 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         tp          = (df['high'] + df['low'] + df['close']) / 3
         _dg         = pd.to_datetime(df['timestamp']).dt.normalize()
         vwap        = (tp * df['volume']).groupby(_dg).cumsum() / df['volume'].groupby(_dg).cumsum()
-        indicators[f'{prefix}vwap']          = vwap
-        indicators[f'{prefix}vwap_distance'] = (df['close'] - vwap) / vwap * 100
+        _ind[f'{prefix}vwap']          = vwap
+        _ind[f'{prefix}vwap_distance'] = (df['close'] - vwap) / vwap * 100
 
     # GROUP U — ATR Bands (renamed from supertrend — see compute_all_indicators for WHY)
     # CHANGED: April 2026 — rename supertrend_upper/lower → atr_band_upper/lower (audit MED)
@@ -1023,8 +1036,8 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         atr_10 = ta.volatility.AverageTrueRange(
             high=df['high'], low=df['low'], close=df['close'], window=10).average_true_range()
         hl_avg = (df['high'] + df['low']) / 2
-        indicators[f'{prefix}atr_band_upper'] = hl_avg + (3 * atr_10)
-        indicators[f'{prefix}atr_band_lower'] = hl_avg - (3 * atr_10)
+        _ind[f'{prefix}atr_band_upper'] = hl_avg + (3 * atr_10)
+        _ind[f'{prefix}atr_band_lower'] = hl_avg - (3 * atr_10)
 
     # GROUP V — Pivot Points
     if only is None or 'pivot' in only:
@@ -1032,85 +1045,85 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         pl = df['low'].shift(1)
         pc = df['close'].shift(1)
         pivot = (ph + pl + pc) / 3
-        indicators[f'{prefix}pivot_point']  = pivot
-        indicators[f'{prefix}resistance_1'] = 2 * pivot - pl
-        indicators[f'{prefix}support_1']    = 2 * pivot - ph
-        indicators[f'{prefix}resistance_2'] = pivot + (ph - pl)
-        indicators[f'{prefix}support_2']    = pivot - (ph - pl)
-        indicators[f'{prefix}resistance_3'] = ph + 2 * (pivot - pl)
-        indicators[f'{prefix}support_3']    = pl - 2 * (ph - pivot)
+        _ind[f'{prefix}pivot_point']  = pivot
+        _ind[f'{prefix}resistance_1'] = 2 * pivot - pl
+        _ind[f'{prefix}support_1']    = 2 * pivot - ph
+        _ind[f'{prefix}resistance_2'] = pivot + (ph - pl)
+        _ind[f'{prefix}support_2']    = pivot - (ph - pl)
+        _ind[f'{prefix}resistance_3'] = ph + 2 * (pivot - pl)
+        _ind[f'{prefix}support_3']    = pl - 2 * (ph - pivot)
 
     # GROUP W — DMI Components
     if only is None or 'dmi' in only:
         adx_ind = ta.trend.ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=14)
-        indicators[f'{prefix}plus_di']  = adx_ind.adx_pos()
-        indicators[f'{prefix}minus_di'] = adx_ind.adx_neg()
+        _ind[f'{prefix}plus_di']  = adx_ind.adx_pos()
+        _ind[f'{prefix}minus_di'] = adx_ind.adx_neg()
 
     # GROUP X — Keltner Channels
     if only is None or 'keltner' in only:
         kc = ta.volatility.KeltnerChannel(
             high=df['high'], low=df['low'], close=df['close'], window=20)
-        indicators[f'{prefix}keltner_upper'] = kc.keltner_channel_hband()
-        indicators[f'{prefix}keltner_lower'] = kc.keltner_channel_lband()
-        indicators[f'{prefix}keltner_width'] = kc.keltner_channel_wband()
+        _ind[f'{prefix}keltner_upper'] = kc.keltner_channel_hband()
+        _ind[f'{prefix}keltner_lower'] = kc.keltner_channel_lband()
+        _ind[f'{prefix}keltner_width'] = kc.keltner_channel_wband()
 
     # GROUP Y — Donchian Channels
     if only is None or 'donchian' in only:
         dc = ta.volatility.DonchianChannel(
             high=df['high'], low=df['low'], close=df['close'], window=20)
-        indicators[f'{prefix}donchian_upper']  = dc.donchian_channel_hband()
-        indicators[f'{prefix}donchian_lower']  = dc.donchian_channel_lband()
-        indicators[f'{prefix}donchian_middle'] = dc.donchian_channel_mband()
+        _ind[f'{prefix}donchian_upper']  = dc.donchian_channel_hband()
+        _ind[f'{prefix}donchian_lower']  = dc.donchian_channel_lband()
+        _ind[f'{prefix}donchian_middle'] = dc.donchian_channel_mband()
 
     # GROUP Z — Aroon
     if only is None or 'aroon' in only:
         aroon = ta.trend.AroonIndicator(high=df['high'], low=df['low'], window=25)
-        indicators[f'{prefix}aroon_up']        = aroon.aroon_up()
-        indicators[f'{prefix}aroon_down']      = aroon.aroon_down()
-        indicators[f'{prefix}aroon_indicator'] = aroon.aroon_indicator()
+        _ind[f'{prefix}aroon_up']        = aroon.aroon_up()
+        _ind[f'{prefix}aroon_down']      = aroon.aroon_down()
+        _ind[f'{prefix}aroon_indicator'] = aroon.aroon_indicator()
 
     # GROUP AA — Elder Ray (Bull/Bear Power)
     if only is None or 'elder_ray' in only:
         ema_13 = ta.trend.EMAIndicator(close=df['close'], window=13).ema_indicator()
-        indicators[f'{prefix}bull_power'] = df['high'] - ema_13
-        indicators[f'{prefix}bear_power'] = df['low']  - ema_13
+        _ind[f'{prefix}bull_power'] = df['high'] - ema_13
+        _ind[f'{prefix}bear_power'] = df['low']  - ema_13
 
     # GROUP AB — TSI
     if only is None or 'tsi' in only:
         tsi = ta.momentum.TSIIndicator(close=df['close'], window_slow=25, window_fast=13)
-        indicators[f'{prefix}tsi'] = tsi.tsi()
+        _ind[f'{prefix}tsi'] = tsi.tsi()
 
     # GROUP AC — KST
     if only is None or 'kst' in only:
         kst_ind = ta.trend.KSTIndicator(close=df['close'])
-        indicators[f'{prefix}kst']        = kst_ind.kst()
-        indicators[f'{prefix}kst_signal'] = kst_ind.kst_sig()
+        _ind[f'{prefix}kst']        = kst_ind.kst()
+        _ind[f'{prefix}kst_signal'] = kst_ind.kst_sig()
 
     # GROUP AD — Ultimate Oscillator
     if only is None or 'uo' in only:
         uo = ta.momentum.UltimateOscillator(
             high=df['high'], low=df['low'], close=df['close'])
-        indicators[f'{prefix}ultimate_oscillator'] = uo.ultimate_oscillator()
+        _ind[f'{prefix}ultimate_oscillator'] = uo.ultimate_oscillator()
 
     # GROUP AE — Awesome Oscillator
     if only is None or 'ao' in only:
         ao = ta.momentum.AwesomeOscillatorIndicator(high=df['high'], low=df['low'])
-        indicators[f'{prefix}awesome_oscillator'] = ao.awesome_oscillator()
+        _ind[f'{prefix}awesome_oscillator'] = ao.awesome_oscillator()
 
     # GROUP AF — Mass Index
     if only is None or 'mass_index' in only:
         mi = ta.trend.MassIndex(high=df['high'], low=df['low'])
-        indicators[f'{prefix}mass_index'] = mi.mass_index()
+        _ind[f'{prefix}mass_index'] = mi.mass_index()
 
     # GROUP AG — DPO
     if only is None or 'dpo' in only:
         dpo_ind = ta.trend.DPOIndicator(close=df['close'], window=20)
-        indicators[f'{prefix}dpo'] = dpo_ind.dpo()
+        _ind[f'{prefix}dpo'] = dpo_ind.dpo()
 
     # GROUP AH — Standard Deviation
     if only is None or 'std_dev' in only:
-        indicators[f'{prefix}std_dev_20'] = df['close'].rolling(window=20).std()
-        indicators[f'{prefix}std_dev_50'] = df['close'].rolling(window=50).std()
+        _ind[f'{prefix}std_dev_20'] = df['close'].rolling(window=20).std()
+        _ind[f'{prefix}std_dev_50'] = df['close'].rolling(window=50).std()
 
     # ── MT5-compatible indicators (Wilder's smoothing) ────────────────────
     # WHY: MT5 built-ins use Wilder's smoothing, not standard EMA.
@@ -1118,34 +1131,34 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     # CHANGED: April 2026 — MT5 indicator parity
     if only is None or 'mt5_rsi' in only or 'rsi' in only:
         for period in [7, 14, 21, 28, 50]:
-            indicators[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(df['close'], period)
+            _ind[f'{prefix}mt5_rsi_{period}'] = _mt5_rsi(df['close'], period)
 
     if only is None or 'mt5_atr' in only or 'atr' in only:
         for period in [7, 14, 21, 28, 50, 100]:
-            indicators[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
+            _ind[f'{prefix}mt5_atr_{period}'] = _mt5_atr(
                 df['high'], df['low'], df['close'], period)
 
     if only is None or 'mt5_macd' in only or 'macd' in only:
         _m_std, _ms_std, _md_std = _mt5_macd(df['close'], 12, 26, 9)
-        indicators[f'{prefix}mt5_macd_std'] = _m_std
-        indicators[f'{prefix}mt5_macd_std_signal'] = _ms_std
-        indicators[f'{prefix}mt5_macd_std_diff'] = _md_std
+        _ind[f'{prefix}mt5_macd_std'] = _m_std
+        _ind[f'{prefix}mt5_macd_std_signal'] = _ms_std
+        _ind[f'{prefix}mt5_macd_std_diff'] = _md_std
         _m_fast, _ms_fast, _md_fast = _mt5_macd(df['close'], 5, 13, 5)
-        indicators[f'{prefix}mt5_macd_fast'] = _m_fast
-        indicators[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
-        indicators[f'{prefix}mt5_macd_fast_diff'] = _md_fast
+        _ind[f'{prefix}mt5_macd_fast'] = _m_fast
+        _ind[f'{prefix}mt5_macd_fast_signal'] = _ms_fast
+        _ind[f'{prefix}mt5_macd_fast_diff'] = _md_fast
 
     if only is None or 'mt5_stoch' in only or 'stoch' in only:
         for period in [14, 21]:
             _k, _d = _mt5_stochastic(
                 df['high'], df['low'], df['close'], period)
-            indicators[f'{prefix}mt5_stoch_{period}_k'] = _k
-            indicators[f'{prefix}mt5_stoch_{period}_d'] = _d
+            _ind[f'{prefix}mt5_stoch_{period}_k'] = _k
+            _ind[f'{prefix}mt5_stoch_{period}_d'] = _d
 
     if only is None or 'mt5_ema' in only or 'ema' in only:
         for period in [9, 20, 50, 100, 200]:
             mt5_ema = _mt5_ema(df['close'], period)
-            indicators[f'{prefix}mt5_ema_{period}_distance'] = (
+            _ind[f'{prefix}mt5_ema_{period}_distance'] = (
                 (df['close'] - mt5_ema) / mt5_ema * 100)
 
     # WHY: bfill() fills warmup-period NaN with FUTURE values — the trader
@@ -1155,6 +1168,10 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
     #      rows will remain NaN and be handled by the sentinel-based NaN
     #      fill in the downstream pipeline.
     # CHANGED: April 2026 — remove bfill leak (audit bug: indicator_utils)
+    # CHANGED: June 2026 — build the DataFrame ONCE from the accumulated dict
+    #   (see _ind = {} init above). Eliminates per-assignment fragmentation /
+    #   pandas PerformanceWarning. Values identical to the previous code.
+    indicators = pd.DataFrame(_ind, index=_ind_index)
     indicators = indicators.ffill()
 
     # Use timestamp as index so reset_index() yields a named 'timestamp' column
