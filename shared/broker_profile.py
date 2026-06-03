@@ -158,6 +158,16 @@ def apply_profile(blob: str, firm_name: str, dry_run: bool = False) -> dict:
     firm['leverage'] = prof.get('account_leverage', firm.get('leverage'))
     firm['gmt_offset_hours_observed'] = gmt_off
     firm['broker_company_observed']   = prof.get('broker_company')
+    # WHY: Canonical broker timezone used by P1 discovery and P2 backtest for
+    #      DST-correct hour/session normalization. gmt_offset_hours_observed
+    #      is REFERENCE ONLY — never use it as a fixed conversion offset
+    #      (the broker observes DST; a fixed offset is wrong half the year).
+    #      Default to Europe/Athens (EET/EEST) — the standard MT5 server
+    #      zone matching the observed +2/+3 pattern. If the firm uses a
+    #      different DST calendar, set firm['broker_timezone'] manually
+    #      after running apply_profile.
+    # CHANGED: June 2026 — persist canonical broker_timezone (IANA zone)
+    firm.setdefault('broker_timezone', 'Europe/Athens')
 
     sh_srv, eh_srv = derive_no_trades_window(prof.get('trade_sessions_minutes', {}))
     sh_gmt = to_gmt_hour(sh_srv, gmt_off)

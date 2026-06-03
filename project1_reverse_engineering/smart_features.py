@@ -355,39 +355,45 @@ def _add_alignment_scores(df):
 
 _session_tz_warned = [False]
 
-def _add_session_intelligence(df):
+def _add_session_intelligence(df, firm_data=None):
     """Session timing features.
 
-    WHY (Phase 42 Fix 3): hour_of_day is whatever timezone step1's
-         auto-detected offset produced — typically broker time, NOT
-         UTC. The session names below assume UTC: London=7-16, NY=13-22,
-         Asian=0-8. If the user's broker is on EET (UTC+2), all session
-         labels are shifted by 2 hours from what they should be, and
-         rules learned in training won't fire at the right times in
-         live trading. Real fix needs upstream timezone tagging in
-         step1 and a tz->UTC normalization here. Until then, log a
-         one-shot warning so the user knows the session features are
-         only meaningful if hour_of_day was already in UTC.
-    CHANGED: April 2026 — Phase 42 Fix 3 — timezone warning
-             (audit Part D HIGH #7)
+    WHY (June 2026 DST fix): The session bucket names below (London=7-16,
+         NY=13-22, Asian=0-8) are GMT/UTC labels. step2_compute_indicators
+         now writes `hour_of_day` as DST-correct UTC via IANA-zone
+         localization (Europe/Athens default), so that column is already
+         the right clock. For defense-in-depth — when `open_time` is
+         present we recompute the UTC hour here from the broker-local
+         timestamp and use it directly for bucketing, so this function
+         is correct regardless of the upstream column's provenance.
+
+         Previously this function read raw broker-local hours and only
+         emitted a warning that sessions might be 2 hours off; under
+         DST that drift was 2 OR 3 hours and shifted with the seasons.
+    CHANGED: June 2026 — IANA-zone DST-correct session bucketing
+             (replaces Phase 42 Fix 3 warning-only path)
     """
-    if 'hour_of_day' not in df.columns:
+    if 'hour_of_day' not in df.columns and 'open_time' not in df.columns:
         return df
-    if not _session_tz_warned[0]:
-        _session_tz_warned[0] = True
+    # Prefer DST-correct UTC hour computed here from open_time when
+    # available; otherwise fall back to the hour_of_day column (which
+    # step2 now writes as UTC). Either way `hour` ends up UTC.
+    if 'open_time' in df.columns:
         try:
-            from shared.logging_setup import get_logger
-            _log = get_logger(__name__)
-            _log.warning(
-                "[SMART_FEATURES] _add_session_intelligence: hour_of_day "
-                "timezone is not verified — features assume UTC labeling "
-                "(London=7-16, NY=13-22). If your broker exports trades "
-                "in non-UTC time, sessions will be misaligned vs live EA. "
-                "(Warning shown once per session.)"
-            )
+            from shared.tz_offset import resolve_broker_tz
+            import pandas as pd
+            _tz = resolve_broker_tz(firm_data=firm_data)
+            _local = pd.to_datetime(df['open_time'])
+            if _local.dt.tz is None:
+                _utc = (_local.dt.tz_localize(_tz, ambiguous='NaT', nonexistent='NaT')
+                               .dt.tz_convert('UTC'))
+            else:
+                _utc = _local.dt.tz_convert('UTC')
+            hour = _utc.dt.hour.fillna(df['hour_of_day']).astype(int).values
         except Exception:
-            pass
-    hour = df['hour_of_day'].values
+            hour = df['hour_of_day'].values
+    else:
+        hour = df['hour_of_day'].values
     # WHY (Phase 42 Fix 2): Old code had hour 13 in BOTH
     #      is_london_ny_overlap (>= 13 & <= 16) and is_pre_ny
     #      (>= 12 & <= 13). Self-contradictory: a rule like
