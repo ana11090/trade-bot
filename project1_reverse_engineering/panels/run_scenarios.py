@@ -3324,6 +3324,15 @@ def build_panel(parent):
                                            insertbackground="white")
     output_text.pack(fill="both", expand=True)
 
+    # WHY: Make rule DIRECTION visible at a glance in the run log — BUY green,
+    #      SELL red/orange, the "Extracted N rules" tallies bold. Discovery
+    #      already produces both directions (analyze.py detects direction from
+    #      the data); this is display only.
+    # CHANGED: June 2026 — color BUY/SELL in run output
+    output_text.tag_config("dir_buy",   foreground="#2ecc71")   # green (visible on dark bg)
+    output_text.tag_config("dir_sell",  foreground="#e74c3c")   # red
+    output_text.tag_config("dir_tally", font=("Consolas", 10, "bold"))
+
     output_text.insert(tk.END, "Ready to run scenarios.\n")
     output_text.insert(tk.END, "Select scenarios from the left and click Run.\n\n")
 
@@ -3896,9 +3905,39 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
             results = {}
 
+            # WHY (CHANGE 3): Per-scenario BUY/SELL tally surfaces both
+            #      directions in one bold line at the end of each scenario.
+            #      Accumulated from the per-step captured stdout below where
+            #      the subprocess prints e.g. "6 BUY rules + 0 SELL rules".
+            # CHANGED: June 2026 — per-scenario direction tally
+            _dir_counts = {}   # scenario -> [buys, sells]
+
             for scenario in selected:
                 def log(msg):
-                    output_text.after(0, lambda m=msg: output_text.insert(tk.END, m + "\n"))
+                    # WHY (CHANGE 2): Tag each streamed line by direction so
+                    #      BUY/SELL stand out — BUY green, SELL red, the
+                    #      "Extracted N rules" tallies bold. Keywords come
+                    #      from the existing subprocess output ([BUY]/[SELL],
+                    #      'Direction: BUY', 'BUY_'/'SELL_' rule ids,
+                    #      'Extracted N rules'). Display only; no logic
+                    #      change in the callers.
+                    # CHANGED: June 2026 — colored direction tagging
+                    _u = msg.upper()
+                    if "EXTRACTED" in _u and "RULE" in _u:
+                        _tag = "dir_tally"
+                    elif "[SELL]" in _u or "SELL_" in _u or "DIRECTION: SELL" in _u:
+                        _tag = "dir_sell"
+                    elif "[BUY]" in _u or "BUY_" in _u or "DIRECTION: BUY" in _u:
+                        _tag = "dir_buy"
+                    else:
+                        _tag = None
+
+                    def _do_insert(m=msg, t=_tag):
+                        if t:
+                            output_text.insert(tk.END, m + "\n", t)
+                        else:
+                            output_text.insert(tk.END, m + "\n")
+                    output_text.after(0, _do_insert)
                     output_text.after(0, lambda: output_text.see(tk.END))
 
                 def update_progress(msg):
@@ -3959,9 +3998,23 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                                 captured = buffer.getvalue()
 
                         if captured:
+                            # WHY (CHANGE 3): Parse the "N BUY rules + M SELL"
+                            #      line from the A.35 directional extraction
+                            #      summary; accumulate into _dir_counts so we
+                            #      can emit a bold tally when the scenario
+                            #      completes. Streams to log unchanged.
+                            # CHANGED: June 2026 — accumulate BUY/SELL per scenario
+                            import re as _re_dir
                             for line in captured.split('\n'):
                                 if line.strip():
                                     log(f"  {line}")
+                                _mt = _re_dir.search(
+                                    r'(\d+)\s+BUY\s+rules?\s*\+\s*(\d+)\s+SELL',
+                                    line)
+                                if _mt:
+                                    _dc = _dir_counts.setdefault(scenario, [0, 0])
+                                    _dc[0] += int(_mt.group(1))
+                                    _dc[1] += int(_mt.group(2))
 
                         completed_steps[0] += 1
                         # WHY (Phase A.37.1): pass total_steps explicitly.
@@ -3992,6 +4045,18 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     log(f"\n✓ SCENARIO {scenario} COMPLETED SUCCESSFULLY\n")
                 else:
                     log(f"\n✗ SCENARIO {scenario} FAILED\n")
+
+                # WHY (CHANGE 3): Surface a clear BUY vs SELL tally per
+                #      scenario so the user sees both directions were
+                #      discovered (the new mixed trade log produces SELL
+                #      rules too). Bold via the dir_tally tag — log()
+                #      routes any line containing 'Extracted...rules' to
+                #      bold, and this format does (case-insensitive match).
+                # CHANGED: June 2026 — per-scenario direction tally emit
+                _dc = _dir_counts.get(scenario)
+                if _dc and (_dc[0] or _dc[1]):
+                    log(f"  ── Direction tally — {scenario}: "
+                        f"{_dc[0]} BUY  |  {_dc[1]} SELL — extracted rules ──")
                     _scenario_failures.append(f"{scenario}: pipeline failed")
                     progress_bar.after(0, lambda: progress_bar.config(
                         style="scenarios.error.Horizontal.TProgressbar"))
