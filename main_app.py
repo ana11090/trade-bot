@@ -157,7 +157,19 @@ def on_content_resize(event):
     _resize_after[0] = window.after(16, _update_scrollregion)
 
 def on_canvas_resize(event):
-    canvas.itemconfig(content_window, width=event.width, height=event.height)
+    # WHY: Forcing the content frame's height to the canvas viewport height
+    #      clamped any content taller than the window — the bottom card's
+    #      controls (e.g. Data Pipeline Step 3 Check/Clean/Save buttons) were
+    #      cut off and could not be scrolled to. Set width only; let height be
+    #      driven by the content so scrollregion (bbox 'all') can reach the
+    #      bottom. If the content is SHORTER than the viewport, stretch it to
+    #      the viewport height so the background still fills the area.
+    # CHANGED: June 2026 — width-only resize; stop clamping content height
+    _content_h = content.winfo_reqheight()
+    if _content_h < event.height:
+        canvas.itemconfig(content_window, width=event.width, height=event.height)
+    else:
+        canvas.itemconfig(content_window, width=event.width)
 
 content.bind("<Configure>", on_content_resize)
 canvas.bind("<Configure>",  on_canvas_resize)
