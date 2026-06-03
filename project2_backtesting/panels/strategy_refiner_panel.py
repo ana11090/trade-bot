@@ -5721,10 +5721,11 @@ def build_panel(parent):
             # the `columns = (...)` tuple below — a stale count makes
             # the guard destroy sel_row's children (including the Load
             # button) on every refresh.
-            # 19 cols: select, star, #, stage, rule, exit, tf, trades, wr, pf,
-            # net_pips, net_dollars, net_pct, avg_pips, avg_dollars, avg_pct,
+            # 20 cols: select, star, #, stage, rule, exit, tf, dir, trades, wr,
+            # pf, net_pips, net_dollars, net_pct, avg_pips, avg_dollars, avg_pct,
             # win_pass, prop_score, del.
-            _expected_col_count = 19
+            # CHANGED: June 2026 — added 'dir' column (BUY/SELL) after tf
+            _expected_col_count = 20
             if has_existing_tree:
                 try:
                     _existing_cols = existing_tree['columns']
@@ -5761,7 +5762,8 @@ def build_panel(parent):
                 #      backtest-matrix rows). No re-run needed — the field
                 #      already exists in every JSON path.
                 # CHANGED: May 2026 — Stage column on the refiner grid
-                columns = ("select", "star", "#", "stage", "rule", "exit", "tf", "trades", "wr", "pf",
+                columns = ("select", "star", "#", "stage", "rule", "exit", "tf", "dir",
+                           "trades", "wr", "pf",
                            "net_pips", "net_dollars", "net_pct",
                            "avg_pips", "avg_dollars", "avg_pct",
                            "win_pass",
@@ -5787,6 +5789,11 @@ def build_panel(parent):
                 _strat_tree.heading("rule",       text="Rule")
                 _strat_tree.heading("exit",       text="Exit Strategy")
                 _strat_tree.heading("tf",         text="TF")
+                # WHY: Direction (BUY/SELL) was previously visible only as a
+                #      substring inside the long Rule cell, easy to miss. A
+                #      dedicated column makes side obvious at a glance.
+                # CHANGED: June 2026 — Dir column
+                _strat_tree.heading("dir",        text="Dir")
                 _strat_tree.heading("trades",     text="Trades")
                 _strat_tree.heading("wr",         text="Win Rate")
                 _strat_tree.heading("pf",         text="PF")
@@ -5817,6 +5824,7 @@ def build_panel(parent):
                 _strat_tree.column("rule",       width=160, anchor="w")
                 _strat_tree.column("exit",       width=120, anchor="w")
                 _strat_tree.column("tf",         width=45,  anchor="center")
+                _strat_tree.column("dir",        width=50,  anchor="center")
                 _strat_tree.column("trades",     width=60,  anchor="center")
                 _strat_tree.column("wr",         width=70,  anchor="center")
                 _strat_tree.column("pf",         width=60,  anchor="center")
@@ -6092,10 +6100,31 @@ def build_panel(parent):
                 is_starred = s.get('is_starred', False)
                 source = s.get('source', 'backtest')
                 star_display = "⭐" if is_starred else ""
+                # WHY: Per-row BUY/SELL value for the new Dir column. Prefers
+                #      the resolved 'direction' field strategy_refiner.py now
+                #      writes onto each backtest row; falls back to saved_rule
+                #      action/direction; last resort scans the rule_combo
+                #      string. Empty for separators / truly unknown — Dir cell
+                #      shows blank there rather than guessing BUY.
+                # CHANGED: June 2026 — Dir column value per row
+                _row_dir = str(s.get('direction', '') or '').upper().strip()
+                if _row_dir not in ('BUY', 'SELL', 'BOTH'):
+                    _sr_d = s.get('saved_rule') or {}
+                    _row_dir = str(_sr_d.get('action', '')
+                                   or _sr_d.get('direction', '') or '').upper().strip()
+                if _row_dir not in ('BUY', 'SELL', 'BOTH'):
+                    _rc_scan = str(s.get('rule_combo', '')).upper()
+                    if 'SELL' in _rc_scan:
+                        _row_dir = 'SELL'
+                    elif 'BUY' in _rc_scan:
+                        _row_dir = 'BUY'
+                    else:
+                        _row_dir = ''
 
                 if source == 'separator':
+                    # CHANGED: June 2026 — 20 cells (added Dir column)
                     _strat_tree.insert("", "end", iid=idx, values=(
-                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
+                        "", "", "── Backtest Results ──", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""), tags=("separator",))
                     continue
                 elif source == 'my_rules':
                     # WHY: My Rules rows render like saved rules — same data shape.
@@ -6130,10 +6159,11 @@ def build_panel(parent):
                         _avg_p_s = f"{_ap:+.2f}%"
                     else:
                         _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                    # CHANGED: June 2026 — Dir slot between entry_tf and trades
                     _strat_tree.insert("", "end", iid=idx, values=(
                         _select_glyph(idx),
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
-                        entry_tf_display, int(trades), wr_s_my,
+                        entry_tf_display, _row_dir, int(trades), wr_s_my,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
@@ -6183,10 +6213,11 @@ def build_panel(parent):
                     #      onto each result row at backtest time. Legacy
                     #      rows missing those fields render as "—".
                     # CHANGED: May 2026 — Win Pass at backtest time
+                    # CHANGED: June 2026 — Dir slot between entry_tf and trades
                     _strat_tree.insert("", "end", iid=idx, values=(
                         _select_glyph(idx),
                         star_display, id_display, _stage_cell_for(s), rc, exit_name,
-                        entry_tf_display, int(trades), wr_s_saved,
+                        entry_tf_display, _row_dir, int(trades), wr_s_saved,
                         f"{pf:.2f}",
                         f"{net:+,.0f}", _net_d_s, _net_p_s,
                         f"{avg:+.1f}", _avg_d_s, _avg_p_s,
@@ -6225,10 +6256,11 @@ def build_panel(parent):
                     _avg_p_s  = f"{_ap:+.2f}%"
                 else:
                     _net_d_s = _avg_d_s = _net_p_s = _avg_p_s = "—"
+                # CHANGED: June 2026 — Dir slot between entry_tf and trades
                 _strat_tree.insert("", "end", iid=idx, values=(
                     _select_glyph(idx),
                     star_display, id_display, _stage_cell_for(s), rc, exit_name,
-                    entry_tf_display, int(trades), wr_str,
+                    entry_tf_display, _row_dir, int(trades), wr_str,
                     f"{pf:.2f}",
                     f"{net:+,.0f}", _net_d_s, _net_p_s,
                     f"{avg:+.1f}", _avg_d_s, _avg_p_s,

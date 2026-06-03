@@ -869,6 +869,29 @@ def load_strategy_list():
                             if _rid:
                                 _rc = _rc.replace(_rc.split(' ')[0], _rid, 1)
 
+                        # WHY: Surface each rule's BUY/SELL direction as a
+                        #      first-class field so the refiner grid can show a
+                        #      Direction column. Read from the embedded rule
+                        #      (action → direction), falling back to the
+                        #      BUY/SELL token already in rule_combo. Default ''
+                        #      (unknown) rather than guessing BUY — leaves the
+                        #      Dir cell blank when the data really has neither.
+                        # CHANGED: June 2026 — per-row direction for grid column
+                        _dir_val = ''
+                        _first_r = (r['rules'][0] if isinstance(r.get('rules'), list)
+                                    and r.get('rules') else {})
+                        if isinstance(_first_r, dict):
+                            _dir_val = str(_first_r.get('action', '')
+                                           or _first_r.get('direction', '') or '').upper().strip()
+                        if _dir_val not in ('BUY', 'SELL', 'BOTH'):
+                            _rc_up = str(_rc).upper()
+                            if 'SELL' in _rc_up:
+                                _dir_val = 'SELL'
+                            elif 'BUY' in _rc_up:
+                                _dir_val = 'BUY'
+                            else:
+                                _dir_val = ''
+
                         results.append({
                             'index':             i,
                             'source':            'backtest',
@@ -876,6 +899,7 @@ def load_strategy_list():
                                                   f"{'  [' + r.get('entry_tf','') + ']' if r.get('entry_tf','') else ''}"
                                                   f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),
                             'rule_combo':        _rc,
+                            'direction':         _dir_val,
                             'exit_strategy':     r.get('exit_strategy', '?'),
                             'exit_name':         r.get('exit_name', '?'),
                             'total_trades':      trades_count,
