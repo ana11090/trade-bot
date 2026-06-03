@@ -3109,6 +3109,90 @@ def build_panel(parent):
 
     right_frame.bind("<Map>", lambda e: _bind_mousewheel(right_frame))
 
+    # WHY: A preset-mode dropdown lets the user pick a vetted combination of
+    #      scenarios + scope + discovery settings in one click instead of
+    #      hand-toggling a dozen controls. "Last used" is the default and is a
+    #      true no-op — it leaves every control exactly as the user left it, so
+    #      the panel behaves identically to before when it is selected. All
+    #      other presets optimize for clean MT5-reproducible rules and rule
+    #      quality: they force mt5_parity_indicators ON and favor higher TFs.
+    #      Each .set() also fires that control's existing trace_add → config
+    #      save, so picking a preset both moves the UI and persists the change.
+    # CHANGED: June 2026 — add preset-mode dropdown above Execute
+    def _apply_preset(_name):
+        if _name == "Last used":
+            return  # no-op: leave all controls as-is
+
+        def _set_scenarios(keys):
+            for _k, _v in scenario_vars.items():
+                _v.set(_k in keys)
+
+        # All non-"Last used" presets: parity indicators ON
+        try:
+            _mt5_parity_var.set(True)
+        except Exception:
+            pass
+
+        if _name == "Parity — Clean H4":
+            _set_scenarios({"H4"})
+            _fs_var.set("per_tf_only")
+            _t3a_target_var.set("binary")
+            _a39a_enabled_var.set(False)
+            _a36_enabled_var.set(False)
+
+        elif _name == "Parity — Clean Higher TFs":
+            _set_scenarios({"H1", "H4", "D1"})
+            _fs_var.set("per_tf_only")
+            _t3a_target_var.set("binary")
+            _a39a_enabled_var.set(False)
+            _a36_enabled_var.set(False)
+
+        elif _name == "Quality — High-WR Tree Rules":
+            _set_scenarios({"M15", "H1", "H4"})
+            _fs_var.set("entry_plus_higher")
+            _t3a_target_var.set("binary")
+            _a39a_enabled_var.set(False)
+            _a36_enabled_var.set(True)
+            _a36_mode_var.set("automatic")
+            _a372_strictness_var.set("conservative")
+
+        elif _name == "Quality — Tightest Single Rule":
+            _set_scenarios({"H4"})
+            _fs_var.set("entry_plus_higher")
+            _a39a_enabled_var.set(True)
+            _a39a_variant_var.set("a")
+            _a39b5_winner_var.set("tightness")
+            _a36_enabled_var.set(False)
+
+        elif _name == "Parity + Quality — Balanced":
+            _set_scenarios({"H1", "H4", "D1"})
+            _fs_var.set("all_scopes_compare")
+            _t3a_target_var.set("binary")
+            _a39a_enabled_var.set(False)
+            _a36_enabled_var.set(True)
+            _a36_mode_var.set("automatic")
+            _a372_strictness_var.set("conservative")
+
+    _preset_row = tk.Frame(right_frame, bg="white")
+    _preset_row.pack(anchor="w", fill="x", pady=(0, 10))
+    tk.Label(_preset_row, text="Mode:", bg="white", fg="#16213e",
+             font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 8))
+    _preset_var = tk.StringVar(value="Last used")
+    _preset_names = [
+        "Last used",
+        "Parity — Clean H4",
+        "Parity — Clean Higher TFs",
+        "Quality — High-WR Tree Rules",
+        "Quality — Tightest Single Rule",
+        "Parity + Quality — Balanced",
+    ]
+    _preset_combo = ttk.Combobox(_preset_row, textvariable=_preset_var,
+                                 values=_preset_names, state="readonly",
+                                 width=32, font=("Segoe UI", 10))
+    _preset_combo.pack(side="left")
+    _preset_combo.bind("<<ComboboxSelected>>",
+                       lambda _e: _apply_preset(_preset_var.get()))
+
     tk.Label(right_frame, text="▶️ Execute",
              bg="white", fg="#16213e",
              font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 15))
