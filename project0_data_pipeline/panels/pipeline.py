@@ -278,10 +278,33 @@ def pipeline_worker():
             # already multi-line (exported CSV/TXT) — just detect date format
             fmt_b = bool(re.search(r'\d{2}/\d{2}/\d{4} \d{2}:\d{2}', raw_text))
 
-        # auto-detect separator (comma for CSV, tab for exported TXT)
-        sep = '\t' if '\t' in raw_text.split('\n')[0] else ','
+        # WHY: MT5 exports use 'YYYY.MM.DD HH:MM:SS' which is neither Format A
+        #      (MMDDYYYY HHMM) nor Format B (DD/MM/YYYY HH:MM). Its dates are
+        #      already readable, so flag it and skip BOTH date converters below.
+        #      This is a NEW branch — Format A/B paths are untouched.
+        # CHANGED: June 2026 — recognize MT5 'YYYY.MM.DD HH:MM:SS' format
+        fmt_mt5 = bool(re.search(r'\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}', raw_text))
+
+        # WHY: MT5 trade-history exports are semicolon-delimited and start with
+        #      a UTF-8 BOM. The old detector only knew tab-or-comma, so a ';'
+        #      file was read as a SINGLE column; the later data.columns[1]
+        #      access then threw "index out of bounds". Strip the BOM and add
+        #      ';' to separator detection. Tab and comma behavior is unchanged.
+        # CHANGED: June 2026 — support MT5 ';'-delimited exports (additive)
+        _first_line = raw_text.split('\n')[0].lstrip('\ufeff')
+        if '\t' in _first_line:
+            sep = '\t'
+        elif ';' in _first_line and _first_line.count(';') >= _first_line.count(','):
+            sep = ';'
+        else:
+            sep = ','
         import pandas as _pd
+        # mangle_dupe_cols handles the duplicate Time/Volume/Price headers
+        # (pandas renames the 2nd occurrence to 'Time.1' etc. — harmless here).
         data = _pd.read_csv(io.StringIO(raw_text), skipinitialspace=True, sep=sep)
+        # Strip a BOM left on the first column name, if any.
+        if len(data.columns) and isinstance(data.columns[0], str):
+            data = data.rename(columns={data.columns[0]: data.columns[0].lstrip('\ufeff')})
 
         if len(data) == 0:
             root.after(0, pipeline_done, None,
@@ -293,7 +316,7 @@ def pipeline_worker():
         col0 = data.columns[0]
         col1 = data.columns[1]
 
-        if not fmt_b:
+        if not fmt_b and not fmt_mt5:
             # Format A: convert dates MMDDYYYY HHMM → DD/MM/YYYY HH:MM
             data[col0] = _pd.to_datetime(data[col0].astype(str).str.strip(),
                                          format="%m%d%Y %H%M", errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
@@ -368,11 +391,18 @@ def check_data():
             bad_open_count += 1
             problem_indices.add(i)
 
+    # WHY: Format A/B have a close-date in col 1. MT5 format has 'Type' in
+    #      col 1 (not a date), so treating it as a date would flag every MT5
+    #      row as "bad close date". Skip the col-1 date check for MT5; the
+    #      MT5 close-time is in a different column (named 'Time.1' after the
+    #      duplicate-header rename in pipeline_worker).
+    # CHANGED: June 2026 — col-1 date check skipped when col 1 is 'Type'
     bad_close_count = 0
-    for i, v in enumerate(df.iloc[:, 1]):
-        if _is_bad_date(v):
-            bad_close_count += 1
-            problem_indices.add(i)
+    if not ("Type" in df.columns and df.columns[1] == "Type"):
+        for i, v in enumerate(df.iloc[:, 1]):
+            if _is_bad_date(v):
+                bad_close_count += 1
+                problem_indices.add(i)
 
     # WHY: `duplicated(keep=False)` flags ALL copies; `keep='first'` flags
     #      only the EXTRAS — exactly the count of rows that will be removed.
@@ -427,11 +457,30 @@ def clean_data():
     # WHY: After to_datetime+strftime, invalid dates become NaN (float), not
     #      the string "NaT". The old filter did nothing for those rows.
     # CHANGED: April 2026 — actually drop rows with invalid dates
-    date_cols = [df.columns[0], df.columns[1]]
+    # WHY: Format A/B have dates in cols 0 AND 1. MT5 format has a date in
+    #      col 0 but 'Type' in col 1, so treating col 1 as a date would drop
+    #      every MT5 row. Only include col 1 as a date column when it isn't
+    #      'Type'. Format A/B (no Type column) take the original 2-col path.
+    # CHANGED: June 2026 — col-1 date check skipped for MT5 (additive)
+    if "Type" in df.columns and df.columns[1] == "Type":
+        date_cols = [df.columns[0]]
+    else:
+        date_cols = [df.columns[0], df.columns[1]]
     for c in date_cols:
         df = df[df[c].astype(str).str.strip() != "NaT"]
     df = df.dropna(subset=date_cols)
     df = df.drop_duplicates()
+
+    # WHY: MT5 history exports include non-trade ledger rows (Balance, Deposit,
+    #      Withdrawal, etc.). They carry a non-null Profit, so the Profit
+    #      dropna below does NOT remove them, and they are not trades. Drop any
+    #      row whose Type is not Buy/Sell. Guarded by the Type column existing,
+    #      so Format A/B files (no Type column) are unaffected.
+    # CHANGED: June 2026 — drop MT5 non-trade ledger rows (additive)
+    if "Type" in df.columns:
+        _t = df["Type"].astype(str).str.strip().str.lower()
+        df = df[_t.isin(["buy", "sell"])]
+
     if "Profit" in df.columns:
         df = df.dropna(subset=["Profit"])
 
