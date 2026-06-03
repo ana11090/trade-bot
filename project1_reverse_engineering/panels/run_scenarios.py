@@ -3514,11 +3514,33 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             try:
                 import config_loader as _run_cl
                 _ds_cfg = _run_cl.load()
-                _ds_path = _ds_cfg.get('data_source_path', '')
-                if _ds_path and os.path.isdir(_ds_path):
-                    step1_align_price.PRICE_DATA_FOLDER = _ds_path
-                    step2_compute_indicators.PRICE_DATA_FOLDER = _ds_path
-                    print(f"[P1] Data source updated: {_ds_path}")
+                # WHY (June 2026 portability fix): Prefer the repo-relative
+                #      lookup via data_source_id so step1/step2 use the same
+                #      folder step1's _get_price_data_folder will resolve.
+                #      Falls back to the absolute path only if it actually
+                #      exists on THIS machine. Final fallback: leave the
+                #      module's existing PRICE_DATA_FOLDER alone.
+                # CHANGED: June 2026 — id-first resolution
+                _ds_resolved = ''
+                _ds_id = _ds_cfg.get('data_source_id', '')
+                if _ds_id:
+                    try:
+                        from shared.data_sources import get_source_path
+                        _by_id = get_source_path(_ds_id)
+                        if _by_id and os.path.isdir(_by_id):
+                            import glob as _glob
+                            if _glob.glob(os.path.join(_by_id, '*.csv')):
+                                _ds_resolved = _by_id
+                    except Exception as _se:
+                        print(f"[P1] get_source_path('{_ds_id}') failed: {_se}")
+                if not _ds_resolved:
+                    _ds_path_abs = _ds_cfg.get('data_source_path', '')
+                    if _ds_path_abs and os.path.isdir(_ds_path_abs):
+                        _ds_resolved = _ds_path_abs
+                if _ds_resolved:
+                    step1_align_price.PRICE_DATA_FOLDER = _ds_resolved
+                    step2_compute_indicators.PRICE_DATA_FOLDER = _ds_resolved
+                    print(f"[P1] Data source updated: {_ds_resolved}")
                 else:
                     print(f"[P1] Using default data source: {step1_align_price.PRICE_DATA_FOLDER}")
             except Exception as _ds_e:

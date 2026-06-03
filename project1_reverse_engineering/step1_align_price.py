@@ -25,6 +25,15 @@ log = get_logger(__name__)
 #      config doesn't have a data source path.
 # CHANGED: April 2026 — read data path from P1 config
 def _get_price_data_folder():
+    # WHY (June 2026 portability fix): The UI's "Historical Data Source"
+    #      dropdown stores `data_source_id`; the repo-relative folder
+    #      `data/sources/<id>/` is what actually holds the CSVs and is
+    #      independent of which drive/path the repo was cloned to.
+    #      The previous code read the absolute `data_source_path` directly,
+    #      so moving the repo (or re-cloning) silently broke alignment.
+    #      Priority now: data_source_id (portable) → absolute path (if it
+    #      exists on THIS machine) → generic PROJECT_ROOT/data (last resort).
+    # CHANGED: June 2026 — id-first portable data-source resolution
     try:
         import importlib.util
         _cl_path = os.path.join(PROJECT_ROOT, 'project1_reverse_engineering', 'config_loader.py')
@@ -32,22 +41,46 @@ def _get_price_data_folder():
         _mod = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
         _cfg = _mod.load()
+
+        # 1) PORTABLE: resolve by data_source_id relative to the repo.
+        _sid = _cfg.get('data_source_id', '')
+        if _sid:
+            try:
+                from shared.data_sources import get_source_path
+                _by_id = get_source_path(_sid)
+                if _by_id and os.path.isdir(_by_id):
+                    # only accept if it actually has candle CSVs (not the
+                    # generic fallback / a placeholder directory)
+                    import glob as _glob
+                    if _glob.glob(os.path.join(_by_id, '*.csv')):
+                        try:
+                            log.info("    [DATA] Using data source by id '" + str(_sid)
+                                     + "': " + _by_id)
+                        except Exception:
+                            pass
+                        return _by_id
+            except Exception as _se:
+                try:
+                    log.info("    [DATA] get_source_path('" + str(_sid)
+                             + "') failed: " + str(_se))
+                except Exception:
+                    pass
+
+        # 2) configured absolute path, only if it exists on THIS machine
         _path = _cfg.get('data_source_path', '')
         if _path and os.path.isdir(_path):
             return _path
         if _path:
-            # WHY: Configured path set but missing — silently falling back to
-            #      PROJECT_ROOT/data leads to runs against the wrong/old
-            #      candles. Make the misconfiguration visible.
-            # CHANGED: June 2026 — warn on missing data_source_path
             try:
                 log.warning("    [DATA] Configured data_source_path does not exist: "
-                            + str(_path) + " — falling back to PROJECT_ROOT/data. "
-                            "Fix the dataset path in Configuration & Data.")
+                            + str(_path) + " — and id-based lookup didn't resolve. "
+                            "Falling back to PROJECT_ROOT/data. Fix the dataset in "
+                            "Configuration & Data.")
             except Exception:
                 pass
     except Exception:
         pass
+    # 3) generic fallback
     return os.path.join(PROJECT_ROOT, 'data')
 
 PRICE_DATA_FOLDER = _get_price_data_folder()
