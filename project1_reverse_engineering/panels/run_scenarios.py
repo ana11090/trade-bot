@@ -3123,9 +3123,14 @@ def build_panel(parent):
         if _name == "Last used":
             return  # no-op: leave all controls as-is
 
-        def _set_scenarios(keys):
-            for _k, _v in scenario_vars.items():
-                _v.set(_k in keys)
+        # WHY (June 2026 revision): every active preset now ticks ALL scenarios
+        #      (M5, M15, H1, H4, D1, H1_M15). Presets differ ONLY by scope +
+        #      discovery settings, never by which timeframes run. The earlier
+        #      per-preset scenario subsets restricted the run unnecessarily;
+        #      the user wants every preset to consider every timeframe.
+        def _select_all_scenarios():
+            for _v in scenario_vars.values():
+                _v.set(True)
 
         # All non-"Last used" presets: parity indicators ON
         try:
@@ -3134,21 +3139,21 @@ def build_panel(parent):
             pass
 
         if _name == "Parity — Clean H4":
-            _set_scenarios({"H4"})
+            _select_all_scenarios()
             _fs_var.set("per_tf_only")
             _t3a_target_var.set("binary")
             _a39a_enabled_var.set(False)
             _a36_enabled_var.set(False)
 
         elif _name == "Parity — Clean Higher TFs":
-            _set_scenarios({"H1", "H4", "D1"})
+            _select_all_scenarios()
             _fs_var.set("per_tf_only")
             _t3a_target_var.set("binary")
             _a39a_enabled_var.set(False)
             _a36_enabled_var.set(False)
 
         elif _name == "Quality — High-WR Tree Rules":
-            _set_scenarios({"M15", "H1", "H4"})
+            _select_all_scenarios()
             _fs_var.set("entry_plus_higher")
             _t3a_target_var.set("binary")
             _a39a_enabled_var.set(False)
@@ -3157,7 +3162,7 @@ def build_panel(parent):
             _a372_strictness_var.set("conservative")
 
         elif _name == "Quality — Tightest Single Rule":
-            _set_scenarios({"H4"})
+            _select_all_scenarios()
             _fs_var.set("entry_plus_higher")
             _a39a_enabled_var.set(True)
             _a39a_variant_var.set("a")
@@ -3165,7 +3170,7 @@ def build_panel(parent):
             _a36_enabled_var.set(False)
 
         elif _name == "Parity + Quality — Balanced":
-            _set_scenarios({"H1", "H4", "D1"})
+            _select_all_scenarios()
             _fs_var.set("all_scopes_compare")
             _t3a_target_var.set("binary")
             _a39a_enabled_var.set(False)
