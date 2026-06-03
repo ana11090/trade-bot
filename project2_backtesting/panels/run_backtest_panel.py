@@ -988,6 +988,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _cfg_market_reopen = -1
             _firm_ntw_start = -1
             _firm_ntw_end   = -1
+            # WHY: Default None so backtester falls back to its resolver default.
+            # CHANGED: June 2026 — broker_timezone outer-scope default
+            _firm_broker_tz = None
             _cfg_cooldown = 0
             _cfg_min_hold = 0
 
@@ -1255,6 +1258,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                                     # CHANGED: June 2026 — firm no-trades window
                                     _firm_ntw_start = _pf_data.get('no_trades_window_start_hour_gmt', -1)
                                     _firm_ntw_end   = _pf_data.get('no_trades_window_end_hour_gmt',   -1)
+                                    # WHY: IANA timezone for broker → UTC conversion in
+                                    #      P2 backtester (Step 3). DST-correct, replaces
+                                    #      the broken fixed utc_offset_hours math.
+                                    # CHANGED: June 2026 — broker_timezone from firm config
+                                    _firm_broker_tz = _pf_data.get('broker_timezone')
                                     # WHY: Read DD alert thresholds from firm's
                                     #      trading_rules based on prop_firm_stage.
                                     #      Eval uses 2.7%/5.7%, funded uses 2.5%/5.5%.
@@ -1972,6 +1980,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: June 2026 — firm no-trades window
                         no_trades_window_start_hour=int(_firm_ntw_start) if _firm_ntw_start is not None and _a48_use_cfg else -1,
                         no_trades_window_end_hour=int(_firm_ntw_end) if _firm_ntw_end is not None and _a48_use_cfg else -1,
+                        # WHY: IANA zone from firm config; backtester DST-converts
+                        #      timestamps so GMT-labeled gates and UTC P1 hour
+                        #      filters compare on the right clock. None → default.
+                        # CHANGED: June 2026 — broker_timezone pass-through
+                        broker_timezone=_firm_broker_tz if _a48_use_cfg else None,
                     )
 
                     # Tag each result row with entry TF when running multi-TF

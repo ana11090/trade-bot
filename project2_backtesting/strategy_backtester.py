@@ -69,6 +69,34 @@ _SESSION_SPREAD_MULTIPLIERS = {
 # memory and crashing the app. Individuals + combos count toward this budget.
 MAX_RULE_COMBOS = 2000
 
+
+def _add_timestamp_utc(df, broker_timezone=None):
+    """Add df['timestamp_utc'] = broker-local timestamp converted to UTC.
+
+    WHY: Candle CSVs are in broker server local time (e.g. EET/EEST for Get
+         Leveraged — DST-shifting). Firm windows (no-trades, force-close,
+         DD reset) are GMT-labeled, and P1 discovery now writes hour_of_day
+         as UTC. Backtest gates that compare against either MUST use UTC,
+         not raw broker-local hours. A fixed integer offset would corrupt
+         ~5 months/year — use a DST-aware IANA zone.
+
+         broker_timezone is an IANA zone string (e.g. 'Europe/Athens') or
+         None; when None, resolve_broker_tz returns the EET/EEST default.
+
+    CHANGED: June 2026 — DST-correct timestamp normalization for backtest
+    """
+    from shared.tz_offset import resolve_broker_tz
+    _tz = resolve_broker_tz(
+        firm_data={'broker_timezone': broker_timezone} if broker_timezone else None
+    )
+    _ts = pd.to_datetime(df['timestamp'])
+    if _ts.dt.tz is None:
+        df['timestamp_utc'] = (_ts.dt.tz_localize(_tz, ambiguous='NaT', nonexistent='NaT')
+                                  .dt.tz_convert('UTC').dt.tz_localize(None))
+    else:
+        df['timestamp_utc'] = _ts.dt.tz_convert('UTC').dt.tz_localize(None)
+    return df
+
 def _get_session_spread(candle_timestamp, base_spread_pips, variable_spread=False,
                         multipliers=None):
     """Return spread in pips for this candle's session.
@@ -1660,7 +1688,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      -1 = disabled (backward compat).
                  # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
                  no_trades_window_start_hour=-1,
-                 no_trades_window_end_hour=-1):
+                 no_trades_window_end_hour=-1,
+                 # WHY: IANA zone for broker-local → UTC conversion. None = EET/EEST
+                 #      default via shared/tz_offset.resolve_broker_tz. DST-correct.
+                 # CHANGED: June 2026 — broker_timezone for UTC gating
+                 broker_timezone=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1674,6 +1706,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
     if sl_slippage_distribution is not None:
         exit_strategy.sl_slippage_distribution = sl_slippage_distribution
+
+    # WHY: Add a UTC column to candles_df so GMT-labeled gates (no-trades
+    #      window, force-close, DD reset) and entry-time filters (P1 hours
+    #      are UTC after the June 2026 fix) can compare against the right
+    #      clock. DST-aware via the broker's IANA zone (default Europe/Athens).
+    # CHANGED: June 2026 — DST-correct UTC timestamps
+    _add_timestamp_utc(candles_df, broker_timezone)
 
     trades = []
     # WHY: Running balance for compound equity — updated after each trade.
@@ -1767,8 +1806,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 _add_momentum_quality,
             )
             # SMART features need hour_of_day and open_time columns
+            # WHY (June 2026 DST fix): hour_of_day must match P1 discovery's
+            #      UTC clock so rule conditions evaluate on the same scale.
+            #      df['timestamp_utc'] was added at function top.
+            # CHANGED: June 2026 — UTC hour_of_day (matches step2)
             if 'hour_of_day' not in ind.columns:
-                ind['hour_of_day'] = df['timestamp'].dt.hour
+                ind['hour_of_day'] = df['timestamp_utc'].dt.hour
             if 'open_time' not in ind.columns:
                 ind['open_time'] = df['timestamp'].astype(str)
 
@@ -2000,7 +2043,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
     #      reproduces the optimizer's filtered trade set.
     # CHANGED: May 2026 — backtest honors optimizer filters
     if entry_filters:
-        _etm = _build_entry_time_mask(df['timestamp'].to_numpy(), entry_filters)
+        # WHY (June 2026 DST fix): P1 entry-time filter hours are UTC after
+        #      step2's IANA-zone conversion. Pass timestamp_utc so the mask
+        #      compares like-with-like.
+        _etm = _build_entry_time_mask(df['timestamp_utc'].to_numpy(), entry_filters)
         _pre_ef = int(signal_mask.sum())
         signal_mask = signal_mask & pd.Series(_etm, index=ind.index)
         _post_ef = int(signal_mask.sum())
@@ -2097,7 +2143,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: May 2026 — DD circuit breaker
         if _dd_enabled:
             try:
-                _dd_ts = pd.Timestamp(next_candle['timestamp'])
+                # WHY (June 2026 DST fix): dd_daily_reset_hour is GMT-labeled
+                #      (firm config). Use UTC timestamp for the comparison.
+                _dd_ts = pd.Timestamp(next_candle['timestamp_utc'])
                 _dd_date = _dd_ts.date()
                 _dd_post_reset = _dd_ts.hour >= dd_daily_reset_hour
                 _dd_day_key = (_dd_date, _dd_post_reset)
@@ -2127,7 +2175,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: May 2026 — market closure window (parity with MT5)
         if hard_close_hour >= 0:
             try:
-                _entry_hour = pd.Timestamp(next_candle['timestamp']).hour
+                # WHY (June 2026 DST fix): hard_close_hour is GMT-labeled
+                #      (firm config). Use UTC timestamp for the comparison.
+                _entry_hour = pd.Timestamp(next_candle['timestamp_utc']).hour
                 if market_reopen_hour > 0 and market_reopen_hour < hard_close_hour:
                     # Midnight wrap: close=23, reopen=1 → block hours 23,0
                     if _entry_hour >= hard_close_hour or _entry_hour < market_reopen_hour:
@@ -2145,7 +2195,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
         if no_trades_window_start_hour >= 0 and no_trades_window_end_hour >= 0:
             try:
-                _ntw_hour = pd.Timestamp(next_candle['timestamp']).hour
+                # WHY (June 2026 DST fix): no_trades_window_*_hour are GMT-labeled.
+                _ntw_hour = pd.Timestamp(next_candle['timestamp_utc']).hour
                 if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
                                                     no_trades_window_end_hour):
                     continue
@@ -2392,7 +2443,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             # CHANGED: April 2026 — hard close hour (MT5/backtester parity)
             if hard_close_hour >= 0:
                 try:
-                    _candle_hour = pd.Timestamp(future_candle['timestamp']).hour
+                    # WHY (June 2026 DST fix): hard_close_hour is GMT-labeled.
+                    _candle_hour = pd.Timestamp(future_candle['timestamp_utc']).hour
                     if _candle_hour == hard_close_hour:
                         exit_price  = float(future_candle["open"])
                         exit_time   = future_candle["timestamp"]
@@ -2710,7 +2762,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   # WHY: Firm no-trades window — see run_backtest.
                   # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
                   no_trades_window_start_hour=-1,
-                  no_trades_window_end_hour=-1):
+                  no_trades_window_end_hour=-1,
+                  # WHY: IANA zone for broker → UTC conversion. None = EET/EEST default.
+                  # CHANGED: June 2026 — broker_timezone for UTC gating
+                  broker_timezone=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -2728,6 +2783,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
     trades = []
+    # WHY: Add a UTC column up front so all GMT-labeled / P1-UTC gates
+    #      (no-trades window, force-close, DD reset, entry-time filter,
+    #      indicator hour_of_day) compare against the right clock.
+    #      DST-aware via broker IANA zone (default Europe/Athens).
+    # CHANGED: June 2026 — DST-correct UTC timestamps
+    if 'timestamp_utc' not in df.columns:
+        _add_timestamp_utc(df, broker_timezone)
     # WHY: Running balance for compound equity — same as run_backtest.
     # CHANGED: April 2026 — equity-tracking lot sizing
     _running_balance = float(account_size) if account_size is not None else None
@@ -2976,7 +3038,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     # ── Entry-time filter gating (day / session / hour) ──────────────
     if entry_filters:
-        _etm = _build_entry_time_mask(df['timestamp'].to_numpy(), entry_filters)
+        # WHY (June 2026 DST fix): P1 entry-time filter hours are UTC after
+        #      step2's IANA-zone conversion. Pass timestamp_utc so the mask
+        #      compares like-with-like.
+        _etm = _build_entry_time_mask(df['timestamp_utc'].to_numpy(), entry_filters)
         _pre_ef = int(signal_mask.sum())
         signal_mask = signal_mask & pd.Series(_etm, index=ind.index)
         _post_ef = int(signal_mask.sum())
@@ -3043,12 +3108,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
         next_candle = df.iloc[_eb_int]
 
         entry_time  = next_candle['timestamp']
+        # WHY (June 2026 DST fix): GMT-labeled gates (force-close, no-trades,
+        #      DD reset) compare against UTC. Derive the UTC scalar once.
+        entry_time_utc = next_candle['timestamp_utc']
 
         # WHY: Block entries during market closure window — see run_backtest.
         # CHANGED: May 2026 — market closure window (parity with MT5)
         if hard_close_hour >= 0:
             try:
-                _entry_hour = pd.Timestamp(entry_time).hour
+                _entry_hour = pd.Timestamp(entry_time_utc).hour
                 if market_reopen_hour > 0 and market_reopen_hour < hard_close_hour:
                     if _entry_hour >= hard_close_hour or _entry_hour < market_reopen_hour:
                         continue
@@ -3062,7 +3130,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: June 2026 — firm no-trades window (MT5 session parity)
         if no_trades_window_start_hour >= 0 and no_trades_window_end_hour >= 0:
             try:
-                _ntw_hour = pd.Timestamp(entry_time).hour
+                _ntw_hour = pd.Timestamp(entry_time_utc).hour
                 if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
                                                     no_trades_window_end_hour):
                     continue
@@ -3116,7 +3184,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: May 2026 — DD circuit breaker
         if _dd_enabled:
             try:
-                _dd_ts = pd.Timestamp(entry_time)
+                # WHY (June 2026 DST fix): dd_daily_reset_hour is GMT-labeled.
+                _dd_ts = pd.Timestamp(entry_time_utc)
                 _dd_date = _dd_ts.date()
                 _dd_post_reset = _dd_ts.hour >= dd_daily_reset_hour
                 _dd_day_key = (_dd_date, _dd_post_reset)
@@ -3399,8 +3468,9 @@ def fast_backtest(df, ind, rules, exit_strategy,
             # CHANGED: April 2026 — hard close hour (MT5/backtester parity)
             if hard_close_hour >= 0:
                 try:
-                    _hc_ts = (candle['timestamp'] if isinstance(candle, dict)
-                              else candle.get('timestamp', ''))
+                    # WHY (June 2026 DST fix): hard_close_hour is GMT-labeled.
+                    _hc_ts = (candle['timestamp_utc'] if isinstance(candle, dict)
+                              else candle.get('timestamp_utc', ''))
                     if pd.Timestamp(_hc_ts).hour == hard_close_hour:
                         _open_val = (candle.get('open', float(future_candles.iloc[ci]['open']))
                                      if isinstance(candle, dict)
@@ -4017,7 +4087,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           # WHY: Firm no-trades window — forwarded to fast_backtest.
                           # CHANGED: June 2026 — firm no-trades window
                           no_trades_window_start_hour=-1,
-                          no_trades_window_end_hour=-1):
+                          no_trades_window_end_hour=-1,
+                          # WHY: IANA zone for broker → UTC. Forwarded to fast_backtest.
+                          # CHANGED: June 2026 — broker_timezone for UTC gating
+                          broker_timezone=None):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -4068,6 +4141,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
 
     candles_df['timestamp'] = normalize_timestamp(candles_df['timestamp'])
     candles_df = candles_df.sort_values('timestamp').reset_index(drop=True)
+    # WHY: Add UTC column ONCE on the parent DataFrame so all inner
+    #      fast_backtest calls reuse it (the inner function checks for
+    #      'timestamp_utc' in df.columns before re-converting).
+    # CHANGED: June 2026 — DST-correct UTC timestamps
+    _add_timestamp_utc(candles_df, broker_timezone)
     log.info(f"  {len(candles_df)} candles "
              f"({candles_df['timestamp'].min()} to {candles_df['timestamp'].max()})")
 
@@ -4184,8 +4262,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _add_momentum_quality,
             )
             # SMART features need hour_of_day and open_time columns
+            # WHY (June 2026 DST fix): hour_of_day must match P1 discovery's
+            #      UTC clock. candles_df['timestamp_utc'] was added at top.
+            # CHANGED: June 2026 — UTC hour_of_day
             if 'hour_of_day' not in indicators_df.columns:
-                indicators_df['hour_of_day'] = candles_df['timestamp'].dt.hour
+                indicators_df['hour_of_day'] = candles_df['timestamp_utc'].dt.hour
             if 'open_time' not in indicators_df.columns:
                 indicators_df['open_time'] = candles_df['timestamp'].astype(str)
 
@@ -4581,6 +4662,11 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # CHANGED: June 2026 — firm no-trades window
                     no_trades_window_start_hour=no_trades_window_start_hour,
                     no_trades_window_end_hour=no_trades_window_end_hour,
+                    # WHY: Forward broker_timezone — already applied to candles_df
+                    #      above so fast_backtest's check finds 'timestamp_utc'
+                    #      and skips re-conversion.
+                    # CHANGED: June 2026 — broker_timezone forwarding
+                    broker_timezone=broker_timezone,
                 )
                 stats = compute_stats(trades)
 

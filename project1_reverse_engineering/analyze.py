@@ -284,15 +284,15 @@ def build_robot_profile(df):
         profile['peak_hours']   = peak_hours
 
         sessions = []
-        # WHY (Phase 51 Fix 3): Session ranges below assume hour_of_day
-        #      is in UTC. step1 may produce broker-time hours (EET etc.)
-        #      depending on the trade source CSV. If broker-time, the
-        #      session labels here are off by the broker-UTC offset.
-        #      Real fix needs upstream timezone tagging in step1 →
-        #      step2 → analyze.py. Until then, the labels are an
-        #      approximation. Marker added so future readers don't
-        #      "simplify" the assumption away.
-        # CHANGED: April 2026 — Phase 51 Fix 3 — timezone assumption doc
+        # WHY: Session ranges below assume hour_of_day is UTC. After the
+        #      June 2026 DST fix, step2_compute_indicators writes
+        #      hour_of_day via tz_localize(broker IANA zone).tz_convert('UTC'),
+        #      so this column IS DST-correct UTC year-round. The
+        #      filters_applied['hours'] this function writes are therefore
+        #      UTC; both the backtester and the live EA (TimeGMT()) gate
+        #      on the same clock.
+        # CHANGED: June 2026 — DST-correct UTC via step2's IANA conversion
+        #          (supersedes Phase 51 Fix 3 broker-time caveat)
         #          (audit Part D MED #46)
         if any(h in active_hours for h in range(0, 8)):
             sessions.append('Asian')
