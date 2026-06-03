@@ -3910,6 +3910,19 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 from shared.run_history import record_run
                 _rh_cfg = _rh_cl.load()
                 _rh_outputs = os.path.join("project1_reverse_engineering", "outputs")
+                # WHY: step1 writes _last_tz_mode.json marking which alignment
+                #      path actually ran (DST-aware vs legacy auto-detect).
+                #      Fold into the recorded criteria so Run History shows it.
+                # CHANGED: June 2026 — tz_mode in run history
+                try:
+                    _tz_meta_path = os.path.join(_rh_outputs, "_last_tz_mode.json")
+                    if os.path.exists(_tz_meta_path):
+                        with open(_tz_meta_path, encoding="utf-8") as _tzf:
+                            _tz_meta = json.load(_tzf)
+                        for _k, _v in _tz_meta.items():
+                            _rh_cfg[_k] = _v
+                except Exception:
+                    pass
                 _rh_results = {}
                 for _sc in selected:
                     _rh_results[_sc] = {}
