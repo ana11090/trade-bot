@@ -500,21 +500,143 @@ def clean_data():
     )
 
 
+def _looks_like_mt5(df):
+    # WHY: MT5 history exports have duplicate Time/Price headers that pandas
+    #      auto-renames to Time/Time.1, Price/Price.1, plus a 'Type' column
+    #      carrying Buy/Sell. Canonical files don't.
+    # CHANGED: June 2026 — MT5 format sniffer
+    cols = list(df.columns)
+    return ("Type" in cols and "Time" in cols
+            and any(str(c).startswith("Time.") for c in cols)
+            and any(str(c).startswith("Price.") for c in cols))
+
+
+def _resolve_pip_size():
+    # WHY: Use the canonical pip_size from p1_config.json; default 0.01
+    #      (XAUUSD) so a config-load error never blocks Save. Use importlib
+    #      to avoid adding project1_reverse_engineering to sys.path
+    #      permanently — same pattern as step1_align_price.
+    # CHANGED: June 2026 — config-driven pip_size for MT5 conversion
+    try:
+        import importlib.util
+        _repo_root = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+        _cl_path = os.path.join(_repo_root, 'project1_reverse_engineering',
+                                'config_loader.py')
+        _spec = importlib.util.spec_from_file_location('_p0_p1_cl', _cl_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _cfg = _mod.load()
+        return float(_cfg.get('pip_size', 0.01) or 0.01)
+    except Exception:
+        return 0.01
+
+
+def _convert_mt5_to_canonical(df):
+    """MT5 history → canonical schema Step 1 expects.
+
+    MT5 columns (after pandas dup-rename):
+      Time / Type / Volume / Symbol / Price / Volume.1 / Time.1 / Price.1 /
+      Commission / Swap / Profit
+    Canonical out: Open Date, Close Date, Symbol, Action, Lots,
+                   Open Price, Close Price, Pips, Profit
+    Pips sign-aware: BUY profits when price rises (close-open),
+                     SELL profits when price falls (open-close).
+    """
+    # WHY: Step 1 (project1_reverse_engineering/step1_align_price.py) maps
+    #      Open Date / Close Date / Open Price / Close Price / Action / Lots
+    #      / Pips / Profit. The MT5 export carries the same INFORMATION under
+    #      different column names and is missing a Pips column. Compute Pips
+    #      here from prices using config pip_size so sells are profitable
+    #      when price falls — without this every sell would look like a loss.
+    # CHANGED: June 2026 — MT5 → canonical converter
+    import pandas as _pd
+
+    _pip_size = _resolve_pip_size()
+
+    out = _pd.DataFrame()
+    out["Open Date"]   = df["Time"]
+    out["Close Date"]  = df["Time.1"]
+    out["Symbol"]      = df["Symbol"]
+    out["Action"]      = df["Type"].astype(str).str.strip().str.upper()  # BUY / SELL
+    out["Lots"]        = _pd.to_numeric(df["Volume"], errors="coerce")
+    out["Open Price"]  = _pd.to_numeric(df["Price"], errors="coerce")
+    out["Close Price"] = _pd.to_numeric(df["Price.1"], errors="coerce")
+    if "Profit" in df.columns:
+        out["Profit"]  = _pd.to_numeric(df["Profit"], errors="coerce")
+
+    _o = out["Open Price"]
+    _c = out["Close Price"]
+    _is_buy = out["Action"].eq("BUY")
+    # where(cond, other): keep (close-open) where BUY, else use (open-close)
+    out["Pips"] = (_c - _o).where(_is_buy, _o - _c) / _pip_size
+
+    # Drop rows that failed numeric conversion (stray ledger rows etc.).
+    out = out.dropna(subset=["Open Date", "Close Date", "Open Price", "Close Price"])
+    return out.reset_index(drop=True)
+
+
 def save_clean_data():
+    # WHY: Previously this only wrote a CSV via a file picker and never
+    #      registered it as the active trade history, so the Project-1
+    #      reverse-engineering run (which reads
+    #      trade_history_manager.get_active_history()) kept using the old
+    #      original_bot/trades_clean.csv fallback — ignoring whatever was
+    #      loaded into this page. It also could not handle MT5 exports
+    #      (different columns, no Pips). Now: if the loaded data is an MT5
+    #      export, convert it to canonical (sign-aware Pips from config
+    #      pip_size), then register the result as the ACTIVE history via
+    #      load_trades() so the very next run uses THIS file.
+    #      SELL handling needs no extra discovery code — analyze.py detects
+    #      direction from the data and runs BOTH sides whenever each has
+    #      >= 40 trades.
+    # CHANGED: June 2026 — convert MT5 + register as active history on save
     if state.loaded_data is None:
         messagebox.showwarning("No data", "Please run the pipeline first.")
         return
-    # WHY: Hardcoded absolute path breaks on every other developer machine.
-    # CHANGED: April 2026 — use _default_dialog_dir() (audit LOW)
-    path = filedialog.asksaveasfilename(
-        title="Save clean data",
-        defaultextension=".csv",
-        initialfile="trades_clean.csv",
-        initialdir=_default_dialog_dir(),
-        filetypes=[("CSV files", "*.csv")]
-    )
-    if path:
-        state.loaded_data.to_csv(path, index=False)
-        messagebox.showinfo("Saved",
-                            f"Clean data saved to:\n{path}\n\n"
-                            "Analysis panels will read from this file.")
+
+    df = state.loaded_data.copy()
+    try:
+        if _looks_like_mt5(df):
+            df = _convert_mt5_to_canonical(df)
+    except Exception as _conv_err:
+        messagebox.showerror("Conversion error",
+                             f"Could not convert MT5 history to the canonical "
+                             f"trade format:\n{_conv_err}")
+        return
+
+    # Ask for a name for this history (used as the active-history label /
+    # robot_name in trade_history_manager).
+    import tkinter.simpledialog as _sd
+    _name = _sd.askstring("Trade history name",
+                          "Name this trade history (used by the run):",
+                          initialvalue="Gold Reaper")
+    if not _name:
+        return
+
+    # Write to a temp CSV, then register as the active history.
+    try:
+        import tempfile
+        _tmp = os.path.join(tempfile.gettempdir(),
+                            f"_clean_{_name.replace(' ', '_')}.csv")
+        df.to_csv(_tmp, index=False)
+
+        # WHY: load_trades(robot_name, trades_csv_path, symbol='XAUUSD',
+        #      description='') registers the file in trade_histories/ AND
+        #      sets active_history_id = its id (line ~276), so the next
+        #      run picks it up via get_active_history(). Positional order
+        #      confirmed against shared/trade_history_manager.py:185.
+        # CHANGED: June 2026 — register the cleaned file as active history
+        from shared.trade_history_manager import load_trades
+        load_trades(_name, _tmp)
+        messagebox.showinfo(
+            "Saved & activated",
+            f"Cleaned {len(df)} trades and set as the ACTIVE trade history "
+            f"('{_name}').\n\nThe next 'Run Selected Scenarios' will use THIS "
+            f"file.\n\n(BUY/SELL is auto-detected from the data.)"
+        )
+    except Exception as _reg_err:
+        messagebox.showerror(
+            "Save error",
+            f"Converted OK but could not register as active history:\n{_reg_err}"
+        )
