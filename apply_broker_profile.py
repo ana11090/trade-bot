@@ -35,9 +35,11 @@ def extract_json(blob: str) -> dict:
     broker_profile.mq5 prints the JSON in ~200-char CHUNKS (MT5 Print truncates a
     single line at ~512 chars), and MT5 prefixes every log line with a timestamp +
     source tag. So we: take all lines between the markers, strip each line's MT5
-    prefix (everything up to and including the last tab), then concatenate the
-    fragments into one JSON string.
+    prefix (everything up to and including the last tab), skip the [BUILD] marker
+    and any comment-prefixed lines, then concatenate the fragments into one JSON
+    string.
     """
+    # CHANGED: June 2026 — skip [BUILD] / // chunk lines emitted by chunked_v2
     lines = blob.splitlines()
     begin = end = None
     for i, ln in enumerate(lines):
@@ -60,8 +62,9 @@ def extract_json(blob: str) -> dict:
         # strip MT5 log prefix: "...timestamp...\tsource (SYM,TF)\t<content>"
         content = ln.split('\t')[-1] if '\t' in ln else ln
         content = content.strip()
-        if content:
-            parts.append(content)
+        if not content or content.startswith('[BUILD]') or content.startswith('//'):
+            continue
+        parts.append(content)
     raw = ''.join(parts)
     # guard: drop anything before the first { and after the last }
     s, e = raw.find('{'), raw.rfind('}')

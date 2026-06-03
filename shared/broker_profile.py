@@ -30,20 +30,36 @@ BT_CFG = os.path.join(REPO, 'project2_backtesting', 'backtest_config.json')
 
 
 def extract_json(blob: str) -> dict:
-    """Pull the JSON between the BEGIN/END markers (or the first {...} found)."""
-    m = re.search(r'BROKER_PROFILE_BEGIN.*?>>>\s*(\{.*?\})\s*>>>?BROKER_PROFILE_END',
-                  blob, re.S)
-    if not m:
-        # fallback: last balanced-looking object on a line
-        m2 = re.search(r'(\{.*"schema"\s*:\s*"broker_profile_v1".*\})', blob, re.S)
-        if not m2:
-            raise ValueError("Could not find a broker_profile JSON block in the input.")
-        raw = m2.group(1)
-    else:
-        raw = m.group(1)
-    # MT5 may wrap long Print lines; strip stray newlines inside the object
-    raw = re.sub(r'\s*\n\s*', '', raw)
-    return json.loads(raw)
+    """Reassemble the JSON emitted in ~200-char chunks between the markers.
+    MT5 prefixes each log line with 'timestamp\\tsource\\t'; strip that, skip the
+    [BUILD] marker, and concatenate the fragments."""
+    # CHANGED: June 2026 — chunked Print reassembly (broker_profile.mq5 v2)
+    lines = blob.splitlines()
+    begin = end = None
+    for i, ln in enumerate(lines):
+        if 'BROKER_PROFILE_BEGIN' in ln and begin is None:
+            begin = i
+        elif 'BROKER_PROFILE_END' in ln and begin is not None:
+            end = i
+            break
+    if begin is None or end is None or end <= begin:
+        m = re.search(r'(\{[^{}]*"schema"\s*:\s*"broker_profile_v1".*?\})', blob, re.S)
+        if not m:
+            raise ValueError("Could not find a broker_profile JSON block "
+                             "(BEGIN/END markers not found).")
+        return json.loads(re.sub(r'\s+', '', m.group(1)))
+    parts = []
+    for ln in lines[begin + 1:end]:
+        content = ln.split('\t')[-1] if '\t' in ln else ln
+        content = content.strip()
+        if not content or content.startswith('[BUILD]') or content.startswith('//'):
+            continue
+        parts.append(content)
+    raw = ''.join(parts)
+    s, e = raw.find('{'), raw.rfind('}')
+    if s == -1 or e == -1:
+        raise ValueError("Markers found but no JSON braces inside.")
+    return json.loads(raw[s:e + 1])
 
 
 def find_firm_file(firm_name: str) -> str:

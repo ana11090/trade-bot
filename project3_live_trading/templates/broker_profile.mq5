@@ -155,6 +155,7 @@ void OnStart()
 
    //── Emit ONE JSON block between markers ────────────────────────────
    Print(">>>BROKER_PROFILE_BEGIN>>>");
+   Print("[BUILD] chunked_v2 — if you see only ONE line before END, you are running an OLD compile");
    string j = "{";
    j += "\"schema\":\"broker_profile_v1\",";
    j += StringFormat("\"symbol\":\"%s\",", sym);
@@ -195,7 +196,13 @@ void OnStart()
                      medLondon/baseSp, medNY/baseSp, medAsian/baseSp);
    j += StringFormat("\"trade_sessions_minutes\":{%s}", sessionsJson);
    j += "}";
-   Print(j);
+   // MT5 Print() truncates a single string at ~512 chars. Emit j in ~200-char
+   // chunks so nothing is lost; the parser strips newlines/log-prefixes between
+   // the markers and reassembles the fragments into one JSON object.
+   int _chunk = 200;
+   int _len = StringLen(j);
+   for(int _p = 0; _p < _len; _p += _chunk)
+      Print(StringSubstr(j, _p, _chunk));
    Print(">>>BROKER_PROFILE_END>>>");
 
    Print("");
