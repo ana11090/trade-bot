@@ -2107,7 +2107,29 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
                             _a40a_cfg[_fk] = _a40a_disk[_fk]
                 except Exception:
                     pass
-                _a40a_entry_tf = _a40a_cfg.get('winning_scenario', 'H1')
+                # CHANGED: June 2026 — entry_timeframe from the ACTUAL scenario
+                #   being analyzed, not the stale config 'winning_scenario'.
+                #   The scenario's entry TF is the LOWEST timeframe in its
+                #   key (M5_H1_H4 → M5, that's the bar the strategy enters on;
+                #   higher TFs are context only).
+                # WHY: M5-scenario rules were mislabeled 'H1' because old code
+                #   read _a40a_cfg['winning_scenario']. Downstream (My Rules &
+                #   EAs panel, backtest, EA generator) then ran them on the
+                #   wrong timeframe.
+                _TF_ORDER_SAVE = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'H8', 'D1', 'W1']
+                def _entry_tf_from_scenario(scenario_key, scenario_dir):
+                    # scenario_key like 'M5' or 'H1_M15'; scenario_dir like 'scenario_M5'
+                    _src = scenario_key or ''
+                    if not _src and scenario_dir:
+                        _src = scenario_dir.replace('scenario_', '')
+                    _tfs = [p for p in _src.split('_') if p in _TF_ORDER_SAVE]
+                    if not _tfs:
+                        return None
+                    # lowest TF = smallest index in _TF_ORDER_SAVE = the entry bar
+                    return min(_tfs, key=lambda t: _TF_ORDER_SAVE.index(t))
+                _scn_key = globals().get('_stage_a_scenario_key', '') or ''
+                _entry_tf_resolved = _entry_tf_from_scenario(_scn_key, _a40a_scenario)
+                _a40a_entry_tf = _entry_tf_resolved or _a40a_cfg.get('winning_scenario', 'H1')
                 _a40a_spread = float(_a40a_cfg.get('spread', 25.0))
                 _a40a_commission = float(_a40a_cfg.get('commission', 0.0))
                 # WHY: Config stores commission in dollars per lot.
@@ -2164,6 +2186,14 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
                 _enriched['direction'] = _action
                 _enriched['entry_timeframe'] = _a40a_entry_tf
                 _enriched['entry_tf'] = _a40a_entry_tf
+                # CHANGED: June 2026 — surface trade count so saved rules don't
+                #   show "Trades: 0". coverage IS the trade count from discovery.
+                # WHY: shared/saved_rules.py displays len(rule.get('trades', []))
+                #   when the rule has no embedded trades list — which is always
+                #   true for discovery rules (only backtested rules embed trades).
+                #   Store the integer count under 'trade_count' and keep
+                #   'coverage' too. Do NOT fabricate a trades list.
+                _enriched['trade_count'] = int(_r.get('coverage', 0) or 0)
                 _enriched['rule_combo'] = _combo_name
                 _enriched['scenario'] = _a40a_scenario
                 _enriched['spread_pips'] = _a40a_spread
@@ -2501,16 +2531,31 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
             _scenario_name = _scenario_dir[len('scenario_'):]
         else:
             _scenario_name = None
-        if _scenario_name:
-            _entry_timeframe = (
-                _scenario_name.split('_')[0]
-                if '_' in _scenario_name
-                else _scenario_name
-            )
-        else:
-            _entry_timeframe = None
     else:
         _scenario_name = None
+    # CHANGED: June 2026 — derive entry_timeframe from the scenario KEY first,
+    #   which is authoritative, instead of parsing the path. The multi-scope
+    #   pipeline nests a scope_* folder (.../scenario_M5/scope_per_tf_only/
+    #   feature_matrix.csv), so the basename of dirname is 'scope_per_tf_only',
+    #   not 'scenario_M5' — path-parsing then failed and the stale-check warned.
+    #   Lowest TF in the key is the entry bar (e.g. 'H1_M15' -> M15).
+    # WHY: keeps the analysis_report's entry_timeframe consistent with the
+    #   saved rules' entry_timeframe (same source) and clears the stale-check
+    #   warning for normal multi-scope runs.
+    _TF_ORDER_RPT = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'H8', 'D1', 'W1']
+    _scn_key_rpt = globals().get('_stage_a_scenario_key', '') or ''
+    _key_tfs = [p for p in _scn_key_rpt.split('_') if p in _TF_ORDER_RPT]
+    if _key_tfs:
+        _entry_timeframe = min(_key_tfs, key=lambda t: _TF_ORDER_RPT.index(t))
+    elif _scenario_name:
+        # Legacy path-based fallback (kept for non-multi-scope layouts where
+        # dirname IS scenario_<TF>). Same logic as the prior code.
+        _entry_timeframe = (
+            _scenario_name.split('_')[0]
+            if '_' in _scenario_name
+            else _scenario_name
+        )
+    else:
         _entry_timeframe = None
 
     if _entry_timeframe is None:

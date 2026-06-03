@@ -1084,6 +1084,22 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 auto_save_discovered_rules as _a40a_save,
                 is_auto_save_enabled as _a40a_enabled,
             )
+            # CHANGED: June 2026 — derive entry_timeframe from the chosen
+            #   conditions' lowest TF prefix. Was missing, so saved Mode A
+            #   rules displayed Entry TF "?" and EAs/backtest couldn't
+            #   choose the right entry bar.
+            # WHY: Each Mode A condition's feature name starts with a TF
+            #   prefix (M5_..., H1_...). The strategy enters on the LOWEST
+            #   TF in the conjunction; higher TFs are context only — same
+            #   rule the Step-3 auto-save uses for non-Mode-A rules.
+            _TF_ORDER_MA = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'H8', 'D1', 'W1']
+            _ma_tfs = []
+            for _c in chosen_conditions:
+                _pfx = str(_c['feature']).split('_', 1)[0]
+                if _pfx in _TF_ORDER_MA:
+                    _ma_tfs.append(_pfx)
+            _ma_entry_tf = (min(_ma_tfs, key=lambda t: _TF_ORDER_MA.index(t))
+                            if _ma_tfs else None)
             _a40a_rule = {
                 'conditions': [
                     {
@@ -1101,10 +1117,24 @@ def discover_mode_a(trade_df, background_df=None, progress_log=None,
                 #      already treats it as "no WR available".
                 # CHANGED: April 2026 — Phase A.40a hotfix
                 'win_rate':         0.0,
+                # WHY: Mode A is a coverage/tightness optimiser, not a WR
+                #   model. Panels should render "WR: n/a" rather than a
+                #   misleading "0.0%". The marker flag is read by
+                #   shared/saved_rules.py display.
+                # CHANGED: June 2026 — mark WR not-applicable for Mode A
+                'win_rate_na':      True,
                 'avg_pips':         0.0,
                 'coverage':         int(round(float(chosen['joint_coverage']) * n_trades)),
+                # CHANGED: June 2026 — duplicate coverage as trade_count so the
+                #   saved-rules display ("Trades: N") shows a real number.
+                'trade_count':      int(round(float(chosen['joint_coverage']) * n_trades)),
                 'confidence':       float(chosen['joint_coverage']),
                 'tightness_product': float(chosen['tightness_product']),
+                # CHANGED: June 2026 — entry_timeframe from the chosen conditions'
+                #   lowest TF prefix. Both keys for compatibility with downstream
+                #   readers (panels use 'entry_timeframe', EA generator uses 'entry_tf').
+                'entry_timeframe':  _ma_entry_tf,
+                'entry_tf':         _ma_entry_tf,
             }
             _winner = p.get('winner_selection', 'tightness')
             _src = (

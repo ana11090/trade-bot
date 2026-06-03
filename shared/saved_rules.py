@@ -385,9 +385,19 @@ def save_rule(rule, source="unknown", notes=""):
     # CHANGED: April 2026 — save confirmation log
     _saved_tf = rule.get('entry_timeframe', rule.get('entry_tf', '?'))
     _saved_dir = rule.get('direction', '?')
-    _saved_trades = len(rule.get('trades', []))
+    # CHANGED: June 2026 — prefer the integer trade_count (from discovery's
+    #   coverage) over len(rule.get('trades', [])). Discovery-saved rules
+    #   carry coverage/trade_count but not an embedded trades list, so the
+    #   old code always printed "Trades: 0". Backtest-saved rules still
+    #   work via len(trades) as the last fallback.
+    _saved_trades = (rule.get('trade_count')
+                     if rule.get('trade_count') is not None
+                     else rule.get('coverage', len(rule.get('trades', []))))
     _saved_combo = rule.get('rule_combo', '?')
-    _saved_wr = rule.get('win_rate', '?')
+    # CHANGED: June 2026 — Mode A rules (and any future WR-less mode) set
+    #   win_rate_na=True so we render "n/a" instead of a misleading 0.0%.
+    _wr = rule.get('win_rate', '?')
+    _saved_wr = "n/a" if rule.get('win_rate_na') else _wr
     _saved_pf = rule.get('net_profit_factor', '?')
     print(f"\n{'='*50}")
     print(f"[SAVED RULES] Rule #{new_id} saved successfully")
