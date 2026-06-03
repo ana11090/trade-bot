@@ -20,7 +20,11 @@ _INFLUENCING_KEYS = [
     "min_samples_leaf", "max_tree_depth",
     # tz alignment diagnostic — set by step1_align_price into a marker file
     # which run_scenarios folds into cfg before calling record_run.
-    "tz_mode", "tz_zone", "tz_offset_hours",
+    # tz_value supersedes tz_zone/tz_offset_hours (kept for backwards-compat
+    # with older marker files); verification rates show why the chosen clock
+    # was chosen — both candidates were measured with the same metric.
+    "tz_mode", "tz_value", "tz_zone", "tz_offset_hours",
+    "tz_verify_offset", "tz_verify_dst", "tz_verify_total",
 ]
 
 def _load():

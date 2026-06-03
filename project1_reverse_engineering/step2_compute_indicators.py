@@ -117,28 +117,21 @@ def compute_features(aligned_trades_path=None, output_dir=None, firm_data=None):
         #      Both are stored nowhere here; step3_label_trades.py adds the
         #      proper `outcome` target column separately.
         # CHANGED: April 2026 — defense-in-depth against leakage
-        # WHY (Phase 60 Fix 1b → June 2026 DST fix):
-        #      Old code subtracted a fixed `utc_offset_hours` (default 2) from
-        #      broker-local hours. The broker observes DST (EET +2 winter /
-        #      EEST +3 summer), so any single integer is wrong for ~5 months
-        #      of the year — every hour/session feature shifted by 1 hour
-        #      between summer and winter, training and live disagree.
-        #
-        #      Fix: DST-correct localization via an IANA zone (Europe/Athens
-        #      by default for EET-family brokers, overridable per firm via
-        #      `broker_timezone`). Both hour_of_day AND day_of_week now come
-        #      from the same UTC conversion so the day flips at the correct
-        #      UTC midnight too. Live EA uses TimeGMT() (true UTC) → all
-        #      three subsystems (discovery, backtest, EA) agree year-round.
-        # CHANGED: June 2026 — IANA-zone DST-correct hour/day normalisation
-        from shared.tz_offset import resolve_broker_tz
-        _tz = resolve_broker_tz(firm_data=firm_data)
-        _local = trades_df['open_time']
-        # localize broker-local -> UTC (DST handled by the IANA zone)
-        _utc = (_local.dt.tz_localize(_tz, ambiguous='NaT', nonexistent='NaT')
-                       .dt.tz_convert('UTC'))
-        feature_matrix['hour_of_day'] = _utc.dt.hour
-        feature_matrix['day_of_week'] = _utc.dt.dayofweek
+        # WHY (June 2026): step1_align_price now OWNS the trade-log clock
+        #      conversion. It measures both candidates (legacy offset
+        #      auto-detect vs firm-tz DST), keeps the winner, and writes
+        #      open_time on the chosen clock to aligned_trades.csv.
+        #      Step2 must NOT re-localize / re-convert here — doing so was
+        #      a silent double-shift that broke hour_of_day / day_of_week
+        #      after step1's fix landed. Read open_time directly; if it
+        #      somehow arrives tz-aware, just convert to UTC without
+        #      re-localizing.
+        # CHANGED: June 2026 — single conversion, owned by step1
+        _ot = pd.to_datetime(trades_df['open_time'])
+        if _ot.dt.tz is not None:
+            _ot = _ot.dt.tz_convert('UTC').dt.tz_localize(None)
+        feature_matrix['hour_of_day'] = _ot.dt.hour
+        feature_matrix['day_of_week'] = _ot.dt.dayofweek
         # NOTE: trade_duration_minutes and is_winner are NOT added here.
         # If you need them for analysis, compute them from trades_df at point of use.
 

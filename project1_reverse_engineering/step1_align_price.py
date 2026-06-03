@@ -83,6 +83,35 @@ def _get_trades_path():
     raise FileNotFoundError("No active trade history found. Load trades first.")
 
 
+# WHY: Single source of truth for "how many trades agree with the candle clock".
+#      Both candidate clocks (legacy auto-detect offset vs firm-tz DST) need to
+#      be scored with EXACTLY the same metric before we decide which to keep,
+#      otherwise the comparison is unfair. _detect_best_offset uses this for
+#      each offset; the align_all_timeframes block uses it for the firm-tz path.
+# CHANGED: June 2026 — extracted verification scorer
+def _verify_count(trades_df, candles_sorted, tol_price):
+    """Count trades whose entry_price matches the OPEN of the next candle.
+
+    trades_df must already be on the clock under test (open_time shifted /
+    converted as appropriate). candles_sorted must be sorted by 'timestamp'.
+    Returns an int.
+    """
+    ts = trades_df.sort_values('open_time')
+    cols = ['timestamp', 'open'] if 'open' in candles_sorted.columns else ['timestamp', 'high', 'low']
+    merged = pd.merge_asof(
+        ts[['open_time', 'entry_price']],
+        candles_sorted[cols],
+        left_on='open_time',
+        right_on='timestamp',
+        direction='forward',
+        tolerance=pd.Timedelta(hours=2),
+    )
+    if 'open' in merged.columns:
+        return int(((merged['entry_price'] - merged['open']).abs() <= tol_price).sum())
+    return int(((merged['entry_price'] >= merged['low'] - tol_price) &
+                (merged['entry_price'] <= merged['high'] + tol_price)).sum())
+
+
 def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
     """
     Find the timezone offset (in hours) that maximizes verification rate.
@@ -382,82 +411,103 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                     pass
 
         if _candles_for_detection and 'entry_price' in trades_df.columns:
-            # WHY (June 2026 DST fix): a single fixed offset is wrong for ~5
-            #      months/year on DST-shifting brokers (EET +2 winter / EEST
-            #      +3 summer). Prefer the firm's IANA timezone (per-row,
-            #      DST-correct). Fall back to the legacy fixed-offset
-            #      auto-detector when no firm broker_timezone is configured —
-            #      that algorithm is UNTOUCHED, runs exactly as before.
-            # CHANGED: June 2026 — DST-aware alignment + legacy fallback
+            # WHY (June 2026): we used to ASSUME firm-tz DST was always better
+            #      than the legacy offset. Real measurement on a 1106-trade log
+            #      showed DST conversion did NOT improve verification for the
+            #      TRADE LOG (separate from candle side, which IS DST-correct).
+            #      So now: score BOTH candidates with the SAME _verify_count
+            #      metric, log both rates, keep the winner. _detect_best_offset
+            #      stays untouched — it just produces candidate A. If the firm
+            #      has no broker_timezone, only A runs (no change vs before).
+            # CHANGED: June 2026 — measure both clocks, keep the winner
+            _detect_tf = ('M5' if 'M5' in _candles_for_detection
+                          else next(iter(_candles_for_detection)))
+            _cand = _candles_for_detection[_detect_tf].sort_values('timestamp').reset_index(drop=True)
+            _tol = ALIGNMENT_TOLERANCE * PIP_SIZE * 5
+            _n = len(trades_df)
+
+            # Candidate A: legacy fixed-offset auto-detect (UNCHANGED algorithm)
+            _best_off = _detect_best_offset(trades_df, _candles_for_detection)
+            _ta = trades_df.copy()
+            _ta['open_time'] = pd.to_datetime(_ta['open_time']) + pd.Timedelta(hours=_best_off)
+            _va = _verify_count(_ta, _cand, _tol)
+
+            # Candidate B: firm-tz DST-aware (only if the firm specifies a zone)
+            _vb = -1
             _tz = None
             try:
-                import config_loader as _tz_cl
+                import config_loader as _cl2
                 from shared.tz_offset import resolve_broker_tz
                 from shared.prop_firm_engine import load_all_firms
-                _tzcfg = _tz_cl.load()
-                _fid = _tzcfg.get('prop_firm_id', '')
+                _c2 = _cl2.load()
+                _fid = _c2.get('prop_firm_id', '')
                 _firms = load_all_firms()
-                _fdata = _firms[_fid].config if _fid and _fid in _firms else None
-                # only use it if the firm ACTUALLY specifies a broker_timezone
-                if _fdata and _fdata.get('broker_timezone'):
-                    _tz = resolve_broker_tz(firm_data=_fdata)
-            except Exception as _tze:
-                log.info("    [TZ] Firm timezone lookup failed (" + str(_tze)
-                         + ") — using auto-detect fallback.")
+                _fd = _firms[_fid].config if _fid and _fid in _firms else None
+                if _fd and _fd.get('broker_timezone'):
+                    _tz = resolve_broker_tz(firm_data=_fd)
+                    _tb = trades_df.copy()
+                    _ot = pd.to_datetime(_tb['open_time'])
+                    _tb['open_time'] = (_ot.dt.tz_localize(_tz, ambiguous='NaT',
+                                                          nonexistent='NaT')
+                                           .dt.tz_convert('UTC').dt.tz_localize(None))
+                    _tb = _tb.dropna(subset=['open_time'])
+                    _vb = _verify_count(_tb, _cand, _tol)
+            except Exception as _e:
+                log.info("    [TZ] firm-tz scoring skipped: " + str(_e))
                 _tz = None
 
-            if _tz:
-                # DST-AWARE PATH: localize broker-local trade times -> UTC.
-                log.info("    [TZ] DST-AWARE alignment using firm broker_timezone='"
-                         + str(_tz) + "' (per-row DST; NOT a fixed offset).")
-                for _col in ('open_time', 'close_time'):
-                    _t = pd.to_datetime(trades_df[_col])
-                    if _t.dt.tz is None:
-                        trades_df[_col] = (_t.dt.tz_localize(_tz, ambiguous='NaT',
-                                                             nonexistent='NaT')
-                                             .dt.tz_convert('UTC').dt.tz_localize(None))
-                    else:
-                        trades_df[_col] = _t.dt.tz_convert('UTC').dt.tz_localize(None)
-                _nat = int(trades_df['open_time'].isna().sum())
-                if _nat:
-                    log.info("    [TZ] " + str(_nat) + " trades dropped at DST "
-                             "boundary (ambiguous/nonexistent local time).")
-                    trades_df = trades_df.dropna(subset=['open_time']).reset_index(drop=True)
-                # Record diagnostic for Run History (read by the recorder hook).
-                try:
-                    trades_df.attrs['tz_mode'] = 'dst_aware'
-                    trades_df.attrs['tz_zone'] = str(_tz)
-                    _meta = {'tz_mode': 'dst_aware', 'tz_zone': str(_tz)}
-                    _meta_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
-                    os.makedirs(_meta_dir, exist_ok=True)
-                    with open(os.path.join(_meta_dir, '_last_tz_mode.json'),
-                              'w', encoding='utf-8') as _mf:
-                        import json as _json
-                        _json.dump(_meta, _mf)
-                except Exception:
-                    pass
+            log.info("    [TZ] Verification — auto-detect offset %+dh: %d/%d (%.1f%%)"
+                     % (_best_off, _va, _n, 100.0 * _va / max(_n, 1)))
+            if _tz is not None:
+                log.info("    [TZ] Verification — firm DST '%s': %d/%d (%.1f%%)"
+                         % (_tz, _vb, _n, 100.0 * _vb / max(_n, 1)))
+
+            if _tz is not None and _vb > _va:
+                log.info("    [TZ] CHOSEN: firm-tz DST-aware ('%s') — higher verification." % _tz)
+                _chosen_mode = 'dst_aware'
+                _chosen_tz = str(_tz)
+                _ot = pd.to_datetime(trades_df['open_time'])
+                _ct = pd.to_datetime(trades_df['close_time'])
+                trades_df['open_time']  = (_ot.dt.tz_localize(_tz, ambiguous='NaT', nonexistent='NaT')
+                                              .dt.tz_convert('UTC').dt.tz_localize(None))
+                trades_df['close_time'] = (_ct.dt.tz_localize(_tz, ambiguous='NaT', nonexistent='NaT')
+                                              .dt.tz_convert('UTC').dt.tz_localize(None))
+                trades_df = trades_df.dropna(subset=['open_time']).reset_index(drop=True)
             else:
-                # FALLBACK: legacy auto-detect (UNCHANGED algorithm).
-                log.info("    [TZ] No firm broker_timezone set — using LEGACY "
-                         "auto-detect offset (single fixed offset; not DST-aware).")
-                detected_offset = _detect_best_offset(trades_df, _candles_for_detection)
-                if detected_offset != 0:
-                    log.info(f"    Applying timezone offset {detected_offset:+d}h to trade timestamps")
-                    trades_df['open_time'] = trades_df['open_time'] + pd.Timedelta(hours=detected_offset)
-                    trades_df['close_time'] = trades_df['close_time'] + pd.Timedelta(hours=detected_offset)
-                try:
-                    trades_df.attrs['tz_mode'] = 'auto_detect'
-                    trades_df.attrs['tz_offset_hours'] = int(detected_offset)
-                    _meta = {'tz_mode': 'auto_detect',
-                             'tz_offset_hours': int(detected_offset)}
-                    _meta_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
-                    os.makedirs(_meta_dir, exist_ok=True)
-                    with open(os.path.join(_meta_dir, '_last_tz_mode.json'),
-                              'w', encoding='utf-8') as _mf:
-                        import json as _json
-                        _json.dump(_meta, _mf)
-                except Exception:
-                    pass
+                _why = ("no firm tz" if _tz is None
+                        else ("offset %+dh scored >= DST" % _best_off))
+                log.info("    [TZ] CHOSEN: legacy auto-detect offset (%s)." % _why)
+                _chosen_mode = 'auto_detect'
+                _chosen_tz = ("offset%+dh" % _best_off)
+                if _best_off != 0:
+                    trades_df['open_time']  = pd.to_datetime(trades_df['open_time'])  + pd.Timedelta(hours=_best_off)
+                    trades_df['close_time'] = pd.to_datetime(trades_df['close_time']) + pd.Timedelta(hours=_best_off)
+
+            # WHY: Globals on the module are read by the run-history recorder
+            #      hook so the chosen mode + both verification rates are
+            #      surfaced in the Run History panel. Marker file kept for
+            #      compatibility with the prior recorder hook.
+            try:
+                globals()['_LAST_TZ_MODE']           = _chosen_mode
+                globals()['_LAST_TZ_VALUE']          = _chosen_tz
+                globals()['_LAST_TZ_VERIFY_OFFSET']  = int(_va)
+                globals()['_LAST_TZ_VERIFY_DST']     = (int(_vb) if _tz is not None else None)
+                globals()['_LAST_TZ_VERIFY_TOTAL']   = int(_n)
+                _meta = {
+                    'tz_mode': _chosen_mode,
+                    'tz_value': _chosen_tz,
+                    'tz_verify_offset':  int(_va),
+                    'tz_verify_dst':     (int(_vb) if _tz is not None else None),
+                    'tz_verify_total':   int(_n),
+                }
+                _meta_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
+                os.makedirs(_meta_dir, exist_ok=True)
+                import json as _json
+                with open(os.path.join(_meta_dir, '_last_tz_mode.json'),
+                          'w', encoding='utf-8') as _mf:
+                    _json.dump(_meta, _mf)
+            except Exception:
+                pass
         else:
             log.info(f"    Could not load candles for offset detection — proceeding without offset")
 
