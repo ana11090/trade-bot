@@ -3331,13 +3331,31 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
         from shared.prop_firm_simulator import simulate_challenge
 
         _oc_trades = cand.get('trades', [])
-        # Need firm_id and challenge_id from firm_data
+        # WHY: The optimizer passes the FLAT settings dict from
+        #      resolve_firm_settings() as firm_data — it has spread_pips,
+        #      force_close_hour, symbol, etc. but NO 'firm_id' and NO
+        #      'challenges' list. Reading firm_id/challenge_id off firm_data
+        #      therefore returned '', which failed the guard below and
+        #      silently dropped the entire "Eval windows" dropdown from every
+        #      card (the rest of the card doesn't need firm_id, so it kept
+        #      rendering — which masked the regression). Resolve the two IDs
+        #      the SAME way the working "Selected rule" panel does, via
+        #      _resolve_firm_challenge(), using the candidate's own rule dict.
+        # CHANGED: June 2026 — resolve firm_id/challenge_id via
+        #          _resolve_firm_challenge instead of reading them off the
+        #          flat firm_data dict (restores the per-window eval dropdown)
         _oc_firm_id = None
         _oc_ch_id   = None
-        if firm_data:
-            _oc_firm_id = firm_data.get('firm_id', '')
-            _chs = firm_data.get('challenges', [])
-            _oc_ch_id = _chs[0].get('challenge_id', '') if _chs else ''
+        try:
+            _oc_firm_id, _oc_ch_id = _resolve_firm_challenge(cand, int(acct))
+        except Exception as _oc_fc_err:
+            # Fallback: keep the old behavior in case cand can't be resolved,
+            # so we never crash card rendering over this.
+            print(f"[OPT-CARD] firm/challenge resolve failed: {_oc_fc_err}")
+            if firm_data:
+                _oc_firm_id = firm_data.get('firm_id', '') or firm_data.get('prop_firm_id', '')
+                _chs = firm_data.get('challenges', [])
+                _oc_ch_id = _chs[0].get('challenge_id', '') if _chs else ''
 
         if _oc_trades and _oc_firm_id and _oc_ch_id:
             _oc_sl   = 150.0
