@@ -45,8 +45,38 @@ def _parse_dt(val):
     return None
 
 
-def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90,
-                     pip_size=0.01):
+def _to_utc_naive(dt, broker_tz, log_is_gmt):
+    """Normalise an EA-log datetime to NAIVE UTC.
+
+    WHY: The Python backtest runs in UTC (timestamp_utc). MT5 logs were
+         broker server time (GMT+2/+3 with DST) until the June 2026 fix —
+         matching naive datetimes shifted every trade 2-3h, masking real
+         disagreements behind a fake "outside tolerance" failure.
+
+         When the EA log was written by the new (post-fix) EA it's already
+         UTC (TimeGMT()); pass log_is_gmt=True. For OLD logs that are still
+         broker server time, pass log_is_gmt=False + the firm's IANA zone
+         (e.g. 'Europe/Athens') and the conversion is DST-aware.
+
+    CHANGED: June 2026 — tz-normalize EA log to UTC for verifier parity
+    """
+    if dt is None:
+        return None
+    if log_is_gmt:
+        return dt  # already UTC, naive
+    try:
+        from zoneinfo import ZoneInfo
+        return (dt.replace(tzinfo=ZoneInfo(broker_tz))
+                  .astimezone(ZoneInfo('UTC')).replace(tzinfo=None))
+    except Exception:
+        # zoneinfo unavailable (very old Python) — fall back to naive shift-less
+        # behavior. Caller will see this as a clear systematic offset in the
+        # report rather than a silent partial conversion.
+        return dt
+
+
+def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=15,
+                     pip_size=0.01, broker_tz='Europe/Athens', log_is_gmt=True):
     """
     Compare EA's logged trades to backtest predictions.
 
@@ -57,15 +87,30 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90,
     ----------
     ea_log_path       : str   — path to EA-generated trade log CSV
     backtest_trades   : list  — trade dicts from backtest_matrix.json
-    tolerance_minutes : int   — entry time tolerance for matching
+    tolerance_minutes : int   — entry time tolerance for matching (default 15;
+                                roughly one M15 bar — tight enough to surface
+                                wrong-bar entries instead of masking them).
+                                Old default was 90 minutes, which hid 2-3h
+                                tz-mismatch errors as "matched".
     pip_size          : float — pip size in price units (default 0.01 for
                                 XAUUSD/JPY pairs; use 0.0001 for forex majors,
                                 1.0 for indices). Wrong value gives slippage
                                 100× off between 0.01 and 0.0001 instruments.
+    broker_tz         : str   — IANA broker timezone, used ONLY when
+                                log_is_gmt=False to convert server-time EA
+                                datetimes to UTC for matching. Default
+                                'Europe/Athens' (EET/EEST).
+    log_is_gmt        : bool  — True (default) when the EA log was written by
+                                the June-2026-or-later EA (TimeGMT()). False
+                                for older logs still in broker server time —
+                                the verifier will convert via broker_tz with
+                                DST awareness.
 
     WHY: Old code hardcoded pip_size=0.01 in the slippage calc.
          XAUUSD-only. Forex pairs showed 100× wrong slippage.
     CHANGED: April 2026 — parameterize pip_size (audit HIGH — Family #1)
+    CHANGED: June 2026 — tz-aware EA-log normalization to UTC; tighten
+                          default tolerance 90 -> 15 minutes
 
     Returns
     -------
@@ -87,9 +132,13 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90,
     ea_skipped = [t for t in ea_trades if t.get('skip_reason')]
 
     # Index EA trades by (entry_dt, direction)
+    # WHY (June 2026): normalize the EA log datetime to UTC before matching.
+    #      The backtest side is UTC; the EA log may be UTC (post-fix EAs) or
+    #      broker server time (older logs). _to_utc_naive handles both.
     ea_indexed = []
     for t in ea_actual:
         dt = _parse_dt(t.get('entry_time') or t.get('timestamp'))
+        dt = _to_utc_naive(dt, broker_tz, log_is_gmt)
         ea_indexed.append({'dt': dt, 'trade': t, 'matched': False})
 
     matched_trades = []
@@ -162,6 +211,8 @@ def verify_ea_trades(ea_log_path, backtest_trades, tolerance_minutes=90,
             skip_reason = 'unknown'
             for sk in ea_skipped:
                 sk_dt = _parse_dt(sk.get('timestamp') or sk.get('entry_time'))
+                # WHY (June 2026): same UTC normalization as the entry side.
+                sk_dt = _to_utc_naive(sk_dt, broker_tz, log_is_gmt)
                 if sk_dt is None or bt_dt is None:
                     continue
                 # Direction match (allow missing direction — generic skips)

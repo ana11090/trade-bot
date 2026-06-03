@@ -129,10 +129,39 @@ def _run_comparison():
         for w in _verdict_frame.winfo_children():
             w.destroy()
 
+    # WHY (June 2026): resolve the firm's broker timezone so the verifier can
+    #   tz-normalize the EA log to UTC before matching. New (June-2026-or-later)
+    #   EAs log TimeGMT() so the log is already UTC — pass log_is_gmt=True.
+    #   For OLDER server-time logs, set log_is_gmt=False and the verifier
+    #   converts via broker_tz (DST-aware).
+    # CHANGED: June 2026 — resolve broker_tz from selected strategy's firm
+    _broker_tz = 'Europe/Athens'
+    try:
+        import json as _lm_json
+        _bt_path = os.path.join(project_root, 'project2_backtesting', 'outputs', 'backtest_matrix.json')
+        with open(_bt_path, 'r', encoding='utf-8') as _bf:
+            _bt_data = _lm_json.load(_bf)
+        _strat = _bt_data['results'][idx]
+        _fid = _strat.get('prop_firm_id') or _strat.get('firm_id') or ''
+        if _fid:
+            from shared.prop_firm_engine import load_all_firms
+            _firms = load_all_firms()
+            if _fid in _firms:
+                _fcfg = _firms[_fid].config
+                if _fcfg.get('broker_timezone'):
+                    _broker_tz = str(_fcfg['broker_timezone'])
+    except Exception as _tze:
+        print(f"[LIVE MONITOR] broker_tz lookup failed ({_tze}); using default {_broker_tz}")
+
     def _worker():
         try:
             from project3_live_trading.ea_verifier import verify_ea_trades
-            result = verify_ea_trades(log_path, backtest_trades)
+            # log_is_gmt=True: newly-generated EAs log TimeGMT(). For OLD
+            # server-time logs, set log_is_gmt=False (the verifier will
+            # convert via broker_tz with DST awareness).
+            result = verify_ea_trades(log_path, backtest_trades,
+                                      broker_tz=_broker_tz,
+                                      log_is_gmt=True)
 
             state.window.after(0, lambda: _display_results(result))
             state.window.after(0, lambda: _display_verdict(result))

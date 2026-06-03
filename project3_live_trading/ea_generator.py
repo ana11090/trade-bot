@@ -3417,12 +3417,18 @@ bool IsNewsImminent()
 void LogTrade(string action, string dir, double lots, double entry, double exitP, double pips, string reason)
 {{
    if(!LogTrades || g_logHandle == INVALID_HANDLE) return;
+   // WHY: Python backtest runs in UTC; logging TimeCurrent() (broker server
+   //      time, GMT+2/+3 with DST) made every trade mismatch the backtest by
+   //      2-3 hours in the verifier, so EA-vs-Python parity reports were
+   //      meaningless. Log TimeGMT() so the EA trade log is unambiguously UTC
+   //      and aligns with backtest['entry_time']. exit_time likewise.
+   // CHANGED: June 2026 — log GMT (was TimeCurrent server time) for parity
    FileWrite(g_logHandle,
-      TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES),
+      TimeToString(TimeGMT(), TIME_DATE|TIME_MINUTES),
       _Symbol, dir, DoubleToString(lots,2),
       DoubleToString(entry,5), DoubleToString(exitP,5),
       DoubleToString(pips,1), reason,
-      TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES), "", "");
+      TimeToString(TimeGMT(), TIME_DATE|TIME_MINUTES), "", "");
    FileFlush(g_logHandle);
 }}
 
@@ -3455,10 +3461,13 @@ void LogSkip(string reason, double val)
 
    // CSV log (existing behavior, preserved)
    if(!LogTrades || g_logHandle == INVALID_HANDLE) return;
+   // WHY: Same UTC-parity rationale as LogTrade above — skip rows are matched
+   //      against backtest skips on the same UTC clock.
+   // CHANGED: June 2026 — log GMT in skip CSV
    FileWrite(g_logHandle,
-      TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES),
+      TimeToString(TimeGMT(), TIME_DATE|TIME_MINUTES),
       _Symbol, "SKIP", "0", "0", "0", "0", "",
-      TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES), "", reason);
+      TimeToString(TimeGMT(), TIME_DATE|TIME_MINUTES), "", reason);
    FileFlush(g_logHandle);
 }}
 //+------------------------------------------------------------------+
