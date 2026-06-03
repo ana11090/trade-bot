@@ -53,6 +53,13 @@ _ui_firm_map = {}          # firm_name → firm dict
 _ui_source_map = {}        # source display name → {id, path}
 _ui_margin_cap_var  = None  # tk.BooleanVar — margin cap checkbox
 _ui_mt5_parity_var  = None  # tk.BooleanVar — MT5 parity indicators checkbox
+# WHY: run_scenarios() runs all six timeframes whenever a non-"Last used" preset
+#      is active. It needs to read the active preset name, but it's a top-level
+#      function separate from build_panel where _preset_var lives. Hold the
+#      active preset name here so run_scenarios can enforce all-TF selection at
+#      run time (not just when the dropdown fires its select event).
+# CHANGED: June 2026 — module holder for active preset name
+_ui_active_preset = [None]  # one-element list; set on preset change
 
 
 def build_panel(parent):
@@ -3120,6 +3127,11 @@ def build_panel(parent):
     #      save, so picking a preset both moves the UI and persists the change.
     # CHANGED: June 2026 — add preset-mode dropdown above Execute
     def _apply_preset(_name):
+        # CHANGED: June 2026 — record active preset for run-time enforcement.
+        #   run_scenarios reads _ui_active_preset[0] to force all-TF selection
+        #   when a preset other than "Last used" is active, regardless of how
+        #   the checkboxes drifted between selection events.
+        _ui_active_preset[0] = _name
         if _name == "Last used":
             return  # no-op: leave all controls as-is
 
@@ -3183,6 +3195,7 @@ def build_panel(parent):
     tk.Label(_preset_row, text="Mode:", bg="white", fg="#16213e",
              font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 8))
     _preset_var = tk.StringVar(value="Last used")
+    _ui_active_preset[0] = "Last used"  # CHANGED: June 2026 — init holder
     _preset_names = [
         "Last used",
         "Parity — Clean H4",
@@ -3197,6 +3210,18 @@ def build_panel(parent):
     _preset_combo.pack(side="left")
     _preset_combo.bind("<<ComboboxSelected>>",
                        lambda _e: _apply_preset(_preset_var.get()))
+
+    # WHY: Re-assert all-TF selection when the user re-opens the dropdown with
+    #      a preset already showing, so the boxes visibly correct themselves
+    #      before Run (in addition to the run-time enforcement below in
+    #      run_scenarios). "Last used" still respects manual choices.
+    # CHANGED: June 2026 — re-assert preset selection on dropdown focus
+    def _reassert_preset(_e=None):
+        _n = _preset_var.get()
+        if _n and _n != "Last used":
+            for _v in scenario_vars.values():
+                _v.set(True)
+    _preset_combo.bind("<FocusIn>", _reassert_preset, add="+")
 
     tk.Label(right_frame, text="▶️ Execute",
              bg="white", fg="#16213e",
@@ -3354,6 +3379,19 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
             "4. Return to Project 1 and try again"
         )
         return
+
+    # WHY: A preset (Mode other than "Last used") guarantees ALL six timeframes
+    #      run — only the other criteria differ between presets. Enforce it
+    #      here at run time so the run can never use a subset just because the
+    #      checkboxes drifted or the <<ComboboxSelected>> event didn't fire
+    #      this session. "Last used" is untouched (manual selection respected).
+    #      Setting these BooleanVars also visually re-ticks the on-screen
+    #      checkboxes, so the user sees the enforcement happen.
+    # CHANGED: June 2026 — enforce all-TF when a preset is active
+    _active_preset = _ui_active_preset[0]
+    if _active_preset and _active_preset != "Last used":
+        for _v in scenario_vars.values():
+            _v.set(True)
 
     selected = [key for key, var in scenario_vars.items() if var.get()]
 
