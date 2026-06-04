@@ -145,9 +145,13 @@ def run_scratch_discovery(
     slippage_pips=0.0,
     swap_long_pips_per_night=0.0,
     swap_short_pips_per_night=0.0,
-    min_hold_candles=0,      # CHANGED: June 2026 — per-candle constraints (audit D)
+    min_hold_candles=0,           # CHANGED: June 2026 — per-candle constraints (audit D)
     hard_close_hour=None,
     allowed_sessions=None,
+    use_atr_sl_tp=True,           # CHANGED: June 2026 — ATR-derived labeling SL/TP (audit E)
+    atr_mult_sl=1.5,              # sl_pips = atr_mult_sl × median ATR (pips)
+    atr_mult_tp=3.0,              # tp_pips = atr_mult_tp × median ATR (pips)
+    risk_per_trade_pct=None,      # CHANGED: June 2026 — explicit risk% (audit E)
     use_smart_features=True,
     max_rules=25,
     max_depth=4,
@@ -215,6 +219,10 @@ def run_scratch_discovery(
                     min_hold_candles=min_hold_candles,
                     hard_close_hour=hard_close_hour,
                     allowed_sessions=allowed_sessions,
+                    use_atr_sl_tp=use_atr_sl_tp,
+                    atr_mult_sl=atr_mult_sl,
+                    atr_mult_tp=atr_mult_tp,
+                    risk_per_trade_pct=risk_per_trade_pct,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -224,8 +232,8 @@ def run_scratch_discovery(
                     train_test_split=train_test_split,
                     prop_firm_name=prop_firm_name,
                     prop_firm_data=prop_firm_data,
-                    compare_all_tfs=False,  # Don't recurse infinitely
-                    progress_callback=None,  # Suppress nested progress
+                    compare_all_tfs=False,
+                    progress_callback=None,
                 )
 
                 # Extract key metrics
@@ -357,6 +365,10 @@ def run_scratch_discovery(
                     min_hold_candles=min_hold_candles,
                     hard_close_hour=hard_close_hour,
                     allowed_sessions=allowed_sessions,
+                    use_atr_sl_tp=False,  # multi-exit tests explicit combos — don't override
+                    atr_mult_sl=atr_mult_sl,
+                    atr_mult_tp=atr_mult_tp,
+                    risk_per_trade_pct=risk_per_trade_pct,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -437,6 +449,47 @@ def run_scratch_discovery(
                      f"slippage={slippage_pips} swap_L={swap_long_pips_per_night} swap_S={swap_short_pips_per_night}")
         except Exception as _e:
             log.warning(f"[scratch] firm cost resolution failed ({_e}) — using caller-supplied values")
+
+    # ── Resolve risk% (audit E) ───────────────────────────────────────────────
+    # CHANGED: June 2026 — risk_per_trade_pct now explicit; fall back to firm
+    # config or a safe default. Previously hardcoded 1.0 in the simulator call.
+    if risk_per_trade_pct is None:
+        risk_per_trade_pct = float((prop_firm_data or {}).get('risk_per_trade_pct', 0.3))
+    risk_per_trade_pct = max(0.01, float(risk_per_trade_pct))
+
+    # ── ATR-derived labeling SL/TP (audit E) ──────────────────────────────────
+    # CHANGED: June 2026 — anchor SL/TP to volatility; default ON (150/300 is
+    # arbitrary gold-scale; ATR scales correctly across volatility regimes).
+    # Falls back to the explicit values if ATR computation fails.
+    if use_atr_sl_tp:
+        try:
+            _atr_raw = pd.read_csv(candles_path, encoding='utf-8-sig')
+            _cmap = {}
+            for _c in _atr_raw.columns:
+                _cl = _c.lower().strip()
+                if 'high' in _cl or _cl == 'h':                               _cmap['high']  = _c
+                elif 'low'  in _cl or _cl == 'l':                             _cmap['low']   = _c
+                elif ('close' in _cl or _cl == 'c') and 'time' not in _cl:    _cmap['close'] = _c
+            if all(k in _cmap for k in ('high', 'low', 'close')):
+                _hi = _atr_raw[_cmap['high']].values.astype(float)
+                _lo = _atr_raw[_cmap['low']].values.astype(float)
+                _cl_vals = _atr_raw[_cmap['close']].values.astype(float)
+                _prev_c = np.concatenate(([_cl_vals[0]], _cl_vals[:-1]))
+                _tr = np.maximum(_hi - _lo,
+                      np.maximum(np.abs(_hi - _prev_c), np.abs(_lo - _prev_c)))
+                # Wilder's ATR(14) via EWM (alpha = 1/period)
+                _atr_series = pd.Series(_tr).ewm(alpha=1.0 / 14, min_periods=14,
+                                                 adjust=False).mean()
+                _median_atr_price = float(_atr_series.dropna().median())
+                _median_atr_pips  = _median_atr_price / pip_size
+                if _median_atr_pips > 0:
+                    sl_pips = max(10.0, round(atr_mult_sl * _median_atr_pips, 1))
+                    tp_pips = max(20.0, round(atr_mult_tp * _median_atr_pips, 1))
+                    log.info(f"[scratch] ATR labeling: sl={sl_pips}, tp={tp_pips} "
+                             f"(median ATR={_median_atr_pips:.1f} pips, "
+                             f"mult ×{atr_mult_sl}/×{atr_mult_tp})")
+        except Exception as _e:
+            log.warning(f"[scratch] ATR derivation failed ({_e}) — using explicit sl={sl_pips}, tp={tp_pips}")
 
     # ── Step 1: Label candles ─────────────────────────────────────────────────
     _cb(1, "Step 1/6: Labeling candles (WIN/LOSS)...")
@@ -807,7 +860,6 @@ def run_scratch_discovery(
         _cb(total_steps, total_steps, "Scoring rules against prop firm challenge...")
         _pip_val  = 1.0   # XAUUSD: 100 oz × $0.01/pip → pip_value_per_lot = 1
         _acct     = prop_firm_data.get('account_size', 10000)
-        _risk_pct = 1.0   # 1% per trade — same default as the backtest
         _max_consec_dd_flag = 3
 
         for _rule in final_rules:
@@ -818,7 +870,7 @@ def run_scratch_discovery(
                     _rows, prop_firm_name, prop_firm_data,
                     pip_value_per_lot=_pip_val,
                     default_sl_pips=float(sl_pips),
-                    risk_per_trade_pct=_risk_pct,
+                    risk_per_trade_pct=risk_per_trade_pct,
                     account_size=_acct,
                 )
             else:
@@ -848,9 +900,14 @@ def run_scratch_discovery(
         "candles_analyzed":   n_candles,
         "base_win_rate":      round(win_rate_base, 3),
         "entry_timeframe":    entry_timeframe or 'H1',
+        "direction":          direction,
+        "action":             direction,     # alias for backtest schema compatibility
         "sl_pips":            sl_pips,
         "tp_pips":            tp_pips,
-        "direction":          direction,
+        "labeling_sl_pips":   sl_pips,       # actual values used (ATR-derived or explicit)
+        "labeling_tp_pips":   tp_pips,
+        "atr_derived_sl_tp":  use_atr_sl_tp,
+        "risk_per_trade_pct": risk_per_trade_pct,
         "max_hold_candles":   max_hold_candles,
         "spread_pips":        spread_pips,
         "data_source_id":           data_source_id,

@@ -144,6 +144,11 @@ def label_candles(
     n = len(candles)
     results = []
 
+    # CHANGED: June 2026 — gross_pips offset (audit P3-4): fixed round-trip cost
+    # in pips (entry + exit spread/slip + commission, excluding swap). Stored on
+    # each label row so the panel can show gross vs net without recalculating.
+    _fixed_round_trip_pips = 2.0 * spread_pips + 2.0 * slippage_pips + commission_pips
+
     # CHANGED: June 2026 — full cost model (audit gap C)
     # Auto-detect candles_per_day from timeframe implied by median bar gap
     if candles_per_day is None:
@@ -285,6 +290,10 @@ def label_candles(
                     pips_result = (entry_price - closes[last_idx]) / pip_size - _exit_cost
                 label = 1 if pips_result > 0 else 0
 
+            # Gross pips = net movement before ANY cost (entry + exit + commission).
+            # Stored pre-swap so the panel can show "gross → net after costs".
+            _gross_pips = round(pips_result + _fixed_round_trip_pips, 1)
+
             # Apply overnight swap cost proportional to hold duration
             if (swap_long_pips_per_night != 0.0 or swap_short_pips_per_night != 0.0) and hold > 0:
                 nights = hold / candles_per_day
@@ -298,12 +307,13 @@ def label_candles(
                     label = 0
 
             results.append({
-                'timestamp':   str(timestamps[i]),
-                'direction':   dir_name,
-                'label':       label,
-                'pips_result': round(pips_result, 1),
+                'timestamp':    str(timestamps[i]),
+                'direction':    dir_name,
+                'label':        label,
+                'pips_result':  round(pips_result, 1),
+                'gross_pips':   _gross_pips,
                 'hold_candles': hold,
-                'exit_reason': exit_reason,
+                'exit_reason':  exit_reason,
             })
 
     df = pd.DataFrame(results)

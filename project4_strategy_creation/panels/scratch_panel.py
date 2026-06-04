@@ -179,8 +179,8 @@ def _build_inner(inner):
                  "\"If I entered a trade HERE, would it have been profitable?\"\n\n"
                  "Then uses XGBoost + 670 features to find WHAT CONDITIONS\n"
                  "predict profitable entries. No robot trade history needed.\n\n"
-                 "130,000+ candles analyzed  vs  ~1,100 trades from a robot.\n"
-                 "More data = more reliable patterns."
+                 "Every candle in your selected data source is analyzed —\n"
+                 "count and date range shown in Data Status below."
              ),
              bg="#e8f4fd", fg="#1a3a5c",
              font=("Segoe UI", 10), justify="left",
@@ -322,12 +322,14 @@ def _build_inner(inner):
     tk.Label(left_col, text="Trade Definition", bg="#f0f2f5", fg="#8e44ad",
              font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
 
-    direction_var = tk.StringVar(value="BUY")
-    sl_var        = tk.StringVar(value="150")
-    tp_var        = tk.StringVar(value="300")
-    hold_var      = tk.StringVar(value="50")
-    spread_var    = tk.StringVar(value="2.5")
-    rr_var        = tk.StringVar(value="R:R = 2.0:1")
+    direction_var  = tk.StringVar(value="BUY")
+    sl_var         = tk.StringVar(value="150")
+    tp_var         = tk.StringVar(value="300")
+    hold_var       = tk.StringVar(value="50")
+    spread_var     = tk.StringVar(value="2.5")
+    rr_var         = tk.StringVar(value="R:R = 2.0:1")
+    # CHANGED: June 2026 — risk% input (audit gap E)
+    risk_pct_var   = tk.StringVar(value="0.3")
 
     # WHY: Phase 26 Fix 4 — Track the initial defaults so the prop
     #      firm selector can detect whether the user has manually
@@ -340,7 +342,8 @@ def _build_inner(inner):
 
     _widgets.update(dict(direction_var=direction_var, sl_var=sl_var,
                          tp_var=tp_var, hold_var=hold_var,
-                         spread_var=spread_var, rr_var=rr_var))
+                         spread_var=spread_var, rr_var=rr_var,
+                         risk_pct_var=risk_pct_var))
 
     def _update_rr(*_):
         try:
@@ -362,6 +365,7 @@ def _build_inner(inner):
         ("TP (pips) [XAUUSD: 300]:",  tp_var,  "entry", None),
         ("Max hold:",           hold_var,      "entry", None),
         ("Spread:",             spread_var,    "entry", None),
+        ("Risk % per trade:",   risk_pct_var,  "entry", None),
     ]
     for lbl, var, kind, opts in left_rows:
         row = tk.Frame(left_col, bg="#f0f2f5")
@@ -382,6 +386,34 @@ def _build_inner(inner):
                       bg="#f0f2f5", fg="#2ecc71",
                       font=("Segoe UI", 9, "bold"))
     rr_lbl.pack(anchor="w", pady=(4, 0))
+
+    # CHANGED: June 2026 — ATR-based labeling controls (audit gap E)
+    use_atr_sl_tp_var = tk.BooleanVar(value=True)
+    atr_mult_sl_var   = tk.StringVar(value="1.5")
+    atr_mult_tp_var   = tk.StringVar(value="3.0")
+    _widgets.update(dict(use_atr_sl_tp_var=use_atr_sl_tp_var,
+                         atr_mult_sl_var=atr_mult_sl_var,
+                         atr_mult_tp_var=atr_mult_tp_var))
+
+    atr_row = tk.Frame(left_col, bg="#f0f2f5")
+    atr_row.pack(fill="x", pady=(6, 0))
+    tk.Checkbutton(atr_row, text="ATR-based SL/TP", variable=use_atr_sl_tp_var,
+                   bg="#f0f2f5", font=("Segoe UI", 9),
+                   activebackground="#f0f2f5").pack(side="left")
+
+    atr_mults_row = tk.Frame(left_col, bg="#f0f2f5")
+    atr_mults_row.pack(fill="x", pady=2)
+    tk.Label(atr_mults_row, text="  SL mult:", bg="#f0f2f5", fg="#666",
+             font=("Segoe UI", 8)).pack(side="left")
+    tk.Entry(atr_mults_row, textvariable=atr_mult_sl_var, width=5,
+             font=("Segoe UI", 9), bg="white", relief="solid", bd=1).pack(side="left", padx=(2, 8))
+    tk.Label(atr_mults_row, text="TP mult:", bg="#f0f2f5", fg="#666",
+             font=("Segoe UI", 8)).pack(side="left")
+    tk.Entry(atr_mults_row, textvariable=atr_mult_tp_var, width=5,
+             font=("Segoe UI", 9), bg="white", relief="solid", bd=1).pack(side="left", padx=(2, 0))
+
+    tk.Label(left_col, text="  (overrides SL/TP above when checked)",
+             bg="#f0f2f5", fg="#999", font=("Segoe UI", 7)).pack(anchor="w")
 
     # Middle column — ML Settings
     mid_col = tk.Frame(settings_container, bg="#f0f2f5")
@@ -938,17 +970,27 @@ def _build_inner(inner):
             _real_pip_value = 1.0
 
         # Calculate lot size based on safe risk
-        # For conservative approach, assume 150-pip SL
-        assumed_sl_pips = 150
+        # CHANGED: June 2026 — use actual SL from settings, not hardcoded 150 (P3-2)
+        try:
+            assumed_sl_pips = float(sl_var.get())
+            if assumed_sl_pips <= 0:
+                assumed_sl_pips = 150.0
+        except (ValueError, TypeError):
+            assumed_sl_pips = 150.0
         pip_value_per_lot = _real_pip_value
         safe_lot_size = safe_risk_per_trade / (assumed_sl_pips * pip_value_per_lot)
 
         # Calculate actual risk% based on account size
         safe_risk_pct = (safe_risk_per_trade / account_size) * 100
 
-        # Suggest SL/TP (maintaining 2:1 R:R)
-        suggested_sl = 150
-        suggested_tp = 300
+        # Suggest SL/TP from actual settings inputs
+        suggested_sl = assumed_sl_pips
+        try:
+            suggested_tp = float(tp_var.get())
+            if suggested_tp <= 0:
+                suggested_tp = round(assumed_sl_pips * 2, 0)
+        except (ValueError, TypeError):
+            suggested_tp = round(assumed_sl_pips * 2, 0)
 
         # Display limits
         prop_limits_var.set(
@@ -1257,6 +1299,25 @@ def _render_results():
              font=("Courier", 10), justify="left",
              padx=14).pack(anchor="w")
 
+    # CHANGED: June 2026 — gross-vs-net cost breakdown (P3-4)
+    _sp  = float(r.get('spread_pips', 0.0))
+    _cm  = float(r.get('commission_pips', 0.0))
+    _sl2 = float(r.get('slippage_pips', 0.0))
+    _total_fixed = 2.0 * _sp + _cm + 2.0 * _sl2
+    if _total_fixed > 0:
+        _rules_for_cost = r.get('rules', [])
+        _best_net = max((rl.get('avg_pips', 0.0) for rl in _rules_for_cost), default=0.0)
+        _best_gross = _best_net + _total_fixed
+        _cost_txt = (
+            f"  Costs/trade:  spread {_sp:.1f}  comm {_cm:.1f}  slip {_sl2:.1f}"
+            f"  →  fixed {_total_fixed:.1f} pips round-trip"
+        )
+        if _rules_for_cost:
+            _cost_txt += f"  |  best rule: gross {_best_gross:+.0f}  →  net {_best_net:+.0f} pips avg"
+        tk.Label(sc, text=_cost_txt,
+                 bg="#2c3e50", fg="#f0b429",
+                 font=("Courier", 9), padx=14).pack(anchor="w")
+
     disc_mode = metrics.get('discovery_mode', r.get('discovery_mode', 'quick'))
     if disc_mode == 'deep':
         extra = (f"XGBoost runs: {metrics.get('xgb_runs', '?')}  |  "
@@ -1368,6 +1429,21 @@ def _render_results():
                          text=f"  {prefix}{feat} {cond['operator']} {cond['value']}",
                          bg=bg, fg=color,
                          font=("Courier", 8)).pack(anchor="w")
+
+    # CHANGED: June 2026 — backtest handoff note (audit gap E)
+    if rules:
+        _scratch_output = os.path.join(_HERE, '..', 'outputs', 'discovery_scratch.json')
+        _saved = os.path.exists(_scratch_output)
+        _handoff_txt = (
+            "Next step: open Backtesting → Source: 'Scratch Discovery' to test all exit strategies.\n"
+            + ("Results saved to discovery_scratch.json — ready for backtesting."
+               if _saved else
+               "Run discovery first, then switch to Backtesting → Source: 'Scratch Discovery'.")
+        )
+        _hnote = tk.Frame(frame, bg="#fff3cd", relief="solid", bd=1)
+        _hnote.pack(fill="x", pady=(8, 2))
+        tk.Label(_hnote, text=_handoff_txt, bg="#fff3cd", fg="#856404",
+                 font=("Segoe UI", 9), justify="left", padx=12, pady=8).pack(anchor="w")
 
     # Multi-exit comparison table (if multi-exit labeling was used)
     multi_exit = r.get('multi_exit_comparison', [])
@@ -1491,6 +1567,11 @@ def _update_comparison():
 # RUN LOGIC
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _clamp(value, lo, hi):
+    """Return value clamped to [lo, hi]."""
+    return max(lo, min(hi, value))
+
+
 def _on_run():
     global _run_thread, _result
 
@@ -1542,13 +1623,22 @@ def _on_run():
         hold       = int(_widgets['hold_var'].get())
         spread     = float(_widgets['spread_var'].get())
         max_rules  = int(_widgets['rules_var'].get())
-        n_est      = int(_widgets['est_var'].get())
-        depth      = int(_widgets['depth_var'].get())
-        cov_pct    = float(_widgets['cov_var'].get())
-        min_wr     = float(_widgets['minwr_var'].get()) / 100.0
-        split      = float(_widgets['split_var'].get()) / 100.0
+        # CHANGED: June 2026 — clamp ML knobs to sane ranges (P3-3)
+        n_est      = _clamp(int(_widgets['est_var'].get()), 10, 1000)
+        depth      = _clamp(int(_widgets['depth_var'].get()), 1, 12)
+        cov_pct    = _clamp(float(_widgets['cov_var'].get()), 0.1, 50.0)
+        min_wr     = _clamp(float(_widgets['minwr_var'].get()), 0.0, 100.0) / 100.0
+        split      = _clamp(float(_widgets['split_var'].get()), 50.0, 95.0) / 100.0
         direction  = _widgets['direction_var'].get()
         use_smart  = _widgets['smart_var'].get()
+        # CHANGED: June 2026 — risk% and ATR params (audit gap E)
+        risk_pct_raw = (_widgets.get('risk_pct_var') or tk.StringVar()).get().strip()
+        risk_per_trade_pct = max(0.01, float(risk_pct_raw)) if risk_pct_raw else 0.3
+        use_atr_sl_tp = bool((_widgets.get('use_atr_sl_tp_var') or tk.BooleanVar()).get())
+        atr_mult_sl_raw = (_widgets.get('atr_mult_sl_var') or tk.StringVar()).get().strip()
+        atr_mult_sl = float(atr_mult_sl_raw) if atr_mult_sl_raw else 1.5
+        atr_mult_tp_raw = (_widgets.get('atr_mult_tp_var') or tk.StringVar()).get().strip()
+        atr_mult_tp = float(atr_mult_tp_raw) if atr_mult_tp_raw else 3.0
 
         # New parameters from Part 2 & 3
         entry_tf       = _widgets['entry_tf_var'].get()
@@ -1693,6 +1783,22 @@ def _on_run():
                         f"in firm_data_map (loaded {len(_firm_map)} firms)."
                     )
 
+            # CHANGED: June 2026 — resolve per-firm costs for discovery (gap C/E)
+            _commission_pips = 0.0
+            _slippage_pips   = 0.0
+            _swap_long       = 0.0
+            _swap_short      = 0.0
+            if prop_data:
+                try:
+                    from shared.firm_settings_resolver import resolve_firm_settings
+                    _fc = resolve_firm_settings(firm_name_param, 'XAUUSD')
+                    _commission_pips = float(_fc.get('commission_pips', 0.0))
+                    _slippage_pips   = float(_fc.get('slippage_pips', 0.0))
+                    _swap_long       = float(_fc.get('swap_long_pips_per_night', 0.0))
+                    _swap_short      = float(_fc.get('swap_short_pips_per_night', 0.0))
+                except Exception:
+                    pass
+
             from project4_strategy_creation.scratch_discovery import run_scratch_discovery
             _result = run_scratch_discovery(
                 candles_path=candles_path,
@@ -1703,6 +1809,14 @@ def _on_run():
                 max_hold_candles=hold,
                 pip_size=0.01,
                 spread_pips=spread,
+                commission_pips=_commission_pips,
+                slippage_pips=_slippage_pips,
+                swap_long_pips_per_night=_swap_long,
+                swap_short_pips_per_night=_swap_short,
+                use_atr_sl_tp=use_atr_sl_tp,
+                atr_mult_sl=atr_mult_sl,
+                atr_mult_tp=atr_mult_tp,
+                risk_per_trade_pct=risk_per_trade_pct,
                 use_smart_features=use_smart,
                 max_rules=max_rules,
                 max_depth=depth,
