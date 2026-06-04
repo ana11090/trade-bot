@@ -186,64 +186,122 @@ def _build_inner(inner):
              font=("Segoe UI", 10), justify="left",
              padx=14, pady=12).pack(anchor="w")
 
-    # ── Data status (auto-detected) ───────────────────────────────────────────
+    # ── Data status — data-source selector ───────────────────────────────────────
+    # WHY: discover on the SAME data source the backtest uses, not a hardcoded
+    #      data/xauusd_TF.csv path. Routes through shared.data_sources so scratch
+    #      and backtest agree on candles (and so the real data/sources/<id>/ dataset
+    #      with tick files is used).
+    # CHANGED: June 2026 — data-source selector (audit gap B)
     _section(inner, "Data Status")
 
-    # Resolve paths relative to project root
-    _project_root = os.path.abspath(os.path.join(_HERE, '..', '..'))
-    _data_dir     = os.path.join(_project_root, 'data')
-
-    # Determine entry TF from config
+    from shared.data_sources import list_sources, get_source_path, resolve_data_dir
+    _sources = []
     try:
-        import sys as _sys
-        _sys.path.insert(0, _project_root)
-        from project2_backtesting.panels.configuration import load_config as _load_cfg
-        _entry_tf = _load_cfg().get('winning_scenario', 'H1')
+        _sources = list_sources()
     except Exception:
-        _entry_tf = 'H1'
-    _candles_fname = f"xauusd_{_entry_tf}.csv"
-    _candles_path  = os.path.join(_data_dir, _candles_fname)
+        _sources = []
+
+    _src_labels = [
+        (f"{s['name']}  ({s.get('candle_count', 0):,} candles"
+         + (f", {s['date_range']}" if s.get('date_range') else '')
+         + ")")
+        for s in _sources
+    ]
+    _src_by_label = {lbl: s for lbl, s in zip(_src_labels, _sources)}
+
+    data_source_var = tk.StringVar()
+    _active_dir = ''
+    try:
+        _active_dir = resolve_data_dir()
+    except Exception:
+        pass
+    _default_label = None
+    for lbl, s in _src_by_label.items():
+        if s.get('path') and os.path.normpath(s['path']) == os.path.normpath(_active_dir):
+            _default_label = lbl
+            break
+    if _default_label is None and _src_labels:
+        _default_label = _src_labels[0]
+    if _default_label:
+        data_source_var.set(_default_label)
+    _widgets['data_source_var'] = data_source_var
+    _widgets['src_by_label']    = _src_by_label
+
+    # Dummy paths so the old existence check below is skipped
+    _project_root = os.path.abspath(os.path.join(_HERE, '..', '..'))
+    _data_dir     = ''
+    _candles_path = ''
 
     status_frame = tk.Frame(inner, bg="#f0f2f5")
     status_frame.pack(fill="x", **pad)
 
-    # Entry TF candle file
-    if os.path.exists(_candles_path):
-        try:
-            # WHY: Old code imported pandas as _pd but only used the builtin
-            #      sum(1 for _ in open(...)) which doesn't need pandas.
-            # CHANGED: April 2026 — remove dead local import (Phase 19b)
-            _nc = sum(1 for _ in open(_candles_path)) - 1
-            candle_status = f"\u2705 Found {_entry_tf} candles: {_nc:,} candles  ({_candles_path})"
-            candle_color  = "#1e8449"
-        except Exception:
-            candle_status = f"\u2705 Found {_entry_tf} candles  ({_candles_path})"
-            candle_color  = "#1e8449"
-    else:
-        candle_status = f"\u274c No {_entry_tf} candle data found at data/{_candles_fname}"
-        candle_color  = "#922b21"
+    tk.Label(status_frame, text="Data source:",
+             bg="#f0f2f5", fg="#333",
+             font=("Segoe UI", 9)).pack(anchor="w")
 
-    tk.Label(status_frame, text=candle_status,
-             bg="#f0f2f5", fg=candle_color,
-             font=("Segoe UI", 9), anchor="w", wraplength=600,
-             justify="left").pack(fill="x")
+    ttk.Combobox(
+        status_frame,
+        textvariable=data_source_var,
+        values=_src_labels,
+        state="readonly",
+        width=60,
+        font=("Segoe UI", 9),
+    ).pack(anchor="w", pady=(2, 6))
 
-    # Indicator cache check
-    _parquet_files = [f for f in os.listdir(_data_dir)
-                      if f.endswith('.parquet')] if os.path.isdir(_data_dir) else []
-    if _parquet_files:
-        cache_status = f"\u2705 Indicator cache ready ({len(_parquet_files)} parquet files) — fast mode (~5 min total)"
-        cache_color  = "#1e8449"
-    else:
-        cache_status = "\u26a0\ufe0f No indicator cache — first run will compute all indicators (may take longer)"
-        cache_color  = "#d35400"
+    _src_status_lbl = tk.Label(
+        status_frame, text="", bg="#f0f2f5",
+        font=("Segoe UI", 9), anchor="w", wraplength=620, justify="left")
+    _src_status_lbl.pack(fill="x")
 
-    tk.Label(status_frame, text=cache_status,
-             bg="#f0f2f5", fg=cache_color,
-             font=("Segoe UI", 9), anchor="w", wraplength=600,
-             justify="left").pack(fill="x", pady=(2, 0))
+    _cache_status_lbl = tk.Label(
+        status_frame, text="", bg="#f0f2f5",
+        font=("Segoe UI", 9), anchor="w", wraplength=620, justify="left")
+    _cache_status_lbl.pack(fill="x", pady=(2, 0))
 
-    _widgets['candles_path'] = _candles_path
+    def _refresh_src_status(*_):
+        lbl = data_source_var.get()
+        src = _src_by_label.get(lbl)
+        if not src:
+            _src_status_lbl.config(
+                text="❌ No data source selected — check Data Pipeline.",
+                fg="#922b21")
+            _cache_status_lbl.config(text="", fg="#555")
+            return
+
+        src_dir   = src.get('path', '')
+        tfs       = ', '.join(src.get('timeframes', [])) or '?'
+        has_ticks = src.get('has_ticks', False)
+        tick_txt  = '  |  ✅ Tick data present' if has_ticks else ''
+
+        if src_dir and os.path.isdir(src_dir):
+            _src_status_lbl.config(
+                text=(f"✅ {src.get('candle_count', 0):,} candles"
+                      f"  |  TFs: {tfs}{tick_txt}"
+                      f"  |  {src_dir}"),
+                fg="#1e8449")
+        else:
+            _src_status_lbl.config(
+                text=f"❌ Path not found: {src_dir}",
+                fg="#922b21")
+
+        _parquet_files = (
+            [f for f in os.listdir(src_dir) if f.endswith('.parquet')]
+            if src_dir and os.path.isdir(src_dir) else []
+        )
+        if _parquet_files:
+            _cache_status_lbl.config(
+                text=(f"✅ Indicator cache ready "
+                      f"({len(_parquet_files)} parquet files) — fast mode (~5 min total)"),
+                fg="#1e8449")
+        else:
+            _cache_status_lbl.config(
+                text="⚠️ No indicator cache — first run will compute all indicators (may take longer)",
+                fg="#d35400")
+
+    data_source_var.trace_add('write', _refresh_src_status)
+    _refresh_src_status()  # initial render
+
+    _widgets['candles_path'] = None  # resolved at run time from selected source
 
     # ── Settings (multi-column layout) ────────────────────────────────────────
     _section(inner, "Settings")
@@ -715,6 +773,14 @@ def _build_inner(inner):
                                  justify="left", anchor="w", padx=8, pady=6, relief="solid", bd=1)
     safe_params_label.pack(fill="x", pady=(4, 0))
 
+    # Cost info label (filled when firm resolved) — CHANGED: June 2026 gap C
+    prop_cost_var = tk.StringVar(value="")
+    prop_cost_label = tk.Label(prop_inner, textvariable=prop_cost_var,
+                               bg="#fff8dc", fg="#555", font=("Segoe UI", 9),
+                               justify="left", anchor="w")
+    prop_cost_label.pack(fill="x", pady=(4, 0))
+    _widgets['prop_cost_var'] = prop_cost_var
+
     # Callback functions
     def _on_firm_selected(*_):
         """When firm selected, populate challenge dropdown."""
@@ -725,6 +791,7 @@ def _build_inner(inner):
             prop_account_var.set("")
             prop_limits_var.set("")
             prop_safe_sl_var.set("")
+            prop_cost_var.set("")
             return
 
         firm_data = firm_data_map[firm_name]
@@ -735,6 +802,28 @@ def _build_inner(inner):
             challenge_combo.set(challenge_labels[0])
         else:
             prop_challenge_var.set("")
+
+        # CHANGED: June 2026 — resolve full cost set from firm (audit gap C)
+        try:
+            from shared.firm_settings_resolver import resolve_firm_settings
+            _costs = resolve_firm_settings(firm_name, 'XAUUSD')
+            _sp   = _costs.get('spread_pips', 0.0)
+            _cm   = _costs.get('commission_pips', 0.0)
+            _sl2  = _costs.get('slippage_pips', 0.0)
+            _swL  = _costs.get('swap_long_pips_per_night', 0.0)
+            _swS  = _costs.get('swap_short_pips_per_night', 0.0)
+            _total = _sp + _cm + 2 * _sl2
+            prop_cost_var.set(
+                f"Costs (XAUUSD):  spread={_sp} pips  |  commission={_cm} pips  |  slippage={_sl2} pips  "
+                f"|  swap long={_swL}/night  short={_swS}/night"
+                f"  →  round-trip fixed cost = {_total:.2f} pips"
+            )
+            # Auto-populate spread field only if it still holds the factory default
+            _spread_widget = _widgets.get('spread_var')
+            if _spread_widget and _spread_widget.get() == "2.5":
+                _spread_widget.set(str(_sp))
+        except Exception as _e:
+            prop_cost_var.set(f"(cost resolution failed: {_e})")
 
     def _on_challenge_selected(*_):
         """When challenge selected, populate account size dropdown."""
@@ -1338,28 +1427,40 @@ def _on_run():
                             "Discovery is already running. Please wait.")
         return
 
-    # WHY: Phase 26 Fix 6 — Recompute candles_path from the CURRENT
-    #      entry timeframe selection. Old code used the path set at
-    #      panel build time (always H1) so picking M15 in the
-    #      dropdown didn't actually change which file was loaded.
-    #      The error message also hardcoded H1; now it shows the
-    #      actual path that was looked up.
-    # CHANGED: April 2026 — Phase 26 Fix 6 (audit Part B #26)
+    # CHANGED: June 2026 — resolve candles path from selected data source (audit gap B)
     _entry_tf_widget = _widgets.get('entry_tf_var')
     _entry_tf = _entry_tf_widget.get() if _entry_tf_widget else 'H1'
-    _data_dir = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data'
-    )
-    candles_path = os.path.join(_data_dir, f"xauusd_{_entry_tf}.csv")
-    # Update the stash so other code paths see the current selection
-    _widgets['candles_path'] = candles_path
 
-    if not os.path.exists(candles_path):
+    _src_lbl  = (_widgets.get('data_source_var') or tk.StringVar()).get()
+    _src_meta = (_widgets.get('src_by_label') or {}).get(_src_lbl)
+    _src_dir  = _src_meta.get('path', '') if _src_meta else ''
+
+    if not _src_dir or not os.path.isdir(_src_dir):
+        # fallback: try legacy data/ folder relative to project root
+        _src_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data'
+        )
+
+    # Try both casing conventions
+    _tf_upper = _entry_tf.upper()
+    _tf_lower = _entry_tf.lower()
+    candles_path = None
+    for _fname in (f"XAUUSD_{_tf_upper}.csv", f"xauusd_{_tf_lower}.csv"):
+        _candidate = os.path.join(_src_dir, _fname)
+        if os.path.exists(_candidate):
+            candles_path = _candidate
+            break
+
+    _data_source_id = _src_meta.get('id') if _src_meta else None
+    _widgets['candles_path'] = candles_path
+    print(f"[scratch] candles resolved: {candles_path}  (source={_data_source_id})")
+
+    if not candles_path:
         messagebox.showerror(
             "Missing Data",
-            f"{_entry_tf} candle data not found at:\n  {candles_path}\n\n"
-            f"Please run the Data Pipeline first to load your candle history "
-            f"for the {_entry_tf} timeframe."
+            f"{_entry_tf} candle file not found in:\n  {_src_dir}\n\n"
+            f"Expected XAUUSD_{_tf_upper}.csv or xauusd_{_tf_lower}.csv.\n"
+            f"Please select a data source that contains {_entry_tf} candle history."
         )
         return
 
@@ -1521,6 +1622,7 @@ def _on_run():
                 min_coverage_pct=cov_pct,
                 min_win_rate=min_wr,
                 train_test_split=split,
+                data_source_id=_data_source_id,
                 prop_firm_name=firm_name_param,
                 prop_firm_data=prop_data,
                 compare_all_tfs=compare_all,

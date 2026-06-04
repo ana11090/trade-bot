@@ -45,6 +45,10 @@ def run_scratch_discovery(
     max_hold_candles=50,
     pip_size=0.01,
     spread_pips=2.5,
+    commission_pips=0.0,
+    slippage_pips=0.0,
+    swap_long_pips_per_night=0.0,
+    swap_short_pips_per_night=0.0,
     use_smart_features=True,
     max_rules=25,
     max_depth=4,
@@ -52,6 +56,7 @@ def run_scratch_discovery(
     min_coverage_pct=1.0,
     min_win_rate=0.55,
     train_test_split=0.7,
+    data_source_id=None,
     prop_firm_name=None,
     prop_firm_data=None,
     compare_all_tfs=False,
@@ -104,6 +109,10 @@ def run_scratch_discovery(
                     max_hold_candles=max_hold_candles,
                     pip_size=pip_size,
                     spread_pips=spread_pips,
+                    commission_pips=commission_pips,
+                    slippage_pips=slippage_pips,
+                    swap_long_pips_per_night=swap_long_pips_per_night,
+                    swap_short_pips_per_night=swap_short_pips_per_night,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -173,15 +182,26 @@ def run_scratch_discovery(
                 progress_callback(args[0], args[1], args[2])
 
     # Auto-detect candle data path if not provided
+    # CHANGED: June 2026 — route through shared.data_sources (audit gap B)
     if candles_path is None:
-        project_root = os.path.abspath(os.path.join(_HERE, '..'))
-        # Use entry_timeframe parameter or default to H1
-        symbol = 'xauusd'
         tf = entry_timeframe if entry_timeframe else 'H1'
-        candles_path = os.path.join(project_root, 'data', f'{symbol}_{tf}.csv')
-        if not os.path.exists(candles_path):
+        tf_upper = tf.upper()
+        tf_lower = tf.lower()
+        try:
+            from shared.data_sources import resolve_data_dir
+            _src_dir = resolve_data_dir()
+        except Exception:
+            _src_dir = os.path.join(os.path.abspath(os.path.join(_HERE, '..')), 'data')
+        candles_path = None
+        for _fname in (f'XAUUSD_{tf_upper}.csv', f'xauusd_{tf_lower}.csv'):
+            _candidate = os.path.join(_src_dir, _fname)
+            if os.path.exists(_candidate):
+                candles_path = _candidate
+                break
+        if not candles_path:
             raise FileNotFoundError(
-                f"{tf} candle data not found at {candles_path}\n"
+                f"{tf} candle file not found in {_src_dir}\n"
+                "Expected XAUUSD_{tf}.csv or xauusd_{tf}.csv.\n"
                 "Run the Data Pipeline first to load your candle history."
             )
 
@@ -228,6 +248,10 @@ def run_scratch_discovery(
                     max_hold_candles=max_hold_candles,
                     pip_size=pip_size,
                     spread_pips=spread_pips,
+                    commission_pips=commission_pips,
+                    slippage_pips=slippage_pips,
+                    swap_long_pips_per_night=swap_long_pips_per_night,
+                    swap_short_pips_per_night=swap_short_pips_per_night,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -291,6 +315,24 @@ def run_scratch_discovery(
         else:
             log.info("[MULTI-EXIT] No exit combo produced viable rules. Falling through to normal discovery.")
 
+    # ── Resolve full cost set from prop firm (audit gap C) ────────────────────
+    # CHANGED: June 2026 — if prop_firm_name set, overwrite spread/commission/
+    #          slippage/swap from firm_settings_resolver instead of using the
+    #          caller's (potentially wrong) spread-only default.
+    if prop_firm_name and prop_firm_name != "None (skip prop firm optimization)":
+        try:
+            from shared.firm_settings_resolver import resolve_firm_settings
+            _firm_costs = resolve_firm_settings(prop_firm_name, 'XAUUSD')
+            spread_pips              = _firm_costs.get('spread_pips', spread_pips)
+            commission_pips          = _firm_costs.get('commission_pips', commission_pips)
+            slippage_pips            = _firm_costs.get('slippage_pips', slippage_pips)
+            swap_long_pips_per_night  = _firm_costs.get('swap_long_pips_per_night', swap_long_pips_per_night)
+            swap_short_pips_per_night = _firm_costs.get('swap_short_pips_per_night', swap_short_pips_per_night)
+            log.info(f"[scratch] firm costs resolved: spread={spread_pips} commission={commission_pips} "
+                     f"slippage={slippage_pips} swap_L={swap_long_pips_per_night} swap_S={swap_short_pips_per_night}")
+        except Exception as _e:
+            log.warning(f"[scratch] firm cost resolution failed ({_e}) — using caller-supplied values")
+
     # ── Step 1: Label candles ─────────────────────────────────────────────────
     _cb(1, "Step 1/6: Labeling candles (WIN/LOSS)...")
 
@@ -305,6 +347,10 @@ def run_scratch_discovery(
             direction=direction,
             max_hold_candles=max_hold_candles,
             spread_pips=spread_pips,
+            commission_pips=commission_pips,
+            slippage_pips=slippage_pips,
+            swap_long_pips_per_night=swap_long_pips_per_night,
+            swap_short_pips_per_night=swap_short_pips_per_night,
             progress_callback=lambda cur, tot, msg: _cb(1, f"Labeling: {msg}"),
         )
 
@@ -358,7 +404,8 @@ def run_scratch_discovery(
     _cb(2, "Step 2/6: Standardizing CSV columns...")
 
     for tf in ['M5', 'M15', 'H1', 'H4', 'D1']:
-        for pattern in [f'{tf}.csv', f'xauusd_{tf}.csv']:
+        # CHANGED: June 2026 — add XAUUSD_ upper-case pattern (audit gap B)
+        for pattern in [f'{tf}.csv', f'xauusd_{tf}.csv', f'XAUUSD_{tf}.csv']:
             csv_file = os.path.join(data_dir, pattern)
             if not os.path.exists(csv_file):
                 continue
@@ -654,6 +701,12 @@ def run_scratch_discovery(
         "direction":          direction,
         "max_hold_candles":   max_hold_candles,
         "spread_pips":        spread_pips,
+        "data_source_id":           data_source_id,
+        "data_source_path":         candles_path,
+        "commission_pips":          commission_pips,
+        "slippage_pips":            slippage_pips,
+        "swap_long_pips_per_night":  swap_long_pips_per_night,
+        "swap_short_pips_per_night": swap_short_pips_per_night,
         "features_used":          len(valid_cols),
         "original_features":      n_original,
         "smart_features":         n_smart,

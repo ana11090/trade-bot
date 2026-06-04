@@ -284,7 +284,9 @@ def _score_rule(monthly_rows, matching_months, rank_by):
     rank_by: 'wr' | 'pips' | 'pass' | 'score'
     Returns dict with wr, pips, pass_pct, variance, score.
     """
-    if not matching_rows := [r for r in monthly_rows if r['month'] in matching_months]:
+    # CHANGED: June 2026 — split walrus out (illegal directly after `not`)
+    matching_rows = [r for r in monthly_rows if r['month'] in matching_months]
+    if not matching_rows:
         return None
 
     trades_total = sum(r['trades'] for r in matching_rows)

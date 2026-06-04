@@ -24,6 +24,11 @@ def label_candles(
     direction="BUY",         # "BUY", "SELL", or "BOTH"
     max_hold_candles=50,     # max candles to hold before forced exit
     spread_pips=2.5,         # deduct spread from entry
+    commission_pips=0.0,     # round-trip commission in pips
+    slippage_pips=0.0,       # one-way slippage in pips (applied at entry + exit)
+    swap_long_pips_per_night=0.0,   # overnight financing cost for BUY (can be negative = credit)
+    swap_short_pips_per_night=0.0,  # overnight financing cost for SELL (can be negative = credit)
+    candles_per_day=None,    # used to convert hold_candles → nights for swap; auto-detected if None
     cache=True,
     progress_callback=None,
 ):
@@ -56,7 +61,9 @@ def label_candles(
     # CHANGED: April 2026 — full parameter cache key (audit HIGH #45)
     cache_name = (
         f"candle_labels_{direction}_sl{sl_pips}_tp{tp_pips}"
-        f"_mh{max_hold_candles}_ps{pip_size}_sp{spread_pips}.csv"
+        f"_mh{max_hold_candles}_ps{pip_size}_sp{spread_pips}"
+        f"_cm{commission_pips}_sl2{slippage_pips}"
+        f"_swL{swap_long_pips_per_night}_swS{swap_short_pips_per_night}.csv"
     )
     cache_path = os.path.join(OUTPUT_DIR, cache_name)
 
@@ -118,6 +125,22 @@ def label_candles(
     n = len(candles)
     results = []
 
+    # CHANGED: June 2026 — full cost model (audit gap C)
+    # Auto-detect candles_per_day from timeframe implied by median bar gap
+    if candles_per_day is None:
+        try:
+            ts_arr = pd.to_datetime(candles['timestamp']).sort_values()
+            _gap_minutes = ts_arr.diff().dropna().dt.total_seconds().median() / 60
+            if _gap_minutes > 0:
+                candles_per_day = round(24 * 60 / _gap_minutes)
+            else:
+                candles_per_day = 24  # fallback: assume H1
+        except Exception:
+            candles_per_day = 24
+
+    # Fixed per-trade cost: round-trip spread + commission + 2× slippage
+    _fixed_cost_pips = spread_pips + commission_pips + 2.0 * slippage_pips
+
     directions_to_test = []
     if direction in ("BUY", "BOTH"):
         directions_to_test.append("BUY")
@@ -138,13 +161,14 @@ def label_candles(
             # Entry at next candle's open
             entry_price = opens[i + 1]
 
-            # Apply spread
+            # Apply spread + entry slippage to get realistic filled price
+            _entry_cost = (spread_pips + slippage_pips) * pip_size
             if dir_name == "BUY":
-                entry_price += spread_pips * pip_size
+                entry_price += _entry_cost
                 sl_price    = entry_price - sl_pips * pip_size
                 tp_price    = entry_price + tp_pips * pip_size
             else:
-                entry_price -= spread_pips * pip_size
+                entry_price -= _entry_cost
                 sl_price    = entry_price + sl_pips * pip_size
                 tp_price    = entry_price - tp_pips * pip_size
 
@@ -159,6 +183,10 @@ def label_candles(
                 candle_low  = lows[j]
                 candle_open = opens[j]
 
+                # CHANGED: June 2026 — full cost model (audit gap C)
+                # exit_cost = exit spread + exit slippage + round-trip commission
+                _exit_cost = spread_pips + slippage_pips + commission_pips
+
                 if dir_name == "BUY":
                     sl_hit = candle_low  <= sl_price
                     tp_hit = candle_high >= tp_price
@@ -172,20 +200,17 @@ def label_candles(
                         #      open does not predict the intra-candle path.
                         # CHANGED: April 2026 — conservative tie-break
                         label       = 0
-                        # WHY: Old code subtracted only entry spread. Exit also
-                        #      costs a spread — charge it at every exit path.
-                        # CHANGED: April 2026 — round-trip spread (audit HIGH)
-                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - spread_pips
+                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - _exit_cost
                         exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
-                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - spread_pips
+                        pips_result = (min(candle_open, sl_price) - entry_price) / pip_size - _exit_cost
                         exit_reason = "STOP_LOSS"
                         break
                     elif tp_hit:
                         label       = 1
-                        pips_result = (max(candle_open, tp_price) - entry_price) / pip_size - spread_pips
+                        pips_result = (max(candle_open, tp_price) - entry_price) / pip_size - _exit_cost
                         exit_reason = "TAKE_PROFIT"
                         break
 
@@ -194,34 +219,41 @@ def label_candles(
                     tp_hit = candle_low  <= tp_price
 
                     if sl_hit and tp_hit:
-                        # WHY: same as BUY — conservative loss labeling.
-                        # CHANGED: April 2026 — conservative tie-break
                         label       = 0
-                        # WHY: round-trip spread deducted at exit (same as BUY).
-                        # CHANGED: April 2026 — round-trip spread (audit HIGH)
-                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - spread_pips
+                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - _exit_cost
                         exit_reason = "STOP_LOSS_AMBIGUOUS"
                         break
                     elif sl_hit:
                         label       = 0
-                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - spread_pips
+                        pips_result = (entry_price - max(candle_open, sl_price)) / pip_size - _exit_cost
                         exit_reason = "STOP_LOSS"
                         break
                     elif tp_hit:
                         label       = 1
-                        pips_result = (entry_price - min(candle_open, tp_price)) / pip_size - spread_pips
+                        pips_result = (entry_price - min(candle_open, tp_price)) / pip_size - _exit_cost
                         exit_reason = "TAKE_PROFIT"
                         break
             else:
                 # Max hold reached — use close of last candle
                 last_idx = min(i + max_hold_candles, n - 1)
-                # WHY: round-trip spread deducted at forced exit too.
-                # CHANGED: April 2026 — round-trip spread (audit HIGH)
+                _exit_cost = spread_pips + slippage_pips + commission_pips
                 if dir_name == "BUY":
-                    pips_result = (closes[last_idx] - entry_price) / pip_size - spread_pips
+                    pips_result = (closes[last_idx] - entry_price) / pip_size - _exit_cost
                 else:
-                    pips_result = (entry_price - closes[last_idx]) / pip_size - spread_pips
+                    pips_result = (entry_price - closes[last_idx]) / pip_size - _exit_cost
                 label = 1 if pips_result > 0 else 0
+
+            # Apply overnight swap cost proportional to hold duration
+            if (swap_long_pips_per_night != 0.0 or swap_short_pips_per_night != 0.0) and hold > 0:
+                nights = hold / candles_per_day
+                if dir_name == "BUY":
+                    pips_result -= swap_long_pips_per_night * nights
+                else:
+                    pips_result -= swap_short_pips_per_night * nights
+                if pips_result > 0:
+                    label = 1
+                else:
+                    label = 0
 
             results.append({
                 'timestamp':   str(timestamps[i]),
