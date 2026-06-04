@@ -147,32 +147,53 @@ content_window = canvas.create_window((0, 0), window=content, anchor="nw")
 # Throttled resize — avoid recalculating scrollregion on every widget create
 _resize_after = [None]
 
+def _sync_content_window(*_):
+    # WHY: Size the canvas content window to max(content's own required
+    #      height, the viewport height). max() does BOTH jobs at once:
+    #      - taller-than-viewport content is NOT clamped (it keeps its full
+    #        height, so scrollregion/bbox can reach the bottom — the reason
+    #        the unconditional height=event.height clamp was removed);
+    #      - shorter content is stretched to the viewport so the page fills
+    #        the window instead of leaving the lower half blank.
+    #      Driven from BOTH <Configure> events because the content's
+    #      reqheight is not settled when the canvas event fires during a
+    #      page switch; the content event fires once children finish packing.
+    # CHANGED: June 2026 — size to max(content, viewport); recompute on both events
+    try:
+        _vp_w = canvas.winfo_width()
+        _vp_h = canvas.winfo_height()
+        if _vp_w <= 1 or _vp_h <= 1:
+            return  # not realized yet
+        _content_h = content.winfo_reqheight()
+        _target_h = _content_h if _content_h > _vp_h else _vp_h
+        canvas.itemconfig(content_window, width=_vp_w, height=_target_h)
+    except Exception:
+        pass
+
 def _update_scrollregion():
     canvas.configure(scrollregion=canvas.bbox("all"))
     _resize_after[0] = None
 
 def on_content_resize(event):
+    # content's children changed → re-sync the window height, then scrollregion
+    _sync_content_window()
     if _resize_after[0]:
         window.after_cancel(_resize_after[0])
     _resize_after[0] = window.after(16, _update_scrollregion)
 
 def on_canvas_resize(event):
-    # WHY: Forcing the content frame's height to the canvas viewport height
-    #      clamped any content taller than the window — the bottom card's
-    #      controls (e.g. Data Pipeline Step 3 Check/Clean/Save buttons) were
-    #      cut off and could not be scrolled to. Set width only; let height be
-    #      driven by the content so scrollregion (bbox 'all') can reach the
-    #      bottom. If the content is SHORTER than the viewport, stretch it to
-    #      the viewport height so the background still fills the area.
-    # CHANGED: June 2026 — width-only resize; stop clamping content height
-    _content_h = content.winfo_reqheight()
-    if _content_h < event.height:
-        canvas.itemconfig(content_window, width=event.width, height=event.height)
-    else:
-        canvas.itemconfig(content_window, width=event.width)
+    # viewport changed → re-sync the window to the new size
+    _sync_content_window()
 
 content.bind("<Configure>", on_content_resize)
 canvas.bind("<Configure>",  on_canvas_resize)
+
+# WHY: ensure the content window is sized correctly on first paint, after
+#      geometry is realized (the initial <Configure> events can fire with
+#      unrealized 1x1 sizes).
+# CHANGED: June 2026 — initial sync after realize
+window.after(50, _sync_content_window)
+window.after(50, _update_scrollregion)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

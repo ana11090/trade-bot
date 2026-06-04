@@ -4928,6 +4928,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
         _wp_passed = 0
         _wp_total  = 0
         _wp_rate   = -1.0
+        _wp_sim    = None
         if _wp_enabled and m.get("trades"):
             try:
                 from project2_backtesting.strategy_validator import _trades_to_df
@@ -4956,6 +4957,18 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             except Exception as _wp_err:
                 log.warning(f"  [win-pass] {m.get('rule_combo','?')}: {_wp_err}")
 
+        # WHY: store the worst consecutive DD-breach run so the refiner can
+        #      filter rules that blow the challenge repeatedly in a row.
+        # CHANGED: June 2026 — consecutive DD-breach metric on each row
+        _max_consec_dd = 0
+        if _wp_sim is not None:
+            try:
+                from project2_backtesting.strategy_refiner import max_consecutive_dd_breaches
+                _max_consec_dd = max_consecutive_dd_breaches(
+                    getattr(_wp_sim, 'individual_results', None))
+            except Exception:
+                pass
+
         result = {
             "rule_combo":      m["rule_combo"],
             "rule_indices":    m.get("rule_indices", []),
@@ -4975,6 +4988,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
             "win_pass_passed": _wp_passed,
             "win_pass_total":  _wp_total,
             "win_pass_rate":   _wp_rate,
+            # WHY: worst consecutive DD-breach run from the same sliding-window sim.
+            # CHANGED: June 2026 — consecutive DD-breach metric on each row
+            "max_consecutive_dd_breaches": _max_consec_dd,
         }
         summary.append(result)
 

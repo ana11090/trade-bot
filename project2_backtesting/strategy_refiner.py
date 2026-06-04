@@ -627,6 +627,36 @@ def count_dd_breaches(trades, account_size=100000, risk_pct=1.0, pip_value=10.0,
     }
 
 
+def max_consecutive_dd_breaches(individual_results):
+    """Longest run of CONSECUTIVE drawdown-failed attempts, in time order.
+
+    A breach = an attempt whose eval_outcome indicates a DD failure
+    (FAIL_DD or FAIL_DAILY_DD). Non-DD outcomes (PASS, TIMEOUT,
+    INSUFFICIENT_TRADES) reset the run. Returns an int (0 if none / no data).
+
+    WHY: prop traders care not just about how MANY times a rule breaches DD,
+         but whether it breaches REPEATEDLY in a row — 3 consecutive blown
+         attempts is a very different risk profile from 3 scattered ones.
+    CHANGED: June 2026 — consecutive DD-breach metric
+    """
+    if not individual_results:
+        return 0
+    _dd_fail = {"FAIL_DD", "FAIL_DAILY_DD"}
+    run = 0
+    worst = 0
+    for r in individual_results:
+        outcome = getattr(r, 'eval_outcome', None)
+        if outcome is None and isinstance(r, dict):
+            outcome = r.get('eval_outcome')
+        if outcome in _dd_fail:
+            run += 1
+            if run > worst:
+                worst = run
+        else:
+            run = 0
+    return worst
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
@@ -991,6 +1021,10 @@ def load_strategy_list():
                             'win_pass_passed':   r.get('win_pass_passed'),
                             'win_pass_total':    r.get('win_pass_total'),
                             'win_pass_rate':     r.get('win_pass_rate'),
+                            # WHY: consecutive DD metric written by the backtester
+                            #      alongside win_pass. Legacy rows default to 0.
+                            # CHANGED: June 2026 — consecutive DD-breach passthrough
+                            'max_consecutive_dd_breaches': r.get('max_consecutive_dd_breaches', 0),
                             # WHY (T2b): Stability verdict + time-distribution fields
                             #      attached by the auto-stability gate in run_backtest_panel.
                             #      Expose them so View Results can render the badge.
@@ -1328,10 +1362,15 @@ def load_strategy_list():
             _wp_passed = sum(1 for w in _wp_wins if (w.eval_outcome or '') == 'PASS')
             _wp_total  = len(_wp_wins)
             _wp_rate   = (_wp_passed / _wp_total) if _wp_total > 0 else 0.0
+            # WHY: compute consecutive DD metric here since individual_results is
+            #      already in scope — avoids a second simulate_challenge call.
+            # CHANGED: June 2026 — consecutive DD-breach metric for My Rules
+            _max_cdd = max_consecutive_dd_breaches(_wp_result.individual_results)
             return {
-                'win_pass_passed': _wp_passed,
-                'win_pass_total':  _wp_total,
-                'win_pass_rate':   _wp_rate,
+                'win_pass_passed':              _wp_passed,
+                'win_pass_total':               _wp_total,
+                'win_pass_rate':                _wp_rate,
+                'max_consecutive_dd_breaches':  _max_cdd,
             }
         except Exception:
             return _wp_default

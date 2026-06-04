@@ -85,7 +85,11 @@ _grid_filt_min_passpct = None  # tk.StringVar
 #      keeping the N best (by windows + pass%). 0 = show all (off). Lets the
 #      user see a few strong variants per rule instead of all 20 exit-variants.
 # CHANGED: June 2026 — max-per-rule cap
-_grid_filt_max_per_rule = None  # tk.StringVar
+_grid_filt_max_per_rule  = None  # tk.StringVar
+# WHY: hide rules that breach the drawdown limit too many times IN A ROW.
+#      0 = off; e.g. 3 = only rules whose worst consecutive DD-breach run <= 3.
+# CHANGED: June 2026 — max consecutive DD breaches filter
+_grid_filt_max_consec_dd = None  # tk.StringVar
 # WHY: Controls which source pool is shown in the refiner grid.
 #      Internal key: "all" | "backtest" | "my_rules" | "saved"
 # CHANGED: June 2026 — source dropdown
@@ -136,7 +140,12 @@ _opt_live_labels    = {}
 _opt_status_lbl     = None
 _opt_start_btn      = None
 _opt_stop_btn       = None
-_opt_worker_running = False   # guard against double-start
+_opt_worker_running  = False   # guard against double-start
+_grid_opt_btns       = []      # [batch_opt_btn, optimize_all_btn] — flipped to Stop while running
+# WHY: keep every (rule_label, cand) from the last optimization so the filter row
+#      can re-render cards without re-running the optimizer.
+# CHANGED: June 2026 — stash candidates for editable re-filtering
+_opt_all_candidates  = []
 _scroll_canvas      = None
 
 _update_pending = False   # debounce flag
@@ -1302,9 +1311,14 @@ def _get_visible_indexes():
     so it reflects the user's current filter combination exactly.
     CHANGED: June 2026 — optimize-all-visible helper
     """
+    # WHY: dd_container is local to build_panel and invisible here; the live
+    #      tree is exposed module-level as _strat_tree_ref (set at build time,
+    #      same handle the other batch functions use). Using dd_container made
+    #      this always return [] → "No rules visible" even with rows shown.
+    # CHANGED: June 2026 — read _strat_tree_ref, not build_panel-local dd_container
     out = []
     try:
-        _tree = dd_container[0] if dd_container else None
+        _tree = globals().get('_strat_tree_ref')
         if _tree is None:
             return out
         for _iid in _tree.get_children():
@@ -2272,14 +2286,113 @@ def _update_status(msg, error=False):
         pass
 
 
+def _opt_card_passes(cand):
+    """True if an optimizer candidate passes the CURRENT filter-row values.
+    Reads the same filter vars as the grid. A threshold is skipped for a
+    candidate that lacks the underlying field (missing data never blanks
+    everything) — except the threshold is still enforced when the field IS present.
+    CHANGED: June 2026 — filter optimizer cards by the editable filter row
+    """
+    try:
+        stats = cand.get('stats') or {}
+        # Min WR%
+        try:
+            _min_wr = float(_grid_filt_min_wr.get() or "0") if _grid_filt_min_wr else 0.0
+        except Exception:
+            _min_wr = 0.0
+        if _min_wr > 0:
+            _wr = stats.get('win_rate', None)
+            if _wr is not None:
+                _wr_pct = _wr * 100 if _wr <= 1 else _wr
+                if _wr_pct < _min_wr:
+                    return False
+        # Min Pass%
+        try:
+            _min_pp = float(_grid_filt_min_passpct.get() or "0") if _grid_filt_min_passpct else 0.0
+        except Exception:
+            _min_pp = 0.0
+        if _min_pp > 0:
+            _pr = cand.get('win_pass_rate', stats.get('win_pass_rate', None))
+            if _pr is not None and float(_pr) * 100.0 < _min_pp:
+                return False
+        # Min Windows
+        try:
+            _min_w = int(_grid_filt_min_windows.get() or "0") if _grid_filt_min_windows else 0
+        except Exception:
+            _min_w = 0
+        if _min_w > 0:
+            _wt = cand.get('win_pass_total', stats.get('win_pass_total', None))
+            if _wt is not None and int(_wt) < _min_w:
+                return False
+        # Max consecutive DD breaches
+        try:
+            _max_cdd = int(_grid_filt_max_consec_dd.get() or "0") if globals().get('_grid_filt_max_consec_dd') else 0
+        except Exception:
+            _max_cdd = 0
+        if _max_cdd > 0:
+            _cdd = cand.get('max_consecutive_dd_breaches', stats.get('max_consecutive_dd_breaches', None))
+            if _cdd is not None and int(_cdd) > _max_cdd:
+                return False
+        return True
+    except Exception:
+        return True   # never hide a card due to a filter error
+
+
+def _rerender_opt_cards():
+    """Re-render optimizer cards from the stashed candidates using the CURRENT
+    filter values. Lets the user edit filters and update the view without
+    re-optimizing.
+    CHANGED: June 2026 — editable re-filtering of optimizer cards
+    """
+    cands = globals().get('_opt_all_candidates') or []
+    frame = globals().get('_opt_results_frame')
+    if frame is None:
+        return
+    try:
+        for w in frame.winfo_children():
+            w.destroy()
+        # Filter by current filter-row values
+        kept = [(rl, c) for (rl, c) in cands if _opt_card_passes(c)]
+        # Optional Max/rule cap — group by rule_label, keep top N by score
+        try:
+            _maxr = int(_grid_filt_max_per_rule.get() or "0") if _grid_filt_max_per_rule else 0
+        except Exception:
+            _maxr = 0
+        if _maxr > 0:
+            from collections import defaultdict
+            _by_rule = defaultdict(list)
+            for rl, c in kept:
+                _by_rule[rl].append(c)
+            kept = []
+            for rl, lst in _by_rule.items():
+                lst.sort(key=lambda c: c.get('score', 0) or 0, reverse=True)
+                for c in lst[:_maxr]:
+                    kept.append((rl, c))
+        # Sort overall by score desc and render
+        kept.sort(key=lambda rc: rc[1].get('score', 0) or 0, reverse=True)
+        if not kept:
+            if cands:
+                tk.Label(frame,
+                         text="No optimized rules match the current filters.",
+                         bg=BG, fg="#888", font=("Segoe UI", 10, "italic")
+                         ).pack(anchor="w", padx=20, pady=10)
+            return
+        for rank, (rule_label, cand) in enumerate(kept, 1):
+            _stats = cand.get('stats') or {}
+            _tagged = dict(cand)
+            _tagged['name'] = f"[{rule_label}] {cand.get('name', '?')}"
+            _render_opt_card(frame, rank, _tagged, _stats, 1.0, 10000, None, None, 1.0, None)
+    except Exception:
+        import traceback; traceback.print_exc()
+
+
 def _start_optimize_all_visible():
     """Tick every visible row and run the existing batch optimizer.
 
     WHY: An "Optimize All Visible" button lets the user tighten the
     filter row (Min WR%/Windows/Pass%/Max-per-rule) until only the
     rules they care about remain, then optimize that whole set in one
-    click. Reuses _start_batch_optimization (50-rule cap, confirmation,
-    streaming). No new optimization machinery.
+    click. Reuses _start_batch_optimization (streaming). No cap.
     CHANGED: June 2026 — optimize all visible rules at once
     """
     _vis = _get_visible_indexes()
@@ -2287,15 +2400,20 @@ def _start_optimize_all_visible():
         messagebox.showinfo("Nothing to optimize",
                             "No rules visible. Adjust filters first.")
         return
-    MAX_BATCH = 50
-    if len(_vis) > MAX_BATCH:
+    # WHY: no hard cap (user choice) — but a large batch can run for HOURS
+    #      (~30-60s/rule), so confirm with a time estimate before committing.
+    # CHANGED: June 2026 — remove 50-cap; confirm with estimate instead
+    if len(_vis) > 25:
+        _lo = int(len(_vis) * 30 / 60)
+        _hi = int(len(_vis) * 60 / 60)
+        _est = (f"{_lo}-{_hi} min" if _hi < 90
+                else f"{_lo/60:.1f}-{_hi/60:.1f} hours")
         if not messagebox.askyesno(
-            "Many rules visible",
-            f"{len(_vis)} rules visible. Optimizer caps at {MAX_BATCH}/run "
-            f"(~30-60s each).\n\nOptimize the first {MAX_BATCH} now? "
-            f"(Tighten filters — Min Pass% / Max per rule — to narrow.)"):
+            "Confirm batch",
+            f"Optimize all {len(_vis)} visible rules?\n\n"
+            f"Estimated time: ~{_est} (~30-60s per rule).\n"
+            f"You can click the button again to STOP at any time."):
             return
-        _vis = _vis[:MAX_BATCH]
     _batch_selected_iids.clear()
     for _iid in _vis:
         _batch_selected_iids.add(str(_iid))
@@ -2321,16 +2439,20 @@ def _start_batch_optimization():
                             "Tick the checkbox (☐ → ☑) on 2 or more rules in the grid to batch-optimize.")
         return
 
-    # Hard cap — each rule is ~30-60s of compute
-    MAX_BATCH = 50
-    if len(selected_iids) > MAX_BATCH:
-        messagebox.showwarning(
-            "Too Many Rules Selected",
-            f"You selected {len(selected_iids)} rules. Max batch size is {MAX_BATCH}.\n\n"
-            f"Each rule takes 30-60 seconds. {MAX_BATCH} rules = ~25-50 minutes.\n"
-            f"Reduce your selection or run in groups."
-        )
-        return
+    # WHY: no hard cap (user choice) — but a large batch can run for HOURS
+    #      (~30-60s/rule), so confirm with a time estimate before committing.
+    # CHANGED: June 2026 — remove 50-cap; confirm with estimate instead
+    if len(selected_iids) > 25:
+        _lo = int(len(selected_iids) * 30 / 60)
+        _hi = int(len(selected_iids) * 60 / 60)
+        _est = (f"{_lo}-{_hi} min" if _hi < 90
+                else f"{_lo/60:.1f}-{_hi/60:.1f} hours")
+        if not messagebox.askyesno(
+            "Confirm batch",
+            f"Optimize {len(selected_iids)} selected rules?\n\n"
+            f"Estimated time: ~{_est} (~30-60s per rule).\n"
+            f"You can click the button again to STOP at any time."):
+            return
 
     # Deep Explore confirmation
     opt_mode = _opt_mode_var.get() if _opt_mode_var else "quick"
@@ -2357,6 +2479,7 @@ def _start_batch_optimization():
         return
 
     _opt_worker_running = True
+    _set_grid_opt_running(True)
     try:
         if _opt_start_btn:
             _opt_start_btn.configure(state="disabled")
@@ -2387,6 +2510,7 @@ def _start_batch_optimization():
             deep_optimize, _stop_flag, compute_stats_summary,
         )
         all_candidates = []   # tournament accumulator: list of (rule_label, candidate)
+        _rules_done = 0       # rules fully processed (incremented at end of each iter)
 
         try:
             for batch_idx, strat in enumerate(selected_strats):
@@ -2544,6 +2668,12 @@ def _start_batch_optimization():
                     state.window.after(0, lambda i=batch_idx+1, n=len(selected_strats):
                         _opt_status_lbl.configure(
                             text=f"Batch: {i}/{n} done", fg=GREEN))
+                _rules_done += 1
+
+            # WHY: keep the full candidate set so the filter row can re-render
+            #      the cards live without re-running the optimization.
+            # CHANGED: June 2026 — stash candidates for editable re-filtering
+            globals()['_opt_all_candidates'] = list(all_candidates)
 
             # ── Tournament view ────────────────────────────────────────
             if all_candidates and not _stop_flag.is_set():
@@ -2567,15 +2697,27 @@ def _start_batch_optimization():
                             _render_opt_card(_opt_results_frame, r, c, s,
                                              1.0, 10000, None, None, 1.0, None))
 
+            # WHY: report the rules ACTUALLY processed, and say "Stopped" when the
+            #      user halted early — the old message always showed the full
+            #      intended count (len(selected_strats)), implying completion.
+            # CHANGED: June 2026 — stop-aware batch status with real count
             if _opt_status_lbl:
-                state.window.after(0, lambda:
-                    _opt_status_lbl.configure(
-                        text=f"Batch done — {len(selected_strats)} rules, "
-                             f"{len(all_candidates)} total candidates",
-                        fg=GREEN))
+                _total_planned = len(selected_strats)
+                _was_stopped = _stop_flag.is_set()
+                if _was_stopped:
+                    _final_msg = (f"Stopped — {_rules_done}/{_total_planned} rules "
+                                  f"processed, {len(all_candidates)} candidates")
+                    _final_color = AMBER
+                else:
+                    _final_msg = (f"Batch done — {_rules_done}/{_total_planned} rules, "
+                                  f"{len(all_candidates)} total candidates")
+                    _final_color = GREEN
+                state.window.after(0, lambda m=_final_msg, c=_final_color:
+                    _opt_status_lbl.configure(text=m, fg=c))
 
         finally:
             globals()['_opt_worker_running'] = False
+            state.window.after(0, lambda: _set_grid_opt_running(False))
             try:
                 if _opt_start_btn:
                     state.window.after(0, lambda: _opt_start_btn.configure(state="normal"))
@@ -3195,6 +3337,38 @@ def _start_optimization():
     threading.Thread(target=_worker, daemon=True).start()
 
 
+def _set_grid_opt_running(running):
+    """Flip the grid optimize buttons between normal and a red Stop button.
+    While running, BOTH buttons show '⏹ Stop' and call _stop_optimization.
+    When idle, they revert to their labels/commands.
+    CHANGED: June 2026 — optimize buttons toggle to Stop while running
+    """
+    btns = globals().get('_grid_opt_btns') or []
+    try:
+        if running:
+            for _b in btns:
+                _b.configure(text="⏹ Stop", bg="#c0392b",
+                             command=_stop_optimization)
+        else:
+            all_btns = globals().get('_grid_opt_btns') or []
+            for _b in all_btns:
+                if all_btns and _b is all_btns[0]:
+                    # batch_opt_btn — restore bg; count label restored by _batch_btn_refresh
+                    _b.configure(bg="#9b59b6", command=_start_batch_optimization)
+                else:
+                    _b.configure(text="Optimize All Visible", bg="#6c3fb5",
+                                 command=_start_optimize_all_visible)
+            # refresh the "Optimize Selected (N)" count label
+            _ref = globals().get('_batch_btn_refresh')
+            if _ref and _ref[0]:
+                try:
+                    _ref[0]()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def _stop_optimization():
     global _opt_worker_running
     from project2_backtesting.strategy_refiner import stop_optimization
@@ -3204,6 +3378,7 @@ def _stop_optimization():
     #      stays disabled until the inner backtest finishes, making it look broken.
     # CHANGED: April 2026 — immediate Start re-enable on stop
     _opt_worker_running = False
+    _set_grid_opt_running(False)
     if _opt_start_btn:
         _opt_start_btn.configure(state="normal")
     if _opt_stop_btn:
@@ -5463,9 +5638,27 @@ def build_panel(parent):
     vscroll = tk.Scrollbar(panel, orient="vertical", command=_scroll_canvas.yview)
     scroll_frame = tk.Frame(_scroll_canvas, bg=BG)
 
-    scroll_frame.bind("<Configure>",
-                      lambda e: _scroll_canvas.configure(
-                          scrollregion=_scroll_canvas.bbox("all")))
+    # WHY: bbox("all") is O(all widgets); recomputing it on every <Configure>
+    #      event makes scrolling laggy once many optimizer cards exist. Coalesce
+    #      bursts of Configure events into a single recompute ~30ms later, the
+    #      same throttle pattern main_app.py uses for the top-level canvas.
+    # CHANGED: June 2026 — throttle scrollregion recompute (scroll lag fix)
+    _sr_after = [None]
+    def _recompute_scrollregion():
+        _sr_after[0] = None
+        try:
+            _scroll_canvas.configure(scrollregion=_scroll_canvas.bbox("all"))
+        except Exception:
+            pass
+    def _on_scroll_frame_configure(_e=None):
+        if _sr_after[0]:
+            try:
+                _scroll_canvas.after_cancel(_sr_after[0])
+            except Exception:
+                pass
+        _sr_after[0] = _scroll_canvas.after(30, _recompute_scrollregion)
+
+    scroll_frame.bind("<Configure>", _on_scroll_frame_configure)
     cwin = _scroll_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
     _scroll_canvas.configure(yscrollcommand=vscroll.set)
     _scroll_canvas.pack(side="left", fill="both", expand=True, padx=(20, 0))
@@ -5504,7 +5697,7 @@ def build_panel(parent):
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
     global _grid_filt_min_pf, _grid_filt_min_windows, _grid_source_var
-    global _grid_filt_min_passpct, _grid_filt_max_per_rule
+    global _grid_filt_min_passpct, _grid_filt_max_per_rule, _grid_filt_max_consec_dd
     global _grid_sort_key, _grid_sort_reverse
     _grid_filt_profitable  = tk.BooleanVar(value=True)
     _grid_filt_min_trades  = tk.StringVar(value="0")
@@ -5516,7 +5709,9 @@ def build_panel(parent):
     # CHANGED: June 2026 — Min Pass% filter init
     _grid_filt_min_passpct = tk.StringVar(value="0")
     # CHANGED: June 2026 — Max-per-rule cap init (0 = off)
-    _grid_filt_max_per_rule = tk.StringVar(value="0")
+    _grid_filt_max_per_rule  = tk.StringVar(value="0")
+    # CHANGED: June 2026 — max consecutive DD breaches init (0 = off)
+    _grid_filt_max_consec_dd = tk.StringVar(value="0")
     # WHY: Source selector — controls which pool the grid shows.
     # CHANGED: June 2026 — source dropdown
     _grid_source_var = tk.StringVar(value="All sources")
@@ -5574,6 +5769,14 @@ def build_panel(parent):
     tk.Entry(filt_row, textvariable=_grid_filt_max_per_rule, width=4,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
+    # WHY: hide rules that breach the drawdown limit too many times IN A ROW.
+    #      0 = off; e.g. 3 = only rules whose worst consecutive DD-breach run <= 3.
+    # CHANGED: June 2026 — max consecutive DD breaches filter widget
+    tk.Label(filt_row, text="Max consec DD:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_max_consec_dd, width=4,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
     # WHY: Source dropdown — instantly filter grid to one source pool
     #      without scrolling past all backtest rows to find My Rules.
     # CHANGED: June 2026 — Show: source dropdown
@@ -5609,6 +5812,11 @@ def build_panel(parent):
         # look it up from the panel's closure via a stored hook.
         if _refiner_rebuild_hook[0]:
             _refiner_rebuild_hook[0]()
+        # WHY: re-render optimizer cards with the same (now-updated) filter values
+        #      so Apply gates BOTH the strategy grid and the optimizer card list.
+        #      Re-renders from the stashed _opt_all_candidates — no re-optimization.
+        # CHANGED: June 2026 — Apply also re-filters optimizer cards
+        _rerender_opt_cards()
 
     def _reset_grid_filters():
         # Reset = restore defaults. Profitable-only is on by default —
@@ -5621,11 +5829,13 @@ def build_panel(parent):
         # WHY: Reset Min Windows with the rest of the filters.
         # CHANGED: June 2026 — Min Windows filter reset
         _grid_filt_min_windows.set("0")
-        # CHANGED: June 2026 — reset Min Pass% + Max/rule
+        # CHANGED: June 2026 — reset Min Pass% + Max/rule + Max consec DD
         if _grid_filt_min_passpct:
             _grid_filt_min_passpct.set("0")
         if _grid_filt_max_per_rule:
             _grid_filt_max_per_rule.set("0")
+        if _grid_filt_max_consec_dd:
+            _grid_filt_max_consec_dd.set("0")
         # WHY: Reset source to "All sources" with the rest of the filters.
         # CHANGED: June 2026 — source dropdown reset
         if _grid_source_var:
@@ -6008,6 +6218,52 @@ def build_panel(parent):
                         return
                 _strat_tree.bind("<Button-1>", _on_tree_left_click, add="+")
 
+                # WHY: Header-click toggles ALL visible non-separator rows at
+                #      once.  Select-all when not all selected; deselect-all
+                #      when all are already selected.  Glyph on the header
+                #      reflects the resulting state (☑ = all in batch, ☐ =
+                #      none/partial).  Defined after _on_tree_left_click so
+                #      _batch_btn_refresh is already in scope.
+                # CHANGED: June 2026 — header Select All / Deselect All
+                def _select_all_visible_toggle():
+                    global _batch_selected_iids
+                    try:
+                        _vis = []
+                        for _iid in _strat_tree.get_children():
+                            _is_sep = False
+                            for s in _strategies:
+                                if str(s.get('index', '')) == str(_iid):
+                                    _is_sep = (s.get('source') == 'separator')
+                                    break
+                            if not _is_sep:
+                                _vis.append(str(_iid))
+                        if not _vis:
+                            return
+                        _all_selected = all(v in _batch_selected_iids for v in _vis)
+                        _new_glyph = "☐" if _all_selected else "☑"
+                        for _iid in _vis:
+                            if _all_selected:
+                                _batch_selected_iids.discard(_iid)
+                            else:
+                                _batch_selected_iids.add(_iid)
+                            _vals = list(_strat_tree.item(_iid, 'values'))
+                            if _vals:
+                                _vals[0] = _new_glyph
+                                _strat_tree.item(_iid, values=_vals)
+                        _strat_tree.heading("select",
+                                            text=("☑" if not _all_selected else "☐"),
+                                            command=_select_all_visible_toggle)
+                        if _batch_btn_refresh[0]:
+                            try:
+                                _batch_btn_refresh[0]()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                # Re-set heading now that the command function is defined
+                _strat_tree.heading("select", text="☑", command=_select_all_visible_toggle)
+
                 tree_scroll = tk.Scrollbar(tree_frame, orient="vertical",
                                            command=_strat_tree.yview)
                 _strat_tree.configure(yscrollcommand=tree_scroll.set)
@@ -6147,6 +6403,20 @@ def build_panel(parent):
                     _wp_rate = strat.get('win_pass_rate', None)
                     if _wp_rate is None or float(_wp_rate) * 100.0 < min_passpct:
                         return False
+                # WHY: Max consecutive DD breaches — drop rules whose worst run
+                #      of consecutive drawdown-failed attempts exceeds the limit.
+                #      0 = off. Rows without the metric (legacy) are kept when
+                #      filter is off, and treated as 0 when on (no known breaches).
+                # CHANGED: June 2026 — max consecutive DD breaches filter logic
+                try:
+                    max_cdd = int(_grid_filt_max_consec_dd.get() or "0") if _grid_filt_max_consec_dd else 0
+                except Exception:
+                    max_cdd = 0
+                if max_cdd > 0:
+                    _cdd = int(strat.get('max_consecutive_dd_breaches', 0) or 0)
+                    if _cdd > max_cdd:
+                        return False
+
                 if _grid_filt_profitable and _grid_filt_profitable.get():
                     _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
                     # WHY: my_rules rows with 0 trades haven't been backtested —
@@ -7086,6 +7356,11 @@ def build_panel(parent):
                 bd=0, padx=12, pady=6, cursor="hand2")
             optimize_all_btn.pack(side="left", padx=(6, 0))
 
+            # WHY: expose the grid optimize buttons so the run lifecycle can flip them
+            #      to a Stop button while a batch runs (user request).
+            # CHANGED: June 2026 — register grid optimize buttons for run/stop toggle
+            globals()['_grid_opt_btns'] = [batch_opt_btn, optimize_all_btn]
+
             def _update_batch_btn(event=None):
                 """Update batch button label and enabled state based on selection."""
                 sel = _get_selected_indexes()
@@ -7111,6 +7386,11 @@ def build_panel(parent):
                 _batch_btn_refresh[0] = _update_batch_btn
             except Exception:
                 pass
+            # WHY: _batch_btn_refresh is local to build_panel; _set_grid_opt_running
+            #      (top-level) needs it to restore the batch button's count label
+            #      after a run ends.
+            # CHANGED: June 2026 — expose _batch_btn_refresh module-level
+            globals()['_batch_btn_refresh'] = _batch_btn_refresh
             _update_batch_btn()
 
             # WHY: Lets the user reset batch selection in one click,
