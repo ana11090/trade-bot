@@ -76,6 +76,16 @@ _grid_filt_min_pf      = None  # tk.StringVar
 #      can hide rows with too few eval windows to be statistically meaningful.
 # CHANGED: June 2026 — Min Windows filter
 _grid_filt_min_windows = None  # tk.StringVar
+# WHY: Filter on win_pass_rate (the "%" in "5/16 (31%)"). Min Windows
+#      filters the denominator; this filters the rate itself. Tighter
+#      criterion than WR% since it's evaluated per sliding window.
+# CHANGED: June 2026 — Min Pass% filter
+_grid_filt_min_passpct = None  # tk.StringVar
+# WHY: De-noise — cap how many results of the SAME underlying rule appear,
+#      keeping the N best (by windows + pass%). 0 = show all (off). Lets the
+#      user see a few strong variants per rule instead of all 20 exit-variants.
+# CHANGED: June 2026 — max-per-rule cap
+_grid_filt_max_per_rule = None  # tk.StringVar
 # WHY: Controls which source pool is shown in the refiner grid.
 #      Internal key: "all" | "backtest" | "my_rules" | "saved"
 # CHANGED: June 2026 — source dropdown
@@ -1283,6 +1293,52 @@ def _get_selected_indexes():
     return list(_batch_selected_iids)
 
 
+def _get_visible_indexes():
+    """Return iids of every currently displayed (post-filter) tree row,
+    skipping the separator row(s).
+
+    WHY: backs "Optimize All Visible" — ticks the whole displayed set so
+    the existing batch optimizer can run on it. Reads the tree itself,
+    so it reflects the user's current filter combination exactly.
+    CHANGED: June 2026 — optimize-all-visible helper
+    """
+    out = []
+    try:
+        _tree = dd_container[0] if dd_container else None
+        if _tree is None:
+            return out
+        for _iid in _tree.get_children():
+            # Skip the "── Backtest Results ──" separator: its strategy
+            # source is 'separator' and it has no useful iid for batch ops.
+            _hit_separator = False
+            for _s in _strategies:
+                if str(_s.get('index', '')) == str(_iid):
+                    if _s.get('source') == 'separator':
+                        _hit_separator = True
+                    break
+            if _hit_separator:
+                continue
+            out.append(_iid)
+    except Exception:
+        pass
+    return out
+
+
+def _rule_identity(s):
+    """Stable per-RULE key so exit-variants of one rule group together.
+
+    Prefers explicit rule ids; falls back to rule_combo string. Used by the
+    Max/rule cap to keep only the N best variants per underlying rule.
+    """
+    # CHANGED: June 2026 — max-per-rule grouping helper
+    rid = (s.get('_saved_rule_id')
+           or s.get('rule_id')
+           or s.get('saved_rule_id'))
+    if rid:
+        return str(rid)
+    return str(s.get('rule_combo', s.get('rule', '')))
+
+
 def _is_discovery_only_rule(strat):
     """Detect saved rules that came from rule-discovery (Project 1)
     and never went through a backtest.
@@ -2214,6 +2270,36 @@ def _update_status(msg, error=False):
             state.window.after(0, lambda: _opt_status_lbl.configure(text=msg, fg=color) if _opt_status_lbl else None)
     except Exception:
         pass
+
+
+def _start_optimize_all_visible():
+    """Tick every visible row and run the existing batch optimizer.
+
+    WHY: An "Optimize All Visible" button lets the user tighten the
+    filter row (Min WR%/Windows/Pass%/Max-per-rule) until only the
+    rules they care about remain, then optimize that whole set in one
+    click. Reuses _start_batch_optimization (50-rule cap, confirmation,
+    streaming). No new optimization machinery.
+    CHANGED: June 2026 — optimize all visible rules at once
+    """
+    _vis = _get_visible_indexes()
+    if not _vis:
+        messagebox.showinfo("Nothing to optimize",
+                            "No rules visible. Adjust filters first.")
+        return
+    MAX_BATCH = 50
+    if len(_vis) > MAX_BATCH:
+        if not messagebox.askyesno(
+            "Many rules visible",
+            f"{len(_vis)} rules visible. Optimizer caps at {MAX_BATCH}/run "
+            f"(~30-60s each).\n\nOptimize the first {MAX_BATCH} now? "
+            f"(Tighten filters — Min Pass% / Max per rule — to narrow.)"):
+            return
+        _vis = _vis[:MAX_BATCH]
+    _batch_selected_iids.clear()
+    for _iid in _vis:
+        _batch_selected_iids.add(str(_iid))
+    _start_batch_optimization()
 
 
 # WHY: Batch optimizer — runs deep_optimize over multiple selected rules
@@ -5417,7 +5503,9 @@ def build_panel(parent):
     #      from disk — _on_strategies_loaded just rebuilds the Treeview.
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
-    global _grid_filt_min_pf, _grid_filt_min_windows, _grid_source_var, _grid_sort_key, _grid_sort_reverse
+    global _grid_filt_min_pf, _grid_filt_min_windows, _grid_source_var
+    global _grid_filt_min_passpct, _grid_filt_max_per_rule
+    global _grid_sort_key, _grid_sort_reverse
     _grid_filt_profitable  = tk.BooleanVar(value=True)
     _grid_filt_min_trades  = tk.StringVar(value="0")
     _grid_filt_min_wr      = tk.StringVar(value="0")
@@ -5425,6 +5513,10 @@ def build_panel(parent):
     # WHY: win_pass_total filter — hide rows with too few eval windows.
     # CHANGED: June 2026 — Min Windows filter
     _grid_filt_min_windows = tk.StringVar(value="0")
+    # CHANGED: June 2026 — Min Pass% filter init
+    _grid_filt_min_passpct = tk.StringVar(value="0")
+    # CHANGED: June 2026 — Max-per-rule cap init (0 = off)
+    _grid_filt_max_per_rule = tk.StringVar(value="0")
     # WHY: Source selector — controls which pool the grid shows.
     # CHANGED: June 2026 — source dropdown
     _grid_source_var = tk.StringVar(value="All sources")
@@ -5464,6 +5556,22 @@ def build_panel(parent):
     tk.Label(filt_row, text="Min Windows:", font=("Segoe UI", 8),
              bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
     tk.Entry(filt_row, textvariable=_grid_filt_min_windows, width=4,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    # WHY: filter on the PASS FRACTION (win_pass_rate), the "%" in "5/16 (31%)".
+    #      Min Windows filters the denominator; this filters the rate itself.
+    # CHANGED: June 2026 — Min Pass% filter widget
+    tk.Label(filt_row, text="Min Pass%:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_min_passpct, width=4,
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
+
+    # WHY: cap how many results of the SAME rule appear — keep the N best
+    #      (by windows + pass%) and hide the rest. 0 = show all (off).
+    # CHANGED: June 2026 — max-per-rule cap widget
+    tk.Label(filt_row, text="Max/rule:", font=("Segoe UI", 8),
+             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
+    tk.Entry(filt_row, textvariable=_grid_filt_max_per_rule, width=4,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
     # WHY: Source dropdown — instantly filter grid to one source pool
@@ -5513,6 +5621,11 @@ def build_panel(parent):
         # WHY: Reset Min Windows with the rest of the filters.
         # CHANGED: June 2026 — Min Windows filter reset
         _grid_filt_min_windows.set("0")
+        # CHANGED: June 2026 — reset Min Pass% + Max/rule
+        if _grid_filt_min_passpct:
+            _grid_filt_min_passpct.set("0")
+        if _grid_filt_max_per_rule:
+            _grid_filt_max_per_rule.set("0")
         # WHY: Reset source to "All sources" with the rest of the filters.
         # CHANGED: June 2026 — source dropdown reset
         if _grid_source_var:
@@ -6022,6 +6135,18 @@ def build_panel(parent):
                     _wp_total = int(strat.get('win_pass_total') or 0)
                     if _wp_total < min_windows:
                         return False
+                # WHY: Min Pass% — drop rows whose pass fraction (win_pass_rate)
+                #      is below the threshold. Rows with no win_pass data are
+                #      dropped only when the threshold > 0 (inconclusive).
+                # CHANGED: June 2026 — Min Pass% filter logic
+                try:
+                    min_passpct = float(_grid_filt_min_passpct.get() or "0") if _grid_filt_min_passpct else 0.0
+                except Exception:
+                    min_passpct = 0.0
+                if min_passpct > 0:
+                    _wp_rate = strat.get('win_pass_rate', None)
+                    if _wp_rate is None or float(_wp_rate) * 100.0 < min_passpct:
+                        return False
                 if _grid_filt_profitable and _grid_filt_profitable.get():
                     _net = float(strat.get('net_total_pips', strat.get('total_pips', 0)) or 0)
                     # WHY: my_rules rows with 0 trades haven't been backtested —
@@ -6081,6 +6206,36 @@ def build_panel(parent):
             if _n_discovery_hidden > 0:
                 print(f"[REFINER] {_n_discovery_hidden} discovery-only saved rules "
                       f"hidden (no trade data). Re-run backtest to make them visible.")
+
+            # WHY: Max per rule — after thresholds, keep only the N best results
+            #      per RULE (grouped by _rule_identity) so the grid isn't
+            #      flooded with 20 exit-variants of the same condition set.
+            #      Rank by BOTH windows then pass% — most-tested first, then
+            #      highest-passing. 0/blank = no cap.
+            # CHANGED: June 2026 — max-per-rule de-noise cap
+            try:
+                _max_per = int(_grid_filt_max_per_rule.get() or "0") if _grid_filt_max_per_rule else 0
+            except Exception:
+                _max_per = 0
+            if _max_per > 0:
+                def _rank_key(s):
+                    return (float(s.get('win_pass_total', 0) or 0),
+                            float(s.get('win_pass_rate', 0) or 0))
+                def _apply_cap(_lst):
+                    if not _lst:
+                        return _lst
+                    _by = {}
+                    for _s in _lst:
+                        _by.setdefault(_rule_identity(_s), []).append(_s)
+                    _out = []
+                    for _grp in _by.values():
+                        _grp.sort(key=_rank_key, reverse=True)
+                        _out.extend(_grp[:_max_per])
+                    return _out
+                _sr_saved    = _apply_cap(_sr_saved)
+                _sr_my_rules = _apply_cap(_sr_my_rules)
+                _sr_others   = _apply_cap(_sr_others)
+
             if _grid_sort_key:
                 _sr_saved.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
                 _sr_my_rules.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
@@ -6918,6 +7073,18 @@ def build_panel(parent):
                                        padx=10, pady=4,
                                        state=tk.DISABLED)
             batch_opt_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+            # WHY: "Optimize All Visible" — companion to checkbox batch.
+            #      Reuses _start_batch_optimization via _start_optimize_all_visible
+            #      which populates _batch_selected_iids from the post-filter
+            #      tree, hits the same 50-cap confirmation flow.
+            # CHANGED: June 2026 — optimize-all-visible button
+            optimize_all_btn = tk.Button(
+                sel_row, text="Optimize All Visible",
+                command=_start_optimize_all_visible,
+                bg="#6c3fb5", fg="white", font=("Segoe UI", 9, "bold"),
+                bd=0, padx=12, pady=6, cursor="hand2")
+            optimize_all_btn.pack(side="left", padx=(6, 0))
 
             def _update_batch_btn(event=None):
                 """Update batch button label and enabled state based on selection."""
