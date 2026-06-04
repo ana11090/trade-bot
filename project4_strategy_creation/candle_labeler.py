@@ -16,6 +16,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(_HERE, 'outputs')
 
 
+def _default_session(hour):
+    """Rough GMT/broker-tz session map. Verify against candle timezone before use.
+    WHY: Candle timestamps may be in Europe/Athens (UTC+2/+3); apply a
+    UTC_OFFSET correction before calling this if timestamps are not in GMT.
+    """
+    if 0  <= hour < 8:  return 'asian'
+    if 8  <= hour < 13: return 'london'
+    if 13 <= hour < 17: return 'london_ny'
+    if 17 <= hour < 21: return 'ny'
+    return 'late'
+
+
 def label_candles(
     candles_path,
     sl_pips=150,
@@ -29,6 +41,11 @@ def label_candles(
     swap_long_pips_per_night=0.0,   # overnight financing cost for BUY (can be negative = credit)
     swap_short_pips_per_night=0.0,  # overnight financing cost for SELL (can be negative = credit)
     candles_per_day=None,    # used to convert hold_candles → nights for swap; auto-detected if None
+    min_hold_candles=0,      # CHANGED: June 2026 — constraints (audit D): min candles before exit
+    hard_close_hour=None,    # e.g. 23 → no new entries at/after this hour (broker tz)
+    allowed_sessions=None,   # e.g. {'london','ny'}; None = all sessions
+    max_spread_pips=0.0,     # skip entry if modeled spread exceeds this; 0 = off (no live spread data)
+    session_of_hour=None,    # optional callable hour->session; None = use _default_session
     cache=True,
     progress_callback=None,
 ):
@@ -59,11 +76,13 @@ def label_candles(
     #      under different parameters. Fix: include every parameter that
     #      affects the output in the cache key.
     # CHANGED: April 2026 — full parameter cache key (audit HIGH #45)
+    _sess_key = '_'.join(sorted(allowed_sessions)) if allowed_sessions else 'all'
     cache_name = (
         f"candle_labels_{direction}_sl{sl_pips}_tp{tp_pips}"
         f"_mh{max_hold_candles}_ps{pip_size}_sp{spread_pips}"
         f"_cm{commission_pips}_sl2{slippage_pips}"
-        f"_swL{swap_long_pips_per_night}_swS{swap_short_pips_per_night}.csv"
+        f"_swL{swap_long_pips_per_night}_swS{swap_short_pips_per_night}"
+        f"_minh{min_hold_candles}_hch{hard_close_hour or 'off'}_sess{_sess_key}.csv"
     )
     cache_path = os.path.join(OUTPUT_DIR, cache_name)
 
@@ -158,6 +177,24 @@ def label_candles(
                 progress_callback(work_done, total_work,
                                   f"Labeling {dir_name}: {pct:.0f}%")
 
+            # CHANGED: June 2026 — per-candle entry gates (audit D)
+            # Entry timestamp is candle i+1 (the candle we enter at open).
+            # WHY: hard_close_hour and session gates prevent labeling entries
+            # that the EA would never take. Keeping them out of labeled data
+            # prevents the ML model from training on "phantom" trades.
+            # TIMEZONE NOTE: timestamps may be in broker tz (Europe/Athens,
+            # UTC+2/+3). Verify candle tz before relying on hour-based gates.
+            _entry_ts = pd.Timestamp(timestamps[i + 1])
+            _hr = _entry_ts.hour
+            if hard_close_hour is not None and _hr >= hard_close_hour:
+                continue
+            if allowed_sessions:
+                _sess_fn = session_of_hour if session_of_hour else _default_session
+                if _sess_fn(_hr) not in allowed_sessions:
+                    continue
+            # max_spread_pips: no per-candle spread series available in scratch;
+            # this gate is a no-op unless a spread column is added in future.
+
             # Entry at next candle's open
             entry_price = opens[i + 1]
 
@@ -179,6 +216,11 @@ def label_candles(
 
             for j in range(i + 1, min(i + 1 + max_hold_candles, n)):
                 hold        = j - i
+                # CHANGED: June 2026 — min hold gate (audit D)
+                # Honor minimum hold: ignore SL/TP until min_hold_candles elapsed.
+                # WHY: models EA behavior where position cannot be closed early.
+                if min_hold_candles > 0 and hold < min_hold_candles:
+                    continue
                 candle_high = highs[j]
                 candle_low  = lows[j]
                 candle_open = opens[j]

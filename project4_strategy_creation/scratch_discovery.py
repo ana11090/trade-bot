@@ -36,6 +36,102 @@ log = get_logger(__name__)
 # of strategy type (scalping vs swing). See audit MED #48 + Phase 19a Fix 6.
 
 
+# ── Prop-firm challenge helpers (audit A + A2) ────────────────────────────────
+
+def _rebuild_rule_mask(rule, df):
+    """Reconstruct the boolean mask for a rule's conditions applied to df.
+    Returns None if any required feature column is absent (e.g. interaction features).
+    CHANGED: June 2026 — needed for per-rule simulator scoring (audit A)
+    """
+    mask = np.ones(len(df), dtype=bool)
+    for cond in rule.get('conditions', []):
+        feat = cond.get('feature')
+        op   = cond.get('operator')
+        val  = cond.get('value')
+        if feat not in df.columns:
+            return None
+        col = df[feat].values
+        if op == '<=':
+            mask &= col <= val
+        else:
+            mask &= col > val
+    return mask
+
+
+def _simulate_rule_challenge(rule_rows, prop_firm_name, prop_firm_data,
+                             pip_value_per_lot=1.0, default_sl_pips=150.0,
+                             risk_per_trade_pct=1.0, account_size=None):
+    """Run a discovered rule's trade sequence through the SAME challenge simulator
+    the backtest uses (simulate_challenge, sliding-window mode). Returns
+    (pass_rate, pass_count, total_windows, max_consec_dd_breaches,
+     max_daily_dd_pct, max_total_dd_pct) — all None on any failure.
+
+    WHY: replaces the dead prop_firm_data param with real DD + pass-rate scoring,
+         identical to the backtest, so "good in scratch" == "good in backtest".
+         Parity: trades_df uses 'Profit' placeholder + 'pips' column so that
+         _rescale_trades rescales correctly (same path as strategy_validator).
+    CHANGED: June 2026 — prop firm actually enforced (audit A + A2)
+    """
+    try:
+        import pandas as pd
+        from shared.prop_firm_simulator import simulate_challenge
+        if rule_rows is None or len(rule_rows) < 5:
+            return (None,) * 6
+
+        firm_id      = (prop_firm_data or {}).get('firm_id')
+        challenge_id = (prop_firm_data or {}).get('challenge_id')
+        if not firm_id or not challenge_id:
+            return (None,) * 6
+
+        acct = int(account_size or (prop_firm_data or {}).get('account_size', 10000))
+
+        df = pd.DataFrame({
+            "Close Date": pd.to_datetime(rule_rows['timestamp'], errors='coerce'),
+            "Profit":     0.0,   # placeholder — _rescale_trades replaces via pips math
+            "pips":       rule_rows['pips_result'].astype(float).values,
+        }).dropna(subset=["Close Date"]).sort_values("Close Date").reset_index(drop=True)
+
+        if len(df) < 5:
+            return (None,) * 6
+
+        # GAP (D Part 2): firm config has max_trades_per_day_range / cooldown
+        # but prop_firm_simulator does NOT enforce them — verified June 2026.
+        # Pass-rate may be optimistic on strategies that fire > max_trades/day.
+        # Fix belongs in prop_firm_simulator, not here.
+        sim = simulate_challenge(
+            trades_df=df,
+            firm_id=firm_id,
+            challenge_id=challenge_id,
+            account_size=acct,
+            mode='sliding_window',
+            simulate_funded=False,
+            risk_per_trade_pct=risk_per_trade_pct,
+            default_sl_pips=default_sl_pips,
+            pip_value_per_lot=pip_value_per_lot,
+            symbol='XAUUSD',
+        )
+        if sim is None:
+            return (None,) * 6
+
+        passed = sim.eval_pass_count
+        total  = sim.eval_pass_count + sim.eval_fail_count
+        rate   = sim.eval_pass_rate if total > 0 else None
+
+        try:
+            from project2_backtesting.strategy_refiner import max_consecutive_dd_breaches
+            consec = max_consecutive_dd_breaches(getattr(sim, 'individual_results', None))
+        except Exception:
+            consec = None
+
+        # eval_avg_max_dd_pct is the closest proxy available on SimulationSummary
+        mdd_daily = getattr(sim, 'worst_daily_dd_pct', None)   # doesn't exist → None
+        mdd_total = getattr(sim, 'eval_avg_max_dd_pct', None)
+
+        return (rate, passed, total, consec, mdd_daily, mdd_total)
+    except Exception:
+        return (None,) * 6
+
+
 def run_scratch_discovery(
     candles_path=None,
     entry_timeframe=None,
@@ -49,6 +145,9 @@ def run_scratch_discovery(
     slippage_pips=0.0,
     swap_long_pips_per_night=0.0,
     swap_short_pips_per_night=0.0,
+    min_hold_candles=0,      # CHANGED: June 2026 — per-candle constraints (audit D)
+    hard_close_hour=None,
+    allowed_sessions=None,
     use_smart_features=True,
     max_rules=25,
     max_depth=4,
@@ -113,6 +212,9 @@ def run_scratch_discovery(
                     slippage_pips=slippage_pips,
                     swap_long_pips_per_night=swap_long_pips_per_night,
                     swap_short_pips_per_night=swap_short_pips_per_night,
+                    min_hold_candles=min_hold_candles,
+                    hard_close_hour=hard_close_hour,
+                    allowed_sessions=allowed_sessions,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -252,6 +354,9 @@ def run_scratch_discovery(
                     slippage_pips=slippage_pips,
                     swap_long_pips_per_night=swap_long_pips_per_night,
                     swap_short_pips_per_night=swap_short_pips_per_night,
+                    min_hold_candles=min_hold_candles,
+                    hard_close_hour=hard_close_hour,
+                    allowed_sessions=allowed_sessions,
                     use_smart_features=use_smart_features,
                     max_rules=max_rules,
                     max_depth=max_depth,
@@ -351,6 +456,9 @@ def run_scratch_discovery(
             slippage_pips=slippage_pips,
             swap_long_pips_per_night=swap_long_pips_per_night,
             swap_short_pips_per_night=swap_short_pips_per_night,
+            min_hold_candles=min_hold_candles,
+            hard_close_hour=hard_close_hour,
+            allowed_sessions=allowed_sessions,
             progress_callback=lambda cur, tot, msg: _cb(1, f"Labeling: {msg}"),
         )
 
@@ -688,6 +796,50 @@ def run_scratch_discovery(
 
     model_metrics['n_estimators'] = n_estimators
     model_metrics['max_depth'] = max_depth
+
+    # ── Prop-firm challenge scoring per discovered rule (audit A + A2) ────────
+    # CHANGED: June 2026 — score each final rule through simulate_challenge
+    # (same engine as the backtest). Only runs when prop_firm_data is available
+    # with firm_id + challenge_id. Zero overhead when no firm selected.
+    if (prop_firm_name and prop_firm_name != "None (skip prop firm optimization)"
+            and prop_firm_data and prop_firm_data.get('firm_id')
+            and prop_firm_data.get('challenge_id')):
+        _cb(total_steps, total_steps, "Scoring rules against prop firm challenge...")
+        _pip_val  = 1.0   # XAUUSD: 100 oz × $0.01/pip → pip_value_per_lot = 1
+        _acct     = prop_firm_data.get('account_size', 10000)
+        _risk_pct = 1.0   # 1% per trade — same default as the backtest
+        _max_consec_dd_flag = 3
+
+        for _rule in final_rules:
+            _mask = _rebuild_rule_mask(_rule, merged)
+            if _mask is not None and _mask.sum() >= 5:
+                _rows = merged[_mask][['timestamp', 'pips_result']].copy()
+                _rate, _passed, _total, _consec, _mdd_d, _mdd_t = _simulate_rule_challenge(
+                    _rows, prop_firm_name, prop_firm_data,
+                    pip_value_per_lot=_pip_val,
+                    default_sl_pips=float(sl_pips),
+                    risk_per_trade_pct=_risk_pct,
+                    account_size=_acct,
+                )
+            else:
+                _rate, _passed, _total, _consec, _mdd_d, _mdd_t = (None,) * 6
+
+            _rule['win_pass_rate']               = _rate
+            _rule['win_pass_passed']             = _passed
+            _rule['win_pass_total']              = _total
+            _rule['max_consecutive_dd_breaches'] = _consec
+            _rule['max_daily_dd_pct']            = _mdd_d
+            _rule['max_total_dd_pct']            = _mdd_t
+            _rule['dd_flag'] = (
+                (_consec is not None and _consec > _max_consec_dd_flag) or
+                (_rate   is not None and _rate   < 0.20)
+            )
+
+        # Re-rank: pass_rate desc primary (None last), score desc as tiebreak
+        def _firm_rank_key(r):
+            pr = r.get('win_pass_rate')
+            return (pr is not None, pr or 0.0, r.get('score', 0.0))
+        final_rules.sort(key=_firm_rank_key, reverse=True)
 
     result = {
         "method":             "scratch_xgboost",

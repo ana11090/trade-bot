@@ -678,7 +678,8 @@ def _build_inner(inner):
 
     tk.Label(prop_frame, text=(
         "🎯 Optimize for a specific prop firm? Select target to auto-calculate safe SL/TP "
-        "and estimate pass probability via Monte Carlo simulation."
+        "and score each rule against the challenge simulator (sliding-window pass rate — "
+        "same engine as the backtest)."
     ), bg="#fff8dc", fg="#8B4513", font=("Segoe UI", 9), justify="left", wraplength=900,
              padx=12, pady=8).pack(fill="x")
 
@@ -1042,6 +1043,60 @@ def _build_inner(inner):
     ), bg="#e8f4fd", fg="#1565C0", font=("Segoe UI", 8), justify="left", anchor="w")
     tf_info_label.pack(fill="x", pady=(4, 0))
 
+    # ── Trading Constraints (optional, per-candle gates) ──────────────────────
+    # CHANGED: June 2026 — constraints section (audit D)
+    _section(inner, "Trading Constraints (Optional)")
+
+    cstr_frame = tk.Frame(inner, bg="#f5f5f5", relief="solid", bd=1)
+    cstr_frame.pack(fill="x", **pad)
+    cstr_inner = tk.Frame(cstr_frame, bg="#f5f5f5")
+    cstr_inner.pack(fill="x", padx=10, pady=8)
+
+    tk.Label(cstr_inner, text=(
+        "Per-candle gates applied during labeling — defaults OFF (no behavioral change).\n"
+        "TIMEZONE NOTE: candle timestamps may be in broker tz (Europe/Athens, UTC+2/+3);\n"
+        "verify before relying on hard-close / session filters."
+    ), bg="#f5f5f5", fg="#555", font=("Segoe UI", 8), justify="left").pack(anchor="w", pady=(0, 6))
+
+    cstr_row1 = tk.Frame(cstr_inner, bg="#f5f5f5")
+    cstr_row1.pack(fill="x", pady=2)
+
+    tk.Label(cstr_row1, text="Min hold candles (0 = off):",
+             bg="#f5f5f5", fg="#333", font=("Segoe UI", 9), width=26, anchor="w").pack(side="left")
+    min_hold_var = tk.StringVar(value="0")
+    tk.Spinbox(cstr_row1, from_=0, to=50, textvariable=min_hold_var,
+               width=5, font=("Segoe UI", 9)).pack(side="left", padx=(0, 20))
+
+    tk.Label(cstr_row1, text="Hard-close hour (24h, blank = off):",
+             bg="#f5f5f5", fg="#333", font=("Segoe UI", 9), width=30, anchor="w").pack(side="left")
+    hard_close_var = tk.StringVar(value="")
+    tk.Entry(cstr_row1, textvariable=hard_close_var, width=5,
+             font=("Segoe UI", 9)).pack(side="left")
+
+    cstr_row2 = tk.Frame(cstr_inner, bg="#f5f5f5")
+    cstr_row2.pack(fill="x", pady=(4, 0))
+    tk.Label(cstr_row2, text="Allowed sessions (blank = all):",
+             bg="#f5f5f5", fg="#333", font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
+
+    sess_asian_var    = tk.BooleanVar(value=False)
+    sess_london_var   = tk.BooleanVar(value=False)
+    sess_lnyny_var    = tk.BooleanVar(value=False)
+    sess_ny_var       = tk.BooleanVar(value=False)
+    for _lbl, _var in [("Asian", sess_asian_var), ("London", sess_london_var),
+                       ("London/NY", sess_lnyny_var), ("NY", sess_ny_var)]:
+        tk.Checkbutton(cstr_row2, text=_lbl, variable=_var,
+                       bg="#f5f5f5", font=("Segoe UI", 9),
+                       activebackground="#f5f5f5").pack(side="left", padx=4)
+
+    _widgets.update(dict(
+        min_hold_var=min_hold_var,
+        hard_close_var=hard_close_var,
+        sess_asian_var=sess_asian_var,
+        sess_london_var=sess_london_var,
+        sess_lnyny_var=sess_lnyny_var,
+        sess_ny_var=sess_ny_var,
+    ))
+
     # ── Run button + progress ─────────────────────────────────────────────────
     _section(inner, "Run")
 
@@ -1287,6 +1342,23 @@ def _render_results():
                          bg=bg, fg=wf_color,
                          font=("Segoe UI", 8, "bold")).pack(anchor="w")
 
+            # CHANGED: June 2026 — prop-firm challenge pass-rate (audit A + A2)
+            _wpr = rule.get('win_pass_rate')
+            _wpp = rule.get('win_pass_passed')
+            _wpt = rule.get('win_pass_total')
+            _cdb = rule.get('max_consecutive_dd_breaches')
+            _mdd = rule.get('max_total_dd_pct')
+            _ddf = rule.get('dd_flag', False)
+            if _wpr is not None:
+                _pass_txt = (
+                    f"  Challenge: {_wpp}/{_wpt} windows passed ({_wpr:.0%})"
+                    + (f"  |  max consec DD breaches: {_cdb}" if _cdb is not None else "")
+                    + (f"  |  avg max DD: {_mdd:.1f}%" if _mdd is not None else "")
+                )
+                _pass_fg = "#922b21" if _ddf else ("#d35400" if _wpr < 0.40 else "#1e8449")
+                tk.Label(rc, text=_pass_txt, bg=bg, fg=_pass_fg,
+                         font=("Segoe UI", 8, "bold")).pack(anchor="w")
+
             for cond in rule.get('conditions', []):
                 feat = cond['feature']
                 is_interaction = feat.startswith('INT_')
@@ -1500,6 +1572,22 @@ def _on_run():
         _fi = _widgets.get('feature_interact_var')
         enhance_interactions = _fi.get() if _fi else False
 
+        # CHANGED: June 2026 — per-candle constraints (audit D)
+        _minh_raw = (_widgets.get('min_hold_var') or tk.StringVar()).get().strip()
+        min_hold_candles = int(_minh_raw) if _minh_raw and _minh_raw != '0' else 0
+
+        _hch_raw = (_widgets.get('hard_close_var') or tk.StringVar()).get().strip()
+        hard_close_hour = int(_hch_raw) if _hch_raw else None
+
+        _sess_map = {
+            'asian':     _widgets.get('sess_asian_var'),
+            'london':    _widgets.get('sess_london_var'),
+            'london_ny': _widgets.get('sess_lnyny_var'),
+            'ny':        _widgets.get('sess_ny_var'),
+        }
+        _sel_sessions = {s for s, v in _sess_map.items() if v and v.get()}
+        allowed_sessions = _sel_sessions if _sel_sessions else None
+
     except ValueError as exc:
         messagebox.showerror("Invalid Input", f"Check your settings:\n{exc}")
         return
@@ -1623,6 +1711,9 @@ def _on_run():
                 min_win_rate=min_wr,
                 train_test_split=split,
                 data_source_id=_data_source_id,
+                min_hold_candles=min_hold_candles,
+                hard_close_hour=hard_close_hour,
+                allowed_sessions=allowed_sessions,
                 prop_firm_name=firm_name_param,
                 prop_firm_data=prop_data,
                 compare_all_tfs=compare_all,
