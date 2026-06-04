@@ -1654,6 +1654,130 @@ def _write_text_report(report, filepath):
         f.write('\n'.join(lines))
 
 
+# ── Regime-restricted discovery helper ───────────────────────────────────────
+
+def _apply_regime_filter(df, regime_filter):
+    """
+    Filter feature-matrix rows to only keep months whose monthly aggregate
+    regime matches regime_filter.
+
+    regime_filter: {'trend': 'trending'|'ranging'|None,
+                    'vol':   'high'|'low'|None,
+                    'dir':   'above'|'below'|None}
+    None on a dim means: no filter on that dimension.
+
+    If the filtered result has < 60 rows, logs a warning and returns the
+    UNFILTERED df so the run falls back to all-data rather than producing
+    garbage rules from a tiny sample.
+
+    WHY: Filter is at month-aggregate level (mean ADX/ATR/EMA200-dist per
+    month), not at individual-row level — matches the intent of the UI which
+    selects months by their overall character, not trade-by-trade indicators.
+
+    CHANGED: June 2026 — regime-restricted discovery
+    """
+    _MIN_ROWS = 60
+
+    # Nothing to filter?
+    active_dims = {k: v for k, v in regime_filter.items() if v}
+    if not active_dims:
+        return df
+
+    # ── Resolve timestamp + month ─────────────────────────────────────────
+    if 'timestamp' not in df.columns:
+        log.warning('[RRD] feature matrix has no timestamp column — skipping regime filter')
+        return df
+
+    ts = pd.to_datetime(df['timestamp'], errors='coerce')
+    months = ts.dt.to_period('M').astype(str)
+    df2 = df.copy()
+    df2['_rrd_month'] = months
+
+    # ── Resolve indicator columns ─────────────────────────────────────────
+    adx_col = next((c for c in ['H4_adx_14', 'H1_adx_14', 'D1_adx_14']
+                    if c in df2.columns and df2[c].notna().sum() > 10), None)
+    atr_col = next((c for c in ['H4_atr_14', 'H1_atr_14']
+                    if c in df2.columns and df2[c].notna().sum() > 10), None)
+    ema_col = next((c for c in ['H4_ema_200_distance', 'H1_ema_200_distance']
+                    if c in df2.columns and df2[c].notna().sum() > 10), None)
+
+    # ── ADX threshold ─────────────────────────────────────────────────────
+    adx_thr = 25.0
+    try:
+        import config_loader as _rrd_cl
+        adx_thr = float(_rrd_cl.load().get('adx_trend_threshold', '25') or '25')
+    except Exception:
+        pass
+
+    # ── ATR median (global, same as analyze_market_regimes) ──────────────
+    atr_median = float(df2[atr_col].median()) if atr_col else 0.0
+
+    # ── Per-month regime labels ───────────────────────────────────────────
+    month_regime = {}
+    for m, grp in df2.groupby('_rrd_month'):
+        if len(grp) < 3:
+            continue
+        mlabel = {}
+        if adx_col and 'trend' in active_dims:
+            mean_adx = pd.to_numeric(grp[adx_col], errors='coerce').mean()
+            mlabel['trend'] = 'trending' if (not pd.isna(mean_adx) and mean_adx >= adx_thr) else 'ranging'
+        if atr_col and 'vol' in active_dims:
+            mean_atr = pd.to_numeric(grp[atr_col], errors='coerce').mean()
+            mlabel['vol'] = 'high' if (not pd.isna(mean_atr) and mean_atr >= atr_median) else 'low'
+        if ema_col and 'dir' in active_dims:
+            mean_ema = pd.to_numeric(grp[ema_col], errors='coerce').mean()
+            mlabel['dir'] = 'above' if (not pd.isna(mean_ema) and mean_ema >= 0) else 'below'
+        month_regime[m] = mlabel
+
+    # ── Match months ─────────────────────────────────────────────────────
+    matching_months = set()
+    for m, mlabel in month_regime.items():
+        ok = True
+        for dim, want in active_dims.items():
+            if dim not in mlabel:
+                continue  # column missing → don't reject this month on this dim
+            if mlabel[dim] != want:
+                ok = False
+                break
+        if ok:
+            matching_months.add(m)
+
+    # ── Apply filter ──────────────────────────────────────────────────────
+    mask = df2['_rrd_month'].isin(matching_months)
+    n_before  = len(df2)
+    n_after   = int(mask.sum())
+    n_months  = len(matching_months)
+
+    log.info(
+        f'\n  [RRD] Regime-restricted discovery: {n_before} → {n_after} trades '
+        f'({n_after / max(n_before, 1) * 100:.1f}% kept) '
+        f'across {n_months} matching months'
+    )
+    if active_dims:
+        log.info(f'  [RRD]   Filter: ' + ', '.join(f"{k}={v}" for k, v in active_dims.items()))
+
+    # Print to stdout so it appears in the run-scenarios output pane
+    print(
+        f"\n⚙  Regime-restricted discovery: matched {n_months} months, "
+        f"{n_after} trades (of {n_before})"
+        + (f"  — rules below are from THIS regime only." if n_after >= _MIN_ROWS else "")
+    )
+
+    if n_after < _MIN_ROWS:
+        log.warning(
+            f'  [RRD] WARN: only {n_after} rows after regime filter '
+            f'(floor={_MIN_ROWS}) — falling back to all-data to avoid '
+            f'producing garbage rules from a tiny sample.'
+        )
+        print(
+            f'  [RRD] WARNING: regime filter left only {n_after} trades '
+            f'(floor={_MIN_ROWS}) — running on ALL data instead.'
+        )
+        return df  # unfiltered — don't corrupt df2 which has extra _rrd_month col
+
+    return df2.drop(columns=['_rrd_month']).reset_index(drop=True)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 # WHY (Stage-A): Accept feature_scope_mode and scenario_key so the caller
@@ -1661,7 +1785,8 @@ def _write_text_report(report, filepath):
 #      pass nothing and get pre-Stage-A behavior (all TFs).
 # CHANGED: April 2026 — Stage-A
 def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key=None,
-                 mt5_parity=True):
+                 mt5_parity=True, regime_filter=None):
+    # CHANGED: June 2026 — optional regime_filter; default None = no-op
     """Run complete analysis and save results."""
     if feature_matrix_path is None:
         feature_matrix_path = os.path.join(OUTPUT_DIR, 'feature_matrix.csv')
@@ -1684,6 +1809,13 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
     log.info('\nLoading feature matrix...')
     df = pd.read_csv(feature_matrix_path)
     log.info(f'  {len(df)} trades x {len(df.columns)} features')
+
+    # WHY: optional regime-restricted discovery — keep only rows in months whose
+    #      regime matches the target. When regime_filter is None/empty (default),
+    #      this is a NO-OP and discovery runs on all data exactly as before.
+    # CHANGED: June 2026 — optional regime restrict (guarded; off = unchanged)
+    if regime_filter:
+        df = _apply_regime_filter(df, regime_filter)
 
     # 1. Profile
     log.info('\n[1/8] Building robot profile...')

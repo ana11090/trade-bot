@@ -35,6 +35,7 @@ from project2_backtesting.panels import (
     saved_rules_panel as p2_saved,
     my_rules_panel as p2_myrules,
     strategy_playground as p2_playground,
+    this_month as p2_this_month,
 )
 from project3_live_trading.panels import (
     ea_generator_panel as p3_generator,
@@ -313,6 +314,7 @@ _POPOUT_CONFIG = {
     "p2_saved":          {"title": "Saved Rules",         "builder": p2_saved.build_panel},
     "p2_myrules":        {"title": "My Rules",            "builder": p2_myrules.build_panel},
     "p2_playground":     {"title": "Strategy Playground", "builder": p2_playground.build_panel},
+    "p2_this_month":    {"title": "This Month",          "builder": p2_this_month.build_panel},
     "p3_generator":      {"title": "EA Generator",        "builder": p3_generator.build_panel},
     "p3_monitor":        {"title": "Live Monitor",        "builder": p3_monitor.build_panel},
     "p3_myrules_eas":    {"title": "My Rules & EAs",   "builder": p3_myrules_eas.build_panel},
@@ -351,6 +353,7 @@ state.panel_builders = {
     "p2_saved":          _make_builder(lambda: p2_saved.build_panel(content), "p2_saved"),
     "p2_myrules":        _make_builder(lambda: p2_myrules.build_panel(content), "p2_myrules"),
     "p2_playground":     _make_builder(lambda: p2_playground.build_panel(content), "p2_playground"),
+    "p2_this_month":    _make_builder(lambda: p2_this_month.build_panel(content), "p2_this_month"),
     "p3_generator":      _make_builder(lambda: p3_generator.build_panel(content), "p3_generator"),
     "p3_monitor":        _make_builder(lambda: p3_monitor.build_panel(content), "p3_monitor"),
     "p3_myrules_eas":    _make_builder(lambda: p3_myrules_eas.build_panel(content), "p3_myrules_eas"),
@@ -385,6 +388,7 @@ refresh_map = {
     "p2_saved":      p2_saved.refresh,
     "p2_myrules":    p2_myrules.refresh,
     "p2_playground": p2_playground.refresh,
+    "p2_this_month": p2_this_month.refresh,
     "p3_generator":  p3_generator.refresh,
     "p3_monitor":    p3_monitor.refresh,
     "p3_myrules_eas":    p3_myrules_eas.refresh,

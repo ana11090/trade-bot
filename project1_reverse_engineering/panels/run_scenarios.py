@@ -61,6 +61,11 @@ _ui_mt5_parity_var  = None  # tk.BooleanVar — MT5 parity indicators checkbox
 # CHANGED: June 2026 — module holder for active preset name
 _ui_active_preset = [None]  # one-element list; set on preset change
 
+# WHY: run_scenarios() is a top-level function and cannot close over build_panel locals.
+#      Store regime-restrict UI var references here so run_in_background() can read them.
+# CHANGED: June 2026 — regime-restricted discovery section
+_ui_regime_restrict = None  # set in build_panel; dict with keys: restrict, auto, trend, vol, dir
+
 
 def build_panel(parent):
     global _data_status_frame
@@ -1602,6 +1607,133 @@ def build_panel(parent):
     #      panel renders correctly on first paint based on saved state.
     # CHANGED: April 2026 — Phase A.36
     _a36_apply_visibility()
+
+    # ════════════════════════════════════════════════════════════════════════
+    # REGIME-RESTRICTED DISCOVERY — optional month-level regime filter
+    # WHY: discover rules from ONLY the months whose market regime matches the
+    #      target (current month by default). OFF by default — when off,
+    #      discovery runs on ALL data exactly as before (zero behavioral change).
+    # CHANGED: June 2026 — optional regime-restricted discovery section
+    # ════════════════════════════════════════════════════════════════════════
+    global _ui_regime_restrict
+
+    _rrd_frame = tk.Frame(left_frame, bg="#f5f0ff", padx=15, pady=12)
+    _rrd_frame.pack(fill="x", pady=(12, 0))
+
+    tk.Label(_rrd_frame, text="🗓 Regime-Restricted Discovery (optional)",
+             bg="#f5f0ff", fg="#2c1e6e",
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+
+    _regime_restrict_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(
+        _rrd_frame,
+        text="Restrict discovery to regime-matching months",
+        variable=_regime_restrict_var,
+        bg="#f5f0ff", fg="#16213e",
+        font=("Segoe UI", 10),
+        activebackground="#f5f0ff",
+        anchor="w",
+    ).pack(anchor="w")
+
+    # Sub-frame — shown always but widgets greyed when checkbox is OFF
+    _rrd_inner = tk.Frame(_rrd_frame, bg="#f5f0ff")
+    _rrd_inner.pack(fill="x", pady=(6, 0))
+
+    _regime_auto_var = tk.BooleanVar(value=True)
+    _rrd_auto_cb = tk.Checkbutton(
+        _rrd_inner,
+        text="Auto-detect current regime from candles",
+        variable=_regime_auto_var,
+        bg="#f5f0ff", fg="#333",
+        font=("Segoe UI", 9),
+        activebackground="#f5f0ff",
+        anchor="w",
+    )
+    _rrd_auto_cb.pack(anchor="w")
+
+    # Three dimension dropdowns (manual override)
+    _rrd_dims_frame = tk.Frame(_rrd_inner, bg="#f5f0ff")
+    _rrd_dims_frame.pack(anchor="w", pady=(4, 0))
+
+    _regime_trend_var = tk.StringVar(value="any")
+    _regime_vol_var   = tk.StringVar(value="any")
+    _regime_dir_var   = tk.StringVar(value="any")
+
+    for col, lbl, var, opts in [
+        (0, "Trend:",       _regime_trend_var, ["any", "trending", "ranging"]),
+        (2, "Volatility:",  _regime_vol_var,   ["any", "high",     "low"]),
+        (4, "Direction:",   _regime_dir_var,   ["any", "above",    "below"]),
+    ]:
+        tk.Label(_rrd_dims_frame, text=lbl, bg="#f5f0ff",
+                 font=("Segoe UI", 9)).grid(row=0, column=col, sticky="w", padx=(0, 2))
+        ttk.Combobox(_rrd_dims_frame, textvariable=var, values=opts,
+                     width=9, state="readonly",
+                     font=("Segoe UI", 9)).grid(row=0, column=col + 1, padx=(0, 10))
+
+    # Live status labels
+    _rrd_target_lbl  = tk.Label(_rrd_inner, text="Target regime: —",
+                                bg="#f5f0ff", fg="#2c1e6e",
+                                font=("Segoe UI", 9, "italic"))
+    _rrd_target_lbl.pack(anchor="w", pady=(4, 0))
+
+    _rrd_match_lbl = tk.Label(_rrd_inner, text="",
+                              bg="#f5f0ff", fg="#555",
+                              font=("Segoe UI", 9))
+    _rrd_match_lbl.pack(anchor="w")
+
+    # Stash refs for run_scenarios() to read
+    _ui_regime_restrict = {
+        'restrict': _regime_restrict_var,
+        'auto':     _regime_auto_var,
+        'trend':    _regime_trend_var,
+        'vol':      _regime_vol_var,
+        'dir':      _regime_dir_var,
+    }
+
+    _rrd_combos = [w for w in _rrd_dims_frame.winfo_children()
+                   if isinstance(w, ttk.Combobox)]
+    _rrd_others = ([_rrd_auto_cb]
+                   + [w for w in _rrd_dims_frame.winfo_children()
+                      if not isinstance(w, ttk.Combobox)]
+                   + [_rrd_target_lbl, _rrd_match_lbl])
+
+    def _rrd_update_state(*_):
+        on = _regime_restrict_var.get()
+        for w in _rrd_others:
+            try:
+                w.config(state='normal' if on else 'disabled')
+            except Exception:
+                pass
+        for w in _rrd_combos:
+            try:
+                w.config(state='readonly' if on else 'disabled')
+            except Exception:
+                pass
+        if on:
+            _rrd_refresh_status()
+
+    _regime_restrict_var.trace_add('write', _rrd_update_state)
+    _rrd_update_state()  # initial state
+
+    def _rrd_refresh_status(*_):
+        """Recompute target regime + matching-month count and update labels."""
+        if not _regime_restrict_var.get():
+            return
+        try:
+            rr = _ui_regime_restrict or {}
+            resolved = _resolve_target_regime(rr)
+            parts = []
+            for dim, k in [('trend', 'trend'), ('vol', 'vol'), ('dir', 'dir')]:
+                v = resolved.get(k)
+                if v:
+                    parts.append(f"{dim.capitalize()}={v}")
+            txt = ', '.join(parts) if parts else 'all dims = any (no filter)'
+            _rrd_target_lbl.config(text=f"Target regime: {txt}")
+        except Exception:
+            _rrd_target_lbl.config(text="Target regime: (error resolving)")
+
+    for v in (_regime_auto_var, _regime_trend_var, _regime_vol_var, _regime_dir_var):
+        v.trace_add('write', _rrd_refresh_status)
 
     # ════════════════════════════════════════════════════════════════════════
     # PHASE A.39a — Single Rule Mode UI scaffolding
@@ -3364,6 +3496,201 @@ def build_panel(parent):
     return panel
 
 
+# ── Regime-Restricted Discovery helpers ──────────────────────────────────────
+# WHY: These are module-level so they're accessible from run_in_background()
+#      (a nested function inside run_scenarios, but via the module global path).
+# CHANGED: June 2026 — regime-restricted discovery
+
+def _resolve_target_regime(rr_vars):
+    """
+    Resolve the target regime dict from UI vars.
+
+    rr_vars: dict with keys: auto (BoolVar), trend/vol/dir (StrVar).
+    Returns: {'trend': 'trending'|'ranging'|None,
+               'vol':   'high'|'low'|None,
+               'dir':   'above'|'below'|None}
+    None on any dim = no filter on that dimension.
+    """
+    auto_on  = rr_vars.get('auto') and rr_vars['auto'].get()
+    m_trend  = (rr_vars.get('trend') and rr_vars['trend'].get()) or 'any'
+    m_vol    = (rr_vars.get('vol')   and rr_vars['vol'].get())   or 'any'
+    m_dir    = (rr_vars.get('dir')   and rr_vars['dir'].get())   or 'any'
+
+    result = {'trend': None, 'vol': None, 'dir': None}
+
+    if auto_on:
+        try:
+            auto = _detect_current_regime()
+            result['trend'] = auto.get('trend')
+            result['vol']   = auto.get('vol')
+            result['dir']   = auto.get('dir')
+        except Exception as _e:
+            print(f"[RRD] auto-detect failed: {_e}")
+
+    # Manual overrides apply on top of auto (or alone when auto is off)
+    if m_trend != 'any':
+        result['trend'] = m_trend
+    if m_vol != 'any':
+        result['vol'] = m_vol
+    if m_dir != 'any':
+        result['dir'] = m_dir
+
+    return result
+
+
+def _detect_current_regime():
+    """
+    Compute the current month's regime from the active candle data source.
+
+    Uses P1 config → data_source_id / data_source_path to find candles,
+    tries H4 then H1, applies Wilder-smoothed ADX/ATR + EMA200 on the last
+    full month of data.
+
+    Returns: {'trend': 'trending'|'ranging', 'vol': 'high'|'low',
+               'dir':  'above'|'below'}
+    """
+    import os
+    import numpy as np
+
+    def _wilder(arr, n):
+        out = np.full(len(arr), np.nan)
+        if len(arr) < n:
+            return out
+        out[n - 1] = np.mean(arr[:n])
+        for i in range(n, len(arr)):
+            out[i] = (out[i - 1] * (n - 1) + arr[i]) / n
+        return out
+
+    # ── Resolve data source ───────────────────────────────────────────────
+    data_path = ''
+    symbol    = 'XAUUSD'
+    adx_thr   = 25.0
+    try:
+        import config_loader as _dcl
+        cfg = _dcl.load()
+        symbol    = cfg.get('symbol', 'XAUUSD') or 'XAUUSD'
+        adx_thr   = float(cfg.get('adx_trend_threshold', '25') or '25')
+        data_path = cfg.get('data_source_path', '') or ''
+        if data_path and not os.path.isdir(data_path):
+            data_path = ''
+        if not data_path:
+            _dsid = cfg.get('data_source_id', '') or ''
+            if _dsid:
+                try:
+                    from shared.data_sources import get_source_path
+                    data_path = get_source_path(_dsid) or ''
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if not data_path:
+        data_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+
+    # ── Try H4 then H1 ────────────────────────────────────────────────────
+    import pandas as pd
+
+    df = None
+    for tf in ('H4', 'H1'):
+        sym_up = symbol.upper()
+        sym_lo = symbol.lower()
+        for p in [
+            os.path.join(data_path, f'{sym_up}_{tf}.csv'),
+            os.path.join(data_path, f'{sym_lo}_{tf}.csv'),
+            os.path.join(data_path, f'{symbol}_{tf}.csv'),
+        ]:
+            if os.path.isfile(p):
+                try:
+                    _df = pd.read_csv(p, encoding='utf-8-sig')
+                    ts_col = next(
+                        (c for c in _df.columns
+                         if c.lower().strip() in ('timestamp', 'time', 'date', 'datetime',
+                                                   'open_time', 'opentime')),
+                        _df.columns[0])
+                    _df = _df.rename(columns={ts_col: 'timestamp'})
+                    _df['timestamp'] = pd.to_datetime(_df['timestamp'], errors='coerce')
+                    _df = _df.dropna(subset=['timestamp']).sort_values('timestamp')
+                    col_map = {c.lower(): c for c in _df.columns}
+                    for need in ('high', 'low', 'close'):
+                        if need not in _df.columns and need in col_map:
+                            _df = _df.rename(columns={col_map[need]: need})
+                    if all(c in _df.columns for c in ('high', 'low', 'close')) and len(_df) >= 250:
+                        df = _df
+                        break
+                except Exception:
+                    pass
+        if df is not None:
+            break
+
+    if df is None or len(df) < 250:
+        raise RuntimeError("No usable H4/H1 candle file found for regime detection")
+
+    # ── Compute ADX, ATR, EMA200 ─────────────────────────────────────────
+    n = len(df)
+    hi    = df['high'].to_numpy(dtype=float)
+    lo    = df['low'].to_numpy(dtype=float)
+    cl    = df['close'].to_numpy(dtype=float)
+
+    tr    = np.zeros(n)
+    pdm   = np.zeros(n)
+    ndm   = np.zeros(n)
+    for i in range(1, n):
+        tr[i]  = max(hi[i] - lo[i], abs(hi[i] - cl[i-1]), abs(lo[i] - cl[i-1]))
+        up     = hi[i] - hi[i-1]
+        dn     = lo[i-1] - lo[i]
+        pdm[i] = up if up > dn and up > 0 else 0.0
+        ndm[i] = dn if dn > up and dn > 0 else 0.0
+
+    s_tr  = _wilder(tr,  14)
+    s_pdm = _wilder(pdm, 14)
+    s_ndm = _wilder(ndm, 14)
+    denom = np.where(s_tr > 0, s_tr, np.nan)
+    pdi   = 100.0 * s_pdm / denom
+    ndi   = 100.0 * s_ndm / denom
+    dn2   = pdi + ndi
+    dx    = np.where(dn2 > 0, 100.0 * np.abs(pdi - ndi) / dn2, 0.0)
+    adx   = _wilder(dx, 14)
+
+    atr   = _wilder(tr, 14)
+    atr_median = float(np.nanmedian(atr))
+
+    alpha   = 2.0 / 201.0
+    ema200  = np.full(n, np.nan)
+    ema200[199] = float(np.mean(cl[:200]))
+    for i in range(200, n):
+        ema200[i] = cl[i] * alpha + ema200[i-1] * (1.0 - alpha)
+
+    # ── Aggregate last complete calendar month ────────────────────────────
+    df2 = df.copy()
+    df2['_adx']    = adx
+    df2['_atr']    = atr
+    df2['_ema200'] = ema200
+    df2['_month']  = df2['timestamp'].dt.to_period('M').astype(str)
+
+    months = sorted(df2['_month'].dropna().unique())
+    if not months:
+        raise RuntimeError("No months found in candle data")
+
+    # Use the latest month that has at least 5 valid rows
+    target_month = None
+    for m in reversed(months):
+        grp = df2[df2['_month'] == m].dropna(subset=['_adx', '_atr', '_ema200'])
+        if len(grp) >= 5:
+            target_month = m
+            break
+    if target_month is None:
+        raise RuntimeError("Not enough data to determine current month regime")
+
+    grp   = df2[df2['_month'] == target_month].dropna(subset=['_adx', '_atr', '_ema200'])
+    trend = 'trending' if (grp['_adx'] >= adx_thr).sum() > len(grp) / 2 else 'ranging'
+    vol   = 'high'     if (grp['_atr'] >= atr_median).sum() > len(grp) / 2 else 'low'
+    ema_dist = grp['close'].values - grp['_ema200'].values
+    direc = 'above'    if (ema_dist >= 0).sum() > len(grp) / 2 else 'below'
+
+    return {'trend': trend, 'vol': vol, 'dir': direc}
+
+
 def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_label, run_btn=None):
     """Run selected scenarios"""
     # Check if trade data is loaded from Project 0
@@ -3768,6 +4095,30 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
 
                 return True
 
+            # WHY: Build regime_filter once before any scenario runs.
+            #      When the checkbox is OFF, regime_filter stays None and
+            #      every run_analysis() call below is a pure no-op on this
+            #      new path — zero behavioral change.
+            # CHANGED: June 2026 — regime-restricted discovery
+            _regime_filter_resolved = None
+            try:
+                _rr_vars = globals().get('_ui_regime_restrict')
+                if _rr_vars and _rr_vars['restrict'].get():
+                    _regime_filter_resolved = _resolve_target_regime(_rr_vars)
+                    _rr_parts = [
+                        f"{k}={v}" for k, v in _regime_filter_resolved.items() if v
+                    ]
+                    _rr_banner = (
+                        f"\n⚙  Regime-restricted discovery: "
+                        + (" + ".join(_rr_parts) if _rr_parts else "all dims = any (no filter)")
+                        + "\n   Rules below are from regime-matching months ONLY.\n"
+                    )
+                    print(_rr_banner)
+                    output_text.after(0, lambda b=_rr_banner: output_text.insert(tk.END, b))
+            except Exception as _rrd_e:
+                print(f"[RRD] Could not resolve regime filter: {_rrd_e}")
+                _regime_filter_resolved = None
+
             # WHY (StageA-all): Run analyze per scenario. When scope mode is
             #      'all_scopes_compare', loops through all three single-mode
             #      scopes and writes each to a scope_<mode>/ subfolder.
@@ -3833,6 +4184,7 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                                     feature_scope_mode=_mode,
                                     scenario_key=scenario,
                                     mt5_parity=_mt5p,
+                                    regime_filter=_regime_filter_resolved,
                                 )
                             except TypeError:
                                 _analyze_mod.run_analysis(feature_matrix_path=_fm_scope)
@@ -3853,6 +4205,7 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                         feature_scope_mode=_fs_mode,
                         scenario_key=scenario,
                         mt5_parity=_mt5p,
+                        regime_filter=_regime_filter_resolved,
                     )
                 except TypeError:
                     _analyze_mod.run_analysis(feature_matrix_path=_fm)
