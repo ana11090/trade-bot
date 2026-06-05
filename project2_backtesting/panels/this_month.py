@@ -22,8 +22,11 @@ _HERE  = os.path.dirname(os.path.abspath(__file__))
 _P2DIR = os.path.dirname(_HERE)
 
 # ─── module-level state ──────────────────────────────────────────────────────
-_worker_running = False
-_after_sr       = [None]   # debounce handle for scroll-region recompute
+_worker_running    = False
+_after_sr          = [None]   # debounce handle for scroll-region recompute
+# CHANGED: June 2026 — capture the SPECIFIC candle-load failure so the panel can
+#          show a meaningful message instead of the generic "check P2 config"
+_LAST_CANDLE_ERROR = None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -166,11 +169,25 @@ def _resolve_candle_path(tf):
 
 
 def _load_candles(tf):
-    """Load OHLC candles for TF. Returns DataFrame or None."""
+    """Load OHLC candles for TF. Returns DataFrame or None.
+    On a git-LFS pointer stub, auto-pull via the shared helper and retry; if
+    the file still isn't real data, stores the reason in _LAST_CANDLE_ERROR and
+    returns None so the panel can show WHY instead of the generic message.
+    CHANGED: June 2026 — auto-handle LFS stubs (reuse assert_not_lfs_stub)
+    """
+    global _LAST_CANDLE_ERROR
+    _LAST_CANDLE_ERROR = None
     try:
         import pandas as pd
         path, _ = _resolve_candle_path(tf)
         if path is None:
+            return None
+        # Detect + auto-pull LFS stubs (same helper the backtest uses)
+        try:
+            from shared.data_sources import assert_not_lfs_stub
+            assert_not_lfs_stub(path)   # auto-runs git lfs pull; raises if still a stub
+        except Exception as _lfs_err:
+            _LAST_CANDLE_ERROR = str(_lfs_err)
             return None
         df = pd.read_csv(path, encoding='utf-8-sig')
         # Normalise timestamp column
@@ -190,9 +207,13 @@ def _load_candles(tf):
                 df = df.rename(columns={col_map[need]: need})
         for need in ('high', 'low', 'close'):
             if need not in df.columns:
+                _LAST_CANDLE_ERROR = (
+                    f"{os.path.basename(path)} has no OHLC columns "
+                    f"(found: {list(df.columns)[:6]}). File may be malformed.")
                 return None
         return df
-    except Exception:
+    except Exception as _e:
+        _LAST_CANDLE_ERROR = f"{type(_e).__name__}: {_e}"
         return None
 
 
@@ -608,9 +629,13 @@ def build_panel(parent):
                     break
 
             if df is None or len(df) < 250:
-                _state_mod.window.after(0, lambda: _status_lbl.config(
-                    text='Cannot load H4/H1 candles — check P2 config data source.',
-                    fg=RED))
+                # CHANGED: June 2026 — show the SPECIFIC failure reason (LFS stub,
+                #          bad path, malformed file) instead of generic message
+                _reason = (_LAST_CANDLE_ERROR
+                           or 'no H4/H1 candle file found — check P2 config data source')
+                _msg = f'Cannot load candles — {_reason}'
+                _state_mod.window.after(0, lambda m=_msg: _status_lbl.config(
+                    text=m, fg=RED))
                 return
 
             _state_mod.window.after(0, lambda: _status_lbl.config(
