@@ -26,7 +26,9 @@ _worker_running    = False
 _after_sr          = [None]   # debounce handle for scroll-region recompute
 # CHANGED: June 2026 — capture the SPECIFIC candle-load failure so the panel can
 #          show a meaningful message instead of the generic "check P2 config"
-_LAST_CANDLE_ERROR = None
+_LAST_CANDLE_ERROR  = None
+# CHANGED: June 2026 — record which source was actually used (for status display)
+_CANDLE_SOURCE_LABEL = None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -164,6 +166,40 @@ def _resolve_candle_path(tf):
     ]:
         if os.path.isfile(p):
             return p, symbol
+
+    # ── auto-discover a source under data/sources/* ───────────────────────────
+    # WHY: P2 config often has data_source_id=None, so the bare data/ fallback
+    #      finds nothing even though candles exist under data/sources/<id>/.
+    #      Scan known sources (richest first) rather than giving up.
+    # CHANGED: June 2026 — auto-discover when config is empty
+    global _CANDLE_SOURCE_LABEL
+    try:
+        from shared.data_sources import list_sources
+        for src in sorted(list_sources(),
+                          key=lambda s: s.get('candle_count', 0), reverse=True):
+            spath = src.get('path')
+            if not spath or not os.path.isdir(spath):
+                continue
+            for _name in (f'{sym_up}_{tf}.csv', f'{sym_lo}_{tf}.csv',
+                          f'{symbol}_{tf}.csv'):
+                cand = os.path.join(spath, _name)
+                if os.path.isfile(cand):
+                    _CANDLE_SOURCE_LABEL = src.get('name') or os.path.basename(spath)
+                    return cand, symbol
+    except Exception:
+        pass
+
+    # ── last resort: glob under data/sources ─────────────────────────────────
+    try:
+        import glob
+        base = os.path.join(os.path.dirname(os.path.dirname(_HERE)), 'data', 'sources')
+        for _name in (f'{sym_up}_{tf}.csv', f'{sym_lo}_{tf}.csv'):
+            hits = glob.glob(os.path.join(base, '*', _name))
+            if hits:
+                _CANDLE_SOURCE_LABEL = os.path.basename(os.path.dirname(hits[0]))
+                return hits[0], symbol
+    except Exception:
+        pass
 
     return None, symbol
 
@@ -638,8 +674,10 @@ def build_panel(parent):
                     text=m, fg=RED))
                 return
 
-            _state_mod.window.after(0, lambda: _status_lbl.config(
-                text=f'Computing regimes from {used_tf} candles ({len(df):,} rows)…',
+            # CHANGED: June 2026 — name the source when auto-discovered
+            _src_note = f', {_CANDLE_SOURCE_LABEL}' if _CANDLE_SOURCE_LABEL else ''
+            _state_mod.window.after(0, lambda _n=_src_note: _status_lbl.config(
+                text=f'Computing regimes from {used_tf} candles ({len(df):,} rows{_n})…',
                 fg='#555'))
 
             month_labels = label_months(df, adx_threshold=adx_thr)
