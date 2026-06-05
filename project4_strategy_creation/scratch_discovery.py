@@ -250,6 +250,9 @@ def run_scratch_discovery(
                     'candles_analyzed': tf_result.get('profile', {}).get('candles_analyzed', 0),
                 })
 
+            except ValueError as e:
+                # CHANGED: June 2026 — all TFs share the same source; empty/stub aborts all
+                raise ValueError(f"Data source unusable — aborting comparison: {e}")
             except Exception as e:
                 log.warning(f"[WARNING] Discovery failed for {tf}: {e}")
                 comparison_results.append({
@@ -518,6 +521,11 @@ def run_scratch_discovery(
         n_candles     = len(labels_df)
         win_rate_base = labels_df['label'].mean()
         log.info(f"[DEBUG] Labeling done: {n_candles} rows, base WR: {win_rate_base:.1%}")
+    except ValueError as e:
+        # CHANGED: June 2026 — abort fast on empty/stub candles, surface reason
+        if progress_callback:
+            progress_callback(6, 6, f"ERROR: {e}")
+        raise
     except Exception as e:
         log.info(f"[DEBUG] FAILED at labeling: {e}")
         import traceback

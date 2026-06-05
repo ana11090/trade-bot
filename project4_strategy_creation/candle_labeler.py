@@ -108,6 +108,26 @@ def label_candles(
     # Load candles (utf-8-sig automatically strips BOM)
     candles = pd.read_csv(candles_path, encoding='utf-8-sig')
 
+    # WHY: a git-LFS pointer stub or empty/garbled CSV passes the path-exists check
+    #      but yields no usable candles — without this guard scratch grinds for many
+    #      minutes and reports "0 rules" with no reason. Fail fast with a clear error.
+    # CHANGED: June 2026 — empty/stub candle guard
+    import os as _os
+    _sz = _os.path.getsize(candles_path) if _os.path.exists(candles_path) else 0
+    _is_lfs_stub = False
+    try:
+        with open(candles_path, 'r', encoding='utf-8', errors='ignore') as _fh:
+            _is_lfs_stub = _fh.read(80).startswith('version https://git-lfs')
+    except Exception:
+        pass
+    if _is_lfs_stub or _sz < 1000 or len(candles) < 50:
+        raise ValueError(
+            f"Candle file has no usable data: {candles_path}\n"
+            f"  size={_sz} bytes, rows={len(candles)}.\n"
+            f"  If this is a git-LFS pointer stub, run `git lfs pull` to download "
+            f"the real candles, then retry."
+        )
+
     # Auto-detect timestamp column — don't assume the name
     ts_col = None
     for col in candles.columns:

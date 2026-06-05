@@ -1839,6 +1839,15 @@ def _on_run():
                 progress_callback=_progress,
             )
             _panel.after(0, _on_done)
+        except ValueError as exc:
+            # CHANGED: June 2026 — show empty/stub data reason cleanly, no traceback
+            _panel.after(0, lambda e=str(exc): (
+                _widgets['run_btn'].configure(state="normal", bg="#27ae60",
+                                              text="Build Strategy from Scratch"),
+                _progress_var[0].set(0),
+                _status_var[0].set(f"Cannot run: {str(e).splitlines()[0]}"),
+                messagebox.showerror("Cannot run discovery", str(e)),
+            ))
         except Exception as exc:
             import traceback
             tb = traceback.format_exc()
