@@ -493,6 +493,9 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p2_results.pack(fill="x")
     btn_p2_refiner = _sub_btn(project2_extras, "✂️ Strategy Refiner", lambda: show_panel("p2_refiner"))
     btn_p2_refiner.pack(fill="x")
+    # CHANGED: June 2026 — This Month panel sidebar entry (was registered but had no button)
+    btn_p2_thismonth = _sub_btn(project2_extras, "📅 This Month", lambda: show_panel("p2_this_month"))
+    btn_p2_thismonth.pack(fill="x")
     btn_p2_validator = _sub_btn(project2_extras, "✅ Strategy Validator", lambda: show_panel("p2_validator"))
     btn_p2_validator.pack(fill="x")
     btn_p2_prop = _sub_btn(project2_extras, "🏦 Prop Firm Test", lambda: show_panel("p2_prop_test"))
@@ -505,14 +508,15 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p2_playground.pack(fill="x")
 
     PROJECT2_BUTTONS = {
-        "p2_config":    btn_p2_config,
-        "p2_run":       btn_p2_run,
-        "p2_results":   btn_p2_results,
-        "p2_refiner":   btn_p2_refiner,
-        "p2_validator": btn_p2_validator,
-        "p2_prop_test": btn_p2_prop,
-        "p2_saved":     btn_p2_saved,
-        "p2_myrules":   btn_p2_myrules,
+        "p2_config":     btn_p2_config,
+        "p2_run":        btn_p2_run,
+        "p2_results":    btn_p2_results,
+        "p2_refiner":    btn_p2_refiner,
+        "p2_this_month": btn_p2_thismonth,
+        "p2_validator":  btn_p2_validator,
+        "p2_prop_test":  btn_p2_prop,
+        "p2_saved":      btn_p2_saved,
+        "p2_myrules":    btn_p2_myrules,
         "p2_playground": btn_p2_playground,
     }
 

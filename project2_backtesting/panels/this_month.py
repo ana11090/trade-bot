@@ -310,13 +310,14 @@ def _score_rule(monthly_rows, matching_months, rank_by):
     )
 
     return {
-        'wr':       wr,
-        'pips':     pips_total,
-        'pass_pct': pass_pct,
-        'variance': variance,
-        'score':    score,
-        'n_match':  len(matching_rows),
-        'trades':   trades_total,
+        'wr':           wr,
+        'pips':         pips_total,
+        'pass_pct':     pass_pct,
+        'variance':     variance,
+        'score':        score,
+        'n_match':      len(matching_rows),
+        'match_months': sorted(r['month'] for r in matching_rows),  # CHANGED: June 2026 — which months
+        'trades':       trades_total,
     }
 
 
@@ -427,6 +428,12 @@ def build_panel(parent):
     tv_scroll_x.config(command=tree.xview)
     tree.pack(fill='both', expand=True)
 
+    # CHANGED: June 2026 — detail label: shows which months matched for the selected rule
+    _months_detail = tk.Label(outer, text='Select a rule to see its matching months',
+                              font=('Segoe UI', 9), fg='#555', anchor='w', justify='left',
+                              wraplength=900, bg=BG)
+    _months_detail.pack(fill='x', padx=10, pady=(4, 8))
+
     # Column widths
     _col_w = {
         '#':        40,
@@ -459,6 +466,7 @@ def build_panel(parent):
         'month_labels':  {},
         'curr_regime':   {},
         'rows':          [],    # computed rows for current settings
+        'rendered_rows': [],    # CHANGED: June 2026 — aligned with tree insert order for selection
     }
 
     def _rank_key(row):
@@ -488,6 +496,7 @@ def build_panel(parent):
     def _render_rows(rows, min_months, hide_thin):
         tree.delete(*tree.get_children())
         sorted_rows = sorted(rows, key=_rank_key, reverse=True)
+        _state['rendered_rows'] = []  # CHANGED: June 2026 — reset aligned list
         rank = 0
         for row in sorted_rows:
             nm = row.get('n_match', 0)
@@ -512,6 +521,27 @@ def build_panel(parent):
                 f"{row.get('variance', 0):.1f}",
                 f"{row.get('score', 0):.1f}",
             ), tags=(tag,))
+            _state['rendered_rows'].append(row)  # CHANGED: June 2026 — aligned with insert
+
+    def _on_select_rule(_e=None):
+        # CHANGED: June 2026 — show which months the selected rule traded in
+        sel = tree.selection()
+        if not sel:
+            return
+        idx = tree.index(sel[0])
+        rendered = _state.get('rendered_rows', [])
+        if 0 <= idx < len(rendered):
+            r = rendered[idx]
+            months = r.get('match_months', [])
+            if months:
+                _months_detail.config(
+                    text=(f"{r.get('label', '?')} traded in {len(months)} matching "
+                          f"months: " + ", ".join(months)))
+            else:
+                _months_detail.config(
+                    text=f"{r.get('label', '?')} — no matching months traded.")
+
+    tree.bind('<<TreeviewSelect>>', _on_select_rule)
 
     def _apply_and_render():
         """Re-render tree from cached rows using current UI settings."""
@@ -526,7 +556,13 @@ def build_panel(parent):
         last_month = sorted(month_labels.keys())[-1] if month_labels else ''
         past_matching = {m for m in matching if m < last_month}
 
-        _match_lbl.config(text=f'Matching past months: {len(past_matching)}')
+        # CHANGED: June 2026 — show which months, not only the count
+        if past_matching:
+            _match_lbl.config(
+                text=f'Matching past months: {len(past_matching)} — '
+                     + ', '.join(sorted(past_matching)))
+        else:
+            _match_lbl.config(text='Matching past months: 0')
 
         if len(past_matching) < 6:
             _warn_lbl.config(text=f'Low confidence — only {len(past_matching)} matching months')
