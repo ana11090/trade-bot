@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-06-01T19:16:01.926131
+Generated: 2026-06-03T14:01:13.804239
 Trades analyzed: 1106 | Features: 804
 ======================================================================
 
@@ -15,7 +15,7 @@ Trades analyzed: 1106 | Features: 804
   Stop loss:      Fixed 150 pips (confidence: 88%)
   Take profit:    Dynamic / trailing
   Sessions:       Asian, London, New York
-  Peak hours:     [12, 13, 11] UTC
+  Peak hours:     [14, 15, 13] UTC
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
@@ -58,9 +58,9 @@ Trades analyzed: 1106 | Features: 804
     above_ema200          : WR 60%, avg +167 pips (811 trades)
     below_ema200          : WR 55%, avg +88 pips (295 trades)
   session:
-    asian                 : WR 60%, avg +145 pips (301 trades)
-    london                : WR 57%, avg +128 pips (647 trades)
-    new_york              : WR 59%, avg +148 pips (499 trades)
+    asian                 : WR 61%, avg +173 pips (277 trades)
+    london                : WR 56%, avg +131 pips (598 trades)
+    new_york              : WR 59%, avg +141 pips (632 trades)
   day_of_week:
     Monday                : WR 61%, avg +165 pips (230 trades)
     Tuesday               : WR 59%, avg +160 pips (196 trades)

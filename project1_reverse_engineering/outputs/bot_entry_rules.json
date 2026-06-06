@@ -7,41 +7,6 @@
       "conditions": [
         {
           "feature": "D1_distance_from_high",
-          "operator": "<=",
-          "value": 0.5875
-        },
-        {
-          "feature": "D1_lower_shadow",
-          "operator": ">",
-          "value": 10.945
-        },
-        {
-          "feature": "D1_cci_20",
-          "operator": ">",
-          "value": -59.3823
-        }
-      ],
-      "prediction": "WIN",
-      "confidence": 0.632,
-      "win_rate": 0.632,
-      "coverage": 87,
-      "coverage_pct": 24.7,
-      "train_win_rate": 0.703,
-      "train_coverage": 64,
-      "overfit_gap": 0.071,
-      "is_overfit": false,
-      "avg_pips": 118.7,
-      "source": "bot_entry",
-      "entry_timeframe": "D1",
-      "action": "BUY",
-      "n_real_trades_in_rule": 176,
-      "data_source_id": "levereged_2026.05.03",
-      "data_source_path": ""
-    },
-    {
-      "conditions": [
-        {
-          "feature": "D1_distance_from_high",
           "operator": ">",
           "value": 0.5875
         },
@@ -54,22 +19,27 @@
           "feature": "D1_candle_range",
           "operator": ">",
           "value": 34.625
+        },
+        {
+          "feature": "M5_volume_change",
+          "operator": "<=",
+          "value": 0.1129
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.733,
-      "win_rate": 0.733,
-      "coverage": 75,
-      "coverage_pct": 21.3,
-      "train_win_rate": 0.739,
-      "train_coverage": 46,
-      "overfit_gap": 0.006,
+      "confidence": 0.778,
+      "win_rate": 0.778,
+      "coverage": 54,
+      "coverage_pct": 15.3,
+      "train_win_rate": 0.586,
+      "train_coverage": 29,
+      "overfit_gap": -0.192,
       "is_overfit": false,
-      "avg_pips": 202.6,
+      "avg_pips": 220.1,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 256,
+      "n_real_trades_in_rule": 180,
       "data_source_id": "levereged_2026.05.03",
       "data_source_path": ""
     },
@@ -89,22 +59,67 @@
           "feature": "D1_candle_range",
           "operator": ">",
           "value": 27.815
+        },
+        {
+          "feature": "H1_body_to_range_ratio",
+          "operator": "<=",
+          "value": 0.5136
         }
       ],
       "prediction": "WIN",
-      "confidence": 0.736,
-      "win_rate": 0.736,
-      "coverage": 72,
-      "coverage_pct": 20.5,
-      "train_win_rate": 0.861,
-      "train_coverage": 79,
-      "overfit_gap": 0.125,
-      "is_overfit": false,
-      "avg_pips": 171.4,
+      "confidence": 0.822,
+      "win_rate": 0.822,
+      "coverage": 45,
+      "coverage_pct": 12.8,
+      "train_win_rate": 0.981,
+      "train_coverage": 53,
+      "overfit_gap": 0.159,
+      "is_overfit": true,
+      "avg_pips": 156.4,
       "source": "bot_entry",
       "entry_timeframe": "D1",
       "action": "BUY",
-      "n_real_trades_in_rule": 298,
+      "n_real_trades_in_rule": 217,
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": ""
+    },
+    {
+      "conditions": [
+        {
+          "feature": "D1_distance_from_high",
+          "operator": "<=",
+          "value": 0.5875
+        },
+        {
+          "feature": "D1_lower_shadow",
+          "operator": ">",
+          "value": 10.945
+        },
+        {
+          "feature": "D1_cci_20",
+          "operator": ">",
+          "value": -59.3823
+        },
+        {
+          "feature": "H4_mt5_rsi_14",
+          "operator": "<=",
+          "value": 59.9718
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.625,
+      "win_rate": 0.625,
+      "coverage": 48,
+      "coverage_pct": 13.6,
+      "train_win_rate": 0.87,
+      "train_coverage": 46,
+      "overfit_gap": 0.245,
+      "is_overfit": true,
+      "avg_pips": 90.2,
+      "source": "bot_entry",
+      "entry_timeframe": "D1",
+      "action": "BUY",
+      "n_real_trades_in_rule": 126,
       "data_source_id": "levereged_2026.05.03",
       "data_source_path": ""
     },
@@ -124,6 +139,11 @@
           "feature": "M5_mt5_atr_14",
           "operator": "<=",
           "value": 3.0123
+        },
+        {
+          "feature": "M15_lower_shadow",
+          "operator": ">",
+          "value": 0.395
         }
       ],
       "prediction": "WIN",
@@ -131,15 +151,15 @@
       "win_rate": 0.833,
       "coverage": 6,
       "coverage_pct": 0.6,
-      "train_win_rate": 0.888,
-      "train_coverage": 294,
-      "overfit_gap": 0.054,
+      "train_win_rate": 0.924,
+      "train_coverage": 250,
+      "overfit_gap": 0.091,
       "is_overfit": false,
-      "avg_pips": 32.2,
+      "avg_pips": 42.9,
       "source": "bot_entry",
       "entry_timeframe": "M15",
       "action": "BUY",
-      "n_real_trades_in_rule": 287,
+      "n_real_trades_in_rule": 256,
       "data_source_id": "levereged_2026.05.03",
       "data_source_path": ""
     }
@@ -180,17 +200,17 @@
     {
       "tf": "D1",
       "status": "ok",
-      "n_rules": 3,
+      "n_rules": 5,
       "n_train": 820,
       "n_test": 352,
       "n_features": 795
     }
   ],
   "params": {
-    "max_rules": 40,
-    "max_depth": 3,
+    "max_rules": 200,
+    "max_depth": 4,
     "n_estimators": 200,
-    "min_coverage": 15,
+    "min_coverage": 13,
     "min_win_rate": 0.55,
     "neg_ratio": 10
   }

@@ -22,6 +22,39 @@ log = get_logger(__name__)
 
 BACKTEST_MATRIX_PATH = os.path.join(_HERE, 'outputs', 'backtest_matrix.json')
 
+# ── Per-TF trade file cache (cleared at the start of each scoring run) ────────
+# WHY: load_trades_from_matrix reads the same backtest_trades_H1.json (etc.) once
+#      per strategy, making This Month scoring O(rules × TF-file-size). With a
+#      cache the file is parsed exactly once per TF per scoring run.
+_TRADES_FILE_CACHE: dict  = {}
+_TRADES_CACHE_HITS        = [0]
+_TRADES_CACHE_MISSES      = [0]
+
+
+def clear_trades_cache():
+    """Discard all cached trade-file data and reset hit/miss counters."""
+    _TRADES_FILE_CACHE.clear()
+    _TRADES_CACHE_HITS[0]   = 0
+    _TRADES_CACHE_MISSES[0] = 0
+
+
+def _load_trades_file_cached(path):
+    """Return parsed JSON for *path*, reading the file only on the first call."""
+    if path in _TRADES_FILE_CACHE:
+        _TRADES_CACHE_HITS[0] += 1
+        return _TRADES_FILE_CACHE[path]
+    _TRADES_CACHE_MISSES[0] += 1
+    with open(path, 'r', encoding='utf-8') as _f:
+        _data = json.load(_f)
+    _TRADES_FILE_CACHE[path] = _data
+    return _data
+
+
+def get_trades_cache_stats():
+    """Return (hits, misses) since the last clear_trades_cache() call."""
+    return (_TRADES_CACHE_HITS[0], _TRADES_CACHE_MISSES[0])
+
+
 # Session hour ranges (UTC)
 _SESSIONS = {
     "Asian":    (0, 8),
@@ -719,8 +752,7 @@ def load_trades_from_matrix(strategy_index, entry_tf=None):
         )
         if os.path.exists(trades_path):
             try:
-                with open(trades_path, 'r', encoding='utf-8') as f:
-                    trades_data = json.load(f)
+                trades_data = _load_trades_file_cached(trades_path)
 
                 # WHY: The trades file is keyed by the original enumerate
                 #      index from the backtester's summary list. The panel

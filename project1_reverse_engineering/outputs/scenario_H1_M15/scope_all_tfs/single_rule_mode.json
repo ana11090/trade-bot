@@ -1,7 +1,7 @@
 {
   "status": "no_conjunction",
   "variant": "a",
-  "target_coverage": 0.85,
+  "target_coverage": 0.8,
   "trade_count": 1106,
   "candidate_pool": [
     {
@@ -279,18 +279,18 @@
   "chosen_stats": null,
   "top_10_conjunctions": [],
   "params": {
-    "target_coverage": 0.85,
+    "target_coverage": 0.8,
     "per_condition_coverage": 0.75,
-    "min_non_nan_frac": 0.82,
+    "min_non_nan_frac": 0.8,
     "pool_size": 27,
-    "min_cardinality": 3,
-    "max_cardinality": 10,
-    "max_enumerations_per_level": 5000,
-    "tie_break_within_pct": 0.1,
+    "min_cardinality": 4,
+    "max_cardinality": 8,
+    "max_enumerations_per_level": 5001,
+    "tie_break_within_pct": 0.13,
     "dedup_correlated": true,
     "winner_selection": "coverage"
   },
-  "reason": "No conjunction of 3..10 conditions reached 85% coverage. The bot may use conditions that span beyond the 27-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
-  "generated_at": "2026-06-01T19:16:22.146424",
+  "reason": "No conjunction of 4..8 conditions reached 80% coverage. The bot may use conditions that span beyond the 27-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
+  "generated_at": "2026-06-03T14:01:54.187093",
   "scenario": null
 }

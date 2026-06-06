@@ -30,6 +30,69 @@ _LAST_CANDLE_ERROR  = None
 # CHANGED: June 2026 — record which source was actually used (for status display)
 _CANDLE_SOURCE_LABEL = None
 
+# ─── Diagnostics ─────────────────────────────────────────────────────────────
+_DIAG_LINES  = []           # accumulated log lines (kept forever, reset on each refresh)
+_DIAG_WINDOW = [None]       # Toplevel reference so we reuse an existing window
+_DIAG_TEXT   = [None]       # scrolledtext widget inside the diagnostics window
+
+
+def _diag(msg):
+    """Append a timestamped line to the diagnostics buffer and echo to open window."""
+    import time as _t
+    line = f"[{_t.strftime('%H:%M:%S')}] {msg}"
+    _DIAG_LINES.append(line)
+    if _DIAG_TEXT[0] is not None:
+        try:
+            _DIAG_TEXT[0].configure(state='normal')
+            _DIAG_TEXT[0].insert('end', line + '\n')
+            _DIAG_TEXT[0].see('end')
+            _DIAG_TEXT[0].configure(state='disabled')
+        except Exception:
+            pass
+
+
+def _open_diagnostics():
+    """Open (or raise) the diagnostics window."""
+    from tkinter.scrolledtext import ScrolledText as _ST
+    import tkinter as _tk
+    if _DIAG_WINDOW[0] is not None:
+        try:
+            _DIAG_WINDOW[0].lift()
+            _DIAG_WINDOW[0].focus_force()
+            return
+        except Exception:
+            _DIAG_WINDOW[0] = None
+
+    win = _tk.Toplevel()
+    win.title('This Month — Diagnostics')
+    win.geometry('780x440')
+    _DIAG_WINDOW[0] = win
+
+    st = _ST(win, wrap='none', font=('Consolas', 9), state='disabled')
+    st.pack(fill='both', expand=True, padx=6, pady=6)
+    _DIAG_TEXT[0] = st
+
+    # Populate with lines already collected
+    st.configure(state='normal')
+    for line in _DIAG_LINES:
+        st.insert('end', line + '\n')
+    st.see('end')
+    st.configure(state='disabled')
+
+    def _on_close():
+        _DIAG_WINDOW[0] = None
+        _DIAG_TEXT[0]   = None
+        win.destroy()
+
+    win.protocol('WM_DELETE_WINDOW', _on_close)
+
+    _tk.Button(win, text='Clear', command=lambda: (
+        _DIAG_LINES.clear(),
+        st.configure(state='normal'),
+        st.delete('1.0', 'end'),
+        st.configure(state='disabled'),
+    )).pack(side='right', padx=6, pady=4)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Indicator helpers (Wilder smoothing, no external deps beyond numpy)
@@ -462,7 +525,12 @@ def build_panel(parent):
     _refresh_btn = tk.Button(ctrl, text='↻ Refresh', bg='#3498db', fg='white',
                              font=('Segoe UI', 9, 'bold'), relief='flat',
                              padx=10, pady=3)
-    _refresh_btn.grid(row=1, column=6, padx=12, pady=(4, 0))
+    _refresh_btn.grid(row=1, column=6, padx=4, pady=(4, 0))
+
+    _diag_btn = tk.Button(ctrl, text='🔍 Diagnostics', bg='#7f8c8d', fg='white',
+                          font=('Segoe UI', 9), relief='flat',
+                          padx=8, pady=3, command=_open_diagnostics)
+    _diag_btn.grid(row=1, column=7, padx=4, pady=(4, 0))
 
     _status_lbl = tk.Label(ctrl, text='', bg=BG, fg='#555',
                            font=('Segoe UI', 9, 'italic'))
@@ -489,7 +557,16 @@ def build_panel(parent):
     _months_detail = tk.Label(outer, text='Select a rule to see its matching months',
                               font=('Segoe UI', 9), fg='#555', anchor='w', justify='left',
                               wraplength=900, bg=BG)
-    _months_detail.pack(fill='x', padx=10, pady=(4, 8))
+    _months_detail.pack(fill='x', padx=10, pady=(4, 2))
+
+    # CHANGED: June 2026 — sim detail box: eval + funded breakdown on rule click
+    from tkinter.scrolledtext import ScrolledText as _ScrolledText
+    _detail_box = _ScrolledText(
+        outer, height=8, state='disabled',
+        font=('Consolas', 8), wrap='none',
+        relief='flat', borderwidth=1, bg='#fafafa',
+    )
+    _detail_box.pack(fill='x', padx=10, pady=(0, 8))
 
     # Column widths
     _col_w = {
@@ -550,6 +627,40 @@ def build_panel(parent):
                 matching.add(m)
         return matching
 
+    def _insert_row_into_tree(row, rank, tag):
+        """Insert one row into the tree. Separated so _append_row can reuse it."""
+        rule_lbl = row.get('label', '?')
+        if len(rule_lbl) > 55:
+            rule_lbl = rule_lbl[:52] + '…'
+        nm = row.get('n_match', 0)
+        tree.insert('', 'end', values=(
+            rank,
+            rule_lbl,
+            row.get('entry_tf', ''),
+            row.get('direction', ''),
+            nm,
+            f"{row.get('wr', 0):.1f}",
+            f"{row.get('pips', 0):.0f}",
+            f"{row.get('pass_pct', 0):.0f}",
+            f"{row.get('variance', 0):.1f}",
+            f"{row.get('score', 0):.1f}",
+        ), tags=(tag,))
+
+    def _append_row(row, min_months, hide_thin):
+        """Stream one scored row into the tree during the compute run.
+
+        Appended at the tail (unsorted); _render_rows at the end re-sorts.
+        Called via window.after(0, ...) from the background thread.
+        """
+        nm = row.get('n_match', 0)
+        is_thin = nm < min_months
+        if hide_thin and is_thin:
+            return
+        rank = len(_state['rendered_rows']) + 1
+        tag = 'thin' if is_thin else 'normal'
+        _insert_row_into_tree(row, rank, tag)
+        _state['rendered_rows'].append(row)
+
     def _render_rows(rows, min_months, hide_thin):
         tree.delete(*tree.get_children())
         sorted_rows = sorted(rows, key=_rank_key, reverse=True)
@@ -562,26 +673,20 @@ def build_panel(parent):
                 continue
             rank += 1
             tag = 'thin' if is_thin else 'normal'
-            rule_lbl = row.get('label', '?')
-            # Trim label for display
-            if len(rule_lbl) > 55:
-                rule_lbl = rule_lbl[:52] + '…'
-            tree.insert('', 'end', values=(
-                rank,
-                rule_lbl,
-                row.get('entry_tf', ''),
-                row.get('direction', ''),
-                nm,
-                f"{row.get('wr', 0):.1f}",
-                f"{row.get('pips', 0):.0f}",
-                f"{row.get('pass_pct', 0):.0f}",
-                f"{row.get('variance', 0):.1f}",
-                f"{row.get('score', 0):.1f}",
-            ), tags=(tag,))
+            _insert_row_into_tree(row, rank, tag)
             _state['rendered_rows'].append(row)  # CHANGED: June 2026 — aligned with insert
 
+    def _set_detail_text(txt, fg='#1a252f'):
+        try:
+            _detail_box.configure(state='normal')
+            _detail_box.delete('1.0', 'end')
+            _detail_box.insert('1.0', txt)
+            _detail_box.configure(state='disabled', fg=fg)
+        except Exception:
+            pass
+
     def _on_select_rule(_e=None):
-        # CHANGED: June 2026 — show which months the selected rule traded in
+        # CHANGED: June 2026 — show matching months + run eval/funded sim for selected rule
         sel = tree.selection()
         if not sel:
             return
@@ -597,6 +702,74 @@ def build_panel(parent):
             else:
                 _months_detail.config(
                     text=f"{r.get('label', '?')} — no matching months traded.")
+
+            # Kick off sim detail in background thread
+            _strat = r.get('_strat')
+            _trades = r.get('_trades')
+            if _strat is None or not _trades:
+                _set_detail_text('⚠ No trade data available for this rule.', fg='#c0392b')
+                return
+
+            _set_detail_text('⏳ Computing eval & funded simulation…', fg='#888888')
+
+            def _run_sim(strat=_strat, trades=_trades, row=r):
+                try:
+                    from shared.sim_detail import resolve_firm_challenge, build_sim_detail_text
+                    from project2_backtesting.panels.strategy_refiner_panel import (
+                        _resolve_firm_challenge as _rfcp)
+                except ImportError:
+                    try:
+                        from shared.sim_detail import resolve_firm_challenge, build_sim_detail_text
+                        _rfcp = None
+                    except Exception as _ie:
+                        import state as _sm
+                        _sm.window.after(0, lambda e=str(_ie): _set_detail_text(
+                            f'⚠ Import failed: {e}', fg='#c0392b'))
+                        return
+
+                rule0 = ((strat.get('rules') or [{}])[0]
+                         if strat.get('rules')
+                         else (strat.get('saved_rule') or {}))
+                _rs0 = strat.get('run_settings') or {}
+                try:
+                    acct = float(rule0.get('account_size')
+                                 or _rs0.get('starting_capital')
+                                 or strat.get('account_size')
+                                 or 10000)
+                    risk = float(rule0.get('risk_pct')
+                                 or _rs0.get('risk_pct')
+                                 or strat.get('risk_pct')
+                                 or 1.0)
+                    sl   = float((rule0.get('exit_params') or {}).get('sl_pips', 150) or 150)
+                    pipv = float(rule0.get('pip_value_per_lot')
+                                 or _rs0.get('pip_value_per_lot') or 1.0)
+                except Exception:
+                    acct, risk, sl, pipv = 10000.0, 1.0, 150.0, 1.0
+
+                _top_firm    = (strat.get('prop_firm_name')
+                                or strat.get('firm_name')
+                                or _rs0.get('prop_firm_name')
+                                or _rs0.get('firm_name'))
+                _top_firm_id = (strat.get('firm_id') or _rs0.get('firm_id'))
+
+                firm_id, ch_id = resolve_firm_challenge(
+                    rule0, int(acct),
+                    fallback_firm_name=_top_firm,
+                    fallback_firm_id=_top_firm_id)
+
+                txt, colour = build_sim_detail_text(
+                    strategy_dict=strat, trades=trades,
+                    firm_id=firm_id, challenge_id=ch_id,
+                    account_size=int(acct), risk_per_trade_pct=risk,
+                    default_sl_pips=sl, pip_value_per_lot=pipv,
+                    symbol='XAUUSD',
+                    firm_label=(_top_firm or rule0.get('prop_firm_name') or '?'),
+                )
+                fg = '#c0392b' if colour == 'err' else '#1a252f'
+                import state as _sm
+                _sm.window.after(0, lambda t=txt, f=fg: _set_detail_text(t, fg=f))
+
+            threading.Thread(target=_run_sim, daemon=True).start()
 
     tree.bind('<<TreeviewSelect>>', _on_select_rule)
 
@@ -648,10 +821,26 @@ def build_panel(parent):
         global _worker_running
         _worker_running = True
 
+        import time as _time
+        _t0 = _time.monotonic()
+
+        # Reset diagnostics for this run
+        _DIAG_LINES.clear()
+        _diag('Refresh started')
+
         try:
             import state as _state_mod
+
+            # Clear tree and cache for this run
+            _state_mod.window.after(0, lambda: tree.delete(*tree.get_children()))
+            _state_mod.window.after(0, lambda: _state.update({'rendered_rows': []}))
             _state_mod.window.after(0, lambda: _status_lbl.config(
                 text='Loading candles…', fg='#555'))
+
+            from project2_backtesting.strategy_refiner import (
+                load_strategy_list, load_trades_from_matrix, compute_monthly_pnl,
+                clear_trades_cache, get_trades_cache_stats)
+            clear_trades_cache()
 
             adx_thr = _adx_threshold()
 
@@ -670,18 +859,21 @@ def build_panel(parent):
                 _reason = (_LAST_CANDLE_ERROR
                            or 'no H4/H1 candle file found — check P2 config data source')
                 _msg = f'Cannot load candles — {_reason}'
+                _diag(f'CANDLE LOAD FAILED: {_reason}')
                 _state_mod.window.after(0, lambda m=_msg: _status_lbl.config(
                     text=m, fg=RED))
                 return
 
-            # CHANGED: June 2026 — name the source when auto-discovered
             _src_note = f', {_CANDLE_SOURCE_LABEL}' if _CANDLE_SOURCE_LABEL else ''
+            _diag(f'Candles loaded: {used_tf}, {len(df):,} rows{_src_note}')
+            # CHANGED: June 2026 — name the source when auto-discovered
             _state_mod.window.after(0, lambda _n=_src_note: _status_lbl.config(
                 text=f'Computing regimes from {used_tf} candles ({len(df):,} rows{_n})…',
                 fg='#555'))
 
             month_labels = label_months(df, adx_threshold=adx_thr)
             if not month_labels:
+                _diag('REGIME FAILED: not enough data')
                 _state_mod.window.after(0, lambda: _status_lbl.config(
                     text='Not enough data to compute monthly regimes.', fg=RED))
                 return
@@ -689,6 +881,7 @@ def build_panel(parent):
             curr = _current_regime(month_labels)
             _state['month_labels'] = month_labels
             _state['curr_regime']  = curr
+            _diag(f'Regime: {curr}  |  total months: {len(month_labels)}')
 
             # Update regime banner
             def _update_banner(c=curr, tf=used_tf):
@@ -706,16 +899,18 @@ def build_panel(parent):
             _state_mod.window.after(0, lambda: _status_lbl.config(
                 text='Scoring rules…', fg='#555'))
 
-            from project2_backtesting.strategy_refiner import (
-                load_strategy_list, load_trades_from_matrix, compute_monthly_pnl)
-
             strategies = load_strategy_list()
             if not strategies:
+                _diag('No strategies found in backtest_matrix.json')
                 _state_mod.window.after(0, lambda: _status_lbl.config(
                     text='No backtested strategies found.', fg=AMBER))
                 return
 
+            _diag(f'Strategies loaded: {len(strategies)}')
+
             rows = []
+            _skipped_no_trades = 0
+            _skipped_no_match  = 0
             use_t = _use_trend.get()
             use_v = _use_vol.get()
             use_d = _use_dir.get()
@@ -724,10 +919,18 @@ def build_panel(parent):
             last_month = sorted(month_labels.keys())[-1]
             matching = {m for m in _matching_months(month_labels, curr, use_t, use_v, use_d)
                         if m < last_month}
+            _diag(f'Matching months ({len(matching)}): ' + ', '.join(sorted(matching)))
+
+            try:
+                min_m = int(_min_months_var.get())
+            except ValueError:
+                min_m = 4
+            _hide = _hide_thin.get()
 
             total = len(strategies)
             for idx, strat in enumerate(strategies):
                 if not _worker_running:
+                    _diag('Scoring aborted by user')
                     break
                 if idx % 20 == 0:
                     pct = idx * 100 // total
@@ -739,32 +942,49 @@ def build_panel(parent):
                 trades = None
                 try:
                     trades = load_trades_from_matrix(sidx, entry_tf=etf)
-                except Exception:
-                    pass
+                except Exception as _te:
+                    _diag(f'  SKIP idx={sidx} ({etf}): trade load error — {_te}')
 
                 if not trades:
+                    _skipped_no_trades += 1
                     continue
 
                 monthly_rows = compute_monthly_pnl(trades)
                 scored = _score_rule(monthly_rows, matching, _rank_var.get())
                 if scored is None:
+                    _skipped_no_match += 1
                     continue
 
-                rows.append({
-                    'label':        strat.get('label', '?'),
-                    'entry_tf':     etf,
-                    'direction':    strat.get('direction', ''),
+                row = {
+                    'label':         strat.get('label', '?'),
+                    'entry_tf':      etf,
+                    'direction':     strat.get('direction', ''),
                     '_monthly_rows': monthly_rows,
+                    '_strat':        strat,
+                    '_trades':       trades,
                     **scored,
-                })
+                }
+                rows.append(row)
+                # Stream the row into the tree immediately (unsorted, re-sorted at end)
+                _state_mod.window.after(0, lambda r=row, m=min_m, h=_hide: _append_row(r, m, h))
 
             _state['rows'] = rows
 
+            h, ms = get_trades_cache_stats()
+            _elapsed = _time.monotonic() - _t0
+            _diag(
+                f'Scoring done: {len(rows)} scored, '
+                f'{_skipped_no_trades} skipped (no trades), '
+                f'{_skipped_no_match} skipped (no matching months) | '
+                f'cache hits={h} misses={ms} | '
+                f'elapsed={_elapsed:.1f}s'
+            )
+
             def _finish():
                 try:
-                    min_m = int(_min_months_var.get())
+                    min_m2 = int(_min_months_var.get())
                 except ValueError:
-                    min_m = 4
+                    min_m2 = 4
                 _apply_and_render()
                 _status_lbl.config(
                     text=f'Done — {len(rows)} rules scored against {len(matching)} matching months.',
@@ -775,6 +995,7 @@ def build_panel(parent):
         except Exception as exc:
             import traceback
             tb = traceback.format_exc()
+            _diag(f'ERROR: {exc}')
             try:
                 import state as _sm
                 _sm.window.after(0, lambda e=str(exc): _status_lbl.config(

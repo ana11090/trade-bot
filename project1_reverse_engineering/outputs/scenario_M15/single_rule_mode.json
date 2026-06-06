@@ -1,0 +1,226 @@
+{
+  "status": "no_conjunction",
+  "variant": "a",
+  "target_coverage": 0.8,
+  "trade_count": 1106,
+  "candidate_pool": [
+    {
+      "feature": "D1_volume_change",
+      "operator": "<",
+      "threshold": 27.710606,
+      "value": 27.710606,
+      "trade_coverage": 0.9498,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.0098
+    },
+    {
+      "feature": "D1_candle_body",
+      "operator": "<",
+      "threshold": 210.992,
+      "value": 210.992,
+      "trade_coverage": 0.9498,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1636
+    },
+    {
+      "feature": "M15_lower_shadow",
+      "operator": "<",
+      "threshold": 11.826,
+      "value": 11.826,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1647
+    },
+    {
+      "feature": "M5_upper_shadow",
+      "operator": "<",
+      "threshold": 5.787,
+      "value": 5.787,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1835
+    },
+    {
+      "feature": "D1_lower_shadow",
+      "operator": "<",
+      "threshold": 105.81,
+      "value": 105.81,
+      "trade_coverage": 0.9434,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.1882
+    },
+    {
+      "feature": "H4_lower_shadow",
+      "operator": "<",
+      "threshold": 39.94,
+      "value": 39.94,
+      "trade_coverage": 0.9485,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.198
+    },
+    {
+      "feature": "M15_volume_change",
+      "operator": "<",
+      "threshold": 0.818657,
+      "value": 0.818657,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2094
+    },
+    {
+      "feature": "H4_upper_shadow",
+      "operator": "<",
+      "threshold": 32.345,
+      "value": 32.345,
+      "trade_coverage": 0.9495,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.211
+    },
+    {
+      "feature": "D1_mt5_atr_7",
+      "operator": "<",
+      "threshold": 267.298043,
+      "value": 267.298043,
+      "trade_coverage": 0.9445,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.212
+    },
+    {
+      "feature": "H1_candle_body",
+      "operator": "<",
+      "threshold": 37.1195,
+      "value": 37.1195,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2148
+    },
+    {
+      "feature": "H1_bear_power",
+      "operator": ">",
+      "threshold": -58.787844,
+      "value": -58.787844,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2171
+    },
+    {
+      "feature": "D1_volume_change",
+      "operator": ">",
+      "threshold": -0.968675,
+      "value": -0.968675,
+      "trade_coverage": 0.9498,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2185
+    },
+    {
+      "feature": "H4_mt5_macd_fast_diff",
+      "operator": ">",
+      "threshold": -20.879831,
+      "value": -20.879831,
+      "trade_coverage": 0.9495,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2309
+    },
+    {
+      "feature": "D1_mt5_macd_fast_signal",
+      "operator": "<",
+      "threshold": 145.463496,
+      "value": 145.463496,
+      "trade_coverage": 0.9498,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2344
+    },
+    {
+      "feature": "H1_mt5_macd_std_diff",
+      "operator": ">",
+      "threshold": -10.582114,
+      "value": -10.582114,
+      "trade_coverage": 0.9475,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2338
+    },
+    {
+      "feature": "M15_bb_20_2_width",
+      "operator": "<",
+      "threshold": 3.181848,
+      "value": 3.181848,
+      "trade_coverage": 0.9497,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2374
+    },
+    {
+      "feature": "H1_dpo",
+      "operator": "<",
+      "threshold": 33.031075,
+      "value": 33.031075,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.237
+    },
+    {
+      "feature": "H1_lower_shadow",
+      "operator": "<",
+      "threshold": 17.2735,
+      "value": 17.2735,
+      "trade_coverage": 0.9496,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2388
+    },
+    {
+      "feature": "H4_candle_body",
+      "operator": "<",
+      "threshold": 55.13,
+      "value": 55.13,
+      "trade_coverage": 0.9485,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2424
+    },
+    {
+      "feature": "H1_macd_std_signal",
+      "operator": "<",
+      "threshold": 28.794522,
+      "value": 28.794522,
+      "trade_coverage": 0.9486,
+      "background_coverage": null,
+      "background_coverage_valid": false,
+      "tightness": 0.2431
+    }
+  ],
+  "chosen": [],
+  "chosen_stats": null,
+  "top_10_conjunctions": [],
+  "params": {
+    "target_coverage": 0.8,
+    "per_condition_coverage": 0.75,
+    "min_non_nan_frac": 0.8,
+    "pool_size": 20,
+    "min_cardinality": 4,
+    "max_cardinality": 10,
+    "max_enumerations_per_level": 5001,
+    "tie_break_within_pct": 0.15,
+    "dedup_correlated": true,
+    "winner_selection": "tightness"
+  },
+  "reason": "No conjunction of 4..10 conditions reached 80% coverage. The bot may use conditions that span beyond the 20-candidate pool \u2014 try reducing per-condition coverage or expanding the pool size.",
+  "generated_at": "2026-06-05T10:59:53.416163",
+  "scenario": null
+}

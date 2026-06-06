@@ -81,11 +81,6 @@ _grid_filt_min_windows = None  # tk.StringVar
 #      criterion than WR% since it's evaluated per sliding window.
 # CHANGED: June 2026 — Min Pass% filter
 _grid_filt_min_passpct = None  # tk.StringVar
-# WHY: De-noise — cap how many results of the SAME underlying rule appear,
-#      keeping the N best (by windows + pass%). 0 = show all (off). Lets the
-#      user see a few strong variants per rule instead of all 20 exit-variants.
-# CHANGED: June 2026 — max-per-rule cap
-_grid_filt_max_per_rule  = None  # tk.StringVar
 # WHY: hide rules that breach the drawdown limit too many times IN A ROW.
 #      0 = off; e.g. 3 = only rules whose worst consecutive DD-breach run <= 3.
 # CHANGED: June 2026 — max consecutive DD breaches filter
@@ -142,10 +137,21 @@ _opt_start_btn      = None
 _opt_stop_btn       = None
 _opt_worker_running  = False   # guard against double-start
 _grid_opt_btns       = []      # [batch_opt_btn, optimize_all_btn] — flipped to Stop while running
+# CHANGED: June 2026 — module-level so refresh/rebuild and the Stop-toggle path
+#          always see a value (matches _batch_selected_iids / _strat_tree_ref pattern)
+_batch_btn_refresh   = [None]
 # WHY: keep every (rule_label, cand) from the last optimization so the filter row
 #      can re-render cards without re-running the optimizer.
 # CHANGED: June 2026 — stash candidates for editable re-filtering
 _opt_all_candidates  = []
+# WHY: keep the last single-rule optimization's candidates for the
+#      optimizer-section live filters (separate from the batch stash above).
+# CHANGED: June 2026 — per-rule optimizer variant filter stash
+_opt_run_candidates  = []
+_opt_filt_min_wr        = None   # tk.StringVar — optimizer-section filter
+_opt_filt_min_windows   = None   # tk.StringVar
+_opt_filt_min_passpct   = None   # tk.StringVar
+_opt_filt_max_consec_dd = None   # tk.StringVar
 _scroll_canvas      = None
 
 _update_pending = False   # debounce flag
@@ -588,13 +594,6 @@ def _update_passrate_detail(strategy_dict):
         except Exception:
             pass
 
-    try:
-        from project2_backtesting.strategy_validator import _trades_to_df
-        from shared.prop_firm_simulator import simulate_challenge
-    except Exception as _ie:
-        _set_text(f"⚠ Simulator import failed: {_ie}", fg=RED)
-        return
-
     trades = _load_trades_for_strategy(strategy_dict)
     if not trades:
         _set_text("⚠ No trade data for this rule — re-run the backtest.", fg=RED)
@@ -603,10 +602,6 @@ def _update_passrate_detail(strategy_dict):
     rule0 = ((strategy_dict.get('rules') or [{}])[0]
              if strategy_dict.get('rules')
              else (strategy_dict.get('saved_rule') or {}))
-    # WHY: acct/risk are saved at run_settings level in the backtest
-    #      matrix (starting_capital, risk_pct), not in each rule. Fall
-    #      back to those when rule0 is missing them.
-    # CHANGED: May 2026 — pull from run_settings as fallback
     _rs0 = strategy_dict.get('run_settings') or {}
     try:
         acct = float(rule0.get('account_size')
@@ -624,18 +619,11 @@ def _update_passrate_detail(strategy_dict):
     except Exception:
         acct, risk, sl, pipv = 10000.0, 1.0, 150.0, 1.0
 
-    # WHY: Firm info lives at multiple paths depending on the matrix
-    #      version. New rows have prop_firm_name at the top; older
-    #      rows only have run_settings.firm_id (slug "leveraged").
-    #      Try all paths and hand BOTH forms to the resolver — it
-    #      matches either firm_name OR firm_id.
-    # CHANGED: May 2026 — accept firm_id via run_settings
-    _top_firm = (strategy_dict.get('prop_firm_name')
-                 or strategy_dict.get('firm_name')
-                 or _rs0.get('prop_firm_name')
-                 or _rs0.get('firm_name'))
-    _top_firm_id = (strategy_dict.get('firm_id')
-                    or _rs0.get('firm_id'))
+    _top_firm    = (strategy_dict.get('prop_firm_name')
+                    or strategy_dict.get('firm_name')
+                    or _rs0.get('prop_firm_name')
+                    or _rs0.get('firm_name'))
+    _top_firm_id = (strategy_dict.get('firm_id') or _rs0.get('firm_id'))
     firm_id, ch_id = _resolve_firm_challenge(
         rule0, int(acct),
         fallback_firm_name=_top_firm,
@@ -649,173 +637,20 @@ def _update_passrate_detail(strategy_dict):
             fg=RED)
         return
 
-    df = _trades_to_df(trades, risk, sl, pipv, int(acct))
-
     _set_text("⏳ Computing eval & funded simulation…", fg=GREY)
     if state.window:
         state.window.update_idletasks()
 
-    sim_e = None
-    sim_f = None
-    try:
-        # WHY: User wants a deterministic historical replay — exactly how many
-        #      of the viable historical start dates would have passed/failed.
-        #      Monte Carlo silently subsamples; sliding_window uses every
-        #      viable start.
-        # CHANGED: May 2026 — sliding window for authoritative count
-        sim_e = simulate_challenge(
-            trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-            account_size=int(acct), mode='sliding_window',
-            simulate_funded=False, risk_per_trade_pct=risk,
-            default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
-        )
-        sim_f = simulate_challenge(
-            trades_df=df, firm_id=firm_id, challenge_id=ch_id,
-            account_size=int(acct), mode='sliding_window',
-            simulate_funded=True, risk_per_trade_pct=risk,
-            default_sl_pips=sl, pip_value_per_lot=pipv, symbol='XAUUSD',
-        )
-    except Exception as _se:
-        import traceback; traceback.print_exc()
-        _set_text(f"⚠ Simulator error: {_se}", fg=RED)
-        return
-
-    # Win Pass cell click-to-populate removed in May 2026 — the
-    # backtester now sets win_pass_passed/_total/_rate on each result
-    # row at backtest time, so the grid reads them directly via
-    # _format_win_pass(s) on every insert. No side-effect write here.
-
-    lines = []
-    lines.append(f"Firm: {rule0.get('prop_firm_name','?')}  |  Account: ${int(acct):,}  "
-                 f"|  Risk: {risk}%  |  Trades: {len(trades)}")
-
-    # WHY: Pip-denominated stats hide whether the rule is actually
-    #      profitable in money terms on this specific account size and
-    #      risk setting. Show both $ and % of account for net and avg.
-    # CHANGED: May 2026 — money summary line
-    try:
-        _net_pips_total = sum(float(_t.get('net_pips', 0) or 0) for _t in trades)
-        _net_pips_avg   = _net_pips_total / len(trades) if trades else 0.0
-        _n_dollars, _n_pct, _a_dollars, _a_pct = _money_for_strategy(
-            strategy_dict, _net_pips_total, _net_pips_avg)
-        if _n_dollars is not None:
-            lines.append(
-                f"   💵 Net: ${_n_dollars:+,.0f} ({_n_pct:+.1f}%)  |  "
-                f"Avg/trade: ${_a_dollars:+,.2f} ({_a_pct:+.2f}%)"
-            )
-    except Exception:
-        # Non-fatal — money line is informational; skip on any data issue.
-        pass
-
-    if sim_e is not None:
-        cnt  = sim_e.eval_pass_count
-        flc  = sim_e.eval_fail_count
-        inc  = sim_e.eval_incomplete_count
-        decided = cnt + flc
-        starts  = decided + inc
-        ep   = sim_e.eval_pass_rate * 100
-        # WHY: Sliding-window historical replay — N is the count of viable
-        #      historical start dates (those with enough forward data). The
-        #      "incomplete" bucket holds start dates that ran out of data
-        #      before reaching pass/fail; they are excluded from the pass
-        #      rate denominator.
-        # CHANGED: May 2026 — historical-count framing
-        if inc > 0:
-            lines.append(
-                f"🎯 EVAL  {cnt} passed  |  {flc} failed  |  {inc} incomplete  "
-                f"(of {starts} historical starts)   pass rate: {ep:.0f}%"
-            )
-        else:
-            lines.append(
-                f"🎯 EVAL  {cnt} passed  |  {flc} failed  "
-                f"(of {starts} historical starts)   pass rate: {ep:.0f}%"
-            )
-        if cnt > 0:
-            lines.append(
-                f"   📅 Days to PASS:  avg {sim_e.eval_avg_days_to_pass:.0f}  |  "
-                f"min {sim_e.eval_min_days_to_pass:.0f}  |  "
-                f"max {sim_e.eval_max_days_to_pass:.0f}"
-            )
-        if flc > 0:
-            lines.append(
-                f"   📅 Days to FAIL:  avg {sim_e.eval_avg_days_to_fail:.0f}  |  "
-                f"min {sim_e.eval_min_days_to_fail:.0f}  |  "
-                f"max {sim_e.eval_max_days_to_fail:.0f}"
-            )
-        lines.append(f"   📊 Avg max DD per attempt: {sim_e.eval_avg_max_dd_pct:.1f}%")
-        if sim_e.eval_fail_reasons:
-            reasons = "  |  ".join(
-                f"{k.replace('FAIL_','').replace('_',' ').title()}: {v}"
-                for k, v in sorted(sim_e.eval_fail_reasons.items(),
-                                   key=lambda x: -x[1])
-            )
-            lines.append(f"   💥 Fail reasons: {reasons}")
-    else:
-        lines.append("🎯 EVAL  simulator returned no data")
-
-    if sim_f is not None:
-        if sim_f.funded_avg_survival_days is not None:
-            lines.append(f"💰 FUNDED survival: "
-                         f"avg {sim_f.funded_avg_survival_days:.0f} days  |  "
-                         f"median {sim_f.funded_median_survival_days:.0f} days")
-        if sim_f.funded_avg_monthly_payout is not None:
-            lines.append(f"   📈 Avg monthly payout: ${sim_f.funded_avg_monthly_payout:,.0f}  "
-                         f"|  total: ${(sim_f.funded_avg_total_payouts or 0):,.0f}")
-        if sim_f.funded_survival_rate_3mo is not None or sim_f.funded_survival_rate_6mo is not None:
-            s3 = (f"{sim_f.funded_survival_rate_3mo*100:.0f}%"
-                  if sim_f.funded_survival_rate_3mo is not None else "—")
-            s6 = (f"{sim_f.funded_survival_rate_6mo*100:.0f}%"
-                  if sim_f.funded_survival_rate_6mo is not None else "—")
-            lines.append(f"   📉 Survival rate: 3-month {s3}  |  6-month {s6}")
-    else:
-        lines.append("💰 FUNDED  simulator returned no data")
-
-    # WHY: Show every window. User wants the full audit of which historical
-    #      starts passed or failed. The panel already has a scrollbar
-    #      (added 2ecf7fe3) so long lists scroll.
-    # CHANGED: May 2026 — show all windows (no cap)
-    if sim_e is not None and sim_e.individual_results:
-        _windows = sim_e.individual_results
-        lines.append("")  # blank separator
-        lines.append(f"📋 Per-window detail ({len(_windows)} windows):")
-        # WHY: "maxDD" beside a "Daily-DD breach" outcome led to
-        #      misreading — the number is the WINDOW'S running total
-        #      drawdown, not the daily loss that triggered the breach.
-        #      Renaming to "totalDD" disambiguates: it's the cumulative
-        #      peak-to-trough across the whole window. The daily loss
-        #      that triggered the breach is the firm's daily limit
-        #      (e.g. 3% for Get Leveraged).
-        # CHANGED: May 2026 — clearer column label
-        for _w in _windows:
-            _o = _w.eval_outcome or "?"
-            _o_short = {
-                'PASS': '✓ PASS',
-                'FAIL_DD': '✗ Total-DD breach',
-                'FAIL_DAILY_DD': '✗ Daily-DD breach',
-                'FAIL_TIMEOUT': '✗ Timeout',
-                'FAIL_CONSISTENCY': '✗ Consistency rule',
-                'INSUFFICIENT_TRADES': '… Incomplete (out of data)',
-            }.get(_o, _o)
-            _sd = str(_w.start_date or '?')[:10]
-            _days = _w.eval_days or 0
-            _prof = _w.eval_profit_pct or 0.0
-            _ddp  = _w.eval_max_dd_pct or 0.0
-            # WHY: Incomplete windows ran out of forward data; their
-            #      profit/DD are partial and misleading. Suppress
-            #      those numbers and explain what happened.
-            # CHANGED: May 2026 — hide misleading partial stats
-            if _o == 'INSUFFICIENT_TRADES':
-                lines.append(
-                    f"   {_sd} → {_o_short:<28}  "
-                    f"{_days:>3}d  |  (window ran out of forward data)"
-                )
-            else:
-                lines.append(
-                    f"   {_sd} → {_o_short:<28}  "
-                    f"{_days:>3}d  |  profit {_prof:+5.1f}%  |  totalDD {_ddp:4.1f}%"
-                )
-
-    _set_text("\n".join(lines), fg=DARK)
+    from shared.sim_detail import build_sim_detail_text
+    txt, colour = build_sim_detail_text(
+        strategy_dict=strategy_dict, trades=trades,
+        firm_id=firm_id, challenge_id=ch_id,
+        account_size=int(acct), risk_per_trade_pct=risk,
+        default_sl_pips=sl, pip_value_per_lot=pipv,
+        symbol='XAUUSD',
+        firm_label=(_top_firm or rule0.get('prop_firm_name') or '?'),
+    )
+    _set_text(txt, fg=(RED if colour == 'err' else DARK))
 
 
 # WHY: Diagnose "No Trades" lookup failures by simulating the refiner's
@@ -1341,8 +1176,7 @@ def _get_visible_indexes():
 def _rule_identity(s):
     """Stable per-RULE key so exit-variants of one rule group together.
 
-    Prefers explicit rule ids; falls back to rule_combo string. Used by the
-    Max/rule cap to keep only the N best variants per underlying rule.
+    Prefers explicit rule ids; falls back to rule_combo string.
     """
     # CHANGED: June 2026 — max-per-rule grouping helper
     rid = (s.get('_saved_rule_id')
@@ -2353,21 +2187,6 @@ def _rerender_opt_cards():
             w.destroy()
         # Filter by current filter-row values
         kept = [(rl, c) for (rl, c) in cands if _opt_card_passes(c)]
-        # Optional Max/rule cap — group by rule_label, keep top N by score
-        try:
-            _maxr = int(_grid_filt_max_per_rule.get() or "0") if _grid_filt_max_per_rule else 0
-        except Exception:
-            _maxr = 0
-        if _maxr > 0:
-            from collections import defaultdict
-            _by_rule = defaultdict(list)
-            for rl, c in kept:
-                _by_rule[rl].append(c)
-            kept = []
-            for rl, lst in _by_rule.items():
-                lst.sort(key=lambda c: c.get('score', 0) or 0, reverse=True)
-                for c in lst[:_maxr]:
-                    kept.append((rl, c))
         # Sort overall by score desc and render
         kept.sort(key=lambda rc: rc[1].get('score', 0) or 0, reverse=True)
         if not kept:
@@ -3071,6 +2890,23 @@ def _start_optimization():
             print(f"[OPTIMIZER] Source: {_risk_dd_source}")
             print(f"[OPTIMIZER] ==================")
 
+            # WHY: entry_bar_offset is needed by BOTH the quick AND deep optimize
+            #      branches. It was computed only inside the quick branch, so deep
+            #      mode hit "cannot access local variable '_rule_ebo'".
+            # CHANGED: June 2026 — hoist _rule_ebo above the quick/deep split
+            _rule_ebo = 0
+            if selected_strategy_row:
+                try:
+                    _rule_ebo = int(
+                        selected_strategy_row.get('entry_bar_offset') or
+                        selected_strategy_row.get('saved_rule', {}).get('entry_bar_offset') or
+                        0
+                    )
+                except Exception:
+                    _rule_ebo = 0
+            _ebo_label = "signal bar (offset=0)" if _rule_ebo == 0 else "+1 bar (offset=1, legacy)"
+            print(f"[OPTIMIZER] Entry timing: {_ebo_label} (from loaded rule)")
+
             # ── Quick optimize (filter existing trades) ──
             if opt_mode == "quick":
                 print("[OPTIMIZER] Running Quick Optimize mode...")
@@ -3090,19 +2926,6 @@ def _start_optimization():
                     _sel_exit_name = selected_strategy_row.get('exit_name', '')
                     _sel_exit_desc = selected_strategy_row.get('exit_strategy', '')
                 print(f"[OPTIMIZER] Selected exit: class={_sel_exit_class!r}, name={_sel_exit_name!r}")
-
-                # WHY: Read entry_bar_offset from the loaded rule so the optimizer
-                #      produces trades with the same entry timing as the original.
-                # CHANGED: May 2026 — entry bar offset from loaded rule
-                _rule_ebo = 0
-                if selected_strategy_row:
-                    _rule_ebo = int(
-                        selected_strategy_row.get('entry_bar_offset') or
-                        selected_strategy_row.get('saved_rule', {}).get('entry_bar_offset') or
-                        0
-                    )
-                _ebo_label = "signal bar (offset=0)" if _rule_ebo == 0 else f"+1 bar (offset=1, legacy)"
-                print(f"[OPTIMIZER] Entry timing: {_ebo_label} (from loaded rule)")
 
                 from project2_backtesting.strategy_refiner import deep_optimize
                 quick_results = deep_optimize(
@@ -3316,7 +3139,11 @@ def _start_optimization():
             all_candidates.sort(key=lambda c: c.get('score', 0), reverse=True)
             print(f"[OPTIMIZER] Total candidates: {len(all_candidates)}")
 
-            state.window.after(0, lambda: _show_opt_results(all_candidates))
+            # WHY: keep this rule's optimized variants so the optimizer-section
+            #      filters can re-render them live without re-optimizing.
+            # CHANGED: June 2026 — stash per-rule candidates for editable filtering
+            globals()['_opt_run_candidates'] = list(all_candidates)
+            state.window.after(0, _rerender_opt_run_cards)
             mode_name = "⚡ Quick Optimize" if opt_mode == "quick" else "🧬 Deep Explore"
             _update_status(f"Complete — {len(all_candidates)} candidates from {mode_name}")
         except Exception as e:
@@ -4592,6 +4419,83 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
 
 
 
+def _opt_variant_passes(cand):
+    """True if an optimized variant meets the optimizer-section filter criteria.
+    A threshold of 0 is OFF. A threshold is skipped when the candidate lacks the
+    underlying field (missing data never blanks everything).
+    CHANGED: June 2026 — per-rule optimizer variant filter
+    """
+    try:
+        stats = cand.get('stats') or {}
+        def _f(var):
+            try: return float(var.get() or "0") if var else 0.0
+            except Exception: return 0.0
+        # Win rate ≥
+        _mw = _f(_opt_filt_min_wr)
+        if _mw > 0:
+            _wr = stats.get('win_rate', None)
+            if _wr is not None:
+                _wr = _wr * 100 if _wr <= 1 else _wr
+                if _wr < _mw:
+                    return False
+        # Windows ≥
+        _mwin = _f(_opt_filt_min_windows)
+        if _mwin > 0:
+            _wt = cand.get('win_pass_total', stats.get('win_pass_total', None))
+            if _wt is not None and int(_wt) < _mwin:
+                return False
+        # Passed window % ≥
+        _mp = _f(_opt_filt_min_passpct)
+        if _mp > 0:
+            _pr = cand.get('win_pass_rate', stats.get('win_pass_rate', None))
+            if _pr is not None and float(_pr) * 100.0 < _mp:
+                return False
+        # Max consec DD ≤ (only if field exists)
+        _mc = _f(_opt_filt_max_consec_dd)
+        if _mc > 0:
+            _cdd = cand.get('max_consecutive_dd_breaches',
+                            stats.get('max_consecutive_dd_breaches', None))
+            if _cdd is not None and int(_cdd) > _mc:
+                return False
+        return True
+    except Exception:
+        return True
+
+
+def _rerender_opt_run_cards():
+    """Clear and re-render the optimizer cards from _opt_run_candidates using the
+    CURRENT optimizer-section filter values. No re-optimization.
+    CHANGED: June 2026 — live editable filtering of this rule's variants
+    """
+    frame = globals().get('_opt_results_frame')
+    cands = globals().get('_opt_run_candidates') or []
+    if frame is None:
+        return
+    try:
+        for w in frame.winfo_children():
+            w.destroy()
+        kept = [c for c in cands if _opt_variant_passes(c)]
+        # Rank by windows then pass% (user: "best results of both")
+        kept.sort(key=lambda c: (float(c.get('win_pass_total', 0) or 0),
+                                 float(c.get('win_pass_rate', 0) or 0)),
+                  reverse=True)
+        if not kept:
+            if cands:
+                tk.Label(frame,
+                         text="No optimized variants match these filters.",
+                         bg=BG, fg="#888", font=("Segoe UI", 10, "italic")
+                         ).pack(anchor="w", padx=20, pady=10)
+            else:
+                tk.Label(frame, text="No candidates found.",
+                         bg=BG, fg=GREY, font=("Segoe UI", 9, "italic")).pack(pady=10)
+            return
+        for rank, cand in enumerate(kept, 1):
+            _stats = cand.get('stats') or {}
+            _render_opt_card(frame, rank, cand, _stats, 1.0, 10000, None, None, 1.0, None)
+    except Exception:
+        import traceback; traceback.print_exc()
+
+
 def _show_opt_results(candidates):
     """Show optimizer results filtered by minimum WR, with working save buttons."""
     if _opt_results_frame is None:
@@ -5697,7 +5601,7 @@ def build_panel(parent):
     # CHANGED: May 2026 — refiner grid filters + sort
     global _grid_filt_profitable, _grid_filt_min_trades, _grid_filt_min_wr
     global _grid_filt_min_pf, _grid_filt_min_windows, _grid_source_var
-    global _grid_filt_min_passpct, _grid_filt_max_per_rule, _grid_filt_max_consec_dd
+    global _grid_filt_min_passpct, _grid_filt_max_consec_dd
     global _grid_sort_key, _grid_sort_reverse
     _grid_filt_profitable  = tk.BooleanVar(value=True)
     _grid_filt_min_trades  = tk.StringVar(value="0")
@@ -5708,8 +5612,6 @@ def build_panel(parent):
     _grid_filt_min_windows = tk.StringVar(value="0")
     # CHANGED: June 2026 — Min Pass% filter init
     _grid_filt_min_passpct = tk.StringVar(value="0")
-    # CHANGED: June 2026 — Max-per-rule cap init (0 = off)
-    _grid_filt_max_per_rule  = tk.StringVar(value="0")
     # CHANGED: June 2026 — max consecutive DD breaches init (0 = off)
     _grid_filt_max_consec_dd = tk.StringVar(value="0")
     # WHY: Source selector — controls which pool the grid shows.
@@ -5759,14 +5661,6 @@ def build_panel(parent):
     tk.Label(filt_row, text="Min Pass%:", font=("Segoe UI", 8),
              bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
     tk.Entry(filt_row, textvariable=_grid_filt_min_passpct, width=4,
-             font=("Segoe UI", 8)).pack(side=tk.LEFT)
-
-    # WHY: cap how many results of the SAME rule appear — keep the N best
-    #      (by windows + pass%) and hide the rest. 0 = show all (off).
-    # CHANGED: June 2026 — max-per-rule cap widget
-    tk.Label(filt_row, text="Max/rule:", font=("Segoe UI", 8),
-             bg=WHITE, fg="#555").pack(side=tk.LEFT, padx=(10, 2))
-    tk.Entry(filt_row, textvariable=_grid_filt_max_per_rule, width=4,
              font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
     # WHY: hide rules that breach the drawdown limit too many times IN A ROW.
@@ -5829,11 +5723,9 @@ def build_panel(parent):
         # WHY: Reset Min Windows with the rest of the filters.
         # CHANGED: June 2026 — Min Windows filter reset
         _grid_filt_min_windows.set("0")
-        # CHANGED: June 2026 — reset Min Pass% + Max/rule + Max consec DD
+        # CHANGED: June 2026 — reset Min Pass% + Max consec DD
         if _grid_filt_min_passpct:
             _grid_filt_min_passpct.set("0")
-        if _grid_filt_max_per_rule:
-            _grid_filt_max_per_rule.set("0")
         if _grid_filt_max_consec_dd:
             _grid_filt_max_consec_dd.set("0")
         # WHY: Reset source to "All sources" with the rest of the filters.
@@ -6171,10 +6063,14 @@ def build_panel(parent):
                 #      fall through to the default selection behavior,
                 #      which drives the detail panel as today.
                 # CHANGED: May 2026 — checkbox-based batch selection
-                # `_batch_btn_refresh` is a one-element list patched by
+                # `_batch_btn_refresh` is a module-level one-element list patched by
                 # the batch-button setup below, so the click handler can
                 # see _update_batch_btn even though it's defined later.
-                _batch_btn_refresh = [None]
+                # CHANGED: June 2026 — reset the module-level holder (do NOT rebind
+                #          to a new local — that reintroduced the "not associated"
+                #          scope error on Refresh; mutate [0] instead)
+                global _batch_btn_refresh
+                _batch_btn_refresh[0] = None
                 def _on_tree_left_click(event):
                     try:
                         region = _strat_tree.identify_region(event.x, event.y)
@@ -6476,35 +6372,6 @@ def build_panel(parent):
             if _n_discovery_hidden > 0:
                 print(f"[REFINER] {_n_discovery_hidden} discovery-only saved rules "
                       f"hidden (no trade data). Re-run backtest to make them visible.")
-
-            # WHY: Max per rule — after thresholds, keep only the N best results
-            #      per RULE (grouped by _rule_identity) so the grid isn't
-            #      flooded with 20 exit-variants of the same condition set.
-            #      Rank by BOTH windows then pass% — most-tested first, then
-            #      highest-passing. 0/blank = no cap.
-            # CHANGED: June 2026 — max-per-rule de-noise cap
-            try:
-                _max_per = int(_grid_filt_max_per_rule.get() or "0") if _grid_filt_max_per_rule else 0
-            except Exception:
-                _max_per = 0
-            if _max_per > 0:
-                def _rank_key(s):
-                    return (float(s.get('win_pass_total', 0) or 0),
-                            float(s.get('win_pass_rate', 0) or 0))
-                def _apply_cap(_lst):
-                    if not _lst:
-                        return _lst
-                    _by = {}
-                    for _s in _lst:
-                        _by.setdefault(_rule_identity(_s), []).append(_s)
-                    _out = []
-                    for _grp in _by.values():
-                        _grp.sort(key=_rank_key, reverse=True)
-                        _out.extend(_grp[:_max_per])
-                    return _out
-                _sr_saved    = _apply_cap(_sr_saved)
-                _sr_my_rules = _apply_cap(_sr_my_rules)
-                _sr_others   = _apply_cap(_sr_others)
 
             if _grid_sort_key:
                 _sr_saved.sort(key=_sort_key_fn, reverse=_grid_sort_reverse)
@@ -7761,6 +7628,47 @@ def build_panel(parent):
              text="Tests filter combinations and scores them. Runs in background — UI stays responsive.",
              font=("Segoe UI", 9), bg=WHITE, fg=MIDGREY).pack(anchor="w", pady=(2, 0))
 
+    # WHY: per-rule optimizer filters — show only the selected rule's optimized
+    #      variants that meet the user's criteria (win rate, # windows, passed
+    #      window %, max consecutive DD breaches). Editable; re-renders live.
+    #      SEPARATE from the grid's filter row (which is left untouched).
+    # CHANGED: June 2026 — optimizer-section result filters
+    global _opt_filt_min_wr, _opt_filt_min_windows, _opt_filt_min_passpct, _opt_filt_max_consec_dd
+    _opt_filt_min_wr        = tk.StringVar(value="0")
+    _opt_filt_min_windows   = tk.StringVar(value="0")
+    _opt_filt_min_passpct   = tk.StringVar(value="0")
+    _opt_filt_max_consec_dd = tk.StringVar(value="0")
+
+    opt_filt_row = tk.Frame(sf, bg=WHITE, padx=20, pady=6)
+    opt_filt_row.pack(fill="x", padx=10, pady=(0, 5))
+    tk.Label(opt_filt_row, text="Show optimized variants where:",
+             font=("Segoe UI", 9, "bold"), bg=WHITE, fg=DARK).pack(side="left")
+
+    def _opt_filt_entry(label, var):
+        tk.Label(opt_filt_row, text=label, font=("Segoe UI", 8),
+                 bg=WHITE, fg="#555").pack(side="left", padx=(10, 2))
+        e = tk.Entry(opt_filt_row, textvariable=var, width=5, font=("Segoe UI", 8))
+        e.pack(side="left")
+        return e
+    _opt_filt_entry("Win rate ≥ %", _opt_filt_min_wr)
+    _opt_filt_entry("Windows ≥", _opt_filt_min_windows)
+    _opt_filt_entry("Passed window % ≥", _opt_filt_min_passpct)
+    _opt_filt_entry("Max consec DD ≤", _opt_filt_max_consec_dd)
+
+    tk.Button(opt_filt_row, text="Apply", font=("Segoe UI", 8, "bold"),
+              bg="#667eea", fg="white", relief=tk.FLAT, padx=10, pady=2,
+              cursor="hand2", command=lambda: _rerender_opt_run_cards()
+              ).pack(side="left", padx=(12, 2))
+    tk.Button(opt_filt_row, text="Reset", font=("Segoe UI", 8),
+              bg="#6c757d", fg="white", relief=tk.FLAT, padx=10, pady=2, cursor="hand2",
+              command=lambda: (
+                  _opt_filt_min_wr.set("0"),
+                  _opt_filt_min_windows.set("0"),
+                  _opt_filt_min_passpct.set("0"),
+                  _opt_filt_max_consec_dd.set("0"),
+                  _rerender_opt_run_cards(),
+              )).pack(side="left", padx=2)
+
     # ── Optimizer Mode Description ────────────────────────────
     mode_desc_frame = tk.Frame(sf, bg="#fff3cd", padx=12, pady=8)
     mode_desc_frame.pack(fill="x", padx=10, pady=(0, 5))
@@ -8219,6 +8127,15 @@ def build_panel(parent):
         _on_stage_change()
 
     # Traces removed — values come from loaded rule, not dropdowns
+
+    # WHY: Provide a clearly-labelled "Optimize Selected Rule" button in the
+    #      optimizer section so the user can trigger a single-rule optimization
+    #      from here (the grid's batch buttons stay unchanged).
+    # CHANGED: June 2026 — optimizer-section optimize trigger
+    tk.Button(sf, text="⚙️ Optimize Selected Rule",
+              command=_start_optimization, bg="#8e44ad", fg="white",
+              font=("Segoe UI", 10, "bold"), bd=0, padx=14, pady=6, cursor="hand2"
+              ).pack(anchor="w", padx=20, pady=(0, 6))
 
     _opt_start_btn = tk.Button(ctrl_row, text="Start Deep Optimization",
                                command=_start_optimization,

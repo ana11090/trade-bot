@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-06-01T19:16:22.150955",
-  "entry_timeframe": null,
+  "generated_at": "2026-06-03T14:01:54.197798",
+  "entry_timeframe": "M15",
   "direction": "BUY",
-  "activated_at": "2026-06-01 19:16:22",
+  "activated_at": "2026-06-03 14:01:54",
   "discovery_method": "p1_run_scenarios",
   "scenario": null,
-  "analysis_time_s": 4.7,
+  "analysis_time_s": 9.4,
   "trade_count": 1106,
   "feature_count": 804,
   "profile": {
@@ -55,14 +55,14 @@
       16,
       17,
       18,
-      21,
-      22,
+      19,
+      20,
       23
     ],
     "peak_hours": [
-      12,
-      13,
-      11
+      14,
+      15,
+      13
     ],
     "sessions": [
       "Asian",
@@ -714,22 +714,22 @@
     },
     "session": {
       "asian": {
-        "count": 301,
-        "win_rate": 0.601,
-        "avg_pips": 145.4,
-        "total_pips": 43766.0
+        "count": 277,
+        "win_rate": 0.61,
+        "avg_pips": 172.8,
+        "total_pips": 47858.0
       },
       "london": {
-        "count": 647,
-        "win_rate": 0.573,
-        "avg_pips": 128.0,
-        "total_pips": 82794.0
+        "count": 598,
+        "win_rate": 0.557,
+        "avg_pips": 131.3,
+        "total_pips": 78530.0
       },
       "new_york": {
-        "count": 499,
-        "win_rate": 0.591,
-        "avg_pips": 148.2,
-        "total_pips": 73948.0
+        "count": 632,
+        "win_rate": 0.587,
+        "avg_pips": 140.8,
+        "total_pips": 88990.0
       }
     },
     "day_of_week": {
@@ -774,7 +774,7 @@
       "win_rate": 0.677,
       "avg_pips": 154.5,
       "avg_duration_min": 18.7,
-      "peak_hour": 13
+      "peak_hour": 15
     },
     {
       "period": "2021",
@@ -784,7 +784,7 @@
       "win_rate": 0.548,
       "avg_pips": 96.6,
       "avg_duration_min": 20.9,
-      "peak_hour": 12
+      "peak_hour": 14
     },
     {
       "period": "2022",
@@ -794,7 +794,7 @@
       "win_rate": 0.495,
       "avg_pips": 60.4,
       "avg_duration_min": 56.1,
-      "peak_hour": 11
+      "peak_hour": 13
     },
     {
       "period": "2023",
@@ -804,7 +804,7 @@
       "win_rate": 0.447,
       "avg_pips": 65.1,
       "avg_duration_min": 28.9,
-      "peak_hour": 13
+      "peak_hour": 15
     },
     {
       "period": "2024",
@@ -814,7 +814,7 @@
       "win_rate": 0.491,
       "avg_pips": 58.2,
       "avg_duration_min": 30.4,
-      "peak_hour": 12
+      "peak_hour": 14
     },
     {
       "period": "2025",
@@ -824,7 +824,7 @@
       "win_rate": 0.605,
       "avg_pips": 128.6,
       "avg_duration_min": 5.2,
-      "peak_hour": 12
+      "peak_hour": 14
     },
     {
       "period": "2026",
@@ -834,7 +834,7 @@
       "win_rate": 0.695,
       "avg_pips": 346.6,
       "avg_duration_min": 1.6,
-      "peak_hour": 15
+      "peak_hour": 17
     }
   ],
   "anomalies": {
@@ -849,7 +849,7 @@
         "pips": 564.0,
         "is_winner": true,
         "score": -0.68,
-        "hour": 6,
+        "hour": 8,
         "duration": 0.0
       },
       {
@@ -858,7 +858,7 @@
         "pips": -150.0,
         "is_winner": false,
         "score": -0.657,
-        "hour": 7,
+        "hour": 9,
         "duration": 0.0
       },
       {
@@ -867,7 +867,7 @@
         "pips": 1045.0,
         "is_winner": true,
         "score": -0.65,
-        "hour": 0,
+        "hour": 2,
         "duration": 1.0
       },
       {
@@ -876,7 +876,7 @@
         "pips": 417.0,
         "is_winner": true,
         "score": -0.642,
-        "hour": 16,
+        "hour": 18,
         "duration": 1.0
       },
       {
@@ -885,7 +885,7 @@
         "pips": 1257.0,
         "is_winner": true,
         "score": -0.637,
-        "hour": 17,
+        "hour": 19,
         "duration": 1.0
       },
       {
@@ -894,7 +894,7 @@
         "pips": 1187.0,
         "is_winner": true,
         "score": -0.635,
-        "hour": 17,
+        "hour": 19,
         "duration": 1.0
       },
       {
@@ -903,7 +903,7 @@
         "pips": 423.0,
         "is_winner": true,
         "score": -0.633,
-        "hour": 1,
+        "hour": 3,
         "duration": 0.0
       },
       {
@@ -912,7 +912,7 @@
         "pips": 774.0,
         "is_winner": true,
         "score": -0.63,
-        "hour": 1,
+        "hour": 3,
         "duration": 1.0
       },
       {
@@ -921,7 +921,7 @@
         "pips": 768.0,
         "is_winner": true,
         "score": -0.627,
-        "hour": 2,
+        "hour": 4,
         "duration": 3.0
       },
       {
@@ -930,7 +930,7 @@
         "pips": 352.0,
         "is_winner": true,
         "score": -0.618,
-        "hour": 0,
+        "hour": 2,
         "duration": 0.0
       }
     ]

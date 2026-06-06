@@ -4436,6 +4436,12 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                     log(f"\n✓ SCENARIO {scenario} COMPLETED SUCCESSFULLY\n")
                 else:
                     log(f"\n✗ SCENARIO {scenario} FAILED\n")
+                    # CHANGED: June 2026 — failure recording moved here from the
+                    #          tally block where it was wrongly marking every
+                    #          successful scenario as failed.
+                    _scenario_failures.append(f"{scenario}: pipeline failed")
+                    progress_bar.after(0, lambda: progress_bar.config(
+                        style="scenarios.error.Horizontal.TProgressbar"))
 
                 # WHY (CHANGE 3): Surface a clear BUY vs SELL tally per
                 #      scenario so the user sees both directions were
@@ -4443,14 +4449,13 @@ def run_scenarios(scenario_vars, output_text, progress_label, progress_bar, pct_
                 #      rules too). Bold via the dir_tally tag — log()
                 #      routes any line containing 'Extracted...rules' to
                 #      bold, and this format does (case-insensitive match).
-                # CHANGED: June 2026 — per-scenario direction tally emit
+                # CHANGED: June 2026 — tally is a SUCCESS artifact; removed the
+                #          stray failure-record + error-bar that were wrongly
+                #          nested here and marked every successful scenario failed.
                 _dc = _dir_counts.get(scenario)
                 if _dc and (_dc[0] or _dc[1]):
                     log(f"  ── Direction tally — {scenario}: "
                         f"{_dc[0]} BUY  |  {_dc[1]} SELL — extracted rules ──")
-                    _scenario_failures.append(f"{scenario}: pipeline failed")
-                    progress_bar.after(0, lambda: progress_bar.config(
-                        style="scenarios.error.Horizontal.TProgressbar"))
 
             # Summary
             log("\n" + "=" * 60)
