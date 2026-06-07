@@ -60,6 +60,9 @@ STARTING_CAPITAL    = 100000.0
 RISK_PER_TRADE_PCT  = 0.01
 LOT_SIZE_CALCULATION = 'DYNAMIC'
 FIXED_LOT_SIZE      = 0.01
+# WHY: broker minimum lot. A computed lot below this is SKIPPED (MT5 lots_below_min),
+#      not clamped up. CHANGED: June 2026 — MT5 parity.
+MIN_LOT_SIZE        = 0.01
 
 # Stop loss and take profit (ATR multipliers)
 SL_ATR_MULTIPLIER  = 1.5
@@ -96,6 +99,7 @@ if os.path.exists(_cfg_path):
         RISK_PER_TRADE_PCT  = float(_cfg.get('risk_pct',          RISK_PER_TRADE_PCT * 100)) / 100
         LOT_SIZE_CALCULATION = _cfg.get('lot_size_calc',    LOT_SIZE_CALCULATION).upper()
         FIXED_LOT_SIZE      = float(_cfg.get('fixed_lot_size',    FIXED_LOT_SIZE))
+        MIN_LOT_SIZE        = float(_cfg.get('min_lot_size',      MIN_LOT_SIZE))
         SL_ATR_MULTIPLIER   = float(_cfg.get('sl_atr',            SL_ATR_MULTIPLIER))
         TP1_ATR_MULTIPLIER  = float(_cfg.get('tp1_atr',           TP1_ATR_MULTIPLIER))
         TP2_ATR_MULTIPLIER  = float(_cfg.get('tp2_atr',           TP2_ATR_MULTIPLIER))
@@ -219,7 +223,14 @@ def parse_rules_file(rules_file_path):
 
 
 def calculate_lot_size(balance, risk_pct, sl_distance_usd):
-    """Calculate lot size based on risk percentage"""
+    """Calculate lot size based on risk percentage.
+    Returns the RAW risk-based lot (rounded to 2dp) WITHOUT clamping up to the
+    minimum — the caller decides whether a below-minimum lot means "skip the trade"
+    (MT5 behaviour: lots_below_min) rather than silently trading 0.01.
+    CHANGED: June 2026 — stop clamping up to 0.01. MT5 SKIPS trades whose computed
+             lot rounds below the broker minimum; the old max(0.01, …) made Python
+             take ~55 trades MT5 refused, breaking parity (Python 57 vs MT5 21).
+    """
     if LOT_SIZE_CALCULATION == 'FIXED':
         return FIXED_LOT_SIZE
 
@@ -232,21 +243,15 @@ def calculate_lot_size(balance, risk_pct, sl_distance_usd):
 
     lot_size = risk_amount / sl_distance_usd
 
-    # WHY (Phase 34 Fix 6): Old cap of 10.0 silently truncated lot sizes
-    #      for large virtual accounts or tight SLs. A $1M virtual
-    #      account at 1% risk / 15 pip SL wants ~667 lots; got 10.
-    #      P&L was silently off by 66x. Raise cap to 100 and log a
-    #      warning when it triggers, mirroring the main run_backtest
-    #      pattern from Phase 28.
-    # CHANGED: April 2026 — Phase 34 Fix 6 — warn instead of silently
-    #          truncating (audit Part C HIGH #63)
+    # WHY (Phase 34 Fix 6): warn instead of silently truncating very large lots.
     if lot_size > 100.0:
         log.warning(
             f"[backtest_engine] Computed lot size {lot_size:.1f} exceeds "
             f"100 — check account_size / risk_pct / sl_pips. Capping to 100."
         )
-    lot_size = max(0.01, min(100.0, lot_size))
+        lot_size = 100.0
 
+    # Round to broker lot step (2dp) but DO NOT clamp up to the minimum here.
     return round(lot_size, 2)
 
 
@@ -299,6 +304,15 @@ def simulate_trade(rule, entry_candle, indicators_df, candles_df, balance, start
     sl_distance_pips = abs(entry_price - sl_price) / PIP_SIZE
     sl_distance_usd = sl_distance_pips * PIP_VALUE_PER_LOT  # dollar risk per 1 lot
     lot_size = calculate_lot_size(balance, RISK_PER_TRADE_PCT, sl_distance_usd)
+
+    # WHY: MT5 cannot place an order below the broker minimum lot (0.01) and logs
+    #      [SKIP] lots_below_min, NOT taking the trade. The Python engine used to
+    #      clamp UP to 0.01 and take it anyway — causing ~55 phantom trades that
+    #      MT5 refused (Python 57 vs MT5 21 on the same rule). To match MT5, SKIP
+    #      the trade when the risk-based lot rounds below the minimum.
+    # CHANGED: June 2026 — min-lot skip for MT5 parity (lots_below_min)
+    if LOT_SIZE_CALCULATION != 'FIXED' and lot_size < MIN_LOT_SIZE:
+        return None  # caller skips — mirrors MT5 [SKIP] lots_below_min
 
     # Track trade state
     position_size = lot_size

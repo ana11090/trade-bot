@@ -143,6 +143,7 @@ canvas.pack(side="left", fill="both", expand=True)
 
 content        = tk.Frame(canvas, bg="#f0f2f5")
 content_window = canvas.create_window((0, 0), window=content, anchor="nw")
+state.content_frame = content
 
 
 # Throttled resize — avoid recalculating scrollregion on every widget create

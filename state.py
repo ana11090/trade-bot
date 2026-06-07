@@ -28,6 +28,7 @@ FG_SUB       = "#5a7a99"   # sub-button inactive text
 # Panel registry
 all_panels   = {}
 active_panel = [None]
+content_frame = None  # set in main_app.py; used by sidebar for loading indicators
 panel_builders   = {}          # lazy builders: name -> callable, populated in main_app.py
 SUB_PANELS      = {"panel4", "panel5", "panel6", "panel7", "panel8"}
 PROB_SUB_PANELS = {"account_survival", "expected_value", "breakeven", "kelly", "streaks", "drawdown_recovery"}

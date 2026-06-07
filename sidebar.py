@@ -151,22 +151,8 @@ def build_sidebar(window, canvas, refresh_map):
                          command=cmd)
 
     # ── show_panel ────────────────────────────────────────────────────────────
-    def show_panel(name):
-        # Lazy-build panel on first access
-        if name not in state.all_panels and name in state.panel_builders:
-            state.all_panels[name] = state.panel_builders[name]()
-
-        # O(1) panel switch: only hide the currently active panel
-        current = state.active_panel[0]
-        if current and current != name and current in state.all_panels:
-            state.all_panels[current].pack_forget()
-        elif current is None:
-            for pframe in state.all_panels.values():
-                pframe.pack_forget()
-
-        if name in state.all_panels:
-            state.all_panels[name].pack(fill="both", expand=True)
-
+    def _finish_show(name):
+        """Update sidebar button colours and auto-expand submenus."""
         is_stats_sub    = name in state.SUB_PANELS
         is_prob_sub     = name in state.PROB_SUB_PANELS
         is_project1_sub = name in state.PROJECT1_SUB_PANELS
@@ -175,7 +161,7 @@ def build_sidebar(window, canvas, refresh_map):
         is_project4_sub = name in state.PROJECT4_SUB_PANELS
         is_p0_extra     = name in state.PROJECT0_EXTRA_PANELS
 
-        # btn0 — active for pipeline + sub-panels + new extra panels
+        # btn0
         if name == "pipeline" or is_stats_sub or is_prob_sub or is_p0_extra:
             btn0.configure(bg=state.COL_PARENT if (is_stats_sub or is_prob_sub or is_p0_extra)
                            else state.COL_ACTIVE,
@@ -186,7 +172,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn0.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
-
         # btn1
         if is_project1_sub:
             btn1.configure(bg=state.COL_PARENT, fg="white",
@@ -194,7 +179,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn1.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
-
         # btn2
         if is_project2_sub:
             btn2.configure(bg=state.COL_PARENT, fg="white",
@@ -202,7 +186,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn2.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
-
         # btn3
         if is_project3_sub:
             btn3.configure(bg=state.COL_PARENT, fg="white",
@@ -210,7 +193,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn3.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
-
         # btn4
         if is_project4_sub:
             btn4.configure(bg=state.COL_PARENT, fg="white",
@@ -218,7 +200,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             btn4.configure(bg=state.COL_INACTIVE, fg=state.FG_INACTIVE,
                            activebackground=state.COL_INACTIVE, activeforeground=state.FG_INACTIVE)
-
         # stats_btn
         if is_stats_sub:
             stats_btn.configure(bg=state.COL_PARENT, fg="white",
@@ -226,7 +207,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             stats_btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                                 activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
         # prob_btn
         if is_prob_sub:
             prob_btn.configure(bg=state.COL_PARENT, fg="white",
@@ -234,8 +214,6 @@ def build_sidebar(window, canvas, refresh_map):
         else:
             prob_btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                                activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # stats sub-button colors
         for pname, btn in STATS_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -243,8 +221,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # prob sub-button colors
         for pname, btn in PROB_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -252,8 +228,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # project0 extra button colors
         for pname, btn in PROJECT0_EXTRA_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -261,8 +235,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # project1 sub-button colors
         for pname, btn in PROJECT1_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -270,8 +242,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # project2 sub-button colors
         for pname, btn in PROJECT2_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -279,8 +249,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # project3 sub-button colors
         for pname, btn in PROJECT3_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -288,8 +256,6 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # project4 sub-button colors
         for pname, btn in PROJECT4_BUTTONS.items():
             if pname == name:
                 btn.configure(bg=state.COL_ACTIVE, fg=state.FG_ACTIVE,
@@ -297,34 +263,70 @@ def build_sidebar(window, canvas, refresh_map):
             else:
                 btn.configure(bg=state.COL_SUB, fg=state.FG_SUB,
                               activebackground=state.COL_SUB, activeforeground=state.FG_SUB)
-
-        # auto-expand submenus when navigating directly
+        # auto-expand submenus
         if is_stats_sub and not stats_open[0]:
-            stats_submenu.pack(fill="x", after=stats_btn)
-            stats_open[0] = True
+            stats_submenu.pack(fill="x", after=stats_btn); stats_open[0] = True
         if is_prob_sub and not prob_open[0]:
-            prob_submenu.pack(fill="x", after=prob_btn)
-            prob_open[0] = True
+            prob_submenu.pack(fill="x", after=prob_btn); prob_open[0] = True
         if is_project1_sub and not project1_open[0]:
-            project1_extras.pack(fill="x", after=btn1)
-            project1_open[0] = True
+            project1_extras.pack(fill="x", after=btn1); project1_open[0] = True
         if is_project2_sub and not project2_open[0]:
-            project2_extras.pack(fill="x", after=btn2)
-            project2_open[0] = True
+            project2_extras.pack(fill="x", after=btn2); project2_open[0] = True
         if is_project3_sub and not project3_open[0]:
-            project3_extras.pack(fill="x", after=btn3)
-            project3_open[0] = True
+            project3_extras.pack(fill="x", after=btn3); project3_open[0] = True
         if is_project4_sub and not project4_open[0]:
-            project4_extras.pack(fill="x", after=btn4)
-            project4_open[0] = True
+            project4_extras.pack(fill="x", after=btn4); project4_open[0] = True
         if is_p0_extra and not project0_extras.winfo_ismapped():
-            project0_extras.pack(fill="x", after=btn0)
-            project0_open[0] = True
+            project0_extras.pack(fill="x", after=btn0); project0_open[0] = True
 
-        canvas.yview_moveto(0)
+    def show_panel(name):
+        # O(1) panel switch: only hide the currently active panel
+        current = state.active_panel[0]
+        if current and current != name and current in state.all_panels:
+            state.all_panels[current].pack_forget()
+        elif current is None:
+            for pframe in state.all_panels.values():
+                pframe.pack_forget()
+
         state.active_panel[0] = name
-        if name in refresh_map:
-            refresh_map[name]()
+        canvas.yview_moveto(0)
+
+        # Already built — show immediately
+        if name in state.all_panels:
+            state.all_panels[name].pack(fill="both", expand=True)
+            _finish_show(name)
+            if name in refresh_map:
+                refresh_map[name]()
+            return
+
+        # Needs building — show a loading indicator, then build in next event-loop tick
+        if name not in state.panel_builders:
+            return
+
+        parent = state.content_frame or canvas
+        loading = tk.Frame(parent, bg="#f0f2f5")
+        tk.Label(loading, text="Loading\u2026", font=("Segoe UI", 16),
+                 bg="#f0f2f5", fg="#888888").pack(expand=True, pady=80)
+        loading.pack(fill="both", expand=True)
+        window.update_idletasks()
+
+        def _deferred_build():
+            try:
+                state.all_panels[name] = state.panel_builders[name]()
+            except Exception as exc:
+                import traceback; traceback.print_exc()
+            loading.pack_forget()
+            loading.destroy()
+            if state.active_panel[0] != name:
+                return  # user clicked elsewhere while loading
+            if name in state.all_panels:
+                state.all_panels[name].pack(fill="both", expand=True)
+            _finish_show(name)
+            if name in refresh_map:
+                refresh_map[name]()
+
+        window.after(10, _deferred_build)
+        _finish_show(name)
 
     # ── Toggles ───────────────────────────────────────────────────────────────
     def _toggle_stats():
