@@ -1,17 +1,11 @@
 === TK CALLBACK EXCEPTION ===
-Time:  2026-06-05T15:06:22.385173
-Type:  UnboundLocalError
-Error: UnboundLocalError("cannot access local variable '_batch_btn_refresh' where it is not associated with a value")
+Time:  2026-06-06T19:18:26.583383
+Type:  KeyboardInterrupt
+Error: KeyboardInterrupt()
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
-    return self.func(*args)
-           ^^^^^^^^^^^^^^^^
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\strategy_refiner_panel.py", line 5701, in _apply_grid_filters
-    _refiner_rebuild_hook[0]()
-  File "c:\Users\anani\my git delete\trade-bot\project2_backtesting\panels\strategy_refiner_panel.py", line 7249, in _on_strategies_loaded
-    globals()['_batch_btn_refresh'] = _batch_btn_refresh
-                                      ^^^^^^^^^^^^^^^^^^
-UnboundLocalError: cannot access local variable '_batch_btn_refresh' where it is not associated with a value
+  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1889, in __call__
+    try:
+KeyboardInterrupt
 

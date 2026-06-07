@@ -1,0 +1,180 @@
+{
+  "rule_combo": "#22_BUY_M15_4c_0606_079c2a93_Time_Based_dc5a",
+  "rule_indices": [
+    21
+  ],
+  "rules": [
+    {
+      "conditions": [
+        {
+          "feature": "M15_std_dev_20",
+          "operator": ">",
+          "value": 5.4025
+        },
+        {
+          "feature": "H4_mt5_adx_21",
+          "operator": ">",
+          "value": 27.569
+        },
+        {
+          "feature": "D1_aroon_indicator",
+          "operator": ">",
+          "value": 90.0
+        },
+        {
+          "feature": "M15_roc_20",
+          "operator": "<=",
+          "value": -0.1964
+        }
+      ],
+      "prediction": "WIN",
+      "confidence": 0.857,
+      "coverage": 21,
+      "coverage_pct": 2.4,
+      "win_rate": 0.857,
+      "avg_pips": 398.1,
+      "_target_mode": "binary",
+      "avg_pips_test": null,
+      "win_rate_test": null,
+      "test_samples": 0,
+      "test_skip_reason": "no_test_matches",
+      "direction": "BUY",
+      "entry_timeframe": "M15",
+      "trade_count": 21,
+      "rule_combo": "Rule 5 (BUY)",
+      "scenario": "scenario_M15",
+      "spread_pips": 37.0,
+      "commission_pips": 4.0,
+      "leverage": 10,
+      "contract_size": 100.0,
+      "pip_value_per_lot": 1.0,
+      "prop_firm_id": "leveraged",
+      "prop_firm_name": "Get Leveraged",
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "discovery_settings": {
+        "regime_filter_enabled": false,
+        "regime_at_discovery": false,
+        "regime_strictness": "conservative",
+        "regime_mode": "automatic",
+        "single_rule_mode_enabled": true,
+        "single_rule_mode_variant": "c",
+        "srm_dedup_correlated": true,
+        "srm_winner_selection": "tightness",
+        "prop_firm_id": "leveraged",
+        "prop_firm_name": "Get Leveraged",
+        "prop_firm_stage": "Evaluation",
+        "prop_firm_account": "10000"
+      },
+      "rules": [
+        {
+          "prediction": "WIN",
+          "action": "BUY",
+          "conditions": [
+            {
+              "feature": "M15_std_dev_20",
+              "operator": ">",
+              "value": 5.4025
+            },
+            {
+              "feature": "H4_mt5_adx_21",
+              "operator": ">",
+              "value": 27.569
+            },
+            {
+              "feature": "D1_aroon_indicator",
+              "operator": ">",
+              "value": 90.0
+            },
+            {
+              "feature": "M15_roc_20",
+              "operator": "<=",
+              "value": -0.1964
+            }
+          ]
+        }
+      ],
+      "spread": 37.0,
+      "pip_size": 0.01,
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": 0.3,
+      "risk_pct_firm": 0.8,
+      "dd_daily_pct": 3.0,
+      "dd_total_pct": 6.0,
+      "account_size": 10000.0,
+      "regime_filter": null,
+      "status": "discovered",
+      "grade": "",
+      "score": 0,
+      "_saved_entry_id": 22,
+      "_saved_rule_id": "BUY_M15_4c_0606_079c2a93"
+    }
+  ],
+  "exit_strategy": "SL 150 pips, close after 12 candles",
+  "exit_name": "Time-Based",
+  "exit_class": "TimeBased",
+  "exit_params": {
+    "sl_pips": 150,
+    "max_candles": 12
+  },
+  "spread_pips": 37.0,
+  "commission_pips": 4.0,
+  "total_trades": 0,
+  "win_rate": 0,
+  "avg_pips": 0,
+  "net_avg_pips": 0,
+  "total_pips": 0,
+  "net_total_pips": 0,
+  "profit_factor": 0,
+  "net_profit_factor": 0,
+  "max_dd_pips": 0,
+  "total_costs": 0,
+  "avg_winner": 0,
+  "avg_loser": 0,
+  "best_trade": 0,
+  "worst_trade": 0,
+  "expectancy": 0,
+  "risk_reward_ratio": 0,
+  "std_pips": 0,
+  "sharpe_ish": 0,
+  "max_win_streak": 0,
+  "max_loss_streak": 0,
+  "trades_per_day": 0,
+  "days_per_trade": 0,
+  "recovery_factor": 0,
+  "winners": 0,
+  "losers": 0,
+  "breakeven": 0,
+  "active_month_coverage": 0.0,
+  "longest_dormant_days": 0.0,
+  "total_calendar_days": 0,
+  "trades": [],
+  "breaches": {
+    "daily_breaches": 0,
+    "total_breaches": 0,
+    "blown_count": 0,
+    "daily_breach_dates": [],
+    "total_breach_dates": [],
+    "daily_safety_stops": 0,
+    "total_safety_stops": 0,
+    "daily_safety_dates": [],
+    "total_safety_dates": [],
+    "avg_days_between_blows": 0,
+    "survival_rate_per_month": 0,
+    "total_months": 0,
+    "months_blown": 0,
+    "worst_daily_pct": 0,
+    "worst_total_pct": 0,
+    "firm_breaches_total": 0,
+    "safety_stops_total": 0,
+    "drawdown_type": "static",
+    "hwm_locked": false
+  },
+  "signals_before_regime_filter": 0,
+  "signals_after_regime_filter": 0,
+  "win_pass_passed": 0,
+  "win_pass_total": 0,
+  "win_pass_rate": -1.0,
+  "max_consecutive_dd_breaches": 0,
+  "entry_tf": "D1"
+}

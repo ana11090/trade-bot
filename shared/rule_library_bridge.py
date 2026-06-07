@@ -67,12 +67,9 @@ def is_auto_save_enabled():
 
 # ── Rule fingerprinting ────────────────────────────────────────────────────
 def _condition_fingerprint(cond):
-    """Normalise one condition dict into a stable tuple.
-
-    Accepts both legacy 'value' and canonical 'value' keys; falls back
-    to 'threshold' (Mode A pre-A.40a Edit 3 schema). Numeric is rounded
-    to 6 decimals so floating-point noise across runs doesn't break
-    dedup.
+    """Normalise one condition into a stable tuple (feature, operator, value, type).
+    CHANGED: June 2026 — include 'type' so filter/remove_cluster/etc. conditions
+             that differ only by type are NOT flattened into the same fingerprint.
     """
     feat = str(cond.get('feature', '')).strip()
     op   = str(cond.get('operator', '')).strip()
@@ -83,16 +80,54 @@ def _condition_fingerprint(cond):
         val = round(float(val), 6)
     except Exception:
         val = str(val)
-    return (feat, op, val)
+    ctype = str(cond.get('type', '')).strip()
+    return (feat, op, val, ctype)
 
 
 def _rule_hash(rule):
-    """SHA1 over the rule's structural identity: sorted conditions +
-    prediction string. Returns hex digest."""
+    """SHA1 over the rule's FULL trading identity so DIFFERENT rules never collide:
+      sorted conditions (with type) + canonical prediction + direction +
+      entry timeframe + exit strategy + exit params + SL/TP.
+    Prediction/direction are canonicalized the SAME way save_rule normalizes them
+    (BUY/SELL prediction -> WIN + direction) so a rule hashes identically before and
+    after save_rule — fixing the BUY/SELL duplicate bug — while timeframe/exit/SLTP
+    ensure rules that trade differently stay distinct.
+    CHANGED: June 2026 — complete identity (fix false-duplicate + BUY/SELL mismatch)
+    """
     conds = rule.get('conditions') or []
     fps = sorted(_condition_fingerprint(c) for c in conds)
-    pred = str(rule.get('prediction', ''))
-    blob = json.dumps({'c': fps, 'p': pred}, sort_keys=True, default=str)
+
+    # canonical prediction/direction (match save_rule normalization)
+    pred = str(rule.get('prediction', '') or rule.get('action', '')).strip().upper()
+    direction = str(rule.get('direction', '') or rule.get('action', '')).strip().upper()
+    if pred in ('BUY', 'SELL'):
+        direction = pred
+        pred = 'WIN'
+    elif pred == 'WIN' and not direction:
+        direction = 'BUY'   # save_rule's default
+
+    # timeframe (canonical key; accept legacy)
+    tf = str(rule.get('entry_timeframe', rule.get('entry_tf', ''))).strip().upper()
+
+    # exit identity (canonical keys; accept legacy)
+    exit_name = str(rule.get('exit_name', rule.get('exit_class', ''))).strip()
+    exit_params = rule.get('exit_params', rule.get('exit_strategy_params', {})) or {}
+    try:
+        exit_params_norm = json.dumps(exit_params, sort_keys=True, default=str)
+    except Exception:
+        exit_params_norm = str(exit_params)
+
+    # SL/TP (rules differing only in stop/target ARE different)
+    def _num(x):
+        try: return round(float(x), 6)
+        except Exception: return None
+    sl = _num(rule.get('sl_pips', rule.get('stop_loss_pips')))
+    tp = _num(rule.get('tp_pips', rule.get('take_profit_pips')))
+
+    blob = json.dumps({
+        'c': fps, 'p': pred, 'd': direction, 'tf': tf,
+        'ex': exit_name, 'exp': exit_params_norm, 'sl': sl, 'tp': tp,
+    }, sort_keys=True, default=str)
     return hashlib.sha1(blob.encode('utf-8')).hexdigest()
 
 
@@ -111,6 +146,26 @@ def _existing_hashes():
         except Exception:
             continue
     return out
+
+
+def dedupe_saved_rules():
+    """Collapse existing entries sharing the NEW canonical hash; keep earliest.
+    Returns removed_count. Run ONCE (button/console), not on every load.
+    CHANGED: June 2026 — cleanup after identity fix
+    """
+    from shared import saved_rules as _sr
+    entries = _sr.load_all() or []
+    seen, keep, removed = set(), [], 0
+    for e in sorted(entries, key=lambda x: x.get('saved_at', '')):
+        h = _rule_hash(e.get('rule') or {})
+        if h in seen:
+            removed += 1
+            continue
+        seen.add(h)
+        keep.append(e)
+    if removed:
+        _sr._atomic_write_json(keep, _sr._SAVE_PATH)
+    return removed
 
 
 def _is_valid_rule(rule):

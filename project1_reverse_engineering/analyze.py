@@ -2617,6 +2617,51 @@ def run_analysis(feature_matrix_path=None, feature_scope_mode=None, scenario_key
                         'target_coverage': _a39b_payload.get('target_coverage'),
                     }
                     _cl_a39b.save({'single_rule_mode_discovered': json.dumps(_a39b_compact)})
+                    # WHY: Single Rule Mode rules were written only to
+                    #      single_rule_mode.json + config and NEVER entered the
+                    #      rule library — so they never showed up in Saved Rules.
+                    #      Save the chosen rule via the same auto-save hook the
+                    #      decision-tree rules use, so SRM discoveries are saved.
+                    # CHANGED: June 2026 — SRM rules into saved_rules.json
+                    try:
+                        from shared.rule_library_bridge import (
+                            auto_save_discovered_rules as _a40a_save_srm,
+                            is_auto_save_enabled as _a40a_enabled_srm,
+                        )
+                        if _a40a_enabled_srm():
+                            _chosen_raw = _a39b_payload.get('chosen') or []
+                            _chosen_conditions = (
+                                _chosen_raw if isinstance(_chosen_raw, list)
+                                else []
+                            )
+                            if _chosen_conditions:
+                                _srm_rule = {
+                                    'conditions': [
+                                        {
+                                            'feature':  c['feature'],
+                                            'operator': c['operator'],
+                                            'value':    c.get('value', c.get('threshold')),
+                                        }
+                                        for c in _chosen_conditions
+                                    ],
+                                    'prediction':      'BUY',
+                                    'direction':       'BUY',
+                                    'win_rate':        0.0,
+                                    'win_rate_na':     True,
+                                    'trade_count':     _a39b_payload.get('trade_count'),
+                                    'source_detail':   'single_rule_mode_A',
+                                }
+                                _saved_n, _dedup_n, _inv_n, _diag = _a40a_save_srm(
+                                    [_srm_rule],
+                                    source="SingleRuleMode:A",
+                                    dedup=True,
+                                )
+                                log.info(
+                                    f"  [A.39b] SRM library save: saved={_saved_n}, "
+                                    f"dedup_skipped={_dedup_n}, invalid={_inv_n}"
+                                    + (f", reason={_diag.get('reason')}" if _diag else ""))
+                    except Exception as _srm_save_e:
+                        log.warning(f"  [A.39b] could not save SRM rule to library: {_srm_save_e}")
                 else:
                     _cl_a39b.save({'single_rule_mode_discovered': json.dumps({
                         'status':  (_a39b_payload or {}).get('status', 'error'),

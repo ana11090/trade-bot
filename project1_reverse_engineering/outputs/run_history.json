@@ -387,5 +387,62 @@
       "D1": {},
       "H1_M15": {}
     }
+  },
+  {
+    "run_number": 8,
+    "timestamp": "2026-06-06T09:13:22",
+    "dataset": "levereged_2026.05.03",
+    "timeframes": "M5,M15,H1,H4,D1",
+    "scenarios": [
+      "M5",
+      "M15",
+      "H1",
+      "H4",
+      "D1",
+      "H1_M15"
+    ],
+    "symbol_or_firm": "Get Leveraged",
+    "broker_timezone": "EET",
+    "criteria": {
+      "data_source_id": "levereged_2026.05.03",
+      "data_source_path": "d:\\traiding data\\trade-bot\\data\\sources\\levereged_2026.05.03",
+      "align_timeframes": "M5,M15,H1,H4,D1",
+      "broker_timezone": "EET",
+      "prop_firm_name": "Get Leveraged",
+      "prop_firm_id": "leveraged",
+      "prop_firm_stage": "Evaluation",
+      "risk_pct": "0.3",
+      "feature_scope_mode": "entry_plus_higher",
+      "lookback_candles": "200",
+      "rule_tree_max_depth": "4",
+      "rule_tree_min_samples_leaf": "20",
+      "rule_tree_min_samples_split": "23",
+      "rule_min_coverage": "5",
+      "rule_min_confidence": "0.65",
+      "rule_min_avg_pips": "0",
+      "rule_target_mode": "binary",
+      "bot_entry_max_depth": "4",
+      "bot_entry_max_rules": "200",
+      "bot_entry_min_coverage": "13",
+      "bot_entry_min_win_rate": "0.55",
+      "match_rate_threshold": "0.70",
+      "adx_trend_threshold": "25",
+      "alignment_tolerance_pips": "150",
+      "regime_filter_mode": "automatic",
+      "regime_filter_strictness": "conservative",
+      "regime_filter_enabled": "false",
+      "rf_trees": "500",
+      "rf_random_state": "42",
+      "min_samples_leaf": "10",
+      "max_tree_depth": "6"
+    },
+    "results": {
+      "M5": {},
+      "M15": {},
+      "H1": {},
+      "H4": {},
+      "D1": {},
+      "H1_M15": {}
+    }
   }
 ]

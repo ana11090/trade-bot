@@ -40,3 +40,5 @@ xauusd/xauusd unlimited levereged/*.csv
 # Large output files
 project2_backtesting/outputs/backtest_trades_*.json
 nul
+project2_backtesting/outputs/backtest_matrix.json
+project2_backtesting/outputs/backtest_matrix.csv

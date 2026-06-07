@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-06-05T10:53:58.151688",
+  "generated_at": "2026-06-06T09:10:00.673368",
   "entry_timeframe": "M5",
   "direction": "BUY",
-  "activated_at": "2026-06-05 10:53:58",
+  "activated_at": "2026-06-06 09:10:00",
   "discovery_method": "p1_run_scenarios",
   "scenario": "M5",
-  "analysis_time_s": 27.1,
+  "analysis_time_s": 13.7,
   "trade_count": 1106,
   "feature_count": 804,
   "profile": {

@@ -1821,11 +1821,15 @@ def build_panel(parent):
     _a39a_radio_frame = tk.Frame(_a39a_inner, bg="#fffbea")
     _a39a_radio_frame.pack(anchor="w", pady=(0, 4))
 
+    # WHY: Variants B/C/D have no discovery algorithm yet — their radio
+    #      buttons are disabled and labelled "(coming soon)" so selecting
+    #      them doesn't look like it should produce results.
+    # CHANGED: June 2026 — disable unimplemented SRM variants in UI
     for _val, _lbl in (
         ('a', "Mode A — single feature + threshold (e.g. RSI < 30)"),
-        ('b', "Mode B — single crossover (e.g. EMA9 crosses above EMA20)"),
-        ('c', "Mode C — two-feature conjunction (e.g. RSI<30 AND ADX>25)"),
-        ('d', "Mode D — regime-gated single rule"),
+        ('b', "Mode B — single crossover (coming soon)"),
+        ('c', "Mode C — two-feature conjunction (coming soon)"),
+        ('d', "Mode D — regime-gated single rule (coming soon)"),
     ):
         tk.Radiobutton(
             _a39a_radio_frame,
@@ -1836,6 +1840,7 @@ def build_panel(parent):
             font=("Segoe UI", 9),
             activebackground="#fffbea",
             anchor="w",
+            state=tk.NORMAL if _val == 'a' else tk.DISABLED,
         ).pack(anchor="w")
 
     # ── Status / disclaimer area (yellow "not wired") ──────────────────────
