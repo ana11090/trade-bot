@@ -4271,9 +4271,17 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 if rule.get('prediction') == 'WIN':
                     data['conditions'].extend(rule.get('conditions', []))
 
-            # Embed regime conditions
+            # WHY: My Rules previously saved the optimization only as metadata
+            #      (regime_filter_conditions stayed []), but the backtester reads
+            #      per-rule rule['regime_filter']. So re-running a My Rules rule
+            #      ignored the optimization and ran the BASE rule. Mirror the _save
+            #      (library) path: bake the discovered regime conditions into each
+            #      saved rule's 'regime_filter' so re-runs reproduce the optimization.
+            #      Root cause of the old silent fail: bare json.loads() with no
+            #      module-level json import → NameError swallowed by except pass.
+            # CHANGED: June 2026 — embed regime_filter into My Rules saves (fixed NameError)
             try:
-                import sys as _sys
+                import sys as _sys, json as _json2
                 _p1_dir = os.path.join(project_root, 'project1_reverse_engineering')
                 if _p1_dir not in _sys.path:
                     _sys.path.insert(0, _p1_dir)
@@ -4282,7 +4290,7 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                 if str(_rf_cfg.get('regime_filter_enabled', 'false')).lower() == 'true':
                     _rf_disc_str = _rf_cfg.get('regime_filter_discovered', '') or ''
                     if _rf_disc_str:
-                        _rf_disc = json.loads(_rf_disc_str)
+                        _rf_disc = _json2.loads(_rf_disc_str)
                         if _rf_disc.get('status') == 'ok':
                             _rf_conds = _rf_disc.get('subset') or _rf_disc.get('subset_chosen') or []
                             data['regime_filter_conditions'] = _rf_conds
@@ -4290,8 +4298,9 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
                                 _rule['regime_filter'] = _rf_conds
                             for _rule in data.get('rules', []):
                                 _rule['regime_filter'] = _rf_conds
-            except Exception:
-                pass
+                            print(f"[MY RULES SAVE] Embedded {len(_rf_conds)} regime conditions into saved rule")
+            except Exception as _rfe:
+                print(f"[MY RULES SAVE] Could not embed regime conditions: {_rfe}")
 
             # Inject broker specs
             try:
