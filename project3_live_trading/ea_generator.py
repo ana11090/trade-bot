@@ -159,11 +159,16 @@ def generate_ea(
     print(f"[EA GEN] Direction: {_dir}")
 
     # WHY: entry_bar_offset from saved rule determines EA entry timing.
-    #      0 = signal bar (immediate, EA parity, new default).
-    #      1 = next bar (legacy, matches Python offset=1 backtest mode).
+    # CHANGED: June 2026 — corrected mapping. UseNextBarEntry=false ALREADY enters at
+    #   the open of N+1 (EA evaluates each new bar with shift=1 = just-closed bar),
+    #   which equals Python offset=1. UseNextBarEntry=true adds an EXTRA bar (enters
+    #   N+2) and must NOT be used for standard parity. So:
+    #     Python offset 0 or 1  -> UseNextBarEntry=false  (EA fires at open of N+1)
+    #   The legacy pending mechanism (true) is only for special multi-bar-delay setups
+    #   and is no longer selected by the offset toggle.
     # CHANGED: May 2026 — EA entry timing from saved rule
     _entry_bar_offset = int(strategy.get('entry_bar_offset', 0))
-    _use_next_bar     = (_entry_bar_offset == 1)
+    _use_next_bar     = False
     # WHY: entry_bar_offset is the sole source of truth for UseNextBarEntry.
     #      The auto-detect that forced UseNextBarEntry=true for same-TF
     #      indicators has been removed. With shift=1 always (see GetBarShift),
@@ -2296,7 +2301,7 @@ bool IsMinHoldMet()
     _vr.append(f"  Max spread: {max_spread_pips} pips  |  Force-close: {force_close_hour}h GMT  |  No-trades: [{no_trades_window_start_hour},{no_trades_window_end_hour})  |  News: {news_filter_minutes}min")
     # WHY: Show entry timing in EA verification report header.
     # CHANGED: May 2026 — entry timing diagnostic in EA header
-    _ebo_vr_label = "Signal bar (immediate)" if not use_next_bar else "Next bar (+1, legacy)"
+    _ebo_vr_label = "Next bar open (N+1, EA parity)" if not use_next_bar else "Pending (+2, legacy)"
     _vr.append(f"ENTRY TIMING: {_ebo_vr_label}  (UseNextBarEntry={'true' if use_next_bar else 'false'})")
     _vr.append("")
     _vr.append("")
