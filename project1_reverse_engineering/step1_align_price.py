@@ -358,7 +358,19 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         if trades_csv_path is None:
             trades_csv_path = _get_trades_path()
 
-        log.info(f"  Loading trades from: {os.path.basename(trades_csv_path)}")
+        # CHANGED: June 2026 — show active-history name, not the internal filename
+        #          (manager stores every history as trades_clean.csv, so the old
+        #           log looked like the OLD file even when it was e.g. Gold Reaper).
+        _disp_name = os.path.basename(trades_csv_path)
+        try:
+            from shared.trade_history_manager import get_active_history
+            _active = get_active_history()
+            if _active and _active.get('robot_name'):
+                _disp_name = "%s (%s)" % (_active.get('robot_name'),
+                                          os.path.basename(trades_csv_path))
+        except Exception:
+            pass
+        log.info(f"  Loading trades from: {_disp_name}")
 
         # WHY (Phase 58 Fix 1): pd.read_csv with no dtype= lets pandas
         #      infer types. A single stray string or #N/A in the timestamp
