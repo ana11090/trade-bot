@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-06-06T09:13:11.467409
+Generated: 2026-06-08T12:36:06.544985
 Trades analyzed: 1106 | Features: 804
 ======================================================================
 
@@ -15,78 +15,66 @@ Trades analyzed: 1106 | Features: 804
   Stop loss:      Fixed 150 pips (confidence: 88%)
   Take profit:    Dynamic / trailing
   Sessions:       Asian, London, New York
-  Peak hours:     [14, 15, 13] UTC
+  Peak hours:     [13, 14, 15] UTC
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=77.8%, test=61.3%
-   1. H1_bb_20_2_width                              1.5%
-   2. H1_bb_20_3_width                              1.2%
-   3. H1_std_dev_20                                 1.1%
-   4. H1_lower_shadow                               1.1%
-   5. H1_distance_from_high                         0.9%
-   6. H1_mt5_atr_7                                  0.9%
-   7. D1_mt5_atr_7                                  0.8%
-   8. H4_mt5_atr_28                                 0.8%
-   9. H4_bb_50_2_width                              0.8%
-  10. D1_std_dev_20                                 0.7%
+  Model accuracy: train=79.0%, test=59.5%
+   1. H1_bb_20_2_width                              1.4%
+   2. H1_bb_20_3_width                              1.3%
+   3. H1_std_dev_20                                 1.0%
+   4. H1_lower_shadow                               0.9%
+   5. D1_mt5_atr_7                                  0.8%
+   6. H1_keltner_width                              0.8%
+   7. D1_std_dev_20                                 0.8%
+   8. H4_mt5_atr_28                                 0.7%
+   9. H1_mt5_atr_7                                  0.7%
+  10. H4_lower_shadow                               0.7%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
-  RULE 1 (WIN, conf: 67%, 290 trades)
-    IF H1_std_dev_20 > 6.3115 AND H4_bb_20_2_width <= 9.9236 AND H1_mt5_stoch_21_d <= 91.5684 AND H1_mt5_rsi_7 <= 49.3553
-    Win rate: 67% | Avg pips: +191
+  RULE 1 (WIN, conf: 88%, 135 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 > 27.569 AND H4_mfi <= 74.2867 AND D1_aroon_indicator <= 90.0
+    Win rate: 88% | Avg pips: +433
 
-  RULE 2 (WIN, conf: 97%, 33 trades)
-    IF H1_std_dev_20 > 6.3115 AND H4_bb_20_2_width > 9.9236 AND H1_close_position_in_range <= 0.4865
-    Win rate: 97% | Avg pips: +510
+  RULE 2 (WIN, conf: 70%, 184 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 <= 27.569 AND H1_lower_shadow > 0.85 AND H4_roc_10 > -0.5843
+    Win rate: 70% | Avg pips: +178
 
-  RULE 3 (WIN, conf: 79%, 33 trades)
-    IF H1_std_dev_20 > 6.3115 AND H4_bb_20_2_width > 9.9236 AND H1_close_position_in_range > 0.4865
-    Win rate: 79% | Avg pips: +587
+  RULE 3 (LOSS, conf: 65%, 115 trades)
+    IF H4_mt5_atr_14 <= 15.6557 AND H1_awesome_oscillator > -6.4573 AND D1_sma_50_distance > -0.8334 AND H4_vwap_distance <= 0.0412
+    Win rate: 35% | Avg pips: +17
 
-  RULE 4 (WIN, conf: 100%, 21 trades)
-    IF H1_std_dev_20 > 6.3115 AND H4_bb_20_2_width <= 9.9236 AND H1_mt5_stoch_21_d > 91.5684 AND D1_volume_change > 0.0886
-    Win rate: 100% | Avg pips: +310
-
-  RULE 5 (WIN, conf: 77%, 30 trades)
-    IF H1_std_dev_20 <= 6.3115 AND H1_volume_ratio_20 > 1.1603 AND H4_ultimate_oscillator > 57.8004
-    Win rate: 77% | Avg pips: +144
-
-  RULE 6 (WIN, conf: 71%, 31 trades)
-    IF H1_std_dev_20 > 6.3115 AND H4_bb_20_2_width <= 9.9236 AND H1_mt5_stoch_21_d > 91.5684 AND D1_volume_change <= 0.0886
-    Win rate: 71% | Avg pips: +220
-
-  RULE 7 (WIN, conf: 73%, 22 trades)
-    IF H1_std_dev_20 <= 6.3115 AND H1_volume_ratio_20 > 1.1603 AND H4_ultimate_oscillator <= 57.8004 AND H4_dpo > 8.3115
-    Win rate: 73% | Avg pips: +90
+  RULE 4 (WIN, conf: 73%, 22 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 > 27.569 AND H4_mfi > 74.2867 AND H4_mt5_adx_21 <= 35.447
+    Win rate: 73% | Avg pips: +283
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 132 trades (11.9%), WR 74%, avg +358 pips, avg dur 0min
-  'Profit cluster': 176 trades (15.9%), WR 65%, avg +242 pips, avg dur 0min
-  'Profit cluster': 512 trades (46.3%), WR 58%, avg +105 pips, avg dur 0min
-  'Profit cluster': 286 trades (25.9%), WR 48%, avg +63 pips, avg dur 0min
+  'Big winners': 130 trades (11.8%), WR 74%, avg +364 pips, avg dur 0min
+  'Profit cluster': 179 trades (16.2%), WR 65%, avg +244 pips, avg dur 0min
+  'Profit cluster': 517 trades (46.7%), WR 58%, avg +103 pips, avg dur 0min
+  'Profit cluster': 280 trades (25.3%), WR 48%, avg +62 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
-    trending              : WR 62%, avg +200 pips (545 trades)
-    ranging               : WR 55%, avg +94 pips (561 trades)
+    trending              : WR 62%, avg +198 pips (547 trades)
+    ranging               : WR 55%, avg +96 pips (559 trades)
   volatility:
-    high                  : WR 66%, avg +231 pips (486 trades)
-    low                   : WR 52%, avg +80 pips (620 trades)
+    high                  : WR 66%, avg +231 pips (485 trades)
+    low                   : WR 53%, avg +80 pips (621 trades)
   direction:
-    above_ema200          : WR 60%, avg +167 pips (811 trades)
-    below_ema200          : WR 55%, avg +88 pips (295 trades)
+    above_ema200          : WR 60%, avg +168 pips (809 trades)
+    below_ema200          : WR 55%, avg +88 pips (297 trades)
   session:
-    asian                 : WR 61%, avg +173 pips (277 trades)
-    london                : WR 56%, avg +131 pips (598 trades)
-    new_york              : WR 59%, avg +141 pips (632 trades)
+    asian                 : WR 61%, avg +164 pips (285 trades)
+    london                : WR 56%, avg +126 pips (609 trades)
+    new_york              : WR 58%, avg +140 pips (614 trades)
   day_of_week:
-    Monday                : WR 61%, avg +165 pips (230 trades)
-    Tuesday               : WR 59%, avg +160 pips (196 trades)
-    Wednesday             : WR 56%, avg +136 pips (212 trades)
-    Thursday              : WR 57%, avg +116 pips (217 trades)
-    Friday                : WR 58%, avg +150 pips (247 trades)
+    Monday                : WR 61%, avg +160 pips (227 trades)
+    Tuesday               : WR 58%, avg +159 pips (200 trades)
+    Wednesday             : WR 56%, avg +136 pips (207 trades)
+    Thursday              : WR 56%, avg +117 pips (220 trades)
+    Friday                : WR 59%, avg +149 pips (244 trades)
 
 -- TIME PERIOD EVOLUTION ------------------------------------------
   2020:   96 trades, WR 68%, avg +154 pips, 8.0/month
@@ -98,8 +86,8 @@ Trades analyzed: 1106 | Features: 804
   2026:  200 trades, WR 70%, avg +347 pips, 66.7/month
 
 -- ANOMALIES -------------------------------------------------------
-  56 outlier trades (5.1%)
-  Anomaly win rate: 88% vs normal: 57%
+  55 outlier trades (5.0%)
+  Anomaly win rate: 86% vs normal: 57%
 
 -- IMPROVEMENT SUGGESTIONS ----------------------------------------
   -> Only trade in high volatility (ATR above median)

@@ -1,0 +1,19 @@
+{
+  "history_id": "spcal_clean",
+  "robot_name": "spcal clean",
+  "symbol": "XAUUSD",
+  "description": "",
+  "date_loaded": "2026-06-08T07:45:43",
+  "trade_count": 1106,
+  "date_range": {
+    "start": "2020-01-07",
+    "end": "2026-03-10"
+  },
+  "status": "loaded",
+  "source_file": "_active_spcal_clean.csv",
+  "pipeline_progress": {
+    "project0": "pending",
+    "project1": "pending",
+    "project2": "pending"
+  }
+}

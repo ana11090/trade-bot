@@ -2,7 +2,40 @@
   "trade_histories": [
     {
       "history_id": "original_bot"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_2"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_3"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_4"
+    },
+    {
+      "history_id": "spcal_clean"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_5"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_6"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_7"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_8"
+    },
+    {
+      "history_id": "gold_reaper_new_v2_2_9"
+    },
+    {
+      "history_id": "spcal_clean_2"
     }
   ],
-  "active_history_id": "original_bot"
+  "active_history_id": "spcal_clean_2"
 }

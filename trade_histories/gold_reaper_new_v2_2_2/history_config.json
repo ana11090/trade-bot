@@ -1,0 +1,19 @@
+{
+  "history_id": "gold_reaper_new_v2_2_2",
+  "robot_name": "Gold Reaper New V2 2",
+  "symbol": "XAUUSD",
+  "description": "",
+  "date_loaded": "2026-06-08T07:26:42",
+  "trade_count": 760,
+  "date_range": {
+    "start": "2024-10-29",
+    "end": "2026-05-29"
+  },
+  "status": "loaded",
+  "source_file": "_active_Gold_Reaper_New_V2_2.csv",
+  "pipeline_progress": {
+    "project0": "pending",
+    "project1": "pending",
+    "project2": "pending"
+  }
+}

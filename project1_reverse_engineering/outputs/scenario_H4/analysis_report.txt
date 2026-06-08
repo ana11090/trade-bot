@@ -1,6 +1,6 @@
 ======================================================================
 ROBOT ANALYSIS REPORT
-Generated: 2026-06-06T09:13:15.241430
+Generated: 2026-06-08T12:36:15.803198
 Trades analyzed: 1106 | Features: 804
 ======================================================================
 
@@ -15,70 +15,66 @@ Trades analyzed: 1106 | Features: 804
   Stop loss:      Fixed 150 pips (confidence: 88%)
   Take profit:    Dynamic / trailing
   Sessions:       Asian, London, New York
-  Peak hours:     [14, 15, 13] UTC
+  Peak hours:     [13, 14, 15] UTC
   Frequency:      increasing (15/month avg)
 
 -- TOP FEATURES (what the robot reacts to) ------------------------
-  Model accuracy: train=76.8%, test=63.1%
-   1. H4_candle_range                               1.2%
-   2. H4_distance_from_high                         1.1%
+  Model accuracy: train=76.9%, test=62.2%
+   1. H4_std_dev_50                                 1.2%
+   2. H4_bb_50_2_width                              1.2%
    3. D1_mt5_atr_7                                  1.1%
-   4. H4_bb_50_2_width                              1.1%
-   5. H4_std_dev_50                                 1.1%
-   6. H4_lower_shadow                               1.1%
-   7. H4_std_dev_20                                 1.1%
-   8. H4_mt5_atr_28                                 1.1%
-   9. D1_std_dev_20                                 1.0%
-  10. D1_upper_shadow                               0.9%
+   4. H4_lower_shadow                               1.1%
+   5. D1_std_dev_20                                 1.1%
+   6. H4_bb_20_2_width                              1.0%
+   7. H4_candle_range                               0.9%
+   8. H4_keltner_width                              0.9%
+   9. H4_distance_from_high                         0.9%
+  10. H4_mt5_atr_21                                 0.9%
 
 -- TRADING RULES (IF/THEN) ----------------------------------------
 
   RULE 1 (WIN, conf: 88%, 135 trades)
-    IF H4_mt5_atr_14 > 15.6497 AND H4_mt5_adx_21 > 27.569 AND D1_aroon_indicator <= 90.0 AND H4_mfi <= 72.936
-    Win rate: 88% | Avg pips: +436
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 > 27.569 AND H4_mfi <= 74.2867 AND D1_aroon_indicator <= 90.0
+    Win rate: 88% | Avg pips: +433
 
-  RULE 2 (WIN, conf: 84%, 57 trades)
-    IF H4_mt5_atr_14 > 15.6497 AND H4_mt5_adx_21 <= 27.569 AND H4_bear_power > -3.6069 AND D1_mfi <= 65.3334
-    Win rate: 84% | Avg pips: +216
+  RULE 2 (WIN, conf: 81%, 42 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 <= 27.569 AND H4_mt5_stoch_14_d > 24.9825 AND H4_williams_r_14 > -10.2964
+    Win rate: 81% | Avg pips: +192
 
-  RULE 3 (WIN, conf: 77%, 39 trades)
-    IF H4_mt5_atr_14 <= 15.6497 AND D1_tsi > 9.9278 AND D1_roc_50 <= 10.9587 AND D1_roc_50 > 9.0505
-    Win rate: 77% | Avg pips: +242
+  RULE 3 (WIN, conf: 73%, 22 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 > 27.569 AND H4_mfi > 74.2867 AND H4_mt5_adx_21 <= 35.447
+    Win rate: 73% | Avg pips: +283
 
-  RULE 4 (WIN, conf: 71%, 38 trades)
-    IF H4_mt5_atr_14 > 15.6497 AND H4_mt5_adx_21 > 27.569 AND D1_aroon_indicator > 90.0 AND H4_vwap_distance <= 0.27
-    Win rate: 71% | Avg pips: +239
-
-  RULE 5 (LOSS, conf: 67%, 72 trades)
-    IF H4_mt5_atr_14 > 15.6497 AND H4_mt5_adx_21 <= 27.569 AND H4_bear_power <= -3.6069 AND H4_roc_5 > -0.1146
-    Win rate: 33% | Avg pips: +40
+  RULE 4 (LOSS, conf: 69%, 29 trades)
+    IF H4_mt5_atr_14 > 15.6557 AND H4_mt5_adx_21 <= 27.569 AND H4_mt5_stoch_14_d <= 24.9825
+    Win rate: 31% | Avg pips: +3
 
 -- TRADE CLUSTERS (auto-detected groups) --------------------------
-  'Big winners': 135 trades (12.2%), WR 68%, avg +315 pips, avg dur 0min
-  'Profit cluster': 184 trades (16.6%), WR 70%, avg +271 pips, avg dur 0min
-  'Profit cluster': 537 trades (48.6%), WR 56%, avg +98 pips, avg dur 0min
-  'Profit cluster': 250 trades (22.6%), WR 51%, avg +68 pips, avg dur 0min
+  'Big winners': 137 trades (12.4%), WR 68%, avg +311 pips, avg dur 0min
+  'Profit cluster': 183 trades (16.5%), WR 70%, avg +273 pips, avg dur 0min
+  'Profit cluster': 528 trades (47.7%), WR 56%, avg +101 pips, avg dur 0min
+  'Profit cluster': 258 trades (23.3%), WR 50%, avg +61 pips, avg dur 0min
 
 -- MARKET REGIME PERFORMANCE --------------------------------------
   trend:
-    trending              : WR 62%, avg +200 pips (545 trades)
-    ranging               : WR 55%, avg +94 pips (561 trades)
+    trending              : WR 62%, avg +198 pips (547 trades)
+    ranging               : WR 55%, avg +96 pips (559 trades)
   volatility:
-    high                  : WR 66%, avg +231 pips (486 trades)
-    low                   : WR 52%, avg +80 pips (620 trades)
+    high                  : WR 66%, avg +231 pips (485 trades)
+    low                   : WR 53%, avg +80 pips (621 trades)
   direction:
-    above_ema200          : WR 60%, avg +167 pips (811 trades)
-    below_ema200          : WR 55%, avg +88 pips (295 trades)
+    above_ema200          : WR 60%, avg +168 pips (809 trades)
+    below_ema200          : WR 55%, avg +88 pips (297 trades)
   session:
-    asian                 : WR 61%, avg +173 pips (277 trades)
-    london                : WR 56%, avg +131 pips (598 trades)
-    new_york              : WR 59%, avg +141 pips (632 trades)
+    asian                 : WR 61%, avg +164 pips (285 trades)
+    london                : WR 56%, avg +126 pips (609 trades)
+    new_york              : WR 58%, avg +140 pips (614 trades)
   day_of_week:
-    Monday                : WR 61%, avg +165 pips (230 trades)
-    Tuesday               : WR 59%, avg +160 pips (196 trades)
-    Wednesday             : WR 56%, avg +136 pips (212 trades)
-    Thursday              : WR 57%, avg +116 pips (217 trades)
-    Friday                : WR 58%, avg +150 pips (247 trades)
+    Monday                : WR 61%, avg +160 pips (227 trades)
+    Tuesday               : WR 58%, avg +159 pips (200 trades)
+    Wednesday             : WR 56%, avg +136 pips (207 trades)
+    Thursday              : WR 56%, avg +117 pips (220 trades)
+    Friday                : WR 59%, avg +149 pips (244 trades)
 
 -- TIME PERIOD EVOLUTION ------------------------------------------
   2020:   96 trades, WR 68%, avg +154 pips, 8.0/month
