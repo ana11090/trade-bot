@@ -122,15 +122,28 @@ def _get_trades_path():
 #      otherwise the comparison is unfair. _detect_best_offset uses this for
 #      each offset; the align_all_timeframes block uses it for the firm-tz path.
 # CHANGED: June 2026 — extracted verification scorer
-def _verify_count(trades_df, candles_sorted, tol_price):
-    """Count trades whose entry_price matches the OPEN of the next candle.
+# CHANGED: June 2026 — open OR high-low range match (market-fill aware)
+def _verify_count(trades_df, candles_sorted, tol_price, return_detail=False):
+    """Count trades whose entry_price is consistent with the matched candle.
+    Verifies if EITHER: matches candle OPEN within tol (bar-open logs), OR falls
+    within candle HIGH-LOW +/- tol (intra-bar MARKET fills).
+    WHY: open-only matching made market-fill exports (Gold Reaper) look ~28%
+         unverified when they were aligned correctly. open-OR-range keeps bar-open
+         files unchanged (open is inside the range) and correctly credits fills.
+    CHANGED: June 2026 — open OR high-low range match (market-fill aware)
 
     trades_df must already be on the clock under test (open_time shifted /
     converted as appropriate). candles_sorted must be sorted by 'timestamp'.
-    Returns an int.
+    Returns int, or (int, int, int) when return_detail=True (total, open, range).
     """
     ts = trades_df.sort_values('open_time')
-    cols = ['timestamp', 'open'] if 'open' in candles_sorted.columns else ['timestamp', 'high', 'low']
+    have_ohl = all(c in candles_sorted.columns for c in ('open', 'high', 'low'))
+    if have_ohl:
+        cols = ['timestamp', 'open', 'high', 'low']
+    elif 'open' in candles_sorted.columns:
+        cols = ['timestamp', 'open']
+    else:
+        cols = ['timestamp', 'high', 'low']
     merged = pd.merge_asof(
         ts[['open_time', 'entry_price']],
         candles_sorted[cols],
@@ -139,10 +152,22 @@ def _verify_count(trades_df, candles_sorted, tol_price):
         direction='forward',
         tolerance=pd.Timedelta(hours=2),
     )
-    if 'open' in merged.columns:
-        return int(((merged['entry_price'] - merged['open']).abs() <= tol_price).sum())
-    return int(((merged['entry_price'] >= merged['low'] - tol_price) &
-                (merged['entry_price'] <= merged['high'] + tol_price)).sum())
+    ep = merged['entry_price']
+    open_ok  = ((ep - merged['open']).abs() <= tol_price
+                if 'open' in merged.columns else None)
+    range_ok = (((ep >= merged['low'] - tol_price) & (ep <= merged['high'] + tol_price))
+                if ('high' in merged.columns and 'low' in merged.columns) else None)
+    if open_ok is not None and range_ok is not None:
+        verified = open_ok | range_ok
+    elif open_ok is not None:
+        verified = open_ok
+    else:
+        verified = range_ok
+    if return_detail:
+        return (int(verified.sum()),
+                int(open_ok.sum())  if open_ok  is not None else 0,
+                int(range_ok.sum()) if range_ok is not None else 0)
+    return int(verified.sum())
 
 
 def _detect_best_offset(trades_df, candles_dict, candidate_offsets=None):
@@ -714,6 +739,13 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
 
             verified_counts[tf] = verified
 
+            # CHANGED: June 2026 — stash one fine-grained TF's aligned rows so the
+            #          in-app diagnostic (after the summary) can explain WHY misses
+            #          miss (sub-hour time skew vs price-feed mismatch).
+            if tf in ('M5', 'M15') and '_diag_aligned' not in dir():
+                _diag_aligned = aligned.copy()
+                _diag_tf = tf
+
             log.info(f"{aligned_count} trades aligned ({verified} verified)")
 
         # Print summary
@@ -728,6 +760,46 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                 # Warn if verification is low
                 if verify_pct < 80:
                     log.warning(f"         Low verification rate - possible timezone mismatch!")
+
+        # CHANGED: June 2026 — in-app alignment DIAGNOSTIC (prints to the same
+        #          Console Output as the rest of Step 1). Explains WHY trades fail
+        #          verification: sub-hour time skew (price lands in an adjacent
+        #          candle) vs price-feed mismatch (price in NO nearby candle).
+        try:
+            if '_diag_aligned' in dir() and _diag_aligned is not None and len(_diag_aligned):
+                _d = _diag_aligned
+                _d = _d[_d['candle_idx'].notna()] if 'candle_idx' in _d.columns else _d
+                _inb = ((_d['entry_price'] >= _d['low'] - ALIGNMENT_TOLERANCE_RAW) &
+                        (_d['entry_price'] <= _d['high'] + ALIGNMENT_TOLERANCE_RAW))
+                _miss = _d[~_inb]
+                _n = len(_d); _nm = len(_miss)
+                log.info("\n  ── Alignment Diagnostic (%s) ──" % _diag_tf)
+                log.info("    %d/%d trades have entry price inside their candle range; %d miss."
+                         % (_n - _nm, _n, _nm))
+                if _nm:
+                    # how far is each miss's price from its candle range? (in pips)
+                    _below = (_d['low'] - _d['entry_price']).clip(lower=0)
+                    _above = (_d['entry_price'] - _d['high']).clip(lower=0)
+                    _dist_price = (_below + _above)[~_inb]
+                    _dist_pips = (_dist_price / PIP_SIZE)
+                    _med = float(_dist_pips.median())
+                    _p90 = float(_dist_pips.quantile(0.90))
+                    log.info("    Miss distance from candle range: median %.0f pips, "
+                             "90th pct %.0f pips (tolerance %.0f pips)."
+                             % (_med, _p90, ALIGNMENT_TOLERANCE))
+                    # small distance => likely adjacent-bar / sub-hour skew;
+                    # large => price-feed mismatch (different vendor than broker fills)
+                    if _med <= 50:
+                        log.info("    → Misses are CLOSE to the range — likely a sub-hour / "
+                                 "bar-stamp skew or normal bid/ask spread, not a wrong clock.")
+                    else:
+                        log.info("    → Misses are FAR from the range — the candle price feed "
+                                 "likely differs from the broker's fill prices (different data "
+                                 "vendor). Timezone changes will NOT fix this.")
+                    log.info("    (This is informational — discovery still runs; it tells you "
+                             "how trustworthy the candle↔trade alignment is.)")
+        except Exception as _diag_e:
+            log.info("  [diag] alignment diagnostic skipped: %s" % _diag_e)
 
         # Save aligned trades
         output_file = os.path.join(output_dir, 'aligned_trades.csv')
