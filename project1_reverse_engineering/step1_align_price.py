@@ -104,6 +104,42 @@ PIP_SIZE             = float(_cfg.get('pip_size', '0.01'))
 ALIGNMENT_TOLERANCE_RAW = ALIGNMENT_TOLERANCE * PIP_SIZE   # in price units
 
 
+def _parse_candle_timestamps(series):
+    """Parse a candle 'timestamp' column ROBUSTLY and CONSISTENTLY.
+
+    WHY: candle CSVs here use US M/D/YYYY H:MM (e.g. '5/3/2021 0:00'). Calling
+         pd.to_datetime with NO format lets pandas guess PER VALUE — it can read
+         '5/3' as May-3 or Mar-5 and may even switch mid-column. Wrong dates make
+         trades align to wrong-date candles, producing huge price gaps (~2849-pip
+         median miss). Fix: pick the format that parses the MOST rows for THIS file
+         and parse the whole column with that ONE format, so every row is
+         interpreted identically. Adapts per file (US, ISO, dot) — not hardcoded.
+    CHANGED: June 2026 — consistent candle timestamp parsing (date-format bug)
+    """
+    s = series.astype(str).str.strip()
+    sample = s.head(200)
+    candidate_formats = [
+        '%m/%d/%Y %H:%M',    # 5/3/2021 0:00   (US, these files)
+        '%m/%d/%Y %H:%M:%S',
+        '%Y-%m-%d %H:%M:%S', # ISO
+        '%Y-%m-%d %H:%M',
+        '%Y.%m.%d %H:%M:%S', # dot (MT5 exports)
+        '%d/%m/%Y %H:%M',    # EU day-first (only if it wins)
+    ]
+    best_fmt, best_ok = None, -1
+    for fmt in candidate_formats:
+        ok = pd.to_datetime(sample, format=fmt, errors='coerce').notna().sum()
+        if ok > best_ok:
+            best_ok, best_fmt = ok, fmt
+    if best_fmt is not None and best_ok > 0:
+        out = pd.to_datetime(s, format=best_fmt, errors='coerce')
+        if out.isna().mean() > 0.02:   # fill stragglers the chosen format missed
+            _gen = pd.to_datetime(s[out.isna()], errors='coerce', dayfirst=False)
+            out.loc[out.isna()] = _gen
+        return out
+    return pd.to_datetime(s, errors='coerce', dayfirst=False)
+
+
 def _get_trades_path():
     """Get trades CSV path from workspace system, fallback to legacy path."""
     active = get_active_history()
@@ -467,7 +503,7 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                             if _col.lower() in ('time', 'date', 'datetime', 'open_time'):
                                 _cdf = _cdf.rename(columns={_col: 'timestamp'})
                                 break
-                    _cdf['timestamp'] = pd.to_datetime(_cdf['timestamp'], errors='coerce')
+                    _cdf['timestamp'] = _parse_candle_timestamps(_cdf['timestamp'])  # CHANGED: June 2026 — consistent date parse
                     # WHY: Phase 44 Fix 5 — surface NaT rows so users see parse failures
                     _nat_count = int(_cdf['timestamp'].isna().sum())
                     if _nat_count > 0:
@@ -634,7 +670,7 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
 
             # Phase 44 Fix 5: low_memory=False for stable dtype inference
             candles_df = pd.read_csv(candle_file, low_memory=False)
-            candles_df['timestamp'] = pd.to_datetime(candles_df['timestamp'], errors='coerce')
+            candles_df['timestamp'] = _parse_candle_timestamps(candles_df['timestamp'])  # CHANGED: June 2026 — consistent date parse
             # Phase 44 Fix 5 cont.: validate timestamps
             _nat_count = int(candles_df['timestamp'].isna().sum())
             if _nat_count > 0:
