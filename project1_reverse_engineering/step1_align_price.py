@@ -103,6 +103,9 @@ PIP_SIZE             = float(_cfg.get('pip_size', '0.01'))
 #          (audit Part D LOW #32)
 ALIGNMENT_TOLERANCE_RAW = ALIGNMENT_TOLERANCE * PIP_SIZE   # in price units
 
+# CHANGED: June 2026 — verified-only filter flag (default OFF = keep all trades)
+KEEP_VERIFIED_ONLY = str(_cfg.get('keep_verified_only', 'false')).lower() in ('true', '1', 'yes')
+
 
 def _parse_candle_timestamps(series):
     """Parse a candle 'timestamp' column ROBUSTLY and CONSISTENTLY.
@@ -805,8 +808,14 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                     (aligned['entry_price'] <= aligned['high'] + tolerance)
                 )
                 verified = int((_has_candle & _in_range).sum())
+                # CHANGED: June 2026 — per-trade verified flag for verified-only filter
+                aligned['_vf'] = (_has_candle & _in_range)
+                _vdedup = aligned.drop_duplicates(subset=['trade_id'])
+                trades_df[f'{tf}_verified'] = _vdedup.set_index('trade_id')['_vf']
+                trades_df[f'{tf}_verified'] = trades_df[f'{tf}_verified'].fillna(False)
             else:
                 verified = 0
+                trades_df[f'{tf}_verified'] = False
 
             verified_counts[tf] = verified
 
@@ -871,6 +880,36 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                              "how trustworthy the candle↔trade alignment is.)")
         except Exception as _diag_e:
             log.info("  [diag] alignment diagnostic skipped: %s" % _diag_e)
+
+        # CHANGED: June 2026 — VERIFIED-ONLY FILTER (keep trades verified on >=1 TF)
+        try:
+            _vcols = [f'{tf}_verified' for tf in ALIGN_TIMEFRAMES
+                      if f'{tf}_verified' in trades_df.columns]
+            if _vcols:
+                _any_verified = trades_df[_vcols].any(axis=1)
+                _n_total = len(trades_df)
+                _n_keep  = int(_any_verified.sum())
+                log.info("\n  ── Verified-Only Filter ──")
+                if KEEP_VERIFIED_ONLY:
+                    trades_df = trades_df[_any_verified].reset_index(drop=True)
+                    log.info("    ENABLED: kept %d of %d trades verified on >=1 timeframe; "
+                             "dropped %d unverified (candle feed could not confirm them)."
+                             % (_n_keep, _n_total, _n_total - _n_keep))
+                    log.info("    NOTE: dropped trades had entry price outside their candle "
+                             "range on every timeframe — typically a candle-vs-broker price-"
+                             "feed mismatch (worst on M5, fine on H4/D1). Discovery now runs "
+                             "on the cleanly-aligned subset only.")
+                    if _n_keep < 100:
+                        log.info("    ⚠ WARNING: only %d trades remain — may be too few for "
+                                 "reliable discovery. Consider keep_verified_only=false or "
+                                 "candle data from the broker's own feed." % _n_keep)
+                else:
+                    log.info("    DISABLED (keep_verified_only=false): keeping all %d trades. "
+                             "Of these, %d verified on >=1 timeframe, %d not. Set "
+                             "keep_verified_only=true in p1_config.json to drop the unverified."
+                             % (_n_total, _n_keep, _n_total - _n_keep))
+        except Exception as _vf_e:
+            log.info("  [verified-only] filter skipped: %s" % _vf_e)
 
         # Save aligned trades
         output_file = os.path.join(output_dir, 'aligned_trades.csv')
