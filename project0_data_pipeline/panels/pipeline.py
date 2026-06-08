@@ -291,7 +291,7 @@ def pipeline_worker():
         #      access then threw "index out of bounds". Strip the BOM and add
         #      ';' to separator detection. Tab and comma behavior is unchanged.
         # CHANGED: June 2026 — support MT5 ';'-delimited exports (additive)
-        _first_line = raw_text.split('\n')[0].lstrip('\ufeff')
+        _first_line = raw_text.split('\n')[0].lstrip('﻿')
         if '\t' in _first_line:
             sep = '\t'
         elif ';' in _first_line and _first_line.count(';') >= _first_line.count(','):
@@ -304,7 +304,7 @@ def pipeline_worker():
         data = _pd.read_csv(io.StringIO(raw_text), skipinitialspace=True, sep=sep)
         # Strip a BOM left on the first column name, if any.
         if len(data.columns) and isinstance(data.columns[0], str):
-            data = data.rename(columns={data.columns[0]: data.columns[0].lstrip('\ufeff')})
+            data = data.rename(columns={data.columns[0]: data.columns[0].lstrip('﻿')})
 
         if len(data) == 0:
             root.after(0, pipeline_done, None,
@@ -345,6 +345,35 @@ def pipeline_done(data, error):
         return
 
     state.loaded_data = data
+
+    # WHY: users (reasonably) expect that loading a trade file and pressing Run
+    #      means the NEXT discovery run uses THAT file. Previously the file only
+    #      became the ACTIVE history via a separate "Save & activate" button, so
+    #      Run Scenarios silently fell back to the old trades_clean.csv (1106
+    #      buy-only trades). Auto-convert (if MT5) and register here so loading
+    #      the file IS enough.
+    # CHANGED: June 2026 — auto-register loaded file as active history on load
+    try:
+        _reg = data.copy()
+        if _looks_like_mt5(_reg):
+            _reg = _convert_mt5_to_canonical(_reg)
+        # name from the loaded filename if we have it, else a default
+        _src_path = getattr(state, 'selected_file_full_path', None) or "Loaded Trades"
+        _src_name = os.path.splitext(os.path.basename(str(_src_path)))[0]
+        import tempfile
+        _tmp = os.path.join(tempfile.gettempdir(),
+                            f"_active_{_src_name.replace(' ', '_')}.csv")
+        _reg.to_csv(_tmp, index=False)
+        from shared.trade_history_manager import load_trades
+        load_trades(_src_name, _tmp)
+        print(f"[pipeline] Auto-registered '{_src_name}' "
+              f"({len(_reg)} trades) as the ACTIVE trade history.")
+    except Exception as _reg_err:
+        # Non-fatal: if auto-register fails, the data is still loaded; the user
+        # can use the explicit Save & activate path. Print loudly so it's visible.
+        print(f"[pipeline] WARNING: could not auto-register loaded file as active "
+              f"history: {_reg_err}. Run will use the previous active history — "
+              f"use 'Save & activate' if the wrong file is used.")
 
     _tree["columns"] = ["ID"] + list(data.columns)
     _tree.heading("ID", text="ID")
