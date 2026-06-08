@@ -492,12 +492,36 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
             log.info("    [TZ] Verification — auto-detect offset %+dh: %d/%d (%.1f%%)"
                      % (_best_off, _va, _n, 100.0 * _va / max(_n, 1)))
             if _tz is not None:
-                log.info("    [TZ] Verification — firm DST '%s': %d/%d (%.1f%%)"
+                log.info("    [TZ] Verification — firm tz '%s': %d/%d (%.1f%%)"
                          % (_tz, _vb, _n, 100.0 * _vb / max(_n, 1)))
 
-            if _tz is not None and _vb > _va:
-                log.info("    [TZ] CHOSEN: firm-tz DST-aware ('%s') — higher verification." % _tz)
-                _chosen_mode = 'dst_aware'
+            # WHY: the firm config stores the broker timezone (e.g. Europe/Athens =
+            #      EET/EEST, DST-correct) which is the AUTHORITATIVE clock for that
+            #      firm's data. Per user spec: when a firm timezone IS stored, USE IT
+            #      as the default — do NOT let the flat auto-detect override it — but
+            #      still SHOW both verification scores so a mismatch is visible, and
+            #      WARN loudly if the firm tz verifies poorly (the export may not be
+            #      in broker time). If NO firm tz is stored, fall back to auto-detect
+            #      exactly as before.
+            # CHANGED: June 2026 — firm tz is the default clock (was: only if it
+            #          out-scored auto-detect). Diagnostic shows both + warning.
+            if _tz is not None:
+                _fr = 100.0 * _vb / max(_n, 1)
+                _ar = 100.0 * _va / max(_n, 1)
+                log.info("    [TZ] CHOSEN: firm tz '%s' (firm config is authoritative "
+                         "for this firm's data)." % _tz)
+                if _vb < _va:
+                    log.info("    [TZ] NOTE: auto-detect offset %+dh scored higher "
+                             "(%.1f%% vs firm %.1f%%). Using firm tz per config; if "
+                             "alignment looks wrong, the trade export may not be in "
+                             "broker time — consider checking the export's timezone."
+                             % (_best_off, _ar, _fr))
+                if _fr < 50.0:
+                    log.info("    [TZ] ⚠ WARNING: firm tz '%s' only verified %.1f%% of "
+                             "trades. Alignment may be unreliable — discovery will read "
+                             "indicators from possibly-wrong candles. Verify the trade "
+                             "file's timezone matches the firm's broker time." % (_tz, _fr))
+                _chosen_mode = 'firm_tz'
                 _chosen_tz = str(_tz)
                 _ot = pd.to_datetime(trades_df['open_time'])
                 _ct = pd.to_datetime(trades_df['close_time'])
@@ -507,9 +531,8 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
                                               .dt.tz_convert('UTC').dt.tz_localize(None))
                 trades_df = trades_df.dropna(subset=['open_time']).reset_index(drop=True)
             else:
-                _why = ("no firm tz" if _tz is None
-                        else ("offset %+dh scored >= DST" % _best_off))
-                log.info("    [TZ] CHOSEN: legacy auto-detect offset (%s)." % _why)
+                log.info("    [TZ] CHOSEN: auto-detect offset %+dh (no firm timezone "
+                         "stored — automatic detection as before)." % _best_off)
                 _chosen_mode = 'auto_detect'
                 _chosen_tz = ("offset%+dh" % _best_off)
                 if _best_off != 0:
