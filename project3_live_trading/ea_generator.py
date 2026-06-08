@@ -1937,13 +1937,19 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 _psar_flip = (
                     f'         double _psarBuf[1];\n'
                     f'         CopyBuffer(handle_exit_psar, 0, 1, 1, _psarBuf);\n'
-                    f'         if(_psarBuf[0] > SymbolInfoDouble(_Symbol, SYMBOL_BID))\n'
+                    f'         // CHANGED: June 2026 — compare PSAR to the previous CLOSED bar close\n'
+                    f'         //          (Python parity); was live SYMBOL_BID which flips mid-bar.\n'
+                    f'         double _psarClose = iClose(_Symbol, {psar_mql_tf}, 1);\n'
+                    f'         if(_psarBuf[0] > _psarClose)\n'
                 )
             else:
                 _psar_flip = (
                     f'         double _psarBuf[1];\n'
                     f'         CopyBuffer(handle_exit_psar, 0, 1, 1, _psarBuf);\n'
-                    f'         if(_psarBuf[0] < SymbolInfoDouble(_Symbol, SYMBOL_ASK))\n'
+                    f'         // CHANGED: June 2026 — compare PSAR to the previous CLOSED bar close\n'
+                    f'         //          (Python parity); was live SYMBOL_ASK which flips mid-bar.\n'
+                    f'         double _psarClose = iClose(_Symbol, {psar_mql_tf}, 1);\n'
+                    f'         if(_psarBuf[0] < _psarClose)\n'
                 )
             exit_management = (
                 f'   // PSARExit: PSAR flip exit + time limit ({_direction_label})\n'
