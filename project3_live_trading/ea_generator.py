@@ -1874,14 +1874,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             )
 
         elif exit_class == 'ATRFixedSLTP':
-            # WHY (May 2026): exit_management below references
-            #      MaxHoldCandles for the time-limit cap. Without an
-            #      exit_inputs block declaring it, the generated EA
-            #      fails to compile with `undeclared identifier
-            #      'MaxHoldCandles'` (MQL5 has no implicit globals).
-            #      Mirror the declaration from the HybridExit branch.
+            # WHY (May 2026): exit_management below references MaxHoldCandles for the
+            #      time-limit cap. The original fix used = which clobbered the shared
+            #      ATR inputs (SL_ATR_Mult, TP_ATR_Mult, ATR_Period) set in the block
+            #      above, producing undeclared-identifier compile errors.
             # CHANGED: May 2026 — declare MaxHoldCandles for ATRFixedSLTP
-            exit_inputs = (
+            # CHANGED: June 2026 — APPEND to ATR inputs instead of overwriting them
+            exit_inputs = exit_inputs + (
                 f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles (0=disabled)\n'
             )
             exit_globals = (
