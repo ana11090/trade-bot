@@ -210,11 +210,14 @@ _t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
 # CHANGED: April 2026 — T2b-fix — opt-in stability gate
 _t2b_stability_var        = None  # BooleanVar: run walk-forward on top rows
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
-# WHY: Entry bar offset checkboxes — signal bar (offset=0, matches EA) and/or
-#      next bar (offset=1, legacy). When both checked, both run in one pass.
+# WHY: Entry bar offset checkboxes. offset=1 (N+1) is TRUE EA parity: the MT5 EA
+#      computes the signal from closed bar N but FILLS at the open of bar N+1
+#      (verified from EA logs: signal bar 23:40 → opened 23:45). offset=0 enters at
+#      bar N itself — one bar early vs MT5. When both are checked, both run in one pass.
 # CHANGED: May 2026 — entry bar offset toggle for EA parity
-_ebo_signal_bar_var       = None  # BooleanVar: test offset=0 (signal bar, EA parity)
-_ebo_next_bar_var         = None  # BooleanVar: test offset=1 (next bar, legacy)
+# CHANGED: June 2026 — corrected EA-parity offset (was mislabeled as N; real parity is N+1)
+_ebo_signal_bar_var       = None  # BooleanVar: test offset=0 (signal bar, legacy — 1 bar early vs EA)
+_ebo_next_bar_var         = None  # BooleanVar: test offset=1 (next bar, TRUE EA parity)
 # WHY: Optional date-range overrides for the backtest. When filled they
 #      override _cfg_bt_start/_cfg_bt_end (which come from saved config).
 #      Empty = test the full data range (pre-existing behavior).
@@ -462,11 +465,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
         # CHANGED: May 2026 — dynamic entry timing label
         _ebo_modes = []
         if _ebo_signal_bar_var and _ebo_signal_bar_var.get():
-            _ebo_modes.append("Signal bar (offset=0, EA parity)")
+            _ebo_modes.append("Signal bar (offset=0, legacy — 1 bar early vs EA)")
         if _ebo_next_bar_var and _ebo_next_bar_var.get():
-            _ebo_modes.append("Next bar (offset=1, legacy)")
+            _ebo_modes.append("Next bar (offset=1, EA parity)")
         if not _ebo_modes:
-            _ebo_modes.append("Signal bar (offset=0, EA parity)")
+            _ebo_modes.append("Next bar (offset=1, EA parity)")
         output_text.insert(tk.END, f"Entry timing: {' + '.join(_ebo_modes)}\n\n")
         output_text.see(tk.END)
 
@@ -4593,11 +4596,15 @@ def build_panel(parent):
     ).pack(anchor="w")
 
     # ── Entry timing (EA parity) ──────────────────────────────────────────────
-    # WHY: Python backtester historically entered at bar N+1 after signal bar N.
-    #      The MT5 EA enters immediately at bar N. Checking "Signal bar" uses
-    #      offset=0 (matches EA). Checking both runs offset=0 and offset=1 in
-    #      one pass and produces paired matrix rows for direct comparison.
+    # WHY: The MT5 EA (UseNextBarEntry=false) computes the signal from bar N's CLOSED
+    #      values but FILLS at the OPEN of bar N+1 (first tick of the next bar). Verified
+    #      from EA logs: signal bar 23:40 -> opened 23:45. So offset=1 (N+1) is TRUE EA
+    #      parity. offset=0 (enter at N) fills one bar early and is the legacy behavior.
+    #      The old comment had this backwards — it said "Signal bar (EA parity)" for
+    #      offset=0 which caused users to pick the wrong mode, producing 60 one-bar-early
+    #      mismatches vs MT5.
     # CHANGED: May 2026 — entry bar offset toggle for EA parity
+    # CHANGED: June 2026 — corrected EA-parity offset (was mislabeled as N; real parity is N+1)
     global _ebo_signal_bar_var, _ebo_next_bar_var
 
     _ebo_frame = tk.Frame(panel, bg="white", pady=6)
@@ -4611,21 +4618,23 @@ def build_panel(parent):
         fg="#333",
     ).pack(anchor="w")
 
-    _ebo_signal_bar_var = tk.BooleanVar(value=True)
-    _ebo_next_bar_var   = tk.BooleanVar(value=False)
+    # Default: N+1 is real EA parity → "Next bar" on by default, "Signal bar" off.
+    # CHANGED: June 2026 — default flipped to N+1 (true EA parity)
+    _ebo_signal_bar_var = tk.BooleanVar(value=False)
+    _ebo_next_bar_var   = tk.BooleanVar(value=True)
 
     _ebo_cb_frame = tk.Frame(_ebo_frame, bg="white")
     _ebo_cb_frame.pack(anchor="w")
     tk.Checkbutton(
         _ebo_cb_frame,
-        text="Signal bar (EA parity — enters at bar N)",
+        text="Signal bar (enters at bar N — legacy, fills 1 bar early vs EA)",
         variable=_ebo_signal_bar_var,
         font=("Segoe UI", 10),
         bg="white",
     ).pack(side="left", padx=(0, 16))
     tk.Checkbutton(
         _ebo_cb_frame,
-        text="Next bar (+1, legacy — enters at bar N+1)",
+        text="Next bar (+1 — EA parity, fills at open of N+1 like MT5)",
         variable=_ebo_next_bar_var,
         font=("Segoe UI", 10),
         bg="white",
