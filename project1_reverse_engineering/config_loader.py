@@ -26,6 +26,7 @@ DEFAULTS = {
     'pip_value_per_lot_usd':     '1.0',      # XAUUSD: $1 per pip per 1.0 lot
     'pip_value_usd':             '0.01',     # DEPRECATED — use pip_size; kept for backward compat
     'alignment_tolerance_pips':  '150',
+    'keep_verified_only':        'false',   # CHANGED: June 2026 — verified-only trade filter (Step 1)
 
     # ── Pipeline ──────────────────────────────────────────────────────────────
     'min_lookback_candles':      '200',

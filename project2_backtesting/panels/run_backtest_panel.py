@@ -1898,6 +1898,33 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             f"  Entry filters from saved rule: {_entry_filters}\n")
                         output_text.see(tk.END)
 
+                    # CHANGED: June 2026 — apply the SAVED RULE's optimizer filters
+                    #          (min_hold/max_trades) so re-running an optimized rule
+                    #          reproduces the optimization. Previously these came only
+                    #          from config/UI vars, so saved optimizations (e.g.
+                    #          min_hold_minutes=20) were silently ignored and the bare
+                    #          rule ran (20 trades/-3470 pips instead of 43/+102k).
+                    _mh = _fa.get('min_hold_minutes')
+                    if _mh not in (None, '', 0, '0'):
+                        try:
+                            _cfg_min_hold = int(float(_mh))
+                            output_text.insert(tk.END,
+                                f"  [SAVED-FILTERS] min_hold_minutes override = {_cfg_min_hold}\n")
+                            output_text.see(tk.END)
+                            print(f"[SAVED-FILTERS] min_hold_minutes override = {_cfg_min_hold}")
+                        except (TypeError, ValueError):
+                            pass
+                    _mt = _fa.get('max_trades_per_day')
+                    if _mt not in (None, '', 0, '0'):
+                        try:
+                            _a42_limit = max(1, int(float(_mt)))
+                            output_text.insert(tk.END,
+                                f"  [SAVED-FILTERS] max_trades_per_day override = {_a42_limit}\n")
+                            output_text.see(tk.END)
+                            print(f"[SAVED-FILTERS] max_trades_per_day override = {_a42_limit}")
+                        except (TypeError, ValueError):
+                            pass
+
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -1946,8 +1973,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — per-firm spread calibration
                         session_spread_multipliers=_cfg_session_spread_multipliers if _a48_use_cfg else None,
                         # WHY: Min hold gates management exits — matches EA MinHoldMinutes.
+                        #      Pass whenever > 0 (may come from saved rule's filters_applied
+                        #      even when _a48_use_cfg is off).
                         # CHANGED: April 2026 — min hold parity with MT5 EA
-                        min_hold_minutes=_cfg_min_hold if _a48_use_cfg else 0,
+                        # CHANGED: June 2026 — always pass _cfg_min_hold (not gated by _a48_use_cfg)
+                        min_hold_minutes=_cfg_min_hold,
                         # WHY: Build offset list from checkboxes. At least one must be selected.
                         # CHANGED: May 2026 — entry bar offset toggle
                         entry_bar_offsets=[o for o, v in [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
