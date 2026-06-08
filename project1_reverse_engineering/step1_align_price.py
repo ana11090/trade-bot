@@ -140,6 +140,41 @@ def _parse_candle_timestamps(series):
     return pd.to_datetime(s, errors='coerce', dayfirst=False)
 
 
+def _parse_trade_timestamps(series):
+    """Parse trade open/close timestamps ROBUSTLY.
+    WHY: canonical trades are YYYY.MM.DD HH:MM:SS (year-first, unambiguous). The old
+         dayfirst=True read 2025.03.12 as Dec-3 instead of Mar-12, aligning trades to
+         wrong-date candles (the ~2849-pip miss root cause). Detect the format that
+         parses the most rows and use it for the whole column.
+    CHANGED: June 2026 — fix dayfirst date flip on YYYY.MM.DD trade times
+    """
+    s = series.astype(str).str.strip()
+    sample = s.head(200)
+    candidate_formats = [
+        '%Y.%m.%d %H:%M:%S',  # 2025.03.12 14:05:00  (canonical — year first)
+        '%Y.%m.%d %H:%M',
+        '%Y-%m-%d %H:%M:%S',  # ISO
+        '%Y-%m-%d %H:%M',
+        '%m/%d/%Y %H:%M:%S',  # US slash
+        '%m/%d/%Y %H:%M',
+        '%d/%m/%Y %H:%M:%S',  # EU day-first (only if it wins)
+        '%d/%m/%Y %H:%M',
+    ]
+    best_fmt, best_ok = None, -1
+    for fmt in candidate_formats:
+        ok = pd.to_datetime(sample, format=fmt, errors='coerce').notna().sum()
+        if ok > best_ok:
+            best_ok, best_fmt = ok, fmt
+    if best_fmt is not None and best_ok > 0:
+        out = pd.to_datetime(s, format=best_fmt, errors='coerce')
+        if out.isna().mean() > 0.02:
+            # year-first files are unambiguous; fall back month-first (NOT dayfirst)
+            _gen = pd.to_datetime(s[out.isna()], errors='coerce', dayfirst=False)
+            out.loc[out.isna()] = _gen
+        return out
+    return pd.to_datetime(s, errors='coerce', dayfirst=False)
+
+
 def _get_trades_path():
     """Get trades CSV path from workspace system, fallback to legacy path."""
     active = get_active_history()
@@ -462,10 +497,10 @@ def align_all_timeframes(trades_csv_path=None, output_dir=None):
         }
         trades_df.rename(columns=column_mapping, inplace=True)
 
-        # Parse timestamps (assume broker timezone, no UTC conversion)
-        # Use dayfirst=True for DD/MM/YYYY format, format='mixed' to handle inconsistent formats
-        trades_df['open_time'] = pd.to_datetime(trades_df['open_time'], format='mixed', dayfirst=True)
-        trades_df['close_time'] = pd.to_datetime(trades_df['close_time'], format='mixed', dayfirst=True)
+        # CHANGED: June 2026 — canonical trades are YYYY.MM.DD (year-first). Old
+        #          dayfirst=True flipped 2025.03.12 -> Dec-3, mis-aligning trades.
+        trades_df['open_time']  = _parse_trade_timestamps(trades_df['open_time'])
+        trades_df['close_time'] = _parse_trade_timestamps(trades_df['close_time'])
 
         # Add trade_id if not present
         if 'trade_id' not in trades_df.columns:
