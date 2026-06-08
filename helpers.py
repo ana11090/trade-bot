@@ -113,26 +113,33 @@ def normalize_conditions(rule):
 def make_copyable(widget):
     """Add right-click 'Copy' context menu to any tk.Label (or similar widget).
 
-    WHY: Tkinter has a hard limit on menu objects (~200-500). When many panels
-         with many labels are built, we can hit "No more menus can be allocated."
-         Catch this gracefully and skip adding the menu rather than crashing.
-    CHANGED: April 2026 — guard against menu allocation limit
+    WHY: creating one tk.Menu PER label made every panel build slow and could hit
+         Tkinter's menu-object limit ("No more menus can be allocated"). Use ONE
+         shared menu for the whole app that retargets to whichever widget was
+         right-clicked — turns hundreds of menu objects into one, so panel
+         switching stays fast no matter how many labels/panels are built.
+    CHANGED: June 2026 — single shared copy menu (was: one tk.Menu per label).
     """
     try:
-        menu = tk.Menu(widget, tearoff=0)
-
-        def _copy():
+        def _show_copy_menu(e, w=widget):
             try:
-                text = widget.cget("text")
-                widget.clipboard_clear()
-                widget.clipboard_append(text)
+                menu = globals().get('_shared_copy_menu')
+                if menu is None:
+                    menu = tk.Menu(w.winfo_toplevel(), tearoff=0)
+                    menu.add_command(label="Copy")
+                    globals()['_shared_copy_menu'] = menu
+                def _copy(_w=w):
+                    try:
+                        _w.clipboard_clear()
+                        _w.clipboard_append(_w.cget("text"))
+                    except Exception:
+                        pass
+                menu.entryconfigure(0, command=_copy)
+                menu.tk_popup(e.x_root, e.y_root)
             except Exception:
                 pass
-
-        menu.add_command(label="Copy", command=_copy)
-        widget.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
+        widget.bind("<Button-3>", _show_copy_menu)
     except Exception:
-        # Hit menu allocation limit or other Tk error - skip this widget
         pass
 
 # canvas -> mpl connection id; disconnect before re-attaching
