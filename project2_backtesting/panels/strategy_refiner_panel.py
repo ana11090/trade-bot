@@ -4417,11 +4417,21 @@ def _render_opt_card(parent, rank, cand, stats, dollar_per_pip, acct,
               relief=tk.FLAT, padx=6, pady=2).pack(side=tk.LEFT, padx=(0, 3))
 
     def _csv(t=trades_snap, n=strategy_name):
+        # CHANGED: June 2026 — force run timestamp into the filename so this export can
+        #   never silently reuse a generic stale name.
+        import os as _os
+        from project2_backtesting.strategy_backtester import get_last_run_stamp
+        _out_dir = _os.path.abspath(_os.path.join(
+            _os.path.dirname(_os.path.abspath(__file__)), '..', 'outputs'))
+        _stamp_fn, _stamp_human = get_last_run_stamp(_out_dir)
         p = filedialog.asksaveasfilename(defaultextension=".csv",
-            initialfile=f"opt_{n.replace(' ', '_')}.csv", filetypes=[("CSV", "*.csv")])
+            initialfile=f"opt_{n.replace(' ', '_')}_{_stamp_fn}.csv",
+            filetypes=[("CSV", "*.csv")])
         if p:
             import pandas as pd
-            pd.DataFrame(t).to_csv(p, index=False)
+            df = pd.DataFrame(t)
+            df.insert(0, 'backtest_run', _stamp_human)
+            df.to_csv(p, index=False)
             messagebox.showinfo("Exported", f"{len(t)} trades saved")
 
     tk.Button(btn, text="📁 CSV", command=_csv,

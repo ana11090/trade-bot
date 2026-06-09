@@ -382,7 +382,7 @@ def _fmt_hold_time(minutes):
     return f"{minutes}m"
 
 
-def export_trades_csv(trades, filepath, account_size=None):
+def export_trades_csv(trades, filepath, account_size=None, run_stamp=None):
     """
     Export all individual trades to a CSV file with full details.
 
@@ -416,10 +416,11 @@ def export_trades_csv(trades, filepath, account_size=None):
         if dollar_pnl is not None and account_size:
             pnl_pct = round(dollar_pnl / account_size * 100, 4)
 
-        rows.append({
-            'Trade #':         i,
-            'Entry Time':      entry_str,
-            'Exit Time':       exit_str,
+        row = {'Trade #': i, 'Entry Time': entry_str, 'Exit Time': exit_str}
+        # CHANGED: June 2026 — embed run time so the file self-identifies its source run
+        if run_stamp:
+            row['Backtest Run'] = run_stamp
+        row.update({
             'Direction':       t.get('direction', ''),
             'Entry Price':     t.get('entry_price', ''),
             'Exit Price':      t.get('exit_price', ''),
@@ -434,6 +435,7 @@ def export_trades_csv(trades, filepath, account_size=None):
             'Exit Reason':     t.get('exit_reason', ''),
             'Rule ID':         t.get('rule_id', ''),
         })
+        rows.append(row)
 
     if not rows:
         return

@@ -1000,12 +1000,20 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                 _fpath = os.path.join(_out_dir, _fname)
 
                                 if _trades:
-                                    _keys = list(_trades[0].keys())
+                                    # CHANGED: June 2026 — embed run time in every row so
+                                    #   the file self-identifies its source run even after
+                                    #   renaming.
+                                    _run_col = _meta_for_fname.get('written_at_str') or _stamp or ''
+                                    _keys = ['backtest_run'] + [k for k in _trades[0].keys()
+                                                                 if k != 'backtest_run']
                                     with open(_fpath, 'w', newline='', encoding='utf-8') as _f:
-                                        writer = csv.DictWriter(_f, fieldnames=_keys)
+                                        writer = csv.DictWriter(_f, fieldnames=_keys,
+                                                                 extrasaction='ignore')
                                         writer.writeheader()
                                         for t in _trades:
-                                            writer.writerow(t)
+                                            _row = dict(t)
+                                            _row['backtest_run'] = _run_col
+                                            writer.writerow(_row)
 
                                     messagebox.showinfo(
                                         "Trades Exported",

@@ -5236,6 +5236,29 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     }
 
 
+# CHANGED: June 2026 — single source for the backtest run timestamp, used by all
+#   export paths so every CSV self-identifies which run it came from.
+def get_last_run_stamp(output_dir):
+    """Return (stamp_for_filename, human_str) from the newest backtest_trades_*.json _meta.
+    Falls back to the current wall-clock time when no meta is available.
+    """
+    import glob, json, time, os
+    try:
+        cands = sorted(
+            glob.glob(os.path.join(output_dir, 'backtest_trades_*.json')),
+            key=os.path.getmtime, reverse=True)
+        if cands:
+            meta = json.load(open(cands[0], encoding='utf-8')).get('_meta', {})
+            human = meta.get('written_at_str')
+            if human:
+                fn = (human.replace(':', '').replace(' ', '_').replace('-', ''))
+                return fn, human
+    except Exception:
+        pass
+    human = time.strftime('%Y-%m-%d %H:%M:%S')
+    return (human.replace(':', '').replace(' ', '_').replace('-', ''), human)
+
+
 if __name__ == "__main__":
     # WHY: Read entry TF from config instead of hardcoding H1
     try:

@@ -642,7 +642,13 @@ def _export_trades():
 
     idx = _get_selected_index()
     label = _strategies[idx]['label'].replace(' × ', '_').replace(' ', '_') if idx is not None else 'trades'
-    default_name = f"trades_{label}.csv"
+    # CHANGED: June 2026 — force run timestamp into the filename so the export can never
+    #   silently overwrite/reuse a generic stale name.
+    import os as _os
+    from project2_backtesting.strategy_backtester import get_last_run_stamp
+    _out_dir = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'outputs'))
+    _stamp_fn, _stamp_human = get_last_run_stamp(_out_dir)
+    default_name = f"trades_{label}_{_stamp_fn}.csv"
 
     filepath = filedialog.asksaveasfilename(
         title="Export Trades to CSV",
@@ -655,7 +661,8 @@ def _export_trades():
 
     try:
         from project2_backtesting.prop_firm_tester import export_trades_csv
-        export_trades_csv(_current_trades, filepath, account_size=account_size)
+        export_trades_csv(_current_trades, filepath, account_size=account_size,
+                          run_stamp=_stamp_human)
         messagebox.showinfo("Export Complete",
                             f"Exported {len(_current_trades)} trades to:\n{filepath}")
     except Exception as e:
