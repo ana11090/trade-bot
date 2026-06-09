@@ -1568,7 +1568,16 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             'swap_nights':          int(swap_nights),
         })
 
-        occupied_until_idx = df.index[exit_pos]
+        # CHANGED: June 2026 — offset-aware re-entry parity (vectorized path), to match
+        #   the detailed path + the EA: free the exit bar for re-entry but never earlier
+        #   than this trade's own entry bar (_eb). Was df.index[exit_pos] → blocked
+        #   through the exit bar (one bar late).
+        _free_pos = exit_pos - 1
+        if _free_pos < _eb:
+            _free_pos = _eb
+        if _free_pos < 0:
+            _free_pos = 0
+        occupied_until_idx = df.index[_free_pos]
 
     return trades
 
