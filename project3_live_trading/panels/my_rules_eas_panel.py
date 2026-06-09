@@ -80,6 +80,15 @@ def _fmt_rule(entry):
         A("exit params   :")
         for k, v in _ep.items():
             A("    " + str(k) + " = " + str(v))
+    # CHANGED: June 2026 — surface the entry timing so it's clear whether the rule was
+    #   backtested at signal bar (N) or next bar (N+1); the EA must match this.
+    _ebo = r.get("entry_bar_offset", 0)
+    try:
+        _ebo = int(_ebo)
+    except Exception:
+        _ebo = 0
+    _ebo_label = "N (signal bar)" if _ebo == 0 else "N+1 (next bar, EA parity)"
+    A("entry timing  : offset=" + str(_ebo) + "  -> " + _ebo_label)
     A("filters       : " + str(r.get("filters_applied") or "(none)"))
     A("WR            : " + str(r.get("win_rate")))
     A("net pips      : " + str(r.get("net_total_pips") or r.get("total_pips")))
@@ -225,11 +234,17 @@ def _populate():
         _tree.delete(it)
     for i, e in enumerate(_rules_cache):
         r = e.get("rule", {})
+        _ebo_val = r.get("entry_bar_offset", 0)
+        try:
+            _ebo_val = int(_ebo_val)
+        except Exception:
+            _ebo_val = 0
         _tree.insert("", "end", iid=str(i), values=(
             e.get("id"),
             (r.get("rule_combo") or e.get("source") or "")[:40],
             r.get("entry_tf") or r.get("entry_timeframe") or "?",
             r.get("exit_name") or "?",
+            "N" if _ebo_val == 0 else "N+1",   # CHANGED: June 2026 — show entry offset
             r.get("win_rate") or "",
             r.get("net_total_pips") or r.get("total_pips") or "",
             e.get("status", ""),
@@ -253,10 +268,12 @@ def build_panel(parent):
 
     # LEFT: rule list
     left = tk.Frame(body, bg=WHITE)
-    cols = ("id", "combo", "tf", "exit", "wr", "net", "status")
+    # CHANGED: June 2026 — added "Offset" column to show N vs N+1 entry timing
+    cols = ("id", "combo", "tf", "exit", "offset", "wr", "net", "status")
     _tree = ttk.Treeview(left, columns=cols, show="headings", height=20)
     for c, t, w in [("id", "ID", 40), ("combo", "Rule", 240), ("tf", "TF", 50),
-                    ("exit", "Exit", 110), ("wr", "WR", 60), ("net", "Net pips", 80),
+                    ("exit", "Exit", 110), ("offset", "Offset", 60),
+                    ("wr", "WR", 60), ("net", "Net pips", 80),
                     ("status", "Status", 80)]:
         _tree.heading(c, text=t)
         _tree.column(c, width=w, anchor="w")
