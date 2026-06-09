@@ -2403,13 +2403,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                             exit_price  = _ec_tp
                             exit_reason = 'TAKE_PROFIT_ENTRY_CANDLE'
                         exit_time = _hit_ts
-                        # WHY: occupied_until_idx normally tracks the
-                        #      future_idx where exit fired. For entry-candle
-                        #      exits the trade closes within the entry
-                        #      candle (df.iloc[entry_pos_int + 1]).
-                        # CHANGED: May 2026 — entry-candle exit
+                        # WHY: For entry-candle exits the trade fills AND closes
+                        #      on the fill bar (entry_pos_int + 1). Setting
+                        #      occupied_until to the fill bar blocked that bar's
+                        #      CLOSE signal, so Python missed the same signal the
+                        #      EA uses to re-enter — producing a one-bar-late
+                        #      re-entry. Fix: set occupied_until to the SIGNAL
+                        #      bar (entry_pos_int) so the fill bar's close signal
+                        #      is free, matching the EA's g_lastExitEntryBarTime
+                        #      logic (blocks only the exit bar, frees the next).
+                        # CHANGED: June 2026 — block only the signal bar for
+                        #   entry-candle exits so re-entry matches EA timing
                         try:
-                            occupied_until_idx = df.index[entry_pos_int + 1]
+                            occupied_until_idx = df.index[entry_pos_int]
                         except Exception:
                             occupied_until_idx = sig_idx
                         pos["candles_held"] = 0
@@ -3721,8 +3727,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _dd_total_halted = True
 
         # Mark occupied candles and update cooldown tracker
-        occupied_until_idx = df.index[min(_eb_int + exit_idx, len(df) - 1)]
-        _last_exit_pos_fbt = min(_eb_int + exit_idx, len(df) - 1)
+        # CHANGED: June 2026 — for entry-candle exits (exit_idx=0, trade exits on the
+        #   fill bar itself), set occupied_until to one bar BEFORE the exit so the
+        #   exit bar's close signal is free — matching EA g_lastExitEntryBarTime logic
+        #   and run_backtest entry-candle path. Without this, fast_backtest also
+        #   blocked the exit bar's signal, producing one-bar-late re-entries.
+        _exit_int = min(_eb_int + exit_idx, len(df) - 1)
+        _occ_int  = max(0, _exit_int - 1) if exit_idx == 0 else _exit_int
+        occupied_until_idx = df.index[_occ_int]
+        _last_exit_pos_fbt = _exit_int
 
     if _skipped_count > 0:
         # CHANGED: April 2026 — Phase 35 Fix 1b — updated limit reference
