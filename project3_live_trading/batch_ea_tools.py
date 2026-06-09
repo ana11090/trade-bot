@@ -37,20 +37,25 @@ def _safe_name(s):
 
 
 def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=12345,
-                   limit=None):
+                   limit=None, entries=None):
     """Generate a .mq5 for every rule in the chosen store.
 
     source: 'my_rules' or 'saved_rules'.
+    entries: optional explicit list of rule entry dicts (from the panel's checkbox grid).
+             When None, falls back to loading the whole store (CLI / back-compat).
     Returns list of dicts: {name, path, rule_combo, exit_name, entry_tf, ok, error}.
     """
-    # reuse the panel's exact EA-building recipe so output matches the app
+    # CHANGED: June 2026 — accept an explicit list of rule entries (from the panel's
+    #   checkbox grid). When None, fall back to loading the whole store (CLI/back-compat).
     from project3_live_trading.panels.my_rules_eas_panel import _gen_ea_for
-    if source == 'saved_rules':
-        from shared.saved_rules import load_all
+    if entries is not None:
+        rules = list(entries)
     else:
-        from shared.my_rules import load_all
-
-    rules = load_all()
+        if source == 'saved_rules':
+            from shared.saved_rules import load_all
+        else:
+            from shared.my_rules import load_all
+        rules = load_all()
     if limit:
         rules = rules[:int(limit)]
     os.makedirs(out_dir, exist_ok=True)
