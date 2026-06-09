@@ -2450,6 +2450,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             candle_dict = future_candle.to_dict()
             if future_idx in ind.index:
                 candle_dict.update(ind.loc[future_idx].to_dict())
+            # CHANGED: June 2026 — supply next-bar open for live-realistic PSAR fill
+            #   (Fix 1: exit at next-bar open rather than this bar's close)
+            try:
+                _np_pos = df.index.get_loc(future_idx) + 1
+                if _np_pos < len(df):
+                    candle_dict["next_open"] = float(df.iloc[_np_pos]["open"])
+            except Exception:
+                pass
 
             # WHY: hard_close_hour forces all positions closed at a specific GMT
             #      hour. The EA does this to match prop firm rules or to avoid

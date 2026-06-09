@@ -1565,11 +1565,31 @@ class PSARExit(ExitStrategy):
                         # WHY: BUY exit when PSAR flips bearish (signal = 0.0).
                         #      psar_signal: 1.0 = bullish, 0.0 = bearish.
                         # CHANGED: April 2026 — PSAR flip detection
+                        # CHANGED: June 2026 — Fix 1: next-bar-open fill (live-realistic).
+                        #   Fix 2: M1 sub-candle refinement to match MT5 intrabar exit.
                         if float(psar_signal) == 0.0:
-                            return {
-                                "exit_price": float(candle["close"]),
-                                "reason": "PSAR_FLIP"
-                            }
+                            # Fix 2: try M1 sub-candle resolution first
+                            _psar_col = self.psar_signal_column.replace('_psar_signal', '_psar')
+                            _psar_price = candle.get(_psar_col)
+                            _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
+                            _subs = (_m1_loader(candle.get('timestamp'))
+                                     if (_m1_loader and _psar_price is not None) else None)
+                            if _subs is not None and len(_subs) > 0:
+                                try:
+                                    import numpy as _np
+                                    _cl = _subs['close'].to_numpy(dtype=float, copy=False)
+                                    _hits = _cl < float(_psar_price)  # BUY flip = close below PSAR
+                                    if _hits.any():
+                                        _i = int(_np.argmax(_hits))
+                                        _fill = (float(_subs['open'].iloc[_i + 1])
+                                                 if _i + 1 < len(_subs)
+                                                 else float(_subs['close'].iloc[_i]))
+                                        return {"exit_price": _fill, "reason": "PSAR_FLIP"}
+                                except Exception:
+                                    pass
+                            # Fix 1 fallback: next parent-bar open (or close if unavailable)
+                            _fill = candle.get("next_open") or candle["close"]
+                            return {"exit_price": float(_fill), "reason": "PSAR_FLIP"}
                     except (TypeError, ValueError):
                         pass
 
@@ -1599,11 +1619,28 @@ class PSARExit(ExitStrategy):
                     try:
                         # WHY: SELL exit when PSAR flips bullish (signal = 1.0).
                         # CHANGED: April 2026 — PSAR flip detection
+                        # CHANGED: June 2026 — Fix 1 + Fix 2 (mirror of BUY block above)
                         if float(psar_signal) == 1.0:
-                            return {
-                                "exit_price": float(candle["close"]),
-                                "reason": "PSAR_FLIP"
-                            }
+                            _psar_col = self.psar_signal_column.replace('_psar_signal', '_psar')
+                            _psar_price = candle.get(_psar_col)
+                            _m1_loader = pos.get('_m1_loader') if hasattr(pos, 'get') else None
+                            _subs = (_m1_loader(candle.get('timestamp'))
+                                     if (_m1_loader and _psar_price is not None) else None)
+                            if _subs is not None and len(_subs) > 0:
+                                try:
+                                    import numpy as _np
+                                    _cl = _subs['close'].to_numpy(dtype=float, copy=False)
+                                    _hits = _cl > float(_psar_price)  # SELL flip = close above PSAR
+                                    if _hits.any():
+                                        _i = int(_np.argmax(_hits))
+                                        _fill = (float(_subs['open'].iloc[_i + 1])
+                                                 if _i + 1 < len(_subs)
+                                                 else float(_subs['close'].iloc[_i]))
+                                        return {"exit_price": _fill, "reason": "PSAR_FLIP"}
+                                except Exception:
+                                    pass
+                            _fill = candle.get("next_open") or candle["close"]
+                            return {"exit_price": float(_fill), "reason": "PSAR_FLIP"}
                     except (TypeError, ValueError):
                         pass
 
