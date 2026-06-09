@@ -2070,21 +2070,30 @@ def _export_csv(trades=None):
     if not trades:
         messagebox.showinfo("No Trades", "No trades to export.")
         return
+    # CHANGED: June 2026 — stamp the run time into BOTH the default filename and an
+    #   in-file 'backtest_run' column, so an exported CSV self-identifies its source run
+    #   and can't be confused with a stale generic trades.csv. (This exporter was missed
+    #   when the other export path got the stamp.)
+    from project2_backtesting.strategy_backtester import get_last_run_stamp
+    import os as _os
+    _out_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'outputs')
+    _stamp_fn, _stamp_human = get_last_run_stamp(_os.path.abspath(_out_dir))
     fp = filedialog.asksaveasfilename(
         title="Export Trades CSV", defaultextension=".csv",
+        initialfile=f"trades_refiner_{_stamp_fn}.csv",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
     )
     if not fp:
         return
-    fieldnames = ['#','entry_time','exit_time','direction','entry_price','exit_price',
-                  'pnl_pips','cost_pips','net_pips','hold_minutes','hold_display',
-                  'session','day_of_week','exit_reason','rule_id']
+    fieldnames = ['backtest_run','#','entry_time','exit_time','direction','entry_price',
+                  'exit_price','pnl_pips','cost_pips','net_pips','hold_minutes',
+                  'hold_display','session','day_of_week','exit_reason','rule_id']
     try:
         with open(fp, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
             w.writeheader()
             for i, t in enumerate(trades, 1):
-                row = {'#': i, **t}
+                row = {'#': i, 'backtest_run': _stamp_human, **t}
                 # WHY: Vectorized backtest stores gross pips as 'pips',
                 #      non-vectorized as 'pnl_pips'. Normalize for CSV export.
                 # CHANGED: May 2026 — normalize pnl_pips field name
