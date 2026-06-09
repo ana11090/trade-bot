@@ -1928,6 +1928,27 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         except (TypeError, ValueError):
                             pass
 
+                    # CHANGED: June 2026 — honor each rule's SAVED entry_bar_offset on
+                    #   re-run, so a rule always re-runs at the N/N+1 it was built with.
+                    #   Falls back to the checkbox selection only if no rule specifies one.
+                    _saved_offsets = []
+                    for _r in (selected_rules or []):
+                        _o = _r.get('entry_bar_offset', None)
+                        if _o is not None:
+                            try:
+                                _saved_offsets.append(int(_o))
+                            except Exception:
+                                pass
+                    _checkbox_offsets = [o for o, v in
+                        [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
+                        if v is not None and v.get()] or [0]
+                    if _saved_offsets:
+                        _use_offsets = sorted(set(_saved_offsets))
+                        print("[ENTRY-OFFSET] using saved rule offset(s): %s "
+                              "(checkboxes overridden)" % _use_offsets)
+                    else:
+                        _use_offsets = _checkbox_offsets
+
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -1981,10 +2002,9 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         # CHANGED: April 2026 — min hold parity with MT5 EA
                         # CHANGED: June 2026 — always pass _cfg_min_hold (not gated by _a48_use_cfg)
                         min_hold_minutes=_cfg_min_hold,
-                        # WHY: Build offset list from checkboxes. At least one must be selected.
-                        # CHANGED: May 2026 — entry bar offset toggle
-                        entry_bar_offsets=[o for o, v in [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
-                                           if v is not None and v.get()] or [0],
+                        # CHANGED: June 2026 — use saved rule offset (computed above);
+                        #   falls back to checkboxes when no rule specifies one.
+                        entry_bar_offsets=_use_offsets,
                         # WHY: DD circuit breaker — stop generating trades when
                         #      daily/total DD alert threshold is hit. Matches EA's
                         #      EvalDailyDDAlert / EvalTotalDDAlert behavior.

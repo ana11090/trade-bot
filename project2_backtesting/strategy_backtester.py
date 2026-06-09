@@ -2455,7 +2455,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                         exit_price  = float(future_candle["open"])
                         exit_time   = future_candle["timestamp"]
                         exit_reason = "HARD_CLOSE_HOUR"
-                        occupied_until_idx = future_idx
+                        # CHANGED: June 2026 — offset-aware re-entry parity (hard close)
+                        try:
+                            _fpos = df.index.get_loc(future_idx)
+                        except Exception:
+                            _fpos = None
+                        if _fpos is not None and _fpos > 0:
+                            _free_pos = _fpos - 1
+                            if _free_pos < _eb_int:
+                                _free_pos = _eb_int
+                            occupied_until_idx = df.index[_free_pos]
+                        else:
+                            occupied_until_idx = future_idx
                         break
                 except Exception:
                     pass
@@ -2465,7 +2476,23 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 exit_price  = result["exit_price"]
                 exit_time   = future_candle["timestamp"]
                 exit_reason = result["reason"]
-                occupied_until_idx = future_idx
+                # CHANGED: June 2026 — offset-aware re-entry parity. MT5 re-enters on
+                #   the SAME bar the prior trade closed; Python blocked through the exit
+                #   bar (one bar late). Free the exit bar by setting occupied_until to
+                #   the bar BEFORE it — but never earlier than the actual ENTRY bar
+                #   (_eb_int), so a new entry can't open on/before this trade's own
+                #   entry bar regardless of N vs N+1 offset.
+                try:
+                    _fpos = df.index.get_loc(future_idx)
+                except Exception:
+                    _fpos = None
+                if _fpos is not None and _fpos > 0:
+                    _free_pos = _fpos - 1
+                    if _free_pos < _eb_int:
+                        _free_pos = _eb_int
+                    occupied_until_idx = df.index[_free_pos]
+                else:
+                    occupied_until_idx = future_idx
                 break
 
         if exit_price is None:
