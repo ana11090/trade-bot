@@ -1805,6 +1805,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         #      the basic ATR handle for per-trade state tracking.
         # CHANGED: April 2026 — extended globals for new ATR exits
         if exit_class == 'ATRBreakevenTrail':
+            # CHANGED: June 2026 — APPEND MaxHoldCandles to the ATR inputs from the shared
+            #   block. ATRBreakevenTrail exit_management uses MaxHoldCandles but never
+            #   declared it → undeclared identifier compile error. Same fix as ATRFixedSLTP.
+            exit_inputs = exit_inputs + (
+                f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles (0=disabled)\n'
+            )
             exit_globals = (
                 f'int handle_exit_atr;\n'
                 f'double g_entrySL = 0.0;\n'
@@ -1935,6 +1941,14 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
                 f'      }}\n'
                 f'      g_entryBarIndex = Bars(_Symbol, {mql_period});\n'
+            )
+            # CHANGED: June 2026 — declare the inputs the PSAR exit_management uses.
+            #   PSARExit references PSAR_SettleCandles and MaxHoldCandles but never
+            #   declared them → generated EA failed to compile (undeclared identifier).
+            #   APPEND (not overwrite) so the shared ATR inputs from the entry block survive.
+            exit_inputs = exit_inputs + (
+                f'input int    PSAR_SettleCandles = {min_candles_before_psar};   // bars before PSAR flip can exit\n'
+                f'input int    MaxHoldCandles     = {max_candles};               // force close after N candles (0=disabled)\n'
             )
             _tg_psar = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
             if is_buy:
