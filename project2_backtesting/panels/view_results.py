@@ -894,14 +894,38 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                 _trades_file = os.path.join(_out_dir, f'backtest_trades_{_entry_tf}.json')
 
                                 _trades = []
+                                _all_trades = {}  # CHANGED: June 2026 — init before conditional load (for _meta stamp)
                                 if os.path.exists(_trades_file):
                                     try:
                                         import json as _tj
                                         with open(_trades_file, 'r', encoding='utf-8') as _tf:
                                             _all_trades = _tj.load(_tf)
+
+                                        # CHANGED: June 2026 — freshness guard: warn if this
+                                        #   per-TF file is older than the matrix (i.e. the latest
+                                        #   backtest run didn't include this TF).
+                                        _matrix_file = os.path.join(_out_dir, 'backtest_matrix.json')
+                                        _stale = False
+                                        _tf_mtime = os.path.getmtime(_trades_file) if os.path.exists(_trades_file) else 0
+                                        _mx_mtime = os.path.getmtime(_matrix_file) if os.path.exists(_matrix_file) else 0
+                                        if _tf_mtime and _mx_mtime and _tf_mtime < _mx_mtime - 1:
+                                            _stale = True
+                                        _meta = _all_trades.get('_meta', {}) if isinstance(_all_trades, dict) else {}
+                                        _run_str = _meta.get('written_at_str', 'unknown')
+                                        if _stale:
+                                            if not messagebox.askyesno(
+                                                "Stale trades?",
+                                                "The %s trades file is OLDER than the last backtest run.\n"
+                                                "It was written: %s\n\n"
+                                                "This timeframe may NOT reflect your latest run. "
+                                                "Re-run the backtest for %s first.\n\nExport anyway?"
+                                                % (_entry_tf, _run_str, _entry_tf)):
+                                                return
+
                                         # Find the matching combo index
                                         # The trades file keys are string indices from
                                         # the per-TF run. We need to match by combo name + exit.
+                                        # Skip the _meta key — it's metadata, not a combo.
                                         _target_combo = result_row.get('rule_combo', '')
                                         _target_exit = result_row.get('exit_strategy',
                                                         result_row.get('exit_name', ''))
@@ -922,7 +946,8 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                             _str_idx = str(_persisted_key)
                                         else:
                                             _str_idx = str(result_idx)
-                                        if _str_idx in _all_trades:
+                                        # CHANGED: June 2026 — skip _meta key (Fix 3)
+                                        if _str_idx in _all_trades and _str_idx != '_meta':
                                             _trades = _all_trades[_str_idx]
                                         else:
                                             # Search by combo+exit name match
@@ -940,8 +965,9 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                                     if (_tr.get('rule_combo', '') == _target_combo and
                                                         (_tr.get('exit_strategy', '') == _target_exit or
                                                          _tr.get('exit_name', '') == _target_exit)):
-                                                        if str(_ti) in _all_trades:
-                                                            _trades = _all_trades[str(_ti)]
+                                                        _ti_str = str(_ti)
+                                                        if _ti_str in _all_trades and _ti_str != '_meta':
+                                                            _trades = _all_trades[_ti_str]
                                                             break
                                     except Exception as _load_e:
                                         print(f"[A.47] Could not load trades from {_trades_file}: {_load_e}")
@@ -966,7 +992,11 @@ def _display_results_inner(output_text, summary_frame, data, results,
                                 _clean_combo = _combo.replace(' ', '_').replace('/', '_')[:30]
                                 _clean_exit = _exit.replace(' ', '_').replace('/', '_')[:20]
                                 _tf_tag = f"_{_entry_tf}" if _entry_tf else ""
-                                _fname = f"trades_{_clean_combo}_{_clean_exit}{_tf_tag}.csv"
+                                # CHANGED: June 2026 — stamp filename with run time so a
+                                #   downloaded CSV self-identifies its source run.
+                                _meta_for_fname = _all_trades.get('_meta', {}) if isinstance(_all_trades, dict) else {}
+                                _stamp = (_meta_for_fname.get('written_at_str','') or '').replace(':','').replace(' ','_').replace('-','')
+                                _fname = f"trades_{_clean_combo}_{_clean_exit}{_tf_tag}_{_stamp or 'run'}.csv"
                                 _fpath = os.path.join(_out_dir, _fname)
 
                                 if _trades:

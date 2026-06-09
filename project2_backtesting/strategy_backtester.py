@@ -5157,7 +5157,15 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     # Save trades to separate per-TF file
     trades_path = os.path.join(output_dir, f'backtest_trades_{timeframe}.json')
     try:
-        trades_data = {}
+        import time as _t
+        trades_data = {
+            # CHANGED: June 2026 — stamp run time so exports can detect stale per-TF files
+            '_meta': {
+                'written_at':     _t.time(),
+                'written_at_str': _t.strftime('%Y-%m-%d %H:%M:%S'),
+                'timeframe':      timeframe,
+            }
+        }
         for idx, m in enumerate(summary):
             # WHY: Persist the original enumerate index so the refiner can
             #      find the right trades-file key even after the panel
