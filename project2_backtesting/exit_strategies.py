@@ -777,12 +777,21 @@ class ATRBased(ExitStrategy):
     #      Using mt5_atr_14 makes Python lot sizing and SL/TP match MT5.
     # CHANGED: April 2026 — switch to MT5-parity ATR column
     def __init__(self, sl_atr_mult=1.5, tp_atr_mult=3.0, atr_column="H1_mt5_atr_14",
-                 max_candles=1000):
+                 max_candles=1000, entry_tf=None):
         super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
                          max_candles=max_candles)
         self.sl_atr_mult = sl_atr_mult
         self.tp_atr_mult = tp_atr_mult
-        self.atr_column  = atr_column
+        # CHANGED: June 2026 — guard against a saved atr_column of None/'' (which made
+        #   candle.get(None) → _entry_atr None → junk 150/450-pip SL/TP). Fall back to
+        #   the entry-TF MT5 ATR (matches the EA, which derives its ATR timeframe from
+        #   this same column), else the legacy H1 default.
+        if atr_column:
+            self.atr_column = atr_column
+        elif entry_tf:
+            self.atr_column = f"{entry_tf}_mt5_atr_14"
+        else:
+            self.atr_column = "H1_mt5_atr_14"
         # WHY (Phase A.14): defensive max-hold cap. Without it, trades
         #      where the ATR column is missing at entry (_entry_atr=None)
         #      run to end-of-data and hang Run Backtest. Also catches
@@ -914,12 +923,21 @@ class ATRFixedSLTP(ExitStrategy):
     name = "ATR Fixed SL/TP"
 
     def __init__(self, sl_atr_mult=1.0, tp_atr_mult=2.5, atr_column="H1_mt5_atr_14",
-                 max_candles=200, pip_size=0.01):
+                 max_candles=200, pip_size=0.01, entry_tf=None):
         super().__init__(pip_size=pip_size, sl_atr_mult=sl_atr_mult,
                          tp_atr_mult=tp_atr_mult, max_candles=max_candles)
         self.sl_atr_mult = sl_atr_mult
         self.tp_atr_mult = tp_atr_mult
-        self.atr_column  = atr_column
+        # CHANGED: June 2026 — guard against a saved atr_column of None/'' (which made
+        #   candle.get(None) → _entry_atr None → junk 150/450-pip SL/TP). Fall back to
+        #   the entry-TF MT5 ATR (matches the EA, which derives its ATR timeframe from
+        #   this same column), else the legacy H1 default.
+        if atr_column:
+            self.atr_column = atr_column
+        elif entry_tf:
+            self.atr_column = f"{entry_tf}_mt5_atr_14"
+        else:
+            self.atr_column = "H1_mt5_atr_14"
         self.max_candles  = max_candles
         # WHY: sl_pips and tp_pips are set per trade in on_entry().
         #      Default to 150/300 so the strategy is safe to use even
@@ -1060,7 +1078,7 @@ class ATRBreakevenTrail(ExitStrategy):
                  max_candles=200, pip_size=0.01,
                  # WHY: Gate BE lock and trail during min_hold window.
                  # CHANGED: April 2026 — min hold parity
-                 min_hold_seconds=0):
+                 min_hold_seconds=0, entry_tf=None):
         super().__init__(pip_size=pip_size,
                          sl_atr_mult=sl_atr_mult,
                          breakeven_atr_mult=breakeven_atr_mult,
@@ -1073,7 +1091,16 @@ class ATRBreakevenTrail(ExitStrategy):
         self.trail_activation_atr_mult = trail_activation_atr_mult
         self.trail_atr_mult            = trail_atr_mult
         self.tp_atr_mult               = tp_atr_mult
-        self.atr_column                = atr_column
+        # CHANGED: June 2026 — guard against a saved atr_column of None/'' (which made
+        #   candle.get(None) → _entry_atr None → junk 150/450-pip SL/TP). Fall back to
+        #   the entry-TF MT5 ATR (matches the EA, which derives its ATR timeframe from
+        #   this same column), else the legacy H1 default.
+        if atr_column:
+            self.atr_column = atr_column
+        elif entry_tf:
+            self.atr_column = f"{entry_tf}_mt5_atr_14"
+        else:
+            self.atr_column = "H1_mt5_atr_14"
         self.max_candles               = max_candles
         self.min_hold_seconds          = int(min_hold_seconds or 0)
         # WHY: sl_pips set in on_entry() for lot sizing via
@@ -1513,10 +1540,12 @@ class PSARExit(ExitStrategy):
                 try:
                     from shared.logging_setup import get_logger
                     _log = get_logger(__name__)
+                    # CHANGED: June 2026 — make the missing-ATR fallback unmistakable in logs
                     _log.warning(
-                        f"[PSARExit] ATR column '{self.atr_column}' missing or "
-                        f"invalid at entry. Using fixed fallback sl=150 pips. "
-                        f"(Warning shown once.)"
+                        "[PSARExit] entry ATR missing (atr_column=%r) — using junk "
+                        "150/450-pip SL/TP. Trades will NOT hit realistic stops. "
+                        "Check the rule's atr_column. (Warning shown once.)",
+                        self.atr_column
                     )
                 except Exception:
                     pass
