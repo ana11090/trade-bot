@@ -531,11 +531,15 @@ def build_sidebar(window, canvas, refresh_map):
     btn_p3_monitor.pack(fill="x")
     btn_p3_myrules    = _sub_btn(project3_extras, "📋 My Rules & EAs",  lambda: show_panel("p3_myrules_eas"))
     btn_p3_myrules.pack(fill="x")
+    # CHANGED: June 2026 — batch EAs panel
+    btn_p3_batch      = _sub_btn(project3_extras, "🗂 Batch EAs",       lambda: show_panel("p3_batch_eas"))
+    btn_p3_batch.pack(fill="x")
 
     PROJECT3_BUTTONS = {
         "p3_generator":   btn_p3_generator,
         "p3_monitor":     btn_p3_monitor,
         "p3_myrules_eas": btn_p3_myrules,
+        "p3_batch_eas":   btn_p3_batch,     # CHANGED: June 2026
     }
 
     btn4 = _sidebar_btn(inner_frame, "4 - Strategy Creation", _toggle_project4)

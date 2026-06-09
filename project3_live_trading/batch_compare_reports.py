@@ -67,15 +67,40 @@ def _read_python_entries(csv_path):
     return sorted(out)
 
 
-def _python_trades_for(name, python_dir):
-    """Locate the Python trades CSV for an EA name. Adjust to your export layout.
+def _clean_combo(combo):
+    # WHY: mirror view_results.py:992 exactly so names line up.
+    # CHANGED: June 2026
+    return str(combo).replace(' ', '_').replace('/', '_')[:30]
 
-    Tries, in order:
-      <python_dir>/<name>.csv
-      <python_dir>/<name>_trades.csv
-      <python_dir>/trades_<name>.csv
-    Falls back to a single shared <python_dir>/trades.csv if present (one-rule case).
+
+def _clean_exit(ex):
+    # WHY: mirror view_results.py:993 exactly.
+    # CHANGED: June 2026
+    return str(ex).replace(' ', '_').replace('/', '_')[:20]
+
+
+def _python_trades_for(name, python_dir, rec=None):
+    """Locate the Python trades CSV for an EA.
+
+    Preferred path (rec given from manifest): reconstruct the backtester's export
+    name  trades_{clean_combo}_{clean_exit}{_tf}_{stamp}.csv  and glob the stamp,
+    returning the NEWEST match. Falls back to the old name-based candidates.
     """
+    # WHY: manifest-driven match against the real exporter naming scheme.
+    # CHANGED: June 2026 — view_results exports trades_{combo}_{exit}{_tf}_{stamp}.csv
+    if rec:
+        combo = rec.get('rule_combo') or name
+        ex = rec.get('exit_name') or ''
+        tf = rec.get('entry_tf') or ''
+        tf_tag = ('_' + tf) if tf else ''
+        pat = 'trades_%s_%s%s_*.csv' % (_clean_combo(combo), _clean_exit(ex), tf_tag)
+        hits = glob.glob(os.path.join(python_dir, pat))
+        if hits:
+            # newest run wins (the stamp guard means many runs may coexist)
+            hits.sort(key=os.path.getmtime, reverse=True)
+            return hits[0]
+
+    # Fallback: legacy/simple layouts.
     cands = [
         os.path.join(python_dir, name + '.csv'),
         os.path.join(python_dir, name + '_trades.csv'),
@@ -112,11 +137,15 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
 
     Prints a table and returns the list of row dicts.
     """
-    # name -> rule_combo from manifest (optional, for nicer labels)
+    # WHY: keep full manifest record per name so we can rebuild the export filename,
+    #      not just a display label.
+    # CHANGED: June 2026
     label = {}
+    rec_by_name = {}
     if manifest_path and os.path.exists(manifest_path):
         try:
             for rec in json.load(open(manifest_path, encoding='utf-8')):
+                rec_by_name[rec['name']] = rec
                 label[rec['name']] = rec.get('rule_combo', rec['name'])
         except Exception:
             pass
@@ -133,7 +162,7 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     for rp in reports:
         name = os.path.splitext(os.path.basename(rp))[0]
         mt5 = _read_mt5_entries(rp)
-        py_csv = _python_trades_for(name, python_dir)
+        py_csv = _python_trades_for(name, python_dir, rec_by_name.get(name))
         if not py_csv:
             print('%-32s %5d   no python trades found' % (name[:32], len(mt5)))
             rows.append(dict(name=name, mt5=len(mt5), error='no_python'))
@@ -159,6 +188,18 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     print('Columns: exact=same-bar entries; early/late=Python off by one bar;')
     print('         after=Python trades past MT5 end (expected if Python ran longer).')
     return rows
+
+
+def compare_reports(reports_dir, python_dir, manifest_path=''):
+    # WHY: panel wants printable lines, not dicts; capture compare_folder's stdout.
+    # CHANGED: June 2026
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        compare_folder(reports_dir, python_dir,
+                       manifest_path=manifest_path or None)
+    return buf.getvalue().splitlines()
 
 
 if __name__ == '__main__':
