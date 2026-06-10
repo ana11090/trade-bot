@@ -778,6 +778,21 @@ def _extract_required_indicators(rules, exit_strategies=None):
                 if len(_parts) == 2 and _parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
                     required.setdefault(_parts[0], set()).add(_parts[1])
 
+            # CHANGED: June 2026 — PSARExit reads psar_signal_column (e.g. M5_psar_signal)
+            #   but it was NOT being added to the compute list, so the column was never
+            #   built and the PSAR flip exit silently never fired (trades rode to SL/TP).
+            #   Add both 'psar_signal' (the column name) and 'psar' (the compute group key)
+            #   so map_rule_indicators_to_compute_groups triggers the psar build group.
+            #   Computing 'psar' builds BOTH {tf}_psar (price) and {tf}_psar_signal (0/1),
+            #   so the sub-candle price path (psar_signal_column.replace('_signal',''))
+            #   is also satisfied by this single addition.
+            _psar_col = getattr(es, 'psar_signal_column', None)
+            if _psar_col and isinstance(_psar_col, str):
+                _parts = _psar_col.split('_', 1)
+                if len(_parts) == 2 and _parts[0] in ('M5', 'M15', 'H1', 'H4', 'D1'):
+                    required.setdefault(_parts[0], set()).add(_parts[1])  # 'psar_signal'
+                    required.setdefault(_parts[0], set()).add('psar')     # ensure group loads
+
     return {tf: sorted(list(inds)) for tf, inds in required.items()}
 
 

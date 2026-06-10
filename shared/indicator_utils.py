@@ -732,6 +732,7 @@ INDICATOR_GROUP_MAP = {
     "ichimoku": "ichimoku",
     "price_above_cloud": "ichimoku",
     "psar": "psar",
+    "psar_signal": "psar",   # CHANGED: June 2026 — psar_signal column needs the psar compute group
     "vwap": "vwap",
     "vwap_distance": "vwap",
     "supertrend": "supertrend",       # legacy key — group still loads atr_band_upper/lower
