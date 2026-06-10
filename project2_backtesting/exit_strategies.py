@@ -1486,15 +1486,33 @@ class PSARExit(ExitStrategy):
                  max_candles=200, pip_size=0.01,
                  # WHY: Gate PSAR flip exit during min_hold window. Matches EA.
                  # CHANGED: April 2026 — min hold parity
-                 min_hold_seconds=0):
+                 min_hold_seconds=0,
+                 entry_tf=None):
         super().__init__(pip_size=pip_size,
                          sl_atr_mult=sl_atr_mult,
                          tp_atr_mult=tp_atr_mult,
                          max_candles=max_candles)
         self.sl_atr_mult          = sl_atr_mult
         self.tp_atr_mult          = tp_atr_mult
-        self.atr_column           = atr_column
-        self.psar_signal_column   = psar_signal_column
+        # CHANGED: June 2026 — PSAR exit must read the ENTRY-TF PSAR (MT5 uses iSAR on the
+        #   entry chart). Reading H1_psar_signal for an M5 rule meant the flip exit never
+        #   fired → trades rode to SL/TP (255) instead of flipping out at ~10 min like MT5
+        #   (PSARFlipExit, median 10 min). Default both columns to entry_tf; keep any
+        #   explicit non-null, non-H1-default saved value; fall back to H1 only if unknown.
+        #   The != "H1_..." guards ensure a stored hardcoded-H1 default for a non-H1 rule
+        #   is corrected to the entry TF on reconstruction via _build_exit_strategy.
+        if psar_signal_column and psar_signal_column != "H1_psar_signal":
+            self.psar_signal_column = psar_signal_column
+        elif entry_tf:
+            self.psar_signal_column = f"{entry_tf}_psar_signal"
+        else:
+            self.psar_signal_column = psar_signal_column or "H1_psar_signal"
+        if atr_column and atr_column != "H1_mt5_atr_14":
+            self.atr_column = atr_column
+        elif entry_tf:
+            self.atr_column = f"{entry_tf}_mt5_atr_14"
+        else:
+            self.atr_column = atr_column or "H1_mt5_atr_14"
         # WHY: Skip PSAR check for the first N candles after entry.
         #      PSAR sometimes hasn't "caught up" to a new entry yet —
         #      it can still be flipped against the trade from the prior
@@ -1697,14 +1715,21 @@ class ATRTrailing(ExitStrategy):
                  max_candles=1000, pip_size=0.01,
                  # WHY: Gate trail ratchet during min_hold window. Matches EA.
                  # CHANGED: April 2026 — min hold parity
-                 min_hold_seconds=0):
+                 min_hold_seconds=0,
+                 entry_tf=None):
         super().__init__(sl_atr_mult=sl_atr_mult, tp_atr_mult=tp_atr_mult,
                          activation_pips=activation_pips,
                          trail_distance_pips=trail_distance_pips,
                          max_candles=max_candles, pip_size=pip_size)
         self.sl_atr_mult         = sl_atr_mult
         self.tp_atr_mult         = tp_atr_mult
-        self.atr_column          = atr_column
+        # CHANGED: June 2026 — guard atr_column; default to entry TF (EA parity), not H1
+        if atr_column:
+            self.atr_column = atr_column
+        elif entry_tf:
+            self.atr_column = f"{entry_tf}_mt5_atr_14"
+        else:
+            self.atr_column = "H1_mt5_atr_14"
         self.activation_pips     = activation_pips
         self.trail_distance_pips = trail_distance_pips
         self.max_candles         = max_candles
@@ -1876,12 +1901,20 @@ class IndicatorExit(ExitStrategy):
                  max_candles=500, pip_size=0.01,
                  # WHY: Gate indicator-based exit during min_hold window.
                  # CHANGED: April 2026 — min hold parity
-                 min_hold_seconds=0):
+                 min_hold_seconds=0,
+                 entry_tf=None):
         super().__init__(pip_size=pip_size, sl_pips=sl_pips,
                          exit_indicator=exit_indicator, exit_threshold=exit_threshold,
                          max_candles=max_candles)
         self.sl_pips          = sl_pips
-        self.exit_indicator   = exit_indicator
+        # CHANGED: June 2026 — guard exit_indicator; default its TF to the entry TF.
+        #   Keeps a valid saved indicator; only fills when missing.
+        if exit_indicator:
+            self.exit_indicator = exit_indicator
+        elif entry_tf:
+            self.exit_indicator = f"{entry_tf}_mt5_rsi_14"
+        else:
+            self.exit_indicator = "H1_mt5_rsi_14"
         self.exit_threshold   = exit_threshold
         self.exit_direction   = exit_direction
         self.min_hold_seconds = int(min_hold_seconds or 0)
@@ -2066,11 +2099,13 @@ def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
         # CHANGED: April 2026 — PSAR exit
         PSARExit(sl_atr_mult=1.5, tp_atr_mult=4.0,
                  psar_signal_column=f"{entry_tf}_psar_signal" if entry_tf else "H1_psar_signal",
-                 atr_column=_atr_col, max_candles=200, pip_size=pip_size),
+                 atr_column=_atr_col, max_candles=200, pip_size=pip_size,
+                 entry_tf=entry_tf),
         PSARExit(sl_atr_mult=1.0, tp_atr_mult=3.0,
                  psar_signal_column=f"{entry_tf}_psar_signal" if entry_tf else "H1_psar_signal",
                  atr_column=_atr_col, min_candles_before_psar=3,
-                 max_candles=150, pip_size=pip_size),
+                 max_candles=150, pip_size=pip_size,
+                 entry_tf=entry_tf),
         TrailingStop(sl_pips=150, activation_pips=50,  trail_distance_pips=100,
                      tp_pips=750, max_candles=1000, pip_size=pip_size),
         TrailingStop(sl_pips=150, activation_pips=100, trail_distance_pips=150,
@@ -2084,8 +2119,11 @@ def get_default_exit_strategies(pip_size=0.01, entry_tf=None):
         # WHY: MT5 parity — H1_rsi_14 (ta library) diverges from MT5 iRSI.
         #      H1_mt5_rsi_14 uses Wilder's smoothing seeded with SMA(period).
         # CHANGED: April 2026 — MT5-parity RSI for IndicatorExit
-        IndicatorExit(sl_pips=150, exit_indicator="H1_mt5_rsi_14",
-                      exit_threshold=70, exit_direction="above", pip_size=pip_size),
+        # CHANGED: June 2026 — use entry TF for RSI column (was hardcoded H1)
+        IndicatorExit(sl_pips=150,
+                      exit_indicator=f"{entry_tf}_mt5_rsi_14" if entry_tf else "H1_mt5_rsi_14",
+                      exit_threshold=70, exit_direction="above", pip_size=pip_size,
+                      entry_tf=entry_tf),
         HybridExit(sl_pips=150, breakeven_activation_pips=50,
                    trail_distance_pips=100, max_candles=12, pip_size=pip_size),
         HybridExit(sl_pips=150, breakeven_activation_pips=100,

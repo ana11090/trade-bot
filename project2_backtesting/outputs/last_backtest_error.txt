@@ -1,11 +1,15 @@
 === TK CALLBACK EXCEPTION ===
-Time:  2026-06-06T19:18:26.583383
-Type:  KeyboardInterrupt
-Error: KeyboardInterrupt()
+Time:  2026-06-10T10:03:18.652949
+Type:  KeyError
+Error: KeyError('win_rate')
 
 --- Full traceback ---
 Traceback (most recent call last):
-  File "C:\Users\anicu\AppData\Local\Programs\Python\Python39\lib\tkinter\__init__.py", line 1889, in __call__
-    try:
-KeyboardInterrupt
+  File "C:\Users\anani\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "c:\Users\anani\my git delete\trade-bot\project3_live_trading\panels\ea_generator_panel.py", line 455, in _update_strat_info
+    text = (f"{s['total_trades']} trades  |  WR {s['win_rate']:.1f}%  |  "
+                                                 ~^^^^^^^^^^^^
+KeyError: 'win_rate'
 

@@ -205,19 +205,33 @@ def generate_ea(
 
     # WHY: Read min hold from firm restrictions if not explicitly set.
     # CHANGED: April 2026 — min hold from firm
+    # CHANGED: June 2026 — was missing top-level 'challenges' path so the EA read 0
+    #   and never gated min hold → 22 same-bar (0-min) exits. Added path b.
+    _firm_min_sec = 0  # exact seconds from firm dict, used to emit MinHoldSeconds input
     if min_hold_minutes == 0 and prop_firm:
         try:
-            _restrictions = prop_firm.get('restrictions', {})
-            if not _restrictions:
-                _firm_d = prop_firm.get('firm_data', {})
-                _ch = _firm_d.get('challenges', [{}])[0]
-                _restrictions = _ch.get('restrictions', {})
-            _min_sec = int(_restrictions.get('min_trade_duration_seconds', 0))
+            _min_sec = 0
+            # a) explicit flat restrictions key
+            _r = prop_firm.get('restrictions') or {}
+            # b) top-level challenges (leveraged.json actual structure)
+            if not _r and isinstance(prop_firm.get('challenges'), list) and prop_firm['challenges']:
+                _r = prop_firm['challenges'][0].get('restrictions', {}) or {}
+            # c) nested under firm_data
+            if not _r:
+                _fd = prop_firm.get('firm_data', {}) or {}
+                if isinstance(_fd.get('challenges'), list) and _fd['challenges']:
+                    _r = _fd['challenges'][0].get('restrictions', {}) or {}
+            _min_sec = int(_r.get('min_trade_duration_seconds', 0) or 0)
             if _min_sec > 0:
-                min_hold_minutes = max(1, _min_sec // 60)
+                _firm_min_sec = _min_sec
+                # Round UP: a 90s rule must never allow a 60s hold.
+                min_hold_minutes = max(1, (_min_sec + 59) // 60)
                 print(f"[EA GEN] Min hold from firm: {_min_sec}s = {min_hold_minutes}min")
-        except Exception:
-            pass
+        except Exception as _e:
+            print(f"[EA GEN] WARNING: min-hold extraction failed: {_e}")
+    # Exact seconds gate: use firm value when available, else derive from minutes.
+    # This makes MinHoldSeconds precise for sub-minute firm rules (e.g. 90s → 90, not 60).
+    _min_hold_seconds = _firm_min_sec if _firm_min_sec > 0 else (min_hold_minutes * 60)
     restrictions  = prop_firm.get('restrictions', {}) if prop_firm else {}
     challenge     = prop_firm.get('challenge', {}) if prop_firm else {}
 
@@ -291,6 +305,7 @@ def generate_ea(
             day_filter=day_filter or [1, 2, 3, 4, 5],
             hour_filter=hour_filter,
             min_hold_minutes=min_hold_minutes,
+            min_hold_seconds=_min_hold_seconds,
             cooldown_minutes=cooldown_minutes,
             news_filter_minutes=news_filter_minutes,
             max_spread_pips=max_spread_pips,
@@ -552,6 +567,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                   no_trades_window_end_hour,
                   dd_daily_pct, dd_total_pct, dd_safety_pct, consistency_pct,
                   grade, score, base_stats, prop_firm_name,
+                  min_hold_seconds=0,
                   stage='evaluation', trading_rules=None,
                   dd_mechanics=None, account_size=10000,
                   restrictions=None, challenge=None,
@@ -1027,7 +1043,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 
     day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     if not day_filter or set(day_filter) == {1, 2, 3, 4, 5}:
-        day_comment = 'All days'
+        day_comment = 'Mon-Fri (weekends have no candles)'
     else:
         day_comment = ', '.join(day_names[d - 1] for d in day_filter if 1 <= d <= 7)
 
@@ -1833,7 +1849,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             )
             _be_pos_chk = (
                 f'         datetime _openT = (datetime)PositionGetInteger(POSITION_TIME);\n'
-                f'         if((int)(TimeCurrent()-_openT) < MinHoldMinutes*60) continue;\n'
+                f'         if((int)(TimeCurrent()-_openT) < MinHoldSeconds) continue;\n'
             ) if min_hold_minutes > 0 else ''
             _tg_be = 'if(IsMinHoldMet()) ' if min_hold_minutes > 0 else ''
             exit_management = (
@@ -2099,11 +2115,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         # Per-position min hold check for breakeven/trailing
         _hybrid_pos_check = (
             f'      // Per-position min hold check: skip breakeven/trailing if not aged enough\n'
-            f'      if(MinHoldMinutes > 0)\n'
+            f'      if(MinHoldSeconds > 0)\n'
             f'      {{\n'
             f'         datetime _openT = (datetime)PositionGetInteger(POSITION_TIME);\n'
             f'         int _holdSec = (int)(TimeCurrent() - _openT);\n'
-            f'         if(_holdSec < MinHoldMinutes * 60) continue;  // Skip this position\n'
+            f'         if(_holdSec < MinHoldSeconds) continue;  // Skip this position\n'
             f'      }}\n'
         ) if min_hold_minutes > 0 else ''
         exit_management = (
@@ -2241,7 +2257,7 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
 //+------------------------------------------------------------------+
 bool IsMinHoldMet()
 {{
-   if(MinHoldMinutes <= 0) return true;
+   if(MinHoldSeconds <= 0) return true;
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {{
@@ -2254,7 +2270,7 @@ bool IsMinHoldMet()
       datetime now = TimeCurrent();
       int holdSec = (int)(now - openTime);
 
-      if(holdSec < MinHoldMinutes * 60)
+      if(holdSec < MinHoldSeconds)
       {{
          // At least one position hasn't met min hold time
          return false;
@@ -2510,7 +2526,8 @@ input int    NoTradesWindowEndHourGMT   = {no_trades_window_end_hour};        //
 input int    TradingHourStartGMT        = {trading_hour_start};               // Optional entry window start GMT hour, inclusive (-1=disabled). Defaulted from optimizer hours filter when present.
 input int    TradingHourEndGMT          = {trading_hour_end};                 // Optional entry window end GMT hour, exclusive. Wraps midnight when end<=start (-1=disabled)
 input int    CooldownMinutes    = {cooldown_minutes};        // Min minutes between trades
-input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time
+input int    MinHoldMinutes     = {min_hold_minutes};        // Min hold time (display only)
+input int    MinHoldSeconds     = {min_hold_seconds};        // Min hold time in seconds (exact gate)
 input bool   UseNextBarEntry    = {'true' if use_next_bar else 'false'};       // Wait 1 bar before entry (legacy parity with offset=1 backtest)
 input bool   UseNewsFilter      = {'true' if news_filter_minutes > 0 else 'false'};  // Skip trading around news
 input int    NewsFilterMinutes  = {news_filter_minutes};     // Minutes before/after news
@@ -2757,8 +2774,11 @@ void OnTick()
    // CHANGED: May 2026 — same-bar re-eval after mid-bar exit
    datetime currentBarTime = iTime(_Symbol, {mql_period}, 0);
    bool _newBar = (currentBarTime != g_lastBarTime);
-   bool _justFlat = (g_hadPositionLastTick && PositionsTotal() == 0);
-   g_hadPositionLastTick = (PositionsTotal() > 0);
+   // CHANGED: June 2026 — count only THIS EA's positions (symbol+magic) so a second
+   //   EA/symbol can't make us think we're flat. No effect in single-symbol tester.
+   bool _hasOur = HasOurPosition();
+   bool _justFlat = (g_hadPositionLastTick && !_hasOur);
+   g_hadPositionLastTick = _hasOur;
    if(!_newBar && !_justFlat) return;
    g_lastBarTime = currentBarTime;
 
@@ -2912,7 +2932,11 @@ void OnTick()
    {{
       // ── Step 2: Normal signal evaluation ──
       // DIAGNOSTIC: log indicator values per bar for parity comparison — REMOVE after confirmed
-      {diag_adx_reads}Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
+      {diag_adx_reads}int _sh_m5  = GetBarShift(PERIOD_M5);
+      int _sh_m15 = GetBarShift(PERIOD_M15);
+      Print("[DIAG] Bar=", TimeToString(iTime(NULL,{mql_period},1), TIME_DATE|TIME_MINUTES),
+            " EvalM5=",  TimeToString(iTime(_Symbol,PERIOD_M5,_sh_m5),  TIME_DATE|TIME_MINUTES),
+            " EvalM15=", TimeToString(iTime(_Symbol,PERIOD_M15,_sh_m15), TIME_DATE|TIME_MINUTES),
             {diag_print_args}{diag_adx_args}" signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
       if(!entrySignal) return;
@@ -3108,7 +3132,13 @@ double SafeCopyBuf(int handle, int bufNum, ENUM_TIMEFRAMES indicatorTF)
 //+------------------------------------------------------------------+
 double Mt5ADX(ENUM_TIMEFRAMES tf, int period, int shift, int mode)
 {{
-   int needed = period * 4 + 10;
+   // CHANGED: June 2026 — widen ADX warm-up. Was period*4+10 (=94 for ADX-21): a cold
+   //   start that diverges from Python's full-series Wilder ADX near the threshold and
+   //   flips borderline entries. Use a long window so the recursive smoothing converges
+   //   to the same value Python computes over the full history.
+   int _avail  = Bars(_Symbol, tf);
+   int needed  = MathMin(_avail - shift, MathMax(period * 20, 500));
+   if(needed < period * 3) return EMPTY_VALUE;
    double h_buf[], l_buf[], c_buf[];
    ArrayResize(h_buf, needed);
    ArrayResize(l_buf, needed);
@@ -3300,11 +3330,11 @@ void ManageTrailingStop()
       if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
 
       // Per-position min hold check: skip trailing if this position hasn't aged enough
-      if(MinHoldMinutes > 0)
+      if(MinHoldSeconds > 0)
       {{
          datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
          int holdSec = (int)(TimeCurrent() - openTime);
-         if(holdSec < MinHoldMinutes * 60) continue;  // Skip this position
+         if(holdSec < MinHoldSeconds) continue;  // Skip this position
       }}
 
       double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
@@ -3346,6 +3376,24 @@ void ManageTrailingStop()
 }}
 
 //+------------------------------------------------------------------+
+//| Check if this EA has any open positions (symbol + magic)          |
+//| CHANGED: June 2026 — prevents foreign positions from affecting   |
+//|   _justFlat detection. No effect in single-symbol tester.        |
+//+------------------------------------------------------------------+
+bool HasOurPosition()
+{{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {{
+      ulong _t = PositionGetTicket(i);
+      if(_t <= 0) continue;
+      if(PositionGetInteger(POSITION_MAGIC) == MagicNumber
+         && PositionGetString(POSITION_SYMBOL) == _Symbol)
+         return true;
+   }}
+   return false;
+}}
+
+//+------------------------------------------------------------------+
 //| Close all open positions                                           |
 //+------------------------------------------------------------------+
 void CloseAllPositions(string reason)
@@ -3353,7 +3401,8 @@ void CloseAllPositions(string reason)
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {{
       ulong ticket = PositionGetTicket(i);
-      if(PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+      if(PositionGetInteger(POSITION_MAGIC) == MagicNumber
+         && PositionGetString(POSITION_SYMBOL) == _Symbol)
       {{
          trade.PositionClose(ticket);
          Print("[EA] Closed position ", ticket, " reason=", reason);

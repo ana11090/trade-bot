@@ -231,7 +231,7 @@ def _load_backtester():
     return run_backtest, compute_stats, build_multi_tf_indicators
 
 
-def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size):
+def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size, entry_tf=None):
     """Reconstruct exit strategy object from class name + params dict."""
     import sys
     project_root = os.path.abspath(os.path.join(_HERE, '..'))
@@ -284,6 +284,10 @@ def _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size):
     sig = inspect.signature(cls.__init__)
     if 'pip_size' in sig.parameters:
         params['pip_size'] = pip_size
+    # CHANGED: June 2026 — pass entry_tf so the None-guard resolves atr_column /
+    #   psar_signal_column to the entry TF instead of falling back to H1.
+    if 'entry_tf' in sig.parameters and 'entry_tf' not in params:
+        params['entry_tf'] = entry_tf
     return cls(**params)
 
 
@@ -641,7 +645,9 @@ def walk_forward_validate(
     except Exception:
         pass
 
-    exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
+    _wf_entry_tf = rules[0].get('entry_timeframe', rules[0].get('entry_tf')) if rules else None
+    exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size,
+                                      entry_tf=_wf_entry_tf)
 
     # Determine data range
     all_dates = pd.to_datetime(candles_df['timestamp'])
@@ -1374,7 +1380,9 @@ def slippage_stress_test(
     _c = candles_df.iloc[200:].reset_index(drop=True)
     _i = indicators_df.iloc[200:].reset_index(drop=True)
 
-    exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size)
+    _ss_entry_tf = rules[0].get('entry_timeframe', rules[0].get('entry_tf')) if rules else None
+    exit_strat = _build_exit_strategy(exit_strategy_class, exit_strategy_params, pip_size,
+                                      entry_tf=_ss_entry_tf)
 
     levels_results = []
     total_runs = len(slippage_levels) * n_runs_per_level
