@@ -2085,9 +2085,14 @@ def _export_csv(trades=None):
     )
     if not fp:
         return
+    # WHY: PSAR parity diagnostic — these per-trade fields are produced by the backtester
+    #      (prompt 01) but were dropped here because extrasaction='ignore' silently discards
+    #      any column not in fieldnames. Without them we cannot join Python↔MT5 per trade.
+    # CHANGED: June 2026 — export PSAR parity diagnostic columns
     fieldnames = ['backtest_run','#','entry_time','exit_time','direction','entry_price',
                   'exit_price','pnl_pips','cost_pips','net_pips','hold_minutes',
-                  'hold_display','session','day_of_week','exit_reason','rule_id']
+                  'hold_display','session','day_of_week','exit_reason','rule_id',
+                  'entry_bar_index','exit_bar_index','hold_candles','exit_via_m1']
     try:
         with open(fp, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
