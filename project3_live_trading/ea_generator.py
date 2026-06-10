@@ -1821,11 +1821,15 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         #      the basic ATR handle for per-trade state tracking.
         # CHANGED: April 2026 — extended globals for new ATR exits
         if exit_class == 'ATRBreakevenTrail':
-            # CHANGED: June 2026 — APPEND MaxHoldCandles to the ATR inputs from the shared
-            #   block. ATRBreakevenTrail exit_management uses MaxHoldCandles but never
-            #   declared it → undeclared identifier compile error. Same fix as ATRFixedSLTP.
+            # CHANGED: June 2026 — declare the ATR multipliers the breakeven/trail logic
+            #   uses. They were referenced (BE_ATR_Mult / TrailAct_ATR_Mult / Trail_ATR_Mult)
+            #   but never declared → undeclared-identifier compile error. APPEND so the
+            #   shared SL_ATR_Mult/TP_ATR_Mult/ATR_Period inputs from the entry block survive.
             exit_inputs = exit_inputs + (
-                f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles (0=disabled)\n'
+                f'input int    MaxHoldCandles     = {max_candles};               // Force close after N candles (0=disabled)\n'
+                f'input double BE_ATR_Mult        = {breakeven_atr_mult};        // Breakeven lock distance = ATR x this\n'
+                f'input double TrailAct_ATR_Mult  = {trail_activation_atr_mult}; // Trail activates at ATR x this profit\n'
+                f'input double Trail_ATR_Mult     = {trail_atr_mult};            // Trail distance = ATR x this\n'
             )
             exit_globals = (
                 f'int handle_exit_atr;\n'
@@ -2099,8 +2103,12 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     elif exit_class == 'HybridExit':
         # WHY: Hybrid combines trailing stop + breakeven + time limit.
         #      Most sophisticated exit — protects profits while limiting time exposure.
+        # CHANGED: June 2026 — declare TrailDistance which the trailing logic uses.
+        #   HybridExit references TrailDistance at line ~2138 but never declared it
+        #   → undeclared-identifier compile error. Same pattern as ATRBreakevenTrail.
         exit_inputs = (
             f'input double BreakevenPips   = {breakeven_pips};            // Move SL to entry after this profit\n'
+            f'input double TrailDistance   = {trail_distance_pips};       // Trailing distance (pips)\n'
             f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles\n'
         )
         exit_globals = (
