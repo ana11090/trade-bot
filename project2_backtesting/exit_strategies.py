@@ -1631,11 +1631,13 @@ class PSARExit(ExitStrategy):
                                         _fill = (float(_subs['open'].iloc[_i + 1])
                                                  if _i + 1 < len(_subs)
                                                  else float(_subs['close'].iloc[_i]))
+                                        pos['_psar_exit_via_m1'] = True
                                         return {"exit_price": _fill, "reason": "PSAR_FLIP"}
                                 except Exception:
                                     pass
                             # Fix 1 fallback: next parent-bar open (or close if unavailable)
                             _fill = candle.get("next_open") or candle["close"]
+                            pos['_psar_exit_via_m1'] = False
                             return {"exit_price": float(_fill), "reason": "PSAR_FLIP"}
                     except (TypeError, ValueError):
                         pass
@@ -1683,10 +1685,12 @@ class PSARExit(ExitStrategy):
                                         _fill = (float(_subs['open'].iloc[_i + 1])
                                                  if _i + 1 < len(_subs)
                                                  else float(_subs['close'].iloc[_i]))
+                                        pos['_psar_exit_via_m1'] = True
                                         return {"exit_price": _fill, "reason": "PSAR_FLIP"}
                                 except Exception:
                                     pass
                             _fill = candle.get("next_open") or candle["close"]
+                            pos['_psar_exit_via_m1'] = False
                             return {"exit_price": float(_fill), "reason": "PSAR_FLIP"}
                     except (TypeError, ValueError):
                         pass
