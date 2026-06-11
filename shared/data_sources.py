@@ -589,6 +589,155 @@ def import_tick_data(tick_source, source_id, symbol='XAUUSD'):
     }
 
 
+def _merge_candle_csv(existing_path, new_path):
+    # WHY: append new candles into an existing per-TF file without losing history
+    #      or duplicating bars. Same-TF only (caller guarantees matching filenames).
+    #      Old files use US M/D/YYYY, new export uses dash-ISO; reuse the repo's
+    #      robust per-file detector so BOTH parse correctly in one column.
+    # CHANGED: June 2026 — extend (append) support
+    import pandas as pd
+    # Reuse the exact parser step1 uses — do not reinvent format detection.
+    from project1_reverse_engineering.step1_align_price import _parse_candle_timestamps
+    new_df = pd.read_csv(new_path, encoding='utf-8-sig')
+    if 'timestamp' not in new_df.columns:
+        return {'error': 'new file %s missing timestamp column' % new_path}
+    if os.path.exists(existing_path) and not is_lfs_pointer(existing_path):
+        old_df = pd.read_csv(existing_path, encoding='utf-8-sig')
+        combined = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        # No existing real file (or it is an unfetched LFS stub) -> treat as fresh.
+        combined = new_df
+        old_df = new_df.iloc[0:0]
+    # Parse robustly (handles US + ISO + dot + dash), sort, and drop duplicate
+    # timestamps keeping the LAST (new) occurrence so a re-exported partial bar
+    # overwrites the stale one. Dedup on the PARSED datetime, not the raw string,
+    # because old/new may render the same instant in different text formats.
+    combined['_ts'] = _parse_candle_timestamps(combined['timestamp'])
+    bad = int(combined['_ts'].isna().sum())
+    combined = combined.dropna(subset=['_ts'])
+    combined = combined.sort_values('_ts')
+    combined = combined.drop_duplicates(subset='_ts', keep='last')
+    # WHY: normalize the written timestamp to ONE canonical format so the file is
+    #      internally consistent after merge (downstream step1 re-detects anyway,
+    #      but a uniform file avoids per-row ambiguity).
+    combined['timestamp'] = combined['_ts'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    combined = combined.drop(columns=['_ts'])
+    combined.to_csv(existing_path, index=False, encoding='utf-8')
+    return {
+        'rows_old': int(len(old_df)),
+        'rows_new_in': int(len(new_df)),
+        'rows_final': int(len(combined)),
+        'rows_added': int(len(combined) - len(old_df)),
+        'rows_unparseable': bad,
+    }
+
+
+def extend_data_source(source_folder, source_id, symbol='XAUUSD'):
+    """Append candles (and any ticks) from source_folder into an EXISTING source.
+
+    Per-TF merge: XAUUSD_M5.csv merges only with the source's XAUUSD_M5.csv, etc.
+    Does NOT create a new source. Ticks present in the folder are extended too.
+    """
+    # WHY: extend the current dataset in place instead of making a new source.
+    # CHANGED: June 2026 — extend (append) support
+    dest = os.path.join(get_sources_dir(), source_id)
+    if not os.path.isdir(dest):
+        return {'error': 'Data source %s not found at %s' % (source_id, dest)}
+
+    per_tf = {}
+    tick_files_present = False
+    for f in os.listdir(source_folder):
+        if not f.endswith('.csv'):
+            continue
+        low = f.lower()
+        if '_ticks' in low or '_tick.' in low:
+            tick_files_present = True
+            continue
+        # Match the existing file of the SAME NAME in dest (case-insensitive).
+        target = None
+        for existing in os.listdir(dest):
+            if existing.lower() == low:
+                target = existing
+                break
+        if target is None:
+            # New TF file the source did not have before -> copy as-is.
+            shutil.copy2(os.path.join(source_folder, f), os.path.join(dest, f))
+            per_tf[f] = {'rows_added': 'new_file_copied'}
+            continue
+        res = _merge_candle_csv(os.path.join(dest, target),
+                                os.path.join(source_folder, f))
+        per_tf[target] = res
+
+    tick_result = None
+    if tick_files_present:
+        try:
+            tick_result = extend_tick_data(source_folder, source_id, symbol=symbol)
+        except Exception as _te:
+            tick_result = {'error': str(_te)}
+
+    # stamp metadata
+    meta_path = os.path.join(dest, '_source_info.json')
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as fh:
+                meta = json.load(fh)
+        except Exception:
+            pass
+    meta['last_extended_at'] = datetime.now().isoformat()
+    with open(meta_path, 'w') as fh:
+        json.dump(meta, fh, indent=2)
+
+    return {'source_id': source_id, 'per_tf': per_tf, 'ticks': tick_result}
+
+
+def extend_tick_data(tick_source, source_id, symbol='XAUUSD'):
+    """Extend monthly tick files. New months copy in; an overlap month is merged."""
+    # WHY: ticks are monthly; new months are additive, but the boundary month that
+    #      already exists must be MERGED (on timestamp_ms) not skipped, or the new
+    #      ticks in that partial month are lost.
+    # CHANGED: June 2026 — extend (append) support
+    import pandas as pd
+    dest = os.path.join(get_sources_dir(), source_id)
+    if not os.path.isdir(dest):
+        return {'error': 'Data source %s not found' % source_id}
+
+    # Single-file MT5 Symbols export -> split into monthly temp files first.
+    if os.path.isfile(tick_source) and tick_source.lower().endswith('.csv'):
+        import tempfile
+        tmp = tempfile.mkdtemp(prefix='ticksplit_')
+        split = _split_mt5_symbols_export_to_monthlies(tick_source, tmp, symbol)
+        if 'error' in split:
+            return split
+        folder = tmp
+    elif os.path.isdir(tick_source):
+        folder = tick_source
+    else:
+        return {'error': 'tick_source must be folder or .csv'}
+
+    merged_months = []
+    new_months = []
+    for f in os.listdir(folder):
+        low = f.lower()
+        if not (f.endswith('.csv') and '_ticks' in low):
+            continue
+        dst = os.path.join(dest, f)
+        src = os.path.join(folder, f)
+        if os.path.exists(dst) and not is_lfs_pointer(dst):
+            old = pd.read_csv(dst, encoding='utf-8-sig')
+            new = pd.read_csv(src, encoding='utf-8-sig')
+            comb = pd.concat([old, new], ignore_index=True)
+            key = 'timestamp_ms' if 'timestamp_ms' in comb.columns else comb.columns[0]
+            comb = comb.drop_duplicates(subset=key, keep='last')
+            comb = comb.sort_values(key)
+            comb.to_csv(dst, index=False, encoding='utf-8')
+            merged_months.append(f)
+        else:
+            shutil.copy2(src, dst)
+            new_months.append(f)
+    return {'new_months': new_months, 'merged_months': merged_months}
+
+
 def _migrate_legacy_if_needed():
     """Move flat CSV files from data/ to data/sources/original/ (one-time)."""
     original_dir = os.path.join(get_sources_dir(), 'original')

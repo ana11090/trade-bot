@@ -13,7 +13,16 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, PROJECT_ROOT)
 
 from shared.trade_history_manager import get_active_history, get_history_trades_path
-from config_loader import load as _load_cfg
+# WHY: config_loader.py lives inside project1_reverse_engineering/. The bare import only
+#   resolves when this folder is on sys.path (running the step directly). When a panel imports
+#   this module as project1_reverse_engineering.step1_align_price, the folder is NOT on path and
+#   the bare import raised ModuleNotFoundError (crashed the fill-end-date button). Package-
+#   qualified import resolves from anywhere; bare fallback keeps direct-script execution working.
+# CHANGED: June 2026 — package-qualified config_loader import with direct-run fallback
+try:
+    from project1_reverse_engineering.config_loader import load as _load_cfg
+except ModuleNotFoundError:
+    from config_loader import load as _load_cfg
 
 # CHANGED: April 2026 — UI-safe logging (Phase 19d)
 from shared.logging_setup import get_logger

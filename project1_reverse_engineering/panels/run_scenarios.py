@@ -641,6 +641,57 @@ def build_panel(parent):
                            command=lambda v=s['name']: _data_source_var.set(v))
         _data_source_var.set(name)
 
+    def _extend_selected_source():
+        # WHY: append freshly-exported candles+ticks into the CURRENTLY selected
+        #      source, instead of creating a new one.
+        # CHANGED: June 2026 — extend data source
+        from shared.data_sources import list_sources, extend_data_source
+        from tkinter import filedialog, messagebox
+        cur_name = _data_source_var.get()
+        target_id = None
+        for s in list_sources():
+            if s['name'] == cur_name:
+                target_id = s['id']
+                break
+        if not target_id:
+            messagebox.showerror("Extend", "Select a data source first.")
+            return
+        if not messagebox.askyesno(
+                "Extend Selected Source",
+                "Append the chosen folder's candles + ticks into:\n\n"
+                "    %s\n\n"
+                "Use this ONLY for newer data from the SAME prop firm / broker.\n"
+                "Per-timeframe merge; duplicates are removed. Continue?" % cur_name):
+            return
+        folder = filedialog.askdirectory(
+            title="Pick folder with newly exported XAUUSD_*.csv (+ tick files)")
+        if not folder:
+            return
+        res = extend_data_source(folder, target_id)
+        if res.get('error'):
+            messagebox.showerror("Extend failed", res['error'])
+            return
+        lines = ["Extended '%s'." % cur_name, ""]
+        for tf_file, r in (res.get('per_tf') or {}).items():
+            if isinstance(r, dict) and 'rows_added' in r:
+                added = r['rows_added']
+                bad = r.get('rows_unparseable', 0)
+                extra = ("  (%d unparseable rows skipped)" % bad) if bad else ""
+                lines.append("%s: +%s rows%s" % (tf_file, added, extra))
+            else:
+                lines.append("%s: %s" % (tf_file, r))
+        tk_res = res.get('ticks')
+        if isinstance(tk_res, dict):
+            lines.append("")
+            lines.append("ticks new: %s" % (tk_res.get('new_months') or []))
+            lines.append("ticks merged: %s" % (tk_res.get('merged_months') or []))
+        messagebox.showinfo("Extend complete", "\n".join(lines))
+        # refresh the info label for the current source
+        try:
+            _on_data_source_changed()
+        except Exception:
+            pass
+
     # WHY: User needs the MT5 export script to get candle data from
     #      any broker. Put download next to import so workflow is clear:
     #      download script → run on MT5 → import the CSVs
@@ -826,6 +877,14 @@ def build_panel(parent):
     tk.Button(_btn_row2, text="📥 Import Tick Data",
               command=_import_tick_data,
               bg="#17a2b8", fg="white", font=("Segoe UI", 9),
+              relief=tk.FLAT, cursor="hand2", padx=10, pady=3
+              ).pack(side=tk.LEFT, padx=(8, 0))
+
+    # CHANGED: June 2026 — extend selected source (moved to row 2 so Compare Data
+    #          Sources stays visible on row 1; 4 buttons clipped row 1)
+    tk.Button(_btn_row2, text="➕ Extend Selected Source",
+              command=_extend_selected_source,
+              bg="#28a745", fg="white", font=("Segoe UI", 9),
               relief=tk.FLAT, cursor="hand2", padx=10, pady=3
               ).pack(side=tk.LEFT, padx=(8, 0))
 

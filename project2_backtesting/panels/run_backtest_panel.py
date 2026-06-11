@@ -4690,6 +4690,95 @@ def build_panel(parent):
     _bt_date_start_var = tk.StringVar(value="")
     _bt_date_end_var   = tk.StringVar(value="")
 
+    def _last_date_in_source():
+        # WHY: the source is chosen in the Run Scenarios panel, which saves ONLY data_source_id
+        #   (data_source_path is intentionally '' for machine-independence). The old version read
+        #   data_source_path and gave up when empty — always empty by design — so it never found
+        #   the loaded source. Resolve via get_source_path(data_source_id) exactly like
+        #   run_scenarios.py (~3578), then read the M5 candle CSV's last timestamp.
+        # CHANGED: June 2026 — resolve active source via data_source_id; read M5 last date
+        import os, glob
+        try:
+            try:
+                from project1_reverse_engineering.config_loader import load as _load_cfg
+            except ModuleNotFoundError:
+                from config_loader import load as _load_cfg
+            from project1_reverse_engineering.step1_align_price import _parse_candle_timestamps
+
+            # WHY: data_source_path in config can be a STALE ABSOLUTE PATH from another
+            #   machine/drive (saw 'd:\traiding data\...' while the repo is on c:\).
+            #   resolve_data_dir() is the repo's single source of truth: it uses
+            #   data_source_path ONLY if it exists on disk, else falls back to
+            #   get_source_path(data_source_id), computed relative to the code location and
+            #   always correct on THIS machine. Don't hand-roll resolution here.
+            # CHANGED: June 2026 — use resolve_data_dir() instead of trusting stale data_source_path
+            from shared.data_sources import resolve_data_dir
+            src_dir = resolve_data_dir() or ''
+            print("[LASTDATE] source dir =", repr(src_dir), flush=True)
+
+            if not src_dir or not os.path.isdir(src_dir):
+                print("[LASTDATE] source dir missing or not a directory", flush=True)
+                return None
+
+            # Find the M5 candle file. MT5 exports XAUUSD_M5.csv; old data xauusd_M5.csv.
+            candidates = (glob.glob(os.path.join(src_dir, '*_M5.csv')) +
+                          glob.glob(os.path.join(src_dir, '*_m5.csv')))
+            if not candidates:
+                # fall back to ANY candle csv so the button still works for non-M5 sources
+                candidates = glob.glob(os.path.join(src_dir, '*.csv'))
+            if not candidates:
+                print("[LASTDATE] no candle csv in source dir", flush=True)
+                return None
+            candle_file = candidates[0]
+            print("[LASTDATE] candle file =", candle_file, flush=True)
+
+            import pandas as pd
+            df = pd.read_csv(candle_file)
+            if df.empty:
+                print("[LASTDATE] candle file is empty", flush=True)
+                return None
+
+            # Identify the timestamp column (step1 conventions: 'time'/'date'/'datetime'/first col).
+            ts_col = None
+            for c in df.columns:
+                if str(c).strip().lower() in ('time', 'date', 'datetime', 'timestamp'):
+                    ts_col = c
+                    break
+            if ts_col is None:
+                ts_col = df.columns[0]
+            print("[LASTDATE] ts column =", ts_col, flush=True)
+
+            parsed = _parse_candle_timestamps(df[ts_col])
+            parsed = parsed.dropna()
+            if parsed.empty:
+                print("[LASTDATE] no parseable timestamps", flush=True)
+                return None
+
+            last_dt = parsed.max()
+            result = last_dt.strftime('%Y-%m-%d')
+            print("[LASTDATE] last date =", result, flush=True)
+            return result
+
+        except Exception as e:
+            import traceback
+            print("[LASTDATE] EXCEPTION:", repr(e), flush=True)
+            traceback.print_exc()
+            return None
+
+    def _fill_end_with_last():
+        # WHY: button handler — set End to the source's last date, or warn if unknown.
+        # CHANGED: June 2026
+        from tkinter import messagebox
+        d = _last_date_in_source()
+        if d:
+            _bt_date_end_var.set(d)
+        else:
+            messagebox.showwarning(
+                "Last date",
+                "Could not read the last candle date from the selected source.\n"
+                "Pick/confirm the data source in the Run Scenarios panel, then try again.\n"
+                "(See console for [LASTDATE] details.)")
+
     _date_row = tk.Frame(_date_frame, bg="white")
     _date_row.pack(fill="x", pady=(4, 0))
 
@@ -4702,6 +4791,12 @@ def build_panel(parent):
              font=("Segoe UI", 9), bg="white", fg="#333").pack(side=tk.LEFT)
     tk.Entry(_date_row, textvariable=_bt_date_end_var, width=14,
              font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(4, 0))
+    # CHANGED: June 2026 — autofill End with source's last date
+    tk.Button(_date_row, text="↦ Last",
+              command=_fill_end_with_last,
+              bg="#17a2b8", fg="white", font=("Segoe UI", 8),
+              relief=tk.FLAT, cursor="hand2", padx=8, pady=1
+              ).pack(side=tk.LEFT, padx=(4, 0))
 
     tk.Label(
         _date_frame,

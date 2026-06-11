@@ -207,7 +207,16 @@ def prepare_features(data, scenario=None):
 # ============================================================
 OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
-from config_loader import load as _load_cfg
+# WHY: config_loader.py lives inside project1_reverse_engineering/. The bare import only
+#   resolves when this folder is on sys.path (running the step directly). When a panel imports
+#   this module as a package, the folder is NOT on path and the bare import raises
+#   ModuleNotFoundError. Package-qualified import resolves from anywhere; bare fallback keeps
+#   direct-script execution working.
+# CHANGED: June 2026 — package-qualified config_loader import with direct-run fallback
+try:
+    from project1_reverse_engineering.config_loader import load as _load_cfg
+except ModuleNotFoundError:
+    from config_loader import load as _load_cfg
 _cfg                 = _load_cfg()
 RF_N_ESTIMATORS      = int(_cfg['rf_trees'])
 RF_MAX_DEPTH         = int(_cfg['max_tree_depth'])

@@ -24,7 +24,16 @@ log = get_logger(__name__)
 # ============================================================
 OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
 
-from config_loader import load as _load_cfg
+# WHY: config_loader.py lives inside project1_reverse_engineering/. The bare import only
+#   resolves when this folder is on sys.path (running the step directly). When a panel imports
+#   this module as a package, the folder is NOT on path and the bare import raises
+#   ModuleNotFoundError. Package-qualified import resolves from anywhere; bare fallback keeps
+#   direct-script execution working.
+# CHANGED: June 2026 — package-qualified config_loader import with direct-run fallback
+try:
+    from project1_reverse_engineering.config_loader import load as _load_cfg
+except ModuleNotFoundError:
+    from config_loader import load as _load_cfg
 _cfg                   = _load_cfg()
 TRAIN_TEST_SPLIT_RATIO = float(_cfg['train_test_split'])
 
