@@ -64,7 +64,10 @@ _f_profitable = None   # BooleanVar — profitable-only filter (parity with refi
 _nostats_lbl  = None
 _cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
 # CHANGED: June 2026 — remember last generate out_dir so 1b/2 default to it
-_last_out_dir = None
+_last_out_dir    = None
+# CHANGED: June 2026 — remember run artifacts so "Run Tests" / Compare need no prompts
+_last_bat_path   = None
+_last_reports_dir = None
 
 
 # CHANGED: June 2026 — derive MT5 data dir (the folder above \MQL5) from any path under it
@@ -81,6 +84,17 @@ def _derive_data_dir(path):
             return head   # parent of MQL5 == data dir
         cur = head
     return None
+
+
+# CHANGED: June 2026 — detect a running MT5 terminal before launching the tester bat
+def _mt5_is_running():
+    try:
+        import subprocess as _sp
+        out = _sp.run(["tasklist", "/FI", "IMAGENAME eq terminal64.exe"],
+                      capture_output=True, text=True, timeout=10)
+        return "terminal64.exe" in (out.stdout or "")
+    except Exception:
+        return False  # if we can't tell, don't block
 
 
 # ── grid helpers ──────────────────────────────────────────────────────────────
@@ -573,7 +587,7 @@ def _do_build_run_files():
         try:
             from project3_live_trading.batch_ea_tools import emit_tester_inis
             # CHANGED: June 2026 — pre-fill manifest path from last generate folder
-            global _last_out_dir
+            global _last_out_dir, _last_bat_path, _last_reports_dir
             _default_manifest = (os.path.join(_last_out_dir, "batch_manifest.json")
                                  if _last_out_dir else "")
             manifest = filedialog.askopenfilename(
@@ -598,13 +612,82 @@ def _do_build_run_files():
             if not reports_dir:
                 _append("Build run files cancelled (no reports dir).")
                 return
-            emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir)
+            # CHANGED: June 2026 — resolve terminal64 (derive from metaeditor → ask once → save)
+            from project3_live_trading.batch_ea_tools import (
+                resolve_terminal_path, save_terminal_path)
+            term = resolve_terminal_path()
+            if not term:
+                _append("terminal64.exe not found automatically on this machine.")
+                term = filedialog.askopenfilename(
+                    title="Locate terminal64.exe — saved for THIS computer only",
+                    filetypes=[("terminal64", "terminal64.exe"), ("All exe", "*.exe")])
+                if term and save_terminal_path(term):
+                    _append("Saved terminal64 path for this machine (%s)."
+                            % __import__('socket').gethostname())
+            emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
+                             terminal_exe=term or None)
+            # CHANGED: June 2026 — record bat + reports dir for the Run Tests / Compare steps
+            _last_bat_path    = os.path.join(os.path.dirname(manifest), "run_all_tests.bat")
+            _last_reports_dir = reports_dir
             _append("Run files written.")
             _append("If you used '1b. Compile EAs', the .ex5 are already in MQL5\\Experts\\batch.")
-            _append("Otherwise compile manually in MetaEditor first.")
-            _append("Set terminal64.exe path in run_all_tests.bat, then run it.")
+            if term:
+                _append("Terminal: %s" % term)
+            _append("Next: click '2b. Run Tests' (make sure MT5 is closed).")
         except Exception as e:
             _append("ERROR during build run files: %s" % e)
+    _run_bg(work)
+
+
+def _do_run_tests():
+    def work():
+        try:
+            import subprocess
+            global _last_bat_path, _last_reports_dir
+            bat = _last_bat_path
+            if not bat or not os.path.isfile(bat):
+                bat = filedialog.askopenfilename(
+                    title="Pick run_all_tests.bat",
+                    initialdir=(_last_out_dir or None),
+                    filetypes=[("Batch", "*.bat")])
+                if not bat:
+                    _append("Run Tests cancelled (no .bat).")
+                    return
+
+            if _mt5_is_running():
+                _append("MT5 is OPEN — close the MetaTrader 5 terminal first, then click "
+                        "2b. Run Tests again. The Strategy Tester can't run while the "
+                        "terminal holds the files.")
+                return
+
+            _append("Running backtests via %s ..." % os.path.basename(bat))
+            _append("MT5 will launch headless once per EA. This can take a few minutes.")
+            proc = subprocess.Popen(
+                ["cmd", "/c", bat],
+                cwd=os.path.dirname(bat),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1)
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    _append("  " + line)
+            proc.wait()
+
+            if proc.returncode == 0:
+                _append("All tester passes finished.")
+            else:
+                _append("Tester batch exited with code %d (some passes may have failed)."
+                        % proc.returncode)
+
+            if _last_reports_dir and os.path.isdir(_last_reports_dir):
+                n_xlsx = len([f for f in os.listdir(_last_reports_dir)
+                              if f.lower().endswith(".xlsx")])
+                _append("Reports folder: %s (%d .xlsx)" % (_last_reports_dir, n_xlsx))
+                _append("Next: click '3. Compare Reports'.")
+            else:
+                _append("Done. Next: click '3. Compare Reports' and pick the reports folder.")
+        except Exception as e:
+            _append("ERROR during run tests: %s" % e)
     _run_bg(work)
 
 
@@ -612,7 +695,13 @@ def _do_compare():
     def work():
         try:
             from project3_live_trading.batch_compare_reports import compare_reports
-            reports = filedialog.askdirectory(title="Pick folder of MT5 .xlsx reports")
+            # CHANGED: June 2026 — use remembered reports dir from Run Tests / Build Run Files
+            global _last_reports_dir
+            reports = (_last_reports_dir
+                       if (_last_reports_dir and os.path.isdir(_last_reports_dir))
+                       else None)
+            if not reports:
+                reports = filedialog.askdirectory(title="Pick folder of MT5 .xlsx reports")
             if not reports:
                 _append("Compare cancelled.")
                 return
@@ -670,6 +759,8 @@ def build_panel(parent):
     # CHANGED: June 2026 — 1b runs metaeditor64 headlessly; no manual MetaEditor needed
     _btn("1b. Compile EAs",   _do_compile).pack(side=tk.LEFT, padx=4)
     _btn("2. Build Run Files", _do_build_run_files).pack(side=tk.LEFT, padx=4)
+    # CHANGED: June 2026 — 2b launches run_all_tests.bat in-app; streams progress to log
+    _btn("2b. Run Tests",      _do_run_tests).pack(side=tk.LEFT, padx=4)
     _btn("3. Compare Reports", _do_compare).pack(side=tk.LEFT, padx=4)
 
     # CHANGED: June 2026 — filter row (parity with Strategy Refiner)

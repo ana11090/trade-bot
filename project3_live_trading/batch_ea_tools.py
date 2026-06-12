@@ -67,7 +67,9 @@ def _find_metaeditor(terminal_dir=None, explicit=None):
 #   keys survive config_loader.save() calls untouched (verified in config_loader.load()).
 # CHANGED: June 2026 — per-machine metaeditor path memory (hostname-keyed in p1_config.json)
 
-_ME_CFG_KEY = "metaeditor_path_by_host"
+_ME_CFG_KEY   = "metaeditor_path_by_host"
+# CHANGED: June 2026 — terminal64.exe path memory (per machine), mirrors metaeditor memory
+_TERM_CFG_KEY = "terminal64_path_by_host"
 
 
 def _p1_config_path():
@@ -130,6 +132,79 @@ def save_metaeditor_path(path):
         except Exception:
             pass
         return False
+
+
+def get_saved_terminal_path():
+    """Return the saved terminal64.exe path for THIS machine, or None."""
+    cfg_path = _p1_config_path()
+    if not os.path.isfile(cfg_path):
+        return None
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        p = (raw.get(_TERM_CFG_KEY) or {}).get(socket.gethostname())
+        return p if (p and os.path.isfile(p)) else None
+    except Exception:
+        return None
+
+
+def save_terminal_path(path):
+    """Persist terminal64.exe path for THIS machine in p1_config.json (gitignored).
+    Atomic write via .tmp → rename. Returns True on success.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    cfg_path = _p1_config_path()
+    try:
+        raw = {}
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        by_host = raw.get(_TERM_CFG_KEY) or {}
+        by_host[socket.gethostname()] = path
+        raw[_TERM_CFG_KEY] = by_host
+        tmp = cfg_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2)
+        if os.path.exists(cfg_path):
+            os.replace(tmp, cfg_path)
+        else:
+            os.rename(tmp, cfg_path)
+        return True
+    except Exception as e:
+        print("[RUNFILES] could not save terminal path:", e)
+        try:
+            if os.path.exists(cfg_path + ".tmp"):
+                os.remove(cfg_path + ".tmp")
+        except Exception:
+            pass
+        return False
+
+
+def resolve_terminal_path(metaeditor_path=None):
+    """Best-effort terminal64.exe: saved(host) → next to metaeditor → common dirs → None.
+
+    WHY: terminal64.exe is always in the same install folder as metaeditor64.exe, so
+    the saved metaeditor path gives us terminal for free without a separate prompt.
+    """
+    # CHANGED: June 2026 — derive from saved metaeditor (same install dir) or common paths
+    p = get_saved_terminal_path()
+    if p:
+        return p
+    me = metaeditor_path or get_saved_metaeditor_path()
+    if me:
+        cand = os.path.join(os.path.dirname(me), "terminal64.exe")
+        if os.path.isfile(cand):
+            return cand
+    for cand in (
+        r"C:\Program Files\MetaTrader 5\terminal64.exe",
+        r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
+        r"C:\Program Files\MetaTrader 5 IC Markets\terminal64.exe",
+        r"C:\Program Files\MetaTrader 5 Pepperstone\terminal64.exe",
+    ):
+        if os.path.isfile(cand):
+            return cand
+    return None
 
 
 def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
