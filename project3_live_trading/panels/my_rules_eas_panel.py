@@ -129,7 +129,19 @@ def _fmt_rule(entry):
 def _gen_ea_for(entry):
     """Build strategy+firm and call generate_ea(). Returns code or error string."""
     from project3_live_trading.ea_generator import generate_ea
-    r = entry.get("rule", {})
+    # WHY: my_rules entries are wrapped as {"rule": {...}}, but batch entries from
+    #   load_strategy_list() are FLAT (fields at top level, no "rule" wrapper). Support both.
+    # CHANGED: June 2026 — accept flat load_strategy_list entries
+    r = entry.get("rule")
+    if not isinstance(r, dict) or not r:
+        r = entry   # flat strategy dict from load_strategy_list
+    # Normalize condition keys: load_strategy_list rows may store the entry conditions under
+    # a different key than generate_ea expects ("rule_combo" or "rules").
+    # CHANGED: June 2026 — normalize condition keys across entry shapes
+    if not r.get("rule_combo"):
+        r = dict(r)  # don't mutate the shared dict
+        r["rule_combo"] = (r.get("combo") or r.get("rule_conditions") or
+                           r.get("conditions"))
     firm_name, firm = _resolve_firm(entry)
     entry_tf = r.get("entry_tf") or r.get("entry_timeframe") or "H1"
     _fa = r.get("filters_applied") or {}
@@ -164,7 +176,9 @@ def _gen_ea_for(entry):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return "// EA generation failed:\n// " + str(e)
+        # CHANGED: June 2026 — non-empty error message so the panel shows the actual cause
+        _msg = str(e) or repr(e) or type(e).__name__
+        return "// EA generation failed:\n// " + _msg
 
 
 def _on_select(_evt=None):

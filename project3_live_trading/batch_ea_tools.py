@@ -242,8 +242,15 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
     results = []
     magic = int(magic_start)
     for i, entry in enumerate(rules):
-        r = entry.get('rule', {}) if isinstance(entry, dict) else {}
-        combo = r.get('rule_combo') or entry.get('rule_id') or ('rule_%d' % i)
+        # CHANGED: June 2026 — batch entries are flat (load_strategy_list); fall back to entry
+        if isinstance(entry, dict):
+            r = entry.get('rule')
+            if not isinstance(r, dict) or not r:
+                r = entry   # flat strategy dict from load_strategy_list
+        else:
+            r = {}
+        combo = (r.get('rule_combo') or r.get('rule_id') or
+                 entry.get('rule_id') or str(entry.get('id') or ('rule_%d' % i)))
         name = _safe_name(combo)
         path = os.path.join(out_dir, name + '.mq5')
         rec = {
@@ -258,7 +265,8 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
         try:
             code = _gen_ea_for(entry)
             if not code or code.startswith('// EA generation failed'):
-                rec['error'] = (code or 'empty').splitlines()[0]
+                # CHANGED: June 2026 — show ALL error lines so the cause is never hidden
+                rec['error'] = (code or 'empty (no code returned)')
             else:
                 with open(path, 'w', encoding='utf-8') as f:
                     f.write(code)
