@@ -72,37 +72,39 @@ _last_reports_dir = None
 _last_data_dir   = None
 
 
-# CHANGED: June 2026 — derive MT5 data dir (the folder above \MQL5) from any path under it
+# CHANGED: June 2026 — derive MT5 data dir: folder above the FIRST 'MQL5' segment.
+#   Idempotent: works even on doubled paths like ...MQL5\Experts\batch\MQL5\Experts\batch.
 def _derive_data_dir(path):
+    """Return the MT5 data dir (folder directly above the first 'MQL5' segment).
+    If no MQL5 segment exists, treat the path itself as the data dir."""
     if not path:
         return None
     p = os.path.abspath(path)
-    cur = p
-    while True:
-        head, tail = os.path.split(cur)
-        if not head or head == cur:
-            break
-        if tail.lower() == "mql5":
-            return head   # parent of MQL5 == data dir
-        cur = head
-    return None
+    parts = p.replace('/', '\\').split('\\')
+    for i, seg in enumerate(parts):
+        if seg.lower() == 'mql5':
+            if i == 0:
+                return None
+            return '\\'.join(parts[:i])   # everything before the first MQL5
+    return p   # no MQL5 found — treat as data dir
 
 
 # CHANGED: June 2026 — single source of truth for the batch EA folder. All steps (generate,
-#   compile, build-run-files, run) use this exact path so the .ini's Expert=batch\name.ex5
-#   always resolves and MT5 indexes one clean folder (no Experts\batch\batch doubling).
+#   compile, build-run-files, run) call this so the .ini's Expert=batch\name.ex5 always resolves.
+#   Self-correcting: collapses any doubled path back to the true data dir before appending once.
 def _canonical_batch_dir():
-    """Return <data_dir>\MQL5\Experts\batch, asking once if data_dir is unknown."""
+    """Return <data_dir>\\MQL5\\Experts\\batch. Never doubles the path."""
     global _last_data_dir
+    # Derive data dir from whatever we know, collapsing any nesting via _derive_data_dir.
     dd = _last_data_dir or (_derive_data_dir(_last_out_dir) if _last_out_dir else None)
-    if not dd:
-        dd = filedialog.askdirectory(
-            title="Pick MT5 DATA folder (the one containing MQL5\\Experts)")
-        if not dd:
+    if not dd or not os.path.isdir(dd):
+        picked = filedialog.askdirectory(
+            title="Pick MT5 DATA folder (the long-hash folder containing MQL5\\Experts)")
+        if not picked:
             return None
-        _last_data_dir = dd
-    else:
-        _last_data_dir = dd
+        # Collapse whatever they picked back to the real data dir (handles picking MQL5 or deeper)
+        dd = _derive_data_dir(picked) or picked
+    _last_data_dir = dd
     return os.path.join(dd, "MQL5", "Experts", "batch")
 
 
@@ -546,10 +548,10 @@ def _do_compile():
                 batch_compile, get_saved_metaeditor_path,
                 save_metaeditor_path, _find_metaeditor,
             )
-            # CHANGED: June 2026 — compile from the canonical Experts\batch (same folder as
-            #   generate), no dialog. Derive data_dir from it for batch_compile's copy step.
+            # CHANGED: June 2026 — always recompute canonical (self-correcting); never trust a
+            #   stale _last_out_dir that may contain a doubled path from a prior run.
             global _last_out_dir
-            out_dir = _last_out_dir or _canonical_batch_dir()
+            out_dir = _canonical_batch_dir()
             if not out_dir:
                 _append("Compile cancelled (no MT5 data folder known).")
                 return
@@ -604,9 +606,9 @@ def _do_build_run_files():
     def work():
         try:
             from project3_live_trading.batch_ea_tools import emit_tester_inis
-            # CHANGED: June 2026 — all paths derived from the canonical Experts\batch; no dialogs.
+            # CHANGED: June 2026 — always recompute canonical (self-correcting); no dialogs.
             global _last_out_dir, _last_bat_path, _last_reports_dir
-            batch_dir = _last_out_dir or _canonical_batch_dir()
+            batch_dir = _canonical_batch_dir()
             if not batch_dir:
                 _append("Build run files cancelled (no MT5 data folder known).")
                 return
@@ -642,7 +644,7 @@ def _do_build_run_files():
             emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
                              terminal_exe=term or None)
             # CHANGED: June 2026 — record bat + reports dir for the Run Tests / Compare steps
-            _last_bat_path    = os.path.join(os.path.dirname(manifest), "run_all_tests.bat")
+            _last_bat_path    = os.path.join(batch_dir, "run_all_tests.bat")
             _last_reports_dir = reports_dir
             _append("Run files written.")
             _append("If you used '1b. Compile EAs', the .ex5 are already in MQL5\\Experts\\batch.")
