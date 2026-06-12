@@ -456,7 +456,17 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         if not rec.get('ok'):
             continue
         name = rec['name']
-        expert_rel = experts_subdir.replace('/', '\\') + '\\' + name + '.ex5'
+        # WHY: MT5 Expert= is relative to MQL5\Experts, NOT MQL5. experts_subdir is
+        #   "Experts\batch", so strip the leading "Experts\" to get "batch\name.ex5".
+        #   Without this MT5 looks in MQL5\Experts\Experts\batch\ → EA not found → tester
+        #   opens and idles with "Cloud servers off" and reports 0 forever.
+        # CHANGED: June 2026 — Expert= path relative to MQL5\Experts (drop "Experts\" prefix)
+        _sub = experts_subdir.replace('/', '\\').strip('\\')
+        if _sub.lower().startswith('experts\\'):
+            _sub = _sub[len('experts\\'):]   # "Experts\batch" -> "batch"
+        elif _sub.lower() == 'experts':
+            _sub = ''
+        expert_rel = (_sub + '\\' + name + '.ex5') if _sub else (name + '.ex5')
         # CHANGED: June 2026 — absolute report path with explicit .xlsx so MT5 writes a known file
         report_path = os.path.abspath(os.path.join(reports_dir, name + '.xlsx')).replace('/', '\\')
         ini = _INI_TEMPLATE.format(
