@@ -1,6 +1,8 @@
 # WHY: expose batch EA generation + MT5 run-file emit + report compare in one panel.
 # CHANGED: June 2026 — new panel; reuses batch_ea_tools + batch_compare_reports.
 # CHANGED: June 2026 — added checkbox rule grid (same interaction as Strategy Refiner)
+# CHANGED: June 2026 — grid columns + filters match Strategy Refiner grid
+# CHANGED: June 2026 — load via load_strategy_list() so backtest-matrix rows (with stats) appear
 import os
 import threading
 import tkinter as tk
@@ -12,6 +14,28 @@ try:
 except Exception:
     _load_saved_rules = None
 
+# WHY: load_strategy_list() returns backtest-matrix rows (with full stats) merged with saved/my
+#   rules — the same source the refiner grid uses. Without this the batch grid only sees raw
+#   saved/my_rules which are discovery-only and have no trade stats.
+# CHANGED: June 2026 — load via strategy_refiner.load_strategy_list
+try:
+    from project2_backtesting.strategy_refiner import load_strategy_list as _load_strategy_list
+except Exception:
+    _load_strategy_list = None
+
+# WHY: reuse the refiner's display formatters so money/win-pass/prop-score formatting
+#   matches exactly across panels.
+# CHANGED: June 2026 — batch grid parity with refiner grid
+try:
+    from project2_backtesting.panels.strategy_refiner_panel import (
+        _money_for_strategy, _format_win_pass, _format_prop_score, _compute_prop_score,
+    )
+except Exception:
+    _money_for_strategy  = None
+    _compute_prop_score  = None
+    _format_win_pass     = lambda s: "—"
+    _format_prop_score   = lambda s: "—"
+
 BG      = "#f0f2f5"
 DARK    = "#1a1a2a"
 MIDGREY = "#555566"
@@ -20,34 +44,298 @@ WHITE   = "#ffffff"
 # CHANGED: June 2026 — checkbox grid state
 _log            = None
 _grid_tree      = None      # the Treeview
-_grid_entries   = []        # rule entry dicts; index == iid
+_grid_entries   = []        # strategy dicts (flat, from load_strategy_list)
 _batch_sel_iids = set()     # iids (str) currently ticked
+# WHY: iid is now r.get('id') or a counter — not a positional index — so we need
+#   a direct iid→entry map for _do_generate to look up selected rows safely.
+# CHANGED: June 2026 — iid_to_entry avoids int(iid)-as-index assumption
+_iid_to_entry   = {}        # iid_str -> strategy dict
+# Filter widgets/vars — set in build_panel as module globals, read by _populate_grid.
+# WHY: must be module-level (not build_panel locals) so _populate_grid can write the
+#   global declaration and read them reliably regardless of call site.
+# CHANGED: June 2026 — promoted to module globals; scope fix
+_f_stage      = None
+_f_tf         = None
+_f_dir        = None
+_f_mintr      = None
+_f_minwr      = None
+_f_sort       = None
+_f_profitable = None   # BooleanVar — profitable-only filter (parity with refiner)
+_nostats_lbl  = None
+_cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
 
 
 # ── grid helpers ──────────────────────────────────────────────────────────────
 
+# CHANGED: June 2026 — stage cell; strategy dicts from load_strategy_list are flat
+def _stage_cell(r):
+    # WHY: prop_firm_stage lives at the top level of load_strategy_list() dicts (flat).
+    #   For saved/my_rules paths it may also be in a nested 'saved_rule' sub-dict.
+    v = r.get('prop_firm_stage')
+    if v:
+        return str(v)
+    saved = r.get('saved_rule') or {}
+    v = saved.get('prop_firm_stage')
+    if v:
+        return str(v)
+    rs = r.get('run_settings') or {}
+    v = rs.get('prop_firm_stage')
+    return str(v) if v else "—"
+
+
+def _rule_label(r):
+    # WHY: strategy dicts from load_strategy_list() carry rule_combo at the top level;
+    #   saved rows may use rule_label, name, or id. Tolerant — never crashes.
+    # CHANGED: June 2026 — wider fallback chain; saved rows vary
+    return (r.get('rule_combo') or r.get('rule') or r.get('rule_label') or
+            r.get('label') or r.get('name') or str(r.get('id', '—')))
+
+
 def _populate_grid(source):
-    # WHY: reload the grid whenever Source changes; reset selections.
-    global _grid_entries, _batch_sel_iids
+    # WHY: reload the grid from load_strategy_list() (same merged source the refiner uses),
+    #   filter by source tag, apply UI filters, sort, then insert.
+    # CHANGED: June 2026 — load_strategy_list + filter by source tag + refiner-parity columns
+    # CHANGED: June 2026 — defensive per-row try/except so one bad row can't blank the grid;
+    #   stats sub-dict fallback for saved rows; non-empty fallback when source yields 0 rows
+    # CHANGED: June 2026 — scope fix: declare filter globals explicitly so _passes always sees
+    #   the live widget values; filter applied as list comprehension before insert loop
+    global _grid_entries, _batch_sel_iids, _iid_to_entry, _cur_source
+    global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable
     if _grid_tree is None:
         return
+    _cur_source = source
     for _i in _grid_tree.get_children():
         _grid_tree.delete(_i)
     _batch_sel_iids = set()
-    if source == 'saved_rules' and _load_saved_rules:
-        _grid_entries = _load_saved_rules() or []
+    _iid_to_entry = {}
+
+    # ── diagnostic: confirm import worked and how many rows we have ──
+    print("[BATCH-GRID] _load_strategy_list =", _load_strategy_list,
+          " loaded =", (len(_load_strategy_list()) if _load_strategy_list else 'n/a'),
+          flush=True)
+
+    # ── load merged strategy list ──
+    if _load_strategy_list is not None:
+        _all = _load_strategy_list() or []
+    elif _load_saved_rules:
+        _all = _load_saved_rules() or []
     else:
-        _grid_entries = _load_my_rules() or []
-    for idx, entry in enumerate(_grid_entries):
-        r = entry.get('rule', {}) if isinstance(entry, dict) else {}
-        combo = r.get('rule_combo') or entry.get('rule_id') or ('rule_%d' % idx)
-        tf    = r.get('entry_tf') or r.get('entry_timeframe') or '?'
-        exit_ = r.get('exit_name') or '?'
-        off   = r.get('entry_bar_offset', 0)
-        _grid_tree.insert('', 'end', iid=str(idx),
-                          values=("☐", str(entry.get('id', idx)), str(combo)[:46],
-                                  tf, exit_, ("N" if int(off or 0) == 0 else "N+1")))
+        _all = []
+
+    # WHY: separator rows are section dividers with no id/rule/stats — they crash the insert
+    #   loop if they reach it. Strip them unconditionally before any further processing.
+    _all = [r for r in _all if r.get('source') != 'separator']
+
+    # Filter by the source dropdown.
+    # Source tags set by load_strategy_list: 'backtest', 'optimizer', 'saved', 'my_rules'.
+    # WHY: 'saved_rules' catches everything that isn't backtest/optimizer (source values from
+    #   saved entries vary: 'saved', 'my_rules', '?', or sometimes absent).
+    if source == 'backtest':
+        _grid_entries = [r for r in _all if r.get('source') == 'backtest']
+    elif source == 'optimizer':
+        _grid_entries = [r for r in _all if r.get('source') == 'optimizer']
+    elif source == 'saved_rules':
+        _grid_entries = [r for r in _all
+                         if r.get('source') not in ('backtest', 'optimizer')]
+    elif source == 'my_rules':
+        _grid_entries = [r for r in _all if r.get('source') == 'my_rules']
+    else:  # 'all'
+        _grid_entries = list(_all)
+
+    # WHY: if the chosen source is empty (e.g. backtest_matrix.json is a Git LFS pointer /
+    #   not pulled), fall back to 'all' so the page is never blank when data exists elsewhere.
+    # CHANGED: June 2026 — non-empty fallback
+    if not _grid_entries and _all:
+        print("[BATCH-GRID] source '%s' empty — falling back to all" % source, flush=True)
+        _grid_entries = list(_all)
+
+    # ── helpers used by filter and sort ──
+    def _val(var, default=""):
+        # Read a Tk variable/widget safely; return default if None or widget destroyed.
+        try:
+            return var.get() if var is not None else default
+        except Exception:
+            return default
+
+    def _num(r, *keys):
+        # Return the first numeric value found at any of the given keys (flat then stats sub-dict).
+        stats = r.get('stats') or {}
+        for k in keys:
+            v = r.get(k) if r.get(k) is not None else stats.get(k)
+            if isinstance(v, (int, float)):
+                return v
+        return None
+
+    # ── filter predicate — applied to _grid_entries before the insert loop ──
+    # WHY: filtering the list before insert (not per-row in the loop) means the
+    #   insert loop never skips rows mid-flight, making _shown count accurate and
+    #   the iid mapping stable.
+    # CHANGED: June 2026 — filter applied as list comprehension; _val() guards None vars
+    def _passes(r):
+        st = _stage_cell(r)
+        tf = r.get('entry_tf') or r.get('entry_timeframe') or '—'
+        dr = r.get('direction') or r.get('dir') or '—'
+        tr = _num(r, 'total_trades') or 0
+        wr = _num(r, 'win_rate') or 0
+        net = _num(r, 'net_pips', 'net_total_pips', 'total_pips')
+
+        if _val(_f_stage, "All") not in ("All", "", st):
+            return False
+        if _val(_f_tf, "All") not in ("All", "", tf):
+            return False
+        if _val(_f_dir, "All") not in ("All", "", dr):
+            return False
+        try:
+            if _val(_f_mintr) and tr < float(_val(_f_mintr)):
+                return False
+            if _val(_f_minwr) and wr < float(_val(_f_minwr)):
+                return False
+        except ValueError:
+            pass
+        # CHANGED: June 2026 — profitable-only filter; matches refiner: hides rules that HAVE
+        #   data and are ≤ 0; keeps no-data rows visible (same guard as refiner uses)
+        if _val(_f_profitable, False):
+            if net is not None and net <= 0:
+                return False
+        return True
+
+    _grid_entries = [r for r in _grid_entries if _passes(r)]
+
+    # ── sort ──
+    # CHANGED: June 2026 — sort after filter; field names match matrix rows (flat, top-level)
+    _sort_choice = _val(_f_sort, "Net Pips")
+    _sort_map = {
+        "Prop Score": "prop_score",
+        "Net Pips":   "net_total_pips",
+        "Win Rate":   "win_rate",
+        "PF":         "net_profit_factor",
+        "Trades":     "total_trades",
+    }
+    _sk = _sort_map.get(_sort_choice, "net_total_pips")
+
+    def _sort_key(r):
+        if _sort_choice == "Prop Score" and _compute_prop_score is not None:
+            try:
+                score, _ = _compute_prop_score(r)
+                return score or 0
+            except Exception:
+                return 0
+        return _num(r, _sk) or 0
+
+    _grid_entries.sort(key=_sort_key, reverse=True)
+
+    # ── insert rows ──
+    # WHY: strategy dicts from load_strategy_list can be flat (backtest rows) or have a
+    #   'stats' sub-dict (some saved rows). Read flat first, fall back to sub-dict.
+    #   Each row is wrapped in try/except so one bad entry can never blank the whole grid.
+    # CHANGED: June 2026 — per-row guard; iid = id/counter stored in _iid_to_entry
+    # CHANGED: June 2026 — safe number formatter (_fmt) replaces inline :+,.Nf specs which
+    #   crash when Python sees the ',' flag combined with '+' in some value paths.
+    def _fmt(v, dec=1, sign=False, comma=False):
+        if not isinstance(v, (int, float)):
+            return "—"
+        try:
+            s = ("%.{d}f".replace("{d}", str(dec)) % v) if not comma else (
+                "{:,.{d}f}".format(v, d=dec))
+            if sign and v >= 0:
+                s = "+" + s
+            elif sign:
+                pass  # negative sign already in s
+            return s
+        except (ValueError, TypeError):
+            return "—"
+
+    _no_stats = 0
+    _shown = 0
+    for r in _grid_entries:
+        # separators were stripped earlier; this is a belt-and-braces guard only
+        if r.get('source') == 'separator':
+            continue
+        try:
+            stats  = r.get('stats') or {}
+            trades = r.get('total_trades') if r.get('total_trades') is not None else stats.get('total_trades')
+            wr     = r.get('win_rate')     if r.get('win_rate')     is not None else stats.get('win_rate')
+            pf     = (r.get('net_profit_factor') or r.get('profit_factor') or
+                      stats.get('net_profit_factor') or stats.get('profit_factor'))
+            net    = (r.get('net_total_pips') or r.get('net_pips') or
+                      stats.get('net_total_pips') or stats.get('net_pips'))
+            avg    = (r.get('net_avg_pips') or r.get('avg_pips') or
+                      stats.get('net_avg_pips') or stats.get('avg_pips'))
+            tf     = (r.get('entry_tf') or r.get('entry_timeframe') or
+                      stats.get('entry_tf') or '—')
+            exit_  = (r.get('exit_name') or r.get('exit_class') or
+                      r.get('exit_strategy') or stats.get('exit_name') or '?')
+            direction = r.get('direction') or r.get('dir') or '—'
+            try:
+                off = "N" if int(r.get('entry_bar_offset', 0) or 0) == 0 else "N+1"
+            except (TypeError, ValueError):
+                off = "N"
+
+            has_stats = trades is not None
+            if not has_stats:
+                _no_stats += 1
+
+            # CHANGED: June 2026 — profitability flag (net pips > 0), matches refiner definition
+            _nv = None
+            for _nk in ('net_pips', 'net_total_pips', 'total_pips'):
+                _nv_cand = stats.get(_nk) if stats.get(_nk) is not None else r.get(_nk)
+                if isinstance(_nv_cand, (int, float)):
+                    _nv = _nv_cand
+                    break
+            if not has_stats or _nv is None:
+                profit_cell = "—";  profit_tag = "neutral"
+            elif _nv > 0:
+                profit_cell = "✅"; profit_tag = "profitable"
+            else:
+                profit_cell = "❌"; profit_tag = "losing"
+
+            if has_stats and _money_for_strategy is not None:
+                _nd, _np, _ad, _ap = _money_for_strategy(r, net or 0, avg or 0)
+                net_d = ("$" + _fmt(_nd, 0, sign=True, comma=True)) if _nd is not None else "—"
+                net_p = (_fmt(_np, 1, sign=True) + "%")             if _np is not None else "—"
+                avg_d = ("$" + _fmt(_ad, 2, sign=True, comma=True)) if _ad is not None else "—"
+                avg_p = (_fmt(_ap, 2, sign=True) + "%")             if _ap is not None else "—"
+            else:
+                net_d = net_p = avg_d = avg_p = "—"
+
+            vals = (
+                "☐",
+                r.get('id', r.get('index', _shown)),
+                _stage_cell(r),
+                str(_rule_label(r))[:60],
+                exit_, tf, direction,
+                (int(trades) if has_stats else "—"),
+                (_fmt(wr, 1) + "%") if has_stats and isinstance(wr, (int, float)) else "—",
+                _fmt(pf, 2)         if has_stats and isinstance(pf, (int, float)) else "—",
+                _fmt(net, 0, sign=True, comma=True) if has_stats and isinstance(net, (int, float)) else "—",
+                net_d, net_p,
+                _fmt(avg, 1, sign=True) if has_stats and isinstance(avg, (int, float)) else "—",
+                avg_d, avg_p,
+                profit_cell,
+                (_format_win_pass(r)   if has_stats else "—"),
+                (_format_prop_score(r) if has_stats else "—"),
+                off,
+            )
+            _iid = str(r.get('id', _shown))
+            _iid_to_entry[_iid] = r
+            _grid_tree.insert('', 'end', iid=_iid, values=vals, tags=(profit_tag,))
+            _shown += 1
+        except Exception as _row_err:
+            print("[BATCH-GRID] skipped a row:", repr(_row_err), flush=True)
+            continue
+
+    print("[BATCH-GRID] source=%s shown=%d no_stats=%d" % (source, _shown, _no_stats),
+          flush=True)
     _grid_tree.heading("sel", text="☐", command=_toggle_all)
+
+    # ── caveat label ──
+    if _nostats_lbl is not None:
+        if _no_stats:
+            _nostats_lbl.config(
+                text="(%d of %d rules have no backtest data — re-run backtest to fill stats)"
+                     % (_no_stats, _shown))
+        else:
+            _nostats_lbl.config(text="")
 
 
 def _toggle_row(event):
@@ -119,8 +407,10 @@ def _do_generate(source_var):
         try:
             from project3_live_trading.batch_ea_tools import batch_generate
             # CHANGED: June 2026 — generate only the rules ticked in the grid
-            _selected = [_grid_entries[int(i)] for i in _batch_sel_iids
-                         if i.isdigit() and int(i) < len(_grid_entries)]
+            # WHY: iid is now r.get('id') or a counter — not a positional index — so
+            #   use _iid_to_entry which was populated during _populate_grid.
+            _selected = [_iid_to_entry[i] for i in _batch_sel_iids
+                         if i in _iid_to_entry]
             if not _selected:
                 _append("Tick at least one rule in the grid (or the header ☐ to select all).")
                 return
@@ -200,7 +490,8 @@ def _do_compare():
 # ── panel builder ─────────────────────────────────────────────────────────────
 
 def build_panel(parent):
-    global _log, _grid_tree
+    global _log, _grid_tree, _cur_source
+    global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable, _nostats_lbl
     panel = tk.Frame(parent, bg=BG)
 
     hdr = tk.Frame(panel, bg=DARK)
@@ -209,16 +500,20 @@ def build_panel(parent):
              font=("Segoe UI", 13, "bold"), padx=12, pady=8).pack(side=tk.LEFT)
 
     # Source + action buttons row
-    src_var = tk.StringVar(value="my_rules")
+    # CHANGED: June 2026 — default 'all' so grid is never blank if backtest_matrix.json
+    #   is a Git LFS stub (not yet pulled). Switch to 'backtest' once matrix is available.
+    src_var = tk.StringVar(value="all")
     bar = tk.Frame(panel, bg=BG)
-    bar.pack(fill="x", padx=10, pady=8)
+    bar.pack(fill="x", padx=10, pady=(8, 2))
     tk.Label(bar, text="Source:", bg=BG, fg=DARK,
              font=("Segoe UI", 9)).pack(side=tk.LEFT)
-    src_combo = ttk.Combobox(bar, textvariable=src_var, width=12, state="readonly",
-                              values=["my_rules", "saved_rules"])
+    # CHANGED: June 2026 — add backtest + optimizer + all options
+    src_combo = ttk.Combobox(bar, textvariable=src_var, width=14, state="readonly",
+                              values=["all", "backtest", "optimizer", "saved_rules", "my_rules"])
     src_combo.pack(side=tk.LEFT, padx=6)
-    # CHANGED: June 2026 — repopulate grid when source changes
     src_combo.bind("<<ComboboxSelected>>", lambda e: _populate_grid(src_var.get()))
+    # WHY: src_var is local to build_panel; filter-widget lambdas use _cur_source (module
+    #   global updated at the top of _populate_grid) so they always pass the active source.
 
     def _btn(text, cmd):
         return tk.Button(bar, text=text, command=cmd, bg=MIDGREY, fg="white",
@@ -229,21 +524,111 @@ def build_panel(parent):
     _btn("2. Build Run Files", _do_build_run_files).pack(side=tk.LEFT, padx=4)
     _btn("3. Compare Reports", _do_compare).pack(side=tk.LEFT, padx=4)
 
-    # CHANGED: June 2026 — rule selection grid (same interaction as Strategy Refiner)
+    # CHANGED: June 2026 — filter row (parity with Strategy Refiner)
+    filt_row = tk.Frame(panel, bg=BG)
+    filt_row.pack(fill="x", padx=10, pady=(0, 4))
+
+    tk.Label(filt_row, text="Stage:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_stage = ttk.Combobox(filt_row, width=10, state="readonly",
+                             values=["All", "Evaluation", "Funded", "Phase 1", "Phase 2"])
+    _f_stage.set("All")
+    _f_stage.pack(side=tk.LEFT, padx=(2, 6))
+
+    tk.Label(filt_row, text="TF:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_tf = ttk.Combobox(filt_row, width=6, state="readonly",
+                          values=["All", "M5", "M15", "H1", "H4", "D1"])
+    _f_tf.set("All")
+    _f_tf.pack(side=tk.LEFT, padx=(2, 6))
+
+    tk.Label(filt_row, text="Dir:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_dir = ttk.Combobox(filt_row, width=6, state="readonly",
+                           values=["All", "BUY", "SELL"])
+    _f_dir.set("All")
+    _f_dir.pack(side=tk.LEFT, padx=(2, 6))
+
+    tk.Label(filt_row, text="Min Trades:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_mintr = tk.Entry(filt_row, width=5, font=("Segoe UI", 9))
+    _f_mintr.pack(side=tk.LEFT, padx=(2, 6))
+
+    tk.Label(filt_row, text="Min Win%:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_minwr = tk.Entry(filt_row, width=5, font=("Segoe UI", 9))
+    _f_minwr.pack(side=tk.LEFT, padx=(2, 6))
+
+    tk.Label(filt_row, text="Sort:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_sort = ttk.Combobox(filt_row, width=12, state="readonly",
+                            values=["Prop Score", "Net Pips", "Win Rate", "PF", "Trades"])
+    _f_sort.set("Net Pips")
+    _f_sort.pack(side=tk.LEFT, padx=(2, 8))
+
+    for _w in (_f_stage, _f_tf, _f_dir, _f_sort):
+        _w.bind("<<ComboboxSelected>>", lambda e: _populate_grid(_cur_source))
+    _f_mintr.bind("<Return>", lambda e: _populate_grid(_cur_source))
+    _f_minwr.bind("<Return>", lambda e: _populate_grid(_cur_source))
+
+    # CHANGED: June 2026 — profitable-only checkbox (parity with refiner, default ON)
+    _f_profitable = tk.BooleanVar(value=True)
+    tk.Checkbutton(filt_row, text="Profitable only", variable=_f_profitable,
+                   bg=BG, fg=DARK, font=("Segoe UI", 9),
+                   command=lambda: _populate_grid(_cur_source)).pack(side=tk.LEFT, padx=(4, 8))
+
+    _nostats_lbl = tk.Label(filt_row, text="", bg=BG, fg="#888",
+                             font=("Segoe UI", 8))
+    _nostats_lbl.pack(side=tk.LEFT, padx=4)
+
+    # CHANGED: June 2026 — rule selection grid with refiner-parity columns
     _grid_frame = tk.Frame(panel, bg=WHITE)
     _grid_frame.pack(fill="both", expand=False, padx=6, pady=(2, 4))
-    cols = ("sel", "id", "combo", "tf", "exit", "off")
+
+    # CHANGED: June 2026 — batch grid columns mirror the Rule Refiner strategy grid
+    # CHANGED: June 2026 — added "profit" column (✅/❌/—) matching refiner's net>0 definition
+    cols = ("sel", "id", "stage", "rule", "exit", "tf", "dir", "trades", "wr", "pf",
+            "net_pips", "net_dollars", "net_pct", "avg_pips", "avg_dollars", "avg_pct",
+            "profit", "win_pass", "prop_score", "off")
     _grid_tree = ttk.Treeview(_grid_frame, columns=cols, show="headings", height=10)
-    for c, t, w in [("sel", "☐", 36), ("id", "ID", 50), ("combo", "Rule", 320),
-                    ("tf", "TF", 50), ("exit", "Exit", 120), ("off", "N/N+1", 60)]:
+    _col_spec = [
+        ("sel",        "☐",             34,  "center"),
+        ("id",         "ID",            60,  "center"),
+        ("stage",      "Stage",         70,  "center"),
+        ("rule",       "Rule",         180,  "w"),
+        ("exit",       "Exit Strategy",120,  "w"),
+        ("tf",         "TF",            45,  "center"),
+        ("dir",        "Dir",           50,  "center"),
+        ("trades",     "Trades",        60,  "center"),
+        ("wr",         "Win Rate",      70,  "center"),
+        ("pf",         "PF",            55,  "center"),
+        ("net_pips",   "Net Pips",      85,  "e"),
+        ("net_dollars","Net $",         85,  "e"),
+        ("net_pct",    "Net %",         65,  "e"),
+        ("avg_pips",   "Avg Pips",      70,  "e"),
+        ("avg_dollars","Avg $",         75,  "e"),
+        ("avg_pct",    "Avg %",         65,  "e"),
+        ("profit",     "Profit",        60,  "center"),
+        ("win_pass",   "Win Pass",      95,  "center"),
+        ("prop_score", "Prop Score",    80,  "center"),
+        ("off",        "N/N+1",         60,  "center"),
+    ]
+    for c, t, w, a in _col_spec:
         _grid_tree.heading(c, text=t)
-        _grid_tree.column(c, width=w, anchor="w")
+        _grid_tree.column(c, width=w, anchor=a)
     _grid_tree.heading("sel", text="☐", command=_toggle_all)
+    # CHANGED: June 2026 — row colors match refiner: green=profitable, red=losing, grey=no-data
+    _grid_tree.tag_configure("profitable", foreground="#28a745")
+    _grid_tree.tag_configure("losing",     foreground="#dc3545")
+    _grid_tree.tag_configure("neutral",    foreground="#888888")
     _grid_tree.bind("<Button-1>", _toggle_row, add="+")
     _gsb = ttk.Scrollbar(_grid_frame, orient="vertical", command=_grid_tree.yview)
     _grid_tree.configure(yscrollcommand=_gsb.set)
+    _gsb_h = ttk.Scrollbar(_grid_frame, orient="horizontal", command=_grid_tree.xview)
+    _grid_tree.configure(xscrollcommand=_gsb_h.set)
     _grid_tree.pack(side="left", fill="both", expand=True)
     _gsb.pack(side="right", fill="y")
+    _gsb_h.pack(side="bottom", fill="x")
     _populate_grid(src_var.get())
 
     # Log box
