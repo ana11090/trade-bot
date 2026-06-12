@@ -68,6 +68,8 @@ _last_out_dir    = None
 # CHANGED: June 2026 — remember run artifacts so "Run Tests" / Compare need no prompts
 _last_bat_path   = None
 _last_reports_dir = None
+# CHANGED: June 2026 — persist the MT5 data dir per session so canonical_batch_dir never re-asks
+_last_data_dir   = None
 
 
 # CHANGED: June 2026 — derive MT5 data dir (the folder above \MQL5) from any path under it
@@ -84,6 +86,24 @@ def _derive_data_dir(path):
             return head   # parent of MQL5 == data dir
         cur = head
     return None
+
+
+# CHANGED: June 2026 — single source of truth for the batch EA folder. All steps (generate,
+#   compile, build-run-files, run) use this exact path so the .ini's Expert=batch\name.ex5
+#   always resolves and MT5 indexes one clean folder (no Experts\batch\batch doubling).
+def _canonical_batch_dir():
+    """Return <data_dir>\MQL5\Experts\batch, asking once if data_dir is unknown."""
+    global _last_data_dir
+    dd = _last_data_dir or (_derive_data_dir(_last_out_dir) if _last_out_dir else None)
+    if not dd:
+        dd = filedialog.askdirectory(
+            title="Pick MT5 DATA folder (the one containing MQL5\\Experts)")
+        if not dd:
+            return None
+        _last_data_dir = dd
+    else:
+        _last_data_dir = dd
+    return os.path.join(dd, "MQL5", "Experts", "batch")
 
 
 # CHANGED: June 2026 — detect a running MT5 terminal before launching the tester bat
@@ -488,20 +508,20 @@ def _do_generate(source_var):
             if not _selected:
                 _append("Tick at least one rule in the grid (or the header ☐ to select all).")
                 return
-            out_dir = filedialog.askdirectory(
-                title="Choose output folder — .mq5 files go into a 'batch' subfolder")
+            # CHANGED: June 2026 — always generate into the canonical Experts\batch (no dialog,
+            #   no doubling). This is the folder the .ini references and MT5 indexes.
+            out_dir = _canonical_batch_dir()
             if not out_dir:
-                _append("Generate cancelled (no folder).")
+                _append("Generate cancelled (no MT5 data folder).")
                 return
-            # WHY: compile (1b) and Build Run Files both expect Experts\batch. Write .mq5 into
-            #   a 'batch' subfolder — but guard against the user having already navigated into
-            #   Experts\batch, which would produce Experts\batch\batch.
-            # CHANGED: June 2026 — auto-append batch subfolder; avoid double-batch
-            if os.path.basename(os.path.normpath(out_dir)).lower() != "batch":
-                out_dir = os.path.join(out_dir, "batch")
             os.makedirs(out_dir, exist_ok=True)
             global _last_out_dir
             _last_out_dir = out_dir
+            # Warn if a stale nested folder exists (leftover from the batch\batch bug)
+            _nested = os.path.join(out_dir, "batch")
+            if os.path.isdir(_nested):
+                _append("NOTE: stale folder found: %s — delete it so old EAs don't confuse the "
+                        "tester. Only files directly in %s are used." % (_nested, out_dir))
             src = source_var.get()
             _append("Generating %d EA(s) into %s ..." % (len(_selected), out_dir))
             results = batch_generate(out_dir, source=src, entries=_selected)
@@ -526,26 +546,23 @@ def _do_compile():
                 batch_compile, get_saved_metaeditor_path,
                 save_metaeditor_path, _find_metaeditor,
             )
-            # CHANGED: June 2026 — reuse the just-generated folder; derive data dir from it.
+            # CHANGED: June 2026 — compile from the canonical Experts\batch (same folder as
+            #   generate), no dialog. Derive data_dir from it for batch_compile's copy step.
             global _last_out_dir
-            out_dir = _last_out_dir
-            if not out_dir or not os.path.isdir(out_dir):
-                out_dir = filedialog.askdirectory(
-                    title="Pick the folder with generated .mq5 files")
+            out_dir = _last_out_dir or _canonical_batch_dir()
             if not out_dir:
-                _append("Compile cancelled (no .mq5 folder).")
+                _append("Compile cancelled (no MT5 data folder known).")
                 return
-
+            _last_out_dir = out_dir
             data_dir = _derive_data_dir(out_dir)
-            if data_dir:
-                _append("Using MT5 data dir: %s" % data_dir)
-            else:
+            if not data_dir:
                 _append("Couldn't derive MT5 data dir from %s — pick it." % out_dir)
                 data_dir = filedialog.askdirectory(
                     title="Pick MT5 DATA folder (contains MQL5\\Experts)")
                 if not data_dir:
                     _append("Compile cancelled (no data dir).")
                     return
+            _append("Compiling from: %s" % out_dir)
 
             # Resolve metaeditor: saved (this machine) → auto-detect → ask once → save.
             me = get_saved_metaeditor_path() or _find_metaeditor()
@@ -587,32 +604,28 @@ def _do_build_run_files():
     def work():
         try:
             from project3_live_trading.batch_ea_tools import emit_tester_inis
-            # CHANGED: June 2026 — pre-fill manifest path from last generate folder
+            # CHANGED: June 2026 — all paths derived from the canonical Experts\batch; no dialogs.
             global _last_out_dir, _last_bat_path, _last_reports_dir
-            _default_manifest = (os.path.join(_last_out_dir, "batch_manifest.json")
-                                 if _last_out_dir else "")
-            manifest = filedialog.askopenfilename(
-                title="Pick batch_manifest.json",
-                initialfile=os.path.basename(_default_manifest) if _default_manifest else None,
-                initialdir=(_last_out_dir or None),
-                filetypes=[("JSON", "*.json")])
-            if not manifest:
-                _append("Build run files cancelled.")
+            batch_dir = _last_out_dir or _canonical_batch_dir()
+            if not batch_dir:
+                _append("Build run files cancelled (no MT5 data folder known).")
                 return
-            # CHANGED: June 2026 — derive data dir from last generate folder; ask only if needed
-            data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
-            if data_dir:
-                _append("Using MT5 data dir: %s" % data_dir)
-            else:
+            _last_out_dir = batch_dir
+            manifest = os.path.join(batch_dir, "batch_manifest.json")
+            if not os.path.isfile(manifest):
+                _append("No manifest at %s — run '1. Generate EAs' first." % manifest)
+                return
+            data_dir = _derive_data_dir(batch_dir)
+            if not data_dir:
+                _append("Couldn't derive MT5 data dir from %s — pick it." % batch_dir)
                 data_dir = filedialog.askdirectory(
                     title="Pick MT5 DATA folder (contains MQL5\\Experts)")
-            if not data_dir:
-                _append("Build run files cancelled (no data dir).")
-                return
-            reports_dir = filedialog.askdirectory(title="Pick folder for MT5 reports output")
-            # CHANGED: June 2026 — default reports dir next to the manifest if not chosen
-            if not reports_dir:
-                reports_dir = os.path.join(os.path.dirname(manifest), "reports")
+                if not data_dir:
+                    _append("Build run files cancelled (no data dir).")
+                    return
+            # CHANGED: June 2026 — reports in a subfolder of Experts\batch, not the EA folder
+            reports_dir = os.path.join(batch_dir, "reports")
+            _append("Using batch dir : %s" % batch_dir)
             _append("Reports will be written to: %s" % os.path.abspath(reports_dir))
             # CHANGED: June 2026 — resolve terminal64 (derive from metaeditor → ask once → save)
             from project3_live_trading.batch_ea_tools import (
