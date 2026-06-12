@@ -454,11 +454,16 @@ def _do_generate(source_var):
     _run_bg(work)
 
 
-# CHANGED: June 2026 — headless compile via metaeditor64 (eliminates manual compile step)
+# CHANGED: June 2026 — headless compile via metaeditor64; remembers the .exe path per machine
+# WHY: user runs on two PCs — the path differs; save it once per hostname in gitignored
+#   p1_config.json so neither machine inherits the other's path.
 def _do_compile():
     def work():
         try:
-            from project3_live_trading.batch_ea_tools import batch_compile
+            from project3_live_trading.batch_ea_tools import (
+                batch_compile, get_saved_metaeditor_path,
+                save_metaeditor_path, _find_metaeditor,
+            )
             out_dir = filedialog.askdirectory(
                 title="Pick the folder with generated .mq5 files")
             if not out_dir:
@@ -469,8 +474,25 @@ def _do_compile():
             if not data_dir:
                 _append("Compile cancelled (no data dir).")
                 return
+
+            # Resolve metaeditor: saved (this machine) → auto-detect → ask once → save.
+            me = get_saved_metaeditor_path() or _find_metaeditor()
+            if not me:
+                _append("metaeditor64.exe not found automatically on this machine.")
+                me = filedialog.askopenfilename(
+                    title="Locate metaeditor64.exe — saved for THIS computer only",
+                    filetypes=[("metaeditor64", "metaeditor64.exe"), ("All exe", "*.exe")])
+                if not me:
+                    _append("Compile cancelled (no metaeditor64.exe picked).")
+                    return
+                if save_metaeditor_path(me):
+                    _append("Saved metaeditor64 path for this machine (%s)."
+                            % __import__('socket').gethostname())
+                else:
+                    _append("Warning: could not save the path; will ask again next time.")
+
             _append("Compiling EAs with metaeditor64 (headless) ...")
-            results = batch_compile(out_dir, data_dir)
+            results = batch_compile(out_dir, data_dir, metaeditor_path=me)
             ok = sum(1 for r in results if r.get("ok"))
             _append("Compiled %d/%d EA(s) to .ex5." % (ok, len(results)))
             for r in results:

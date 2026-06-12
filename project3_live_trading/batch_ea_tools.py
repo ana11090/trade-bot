@@ -21,6 +21,7 @@ import json
 import shutil
 import subprocess
 import glob
+import socket
 
 # repo root = two levels up from this file
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +59,78 @@ def _find_metaeditor(terminal_dir=None, explicit=None):
     return None
 
 
+# WHY: metaeditor64.exe lives at a different path on each of the two machines. Persist it in
+#   the gitignored p1_config.json keyed by hostname so each PC keeps its own entry and it
+#   is never shared via git. config_loader.save() only handles keys in DEFAULTS and str()s
+#   values, so we read/write the raw JSON file directly for this dict-valued key. Unknown
+#   keys survive config_loader.save() calls untouched (verified in config_loader.load()).
+# CHANGED: June 2026 — per-machine metaeditor path memory (hostname-keyed in p1_config.json)
+
+_ME_CFG_KEY = "metaeditor_path_by_host"
+
+
+def _p1_config_path():
+    """Absolute path to the gitignored p1_config.json (project1_reverse_engineering/)."""
+    # Mirror config_loader._CONFIG_FILE location: <repo>/project1_reverse_engineering/p1_config.json
+    return os.path.join(_ROOT, "project1_reverse_engineering", "p1_config.json")
+
+
+def get_saved_metaeditor_path():
+    """Return the saved metaeditor64.exe path for THIS machine, or None.
+
+    Reads p1_config.json directly (not via config_loader.load()) because the
+    value is a dict — config_loader.load() only accepts keys in DEFAULTS and
+    str()-coerces values, which would corrupt a hostname→path mapping.
+    """
+    cfg_path = _p1_config_path()
+    if not os.path.isfile(cfg_path):
+        return None
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        by_host = raw.get(_ME_CFG_KEY) or {}
+        p = by_host.get(socket.gethostname())
+        return p if (p and os.path.isfile(p)) else None
+    except Exception:
+        return None
+
+
+def save_metaeditor_path(path):
+    """Persist metaeditor64.exe path for THIS machine in p1_config.json (gitignored).
+
+    Merges into the existing file so all other keys (data_source_id, etc.) are
+    preserved. Atomic write via .tmp → rename.
+    Returns True on success.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    cfg_path = _p1_config_path()
+    try:
+        raw = {}
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        by_host = raw.get(_ME_CFG_KEY) or {}
+        by_host[socket.gethostname()] = path
+        raw[_ME_CFG_KEY] = by_host
+        tmp = cfg_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2)
+        if os.path.exists(cfg_path):
+            os.replace(tmp, cfg_path)
+        else:
+            os.rename(tmp, cfg_path)
+        return True
+    except Exception as e:
+        print("[COMPILE] could not save metaeditor path:", e)
+        try:
+            if os.path.exists(cfg_path + ".tmp"):
+                os.remove(cfg_path + ".tmp")
+        except Exception:
+            pass
+        return False
+
+
 def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
                   metaeditor_path=None, terminal_dir=None, timeout_sec=120):
     """Copy generated .mq5 from out_dir into <data_dir>\\MQL5\\<experts_subdir>, compile each
@@ -70,6 +143,9 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
     terminal_dir    : MT5 install dir to help auto-detect metaeditor64.exe
     timeout_sec     : per-file compile timeout
     """
+    # CHANGED: June 2026 — prefer per-machine saved path, then auto-detect
+    if metaeditor_path is None:
+        metaeditor_path = get_saved_metaeditor_path()
     me = _find_metaeditor(terminal_dir, metaeditor_path)
     if not me:
         return [{"name": "(all)", "ok": False,
