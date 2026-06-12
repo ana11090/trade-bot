@@ -67,6 +67,24 @@ _cur_source   = "all"  # tracks the active source so filter-widget callbacks don
 
 # ── grid helpers ──────────────────────────────────────────────────────────────
 
+# WHY: matrix net/pf/etc. can arrive as str or non-native numeric. The refiner coerces with
+#   float() (strategy_refiner_panel.py:6498) — the strict isinstance() gate was rejecting
+#   those values, so losing rows never got the ❌/losing tag and "Profitable only" had nothing
+#   to filter. Coerce the same way the refiner does.
+# CHANGED: June 2026 — tolerant numeric coercion (handles str like "1,234" / "-1234")
+def _as_num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.strip().replace(',', '').replace('+', '').replace('−', '-')
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return None
+
 # CHANGED: June 2026 — stage cell; strategy dicts from load_strategy_list are flat
 def _stage_cell(r):
     # WHY: prop_firm_stage lives at the top level of load_strategy_list() dicts (flat).
@@ -158,12 +176,13 @@ def _populate_grid(source):
             return default
 
     def _num(r, *keys):
-        # Return the first numeric value found at any of the given keys (flat then stats sub-dict).
+        # CHANGED: June 2026 — coerce via _as_num (str/non-native ok), matches refiner behaviour
         stats = r.get('stats') or {}
         for k in keys:
-            v = r.get(k) if r.get(k) is not None else stats.get(k)
-            if isinstance(v, (int, float)):
-                return v
+            raw = r.get(k) if r.get(k) is not None else stats.get(k)
+            val = _as_num(raw)
+            if val is not None:
+                return val
         return None
 
     # ── filter predicate — applied to _grid_entries before the insert loop ──
@@ -220,7 +239,8 @@ def _populate_grid(source):
                 return score or 0
             except Exception:
                 return 0
-        return _num(r, _sk) or 0
+        # CHANGED: June 2026 — _num already coerces via _as_num; string vals sort correctly
+        return _num(r, _sk) or 0.0
 
     _grid_entries.sort(key=_sort_key, reverse=True)
 
@@ -253,14 +273,16 @@ def _populate_grid(source):
             continue
         try:
             stats  = r.get('stats') or {}
-            trades = r.get('total_trades') if r.get('total_trades') is not None else stats.get('total_trades')
-            wr     = r.get('win_rate')     if r.get('win_rate')     is not None else stats.get('win_rate')
-            pf     = (r.get('net_profit_factor') or r.get('profit_factor') or
-                      stats.get('net_profit_factor') or stats.get('profit_factor'))
-            net    = (r.get('net_total_pips') or r.get('net_pips') or
-                      stats.get('net_total_pips') or stats.get('net_pips'))
-            avg    = (r.get('net_avg_pips') or r.get('avg_pips') or
-                      stats.get('net_avg_pips') or stats.get('avg_pips'))
+            # CHANGED: June 2026 — coerce all numeric fields via _as_num so string values
+            #   (e.g. "1,234" stored in matrix JSON) don't produce None and blank the cells.
+            trades = _as_num(r.get('total_trades') if r.get('total_trades') is not None else stats.get('total_trades'))
+            wr     = _as_num(r.get('win_rate')     if r.get('win_rate')     is not None else stats.get('win_rate'))
+            pf     = _as_num(r.get('net_profit_factor') or r.get('profit_factor') or
+                             stats.get('net_profit_factor') or stats.get('profit_factor'))
+            net    = _as_num(r.get('net_total_pips') or r.get('net_pips') or
+                             stats.get('net_total_pips') or stats.get('net_pips'))
+            avg    = _as_num(r.get('net_avg_pips') or r.get('avg_pips') or
+                             stats.get('net_avg_pips') or stats.get('avg_pips'))
             tf     = (r.get('entry_tf') or r.get('entry_timeframe') or
                       stats.get('entry_tf') or '—')
             exit_  = (r.get('exit_name') or r.get('exit_class') or
@@ -275,12 +297,12 @@ def _populate_grid(source):
             if not has_stats:
                 _no_stats += 1
 
-            # CHANGED: June 2026 — profitability flag (net pips > 0), matches refiner definition
+            # CHANGED: June 2026 — coerce net (matches refiner net>0 definition); net_total_pips
+            #   listed first (same priority as refiner line 6571). _as_num handles string values.
             _nv = None
-            for _nk in ('net_pips', 'net_total_pips', 'total_pips'):
-                _nv_cand = stats.get(_nk) if stats.get(_nk) is not None else r.get(_nk)
-                if isinstance(_nv_cand, (int, float)):
-                    _nv = _nv_cand
+            for _nk in ('net_total_pips', 'net_pips', 'total_pips'):
+                _nv = _as_num(stats.get(_nk) if stats.get(_nk) is not None else r.get(_nk))
+                if _nv is not None:
                     break
             if not has_stats or _nv is None:
                 profit_cell = "—";  profit_tag = "neutral"
@@ -305,11 +327,11 @@ def _populate_grid(source):
                 str(_rule_label(r))[:60],
                 exit_, tf, direction,
                 (int(trades) if has_stats else "—"),
-                (_fmt(wr, 1) + "%") if has_stats and isinstance(wr, (int, float)) else "—",
-                _fmt(pf, 2)         if has_stats and isinstance(pf, (int, float)) else "—",
-                _fmt(net, 0, sign=True, comma=True) if has_stats and isinstance(net, (int, float)) else "—",
+                (_fmt(wr, 1) + "%") if (has_stats and wr is not None) else "—",
+                _fmt(pf, 2)         if (has_stats and pf is not None) else "—",
+                _fmt(net, 0, sign=True, comma=True) if (has_stats and net is not None) else "—",
                 net_d, net_p,
-                _fmt(avg, 1, sign=True) if has_stats and isinstance(avg, (int, float)) else "—",
+                _fmt(avg, 1, sign=True) if (has_stats and avg is not None) else "—",
                 avg_d, avg_p,
                 profit_cell,
                 (_format_win_pass(r)   if has_stats else "—"),
