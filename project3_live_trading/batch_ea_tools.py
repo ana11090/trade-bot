@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import glob
 import socket
+import time
 
 # repo root = two levels up from this file
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -154,7 +155,25 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
     dest_dir = os.path.join(data_dir, "MQL5", experts_subdir)
     os.makedirs(dest_dir, exist_ok=True)
 
-    mq5_files = sorted(glob.glob(os.path.join(out_dir, "*.mq5")))
+    # WHY: only compile the EAs from THIS batch (manifest), not stale .mq5 left in the folder
+    #   from previous runs. Without this, 11 files compiled when 7 were generated.
+    # CHANGED: June 2026 — restrict to manifest entries; fall back to glob if no manifest
+    mq5_files = []
+    man_path = os.path.join(out_dir, "batch_manifest.json")
+    if os.path.isfile(man_path):
+        try:
+            with open(man_path, "r", encoding="utf-8") as f:
+                man = json.load(f)
+            for rec in man:
+                nm = rec.get("name")
+                if nm:
+                    cand = os.path.join(out_dir, nm + ".mq5")
+                    if os.path.isfile(cand):
+                        mq5_files.append(cand)
+        except Exception as e:
+            print("[COMPILE] manifest read failed (%s); falling back to glob" % e)
+    if not mq5_files:
+        mq5_files = sorted(glob.glob(os.path.join(out_dir, "*.mq5")))
     if not mq5_files:
         return [{"name": "(none)", "ok": False, "error": "no .mq5 files in " + out_dir}]
 
@@ -165,10 +184,27 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
         ex5  = os.path.join(dest_dir, name + ".ex5")
         log  = os.path.join(dest_dir, name + ".compile.log")
         try:
-            shutil.copy2(src, dest)
-            # remove stale .ex5 so the existence check after compile is meaningful
+            # WHY: if EAs were generated straight into Experts\batch, out_dir == dest_dir and
+            #   src == dest — shutil.copy2 onto itself raises SameFileError / WinError 32.
+            #   Detect and skip the copy; metaeditor64 compiles the file in place.
+            # CHANGED: June 2026 — no self-copy; compile in place when already in dest_dir
+            _same = (os.path.abspath(src) == os.path.abspath(dest))
+            if not _same:
+                try:
+                    shutil.copy2(src, dest)
+                except shutil.SameFileError:
+                    pass
+            # Remove stale .ex5 so the existence check after compile is meaningful.
+            # MT5 may hold a lock (WinError 32) — retry briefly, then continue.
+            # CHANGED: June 2026 — retry loop for locked .ex5
             if os.path.isfile(ex5):
-                os.remove(ex5)
+                for _try in range(3):
+                    try:
+                        os.remove(ex5)
+                        break
+                    except PermissionError:
+                        time.sleep(0.4)
+
             cmd = [me, "/compile:" + dest, "/log:" + log]
             try:
                 subprocess.run(cmd, timeout=timeout_sec,
@@ -199,6 +235,9 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
                     "no .ex5 produced")
                 results.append({"name": name, "ok": False, "error": first_err})
 
+        except PermissionError as e:
+            results.append({"name": name, "ok": False,
+                            "error": "file locked (close MT5 terminal, then retry): %s" % e})
         except Exception as e:
             results.append({"name": name, "ok": False, "error": str(e)})
 

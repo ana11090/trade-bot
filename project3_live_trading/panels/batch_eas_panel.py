@@ -555,6 +555,12 @@ def _do_compile():
             for r in results:
                 if not r.get("ok"):
                     _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
+            # CHANGED: June 2026 — actionable hint when MT5 is holding file locks
+            if any("lock" in (r.get("error") or "").lower() or
+                   "WinError 32" in (r.get("error") or "") for r in results):
+                _append("Some files were LOCKED. Close the MT5 terminal (or at least "
+                        "MetaEditor), then run 1b again. metaeditor64 can't overwrite "
+                        ".ex5 while MT5 holds them open.")
             if ok == len(results) and ok > 0:
                 _append("All compiled. Next: 2. Build Run Files.")
         except Exception as e:
