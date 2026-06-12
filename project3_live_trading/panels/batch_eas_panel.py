@@ -493,11 +493,12 @@ def _do_generate(source_var):
             if not out_dir:
                 _append("Generate cancelled (no folder).")
                 return
-            # WHY: compile (1b) and Build Run Files both expect Experts\batch. Always write
-            #   .mq5 into a 'batch' subfolder of whatever folder the user picks so the next
-            #   steps find them without an extra navigation step.
-            # CHANGED: June 2026 — auto-append batch subfolder
-            out_dir = os.path.join(out_dir, "batch")
+            # WHY: compile (1b) and Build Run Files both expect Experts\batch. Write .mq5 into
+            #   a 'batch' subfolder — but guard against the user having already navigated into
+            #   Experts\batch, which would produce Experts\batch\batch.
+            # CHANGED: June 2026 — auto-append batch subfolder; avoid double-batch
+            if os.path.basename(os.path.normpath(out_dir)).lower() != "batch":
+                out_dir = os.path.join(out_dir, "batch")
             os.makedirs(out_dir, exist_ok=True)
             global _last_out_dir
             _last_out_dir = out_dir
@@ -661,24 +662,73 @@ def _do_run_tests():
                         "terminal holds the files.")
                 return
 
+            import subprocess, threading, time, glob as _glob
             _append("Running backtests via %s ..." % os.path.basename(bat))
-            _append("MT5 will launch headless once per EA. This can take a few minutes.")
+            _append("MT5 runs each EA headless (no visible window). Watch the heartbeat below.")
+
             proc = subprocess.Popen(
                 ["cmd", "/c", bat],
                 cwd=os.path.dirname(bat),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1)
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line:
-                    _append("  " + line)
-            proc.wait()
 
-            if proc.returncode == 0:
+            # Thread 1: stream the bat's own echo lines (=== RUNNING/DONE ===, BATCH TESTER …)
+            def _pump():
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        _append("  " + line)
+            _t = threading.Thread(target=_pump, daemon=True)
+            _t.start()
+
+            # Heartbeat: every 5s prove work is happening — MT5 alive + newest report growing.
+            # CHANGED: June 2026 — heartbeat replaces silent wait; gives live proof per-EA
+            rdir = _last_reports_dir
+            _beat = 0
+            while proc.poll() is None:
+                time.sleep(5)
+                _beat += 1
+                alive = _mt5_is_running()
+                newest = ""
+                size = 0
+                if rdir and os.path.isdir(rdir):
+                    _files = (_glob.glob(os.path.join(rdir, "*.xlsx")) +
+                              _glob.glob(os.path.join(rdir, "*.htm")) +
+                              _glob.glob(os.path.join(rdir, "*.xml")))
+                    if _files:
+                        newest = max(_files, key=os.path.getmtime)
+                        try:
+                            size = os.path.getsize(newest)
+                        except OSError:
+                            size = 0
+                done_n = len(_glob.glob(os.path.join(rdir, "*.xlsx"))) if (rdir and os.path.isdir(rdir)) else 0
+                _append("  [heartbeat %d] MT5 %s | reports done: %d%s"
+                        % (_beat,
+                           "running" if alive else "starting/closing",
+                           done_n,
+                           (" | writing %s (%d KB)" % (os.path.basename(newest), size // 1024))
+                           if newest else ""))
+                # A2: tail the MT5 tester log for the "bars processed" line
+                _tlog_dir = os.path.join(_derive_data_dir(_last_out_dir) or "", "Tester", "logs")
+                if os.path.isdir(_tlog_dir):
+                    _tlogs = _glob.glob(os.path.join(_tlog_dir, "*.log"))
+                    if _tlogs:
+                        _tl = max(_tlogs, key=os.path.getmtime)
+                        try:
+                            with open(_tl, "rb") as _f:
+                                _f.seek(max(0, os.path.getsize(_tl) - 400))
+                                _tail = _f.read().decode("utf-16", "ignore").strip().splitlines()
+                            if _tail:
+                                _append("    tester: " + _tail[-1][-120:])
+                        except Exception:
+                            pass
+            _t.join(timeout=2)
+            rc = proc.returncode
+
+            if rc == 0:
                 _append("All tester passes finished.")
             else:
-                _append("Tester batch exited with code %d (some passes may have failed)."
-                        % proc.returncode)
+                _append("Tester batch exited with code %d (some passes may have failed)." % rc)
 
             if _last_reports_dir and os.path.isdir(_last_reports_dir):
                 n_xlsx = len([f for f in os.listdir(_last_reports_dir)
