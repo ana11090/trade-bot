@@ -17,6 +17,18 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _MYRULES = os.path.join(_ROOT, "my_rules.json")
 _PROPDIR = os.path.join(_ROOT, "prop_firms")
 
+# CHANGED: June 2026 — safe float coercer for stats fed into generate_ea
+def _f(v, default=0.0):
+    try:
+        if v is None:
+            return default
+        if isinstance(v, str):
+            v = v.strip().replace(',', '').replace('+', '').replace('−', '-')
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 _tree = None
 _rule_txt = None
 _ea_txt = None
@@ -158,10 +170,18 @@ def _gen_ea_for(entry):
         "exit_name": r.get("exit_name", "FixedSLTP"),
         "exit_strategy_params": r.get("exit_params") or r.get("exit_strategy_params") or {},
         "filters_applied": _fa,
+        # WHY: flat load_strategy_list entries carry None for missing stats; ea_generator
+        #   formats them with {:.1f}/{:.2f} which crashes on None. Coerce to float (0.0).
+        #   Also resolve matrix field aliases (net_total_pips / net_profit_factor).
+        # WHY win_rate: ea_generator multiplies by 100, so expects a fraction (0.47).
+        #   If the row stores it as a percent (47.0), divide back down.
+        # CHANGED: June 2026 — never pass None stats into generate_ea
         "stats": {
-            "win_rate": r.get("win_rate"),
-            "total_pips": r.get("total_pips"),
-            "profit_factor": r.get("net_profit_factor"),
+            "win_rate":      (_f(r.get("win_rate")) / 100.0
+                              if _f(r.get("win_rate")) > 1.0
+                              else _f(r.get("win_rate"))),
+            "total_pips":    _f(r.get("total_pips") or r.get("net_total_pips")),
+            "profit_factor": _f(r.get("profit_factor") or r.get("net_profit_factor")),
         },
         "regime_filter_conditions": r.get("regime_filter_conditions", []),
     }

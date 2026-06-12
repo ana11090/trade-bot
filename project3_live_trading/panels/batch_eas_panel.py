@@ -456,10 +456,17 @@ def _do_generate(source_var):
             if not _selected:
                 _append("Tick at least one rule in the grid (or the header ☐ to select all).")
                 return
-            out_dir = filedialog.askdirectory(title="Choose output folder for .mq5 + manifest")
+            out_dir = filedialog.askdirectory(
+                title="Choose output folder — .mq5 files go into a 'batch' subfolder")
             if not out_dir:
                 _append("Generate cancelled (no folder).")
                 return
+            # WHY: compile (1b) and Build Run Files both expect Experts\batch. Always write
+            #   .mq5 into a 'batch' subfolder of whatever folder the user picks so the next
+            #   steps find them without an extra navigation step.
+            # CHANGED: June 2026 — auto-append batch subfolder
+            out_dir = os.path.join(out_dir, "batch")
+            os.makedirs(out_dir, exist_ok=True)
             src = source_var.get()
             _append("Generating %d EA(s) into %s ..." % (len(_selected), out_dir))
             results = batch_generate(out_dir, source=src, entries=_selected)
