@@ -605,7 +605,8 @@ def build_panel(parent):
 
     # CHANGED: June 2026 — rule selection grid with refiner-parity columns
     _grid_frame = tk.Frame(panel, bg=WHITE)
-    _grid_frame.pack(fill="both", expand=False, padx=6, pady=(2, 4))
+    # CHANGED: June 2026 — expand=True so the grid + scrollbars get real vertical space
+    _grid_frame.pack(fill="both", expand=True, padx=6, pady=(2, 4))
 
     # CHANGED: June 2026 — batch grid columns mirror the Rule Refiner strategy grid
     # CHANGED: June 2026 — added "profit" column (✅/❌/—) matching refiner's net>0 definition
@@ -637,7 +638,9 @@ def build_panel(parent):
     ]
     for c, t, w, a in _col_spec:
         _grid_tree.heading(c, text=t)
-        _grid_tree.column(c, width=w, anchor=a)
+        # CHANGED: June 2026 — minwidth + stretch=False so columns hold their size and the
+        #   horizontal scrollbar has real range (matches refiner grid feel)
+        _grid_tree.column(c, width=w, minwidth=max(40, w // 2), anchor=a, stretch=False)
     _grid_tree.heading("sel", text="☐", command=_toggle_all)
     # CHANGED: June 2026 — row colors match refiner: green=profitable, red=losing, grey=no-data
     _grid_tree.tag_configure("profitable", foreground="#28a745")
@@ -648,14 +651,34 @@ def build_panel(parent):
     _grid_tree.configure(yscrollcommand=_gsb.set)
     _gsb_h = ttk.Scrollbar(_grid_frame, orient="horizontal", command=_grid_tree.xview)
     _grid_tree.configure(xscrollcommand=_gsb_h.set)
+    # CHANGED: June 2026 — pack scrollbars BEFORE the tree (refiner order) so each bar
+    #   reserves its strip before the tree claims the remaining space.
+    _gsb_h.pack(side="bottom", fill="x")   # h-bar first → owns the bottom strip
+    _gsb.pack(side="right",  fill="y")     # v-bar next  → owns the right strip
     _grid_tree.pack(side="left", fill="both", expand=True)
-    _gsb.pack(side="right", fill="y")
-    _gsb_h.pack(side="bottom", fill="x")
+    # CHANGED: June 2026 — wheel scroll on hover (parity with refiner); bind() not bind_all()
+    #   so it only fires over this grid and doesn't hijack other panels' scrolling.
+    def _grid_wheel(event):
+        try:
+            if event.num == 4:
+                _grid_tree.yview_scroll(-3, "units")
+            elif event.num == 5:
+                _grid_tree.yview_scroll(3, "units")
+            else:
+                _grid_tree.yview_scroll(int(-1 * (event.delta / 120)) * 3, "units")
+        except Exception:
+            pass
+        return "break"
+    _grid_tree.bind("<MouseWheel>", _grid_wheel)
+    _grid_tree.bind("<Button-4>",   _grid_wheel)
+    _grid_tree.bind("<Button-5>",   _grid_wheel)
+    _grid_tree.bind("<Shift-MouseWheel>",
+                    lambda e: (_grid_tree.xview_scroll(int(-1*(e.delta/120))*3, "units"), "break")[1])
     _populate_grid(src_var.get())
 
-    # Log box
-    _log = tk.Text(panel, font=("Consolas", 9), bg=WHITE, fg=DARK, wrap="word")
-    _log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    # Log box — expand=False so the grid above gets the vertical space
+    _log = tk.Text(panel, font=("Consolas", 9), bg=WHITE, fg=DARK, wrap="word", height=6)
+    _log.pack(fill="x", expand=False, padx=10, pady=(0, 10))
     _log.insert("end",
                 "Batch flow: 1. Tick rules above -> Generate EAs  ->  "
                 "(compile .mq5->ex5 in MetaEditor)  ->  2. Build Run Files  "
