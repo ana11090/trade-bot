@@ -473,8 +473,14 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         elif _sub.lower() == 'experts':
             _sub = ''
         expert_rel = (_sub + '\\' + name + '.ex5') if _sub else (name + '.ex5')
-        # CHANGED: June 2026 — absolute report path with explicit .xlsx so MT5 writes a known file
-        report_path = os.path.abspath(os.path.join(reports_dir, name + '.xlsx')).replace('/', '\\')
+        # WHY: MT5 tester Report= is relative to the terminal data dir, not absolute — absolute
+        #   paths are ignored and the reports folder stays empty. Also, /config writes HTML (.html),
+        #   not xlsx; specifying an extension causes MT5 to double-append or skip. Use a data-dir-
+        #   relative path with NO extension; MT5 writes <name>.html automatically.
+        # CHANGED: June 2026 — data-dir-relative report path, no extension
+        _abs_report = os.path.join(reports_dir, name)                       # full path, no ext
+        _rel_report = os.path.relpath(_abs_report, terminal_data_dir)        # relative to data dir
+        report_path = _rel_report.replace('/', '\\')
         # CHANGED: June 2026 — use each EA's own timeframe from the manifest, not the global default
         _period = rec.get('entry_tf') or period
         ini = _INI_TEMPLATE.format(

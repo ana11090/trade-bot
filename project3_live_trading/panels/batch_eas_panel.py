@@ -707,8 +707,9 @@ def _do_run_tests():
                 newest = ""
                 size = 0
                 if rdir and os.path.isdir(rdir):
-                    _files = (_glob.glob(os.path.join(rdir, "*.xlsx")) +
-                              _glob.glob(os.path.join(rdir, "*.htm")) +
+                    # CHANGED: June 2026 — MT5 /config writes HTML, not xlsx; count .htm/.html
+                    _files = (_glob.glob(os.path.join(rdir, "*.htm")) +
+                              _glob.glob(os.path.join(rdir, "*.html")) +
                               _glob.glob(os.path.join(rdir, "*.xml")))
                     if _files:
                         newest = max(_files, key=os.path.getmtime)
@@ -716,7 +717,8 @@ def _do_run_tests():
                             size = os.path.getsize(newest)
                         except OSError:
                             size = 0
-                done_n = len(_glob.glob(os.path.join(rdir, "*.xlsx"))) if (rdir and os.path.isdir(rdir)) else 0
+                done_n = (len(_glob.glob(os.path.join(rdir, "*.htm"))) +
+                          len(_glob.glob(os.path.join(rdir, "*.html")))) if (rdir and os.path.isdir(rdir)) else 0
                 _append("  [heartbeat %d] MT5 %s | reports done: %d%s"
                         % (_beat,
                            "running" if alive else "starting/closing",
@@ -746,9 +748,10 @@ def _do_run_tests():
                 _append("Tester batch exited with code %d (some passes may have failed)." % rc)
 
             if _last_reports_dir and os.path.isdir(_last_reports_dir):
-                n_xlsx = len([f for f in os.listdir(_last_reports_dir)
-                              if f.lower().endswith(".xlsx")])
-                _append("Reports folder: %s (%d .xlsx)" % (_last_reports_dir, n_xlsx))
+                # CHANGED: June 2026 — count .htm/.html (MT5 /config output format)
+                n_rep = len([f for f in os.listdir(_last_reports_dir)
+                             if f.lower().endswith((".htm", ".html"))])
+                _append("Reports folder: %s (%d reports)" % (_last_reports_dir, n_rep))
                 _append("Next: click '3. Compare Reports'.")
             else:
                 _append("Done. Next: click '3. Compare Reports' and pick the reports folder.")

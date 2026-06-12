@@ -27,31 +27,99 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 
 
-def _read_mt5_entries(xlsx_path):
-    """Return sorted list of MT5 entry datetimes (deals with Direction == 'in')."""
-    import openpyxl
-    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    rows = list(wb.worksheets[0].iter_rows(values_only=True))
-    hdr_i = None
-    for i, row in enumerate(rows):
-        if row and row[0] == 'Time' and 'Deal' in [str(c) for c in row]:
-            hdr_i = i
+def _parse_mt5_html_stats(path):
+    """Parse summary stats from an MT5 HTML report (UTF-16). Returns dict or None."""
+    # WHY: MT5 /config tester writes HTML, not xlsx. Stats live in <td> pairs.
+    # CHANGED: June 2026 — HTML report parser replaces xlsx reader for summary stats
+    import re
+    for enc in ("utf-16", "utf-16-le", "utf-8"):
+        try:
+            with open(path, encoding=enc, errors="ignore") as f:
+                html = f.read()
             break
-    if hdr_i is None:
+        except Exception:
+            html = ""
+    if not html:
+        return None
+
+    def _grab(label):
+        m = re.search(re.escape(label) + r'\s*:?\s*</td>\s*<td[^>]*>\s*([-\d., ]+)',
+                      html, re.IGNORECASE)
+        if not m:
+            return None
+        return m.group(1).replace(' ', '').replace(',', '')
+
+    return {
+        "net_profit":    _grab("Total Net Profit") or _grab("Net Profit"),
+        "profit_factor": _grab("Profit Factor"),
+        "trades":        _grab("Total Trades"),
+    }
+
+
+def _read_mt5_entries_html(path):
+    """Return sorted list of MT5 entry datetimes from an HTML report (deals 'in')."""
+    # WHY: MT5 /config writes HTML; deal rows look like <td>2026.01.05 08:00</td>...<td>in</td>
+    # CHANGED: June 2026 — parse HTML trade table instead of xlsx
+    import re
+    for enc in ("utf-16", "utf-16-le", "utf-8"):
+        try:
+            with open(path, encoding=enc, errors="ignore") as f:
+                html = f.read()
+            break
+        except Exception:
+            html = ""
+    if not html:
         return []
+    # Each row: sequence of <td> cells; we want rows where one cell matches 'in' (entry direction)
+    rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
     out = []
-    for row in rows[hdr_i + 1:]:
-        if not row or row[0] is None:
+    for row in rows:
+        cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
+        cells = [re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+        if not cells:
             continue
-        if 'Balance:' in str(row[0]):
-            break
-        # Direction column is index 4 in these reports
-        if len(row) > 4 and str(row[4]).lower() == 'in':
-            try:
-                out.append(datetime.strptime(str(row[0])[:16], '%Y.%m.%d %H:%M'))
-            except Exception:
-                pass
+        if any(c.lower() == 'in' for c in cells):
+            # first cell that looks like a datetime
+            for c in cells:
+                try:
+                    out.append(datetime.strptime(c[:16], '%Y.%m.%d %H:%M'))
+                    break
+                except Exception:
+                    pass
     return sorted(out)
+
+
+def _read_mt5_entries(path):
+    """Dispatch to HTML or xlsx reader based on extension."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in ('.htm', '.html'):
+        return _read_mt5_entries_html(path)
+    # Legacy xlsx path (kept for back-compat)
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, data_only=True)
+        rows = list(wb.worksheets[0].iter_rows(values_only=True))
+        hdr_i = None
+        for i, row in enumerate(rows):
+            if row and row[0] == 'Time' and 'Deal' in [str(c) for c in row]:
+                hdr_i = i
+                break
+        if hdr_i is None:
+            return []
+        out = []
+        for row in rows[hdr_i + 1:]:
+            if not row or row[0] is None:
+                continue
+            if 'Balance:' in str(row[0]):
+                break
+            if len(row) > 4 and str(row[4]).lower() == 'in':
+                try:
+                    out.append(datetime.strptime(str(row[0])[:16], '%Y.%m.%d %H:%M'))
+                except Exception:
+                    pass
+        return sorted(out)
+    except Exception:
+        return []
 
 
 def _read_python_entries(csv_path):
@@ -150,17 +218,21 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         except Exception:
             pass
 
-    reports = sorted(glob.glob(os.path.join(reports_dir, '*.xlsx')))
+    # CHANGED: June 2026 — MT5 /config writes HTML reports; accept .htm and .html (+ legacy .xlsx)
+    reports = sorted(glob.glob(os.path.join(reports_dir, '*.htm')) +
+                     glob.glob(os.path.join(reports_dir, '*.html')) +
+                     glob.glob(os.path.join(reports_dir, '*.xlsx')))
     if not reports:
-        print('[CMP] no .xlsx reports in %s' % reports_dir)
-        return []
+        print('[CMP] no reports (.htm/.html/.xlsx) in %s' % reports_dir)
+        return ["No MT5 reports found — check the tester actually wrote them."]
 
     rows = []
-    print('\n%-32s %5s %5s %6s %7s %6s %6s' %
-          ('EA', 'MT5', 'PY', 'exact', 'early', 'late', 'after'))
-    print('-' * 78)
+    print('\n%-32s %5s %5s %8s %6s %7s %6s %6s' %
+          ('EA', 'MT5', 'PY', 'net_pip', 'exact', 'early', 'late', 'after'))
+    print('-' * 85)
     for rp in reports:
         name = os.path.splitext(os.path.basename(rp))[0]
+        stats = _parse_mt5_html_stats(rp) or {}
         mt5 = _read_mt5_entries(rp)
         py_csv = _python_trades_for(name, python_dir, rec_by_name.get(name))
         if not py_csv:
@@ -170,14 +242,17 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         py = _read_python_entries(py_csv)
         m = _compare(mt5, py, bar_minutes=bar_minutes)
         m['name'] = name
+        m['net_profit']    = stats.get('net_profit', '')
+        m['profit_factor'] = stats.get('profit_factor', '')
         rows.append(m)
-        print('%-32s %5d %5d %6d %7d %6d %6d' %
-              (name[:32], m['mt5'], m['py'], m['exact'],
-               m['one_bar_early'], m['one_bar_late'], m['py_after_end']))
+        print('%-32s %5d %5d %8s %6d %7d %6d %6d' %
+              (name[:32], m['mt5'], m['py'],
+               (stats.get('net_profit') or '?')[:8],
+               m['exact'], m['one_bar_early'], m['one_bar_late'], m['py_after_end']))
 
     # write CSV summary
     out_csv = os.path.join(reports_dir, 'comparison_summary.csv')
-    keys = ['name', 'mt5', 'py', 'py_in_range', 'exact',
+    keys = ['name', 'net_profit', 'profit_factor', 'mt5', 'py', 'py_in_range', 'exact',
             'one_bar_early', 'one_bar_late', 'py_after_end']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
