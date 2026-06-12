@@ -18,12 +18,115 @@ Run on Windows (where MT5 lives). Python 3.9+ compatible.
 import os
 import sys
 import json
+import shutil
+import subprocess
+import glob
 
 # repo root = two levels up from this file
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+
+
+# ----------------------------------------------------------------------------
+# 0) BATCH COMPILE  (headless via metaeditor64.exe /compile)
+# ----------------------------------------------------------------------------
+
+# WHY: eliminate the manual "open MetaEditor and compile each EA" step. metaeditor64.exe has a
+#   headless /compile mode. We copy each .mq5 into MQL5\Experts\batch, compile headlessly, and
+#   confirm the .ex5 appeared + scan the per-file log for hard errors. metaeditor64 returns
+#   non-zero on warnings too, so success is (.ex5 exists AND no "error" line in the log).
+# CHANGED: June 2026 — new function; automated batch compile via metaeditor64 CLI
+
+def _find_metaeditor(terminal_dir=None, explicit=None):
+    """Locate metaeditor64.exe. Priority: explicit arg → alongside terminal dir → common paths."""
+    cands = []
+    if explicit:
+        cands.append(explicit)
+    if terminal_dir:
+        cands.append(os.path.join(terminal_dir, 'metaeditor64.exe'))
+    cands += [
+        r"C:\Program Files\MetaTrader 5\metaeditor64.exe",
+        r"C:\Program Files\MetaTrader 5 EXNESS\metaeditor64.exe",
+        r"C:\Program Files\MetaTrader 5 IC Markets\metaeditor64.exe",
+        r"C:\Program Files\MetaTrader 5 Pepperstone\metaeditor64.exe",
+    ]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
+                  metaeditor_path=None, terminal_dir=None, timeout_sec=120):
+    """Copy generated .mq5 from out_dir into <data_dir>\\MQL5\\<experts_subdir>, compile each
+    to .ex5 with metaeditor64, and verify. Returns list of {name, ok, ex5, error}.
+
+    out_dir         : folder where batch_generate wrote the .mq5 files
+    data_dir        : MT5 DATA folder (contains MQL5\\Experts)
+    experts_subdir  : subfolder under MQL5\\ (default Experts\\batch)
+    metaeditor_path : full path to metaeditor64.exe (auto-detected if omitted)
+    terminal_dir    : MT5 install dir to help auto-detect metaeditor64.exe
+    timeout_sec     : per-file compile timeout
+    """
+    me = _find_metaeditor(terminal_dir, metaeditor_path)
+    if not me:
+        return [{"name": "(all)", "ok": False,
+                 "error": "metaeditor64.exe not found — pass metaeditor_path or terminal_dir"}]
+
+    dest_dir = os.path.join(data_dir, "MQL5", experts_subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    mq5_files = sorted(glob.glob(os.path.join(out_dir, "*.mq5")))
+    if not mq5_files:
+        return [{"name": "(none)", "ok": False, "error": "no .mq5 files in " + out_dir}]
+
+    results = []
+    for src in mq5_files:
+        name = os.path.splitext(os.path.basename(src))[0]
+        dest = os.path.join(dest_dir, name + ".mq5")
+        ex5  = os.path.join(dest_dir, name + ".ex5")
+        log  = os.path.join(dest_dir, name + ".compile.log")
+        try:
+            shutil.copy2(src, dest)
+            # remove stale .ex5 so the existence check after compile is meaningful
+            if os.path.isfile(ex5):
+                os.remove(ex5)
+            cmd = [me, "/compile:" + dest, "/log:" + log]
+            try:
+                subprocess.run(cmd, timeout=timeout_sec,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except subprocess.TimeoutExpired:
+                results.append({"name": name, "ok": False, "error": "compile timed out"})
+                continue
+
+            # MetaEditor writes logs as UTF-16; try common encodings tolerantly
+            err_text = ""
+            if os.path.isfile(log):
+                for enc in ("utf-16", "utf-8", "cp1252"):
+                    try:
+                        with open(log, "r", encoding=enc, errors="ignore") as f:
+                            err_text = f.read()
+                        break
+                    except Exception:
+                        continue
+
+            has_ex5  = os.path.isfile(ex5)
+            hard_err = any(" error " in ln.lower() for ln in err_text.splitlines())
+
+            if has_ex5 and not hard_err:
+                results.append({"name": name, "ok": True, "ex5": ex5})
+            else:
+                first_err = next(
+                    (ln.strip() for ln in err_text.splitlines() if " error " in ln.lower()),
+                    "no .ex5 produced")
+                results.append({"name": name, "ok": False, "error": first_err})
+
+        except Exception as e:
+            results.append({"name": name, "ok": False, "error": str(e)})
+
+    return results
 
 
 # ----------------------------------------------------------------------------

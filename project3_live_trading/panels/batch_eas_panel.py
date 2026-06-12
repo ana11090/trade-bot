@@ -454,6 +454,35 @@ def _do_generate(source_var):
     _run_bg(work)
 
 
+# CHANGED: June 2026 — headless compile via metaeditor64 (eliminates manual compile step)
+def _do_compile():
+    def work():
+        try:
+            from project3_live_trading.batch_ea_tools import batch_compile
+            out_dir = filedialog.askdirectory(
+                title="Pick the folder with generated .mq5 files")
+            if not out_dir:
+                _append("Compile cancelled (no .mq5 folder).")
+                return
+            data_dir = filedialog.askdirectory(
+                title="Pick MT5 DATA folder (contains MQL5\\Experts)")
+            if not data_dir:
+                _append("Compile cancelled (no data dir).")
+                return
+            _append("Compiling EAs with metaeditor64 (headless) ...")
+            results = batch_compile(out_dir, data_dir)
+            ok = sum(1 for r in results if r.get("ok"))
+            _append("Compiled %d/%d EA(s) to .ex5." % (ok, len(results)))
+            for r in results:
+                if not r.get("ok"):
+                    _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
+            if ok == len(results) and ok > 0:
+                _append("All compiled. Next: 2. Build Run Files.")
+        except Exception as e:
+            _append("ERROR during compile: %s" % e)
+    _run_bg(work)
+
+
 def _do_build_run_files():
     def work():
         try:
@@ -474,11 +503,10 @@ def _do_build_run_files():
                 _append("Build run files cancelled (no reports dir).")
                 return
             emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir)
-            _append("Wrote tester .ini files + run_all.bat next to the manifest.")
-            _append("MANUAL STEPS (no code does these for you):")
-            _append("  1. Copy the .mq5 files into MQL5\\Experts\\batch")
-            _append("  2. Compile each .mq5 -> .ex5 in MetaEditor (or /compile)")
-            _append("  3. Set terminal64.exe path in run_all.bat, then run it.")
+            _append("Run files written.")
+            _append("If you used '1b. Compile EAs', the .ex5 are already in MQL5\\Experts\\batch.")
+            _append("Otherwise compile manually in MetaEditor first.")
+            _append("Set terminal64.exe path in run_all_tests.bat, then run it.")
         except Exception as e:
             _append("ERROR during build run files: %s" % e)
     _run_bg(work)
@@ -543,6 +571,8 @@ def build_panel(parent):
                          font=("Segoe UI", 9, "bold"))
 
     _btn("1. Generate EAs",    lambda: _do_generate(src_var)).pack(side=tk.LEFT, padx=4)
+    # CHANGED: June 2026 — 1b runs metaeditor64 headlessly; no manual MetaEditor needed
+    _btn("1b. Compile EAs",   _do_compile).pack(side=tk.LEFT, padx=4)
     _btn("2. Build Run Files", _do_build_run_files).pack(side=tk.LEFT, padx=4)
     _btn("3. Compare Reports", _do_compare).pack(side=tk.LEFT, padx=4)
 
@@ -680,9 +710,8 @@ def build_panel(parent):
     _log = tk.Text(panel, font=("Consolas", 9), bg=WHITE, fg=DARK, wrap="word", height=6)
     _log.pack(fill="x", expand=False, padx=10, pady=(0, 10))
     _log.insert("end",
-                "Batch flow: 1. Tick rules above -> Generate EAs  ->  "
-                "(compile .mq5->ex5 in MetaEditor)  ->  2. Build Run Files  "
-                "->  run .bat in MT5  ->  3. Compare Reports.\n\n")
+                "Batch flow: 1. Tick rules -> Generate EAs -> 1b. Compile EAs (headless) -> "
+                "2. Build Run Files -> run .bat in MT5 -> 3. Compare Reports.\n\n")
     _log.configure(state="disabled")
 
     return panel
