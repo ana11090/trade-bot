@@ -63,6 +63,24 @@ _f_sort       = None
 _f_profitable = None   # BooleanVar — profitable-only filter (parity with refiner)
 _nostats_lbl  = None
 _cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
+# CHANGED: June 2026 — remember last generate out_dir so 1b/2 default to it
+_last_out_dir = None
+
+
+# CHANGED: June 2026 — derive MT5 data dir (the folder above \MQL5) from any path under it
+def _derive_data_dir(path):
+    if not path:
+        return None
+    p = os.path.abspath(path)
+    cur = p
+    while True:
+        head, tail = os.path.split(cur)
+        if not head or head == cur:
+            break
+        if tail.lower() == "mql5":
+            return head   # parent of MQL5 == data dir
+        cur = head
+    return None
 
 
 # ── grid helpers ──────────────────────────────────────────────────────────────
@@ -467,6 +485,8 @@ def _do_generate(source_var):
             # CHANGED: June 2026 — auto-append batch subfolder
             out_dir = os.path.join(out_dir, "batch")
             os.makedirs(out_dir, exist_ok=True)
+            global _last_out_dir
+            _last_out_dir = out_dir
             src = source_var.get()
             _append("Generating %d EA(s) into %s ..." % (len(_selected), out_dir))
             results = batch_generate(out_dir, source=src, entries=_selected)
@@ -491,16 +511,26 @@ def _do_compile():
                 batch_compile, get_saved_metaeditor_path,
                 save_metaeditor_path, _find_metaeditor,
             )
-            out_dir = filedialog.askdirectory(
-                title="Pick the folder with generated .mq5 files")
+            # CHANGED: June 2026 — reuse the just-generated folder; derive data dir from it.
+            global _last_out_dir
+            out_dir = _last_out_dir
+            if not out_dir or not os.path.isdir(out_dir):
+                out_dir = filedialog.askdirectory(
+                    title="Pick the folder with generated .mq5 files")
             if not out_dir:
                 _append("Compile cancelled (no .mq5 folder).")
                 return
-            data_dir = filedialog.askdirectory(
-                title="Pick MT5 DATA folder (contains MQL5\\Experts)")
-            if not data_dir:
-                _append("Compile cancelled (no data dir).")
-                return
+
+            data_dir = _derive_data_dir(out_dir)
+            if data_dir:
+                _append("Using MT5 data dir: %s" % data_dir)
+            else:
+                _append("Couldn't derive MT5 data dir from %s — pick it." % out_dir)
+                data_dir = filedialog.askdirectory(
+                    title="Pick MT5 DATA folder (contains MQL5\\Experts)")
+                if not data_dir:
+                    _append("Compile cancelled (no data dir).")
+                    return
 
             # Resolve metaeditor: saved (this machine) → auto-detect → ask once → save.
             me = get_saved_metaeditor_path() or _find_metaeditor()
@@ -536,14 +566,25 @@ def _do_build_run_files():
     def work():
         try:
             from project3_live_trading.batch_ea_tools import emit_tester_inis
+            # CHANGED: June 2026 — pre-fill manifest path from last generate folder
+            global _last_out_dir
+            _default_manifest = (os.path.join(_last_out_dir, "batch_manifest.json")
+                                 if _last_out_dir else "")
             manifest = filedialog.askopenfilename(
                 title="Pick batch_manifest.json",
+                initialfile=os.path.basename(_default_manifest) if _default_manifest else None,
+                initialdir=(_last_out_dir or None),
                 filetypes=[("JSON", "*.json")])
             if not manifest:
                 _append("Build run files cancelled.")
                 return
-            data_dir = filedialog.askdirectory(
-                title="Pick MT5 DATA folder (contains MQL5\\Experts)")
+            # CHANGED: June 2026 — derive data dir from last generate folder; ask only if needed
+            data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
+            if data_dir:
+                _append("Using MT5 data dir: %s" % data_dir)
+            else:
+                data_dir = filedialog.askdirectory(
+                    title="Pick MT5 DATA folder (contains MQL5\\Experts)")
             if not data_dir:
                 _append("Build run files cancelled (no data dir).")
                 return
