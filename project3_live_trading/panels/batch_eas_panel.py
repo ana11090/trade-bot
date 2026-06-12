@@ -159,6 +159,20 @@ def _populate_grid(source):
         _grid_entries = [r for r in _all if r.get('source') == 'my_rules']
     else:  # 'all'
         _grid_entries = list(_all)
+        # WHY: load_strategy_list() can return the same rule id under multiple sources
+        #   (e.g. backtest copy id=41 AND its saved copy id=41). De-dupe by id, keeping
+        #   the copy with the best source (backtest > optimizer > saved > my_rules) so
+        #   the row with real stats wins and 'all' always has ≥ rows as any single source.
+        # CHANGED: June 2026 — de-dupe 'all' to prevent iid collision and show each rule once
+        _src_rank = {'backtest': 0, 'optimizer': 1, 'saved': 2, 'my_rules': 3}
+        _best = {}
+        for _r in _grid_entries:
+            _rid = str(_r.get('id', id(_r)))
+            _cur = _best.get(_rid)
+            if (_cur is None or
+                    _src_rank.get(_r.get('source'), 9) < _src_rank.get(_cur.get('source'), 9)):
+                _best[_rid] = _r
+        _grid_entries = list(_best.values())
 
     # WHY: if the chosen source is empty (e.g. backtest_matrix.json is a Git LFS pointer /
     #   not pulled), fall back to 'all' so the page is never blank when data exists elsewhere.
@@ -338,7 +352,13 @@ def _populate_grid(source):
                 (_format_prop_score(r) if has_stats else "—"),
                 off,
             )
-            _iid = str(r.get('id', _shown))
+            # WHY: the same rule id appears under multiple sources (backtest + saved copy).
+            #   Treeview.insert raises TclError on a duplicate iid — swallowed by the except
+            #   and silently dropped rows, making 'all' < 'backtest'. Unique iid per row.
+            # CHANGED: June 2026 — unique iid = source::id::counter (no TclError collisions)
+            _src = str(r.get('source', 'x'))
+            _rid = str(r.get('id', r.get('index', _shown)))
+            _iid = "%s::%s::%d" % (_src, _rid, _shown)
             _iid_to_entry[_iid] = r
             _grid_tree.insert('', 'end', iid=_iid, values=vals, tags=(profit_tag,))
             _shown += 1
