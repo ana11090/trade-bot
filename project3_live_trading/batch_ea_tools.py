@@ -438,9 +438,18 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         man = json.load(f)
     ini_dir = os.path.join(os.path.dirname(manifest_path), 'tester_inis')
     os.makedirs(ini_dir, exist_ok=True)
+    # CHANGED: June 2026 — absolute reports dir so MT5 writes where we expect
+    reports_dir = os.path.abspath(reports_dir)
     os.makedirs(reports_dir, exist_ok=True)
 
-    bat_lines = ['@echo off', 'REM auto-generated — runs each tester pass in sequence']
+    # WHY: terminal64.exe launches a detached GUI and returns instantly, so a plain
+    #   `"terminal64.exe" /config:...` line lets the bat fire all EAs at once with no
+    #   progress signal. `start "" /wait` blocks until the terminal exits (ShutdownTerminal=1
+    #   closes it when the tester pass ends), serialising runs and giving per-EA DONE markers.
+    # CHANGED: June 2026 — blocking, headless, progress-visible tester run
+    bat_lines = ['@echo off',
+                 'echo BATCH TESTER START',
+                 'REM auto-generated — runs each tester pass in sequence, waiting for each']
     exe = terminal_exe or 'C:\\Program Files\\MetaTrader 5\\terminal64.exe'
     made = 0
     for rec in man:
@@ -448,8 +457,8 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
             continue
         name = rec['name']
         expert_rel = experts_subdir.replace('/', '\\') + '\\' + name + '.ex5'
-        # per-EA report path (MT5 writes relative to terminal dir if not absolute)
-        report_path = os.path.join(reports_dir, name).replace('/', '\\')
+        # CHANGED: June 2026 — absolute report path with explicit .xlsx so MT5 writes a known file
+        report_path = os.path.abspath(os.path.join(reports_dir, name + '.xlsx')).replace('/', '\\')
         ini = _INI_TEMPLATE.format(
             expert_rel=expert_rel, symbol=symbol, period=period,
             from_date=from_date, to_date=to_date, deposit=deposit,
@@ -458,22 +467,18 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         ini_path = os.path.join(ini_dir, name + '.ini')
         with open(ini_path, 'w', encoding='utf-8') as f:
             f.write(ini)
-        bat_lines.append('echo === %s ===' % name)
-        bat_lines.append('"%s" /config:"%s"' % (exe, ini_path))
+        bat_lines.append('echo === RUNNING %s ===' % name)
+        bat_lines.append('start "" /wait "%s" /config:"%s"' % (exe, ini_path))
+        bat_lines.append('echo === DONE %s ===' % name)
         made += 1
 
+    bat_lines.append('echo BATCH TESTER COMPLETE')
     bat_path = os.path.join(os.path.dirname(manifest_path), 'run_all_tests.bat')
     with open(bat_path, 'w', encoding='utf-8') as f:
         f.write('\r\n'.join(bat_lines) + '\r\n')
     print('[RUN] wrote %d .ini files to %s' % (made, ini_dir))
     print('[RUN] wrote %s' % bat_path)
-    print('\nNEXT STEPS (one-time setup):')
-    print('  1) Copy the .mq5 files into <data_dir>\\MQL5\\Experts\\%s' % experts_subdir)
-    print('  2) Compile them to .ex5 (MetaEditor: open folder, Compile; or')
-    print('     run metaeditor64.exe /compile for each — see MT5 docs).')
-    print('  3) Edit run_all_tests.bat if the terminal path differs.')
-    print('  4) Double-click run_all_tests.bat — each EA runs headless, writes a report.')
-    print('  5) Then run batch_compare_reports.py against the reports folder.')
+    print('[RUN] reports dir: %s' % reports_dir)
     return bat_path
 
 

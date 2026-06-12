@@ -609,9 +609,10 @@ def _do_build_run_files():
                 _append("Build run files cancelled (no data dir).")
                 return
             reports_dir = filedialog.askdirectory(title="Pick folder for MT5 reports output")
+            # CHANGED: June 2026 — default reports dir next to the manifest if not chosen
             if not reports_dir:
-                _append("Build run files cancelled (no reports dir).")
-                return
+                reports_dir = os.path.join(os.path.dirname(manifest), "reports")
+            _append("Reports will be written to: %s" % os.path.abspath(reports_dir))
             # CHANGED: June 2026 — resolve terminal64 (derive from metaeditor → ask once → save)
             from project3_live_trading.batch_ea_tools import (
                 resolve_terminal_path, save_terminal_path)
