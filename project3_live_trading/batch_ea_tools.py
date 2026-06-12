@@ -403,17 +403,23 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
 # ----------------------------------------------------------------------------
 # 2) EMIT MT5 TESTER .ini FILES + a .bat to run them headlessly
 # ----------------------------------------------------------------------------
+# CHANGED: June 2026 — Model param (0=1-min OHLC, no tick data needed) + Currency/Visual/Forward
+#   so the headless tester actually starts. Model=1 (every tick) hung waiting for tick history
+#   that wasn't downloaded — tester opened and idled forever (reports 0, "Cloud servers off").
 _INI_TEMPLATE = """; auto-generated MT5 Strategy Tester config
 [Tester]
 Expert={expert_rel}
 Symbol={symbol}
 Period={period}
-Model=1
+Model={model}
 FromDate={from_date}
 ToDate={to_date}
+ForwardMode=0
 Deposit={deposit}
+Currency=USD
 Leverage=1:{leverage}
 Optimization=0
+Visual=0
 ShutdownTerminal=1
 Report={report_path}
 ReplaceReport=1
@@ -423,7 +429,7 @@ ReplaceReport=1
 def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
                      reports_dir, symbol='XAUUSD', period='M5',
                      from_date='2026.01.01', to_date='2026.04.08',
-                     deposit=10000, leverage=10, terminal_exe=None):
+                     deposit=10000, leverage=10, terminal_exe=None, model=0):
     """Write one .ini per generated EA and a run_all.bat.
 
     terminal_data_dir : the MT5 *data* folder (where MQL5\\Experts lives), e.g.
@@ -469,10 +475,12 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         expert_rel = (_sub + '\\' + name + '.ex5') if _sub else (name + '.ex5')
         # CHANGED: June 2026 — absolute report path with explicit .xlsx so MT5 writes a known file
         report_path = os.path.abspath(os.path.join(reports_dir, name + '.xlsx')).replace('/', '\\')
+        # CHANGED: June 2026 — use each EA's own timeframe from the manifest, not the global default
+        _period = rec.get('entry_tf') or period
         ini = _INI_TEMPLATE.format(
-            expert_rel=expert_rel, symbol=symbol, period=period,
+            expert_rel=expert_rel, symbol=symbol, period=_period,
             from_date=from_date, to_date=to_date, deposit=deposit,
-            leverage=leverage, report_path=report_path,
+            leverage=leverage, report_path=report_path, model=model,
         )
         ini_path = os.path.join(ini_dir, name + '.ini')
         with open(ini_path, 'w', encoding='utf-8') as f:
