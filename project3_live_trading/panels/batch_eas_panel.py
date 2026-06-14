@@ -845,8 +845,8 @@ def _write_debug_dump():
     import json, glob, datetime, csv as _csv, shutil
     try:
         from project3_live_trading.batch_compare_reports import (
-            _load_py_trades_for, _py_rules_dir, _parse_mt5_xlsx, _find_report,
-            _parse_mt5_html_stats, _read_mt5_entries)
+            _load_py_trades_for, _py_rules_dir, _parse_mt5_xlsx, _parse_mt5_html,
+            _find_report, _parse_mt5_html_stats, _read_mt5_entries)
     except Exception:
         _append("Debug dump skipped (import failed).")
         return
@@ -857,6 +857,17 @@ def _write_debug_dump():
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     dump = os.path.join(bdir, "debug_dump_%s" % stamp)
     os.makedirs(dump, exist_ok=True)
+
+    # CHANGED: June 2026 — write comprehensive debug log to file for diagnostics
+    # WHY: in-app _append may scroll off; file captures exact state for analysis.
+    _dbg_path = os.path.join(dump, "_DEBUG.txt")
+    _dbg = open(_dbg_path, "w", encoding="utf-8")
+    def _d(msg):
+        """Write to debug file and append to UI log."""
+        _dbg.write(msg + "\n")
+        _dbg.flush()
+        _append(msg)
+
     man = {}
     mpath = os.path.join(bdir, "batch_manifest.json")
     if os.path.isfile(mpath):
@@ -865,25 +876,38 @@ def _write_debug_dump():
                 man[rec.get("name")] = rec
 
     # CHANGED: June 2026 — iterate over actual report files, parse directly
-    # HOTFIX: June 2026 — strip extension for EA name to avoid ".xlsx.xlsx" lookup bug
+    # HOTFIX: June 2026 — also include .xlsx.htm files from old buggy runs
     # WHY: we already have the report path, so parse it directly instead of re-finding.
-    report_files = (glob.glob(os.path.join(reports, "*.xlsx")) +
+    report_files = (glob.glob(os.path.join(reports, "*.xlsx.htm")) +
+                    glob.glob(os.path.join(reports, "*.xlsx")) +
                     glob.glob(os.path.join(reports, "*.htm")) +
                     glob.glob(os.path.join(reports, "*.html")))
 
-    # DEBUG: log what files are found to diagnose MT5 write/parse issues
-    _append("DEBUG: reports dir = %s" % reports)
-    _append("DEBUG: report files found = %s" %
-            ([os.path.basename(p) for p in report_files] or "NONE"))
+    # DEBUG: comprehensive logging to _DEBUG.txt
+    _d("reports dir: %s" % reports)
+    _d("files found: %s" % ([os.path.basename(p) for p in report_files] or "NONE"))
+    for p in report_files:
+        _d("  %s  (%d bytes, ext=%s)" %
+           (os.path.basename(p), os.path.getsize(p), os.path.splitext(p)[1]))
 
     for rpt in sorted(report_files):
-        # CHANGED: June 2026 — EA name is the filename WITHOUT extension
-        # WHY: keeping ".xlsx" breaks manifest lookup (searches for name.xlsx, gets "?")
-        #   and report finding (searches for name.xlsx.xlsx, gets 0 trades).
-        ea = os.path.splitext(os.path.basename(rpt))[0]
+        # CHANGED: June 2026 — EA name is the filename WITHOUT extension(s)
+        # WHY: MT5 can create double extensions like ".xlsx.htm" if Report= had .xlsx in it.
+        #   Single splitext turns "name.xlsx.htm" → "name.xlsx" (wrong).
+        #   Strip up to 3 extensions to handle any multi-dot cases.
+        base = os.path.basename(rpt)
+        for _ in range(3):
+            base, ext = os.path.splitext(base)
+            if not ext:
+                break
+        ea = base
 
         sub = os.path.join(dump, ea)
         os.makedirs(sub, exist_ok=True)
+
+        # DEBUG: log detailed parse results for each report
+        _d("---- %s ----" % os.path.basename(rpt))
+        _d("  EA name (stripped): %s" % ea)
 
         # CHANGED: June 2026 — parse the report we already have (don't re-find by name)
         # WHY: we're iterating over actual files, so parse them directly.
@@ -892,28 +916,35 @@ def _write_debug_dump():
         #   returns 0, fall back to entry-only rows to match compare's count.
         mt5_trades = []
         mt5_stats = {}
+
+        # Test proven entry reader first
+        try:
+            entries = _read_mt5_entries(rpt)
+            _d("  _read_mt5_entries: %d entries" % len(entries))
+        except Exception as e:
+            _d("  _read_mt5_entries FAILED: %r" % e)
+            entries = []
+
+        # Test full parser
         try:
             if rpt.lower().endswith(".xlsx"):
-                # Try full parser (trades + stats)
                 mt5_trades, mt5_stats = _parse_mt5_xlsx(rpt)
-                # Also get entries via proven reader for comparison
-                entries = _read_mt5_entries(rpt)
+                _d("  _parse_mt5_xlsx: %d trades, stats=%s" %
+                   (len(mt5_trades), {k: v for k, v in mt5_stats.items() if v}))
 
                 # If full parser got 0 but proven reader found entries, use entry-only rows
                 if not mt5_trades and entries:
                     mt5_trades = [{"entry_time": e.strftime("%Y-%m-%d %H:%M:%S") if hasattr(e, 'strftime') else str(e)}
                                   for e in entries]
-                    _append("DEBUG: %s → fallback to entries reader: %d entry-only rows" %
-                            (os.path.basename(rpt), len(mt5_trades)))
-                else:
-                    _append("DEBUG: %s → entries=%d full=%d" %
-                            (os.path.basename(rpt), len(entries), len(mt5_trades)))
+                    _d("  → FALLBACK to entry reader: %d entry-only rows" % len(mt5_trades))
             elif rpt.lower().endswith((".htm", ".html")):
-                # Fallback: HTML report (summary stats only, no per-trade details)
-                mt5_stats = _parse_mt5_html_stats(rpt) or {}
-                _append("DEBUG: %s → HTML stats only (no trades)" % os.path.basename(rpt))
+                # CHANGED: June 2026 — parse HTML reports FULLY (trades + stats)
+                # WHY: detailed HTML reports (635KB+) contain full deals table with in/out pairs
+                mt5_trades, mt5_stats = _parse_mt5_html(rpt)
+                _d("  _parse_mt5_html: %d trades, stats=%s" %
+                   (len(mt5_trades), {k: v for k, v in mt5_stats.items() if v}))
         except Exception as e:
-            _append("DEBUG: parse FAILED for %s: %s" % (os.path.basename(rpt), e))
+            _d("  parse FAILED: %r" % e)
             print("[DEBUG-DUMP] %s parse failed: %s" % (ea, e), flush=True)
 
         # CHANGED: June 2026 — write FULL MT5 trades (entry/exit/price/profit), not just entry_time
@@ -1074,7 +1105,12 @@ def _write_debug_dump():
     cs = os.path.join(reports, "comparison_summary.csv")
     if os.path.isfile(cs):
         shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
+
+    # Close debug file
+    _dbg.close()
+
     _append("DEBUG DUMP: %s" % dump)
+    _append("DEBUG LOG: %s" % _dbg_path)
     try:
         os.startfile(dump)
     except Exception:
@@ -1205,8 +1241,9 @@ def _do_run_tests():
             # WHY: stale reports from prior runs pollute the counter (5/4 done) and Compare.
             if _last_reports_dir and os.path.isdir(_last_reports_dir):
                 _cleared = 0
-                # CHANGED: June 2026 — also clear .xlsx reports (tester now writes xlsx, not htm)
-                for _f in (_glob.glob(os.path.join(_last_reports_dir, "*.xlsx")) +
+                # CHANGED: June 2026 — clear all report formats including old .xlsx.htm double-ext files
+                for _f in (_glob.glob(os.path.join(_last_reports_dir, "*.xlsx.htm")) +
+                           _glob.glob(os.path.join(_last_reports_dir, "*.xlsx")) +
                            _glob.glob(os.path.join(_last_reports_dir, "*.htm")) +
                            _glob.glob(os.path.join(_last_reports_dir, "*.html"))):
                     try:

@@ -214,6 +214,128 @@ def _read_mt5_entries(path):
         return []
 
 
+def _parse_mt5_html(path):
+    """Return (trades, stats) from an MT5 HTML report. Full per-trade deals + summary stats.
+
+    The detailed HTML report (635KB+) contains:
+    - Summary stats table: Symbol, Period, Initial Deposit, Total Net Profit, Profit Factor, etc.
+    - Deals table with columns: Time | Deal | Symbol | Type | Direction | Volume | Price | Order | Commission | Swap | Profit | Balance | Comment
+
+    This parser extracts both stats and pairs in/out deals into complete trades.
+    """
+    import re
+
+    # Read HTML with multiple encoding attempts
+    html = ""
+    for enc in ("utf-16", "utf-16-le", "utf-8"):
+        try:
+            with open(path, encoding=enc, errors="ignore") as f:
+                html = f.read()
+            if html:
+                break
+        except Exception:
+            html = ""
+
+    # Parse all table rows and cells first
+    rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.I)
+
+    def _cells(row):
+        """Extract cell contents from a table row, stripping HTML tags."""
+        cs = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.I)
+        return [re.sub(r'<[^>]+>', '', c).strip() for c in cs]
+
+    # CHANGED: June 2026 — extract summary stats via row-cell scan (robust to label colon placement)
+    # WHY: MT5 HTML has <td>Symbol:</td><td>XAUUSD</td> (colon inside label cell).
+    #   Regex approach missed because it expected Label</td><td> without colon.
+    #   Row-cell scan: find cell matching label (ignoring trailing colon), take next non-empty cell.
+    all_cells = []
+    for row in rows:
+        all_cells.extend(_cells(row))
+
+    def _stat(label):
+        """Find label cell, return next non-empty cell value."""
+        lab = label.lower()
+        for i, c in enumerate(all_cells):
+            if c.strip().rstrip(":").lower() == lab:
+                # Look ahead up to 3 cells for the value
+                for j in range(i + 1, min(i + 4, len(all_cells))):
+                    v = all_cells[j].strip()
+                    if v and v != ":":
+                        # Strip thousand separators (space or non-breaking space)
+                        return v.replace(" ", "").replace("\xa0", "")
+        return None
+
+    stats = {
+        "symbol":          _stat("Symbol"),
+        "period":          _stat("Period"),
+        "bars":            _stat("Bars"),
+        "initial_deposit": _stat("Initial Deposit"),
+        "net_profit":      _stat("Total Net Profit"),
+        "profit_factor":   _stat("Profit Factor"),
+        "total_deals":     _stat("Total Deals"),
+    }
+
+    # Find the deals header row: contains 'Time' and 'Deal' and 'Direction'
+    col = None
+    start = 0
+    for i, row in enumerate(rows):
+        cs = _cells(row)
+        if cs and "Time" in cs and "Deal" in cs and ("Direction" in cs or "Profit" in cs):
+            # Map column names to indices
+            col = {name: k for k, name in enumerate(cs)}
+            start = i + 1
+            break
+
+    trades = []
+    if col is not None:
+        def g(cs, name):
+            """Get cell value by column name."""
+            k = col.get(name)
+            return cs[k] if (k is not None and k < len(cs)) else None
+
+        def _num(x):
+            """Parse numeric value, handling spaces and non-breaking spaces."""
+            try:
+                return float(str(x).replace(" ", "").replace("\xa0", ""))
+            except Exception:
+                return None
+
+        # Pair in/out deals
+        pend = None
+        for row in rows[start:]:
+            cs = _cells(row)
+            if not cs:
+                continue
+
+            dirn = (g(cs, "Direction") or "").lower()
+            typ = (g(cs, "Type") or "").lower()
+
+            # Skip balance adjustments
+            if typ == "balance":
+                continue
+
+            if dirn == "in":
+                # Entry deal - save for pairing
+                pend = cs
+            elif dirn == "out" and pend is not None:
+                # Exit deal - pair with pending entry
+                trades.append({
+                    "entry_time":  g(pend, "Time"),
+                    "exit_time":   g(cs, "Time"),
+                    "entry_price": _num(g(pend, "Price")),
+                    "exit_price":  _num(g(cs, "Price")),
+                    "direction":   g(pend, "Type"),
+                    "volume":      g(pend, "Volume"),
+                    "commission":  (_num(g(pend, "Commission")) or 0) + (_num(g(cs, "Commission")) or 0),
+                    "swap":        _num(g(cs, "Swap")) or 0,
+                    "profit":      _num(g(cs, "Profit")) or 0,
+                    "comment":     g(pend, "Comment") or "",  # capture for future indicator logging
+                })
+                pend = None
+
+    return trades, stats
+
+
 # CHANGED: June 2026 — full MT5 xlsx parser (trades + stats)
 # WHY: MT5 tester writes ReportTester xlsx with full deal pairs (in/out) and summary stats.
 #   The HTML report lacks per-trade details; xlsx has entry/exit times, prices, profit, commission.
@@ -261,14 +383,15 @@ def _parse_mt5_xlsx(path):
     # WHY: looking for 'Deals' section label didn't match some MT5 layouts; the proven reader
     #   finds the header by 'Time' in first cell + 'Deal' somewhere in the row. This IS the
     #   column header row, so data starts at hdr+1.
+    # CHANGED: June 2026 — accept 'Time' anywhere in row (not just first cell) for robustness
+    # WHY: some MT5 layouts may have a different column order or leading columns.
     hdr_idx = None
     for i, r in enumerate(rows):
         if not r:
             continue
-        first = str(r[0]).strip() if r[0] is not None else ""
-        cells = [str(c) for c in r if c is not None]
-        # Match the working reader: first cell == 'Time' AND row contains 'Deal'
-        if first == "Time" and "Deal" in cells:
+        cells = [str(c).strip() for c in r if c is not None]
+        # Match if row contains both 'Time' AND 'Deal' (column headers)
+        if "Time" in cells and "Deal" in cells:
             hdr_idx = i
             break
 
@@ -498,7 +621,19 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     print('-' * 100)
     for rp in reports:
         name = os.path.splitext(os.path.basename(rp))[0]
-        stats = _parse_mt5_html_stats(rp) or {}
+
+        # CHANGED: June 2026 — use full parsers for stats (populate net_profit, profit_factor)
+        # WHY: _parse_mt5_html and _parse_mt5_xlsx return complete stats; _parse_mt5_html_stats
+        #   was a partial fallback. Full parsers extract summary stats from detailed reports.
+        stats = {}
+        try:
+            if rp.lower().endswith('.xlsx'):
+                _, stats = _parse_mt5_xlsx(rp)
+            elif rp.lower().endswith(('.htm', '.html')):
+                _, stats = _parse_mt5_html(rp)
+        except Exception:
+            stats = {}
+
         mt5 = _read_mt5_entries(rp)
 
         # CHANGED: June 2026 — load Python trades from stored outputs/rules/*.json

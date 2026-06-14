@@ -495,11 +495,11 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         elif _sub.lower() == 'experts':
             _sub = ''
         expert_rel = (_sub + '\\' + name + '.ex5') if _sub else (name + '.ex5')
-        # WHY: Report= with NO extension makes MT5 write summary-only HTML (no deals table),
-        #   so the parser sees 0 trades. Ending the path in .xlsx makes MT5 write the FULL Excel
-        #   report including the per-deal table. Still relative to the data dir for portability.
-        # CHANGED: June 2026 — emit .xlsx (full deals) instead of summary html
-        _abs_report = os.path.join(reports_dir, name + ".xlsx")             # full path with .xlsx
+        # WHY: MT5's /config Report= ALWAYS writes HTML and appends .htm itself.
+        #   If we pass "name.xlsx", MT5 writes "name.xlsx.htm" (HTML file with double extension).
+        #   Instead, pass just the name (no extension) and MT5 writes "name.htm" (clean HTML).
+        # CHANGED: June 2026 — use bare name (no extension); MT5 appends .htm
+        _abs_report = os.path.join(reports_dir, name)                       # bare name
         _rel_report = os.path.relpath(_abs_report, terminal_data_dir)       # relative to data dir
         report_path = _rel_report.replace('/', '\\')
         # CHANGED: June 2026 — use each EA's own timeframe from the manifest, not the global default
