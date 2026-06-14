@@ -363,9 +363,21 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
                 r = entry   # flat strategy dict from load_strategy_list
         else:
             r = {}
+        # WHY: several selected rules can share the same rule_combo (same entry, different exit/
+        #   offset). Using combo alone as the filename made them overwrite each other, so 6 rules
+        #   collapsed to 2 .mq5 files. Disambiguate with exit + tf + a counter so every EA is unique.
+        # CHANGED: June 2026 — unique EA name per selected rule
         combo = (r.get('rule_combo') or r.get('rule_id') or
                  entry.get('rule_id') or str(entry.get('id') or ('rule_%d' % i)))
-        name = _safe_name(combo)
+        _exit = r.get('exit_name') or r.get('exit_strategy') or ''
+        _tf   = r.get('entry_tf') or r.get('entry_timeframe') or ''
+        _suffix_parts = [p for p in (_tf, _exit) if p]
+        _base = combo + ('_' + '_'.join(_suffix_parts) if _suffix_parts else '')
+        name = _safe_name(_base)
+        # guarantee uniqueness even if base still collides
+        _existing = {rr['name'] for rr in results}
+        if name in _existing:
+            name = _safe_name(_base + '_%d' % i)
         path = os.path.join(out_dir, name + '.mq5')
         rec = {
             'name': name, 'path': path,
@@ -442,6 +454,16 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
     """
     with open(manifest_path, encoding='utf-8') as f:
         man = json.load(f)
+
+    # CHANGED: June 2026 — add test settings to manifest for debug dump
+    # WHY: dump needs to show what config MT5 tested with (symbol, dates, deposit, etc).
+    for rec in man:
+        rec['test_symbol'] = symbol
+        rec['test_from'] = from_date
+        rec['test_to'] = to_date
+        rec['test_deposit'] = deposit
+        rec['test_leverage'] = leverage
+        rec['test_period'] = rec.get('entry_tf') or period  # per-EA TF
     ini_dir = os.path.join(os.path.dirname(manifest_path), 'tester_inis')
     os.makedirs(ini_dir, exist_ok=True)
     # CHANGED: June 2026 — absolute reports dir so MT5 writes where we expect
@@ -473,13 +495,12 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         elif _sub.lower() == 'experts':
             _sub = ''
         expert_rel = (_sub + '\\' + name + '.ex5') if _sub else (name + '.ex5')
-        # WHY: MT5 tester Report= is relative to the terminal data dir, not absolute — absolute
-        #   paths are ignored and the reports folder stays empty. Also, /config writes HTML (.html),
-        #   not xlsx; specifying an extension causes MT5 to double-append or skip. Use a data-dir-
-        #   relative path with NO extension; MT5 writes <name>.html automatically.
-        # CHANGED: June 2026 — data-dir-relative report path, no extension
-        _abs_report = os.path.join(reports_dir, name)                       # full path, no ext
-        _rel_report = os.path.relpath(_abs_report, terminal_data_dir)        # relative to data dir
+        # WHY: Report= with NO extension makes MT5 write summary-only HTML (no deals table),
+        #   so the parser sees 0 trades. Ending the path in .xlsx makes MT5 write the FULL Excel
+        #   report including the per-deal table. Still relative to the data dir for portability.
+        # CHANGED: June 2026 — emit .xlsx (full deals) instead of summary html
+        _abs_report = os.path.join(reports_dir, name + ".xlsx")             # full path with .xlsx
+        _rel_report = os.path.relpath(_abs_report, terminal_data_dir)       # relative to data dir
         report_path = _rel_report.replace('/', '\\')
         # CHANGED: June 2026 — use each EA's own timeframe from the manifest, not the global default
         _period = rec.get('entry_tf') or period
@@ -500,6 +521,12 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
     bat_path = os.path.join(os.path.dirname(manifest_path), 'run_all_tests.bat')
     with open(bat_path, 'w', encoding='utf-8') as f:
         f.write('\r\n'.join(bat_lines) + '\r\n')
+
+    # CHANGED: June 2026 — write back updated manifest with test settings
+    # WHY: debug dump reads test_* fields to show MT5 config.
+    with open(manifest_path, 'w', encoding='utf-8') as f:
+        json.dump(man, f, indent=2)
+
     print('[RUN] wrote %d .ini files to %s' % (made, ini_dir))
     print('[RUN] wrote %s' % bat_path)
     print('[RUN] reports dir: %s' % reports_dir)

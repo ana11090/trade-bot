@@ -63,6 +63,113 @@ _f_sort       = None
 _f_profitable = None   # BooleanVar — profitable-only filter (parity with refiner)
 _nostats_lbl  = None
 _cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
+# CHANGED: June 2026 — multi-select exit-strategy filter
+_f_exit_vars  = {}     # exit_name -> tk.BooleanVar
+_f_exit_all   = None   # tk.BooleanVar for the "All" toggle
+_f_exit_menu  = None   # the Menubutton (so we can rebuild its menu when rows change)
+_f_exit_menuobj = None # the tk.Menu object itself (NOT _f_exit_menu['menu'], which is a str)
+
+
+# CHANGED: June 2026 — helper returns checked exits or None for 'all'
+# WHY: exit filter logic needs a stable query function; returns None when "All" is checked.
+def _selected_exits():
+    """Return set of checked exit names, or None if "All" is checked (or nothing is checked)."""
+    global _f_exit_all, _f_exit_vars
+    if _f_exit_all is not None and _f_exit_all.get():
+        return None  # All → no filtering
+    picked = {n for n, v in _f_exit_vars.items() if v.get()}
+    return picked or None  # If nothing is picked, treat as "All"
+
+
+# CHANGED: June 2026 — rebuild exit filter menu from current grid rows
+# WHY: each source has different exit strategies; rebuild the checkboxes dynamically.
+# HOTFIX: June 2026 — use _f_exit_menuobj (the real Menu object), not _f_exit_menu['menu'] (a str)
+# FIX: June 2026 — proper checkbuttons with independent BooleanVars; menu stays open on toggle.
+def _rebuild_exit_menu(all_rows=None):
+    """Scan rows for unique exits, rebuild the Menubutton's menu with checkboxes."""
+    global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
+    # WHY: panel not built yet → menu object doesn't exist; skip safely to prevent blank panel.
+    m = _f_exit_menuobj  # the real Menu object, never _f_exit_menu['menu'] (which is a str)
+    if m is None:
+        return
+
+    # Extract unique exit names from rows (all_rows if provided, else _grid_entries)
+    rows = all_rows if all_rows is not None else _grid_entries
+    names = sorted({
+        (r.get('exit_name') or r.get('exit_class') or
+         r.get('exit_strategy') or '').strip()
+        for r in rows
+        if (r.get('exit_name') or r.get('exit_class') or r.get('exit_strategy'))
+    })
+
+    # Clear old menu
+    m.delete(0, 'end')
+
+    # "All" as a CHECKBUTTON (keeps menu open, shows a check)
+    if _f_exit_all is None:
+        _f_exit_all = tk.BooleanVar(value=True)
+
+    def _on_all():
+        """When All is toggled, clear individual picks (or re-enable All if nothing else is checked)."""
+        if _f_exit_all.get():
+            # Turning All on clears individual picks
+            for v in _f_exit_vars.values():
+                v.set(False)
+        else:
+            # Don't allow All to be the only thing unchecked with nothing else → re-check it
+            if not any(v.get() for v in _f_exit_vars.values()):
+                _f_exit_all.set(True)
+        _refresh_exit_label()
+        _populate_grid(_cur_source)
+
+    m.add_checkbutton(label="All", variable=_f_exit_all, command=_on_all)
+    m.add_separator()
+
+    # One CHECKBUTTON per exit
+    for nm in names:
+        if nm not in _f_exit_vars:
+            _f_exit_vars[nm] = tk.BooleanVar(value=False)
+
+        def _on_one(_nm=nm):
+            """When a specific exit is toggled, turn All off (or back on if nothing is checked)."""
+            if any(v.get() for v in _f_exit_vars.values()):
+                _f_exit_all.set(False)  # Picking specific exits turns All off
+            else:
+                _f_exit_all.set(True)   # Nothing left → back to All
+            _refresh_exit_label()
+            _populate_grid(_cur_source)
+
+        m.add_checkbutton(label=nm, variable=_f_exit_vars[nm], command=_on_one)
+
+    # Drop stale vars (exits that no longer exist in the current source)
+    for stale in [k for k in list(_f_exit_vars) if k not in names]:
+        _f_exit_vars.pop(stale, None)
+
+    _refresh_exit_label()
+
+
+# CHANGED: June 2026 — update Menubutton label to show current selection
+# WHY: "All ▾" / "PSAR Only ▾" / "3 exits ▾" tells you what's filtered without opening menu.
+def _refresh_exit_label():
+    """Update the Menubutton text to reflect current selection."""
+    global _f_exit_all, _f_exit_vars, _f_exit_menu
+    if _f_exit_menu is None:
+        return
+    # If "All" is checked, show "All ▾"
+    if _f_exit_all is None or _f_exit_all.get():
+        _f_exit_menu.config(text="All ▾")
+        return
+    # Otherwise, show the specific exits that are checked
+    picked = [n for n, v in _f_exit_vars.items() if v.get()]
+    if not picked:
+        _f_exit_menu.config(text="All ▾")
+    elif len(picked) == 1:
+        # Truncate long names to 14 chars
+        _f_exit_menu.config(text=picked[0][:14] + " ▾")
+    else:
+        _f_exit_menu.config(text="%d exits ▾" % len(picked))
+
+
 # CHANGED: June 2026 — remember last generate out_dir so 1b/2 default to it
 _last_out_dir    = None
 # CHANGED: June 2026 — remember run artifacts so "Run Tests" / Compare need no prompts
@@ -171,8 +278,10 @@ def _populate_grid(source):
     #   stats sub-dict fallback for saved rows; non-empty fallback when source yields 0 rows
     # CHANGED: June 2026 — scope fix: declare filter globals explicitly so _passes always sees
     #   the live widget values; filter applied as list comprehension before insert loop
+    # CHANGED: June 2026 — added exit filter globals
     global _grid_entries, _batch_sel_iids, _iid_to_entry, _cur_source
     global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable
+    global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
     if _grid_tree is None:
         return
     _cur_source = source
@@ -235,6 +344,14 @@ def _populate_grid(source):
         print("[BATCH-GRID] source '%s' empty — falling back to all" % source, flush=True)
         _grid_entries = list(_all)
 
+    # CHANGED: June 2026 — rebuild exit filter menu based on current rows (before filtering)
+    # WHY: each source has different exit strategies; dynamically populate the checkboxes.
+    # HOTFIX: June 2026 — wrap in try/except so exit-menu issues can't blank the whole panel.
+    try:
+        _rebuild_exit_menu()
+    except Exception as _e:
+        print("[BATCH-GRID] exit menu rebuild skipped:", _e, flush=True)
+
     # ── helpers used by filter and sort ──
     def _val(var, default=""):
         # Read a Tk variable/widget safely; return default if None or widget destroyed.
@@ -258,10 +375,14 @@ def _populate_grid(source):
     #   insert loop never skips rows mid-flight, making _shown count accurate and
     #   the iid mapping stable.
     # CHANGED: June 2026 — filter applied as list comprehension; _val() guards None vars
+    # CHANGED: June 2026 — added exit-strategy filter (multi-select)
     def _passes(r):
         st = _stage_cell(r)
         tf = r.get('entry_tf') or r.get('entry_timeframe') or '—'
         dr = r.get('direction') or r.get('dir') or '—'
+        # CHANGED: June 2026 — strip whitespace from exit name for consistent matching
+        exit_ = (r.get('exit_name') or r.get('exit_class') or
+                 r.get('exit_strategy') or '').strip()
         tr = _num(r, 'total_trades') or 0
         wr = _num(r, 'win_rate') or 0
         net = _num(r, 'net_pips', 'net_total_pips', 'total_pips')
@@ -271,6 +392,11 @@ def _populate_grid(source):
         if _val(_f_tf, "All") not in ("All", "", tf):
             return False
         if _val(_f_dir, "All") not in ("All", "", dr):
+            return False
+        # CHANGED: June 2026 — exit filter: if specific exits are checked, hide others
+        # WHY: _selected_exits() returns None when "All" is on, set of names otherwise.
+        _sel_exits = _selected_exits()
+        if _sel_exits is not None and exit_ and exit_ not in _sel_exits:
             return False
         try:
             if _val(_f_mintr) and tr < float(_val(_f_mintr)):
@@ -498,108 +624,492 @@ def _run_bg(fn):
 
 # ── button callbacks ──────────────────────────────────────────────────────────
 
+# CHANGED: June 2026 — synchronous step functions for "Run All" chain
+# WHY: each step returns True/False so the chain can stop on failure.
+def _step_generate(source_var):
+    """Synchronous: returns True on success, False on error."""
+    try:
+        from project3_live_trading.batch_ea_tools import batch_generate
+        _selected = [_iid_to_entry[i] for i in _batch_sel_iids if i in _iid_to_entry]
+        if not _selected:
+            _append("Tick at least one rule in the grid (or the header ☐ to select all).")
+            return False
+        out_dir = _canonical_batch_dir()
+        if not out_dir:
+            _append("Generate cancelled (no MT5 data folder).")
+            return False
+        os.makedirs(out_dir, exist_ok=True)
+        global _last_out_dir
+        _last_out_dir = out_dir
+        _nested = os.path.join(out_dir, "batch")
+        if os.path.isdir(_nested):
+            _append("NOTE: stale folder found: %s — delete it so old EAs don't confuse the "
+                    "tester. Only files directly in %s are used." % (_nested, out_dir))
+        src = source_var.get()
+        _append("Generating %d EA(s) into %s ..." % (len(_selected), out_dir))
+        results = batch_generate(out_dir, source=src, entries=_selected)
+        ok = sum(1 for r in results if r.get("ok"))
+        _append("Done: %d/%d EAs written." % (ok, len(results)))
+        for r in results:
+            if not r.get("ok"):
+                _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
+        _append("Manifest: %s" % os.path.join(out_dir, "batch_manifest.json"))
+        return ok > 0
+    except Exception as e:
+        _append("ERROR during generate: %s" % e)
+        return False
+
 def _do_generate(source_var):
-    def work():
+    _run_bg(lambda: _step_generate(source_var))
+
+
+def _step_compile():
+    """Synchronous: returns True on success, False on error."""
+    try:
+        from project3_live_trading.batch_ea_tools import (
+            batch_compile, get_saved_metaeditor_path,
+            save_metaeditor_path, _find_metaeditor,
+        )
+        global _last_out_dir
+        out_dir = _canonical_batch_dir()
+        if not out_dir:
+            _append("Compile cancelled (no MT5 data folder known).")
+            return False
+        _last_out_dir = out_dir
+        data_dir = _derive_data_dir(out_dir)
+        if not data_dir:
+            _append("Compile failed: couldn't derive MT5 data dir from %s" % out_dir)
+            return False
+        _append("Compiling from: %s" % out_dir)
+
+        me = get_saved_metaeditor_path() or _find_metaeditor()
+        if not me:
+            _append("Compile failed: metaeditor64.exe not found. Run '1b. Compile EAs' manually once to set path.")
+            return False
+
+        _append("Compiling EAs with metaeditor64 (headless) ...")
+        results = batch_compile(out_dir, data_dir, metaeditor_path=me)
+        ok = sum(1 for r in results if r.get("ok"))
+        _append("Compiled %d/%d EA(s) to .ex5." % (ok, len(results)))
+        for r in results:
+            if not r.get("ok"):
+                _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
+        if any("lock" in (r.get("error") or "").lower() or
+               "WinError 32" in (r.get("error") or "") for r in results):
+            _append("Some files were LOCKED. Close MT5 terminal and try again.")
+            return False
+        return ok == len(results) and ok > 0
+    except Exception as e:
+        _append("ERROR during compile: %s" % e)
+        return False
+
+
+def _step_build_run_files():
+    """Synchronous: returns True on success, False on error."""
+    try:
+        from project3_live_trading.batch_ea_tools import emit_tester_inis, resolve_terminal_path
+        global _last_out_dir, _last_bat_path, _last_reports_dir
+        batch_dir = _canonical_batch_dir()
+        if not batch_dir:
+            _append("Build run files cancelled (no MT5 data folder known).")
+            return False
+        _last_out_dir = batch_dir
+        manifest = os.path.join(batch_dir, "batch_manifest.json")
+        if not os.path.isfile(manifest):
+            _append("No manifest — run '1. Generate EAs' first.")
+            return False
+        data_dir = _derive_data_dir(batch_dir)
+        if not data_dir:
+            _append("Build failed: couldn't derive MT5 data dir")
+            return False
+        reports_dir = os.path.join(batch_dir, "reports")
+        term = resolve_terminal_path()
+        if not term:
+            _append("Build failed: terminal64.exe not found. Run '2. Build Run Files' manually once to set path.")
+            return False
+        emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir, terminal_exe=term)
+        _last_bat_path = os.path.join(batch_dir, "run_all_tests.bat")
+        _last_reports_dir = reports_dir
+        _append("Run files written.")
+        return True
+    except Exception as e:
+        _append("ERROR during build: %s" % e)
+        return False
+
+
+def _step_run_tests():
+    """Synchronous: BLOCKS until bat completes. Returns True on success."""
+    try:
+        import subprocess, threading, time, glob as _glob, json as _json
+        global _last_bat_path, _last_reports_dir
+        bat = _last_bat_path
+        if not bat or not os.path.isfile(bat):
+            _append("Run Tests failed: no .bat (run '2. Build Run Files' first).")
+            return False
+        if _mt5_is_running():
+            _append("MT5 is OPEN — close the terminal first.")
+            return False
+
+        _total_eas = 0
         try:
-            from project3_live_trading.batch_ea_tools import batch_generate
-            # CHANGED: June 2026 — generate only the rules ticked in the grid
-            # WHY: iid is now r.get('id') or a counter — not a positional index — so
-            #   use _iid_to_entry which was populated during _populate_grid.
-            _selected = [_iid_to_entry[i] for i in _batch_sel_iids
-                         if i in _iid_to_entry]
-            if not _selected:
-                _append("Tick at least one rule in the grid (or the header ☐ to select all).")
-                return
-            # CHANGED: June 2026 — always generate into the canonical Experts\batch (no dialog,
-            #   no doubling). This is the folder the .ini references and MT5 indexes.
-            out_dir = _canonical_batch_dir()
-            if not out_dir:
-                _append("Generate cancelled (no MT5 data folder).")
-                return
-            os.makedirs(out_dir, exist_ok=True)
-            global _last_out_dir
-            _last_out_dir = out_dir
-            # Warn if a stale nested folder exists (leftover from the batch\batch bug)
-            _nested = os.path.join(out_dir, "batch")
-            if os.path.isdir(_nested):
-                _append("NOTE: stale folder found: %s — delete it so old EAs don't confuse the "
-                        "tester. Only files directly in %s are used." % (_nested, out_dir))
-            src = source_var.get()
-            _append("Generating %d EA(s) into %s ..." % (len(_selected), out_dir))
-            results = batch_generate(out_dir, source=src, entries=_selected)
-            ok = sum(1 for r in results if r.get("ok"))
-            _append("Done: %d/%d EAs written." % (ok, len(results)))
-            for r in results:
-                if not r.get("ok"):
-                    _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
-            _append("Manifest: %s" % os.path.join(out_dir, "batch_manifest.json"))
+            _man = os.path.join(os.path.dirname(bat), "batch_manifest.json")
+            if os.path.isfile(_man):
+                with open(_man, encoding="utf-8") as _f:
+                    _total_eas = len(_json.load(_f))
+        except Exception:
+            pass
+
+        if _last_reports_dir and os.path.isdir(_last_reports_dir):
+            _cleared = 0
+            # CHANGED: June 2026 — also clear .xlsx reports (tester now writes xlsx)
+            for _f in (_glob.glob(os.path.join(_last_reports_dir, "*.xlsx")) +
+                       _glob.glob(os.path.join(_last_reports_dir, "*.htm")) +
+                       _glob.glob(os.path.join(_last_reports_dir, "*.html"))):
+                try:
+                    os.remove(_f)
+                    _cleared += 1
+                except Exception:
+                    pass
+
+        _append("Running %d EA(s) via %s ..." % (_total_eas, os.path.basename(bat)))
+        proc = subprocess.Popen(["cmd", "/c", bat], cwd=os.path.dirname(bat),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1)
+
+        _seen = {"n": 0}
+        def _pump():
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                if "=== RUNNING" in line:
+                    _seen["n"] += 1
+                    if _total_eas:
+                        line = line.replace("=== RUNNING",
+                                            "=== RUNNING [%d/%d]" % (_seen["n"], _total_eas))
+                _append("  " + line)
+        threading.Thread(target=_pump, daemon=True).start()
+
+        while proc.poll() is None:
+            time.sleep(5)
+            # CHANGED: June 2026 — count .xlsx reports (full deal data) instead of .htm (summary only)
+            # WHY: tester now writes .xlsx with complete trade details.
+            done_n = (len(_glob.glob(os.path.join(_last_reports_dir, "*.xlsx"))) +
+                      len(_glob.glob(os.path.join(_last_reports_dir, "*.htm"))) +
+                      len(_glob.glob(os.path.join(_last_reports_dir, "*.html"))))             if (_last_reports_dir and os.path.isdir(_last_reports_dir)) else 0
+            _prog = "%d/%d done" % (done_n, _total_eas) if _total_eas else "%d done" % done_n
+            _append("  [heartbeat] %s" % _prog)
+
+        _append("All tester passes finished." if proc.returncode == 0 else
+                "Tester exited code %d" % proc.returncode)
+        return proc.returncode == 0
+    except Exception as e:
+        _append("ERROR during run: %s" % e)
+        return False
+
+
+def _step_compare():
+    """Synchronous: returns True on success."""
+    try:
+        from project3_live_trading.batch_compare_reports import compare_reports
+        global _last_reports_dir, _last_out_dir
+        reports = (_last_reports_dir if (_last_reports_dir and os.path.isdir(_last_reports_dir))
+                   else None)
+        if not reports:
+            bdir = _last_out_dir or _canonical_batch_dir()
+            if bdir:
+                cand = os.path.join(bdir, "reports")
+                if os.path.isdir(cand):
+                    reports = cand
+        if not reports:
+            _append("No reports folder — run tests first.")
+            return False
+        manifest = ""
+        bdir = _last_out_dir or _canonical_batch_dir()
+        if bdir:
+            m = os.path.join(bdir, "batch_manifest.json")
+            if os.path.isfile(m):
+                manifest = m
+        _append("Comparing (%d reports)..." % len(os.listdir(reports)))
+        rows = compare_reports(reports, "", manifest)
+        for line in rows:
+            _append(line)
+        return True
+    except Exception as e:
+        _append("ERROR during compare: %s" % e)
+        return False
+
+
+def _write_debug_dump():
+    """Write MT5 + Python trades + comparison to debug_dump folder."""
+    import json, glob, datetime, csv as _csv, shutil
+    try:
+        from project3_live_trading.batch_compare_reports import (
+            _load_py_trades_for, _py_rules_dir, _parse_mt5_xlsx, _find_report,
+            _parse_mt5_html_stats, _read_mt5_entries)
+    except Exception:
+        _append("Debug dump skipped (import failed).")
+        return
+    reports = _last_reports_dir
+    bdir = _last_out_dir or _canonical_batch_dir()
+    if not reports or not bdir:
+        return
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    dump = os.path.join(bdir, "debug_dump_%s" % stamp)
+    os.makedirs(dump, exist_ok=True)
+    man = {}
+    mpath = os.path.join(bdir, "batch_manifest.json")
+    if os.path.isfile(mpath):
+        with open(mpath, encoding="utf-8") as f:
+            for rec in json.load(f):
+                man[rec.get("name")] = rec
+
+    # CHANGED: June 2026 — iterate over actual report files, parse directly
+    # HOTFIX: June 2026 — strip extension for EA name to avoid ".xlsx.xlsx" lookup bug
+    # WHY: we already have the report path, so parse it directly instead of re-finding.
+    report_files = (glob.glob(os.path.join(reports, "*.xlsx")) +
+                    glob.glob(os.path.join(reports, "*.htm")) +
+                    glob.glob(os.path.join(reports, "*.html")))
+
+    # DEBUG: log what files are found to diagnose MT5 write/parse issues
+    _append("DEBUG: reports dir = %s" % reports)
+    _append("DEBUG: report files found = %s" %
+            ([os.path.basename(p) for p in report_files] or "NONE"))
+
+    for rpt in sorted(report_files):
+        # CHANGED: June 2026 — EA name is the filename WITHOUT extension
+        # WHY: keeping ".xlsx" breaks manifest lookup (searches for name.xlsx, gets "?")
+        #   and report finding (searches for name.xlsx.xlsx, gets 0 trades).
+        ea = os.path.splitext(os.path.basename(rpt))[0]
+
+        sub = os.path.join(dump, ea)
+        os.makedirs(sub, exist_ok=True)
+
+        # CHANGED: June 2026 — parse the report we already have (don't re-find by name)
+        # WHY: we're iterating over actual files, so parse them directly.
+        # CHANGED: June 2026 — fallback to proven entry reader if full parser returns 0
+        # WHY: compare_reports uses _read_mt5_entries (proven: got 308), so if _parse_mt5_xlsx
+        #   returns 0, fall back to entry-only rows to match compare's count.
+        mt5_trades = []
+        mt5_stats = {}
+        try:
+            if rpt.lower().endswith(".xlsx"):
+                # Try full parser (trades + stats)
+                mt5_trades, mt5_stats = _parse_mt5_xlsx(rpt)
+                # Also get entries via proven reader for comparison
+                entries = _read_mt5_entries(rpt)
+
+                # If full parser got 0 but proven reader found entries, use entry-only rows
+                if not mt5_trades and entries:
+                    mt5_trades = [{"entry_time": e.strftime("%Y-%m-%d %H:%M:%S") if hasattr(e, 'strftime') else str(e)}
+                                  for e in entries]
+                    _append("DEBUG: %s → fallback to entries reader: %d entry-only rows" %
+                            (os.path.basename(rpt), len(mt5_trades)))
+                else:
+                    _append("DEBUG: %s → entries=%d full=%d" %
+                            (os.path.basename(rpt), len(entries), len(mt5_trades)))
+            elif rpt.lower().endswith((".htm", ".html")):
+                # Fallback: HTML report (summary stats only, no per-trade details)
+                mt5_stats = _parse_mt5_html_stats(rpt) or {}
+                _append("DEBUG: %s → HTML stats only (no trades)" % os.path.basename(rpt))
         except Exception as e:
-            _append("ERROR during generate: %s" % e)
-    _run_bg(work)
+            _append("DEBUG: parse FAILED for %s: %s" % (os.path.basename(rpt), e))
+            print("[DEBUG-DUMP] %s parse failed: %s" % (ea, e), flush=True)
+
+        # CHANGED: June 2026 — write FULL MT5 trades (entry/exit/price/profit), not just entry_time
+        # WHY: xlsx has complete deal pairs; compare side-by-side with Python trades.
+        with open(os.path.join(sub, "mt5_trades.csv"), "w", newline="", encoding="utf-8") as f:
+            if mt5_trades:
+                w = _csv.DictWriter(f, fieldnames=list(mt5_trades[0].keys()))
+                w.writeheader()
+                w.writerows(mt5_trades)
+
+        # CHANGED: June 2026 — hex-based fallback for manifest matching
+        # WHY: if EA name differs slightly from manifest key, match by combo hex ID.
+        rec = man.get(ea)
+        if rec is None:
+            import re as _re
+            m = _re.search(r"[0-9a-f]{8}", ea.lower())
+            hexid = m.group(0) if m else None
+            if hexid:
+                for k, v in man.items():
+                    if hexid in k.lower() or hexid in str(v.get("rule_combo", "")).lower():
+                        rec = v
+                        break
+        rec = rec or {}
+
+        py, meta = (_load_py_trades_for(rec.get("rule_combo", ""), rec.get("exit_name", ""),
+                                        rec.get("entry_tf", "")) if rec else (None, None))
+        with open(os.path.join(sub, "python_trades.csv"), "w", newline="", encoding="utf-8") as f:
+            if py:
+                w = _csv.DictWriter(f, fieldnames=list(py[0].keys()))
+                w.writeheader()
+                w.writerows(py)
+        # CHANGED: June 2026 — enriched summary with profitability + date ranges both sides
+        # WHY: shows PROFITABLE/LOSS, first/last trade dates, and in-window Python stats
+        #   so you can see if trade-count gaps are date-range issues (not logic bugs).
+        def _dates(trades, ekey="entry_time"):
+            """Extract (first, last) date strings from trades list."""
+            ts = [t.get(ekey) for t in (trades or []) if t.get(ekey)]
+            ts = sorted(str(x) for x in ts)
+            return (ts[0], ts[-1]) if ts else ("-", "-")
+
+        # MT5 stats already parsed above (from xlsx or HTML)
+        mt5_net = mt5_stats.get("net_profit")
+        mt5_pf  = mt5_stats.get("profit_factor")
+        mt5_first, mt5_last = _dates(mt5_trades)
+
+        # Python stats: recompute from trades we already have
+        def _f(x):
+            try:
+                return float(x)
+            except Exception:
+                return None
+
+        py_net_pips = sum((_f(t.get("net_pips")) or 0) for t in (py or [])) if py else None
+        # Profit factor from trades: sum wins / abs(sum losses)
+        py_pf = None
+        if py:
+            wins = sum((_f(t.get("net_pips")) or 0) for t in py if (_f(t.get("net_pips")) or 0) > 0)
+            losses = sum((_f(t.get("net_pips")) or 0) for t in py if (_f(t.get("net_pips")) or 0) < 0)
+            py_pf = (wins / abs(losses)) if losses else None
+        py_first, py_last = _dates(py)
+
+        # In-window Python stats (restricted to MT5 test window)
+        # WHY: Python JSON spans years; MT5 test is ~3 months. Compare like-for-like.
+        def _in_window(t, lo="2026-01-01", hi="2026-04-08"):
+            et = str(t.get("entry_time") or "")[:10]
+            return lo <= et <= hi
+        py_in = [t for t in (py or []) if _in_window(t)]
+        py_in_pips = sum((_f(t.get("net_pips")) or 0) for t in py_in) if py_in else 0
+
+        def _verdict(v):
+            """Return (label, float_val) — PROFITABLE/LOSS/? based on sign."""
+            try:
+                v = float(v)
+                return ("PROFITABLE" if v > 0 else "LOSS"), v
+            except Exception:
+                return ("?", None)
+
+        mt5_verd, mt5_v = _verdict(mt5_net)
+        py_verd,  py_v  = _verdict(py_net_pips)
+
+        with open(os.path.join(sub, "summary.txt"), "w", encoding="utf-8") as f:
+            f.write("EA: %s\n" % ea)
+            f.write("combo: %s\nexit: %s\ntf: %s\n\n" %
+                    (rec.get("rule_combo", "?"), rec.get("exit_name", "?"),
+                     rec.get("entry_tf", "?")))
+
+            f.write("MT5:\n")
+            f.write("  trades: %d\n" % len(mt5_trades))
+            f.write("  net_profit: %s  (%s)\n" %
+                    (mt5_net if mt5_net is not None else "?", mt5_verd))
+            f.write("  profit_factor: %s\n" %
+                    (mt5_pf if mt5_pf is not None else "?"))
+            f.write("  first trade: %s\n  last  trade: %s\n\n" % (mt5_first, mt5_last))
+
+            f.write("Python:\n")
+            f.write("  trades: %d\n" % len(py or []))
+            f.write("  net_pips: %s  (%s)\n" %
+                    (("%.1f" % py_net_pips) if py_net_pips is not None else "?", py_verd))
+            f.write("  profit_factor: %s\n" %
+                    (("%.2f" % py_pf) if py_pf is not None else "?"))
+            f.write("  first trade: %s\n  last  trade: %s\n" % (py_first, py_last))
+            f.write("  in-window (2026-01-01..2026-04-08): %d trades, net_pips %.1f\n\n"
+                    % (len(py_in), py_in_pips))
+
+            if meta:
+                f.write("python source file: %s\npython tf: %s\n\n" %
+                        (meta.get("file"), meta.get("py_tf")))
+
+            # CHANGED: June 2026 — reload Python rule JSON for spread/commission
+            # WHY: cost settings must match between MT5 and Python for valid comparison.
+            py_cfg = {}
+            if meta and meta.get("file"):
+                try:
+                    import json as _json
+                    with open(os.path.join(_py_rules_dir(), meta["file"]), encoding="utf-8") as _fh:
+                        _rd = _json.load(_fh)
+                    py_cfg = {
+                        "spread_pips": _rd.get("spread_pips"),
+                        "commission_pips": _rd.get("commission_pips"),
+                        "entry_tf": _rd.get("entry_tf"),
+                    }
+                except Exception:
+                    pass
+
+            # CHANGED: June 2026 — DATA CONFIG block shows test settings both sides
+            # WHY: confirms symbol, date window, spread/commission, deposit match.
+            #   Mismatches here (different symbol/window/costs) change trade counts/net
+            #   for reasons unrelated to entry/exit logic.
+            f.write("----- DATA CONFIG (confirm both sides match) -----\n")
+            f.write("MT5 (from report/ini):\n")
+            f.write("  symbol: %s\n  period: %s\n  bars: %s\n  initial_deposit: %s\n  broker/server: %s\n"
+                    % (mt5_stats.get("symbol") or "?",
+                       mt5_stats.get("period") or "?",
+                       mt5_stats.get("bars") or "?",
+                       mt5_stats.get("initial_deposit") or "?",
+                       mt5_stats.get("broker") or "?"))
+            f.write("  requested: symbol=%s from=%s to=%s deposit=%s leverage=1:%s\n\n"
+                    % (rec.get("test_symbol") or "?",
+                       rec.get("test_from") or "?",
+                       rec.get("test_to") or "?",
+                       rec.get("test_deposit") or "?",
+                       rec.get("test_leverage") or "?"))
+            f.write("Python (intended config):\n")
+            # WHY: prop firm / account size / symbol not yet tracked in panel globals;
+            #   mark as "?" for now. Can wire from panel selections later.
+            f.write("  prop_firm: ?\n  account_size: ?\n  symbol: ?\n")
+            f.write("  spread_pips: %s\n  commission_pips: %s\n  entry_tf: %s\n\n"
+                    % (py_cfg.get("spread_pips") or "?",
+                       py_cfg.get("commission_pips") or "?",
+                       py_cfg.get("entry_tf") or "?"))
+            f.write("CHECK: symbol, date window, spread/commission, and deposit should match across\n"
+                    "both sides. A different symbol/window/costs will change trade counts and net.\n\n")
+
+            # Explicit date-range warning
+            f.write("NOTE: compare the date ranges above. If Python's first/last span is much wider\n"
+                    "than MT5's test window, the trade-count gap is mostly out-of-range trades,\n"
+                    "not a logic divergence.\n")
+    cs = os.path.join(reports, "comparison_summary.csv")
+    if os.path.isfile(cs):
+        shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
+    _append("DEBUG DUMP: %s" % dump)
+    try:
+        os.startfile(dump)
+    except Exception:
+        pass
+
+
+def _do_run_all(source_var):
+    """Chain: Generate → Compile → Build → Run → Compare → Debug Dump."""
+    def chain():
+        _append("\n===== RUN ALL =====")
+        if not _step_generate(source_var):
+            _append("===== STOPPED (generate) =====")
+            return
+        if not _step_compile():
+            _append("===== STOPPED (compile) =====")
+            return
+        if not _step_build_run_files():
+            _append("===== STOPPED (build) =====")
+            return
+        if not _step_run_tests():
+            _append("===== STOPPED (run) =====")
+            return
+        if not _step_compare():
+            _append("===== STOPPED (compare) =====")
+            return
+        _write_debug_dump()
+        _append("===== RUN ALL COMPLETE =====")
+    _run_bg(chain)
 
 
 # CHANGED: June 2026 — headless compile via metaeditor64; remembers the .exe path per machine
 # WHY: user runs on two PCs — the path differs; save it once per hostname in gitignored
 #   p1_config.json so neither machine inherits the other's path.
 def _do_compile():
-    def work():
-        try:
-            from project3_live_trading.batch_ea_tools import (
-                batch_compile, get_saved_metaeditor_path,
-                save_metaeditor_path, _find_metaeditor,
-            )
-            # CHANGED: June 2026 — always recompute canonical (self-correcting); never trust a
-            #   stale _last_out_dir that may contain a doubled path from a prior run.
-            global _last_out_dir
-            out_dir = _canonical_batch_dir()
-            if not out_dir:
-                _append("Compile cancelled (no MT5 data folder known).")
-                return
-            _last_out_dir = out_dir
-            data_dir = _derive_data_dir(out_dir)
-            if not data_dir:
-                _append("Couldn't derive MT5 data dir from %s — pick it." % out_dir)
-                data_dir = filedialog.askdirectory(
-                    title="Pick MT5 DATA folder (contains MQL5\\Experts)")
-                if not data_dir:
-                    _append("Compile cancelled (no data dir).")
-                    return
-            _append("Compiling from: %s" % out_dir)
-
-            # Resolve metaeditor: saved (this machine) → auto-detect → ask once → save.
-            me = get_saved_metaeditor_path() or _find_metaeditor()
-            if not me:
-                _append("metaeditor64.exe not found automatically on this machine.")
-                me = filedialog.askopenfilename(
-                    title="Locate metaeditor64.exe — saved for THIS computer only",
-                    filetypes=[("metaeditor64", "metaeditor64.exe"), ("All exe", "*.exe")])
-                if not me:
-                    _append("Compile cancelled (no metaeditor64.exe picked).")
-                    return
-                if save_metaeditor_path(me):
-                    _append("Saved metaeditor64 path for this machine (%s)."
-                            % __import__('socket').gethostname())
-                else:
-                    _append("Warning: could not save the path; will ask again next time.")
-
-            _append("Compiling EAs with metaeditor64 (headless) ...")
-            results = batch_compile(out_dir, data_dir, metaeditor_path=me)
-            ok = sum(1 for r in results if r.get("ok"))
-            _append("Compiled %d/%d EA(s) to .ex5." % (ok, len(results)))
-            for r in results:
-                if not r.get("ok"):
-                    _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
-            # CHANGED: June 2026 — actionable hint when MT5 is holding file locks
-            if any("lock" in (r.get("error") or "").lower() or
-                   "WinError 32" in (r.get("error") or "") for r in results):
-                _append("Some files were LOCKED. Close the MT5 terminal (or at least "
-                        "MetaEditor), then run 1b again. metaeditor64 can't overwrite "
-                        ".ex5 while MT5 holds them open.")
-            if ok == len(results) and ok > 0:
-                _append("All compiled. Next: 2. Build Run Files.")
-        except Exception as e:
-            _append("ERROR during compile: %s" % e)
-    _run_bg(work)
+    _run_bg(_step_compile)
 
 
 def _do_build_run_files():
@@ -678,7 +1188,38 @@ def _do_run_tests():
                 return
 
             import subprocess, threading, time, glob as _glob
+
+            # CHANGED: June 2026 — read total EA count from manifest for progress readout
+            # WHY: show done/total and remaining so you know how many rules are left.
+            _total_eas = 0
+            try:
+                import json as _json
+                _man = os.path.join(os.path.dirname(bat), "batch_manifest.json")
+                if os.path.isfile(_man):
+                    with open(_man, encoding="utf-8") as _f:
+                        _total_eas = len(_json.load(_f))
+            except Exception:
+                _total_eas = 0
+
+            # CHANGED: June 2026 — clear old reports so the done/total count is accurate
+            # WHY: stale reports from prior runs pollute the counter (5/4 done) and Compare.
+            if _last_reports_dir and os.path.isdir(_last_reports_dir):
+                _cleared = 0
+                # CHANGED: June 2026 — also clear .xlsx reports (tester now writes xlsx, not htm)
+                for _f in (_glob.glob(os.path.join(_last_reports_dir, "*.xlsx")) +
+                           _glob.glob(os.path.join(_last_reports_dir, "*.htm")) +
+                           _glob.glob(os.path.join(_last_reports_dir, "*.html"))):
+                    try:
+                        os.remove(_f)
+                        _cleared += 1
+                    except Exception:
+                        pass
+                if _cleared:
+                    _append("Cleared %d old report(s) from %s" % (_cleared, _last_reports_dir))
+
             _append("Running backtests via %s ..." % os.path.basename(bat))
+            if _total_eas:
+                _append("Running %d EA(s). Each takes ~1-2 min headless." % _total_eas)
             _append("MT5 runs each EA headless (no visible window). Watch the heartbeat below.")
 
             proc = subprocess.Popen(
@@ -687,12 +1228,20 @@ def _do_run_tests():
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1)
 
-            # Thread 1: stream the bat's own echo lines (=== RUNNING/DONE ===, BATCH TESTER …)
+            # CHANGED: June 2026 — number the RUNNING lines as they stream so you know position
+            # WHY: each RUNNING line gets tagged [k/N] so you see which EA is in progress.
+            _seen = {"n": 0}
             def _pump():
                 for line in proc.stdout:
                     line = line.rstrip()
-                    if line:
-                        _append("  " + line)
+                    if not line:
+                        continue
+                    if "=== RUNNING" in line:
+                        _seen["n"] += 1
+                        if _total_eas:
+                            line = line.replace("=== RUNNING",
+                                                "=== RUNNING [%d/%d]" % (_seen["n"], _total_eas))
+                    _append("  " + line)
             _t = threading.Thread(target=_pump, daemon=True)
             _t.start()
 
@@ -707,8 +1256,9 @@ def _do_run_tests():
                 newest = ""
                 size = 0
                 if rdir and os.path.isdir(rdir):
-                    # CHANGED: June 2026 — MT5 /config writes HTML, not xlsx; count .htm/.html
-                    _files = (_glob.glob(os.path.join(rdir, "*.htm")) +
+                    # CHANGED: June 2026 — tester now writes .xlsx (full deal data)
+                    _files = (_glob.glob(os.path.join(rdir, "*.xlsx")) +
+                              _glob.glob(os.path.join(rdir, "*.htm")) +
                               _glob.glob(os.path.join(rdir, "*.html")) +
                               _glob.glob(os.path.join(rdir, "*.xml")))
                     if _files:
@@ -717,12 +1267,20 @@ def _do_run_tests():
                             size = os.path.getsize(newest)
                         except OSError:
                             size = 0
-                done_n = (len(_glob.glob(os.path.join(rdir, "*.htm"))) +
+                done_n = (len(_glob.glob(os.path.join(rdir, "*.xlsx"))) +
+                          len(_glob.glob(os.path.join(rdir, "*.htm"))) +
                           len(_glob.glob(os.path.join(rdir, "*.html")))) if (rdir and os.path.isdir(rdir)) else 0
-                _append("  [heartbeat %d] MT5 %s | reports done: %d%s"
+                # CHANGED: June 2026 — show done/total and remaining so you know how many left
+                # WHY: clear progress readout (3/6 done, 3 left) instead of just count.
+                if _total_eas:
+                    _remaining = max(0, _total_eas - done_n)
+                    _prog = "%d/%d done, %d left" % (done_n, _total_eas, _remaining)
+                else:
+                    _prog = "%d done" % done_n
+                _append("  [heartbeat %d] MT5 %s | %s%s"
                         % (_beat,
                            "running" if alive else "starting/closing",
-                           done_n,
+                           _prog,
                            (" | writing %s (%d KB)" % (os.path.basename(newest), size // 1024))
                            if newest else ""))
                 # A2: tail the MT5 tester log for the "bars processed" line
@@ -748,10 +1306,12 @@ def _do_run_tests():
                 _append("Tester batch exited with code %d (some passes may have failed)." % rc)
 
             if _last_reports_dir and os.path.isdir(_last_reports_dir):
-                # CHANGED: June 2026 — count .htm/.html (MT5 /config output format)
+                # CHANGED: June 2026 — count .xlsx/.htm/.html (tester now writes .xlsx)
                 n_rep = len([f for f in os.listdir(_last_reports_dir)
-                             if f.lower().endswith((".htm", ".html"))])
-                _append("Reports folder: %s (%d reports)" % (_last_reports_dir, n_rep))
+                             if f.lower().endswith((".xlsx", ".htm", ".html"))])
+                # CHANGED: June 2026 — explicit done/total count in final summary
+                _append("Done: %d/%d reports written." % (n_rep, _total_eas or n_rep))
+                _append("Reports folder: %s" % _last_reports_dir)
                 _append("Next: click '3. Compare Reports'.")
             else:
                 _append("Done. Next: click '3. Compare Reports' and pick the reports folder.")
@@ -764,25 +1324,51 @@ def _do_compare():
     def work():
         try:
             from project3_live_trading.batch_compare_reports import compare_reports
-            # CHANGED: June 2026 — use remembered reports dir from Run Tests / Build Run Files
-            global _last_reports_dir
+            import glob as _g
+            # CHANGED: June 2026 — auto-resolve ALL paths (reports, manifest); NO dialogs
+            # CHANGED: June 2026 — Python trades now loaded from stored backtest files; no CSV dir
+            # WHY: trades exist in backtest_trades_{TF}.json from backtesting; fully automatic.
+            global _last_reports_dir, _last_out_dir
+
+            # 1) REPORTS DIR — remembered from Run Tests/Build Run Files; else derive from batch dir
             reports = (_last_reports_dir
-                       if (_last_reports_dir and os.path.isdir(_last_reports_dir))
-                       else None)
+                       if (_last_reports_dir and os.path.isdir(_last_reports_dir)) else None)
             if not reports:
-                reports = filedialog.askdirectory(title="Pick folder of MT5 .xlsx reports")
-            if not reports:
-                _append("Compare cancelled.")
+                bdir = _last_out_dir or _canonical_batch_dir()
+                if bdir:
+                    cand = os.path.join(bdir, "reports")
+                    if os.path.isdir(cand):
+                        reports = cand
+            if not reports or not os.path.isdir(reports):
+                _append("No reports folder found — run 2b. Run Tests first.")
                 return
-            python_dir = filedialog.askdirectory(title="Pick folder of Python trade CSVs")
-            if not python_dir:
-                _append("Compare cancelled (no python dir).")
-                return
-            manifest = filedialog.askopenfilename(
-                title="Pick batch_manifest.json (recommended)",
-                filetypes=[("JSON", "*.json")])
+
+            # 2) MANIFEST — sits next to the batch dir; auto-resolve, never ask
+            manifest = ""
+            bdir = _last_out_dir or _canonical_batch_dir()
+            if bdir:
+                m = os.path.join(bdir, "batch_manifest.json")
+                if os.path.isfile(m):
+                    manifest = m
+            # also try one level up from reports (…\batch\reports → …\batch)
+            if not manifest:
+                m2 = os.path.join(os.path.dirname(reports), "batch_manifest.json")
+                if os.path.isfile(m2):
+                    manifest = m2
+            # manifest is optional for compare_reports; empty string is fine if not found
+
+            # 3) PYTHON TRADES — pulled automatically from stored outputs/rules/*.json
+            # WHY: trades already exist on disk from backtesting; no manual export needed.
+            #   Each rule_*_{combo}_{exit}_{hash}_{TF}.json has a trades list.
             _append("Comparing reports in %s ..." % reports)
-            rows = compare_reports(reports, python_dir, manifest or "")
+            if manifest:
+                _append("Manifest: %s" % manifest)
+            else:
+                _append("(No manifest found — will use EA names only for matching)")
+            _append("Python trades loaded from outputs/rules/*.json (automatic).")
+
+            # No python_dir needed; trades come from outputs/rules/*.json via manifest
+            rows = compare_reports(reports, "", manifest)
             for line in rows:
                 _append(line)
             _append("comparison_summary.csv written in the reports folder.")
@@ -796,6 +1382,7 @@ def _do_compare():
 def build_panel(parent):
     global _log, _grid_tree, _cur_source
     global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable, _nostats_lbl
+    global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
     panel = tk.Frame(parent, bg=BG)
 
     hdr = tk.Frame(panel, bg=DARK)
@@ -831,6 +1418,8 @@ def build_panel(parent):
     # CHANGED: June 2026 — 2b launches run_all_tests.bat in-app; streams progress to log
     _btn("2b. Run Tests",      _do_run_tests).pack(side=tk.LEFT, padx=4)
     _btn("3. Compare Reports", _do_compare).pack(side=tk.LEFT, padx=4)
+    # CHANGED: June 2026 — Run All chains all steps + writes debug dump
+    _btn("▶ Run All", lambda: _do_run_all(src_var)).pack(side=tk.LEFT, padx=8)
 
     # CHANGED: June 2026 — filter row (parity with Strategy Refiner)
     filt_row = tk.Frame(panel, bg=BG)
@@ -856,6 +1445,17 @@ def build_panel(parent):
                            values=["All", "BUY", "SELL"])
     _f_dir.set("All")
     _f_dir.pack(side=tk.LEFT, padx=(2, 6))
+
+    # CHANGED: June 2026 — multi-select exit-strategy filter via Menubutton
+    # WHY: dropdown of checkboxes (All / specific exits) — compact, fits in filter row.
+    # HOTFIX: June 2026 — store Menu object in _f_exit_menuobj (not _f_exit_menu['menu'], which is a str)
+    tk.Label(filt_row, text="Exits:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    _f_exit_menu = tk.Menubutton(filt_row, text="All ▾", relief=tk.RAISED, bg=WHITE,
+                                 font=("Segoe UI", 9), padx=6, pady=2, cursor="hand2")
+    _f_exit_menuobj = tk.Menu(_f_exit_menu, tearoff=0)  # keep the OBJECT
+    _f_exit_menu.config(menu=_f_exit_menuobj)           # attach it
+    _f_exit_menu.pack(side=tk.LEFT, padx=(2, 6))
 
     tk.Label(filt_row, text="Min Trades:", bg=BG, fg=DARK,
              font=("Segoe UI", 9)).pack(side=tk.LEFT)
@@ -889,10 +1489,15 @@ def build_panel(parent):
                              font=("Segoe UI", 8))
     _nostats_lbl.pack(side=tk.LEFT, padx=4)
 
+    # CHANGED: June 2026 — grid + log in a vertical PanedWindow so the log box is drag-resizable
+    # WHY: fixed-height log can't be resized; PanedWindow sash lets you drag to grow/shrink.
+    _split = tk.PanedWindow(panel, orient="vertical", sashwidth=6,
+                            sashrelief="raised", bg=BG)
+    _split.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
     # CHANGED: June 2026 — rule selection grid with refiner-parity columns
-    _grid_frame = tk.Frame(panel, bg=WHITE)
-    # CHANGED: June 2026 — expand=True so the grid + scrollbars get real vertical space
-    _grid_frame.pack(fill="both", expand=True, padx=6, pady=(2, 4))
+    _grid_frame = tk.Frame(_split, bg=WHITE)
+    # CHANGED: June 2026 — grid becomes first pane of PanedWindow (was pack with expand=True)
 
     # CHANGED: June 2026 — batch grid columns mirror the Rule Refiner strategy grid
     # CHANGED: June 2026 — added "profit" column (✅/❌/—) matching refiner's net>0 definition
@@ -960,11 +1565,17 @@ def build_panel(parent):
     _grid_tree.bind("<Button-5>",   _grid_wheel)
     _grid_tree.bind("<Shift-MouseWheel>",
                     lambda e: (_grid_tree.xview_scroll(int(-1*(e.delta/120))*3, "units"), "break")[1])
+
+    # CHANGED: June 2026 — add grid frame to PanedWindow (was .pack(fill="both", expand=True))
+    # WHY: minsize=120 prevents grid from collapsing; stretch="always" shares space with log.
+    _split.add(_grid_frame, minsize=120, stretch="always")
+
     _populate_grid(src_var.get())
 
-    # Log box — expand=False so the grid above gets the vertical space
-    _log = tk.Text(panel, font=("Consolas", 9), bg=WHITE, fg=DARK, wrap="word", height=6)
-    _log.pack(fill="x", expand=False, padx=10, pady=(0, 10))
+    # CHANGED: June 2026 — log becomes second pane of PanedWindow (was pack with height=6, expand=False)
+    # WHY: drag the sash up → log grows taller, grid shrinks; drag down → reverse.
+    _log = tk.Text(_split, font=("Consolas", 9), bg=WHITE, fg=DARK, wrap="word", height=8)
+    _split.add(_log, minsize=60, stretch="always")
     _log.insert("end",
                 "Batch flow: 1. Tick rules -> Generate EAs -> 1b. Compile EAs (headless) -> "
                 "2. Build Run Files -> run .bat in MT5 -> 3. Compare Reports.\n\n")

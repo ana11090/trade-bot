@@ -27,10 +27,88 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 
 
+# CHANGED: June 2026 — pull Python trades from stored outputs/rules/*.json files
+# WHY: trades already exist on disk from backtesting; no manual export needed.
+#   Each rule_*_{combo}_{exit}_{hash}_{TF}.json has a trades list with full detail.
+import re
+
+
+def _py_rules_dir():
+    """Return the project2_backtesting/outputs/rules directory."""
+    return os.path.join(_ROOT, "project2_backtesting", "outputs", "rules")
+
+
+def _norm(s):
+    """Normalize string for matching: alphanumeric lowercase only."""
+    return "".join(ch.lower() for ch in str(s) if ch.isalnum())
+
+
+def _load_py_trades_for(combo, exit_name, entry_tf):
+    """Find the stored rule JSON whose combo + exit + tf match.
+
+    Returns: (trades_list, meta_dict) or (None, None)
+    meta_dict includes: {"file": filename, "py_tf": stored_tf, "tf_match": bool}
+
+    WHY: Must match combo + exit + TF. Comparing M5 EA vs H4 Python is meaningless.
+    """
+    d = _py_rules_dir()
+    if not os.path.isdir(d):
+        return None, None
+
+    # Extract 8-hex ID from combo for robust matching
+    m = re.search(r"[0-9a-f]{8}", str(combo).lower())
+    hexid = m.group(0) if m else None
+    want_exit = _norm(exit_name)
+    want_tf = _norm(entry_tf)
+
+    best = None
+    for f in glob.glob(os.path.join(d, "rule_*.json")):
+        base = os.path.basename(f).lower()
+        # Quick filter: file must contain the hex ID
+        if hexid and hexid not in base:
+            continue
+
+        try:
+            with open(f, encoding="utf-8") as fh:
+                rd = json.load(fh)
+        except Exception:
+            continue
+
+        if not rd.get("trades"):
+            continue
+
+        r_exit = _norm(rd.get("exit_name") or rd.get("exit_strategy") or "")
+        r_tf = _norm(rd.get("entry_tf") or "")
+
+        # Score the match: exit match + tf match
+        score = 0
+        if want_exit and want_exit in r_exit:
+            score += 2
+        if want_tf and want_tf == r_tf:
+            score += 2
+        elif want_tf and want_tf in r_tf:
+            score += 1
+
+        if best is None or score > best[0]:
+            best = (score, rd, f, r_tf)
+
+    if not best:
+        return None, None
+
+    _, rd, f, r_tf = best
+    meta = {
+        "file": os.path.basename(f),
+        "py_tf": rd.get("entry_tf"),
+        "tf_match": (_norm(rd.get("entry_tf") or "") == want_tf)
+    }
+    return rd["trades"], meta
+
+
 def _parse_mt5_html_stats(path):
     """Parse summary stats from an MT5 HTML report (UTF-16). Returns dict or None."""
     # WHY: MT5 /config tester writes HTML, not xlsx. Stats live in <td> pairs.
     # CHANGED: June 2026 — HTML report parser replaces xlsx reader for summary stats
+    # CHANGED: June 2026 — added data-config fields (symbol, period, bars, deposit, broker)
     import re
     for enc in ("utf-16", "utf-16-le", "utf-8"):
         try:
@@ -49,10 +127,24 @@ def _parse_mt5_html_stats(path):
             return None
         return m.group(1).replace(' ', '').replace(',', '')
 
+    def _grab_text(label):
+        """Tolerant grab for header fields — matches 'Label: value' or '<td>Label</td><td>value'."""
+        # WHY: header fields aren't always strict <td> pairs; looser pattern for text values.
+        m = re.search(re.escape(label) + r'\s*:?\s*(?:</td>\s*<td[^>]*>)?\s*([^<\n\r]+)',
+                      html, re.IGNORECASE)
+        return m.group(1).strip() if m else None
+
     return {
         "net_profit":    _grab("Total Net Profit") or _grab("Net Profit"),
         "profit_factor": _grab("Profit Factor"),
         "trades":        _grab("Total Trades"),
+        # CHANGED: June 2026 — data-config fields (symbol, period, bars, deposit, broker)
+        # WHY: confirms both sides tested same instrument/window/costs.
+        "symbol":        _grab_text("Symbol"),
+        "period":        _grab_text("Period"),
+        "bars":          _grab_text("Bars"),
+        "initial_deposit": _grab_text("Initial Deposit") or _grab_text("Initial deposit"),
+        "broker":        _grab_text("Broker") or _grab_text("Company") or _grab_text("Server"),
     }
 
 
@@ -122,6 +214,128 @@ def _read_mt5_entries(path):
         return []
 
 
+# CHANGED: June 2026 — full MT5 xlsx parser (trades + stats)
+# WHY: MT5 tester writes ReportTester xlsx with full deal pairs (in/out) and summary stats.
+#   The HTML report lacks per-trade details; xlsx has entry/exit times, prices, profit, commission.
+def _parse_mt5_xlsx(path):
+    """Return (trades, stats) from an MT5 ReportTester xlsx.
+
+    trades: list of dicts with entry_time, exit_time, entry_price, exit_price,
+            direction, volume, profit, commission, swap.
+    stats:  dict with symbol, period, initial_deposit, net_profit, profit_factor, total_deals.
+    """
+    import openpyxl
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+
+    # CHANGED: June 2026 — search all worksheets for stats (labels may be on different sheet)
+    # WHY: some MT5 builds put summary on a separate sheet; iterate all sheets for robustness.
+    rows = []
+    for ws in wb.worksheets:
+        rows += list(ws.iter_rows(values_only=True))
+
+    def _cellval(label):
+        """Find a label cell and return the next non-empty cell's value."""
+        for r in rows:
+            cells = list(r)
+            for i, c in enumerate(cells):
+                if c is not None and str(c).strip().rstrip(":").lower() == label.lower():
+                    # Value is the next non-None cell
+                    for j in range(i + 1, len(cells)):
+                        if cells[j] is not None and str(cells[j]).strip():
+                            return str(cells[j]).strip()
+        return None
+
+    stats = {
+        "symbol":          _cellval("Symbol"),
+        "period":          _cellval("Period"),
+        "initial_deposit": _cellval("Initial Deposit"),
+        "net_profit":      _cellval("Total Net Profit"),
+        "profit_factor":   _cellval("Profit Factor"),
+        "total_deals":     _cellval("Total Deals"),
+    }
+
+    # CHANGED: June 2026 — find the deals HEADER row like the working entries reader
+    # WHY: looking for 'Deals' section label didn't match some MT5 layouts; the proven reader
+    #   finds the header by 'Time' in first cell + 'Deal' somewhere in the row. This IS the
+    #   column header row, so data starts at hdr+1.
+    hdr_idx = None
+    for i, r in enumerate(rows):
+        if not r:
+            continue
+        first = str(r[0]).strip() if r[0] is not None else ""
+        cells = [str(c) for c in r if c is not None]
+        # Match the working reader: first cell == 'Time' AND row contains 'Deal'
+        if first == "Time" and "Deal" in cells:
+            hdr_idx = i
+            break
+
+    trades = []
+    if hdr_idx is None:
+        return trades, stats  # No deals header found, return empty trades
+
+    header = [str(c).strip() if c is not None else "" for c in rows[hdr_idx]]
+    col = {name: k for k, name in enumerate(header)}
+
+    def g(row, name):
+        """Get column value by name."""
+        k = col.get(name)
+        return row[k] if (k is not None and k < len(row)) else None
+
+    pending_in = None
+    for r in rows[hdr_idx + 1:]:
+        if not r or r[0] is None:
+            continue
+        # Stop at Balance: summary row (marks end of deals in some layouts)
+        if "Balance:" in str(r[0]):
+            break
+        typ = str(g(r, "Type") or "").lower()
+        direction = str(g(r, "Direction") or "").lower()
+        # Skip balance rows
+        if typ == "balance":
+            continue
+        # Pair in/out deals into trades
+        if direction == "in":
+            pending_in = r
+        elif direction == "out" and pending_in is not None:
+            trades.append({
+                "entry_time":  g(pending_in, "Time"),
+                "exit_time":   g(r, "Time"),
+                "entry_price": g(pending_in, "Price"),
+                "exit_price":  g(r, "Price"),
+                "direction":   str(g(pending_in, "Type") or ""),
+                "volume":      g(pending_in, "Volume"),
+                "commission":  (float(g(pending_in, "Commission") or 0) +
+                               float(g(r, "Commission") or 0)),
+                "swap":        float(g(r, "Swap") or 0),
+                "profit":      float(g(r, "Profit") or 0),
+            })
+            pending_in = None
+
+    return trades, stats
+
+
+# CHANGED: June 2026 — find MT5 report with xlsx preference
+# WHY: xlsx has full deal data; htm is summary-only fallback.
+# CHANGED: June 2026 — sort by newest (mtime) to get the right report when multiple exist.
+def _find_report(reports_dir, ea_name):
+    """Find the MT5 report for an EA, preferring xlsx over htm/html, newest first."""
+    import glob as _glob
+    # Try exact name match first (EA name + extension), newest first
+    for pat in (ea_name + ".xlsx",
+                "*" + ea_name + "*.xlsx",      # partial match (e.g. ReportTester-<n>.xlsx)
+                "ReportTester*.xlsx",           # MT5 default name if EA-named path wasn't honored
+                ea_name + ".htm",
+                ea_name + ".html"):
+        hits = sorted(_glob.glob(os.path.join(reports_dir, pat)),
+                      key=lambda p: os.path.getmtime(p), reverse=True)
+        if hits:
+            return hits[0]  # Return newest match
+    return None
+
+
 def _read_python_entries(csv_path):
     """Return sorted list of Python entry datetimes (minute-truncated)."""
     out = []
@@ -132,6 +346,33 @@ def _read_python_entries(csv_path):
                            .replace(second=0))
             except Exception:
                 pass
+    return sorted(out)
+
+
+# CHANGED: June 2026 — extract entry times from stored trade list (not CSV)
+# WHY: _load_py_trades_for returns a list of trade dicts; we need datetimes for comparison.
+def _extract_py_entry_times(trades):
+    """Return sorted list of Python entry datetimes from a trade list."""
+    out = []
+    if not trades:
+        return out
+    for t in trades:
+        if not isinstance(t, dict):
+            continue
+        et = t.get('entry_time')
+        if not et:
+            continue
+        try:
+            # handle both string and datetime formats
+            if isinstance(et, str):
+                dt = datetime.strptime(et, '%Y-%m-%d %H:%M:%S').replace(second=0)
+            elif isinstance(et, datetime):
+                dt = et.replace(second=0)
+            else:
+                continue
+            out.append(dt)
+        except Exception:
+            pass
     return sorted(out)
 
 
@@ -167,6 +408,31 @@ def _python_trades_for(name, python_dir, rec=None):
             # newest run wins (the stamp guard means many runs may coexist)
             hits.sort(key=os.path.getmtime, reverse=True)
             return hits[0]
+
+    # CHANGED: June 2026 — tolerant match: extract combo (8-hex) + exit keyword from EA name
+    # WHY: EA names now carry exit+tf suffixes (e.g. BUY_M5_4c_0608_198587b7_M5_ATR_Only),
+    #   while CSVs are trades_{combo}_{exit}{tf}_{stamp}.csv. Match by combo + exit token.
+    # CHANGED: June 2026 — guard against empty python_dir (when no CSVs exported yet)
+    if not python_dir:
+        return None
+    toks = name.replace("BUY_", "").replace("SELL_", "").split("_")
+    # find the 8-hex combo token (e.g. 198587b7)
+    combo = next((t for t in toks if len(t) == 8 and all(c in "0123456789abcdef" for c in t.lower())), None)
+    cand = glob.glob(os.path.join(python_dir, "trades_*.csv"))
+    if combo:
+        cand = [c for c in cand if combo in os.path.basename(c)]
+    # further narrow by an exit keyword if present in the EA name
+    for kw in ("ATR_Only", "ATR_Fixed", "Fixed_SL", "Time_Based", "Indicator", "Hybrid",
+               "Trailing", "PSAR", "Breakeven"):
+        if kw.lower() in name.lower():
+            hit = [c for c in cand if kw.lower() in os.path.basename(c).lower()]
+            if hit:
+                cand = hit
+                break
+    # newest match wins
+    if cand:
+        cand.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return cand[0]
 
     # Fallback: legacy/simple layouts.
     cands = [
@@ -227,33 +493,62 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         return ["No MT5 reports found — check the tester actually wrote them."]
 
     rows = []
-    print('\n%-32s %5s %5s %8s %6s %7s %6s %6s' %
-          ('EA', 'MT5', 'PY', 'net_pip', 'exact', 'early', 'late', 'after'))
-    print('-' * 85)
+    print('\n%-32s %5s %5s %8s %6s %7s %6s %6s  %s' %
+          ('EA', 'MT5', 'PY', 'net_pip', 'exact', 'early', 'late', 'after', 'note'))
+    print('-' * 100)
     for rp in reports:
         name = os.path.splitext(os.path.basename(rp))[0]
         stats = _parse_mt5_html_stats(rp) or {}
         mt5 = _read_mt5_entries(rp)
-        py_csv = _python_trades_for(name, python_dir, rec_by_name.get(name))
-        if not py_csv:
-            print('%-32s %5d   no python trades found' % (name[:32], len(mt5)))
-            rows.append(dict(name=name, mt5=len(mt5), error='no_python'))
+
+        # CHANGED: June 2026 — load Python trades from stored outputs/rules/*.json
+        # WHY: trades already exist on disk; no manual export/CSV needed. Fully automatic.
+        #   Must match combo + exit + TF (comparing M5 EA vs H4 Python is meaningless).
+        rec = rec_by_name.get(name, {})
+        combo = str(rec.get('rule_combo') or '')
+        exit_name = rec.get('exit_name') or ''
+        tf = rec.get('entry_tf') or ''
+        py_trades, meta = _load_py_trades_for(combo, exit_name, tf) if combo else (None, None)
+
+        if not py_trades:
+            # No stored trades for this rule (never backtested, or different combo)
+            print('%-32s %5d   no stored Python run for this rule (combo=%s)' %
+                  (name[:32], len(mt5), combo[:8] or '?'))
+            rows.append(dict(name=name, mt5=len(mt5), error='no_python',
+                            note='no stored Python run'))
             continue
-        py = _read_python_entries(py_csv)
+
+        # Check TF match — if stored Python run is different TF than EA, comparison is meaningless
+        if meta and not meta.get('tf_match'):
+            py_tf = meta.get('py_tf') or '?'
+            note = f"PY run TF={py_tf} ≠ EA TF={tf} (counts not comparable)"
+            print('%-32s %5d %5d %8s  %s' %
+                  (name[:32], len(mt5), len(py_trades),
+                   (stats.get('net_profit') or '?')[:8], note))
+            rows.append(dict(name=name, mt5=len(mt5), py=len(py_trades),
+                            net_profit=stats.get('net_profit', ''),
+                            profit_factor=stats.get('profit_factor', ''),
+                            note=note))
+            continue
+
+        # TF matches → do real entry-time comparison
+        py = _extract_py_entry_times(py_trades)
         m = _compare(mt5, py, bar_minutes=bar_minutes)
         m['name'] = name
-        m['net_profit']    = stats.get('net_profit', '')
+        m['net_profit'] = stats.get('net_profit', '')
         m['profit_factor'] = stats.get('profit_factor', '')
+        m['note'] = f"matched (file: {meta.get('file', '?')[:20]})"
         rows.append(m)
-        print('%-32s %5d %5d %8s %6d %7d %6d %6d' %
+        print('%-32s %5d %5d %8s %6d %7d %6d %6d  %s' %
               (name[:32], m['mt5'], m['py'],
                (stats.get('net_profit') or '?')[:8],
-               m['exact'], m['one_bar_early'], m['one_bar_late'], m['py_after_end']))
+               m['exact'], m['one_bar_early'], m['one_bar_late'], m['py_after_end'],
+               m['note'][:30]))
 
     # write CSV summary
     out_csv = os.path.join(reports_dir, 'comparison_summary.csv')
     keys = ['name', 'net_profit', 'profit_factor', 'mt5', 'py', 'py_in_range', 'exact',
-            'one_bar_early', 'one_bar_late', 'py_after_end']
+            'one_bar_early', 'one_bar_late', 'py_after_end', 'note']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
         w.writeheader()
@@ -262,6 +557,7 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     print('\n[CMP] summary -> %s' % out_csv)
     print('Columns: exact=same-bar entries; early/late=Python off by one bar;')
     print('         after=Python trades past MT5 end (expected if Python ran longer).')
+    print('         note=TF mismatch warning or match confirmation.')
     return rows
 
 
