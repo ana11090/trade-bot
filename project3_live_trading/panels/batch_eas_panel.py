@@ -692,6 +692,9 @@ def _step_compile():
         ok = sum(1 for r in results if r.get("ok"))
         _append("Compiled %d/%d EA(s) to .ex5." % (ok, len(results)))
         for r in results:
+            if r.get("ok"):
+                _append("  OK %s (%d bytes)" % (r.get("name"), r.get("ex5_size", 0)))
+        for r in results:
             if not r.get("ok"):
                 _append("  FAILED %s: %s" % (r.get("name"), r.get("error")))
         if any("lock" in (r.get("error") or "").lower() or

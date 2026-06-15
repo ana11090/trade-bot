@@ -299,16 +299,36 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
                     except Exception:
                         continue
 
-            has_ex5  = os.path.isfile(ex5)
+            # CHANGED 2026-06-15 — verify the .ex5 is VALID, not merely present.
+            # WHY: metaeditor64 can leave a zero-byte/truncated .ex5 and still return 0, so
+            #   os.path.isfile() passed and the panel reported success while MT5 later said
+            #   "cannot load EX5" (-1000012356). Require: file exists, is non-trivially sized,
+            #   and is newer than the source .mq5 (proves THIS compile wrote it, not a stale leftover).
+            has_ex5 = os.path.isfile(ex5)
+            ex5_size = os.path.getsize(ex5) if has_ex5 else 0
+            try:
+                _src_mtime = os.path.getmtime(dest)
+                _ex5_mtime = os.path.getmtime(ex5) if has_ex5 else 0
+            except Exception:
+                _src_mtime, _ex5_mtime = 0, 1  # don't block on mtime read failure
+            # A real compiled EA is well over a few KB; 1024 is a safe floor for "not a stub".
+            ex5_valid = has_ex5 and ex5_size >= 1024 and _ex5_mtime >= _src_mtime
             hard_err = any(" error " in ln.lower() for ln in err_text.splitlines())
 
-            if has_ex5 and not hard_err:
-                results.append({"name": name, "ok": True, "ex5": ex5})
+            if ex5_valid and not hard_err:
+                results.append({"name": name, "ok": True, "ex5": ex5, "ex5_size": ex5_size})
             else:
-                first_err = next(
-                    (ln.strip() for ln in err_text.splitlines() if " error " in ln.lower()),
-                    "no .ex5 produced")
-                results.append({"name": name, "ok": False, "error": first_err})
+                if not has_ex5:
+                    _reason = "no .ex5 produced"
+                elif ex5_size < 1024:
+                    _reason = "compile produced a stub .ex5 (%d bytes) — MT5 will fail to load it" % ex5_size
+                elif _ex5_mtime < _src_mtime:
+                    _reason = "stale .ex5 (older than .mq5) — recompile did not overwrite it"
+                else:
+                    _reason = next(
+                        (ln.strip() for ln in err_text.splitlines() if " error " in ln.lower()),
+                        "compile log reported an error")
+                results.append({"name": name, "ok": False, "error": _reason})
 
         except PermissionError as e:
             results.append({"name": name, "ok": False,
