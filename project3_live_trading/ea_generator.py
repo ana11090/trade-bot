@@ -1238,6 +1238,27 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     else:
         cond_log_block = ''
 
+    # Build TF prime block for OnInit — forces tester to build all used TF series before OnTick.
+    # WHY: June 2026 — multi-TF rules read H1/M15/M5 from an H4 entry chart. Under Model=0
+    #   (1-min OHLC), these cross-TF series aren't pre-built → CopyBuffer returns EMPTY_VALUE
+    #   on every bar → indicatorFailed=true → 0 trades. CopyTime/CopyClose in OnInit forces the
+    #   tester to synthesize the other-TF series from its M1 data before the first OnTick fires.
+    _prime_periods = set(_elog_tf_map.values())   # TFs from rule conditions
+    _prime_periods.add(mql_period)                # always include entry TF
+    _prime_arr = ', '.join(sorted(_prime_periods))
+    tf_prime_block = f"""
+   // WHY: June 2026 — prime all TFs used by this rule so tester builds their series before OnTick
+   // CHANGED: June 2026 — TF warm-up priming; fixes 0-trades on multi-TF rules under Model=0
+   {{
+      ENUM_TIMEFRAMES _prime_tfs[] = {{ {_prime_arr} }};
+      for(int _i = 0; _i < ArraySize(_prime_tfs); _i++)
+      {{
+         datetime _pt[]; double _pc[];
+         CopyTime (_Symbol, _prime_tfs[_i], 0, 50, _pt);
+         CopyClose(_Symbol, _prime_tfs[_i], 0, 50, _pc);
+      }}
+   }}"""
+
     # ══════════════════════════════════════════════════════════════════════
     # RULES-DRIVEN MQL5 CODE GENERATION
     # WHY: Each trading_rule in the JSON produces specific MQL5 code.
@@ -2719,6 +2740,7 @@ int OnInit()
    //--- Create indicator handles
    {handle_inits}
 
+{tf_prime_block}
    //--- Open log file
    // WHY: Without FILE_COMMON, FileOpen writes to the Strategy Tester's
    //      sandbox (Tester\\<ID>\\Agent-127.0.0.1-3000\\MQL5\\Files\\) which

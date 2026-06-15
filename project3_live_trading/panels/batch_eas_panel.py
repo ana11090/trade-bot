@@ -1195,6 +1195,36 @@ def _write_debug_dump():
     if os.path.isfile(cs):
         shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
 
+    # CHANGED: June 2026 — copy tester condlog + journal into dump for offline analysis
+    # WHY: condlog_<magic>.csv (per-bar condition PASS/fail) + journal prove which condition
+    #   is always-false (0-trades root cause). Copying them alongside the trades lets us
+    #   analyze without needing the tester open.
+    _copy_data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
+    if _copy_data_dir:
+        # Newest condlog_*.csv from any tester agent sandbox
+        _clogs = sorted(
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')),
+            key=os.path.getmtime, reverse=True
+        )
+        if _clogs:
+            shutil.copy(_clogs[0], os.path.join(dump, "condlog.csv"))
+            _d("Copied condlog: %s" % _clogs[0])
+        else:
+            _d("condlog: not found in Tester sandbox (run with DebugConditions=true first)")
+        # Newest *.log from tester agent Logs/ or agent root
+        _jlogs = sorted(
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'Logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', '*.log')),
+            key=os.path.getmtime, reverse=True
+        )
+        if _jlogs:
+            shutil.copy(_jlogs[0], os.path.join(dump, "mt5_journal.log"))
+            _d("Copied journal: %s" % _jlogs[0])
+        else:
+            _d("journal: not found in Tester agent folders")
+    else:
+        _d("condlog/journal copy skipped: data dir unknown")
+
     if _dbg is not None:
         try: _dbg.close()
         except Exception: pass
