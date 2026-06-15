@@ -435,6 +435,9 @@ Visual=0
 ShutdownTerminal=1
 Report={report_path}
 ReplaceReport=1
+
+[TesterInputs]
+DebugConditions=true
 """
 
 

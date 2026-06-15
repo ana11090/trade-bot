@@ -950,6 +950,10 @@ def _write_debug_dump():
                 mt5_trades, mt5_stats = _parse_mt5_html(rpt)
                 _d("  _parse_mt5_html: %d trades, stats=%s" %
                    (len(mt5_trades), {k: v for k, v in mt5_stats.items() if v}))
+                if not mt5_stats.get("bars") or not mt5_stats.get("initial_deposit"):
+                    _d("  WARNING: stats incomplete (bars=%r deposit=%r) — report may be short/summary-only: %s (%d bytes)"
+                       % (mt5_stats.get("bars"), mt5_stats.get("initial_deposit"),
+                          os.path.basename(rpt), os.path.getsize(rpt)))
         except Exception as e:
             _d("  parse FAILED: %r" % e)
             print("[DEBUG-DUMP] %s parse failed: %s" % (ea, e), flush=True)
@@ -974,6 +978,20 @@ def _write_debug_dump():
                     if hexid in k.lower() or hexid in str(v.get("rule_combo", "")).lower():
                         rec = v
                         break
+        # CHANGED: June 2026 — when manifest record still missing after hex match, derive
+        #   combo/exit/tf from EA filename so summary.txt shows config not '?'.
+        if rec is None:
+            _toks = ea.split('_')
+            _tf_tokens = {'M5', 'M15', 'H1', 'H4', 'D1'}
+            _tf_idx = next((i for i, t in enumerate(_toks) if t in _tf_tokens and i >= 2), None)
+            if _tf_idx is not None:
+                _combo = '_'.join(_toks[:_tf_idx])
+                _tf    = _toks[_tf_idx]
+                _exit  = '_'.join(_toks[_tf_idx + 1:])
+                rec = {"rule_combo": _combo, "entry_tf": _tf, "exit_name": _exit}
+                _d("  rec fallback from filename: combo=%s tf=%s exit=%s" % (_combo, _tf, _exit))
+            else:
+                _d("  rec fallback FAILED: no TF token in '%s'" % ea)
         rec = rec or {}
 
         py, meta = (_load_py_trades_for(rec.get("rule_combo", ""), rec.get("exit_name", ""),
@@ -1195,33 +1213,85 @@ def _write_debug_dump():
     if os.path.isfile(cs):
         shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
 
-    # CHANGED: June 2026 — copy tester condlog + journal into dump for offline analysis
-    # WHY: condlog_<magic>.csv (per-bar condition PASS/fail) + journal prove which condition
-    #   is always-false (0-trades root cause). Copying them alongside the trades lets us
-    #   analyze without needing the tester open.
+    # CHANGED: June 2026 — broader tester log patterns + journal summary in _DEBUG.txt
+    # WHY: original globs assumed Tester\<hash>\Agent-* nesting; local agents live at
+    #   Tester\Agent-127.0.0.1-3000\ or Tester\Core01\ directly under Tester\.
     _copy_data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
+
+    def _summarize_journal(journal_path):
+        import re as _re, collections as _coll
+        skip = _coll.Counter()
+        sig_true = sig_false = indfail = 0
+        shiftdiag = gmtdiag = ""
+        try:
+            with open(journal_path, encoding="utf-16", errors="ignore") as f:
+                txt = f.read()
+            if "[DIAG]" not in txt and "[SKIP]" not in txt:
+                with open(journal_path, encoding="utf-8", errors="ignore") as f:
+                    txt = f.read()
+        except Exception as e:
+            _d("  journal read error: %s" % e)
+            return
+        for line in txt.splitlines():
+            m = _re.search(r'\[SKIP\] (\w+)', line)
+            if m:
+                skip[m.group(1)] += 1
+            if "signal=true"  in line: sig_true  += 1
+            if "signal=false" in line: sig_false += 1
+            if "indFail=true" in line: indfail   += 1
+            if "[SHIFT-DIAG]" in line and not shiftdiag:
+                shiftdiag = line.strip()[-200:]
+            if "[GMT-DIAG]" in line and not gmtdiag:
+                gmtdiag = line.strip()[-200:]
+        _d("  JOURNAL SUMMARY: signal_true=%d  signal_false=%d  indFail_true=%d" %
+           (sig_true, sig_false, indfail))
+        _d("  SKIP counts: %s" % dict(skip))
+        if shiftdiag: _d("  %s" % shiftdiag)
+        if gmtdiag:   _d("  %s" % gmtdiag)
+
     if _copy_data_dir:
-        # Newest condlog_*.csv from any tester agent sandbox
-        _clogs = sorted(
-            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')),
-            key=os.path.getmtime, reverse=True
-        )
+        import glob as _g
+        # condlog_*.csv — search every plausible tester sandbox depth + terminal Files
+        _clog_pats = [
+            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv'),
+            os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv'),
+            os.path.join(_copy_data_dir, 'Tester', '*', 'MQL5', 'Files', 'condlog_*.csv'),
+            os.path.join(_copy_data_dir, 'MQL5', 'Files', 'condlog_*.csv'),
+            os.path.join(_copy_data_dir, 'Tester', '**', 'condlog_*.csv'),
+        ]
+        _clogs = []
+        for _p in _clog_pats:
+            _clogs += _g.glob(_p, recursive=True)
+        _clogs = sorted(set(_clogs), key=os.path.getmtime, reverse=True)
         if _clogs:
             shutil.copy(_clogs[0], os.path.join(dump, "condlog.csv"))
             _d("Copied condlog: %s" % _clogs[0])
         else:
-            _d("condlog: not found in Tester sandbox (run with DebugConditions=true first)")
-        # Newest *.log from tester agent Logs/ or agent root
-        _jlogs = sorted(
-            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'Logs', '*.log')) +
-            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', '*.log')),
-            key=os.path.getmtime, reverse=True
-        )
+            _d("condlog: not found (run with DebugConditions=true; searched %d patterns)"
+               % len(_clog_pats))
+
+        # tester journal *.log — local agents live DIRECTLY under Tester\, plus terminal Logs\
+        _jlog_pats = [
+            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log'),
+            os.path.join(_copy_data_dir, 'Tester', 'Core*', 'logs', '*.log'),
+            os.path.join(_copy_data_dir, 'Tester', '*', 'logs', '*.log'),
+            os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'logs', '*.log'),
+            os.path.join(_copy_data_dir, 'Logs', '*.log'),
+            os.path.join(_copy_data_dir, 'MQL5', 'Logs', '*.log'),
+            os.path.join(_copy_data_dir, 'Tester', '**', '*.log'),
+        ]
+        _jlogs = []
+        for _p in _jlog_pats:
+            _jlogs += _g.glob(_p, recursive=True)
+        _jlogs = sorted(set(_jlogs), key=os.path.getmtime, reverse=True)
         if _jlogs:
-            shutil.copy(_jlogs[0], os.path.join(dump, "mt5_journal.log"))
-            _d("Copied journal: %s" % _jlogs[0])
+            for _i, _src in enumerate(_jlogs[:2]):
+                shutil.copy(_src, os.path.join(dump, "mt5_journal_%d.log" % _i))
+            _d("Copied journal(s): %s" % [os.path.basename(x) for x in _jlogs[:2]])
+            _summarize_journal(_jlogs[0])
         else:
-            _d("journal: not found in Tester agent folders")
+            _d("journal: not found (searched %d patterns under %s)"
+               % (len(_jlog_pats), os.path.join(_copy_data_dir, 'Tester')))
     else:
         _d("condlog/journal copy skipped: data dir unknown")
 
