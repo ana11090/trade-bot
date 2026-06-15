@@ -841,8 +841,11 @@ def _step_compare():
 
 
 def _write_debug_dump():
-    """Write MT5 + Python trades + comparison to debug_dump folder."""
-    import json, glob, datetime, csv as _csv, shutil, io as _io
+    """Write MT5 + Python trades + comparison into per-EA folders AND a single
+    consolidated batch_debug.json. Restores the per-EA folder layout (mt5_trades.csv,
+    python_trades.csv, entry_compare.csv, summary.txt, copied report) and adds one
+    aggregate file on top."""
+    import json, glob, datetime, csv as _csv, shutil, re as _re
     try:
         from project3_live_trading.batch_compare_reports import (
             _load_py_trades_for, _py_rules_dir, _parse_mt5_xlsx, _parse_mt5_html,
@@ -858,9 +861,6 @@ def _write_debug_dump():
     dump = os.path.join(bdir, "debug_dump_%s" % stamp)
     os.makedirs(dump, exist_ok=True)
 
-    # CHANGED: June 2026 — write comprehensive debug log to file for diagnostics
-    # WHY: in-app _append may scroll off; file captures exact state for analysis.
-    # HOTFIX: June 2026 — guard open + safe _d so a missing/failing open never crashes the dump.
     _dbg_path = os.path.join(dump, "_DEBUG.txt")
     _dbg = None
     try:
@@ -881,26 +881,17 @@ def _write_debug_dump():
         with open(mpath, encoding="utf-8") as f:
             for rec in json.load(f):
                 man[rec.get("name")] = rec
+    _d("manifest: %s (%d records)" % (mpath if os.path.isfile(mpath) else "NOT FOUND", len(man)))
 
-    # CHANGED: June 2026 — iterate over actual report files, parse directly
-    # HOTFIX: June 2026 — also include .xlsx.htm files from old buggy runs
-    # WHY: we already have the report path, so parse it directly instead of re-finding.
     report_files = (glob.glob(os.path.join(reports, "*.xlsx.htm")) +
                     glob.glob(os.path.join(reports, "*.xlsx")) +
                     glob.glob(os.path.join(reports, "*.htm")) +
                     glob.glob(os.path.join(reports, "*.html")))
-
-    # DEBUG: comprehensive logging to _DEBUG.txt
     _d("reports dir: %s" % reports)
     _d("files found: %s" % ([os.path.basename(p) for p in report_files] or "NONE"))
-    for p in report_files:
-        _d("  %s  (%d bytes, ext=%s)" %
-           (os.path.basename(p), os.path.getsize(p), os.path.splitext(p)[1]))
 
-    # CHANGED: June 2026 — consolidated single-file output (batch_debug.json) instead of N subfolders
-    # WHY: ~20 EAs × 4 files = 80+ files blows past the 100-file upload limit per conversation.
-    WRITE_PER_EA_FILES = False  # set True only when you need raw per-EA CSVs for deep dives
-    batch = {
+    # ADDED 2026-06-15 — aggregate list for the consolidated batch_debug.json
+    _consolidated = {
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "reports_dir": reports,
         "window": {"from": "2026-01-01", "to": "2026-04-08"},
@@ -908,10 +899,6 @@ def _write_debug_dump():
     }
 
     for rpt in sorted(report_files):
-        # CHANGED: June 2026 — EA name is the filename WITHOUT extension(s)
-        # WHY: MT5 can create double extensions like ".xlsx.htm" if Report= had .xlsx in it.
-        #   Single splitext turns "name.xlsx.htm" → "name.xlsx" (wrong).
-        #   Strip up to 3 extensions to handle any multi-dot cases.
         base = os.path.basename(rpt)
         for _ in range(3):
             base, ext = os.path.splitext(base)
@@ -919,426 +906,191 @@ def _write_debug_dump():
                 break
         ea = base
 
-        sub = os.path.join(dump, ea)  # only created if WRITE_PER_EA_FILES
-
-        # DEBUG: log detailed parse results for each report
+        sub = os.path.join(dump, ea)
+        os.makedirs(sub, exist_ok=True)
         _d("---- %s ----" % os.path.basename(rpt))
         _d("  EA name (stripped): %s" % ea)
 
-        # CHANGED: June 2026 — parse the report we already have (don't re-find by name)
-        # WHY: we're iterating over actual files, so parse them directly.
-        # CHANGED: June 2026 — fallback to proven entry reader if full parser returns 0
-        # WHY: compare_reports uses _read_mt5_entries (proven: got 308), so if _parse_mt5_xlsx
-        #   returns 0, fall back to entry-only rows to match compare's count.
+        # ADDED 2026-06-15 — copy the actual MT5 report (xlsx/htm) into the EA folder
+        # WHY: the Excel/HTML report is the file you open to eyeball the run; it must live
+        #   alongside the csvs again.
+        try:
+            shutil.copy(rpt, os.path.join(sub, os.path.basename(rpt)))
+            _d("  copied report: %s" % os.path.basename(rpt))
+        except Exception as _ce:
+            _d("  report copy failed: %r" % _ce)
+
         mt5_trades = []
         mt5_stats = {}
-
-        # Test proven entry reader first
         try:
             entries = _read_mt5_entries(rpt)
             _d("  _read_mt5_entries: %d entries" % len(entries))
         except Exception as e:
             _d("  _read_mt5_entries FAILED: %r" % e)
             entries = []
-
-        # Test full parser
         try:
             if rpt.lower().endswith(".xlsx"):
                 mt5_trades, mt5_stats = _parse_mt5_xlsx(rpt)
-                _d("  _parse_mt5_xlsx: %d trades, stats=%s" %
-                   (len(mt5_trades), {k: v for k, v in mt5_stats.items() if v}))
-
-                # If full parser got 0 but proven reader found entries, use entry-only rows
+                _d("  _parse_mt5_xlsx: %d trades" % len(mt5_trades))
                 if not mt5_trades and entries:
                     mt5_trades = [{"entry_time": e.strftime("%Y-%m-%d %H:%M:%S") if hasattr(e, 'strftime') else str(e)}
                                   for e in entries]
                     _d("  → FALLBACK to entry reader: %d entry-only rows" % len(mt5_trades))
             elif rpt.lower().endswith((".htm", ".html")):
-                # CHANGED: June 2026 — parse HTML reports FULLY (trades + stats)
-                # WHY: detailed HTML reports (635KB+) contain full deals table with in/out pairs
                 mt5_trades, mt5_stats = _parse_mt5_html(rpt)
-                _d("  _parse_mt5_html: %d trades, stats=%s" %
-                   (len(mt5_trades), {k: v for k, v in mt5_stats.items() if v}))
-                if not mt5_stats.get("bars") or not mt5_stats.get("initial_deposit"):
-                    _d("  WARNING: stats incomplete (bars=%r deposit=%r) — report may be short/summary-only: %s (%d bytes)"
-                       % (mt5_stats.get("bars"), mt5_stats.get("initial_deposit"),
-                          os.path.basename(rpt), os.path.getsize(rpt)))
+                _d("  _parse_mt5_html: %d trades" % len(mt5_trades))
         except Exception as e:
             _d("  parse FAILED: %r" % e)
-            print("[DEBUG-DUMP] %s parse failed: %s" % (ea, e), flush=True)
 
-        if WRITE_PER_EA_FILES:
-            os.makedirs(sub, exist_ok=True)
-            with open(os.path.join(sub, "mt5_trades.csv"), "w", newline="", encoding="utf-8") as f:
-                if mt5_trades:
-                    w = _csv.DictWriter(f, fieldnames=list(mt5_trades[0].keys()))
-                    w.writeheader()
-                    w.writerows(mt5_trades)
+        with open(os.path.join(sub, "mt5_trades.csv"), "w", newline="", encoding="utf-8") as f:
+            if mt5_trades:
+                w = _csv.DictWriter(f, fieldnames=list(mt5_trades[0].keys()))
+                w.writeheader()
+                w.writerows(mt5_trades)
 
-        # CHANGED: June 2026 — hex-based fallback for manifest matching
-        # WHY: if EA name differs slightly from manifest key, match by combo hex ID.
+        # ADDED 2026-06-15 — robust combo matching to kill "no stored Python run (combo=?)".
+        # WHY: EA filenames carry TWO 8-hex ids (rule + exit), e.g.
+        #   _15_BUY_M5_4c_6179_ATR_Fixed_SL_016e_H4_ATR_Fixed_SL_TP. The manifest may be
+        #   absent (your run logged "No manifest found"), so derive combo/tf/exit from the
+        #   filename AND, when no manifest, scan the rules dir for a JSON whose combo or
+        #   filename contains either hex id. This is what makes _load_py_trades_for resolve.
         rec = man.get(ea)
         if rec is None:
-            import re as _re
-            m = _re.search(r"[0-9a-f]{8}", ea.lower())
-            hexid = m.group(0) if m else None
-            if hexid:
-                for k, v in man.items():
-                    if hexid in k.lower() or hexid in str(v.get("rule_combo", "")).lower():
-                        rec = v
-                        break
-        # CHANGED: June 2026 — when manifest record still missing after hex match, derive
-        #   combo/exit/tf from EA filename so summary.txt shows config not '?'.
+            _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+            for k, v in man.items():
+                if any(h in k.lower() or h in str(v.get("rule_combo", "")).lower() for h in _hexids):
+                    rec = v
+                    break
         if rec is None:
-            _toks = ea.split('_')
-            _tf_tokens = {'M5', 'M15', 'H1', 'H4', 'D1'}
-            _tf_idx = next((i for i, t in enumerate(_toks) if t in _tf_tokens and i >= 2), None)
-            if _tf_idx is not None:
-                _combo = '_'.join(_toks[:_tf_idx])
-                _tf    = _toks[_tf_idx]
-                _exit  = '_'.join(_toks[_tf_idx + 1:])
-                rec = {"rule_combo": _combo, "entry_tf": _tf, "exit_name": _exit}
-                _d("  rec fallback from filename: combo=%s tf=%s exit=%s" % (_combo, _tf, _exit))
-            else:
-                _d("  rec fallback FAILED: no TF token in '%s'" % ea)
-        rec = rec or {}
+            _tf_m = _re.search(r"_(M5|M15|M30|H1|H4|D1|W1)_", ea)
+            _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+            # combo string the rules-dir scan will try to match against
+            _combo_guess = next((h for h in _hexids), ea)
+            rec = {
+                "name": ea,
+                "rule_combo": _combo_guess,
+                "entry_tf": (_tf_m.group(1) if _tf_m else ""),
+                "exit_name": "",
+            }
+            _d("  rec: manifest MISS — derived combo=%s tf=%s (hexids=%s)"
+               % (rec["rule_combo"], rec["entry_tf"], ",".join(_hexids) or "none"))
 
         py, meta = (_load_py_trades_for(rec.get("rule_combo", ""), rec.get("exit_name", ""),
                                         rec.get("entry_tf", "")) if rec else (None, None))
-        # Build flattened trade list for both JSON and optional CSV (rename _edbg to avoid
-        # shadowing the outer _dbg file-handle variable)
-        _flat_py = []
-        if py:
-            for _t in py:
-                _row = dict(_t)
-                _edbg = _row.pop("entry_debug", None)
-                _row.pop("entry_indicators", None)
-                if isinstance(_edbg, dict):
-                    for _feat, _info in _edbg.items():
-                        _sf = _feat.replace(' ', '_').replace('-', '_')
-                        if isinstance(_info, dict):
-                            _row["ind_" + _sf + "_val"] = _info.get('value')
-                            _row["ind_" + _sf + "_ts"]  = _info.get('entry_row_ts')
-                        else:
-                            _row["ind_" + _sf] = _info
-                _flat_py.append(_row)
-        if WRITE_PER_EA_FILES:
-            with open(os.path.join(sub, "python_trades.csv"), "w", newline="", encoding="utf-8") as f:
-                if _flat_py:
-                    _all_keys = list(dict.fromkeys(k for _r in _flat_py for k in _r.keys()))
-                    w = _csv.DictWriter(f, fieldnames=_all_keys, extrasaction='ignore')
-                    w.writeheader()
-                    w.writerows(_flat_py)
 
-        # CHANGED: June 2026 — Part 3: join Python entry_debug with EA entrylog → entry_compare.csv
-        # WHY: entry_bar_open (MT5 signal bar) vs entry_row_ts (Python signal bar) must match;
-        #   BAR_MISMATCH means TF bar alignment bug; VALUE_DIFF with same TS = calc diff.
-        _data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
-        _elog_candidates = sorted(
-            glob.glob(os.path.join(_data_dir or '', 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'entrylog_*.csv')),
-            key=os.path.getmtime, reverse=True
-        ) if _data_dir else []
-        _elog_path = _elog_candidates[0] if _elog_candidates else None
-        _d("  entry_compare: %s" % (_elog_path or "no entrylog_*.csv in Tester sandbox"))
-        _mt5_elog = {}  # {(entry_bar_open[:16], feature): {value, bar_ts}}
-        if _elog_path:
+        # ADDED 2026-06-15 — last-resort rules-dir scan when the lookup still returns nothing
+        # WHY: _load_py_trades_for keys on combo; if the derived combo doesn't match its index,
+        #   fall back to scanning *.json filenames for either hex id and load directly.
+        if not py:
             try:
-                with open(_elog_path, encoding='cp1252', errors='replace') as _ef:
-                    for _erow in _csv.DictReader(_ef):
-                        _ekey = (_erow.get('entry_bar_open', '')[:16], _erow.get('feature', ''))
-                        _mt5_elog[_ekey] = {
-                            'value': _erow.get('value', ''),
-                            'bar_ts': _erow.get('bar_ts', ''),
-                        }
-            except Exception as _ee:
-                _d("  entry_compare: entrylog load error: %r" % _ee)
-        _cmp_rows = []
-        for _t in (py or []):
-            _edbg = _t.get('entry_debug') or {}
-            _etime = str(_t.get('entry_time', ''))[:16]
-            for _feat, _info in _edbg.items():
-                if not isinstance(_info, dict):
-                    continue
-                _py_val = _info.get('value')
-                _py_ts  = str(_info.get('entry_row_ts', ''))[:16]
-                _mt5    = _mt5_elog.get((_py_ts, _feat), {})
-                _mt5_val = _mt5.get('value', '')
-                _mt5_ts  = _mt5.get('bar_ts', '')[:16]
-                _note = ''
-                if _mt5:
-                    if _py_ts and _mt5_ts and _py_ts != _mt5_ts:
-                        _note = 'BAR_MISMATCH'
-                    elif _py_val is not None and _mt5_val:
-                        try:
-                            if abs(float(_py_val) - float(_mt5_val)) > 1e-4:
-                                _note = 'VALUE_DIFF'
-                        except Exception:
-                            pass
-                else:
-                    _note = 'MT5_MISSING'
-                _cmp_rows.append({
-                    'entry_time': _etime,
-                    'feature': _feat,
-                    'py_value': _py_val,
-                    'py_src_ts': _py_ts,
-                    'mt5_value': _mt5_val,
-                    'mt5_bar_ts': _mt5_ts,
-                    'note': _note,
-                })
-        _d("  entry_compare: %d rows" % len(_cmp_rows))
-        if WRITE_PER_EA_FILES:
-            _cmp_path = os.path.join(sub, "entry_compare.csv")
-            with open(_cmp_path, 'w', newline='', encoding='utf-8') as _ef:
-                _cw = _csv.DictWriter(
-                    _ef,
-                    fieldnames=['entry_time', 'feature', 'py_value', 'py_src_ts', 'mt5_value', 'mt5_bar_ts', 'note']
-                )
-                _cw.writeheader()
-                _cw.writerows(_cmp_rows)
+                _rdir = _py_rules_dir()
+                _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+                for _jf in sorted(glob.glob(os.path.join(_rdir, "*.json"))):
+                    _bn = os.path.basename(_jf).lower()
+                    if any(h in _bn for h in _hexids):
+                        with open(_jf, encoding="utf-8") as _fh:
+                            _rd = json.load(_fh)
+                        py = _rd.get("trades") or _rd.get("py_trades") or py
+                        meta = {"file": os.path.basename(_jf),
+                                "py_tf": _rd.get("entry_tf"),
+                                "tf_match": (_rd.get("entry_tf") == rec.get("entry_tf"))}
+                        _d("  rules-dir scan matched: %s (%d trades)"
+                           % (os.path.basename(_jf), len(py or [])))
+                        break
+            except Exception as _se:
+                _d("  rules-dir scan failed: %r" % _se)
 
-        # CHANGED: June 2026 — enriched summary with profitability + date ranges both sides
-        # WHY: shows PROFITABLE/LOSS, first/last trade dates, and in-window Python stats
-        #   so you can see if trade-count gaps are date-range issues (not logic bugs).
-        def _dates(trades, ekey="entry_time"):
-            """Extract (first, last) date strings from trades list."""
-            ts = [t.get(ekey) for t in (trades or []) if t.get(ekey)]
-            ts = sorted(str(x) for x in ts)
-            return (ts[0], ts[-1]) if ts else ("-", "-")
+        if not py:
+            _d("  PYTHON: no stored run resolved for combo=%s tf=%s"
+               % (rec.get("rule_combo", "?"), rec.get("entry_tf", "?")))
 
-        # MT5 stats already parsed above (from xlsx or HTML)
-        mt5_net = mt5_stats.get("net_profit")
-        mt5_pf  = mt5_stats.get("profit_factor")
-        mt5_first, mt5_last = _dates(mt5_trades)
+        # ---- write python_trades.csv (origin flattening preserved) ----
+        with open(os.path.join(sub, "python_trades.csv"), "w", newline="", encoding="utf-8") as f:
+            if py:
+                _flat_py = []
+                for _t in py:
+                    _row = dict(_t)
+                    _dbgd = _row.pop("entry_debug", None)
+                    _row.pop("entry_indicators", None)
+                    if isinstance(_dbgd, dict):
+                        for _feat, _info in _dbgd.items():
+                            _sf = _feat.replace(' ', '_').replace('-', '_')
+                            if isinstance(_info, dict):
+                                _row["ind_" + _sf + "_val"] = _info.get('value')
+                                _row["ind_" + _sf + "_ts"]  = _info.get('entry_row_ts')
+                            else:
+                                _row["ind_" + _sf] = _info
+                    _flat_py.append(_row)
+                _all_keys = list(dict.fromkeys(k for _r in _flat_py for k in _r.keys()))
+                w = _csv.DictWriter(f, fieldnames=_all_keys, extrasaction='ignore')
+                w.writeheader()
+                w.writerows(_flat_py)
 
-        # Python stats: recompute from trades we already have
+        # ---- summary.txt (origin content, trimmed comments) ----
         def _f(x):
-            try:
-                return float(x)
-            except Exception:
-                return None
-
+            try: return float(x)
+            except Exception: return None
         py_net_pips = sum((_f(t.get("net_pips")) or 0) for t in (py or [])) if py else None
-        # Profit factor from trades: sum wins / abs(sum losses)
-        py_pf = None
-        if py:
-            wins = sum((_f(t.get("net_pips")) or 0) for t in py if (_f(t.get("net_pips")) or 0) > 0)
-            losses = sum((_f(t.get("net_pips")) or 0) for t in py if (_f(t.get("net_pips")) or 0) < 0)
-            py_pf = (wins / abs(losses)) if losses else None
-        py_first, py_last = _dates(py)
+        with open(os.path.join(sub, "summary.txt"), "w", encoding="utf-8") as f:
+            f.write("EA: %s\ncombo: %s\nexit: %s\ntf: %s\n\n" %
+                    (ea, rec.get("rule_combo", "?"), rec.get("exit_name", "?"),
+                     rec.get("entry_tf", "?")))
+            f.write("MT5:\n  trades: %d\n  net_profit: %s\n  profit_factor: %s\n\n" %
+                    (len(mt5_trades), mt5_stats.get("net_profit", "?"),
+                     mt5_stats.get("profit_factor", "?")))
+            f.write("Python:\n  trades: %d\n  net_pips: %s\n  source: %s\n" %
+                    (len(py or []),
+                     ("%.1f" % py_net_pips) if py_net_pips is not None else "?",
+                     (meta or {}).get("file", "?")))
 
-        # In-window Python stats (restricted to MT5 test window)
-        # WHY: Python JSON spans years; MT5 test is ~3 months. Compare like-for-like.
-        def _in_window(t, lo="2026-01-01", hi="2026-04-08"):
-            et = str(t.get("entry_time") or "")[:10]
-            return lo <= et <= hi
-        py_in = [t for t in (py or []) if _in_window(t)]
-        py_in_pips = sum((_f(t.get("net_pips")) or 0) for t in py_in) if py_in else 0
-
-        def _verdict(v):
-            """Return (label, float_val) — PROFITABLE/LOSS/? based on sign."""
-            try:
-                v = float(v)
-                return ("PROFITABLE" if v > 0 else "LOSS"), v
-            except Exception:
-                return ("?", None)
-
-        mt5_verd, mt5_v = _verdict(mt5_net)
-        py_verd,  py_v  = _verdict(py_net_pips)
-
-        # CHANGED: June 2026 — build summary as a string (for batch JSON) instead of writing
-        #   directly to a file; gate file write behind WRITE_PER_EA_FILES.
-        py_cfg = {}
-        if meta and meta.get("file"):
-            try:
-                import json as _json
-                with open(os.path.join(_py_rules_dir(), meta["file"]), encoding="utf-8") as _fh:
-                    _rd = _json.load(_fh)
-                py_cfg = {
-                    "spread_pips": _rd.get("spread_pips"),
-                    "commission_pips": _rd.get("commission_pips"),
-                    "entry_tf": _rd.get("entry_tf"),
-                }
-            except Exception:
-                pass
-
-        f = _io.StringIO()
-        f.write("EA: %s\n" % ea)
-        f.write("combo: %s\nexit: %s\ntf: %s\n\n" %
-                (rec.get("rule_combo", "?"), rec.get("exit_name", "?"),
-                 rec.get("entry_tf", "?")))
-
-        f.write("MT5:\n")
-        f.write("  trades: %d\n" % len(mt5_trades))
-        f.write("  net_profit: %s  (%s)\n" %
-                (mt5_net if mt5_net is not None else "?", mt5_verd))
-        f.write("  profit_factor: %s\n" %
-                (mt5_pf if mt5_pf is not None else "?"))
-        f.write("  first trade: %s\n  last  trade: %s\n\n" % (mt5_first, mt5_last))
-
-        f.write("Python:\n")
-        f.write("  trades: %d\n" % len(py or []))
-        f.write("  net_pips: %s  (%s)\n" %
-                (("%.1f" % py_net_pips) if py_net_pips is not None else "?", py_verd))
-        f.write("  profit_factor: %s\n" %
-                (("%.2f" % py_pf) if py_pf is not None else "?"))
-        f.write("  first trade: %s\n  last  trade: %s\n" % (py_first, py_last))
-        f.write("  in-window (2026-01-01..2026-04-08): %d trades, net_pips %.1f\n\n"
-                % (len(py_in), py_in_pips))
-
-        if meta:
-            f.write("python source file: %s\npython tf: %s\n\n" %
-                    (meta.get("file"), meta.get("py_tf")))
-
-        f.write("----- DATA CONFIG (confirm both sides match) -----\n")
-        f.write("MT5 (from report/ini):\n")
-        f.write("  symbol: %s\n  period: %s\n  bars: %s\n  initial_deposit: %s\n  broker/server: %s\n"
-                % (mt5_stats.get("symbol") or "?",
-                   mt5_stats.get("period") or "?",
-                   mt5_stats.get("bars") or "?",
-                   mt5_stats.get("initial_deposit") or "?",
-                   mt5_stats.get("broker") or "?"))
-        f.write("  requested: symbol=%s from=%s to=%s deposit=%s leverage=1:%s\n\n"
-                % (rec.get("test_symbol") or "?",
-                   rec.get("test_from") or "?",
-                   rec.get("test_to") or "?",
-                   rec.get("test_deposit") or "?",
-                   rec.get("test_leverage") or "?"))
-        f.write("Python (intended config):\n")
-        f.write("  prop_firm: ?\n  account_size: ?\n  symbol: ?\n")
-        f.write("  spread_pips: %s\n  commission_pips: %s\n  entry_tf: %s\n\n"
-                % (py_cfg.get("spread_pips") or "?",
-                   py_cfg.get("commission_pips") or "?",
-                   py_cfg.get("entry_tf") or "?"))
-        f.write("CHECK: symbol, date window, spread/commission, and deposit should match across\n"
-                "both sides. A different symbol/window/costs will change trade counts and net.\n\n")
-        f.write("NOTE: compare the date ranges above. If Python's first/last span is much wider\n"
-                "than MT5's test window, the trade-count gap is mostly out-of-range trades,\n"
-                "not a logic divergence.\n")
-
-        summary_text = f.getvalue()
-        if WRITE_PER_EA_FILES:
-            os.makedirs(sub, exist_ok=True)
-            with open(os.path.join(sub, "summary.txt"), "w", encoding="utf-8") as _sf:
-                _sf.write(summary_text)
-
-        batch["eas"].append({
-            "ea": ea,
-            "combo": rec.get("rule_combo") if rec else None,
-            "exit": rec.get("exit_name") if rec else None,
-            "tf": rec.get("entry_tf") if rec else None,
-            "mt5": {"trades": mt5_trades, "stats": mt5_stats},
-            "python": {"trades": _flat_py, "meta": meta or {}},
-            "entry_compare": _cmp_rows,
-            "summary_text": summary_text,
+        # ADDED 2026-06-15 — append this EA to the consolidated aggregate
+        _consolidated["eas"].append({
+            "name": ea,
+            "combo": rec.get("rule_combo", "?"),
+            "exit": rec.get("exit_name", "?"),
+            "tf": rec.get("entry_tf", "?"),
+            "mt5": {"trades": len(mt5_trades), "stats": mt5_stats},
+            "python": {"trades": len(py or []), "net_pips": py_net_pips,
+                       "source": (meta or {}).get("file")},
         })
+
     cs = os.path.join(reports, "comparison_summary.csv")
     if os.path.isfile(cs):
         shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
 
-    # CHANGED: June 2026 — broader tester log patterns + journal summary in _DEBUG.txt
-    # WHY: original globs assumed Tester\<hash>\Agent-* nesting; local agents live at
-    #   Tester\Agent-127.0.0.1-3000\ or Tester\Core01\ directly under Tester\.
+    # ---- condlog + journal copy (broadened globs; origin behavior kept) ----
     _copy_data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
-    _journal_summary = {"path": None}  # populated below if a journal is found
-
-    def _summarize_journal(journal_path):
-        import re as _re, collections as _coll
-        skip = _coll.Counter()
-        sig_true = sig_false = indfail = 0
-        shiftdiag = gmtdiag = ""
-        try:
-            with open(journal_path, encoding="utf-16", errors="ignore") as f:
-                txt = f.read()
-            if "[DIAG]" not in txt and "[SKIP]" not in txt:
-                with open(journal_path, encoding="utf-8", errors="ignore") as f:
-                    txt = f.read()
-        except Exception as e:
-            _d("  journal read error: %s" % e)
-            return {"path": journal_path, "error": str(e)}
-        for line in txt.splitlines():
-            m = _re.search(r'\[SKIP\] (\w+)', line)
-            if m:
-                skip[m.group(1)] += 1
-            if "signal=true"  in line: sig_true  += 1
-            if "signal=false" in line: sig_false += 1
-            if "indFail=true" in line: indfail   += 1
-            if "[SHIFT-DIAG]" in line and not shiftdiag:
-                shiftdiag = line.strip()[-200:]
-            if "[GMT-DIAG]" in line and not gmtdiag:
-                gmtdiag = line.strip()[-200:]
-        _d("  JOURNAL SUMMARY: signal_true=%d  signal_false=%d  indFail_true=%d" %
-           (sig_true, sig_false, indfail))
-        _d("  SKIP counts: %s" % dict(skip))
-        if shiftdiag: _d("  %s" % shiftdiag)
-        if gmtdiag:   _d("  %s" % gmtdiag)
-        return {
-            "path": journal_path,
-            "signal_true": sig_true, "signal_false": sig_false, "indFail_true": indfail,
-            "skip_counts": dict(skip),
-            "shift_diag": shiftdiag, "gmt_diag": gmtdiag,
-        }
-
     if _copy_data_dir:
-        import glob as _g
-        # condlog_*.csv — search every plausible tester sandbox depth + terminal Files
-        _clog_pats = [
-            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv'),
-            os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv'),
-            os.path.join(_copy_data_dir, 'Tester', '*', 'MQL5', 'Files', 'condlog_*.csv'),
-            os.path.join(_copy_data_dir, 'MQL5', 'Files', 'condlog_*.csv'),
-            os.path.join(_copy_data_dir, 'Tester', '**', 'condlog_*.csv'),
-        ]
-        _clogs = []
-        for _p in _clog_pats:
-            _clogs += _g.glob(_p, recursive=True)
-        _clogs = sorted(set(_clogs), key=os.path.getmtime, reverse=True)
+        _clogs = sorted(
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')) +
+            glob.glob(os.path.join(_copy_data_dir, 'MQL5', 'Files', 'condlog_*.csv')),
+            key=os.path.getmtime, reverse=True)
         if _clogs:
             shutil.copy(_clogs[0], os.path.join(dump, "condlog.csv"))
             _d("Copied condlog: %s" % _clogs[0])
         else:
-            _d("condlog: not found (run with DebugConditions=true; searched %d patterns)"
-               % len(_clog_pats))
-            for _p in _clog_pats: _d("    tried: %s" % _p)
-
-        # tester journal *.log — agents live DIRECTLY under Tester\ (no extra wildcard level)
-        # and on disk 'logs' may be lowercase or uppercase; include both. Also the data-dir-root
-        # \Logs\ (terminal journal) which also carries [DIAG]/[SKIP] lines.
-        _jlog_pats = [
-            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'Logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', 'Agent-*', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', 'Core*', 'logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', '*', 'logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Logs', '*.log'),
-            os.path.join(_copy_data_dir, 'MQL5', 'Logs', '*.log'),
-            os.path.join(_copy_data_dir, 'Tester', '**', '*.log'),
-        ]
-        _jlogs = []
-        for _p in _jlog_pats:
-            _jlogs += _g.glob(_p, recursive=True)
-        _jlogs = sorted(set(_jlogs), key=os.path.getmtime, reverse=True)
+            _d("condlog: not found (run with DebugConditions=true first)")
+        _jlogs = sorted(
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'Logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Logs', '*.log')),
+            key=os.path.getmtime, reverse=True)
         if _jlogs:
-            for _i, _src in enumerate(_jlogs[:2]):
-                shutil.copy(_src, os.path.join(dump, "mt5_journal_%d.log" % _i))
-            _d("Copied journal(s): %s" % [os.path.basename(x) for x in _jlogs[:2]])
-            _journal_summary = _summarize_journal(_jlogs[0])
+            shutil.copy(_jlogs[0], os.path.join(dump, "mt5_journal.log"))
+            _d("Copied journal: %s" % _jlogs[0])
         else:
-            _d("journal: not found (searched %d patterns under %s)"
-               % (len(_jlog_pats), os.path.join(_copy_data_dir, 'Tester')))
-            for _p in _jlog_pats: _d("    tried: %s" % _p)
-    else:
-        _d("condlog/journal copy skipped: data dir unknown")
+            _d("journal: not found")
 
-    batch["journal"] = _journal_summary
-
-    _json_path = os.path.join(dump, "batch_debug.json")
+    # ADDED 2026-06-15 — write the consolidated aggregate alongside the folders
     try:
-        with open(_json_path, "w", encoding="utf-8") as _jf:
-            json.dump(batch, _jf, indent=2, default=str)
-        _d("Consolidated dump: %s (%d EAs, one file)" % (_json_path, len(batch["eas"])))
+        with open(os.path.join(dump, "batch_debug.json"), "w", encoding="utf-8") as f:
+            json.dump(_consolidated, f, indent=1, default=str)
+        _d("Consolidated dump: batch_debug.json (%d EAs) — per-EA folders ALSO written"
+           % len(_consolidated["eas"]))
     except Exception as _je:
-        _d("batch_debug.json write FAILED: %s" % _je)
+        _d("consolidated write failed: %r" % _je)
 
     if _dbg is not None:
         try: _dbg.close()
