@@ -46,6 +46,7 @@ def generate_ea(
     symbol='XAUUSD',
     magic_number=None,
     risk_per_trade_pct=1.0,
+    floor_to_min_lot=True,
     # WHY: Default 5 was arbitrary. Should match backtest. 0 = unlimited.
     # CHANGED: April 2026 — match backtest default
     max_trades_per_day=0,
@@ -300,6 +301,7 @@ def generate_ea(
             symbol=symbol,
             magic_number=magic_number,
             risk_per_trade_pct=risk_per_trade_pct,
+            floor_to_min_lot=floor_to_min_lot,
             max_trades_per_day=max_trades_per_day,
             session_filter=session_filter or [],
             day_filter=day_filter or [1, 2, 3, 4, 5],
@@ -553,7 +555,7 @@ def generate_ea(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
-                  risk_per_trade_pct, max_trades_per_day, session_filter,
+                  risk_per_trade_pct, floor_to_min_lot, max_trades_per_day, session_filter,
                   day_filter, min_hold_minutes, cooldown_minutes,
                   news_filter_minutes, max_spread_pips,
                   # WHY (May 2026 — Phase 2): Three split fields replace
@@ -2660,6 +2662,7 @@ bool IsMinHoldMet()
 
 //--- Input parameters
 input double RiskPercent        = {risk_per_trade_pct};     // Risk per trade % (capped for leverage)
+input bool   FloorToMinLot      = {floor_to_min_lot};       // OPTION A(true): take at minLot when risk-lots<min. B(false): skip.
 input int    Leverage           = {leverage};                // Account leverage for this instrument (0=not set)
 input int    MaxTradesPerDay    = {max_trades_per_day};      // Max trades per day
 input int    MagicNumber        = {magic_number};            // Magic number
@@ -3410,17 +3413,27 @@ double CalculateLots(double slDistance)
 
    //--- Apply broker limits with diagnostic logging
    double lots       = lotsRounded;
-   // WHY: If risk-based lots < minLot, entering at minLot would exceed the
-   //      intended risk by potentially 4-5x — a blow-up risk on prop firms
-   //      with tight DD limits. Skip the trade instead. The backtest must
-   //      apply the same rule or PnL will never reconcile.
-   // CHANGED: June 2026 — skip trade instead of forcing minLot
+   // WHY: risk-based lots can fall below minLot when slDistance is large
+   //      (e.g. gold ATR stops on a 10k account). FloorToMinLot chooses the policy:
+   //      A(true) = take the trade at minLot (risk EXCEEDS RiskPercent), matches the
+   //      Python backtest's max(0.01,..) flooring; B(false) = skip (risk-honest).
+   //      Both engines MUST use the same policy or PnL/trade-count never reconcile.
+   // CHANGED: June 2026 — flag-driven floor (Option A default) vs skip (Option B)
    if(lots < minLot)
    {{
-      Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
-            " lots but minLot=", minLot, " — skipping trade (would exceed risk).");
-      LogSkip("lots_below_min", lotsRaw);
-      return 0.0;
+      if(FloorToMinLot)
+      {{
+         Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
+               " lots < minLot=", minLot, " — flooring to minLot (risk EXCEEDS RiskPercent).");
+         lots = minLot;
+      }}
+      else
+      {{
+         Print("[LOTS] Risk requested ", DoubleToString(lotsRaw, 4),
+               " lots but minLot=", minLot, " — skipping trade (would exceed risk).");
+         LogSkip("lots_below_min", lotsRaw);
+         return 0.0;
+      }}
    }}
    if(lots > maxLot)
    {{
