@@ -949,21 +949,21 @@ def _write_debug_dump():
                 w.writerows(mt5_trades)
 
         # ADDED 2026-06-15 — robust combo matching to kill "no stored Python run (combo=?)".
-        # WHY: EA filenames carry TWO 8-hex ids (rule + exit), e.g.
-        #   _15_BUY_M5_4c_6179_ATR_Fixed_SL_016e_H4_ATR_Fixed_SL_TP. The manifest may be
-        #   absent (your run logged "No manifest found"), so derive combo/tf/exit from the
-        #   filename AND, when no manifest, scan the rules dir for a JSON whose combo or
-        #   filename contains either hex id. This is what makes _load_py_trades_for resolve.
+        # WHY: rule/exit hashes in EA filenames are 4-char hex (e.g. 6179, 016e), not 8-char.
+        #   The {8} regex missed them entirely, so hexids was always []. Using {4,8} with
+        #   word-boundary lookarounds extracts 4-to-8 char hex tokens that are not part of a
+        #   longer run (avoids matching '4c' in '4c6179' if ever concatenated).
+        _HEX_RE = r"(?<![0-9a-f])[0-9a-f]{4,8}(?![0-9a-f])"
         rec = man.get(ea)
         if rec is None:
-            _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+            _hexids = _re.findall(_HEX_RE, ea.lower())
             for k, v in man.items():
                 if any(h in k.lower() or h in str(v.get("rule_combo", "")).lower() for h in _hexids):
                     rec = v
                     break
         if rec is None:
             _tf_m = _re.search(r"_(M5|M15|M30|H1|H4|D1|W1)_", ea)
-            _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+            _hexids = _re.findall(_HEX_RE, ea.lower())
             # combo string the rules-dir scan will try to match against
             _combo_guess = next((h for h in _hexids), ea)
             rec = {
@@ -984,7 +984,7 @@ def _write_debug_dump():
         if not py:
             try:
                 _rdir = _py_rules_dir()
-                _hexids = _re.findall(r"[0-9a-f]{8}", ea.lower())
+                _hexids = _re.findall(_HEX_RE, ea.lower())
                 for _jf in sorted(glob.glob(os.path.join(_rdir, "*.json"))):
                     _bn = os.path.basename(_jf).lower()
                     if any(h in _bn for h in _hexids):
