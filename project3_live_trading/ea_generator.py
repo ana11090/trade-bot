@@ -1186,6 +1186,58 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     else:
         entry_log_block = ''
 
+    # Build per-bar condition diagnostic log block (one row per condition per bar).
+    # WHY: June 2026 — when MT5 gets 0 trades on a multi-TF rule, every condition value
+    #   + PASS/fail on every bar shows exactly which condition is always false in MT5
+    #   (scale/sign bug) vs which is borderline (bar-offset bug). Gated by DebugConditions input.
+    _clog_rows = []
+    for _ri, _wr in enumerate(win_rules, 1):
+        for _ci, _cond in enumerate(_wr.get('conditions', []), 1):
+            _feat = _cond.get('feature', '')
+            _op   = _cond.get('operator', '>')
+            _val  = _cond.get('value', 0)
+            if not _feat:
+                continue
+            try:
+                _safe = re.sub(r'[^a-zA-Z0-9]', '_', _feat)
+                _pname = f'Rule{_ri}_Cond{_ci}_{_safe[:20]}'
+                _mql_c = get_mql_code(_feat, 'mt5')
+                _vn = _mql_c.get('var_name', '')
+                if not _vn:
+                    continue
+                _cexpr = _mql_condition_expr(f'val_{_vn}', _op, _pname)
+                _label = f'R{_ri}_{_feat}' if len(win_rules) > 1 else _feat
+                _clog_rows.append(
+                    f'         FileWrite(_clog_fh,'
+                    f' TimeToString(_clog_bt, TIME_DATE|TIME_MINUTES|TIME_SECONDS),'
+                    f' "{_label}", DoubleToString(val_{_vn}, 6),'
+                    f' ({_cexpr} ? "PASS" : "fail"),'
+                    f' DoubleToString({_pname}, 6));'
+                )
+            except Exception:
+                pass
+    if _clog_rows:
+        _clog_rows_str = '\n'.join(_clog_rows)
+        cond_log_block = f"""
+   // WHY: June 2026 — per-bar condition diagnostic; DebugConditions=true → condlog_<magic>.csv
+   //   One row per condition per bar: bar_time, feature, value, pass_fail, threshold.
+   //   Count PASS per feature — a condition with 0 PASS across all bars is the broken one.
+   if(DebugConditions)
+   {{
+      int _clog_fh = FileOpen(g_condLogName, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+      if(_clog_fh != INVALID_HANDLE)
+      {{
+         bool _clog_new = (FileSize(_clog_fh) == 0);
+         FileSeek(_clog_fh, 0, SEEK_END);
+         if(_clog_new) FileWrite(_clog_fh, "bar_time", "feature", "value", "pass_fail", "threshold");
+         datetime _clog_bt = iTime(_Symbol, {mql_period}, 0);
+{_clog_rows_str}
+         FileClose(_clog_fh);
+      }}
+   }}"""
+    else:
+        cond_log_block = ''
+
     # ══════════════════════════════════════════════════════════════════════
     # RULES-DRIVEN MQL5 CODE GENERATION
     # WHY: Each trading_rule in the JSON produces specific MQL5 code.
@@ -2607,6 +2659,8 @@ input double DailyDDLimitPct    = {dd_daily_pct};           // Daily DD blow lim
 input double TotalDDLimitPct    = {dd_total_pct};           // Total DD blow limit % (firm closes account here)
 input bool   LogTrades          = true;                      // Log trades to CSV
 input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file path
+// WHY: June 2026 — per-bar condition diagnostic; enable to find which condition never fires in MT5
+input bool   DebugConditions    = false;                     // Log per-bar condition values to condlog_<magic>.csv
 // WHY: The value is computed as a GMT hour in Python (line ~809), so we
 //      must compare against TimeGMT(), not TimeCurrent() (server time).
 //      Old name "Server" was misleading — a Cyprus broker's server time
@@ -2646,6 +2700,8 @@ bool   g_loggedFirstBar  = false;
 // WHY: June 2026 — entry debug log for Python/MT5 parity. Written to tester
 //   sandbox (no FILE_COMMON) so Python dump code finds it in Agent-*/MQL5/Files/.
 string g_entryLogName    = "";
+// WHY: June 2026 — per-bar condition diagnostic log (gated by DebugConditions input).
+string g_condLogName     = "";
 {extra_globals_block}
 {exit_globals}
 
@@ -2656,8 +2712,9 @@ int OnInit()
 {{
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(30);
-   // WHY: June 2026 — unique log name per magic so concurrent runs don't clobber each other
+   // WHY: June 2026 — unique log names per magic so concurrent runs don't clobber each other
    g_entryLogName = "entrylog_" + IntegerToString(MagicNumber) + ".csv";
+   g_condLogName  = "condlog_"  + IntegerToString(MagicNumber) + ".csv";
 
    //--- Create indicator handles
    {handle_inits}
@@ -2985,7 +3042,7 @@ void OnTick()
 
 {regime_check_block}
 {conditions_check_block}
-
+{cond_log_block}
    // WHY: UseNextBarEntry pending signal check must run BEFORE the
    //      entrySignal return. On the next bar after a pending signal,
    //      conditions may no longer be true (entrySignal=false), but we
