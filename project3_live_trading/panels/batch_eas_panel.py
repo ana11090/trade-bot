@@ -1071,17 +1071,48 @@ def _write_debug_dump():
             _d("Copied condlog: %s" % _clogs[0])
         else:
             _d("condlog: not found (run with DebugConditions=true first)")
-        _jlogs = sorted(
+        # WHY: terminal log (Logs\*.log) is often newer by mtime than the agent log and gets
+        #   picked first, but it contains only Startup/Network lines — no [DIAG]/[SKIP] prints.
+        #   Agent logs under Tester\Agent-*\ have all per-bar EA output. Strategy:
+        #   (1) collect agent logs and terminal logs separately,
+        #   (2) prefer the newest agent log that contains [DIAG] or [SKIP],
+        #   (3) fall back to newest agent log without those markers (EA may lack DebugConditions),
+        #   (4) only use terminal log if no agent log exists at all.
+        _agent_logs = sorted(set(
             glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'Logs', '*.log')) +
             glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'logs', '*.log')) +
-            glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'Logs', '*.log')) +
+            glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log'))
+        ), key=os.path.getmtime, reverse=True)
+        _term_logs = sorted(
             glob.glob(os.path.join(_copy_data_dir, 'Logs', '*.log')),
             key=os.path.getmtime, reverse=True)
-        if _jlogs:
-            shutil.copy(_jlogs[0], os.path.join(dump, "mt5_journal.log"))
-            _d("Copied journal: %s" % _jlogs[0])
+        def _has_ea_prints(path):
+            for enc in ("utf-16", "utf-8"):
+                try:
+                    with open(path, encoding=enc, errors="ignore") as _lf:
+                        chunk = _lf.read(131072)
+                    if "[DIAG]" in chunk or "[SKIP]" in chunk:
+                        return True
+                except Exception:
+                    pass
+            return False
+        _jlog = None
+        for _src in _agent_logs:
+            if _has_ea_prints(_src):
+                _jlog = _src
+                _d("Copied journal (agent, has [DIAG]/[SKIP]): %s" % _jlog)
+                break
+        if _jlog is None and _agent_logs:
+            _jlog = _agent_logs[0]
+            _d("Copied journal (agent, no [DIAG] — run with DebugConditions=true): %s" % _jlog)
+        if _jlog is None and _term_logs:
+            _jlog = _term_logs[0]
+            _d("Copied journal (TERMINAL fallback — no agent log found): %s" % _jlog)
+        if _jlog:
+            shutil.copy(_jlog, os.path.join(dump, "mt5_journal.log"))
         else:
-            _d("journal: not found")
+            _d("journal: not found (searched agent + terminal paths under %s)" % _copy_data_dir)
 
     # ADDED 2026-06-15 — write the consolidated aggregate alongside the folders
     try:
