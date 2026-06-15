@@ -240,29 +240,33 @@ def _parse_mt5_html(path):
     rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.I)
 
     def _cells(row):
-        """Extract cell contents from a table row, stripping HTML tags."""
+        """Extract <td> cell contents from a table row, stripping HTML tags."""
         cs = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.I)
         return [re.sub(r'<[^>]+>', '', c).strip() for c in cs]
 
-    # CHANGED: June 2026 — extract summary stats via row-cell scan (robust to label colon placement)
-    # WHY: MT5 HTML has <td>Symbol:</td><td>XAUUSD</td> (colon inside label cell).
-    #   Regex approach missed because it expected Label</td><td> without colon.
-    #   Row-cell scan: find cell matching label (ignoring trailing colon), take next non-empty cell.
-    all_cells = []
-    for row in rows:
-        all_cells.extend(_cells(row))
+    def _all_text(row):
+        """Extract both <td> and <th> cell text from a row (for stats scan)."""
+        cs = re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row, re.DOTALL | re.I)
+        return [re.sub(r'<[^>]+>', '', c).strip() for c in cs]
 
+    # CHANGED: June 2026 — per-row stats scan using _all_text (includes <th> cells)
+    # WHY: the flat all_cells approach has two failure modes:
+    #   1. Some MT5 HTML versions use <th> for stat labels — _cells(<td> only) misses them.
+    #   2. Cross-row contamination: "Symbol" in the deals header row (13 cols) was picked
+    #      up first and the "next cell" in the flat list was "Type", not "XAUUSD".
+    # Per-row scan stays within the same <tr> so label+value must be adjacent in one row.
     def _stat(label):
-        """Find label cell, return next non-empty cell value."""
+        """Find label cell within the same <tr>, return next non-empty cell value."""
         lab = label.lower()
-        for i, c in enumerate(all_cells):
-            if c.strip().rstrip(":").lower() == lab:
-                # Look ahead up to 3 cells for the value
-                for j in range(i + 1, min(i + 4, len(all_cells))):
-                    v = all_cells[j].strip()
-                    if v and v != ":":
-                        # Strip thousand separators (space or non-breaking space)
-                        return v.replace(" ", "").replace("\xa0", "")
+        for _row in rows:
+            cs = _all_text(_row)
+            for i, c in enumerate(cs):
+                if c.strip().rstrip(":").lower() == lab:
+                    for j in range(i + 1, min(i + 4, len(cs))):
+                        v = cs[j].strip()
+                        if v and v != ":":
+                            # Strip thousand separators (space or non-breaking space)
+                            return v.replace(" ", "").replace("\xa0", "")
         return None
 
     stats = {
@@ -273,6 +277,7 @@ def _parse_mt5_html(path):
         "net_profit":      _stat("Total Net Profit"),
         "profit_factor":   _stat("Profit Factor"),
         "total_deals":     _stat("Total Deals"),
+        "broker":          _stat("Broker") or _stat("Company") or _stat("Server"),
     }
 
     # Find the deals header row: contains 'Time' and 'Deal' and 'Direction'

@@ -1130,6 +1130,62 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                 f'" {_vm}_mdi=", DoubleToString(val_{_vm}_mdi, 4), '
             )
 
+    # Build entry condition debug log block (injected after entrySignal confirmed true).
+    # WHY: June 2026 — per-condition value + bar timestamp for Python/MT5 parity.
+    #   Logs to Tester sandbox Files/ (no FILE_COMMON) so dump code can locate it per run.
+    _elog_conds = []   # (feature, var_name, tf_str)
+    _elog_tf_map = {}  # tf_str -> PERIOD_X constant
+    for _wr in win_rules:
+        for _cond in _wr.get('conditions', []):
+            _feat = _cond.get('feature', '')
+            if not _feat:
+                continue
+            try:
+                _pf = parse_feature_name(_feat)
+                _tf_str = _pf.get('timeframe') or entry_timeframe
+                _mql_c = get_mql_code(_feat, 'mt5')
+                _vn = _mql_c.get('var_name', '')
+                if _vn:
+                    _elog_conds.append((_feat, _vn, _tf_str))
+                    if _tf_str not in _elog_tf_map:
+                        _elog_tf_map[_tf_str] = _mql_periods.get(_tf_str, f'PERIOD_{_tf_str}')
+            except Exception:
+                pass
+    _elog_seen_vns = set()
+    _elog_unique = []
+    for _feat, _vn, _tf in _elog_conds:
+        if _vn not in _elog_seen_vns:
+            _elog_seen_vns.add(_vn)
+            _elog_unique.append((_feat, _vn, _tf))
+    if _elog_unique:
+        _ts_decl_lines = '\n'.join(
+            f'            datetime _elog_ts_{_tf} = iTime(_Symbol, {_per}, GetBarShift({_per}));'
+            for _tf, _per in _elog_tf_map.items()
+        )
+        _write_lines = '\n'.join(
+            f'            FileWrite(_elog_fh, TimeToString(_elog_entry_bar, TIME_DATE|TIME_MINUTES|TIME_SECONDS),'
+            f' "{_feat}", DoubleToString(val_{_vn}, 5),'
+            f' TimeToString(_elog_ts_{_tf}, TIME_DATE|TIME_MINUTES|TIME_SECONDS));'
+            for _feat, _vn, _tf in _elog_unique
+        )
+        entry_log_block = f"""
+      // WHY: June 2026 — entry debug log per condition for Python/MT5 parity analysis
+      {{
+         int _elog_fh = FileOpen(g_entryLogName, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+         if(_elog_fh != INVALID_HANDLE)
+         {{
+            bool _elog_new = (FileSize(_elog_fh) == 0);
+            FileSeek(_elog_fh, 0, SEEK_END);
+            if(_elog_new) FileWrite(_elog_fh, "entry_bar_open", "feature", "value", "bar_ts");
+            datetime _elog_entry_bar = iTime(_Symbol, {mql_period}, 0);
+{_ts_decl_lines}
+{_write_lines}
+            FileClose(_elog_fh);
+         }}
+      }}"""
+    else:
+        entry_log_block = ''
+
     # ══════════════════════════════════════════════════════════════════════
     # RULES-DRIVEN MQL5 CODE GENERATION
     # WHY: Each trading_rule in the JSON produces specific MQL5 code.
@@ -2587,6 +2643,9 @@ int    g_logHandle       = INVALID_HANDLE;
 //      flood the journal.
 // CHANGED: April 2026 — broker GMT diagnostic logging
 bool   g_loggedFirstBar  = false;
+// WHY: June 2026 — entry debug log for Python/MT5 parity. Written to tester
+//   sandbox (no FILE_COMMON) so Python dump code finds it in Agent-*/MQL5/Files/.
+string g_entryLogName    = "";
 {extra_globals_block}
 {exit_globals}
 
@@ -2597,16 +2656,18 @@ int OnInit()
 {{
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(30);
+   // WHY: June 2026 — unique log name per magic so concurrent runs don't clobber each other
+   g_entryLogName = "entrylog_" + IntegerToString(MagicNumber) + ".csv";
 
    //--- Create indicator handles
    {handle_inits}
 
    //--- Open log file
    // WHY: Without FILE_COMMON, FileOpen writes to the Strategy Tester's
-   //      sandbox (Tester\<ID>\Agent-127.0.0.1-3000\MQL5\Files\) which
+   //      sandbox (Tester\\<ID>\\Agent-127.0.0.1-3000\\MQL5\\Files\\) which
    //      MT5 wipes at run start AND on agent shutdown — leaving the user
    //      with a 0 KB file and no way to diagnose backtest behavior.
-   //      FILE_COMMON redirects to Terminal\Common\Files\ which persists
+   //      FILE_COMMON redirects to Terminal\\Common\\Files\\ which persists
    //      across tests and is readable while a test is running.
    // CHANGED: April 2026 — FILE_COMMON for log persistence in tester
    if(LogTrades)
@@ -2955,7 +3016,7 @@ void OnTick()
             {diag_print_args}{diag_adx_args}" signal=", entrySignal, " indFail=", indicatorFailed);
       if(indicatorFailed) {{ LogSkip("indicator_not_ready", 0); return; }}
       if(!entrySignal) return;
-
+{entry_log_block}
       // ── Step 3: If UseNextBarEntry, store signal instead of entering now ──
       if(UseNextBarEntry)
       {{

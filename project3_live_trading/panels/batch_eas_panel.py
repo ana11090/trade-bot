@@ -860,12 +860,19 @@ def _write_debug_dump():
 
     # CHANGED: June 2026 — write comprehensive debug log to file for diagnostics
     # WHY: in-app _append may scroll off; file captures exact state for analysis.
+    # HOTFIX: June 2026 — guard open + safe _d so a missing/failing open never crashes the dump.
     _dbg_path = os.path.join(dump, "_DEBUG.txt")
-    _dbg = open(_dbg_path, "w", encoding="utf-8")
+    _dbg = None
+    try:
+        _dbg = open(_dbg_path, "w", encoding="utf-8")
+    except Exception:
+        pass
     def _d(msg):
-        """Write to debug file and append to UI log."""
-        _dbg.write(msg + "\n")
-        _dbg.flush()
+        try:
+            if _dbg is not None:
+                _dbg.write(msg + "\n"); _dbg.flush()
+        except Exception:
+            pass
         _append(msg)
 
     man = {}
@@ -973,9 +980,91 @@ def _write_debug_dump():
                                         rec.get("entry_tf", "")) if rec else (None, None))
         with open(os.path.join(sub, "python_trades.csv"), "w", newline="", encoding="utf-8") as f:
             if py:
-                w = _csv.DictWriter(f, fieldnames=list(py[0].keys()))
+                # Flatten entry_debug nested dicts {feat: {value, entry_row_ts}} into ind_X_val / ind_X_ts cols
+                _flat_py = []
+                for _t in py:
+                    _row = dict(_t)
+                    _dbg = _row.pop("entry_debug", None)
+                    _row.pop("entry_indicators", None)  # remove legacy flat field if present
+                    if isinstance(_dbg, dict):
+                        for _feat, _info in _dbg.items():
+                            _sf = _feat.replace(' ', '_').replace('-', '_')
+                            if isinstance(_info, dict):
+                                _row["ind_" + _sf + "_val"] = _info.get('value')
+                                _row["ind_" + _sf + "_ts"]  = _info.get('entry_row_ts')
+                            else:
+                                _row["ind_" + _sf] = _info
+                    _flat_py.append(_row)
+                _all_keys = list(dict.fromkeys(k for _r in _flat_py for k in _r.keys()))
+                w = _csv.DictWriter(f, fieldnames=_all_keys, extrasaction='ignore')
                 w.writeheader()
-                w.writerows(py)
+                w.writerows(_flat_py)
+
+        # CHANGED: June 2026 — Part 3: join Python entry_debug with EA entrylog → entry_compare.csv
+        # WHY: entry_bar_open (MT5 signal bar) vs entry_row_ts (Python signal bar) must match;
+        #   BAR_MISMATCH means TF bar alignment bug; VALUE_DIFF with same TS = calc diff.
+        _data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
+        _elog_candidates = sorted(
+            glob.glob(os.path.join(_data_dir or '', 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'entrylog_*.csv')),
+            key=os.path.getmtime, reverse=True
+        ) if _data_dir else []
+        _elog_path = _elog_candidates[0] if _elog_candidates else None
+        _d("  entry_compare: %s" % (_elog_path or "no entrylog_*.csv in Tester sandbox"))
+        _mt5_elog = {}  # {(entry_bar_open[:16], feature): {value, bar_ts}}
+        if _elog_path:
+            try:
+                with open(_elog_path, encoding='cp1252', errors='replace') as _ef:
+                    for _erow in _csv.DictReader(_ef):
+                        _ekey = (_erow.get('entry_bar_open', '')[:16], _erow.get('feature', ''))
+                        _mt5_elog[_ekey] = {
+                            'value': _erow.get('value', ''),
+                            'bar_ts': _erow.get('bar_ts', ''),
+                        }
+            except Exception as _ee:
+                _d("  entry_compare: entrylog load error: %r" % _ee)
+        _cmp_rows = []
+        for _t in (py or []):
+            _dbg = _t.get('entry_debug') or {}
+            _etime = str(_t.get('entry_time', ''))[:16]
+            for _feat, _info in _dbg.items():
+                if not isinstance(_info, dict):
+                    continue
+                _py_val = _info.get('value')
+                _py_ts  = str(_info.get('entry_row_ts', ''))[:16]
+                _mt5    = _mt5_elog.get((_py_ts, _feat), {})
+                _mt5_val = _mt5.get('value', '')
+                _mt5_ts  = _mt5.get('bar_ts', '')[:16]
+                _note = ''
+                if _mt5:
+                    if _py_ts and _mt5_ts and _py_ts != _mt5_ts:
+                        _note = 'BAR_MISMATCH'
+                    elif _py_val is not None and _mt5_val:
+                        try:
+                            if abs(float(_py_val) - float(_mt5_val)) > 1e-4:
+                                _note = 'VALUE_DIFF'
+                        except Exception:
+                            pass
+                else:
+                    _note = 'MT5_MISSING'
+                _cmp_rows.append({
+                    'entry_time': _etime,
+                    'feature': _feat,
+                    'py_value': _py_val,
+                    'py_src_ts': _py_ts,
+                    'mt5_value': _mt5_val,
+                    'mt5_bar_ts': _mt5_ts,
+                    'note': _note,
+                })
+        _cmp_path = os.path.join(sub, "entry_compare.csv")
+        with open(_cmp_path, 'w', newline='', encoding='utf-8') as _ef:
+            _cw = _csv.DictWriter(
+                _ef,
+                fieldnames=['entry_time', 'feature', 'py_value', 'py_src_ts', 'mt5_value', 'mt5_bar_ts', 'note']
+            )
+            _cw.writeheader()
+            _cw.writerows(_cmp_rows)
+        _d("  entry_compare: %d rows → %s" % (len(_cmp_rows), os.path.basename(_cmp_path)))
+
         # CHANGED: June 2026 — enriched summary with profitability + date ranges both sides
         # WHY: shows PROFITABLE/LOSS, first/last trade dates, and in-window Python stats
         #   so you can see if trade-count gaps are date-range issues (not logic bugs).
@@ -1106,8 +1195,9 @@ def _write_debug_dump():
     if os.path.isfile(cs):
         shutil.copy(cs, os.path.join(dump, "comparison_summary.csv"))
 
-    # Close debug file
-    _dbg.close()
+    if _dbg is not None:
+        try: _dbg.close()
+        except Exception: pass
 
     _append("DEBUG DUMP: %s" % dump)
     _append("DEBUG LOG: %s" % _dbg_path)

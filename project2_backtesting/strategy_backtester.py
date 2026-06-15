@@ -2682,6 +2682,29 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 _a42_daily_counts_rb[_a42_entry_day_rb] = _a42_daily_counts_rb.get(_a42_entry_day_rb, 0) + 1
             except Exception:
                 pass
+        # Capture per-condition value + signal bar timestamp for Python/MT5 parity debugging.
+        # WHY: nested {value, entry_row_ts} per condition lets entry_compare.csv detect
+        #   bar misalignment (ts differs) vs calculation diff (ts same, value differs).
+        try:
+            _sig_row = df.iloc[entry_pos_int]
+            _entry_ts = (str(_sig_row['timestamp']) if 'timestamp' in df.columns
+                         else str(df.index[entry_pos_int]))
+            _rule_conds = next(
+                (r.get('conditions') or [] for r in rules
+                 if int(r.get('id', r.get('_saved_entry_id', r.get('_saved_rule_id', -1)))) == rule_id),
+                []
+            )
+            _entry_dbg = {
+                _c['feature']: {
+                    'value': (float(_sig_row[_c['feature']]) if pd.notna(_sig_row[_c['feature']]) else None),
+                    'entry_row_ts': _entry_ts,
+                }
+                for _c in _rule_conds
+                if _c.get('feature') and _c['feature'] in df.columns
+            }
+        except Exception:
+            _entry_dbg = {}
+
         trades.append({
             "entry_time":  entry_time,
             "exit_time":   exit_time,
@@ -2704,6 +2727,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             "hold_candles":    int(candles_held),
             "exit_via_m1":     bool(pos.get('_psar_exit_via_m1', False)),
             "rule_id":      rule_id,
+            "entry_debug":  _entry_dbg,
             # WHY (May 2026): Persist the SL distance used to size this
             #      trade. The refiner panel needs this to compute
             #      realistic $ stats for ATR exits (where
@@ -3737,6 +3761,28 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      on every ATR/trailing/PSAR/Hybrid/Indicator/TimeBased exit.
         # CHANGED: April 2026 — add candles_held + cost_pips; updated for bias fix
         # CHANGED: April 2026 — add swap + cost-breakdown fields (was missing)
+        # Capture per-condition value + signal bar timestamp for Python/MT5 parity debugging.
+        try:
+            _sig_row = df.iloc[entry_pos_int]
+            _entry_ts = (str(_sig_row['timestamp']) if 'timestamp' in df.columns
+                         else str(df.index[entry_pos_int]))
+            _rule_id_p3 = int(signal_rule_ids.loc[sig_idx])
+            _rule_conds = next(
+                (r.get('conditions') or [] for r in rules
+                 if int(r.get('id', r.get('_saved_entry_id', r.get('_saved_rule_id', -1)))) == _rule_id_p3),
+                []
+            )
+            _entry_dbg = {
+                _c['feature']: {
+                    'value': (float(_sig_row[_c['feature']]) if pd.notna(_sig_row[_c['feature']]) else None),
+                    'entry_row_ts': _entry_ts,
+                }
+                for _c in _rule_conds
+                if _c.get('feature') and _c['feature'] in df.columns
+            }
+        except Exception:
+            _entry_dbg = {}
+
         trade = {
             'entry_time':   str(entry_time),
             'exit_time':    str(exit_time),
@@ -3758,6 +3804,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'exit_via_m1':     False,
             'exit_reason':  exit_reason,
             'rule_id':      int(signal_rule_ids.loc[sig_idx]),
+            'entry_debug':  _entry_dbg,
             # WHY: Per-trade cost breakdown — matches vectorized path schema.
             # CHANGED: April 2026 — cost breakdown (was missing from this path)
             'cost_spread_pips':     round(-float(spread_pips), 1),
