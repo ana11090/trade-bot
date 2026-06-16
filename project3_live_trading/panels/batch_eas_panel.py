@@ -1064,7 +1064,16 @@ def _write_debug_dump():
     # ---- condlog + journal copy (broadened globs; origin behavior kept) ----
     _copy_data_dir = _derive_data_dir(_last_out_dir) if _last_out_dir else None
     if _copy_data_dir:
+        # WHY: MT5 stores tester agent files under MetaQuotes\Tester\<hash>\ while the EA
+        #      data dir (_copy_data_dir) is MetaQuotes\Terminal\<hash>\ — SIBLING directories
+        #      under MetaQuotes, not nested. All prior globs searched Terminal\<hash>\Tester\...,
+        #      which does not exist, so condlog and agent logs were never found.
+        # CHANGED: June 2026 — add sibling Tester\<hash> path to all glob candidates
+        _meta_root   = os.path.dirname(os.path.dirname(_copy_data_dir))  # ...MetaQuotes
+        _data_hash   = os.path.basename(_copy_data_dir)                   # D0E8209F77C8CF37...
+        _tester_root = os.path.join(_meta_root, 'Tester', _data_hash)    # Tester\<hash>
         _clogs = sorted(
+            glob.glob(os.path.join(_tester_root, 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')) +
             glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')) +
             glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'MQL5', 'Files', 'condlog_*.csv')) +
             glob.glob(os.path.join(_copy_data_dir, 'MQL5', 'Files', 'condlog_*.csv')),
@@ -1080,6 +1089,8 @@ def _write_debug_dump():
         #   newest log that actually contains those markers; mtime is only a tiebreak.
         _jcands = sorted(
             set(
+                glob.glob(os.path.join(_tester_root, 'Agent-*', 'logs', '*.log')) +
+                glob.glob(os.path.join(_tester_root, 'Agent-*', 'Logs', '*.log')) +
                 glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'logs', '*.log')) +
                 glob.glob(os.path.join(_copy_data_dir, 'Tester', '*', 'Agent-*', 'Logs', '*.log')) +
                 glob.glob(os.path.join(_copy_data_dir, 'Tester', 'Agent-*', 'logs', '*.log')) +

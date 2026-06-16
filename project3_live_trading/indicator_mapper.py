@@ -424,6 +424,19 @@ INDICATOR_PATTERNS = [
         "custom_indicator_mt5": True,
         "description": "KST on {tf} (custom indicator)",
     }),
+    # KST Signal line (buffer 1 of same KST custom indicator).
+    # WHY: Python's pandas_ta kst() returns both KST and KSTsignal columns;
+    #      the EA generator was emitting indicatorFailed=true for kst_signal
+    #      because only ^kst$ was mapped. Buffer 1 = 9-period SMA of KST.
+    # CHANGED: June 2026 — add kst_signal mapping
+    (r"^kst_signal$", {
+        "mt5_handle_var":  "int handle_kst_signal_{tf};",
+        "mt5_handle_init": "handle_kst_signal_{tf} = iCustom(NULL,{mt5_tf},\"KST\",10,15,20,30); if(handle_kst_signal_{tf}==INVALID_HANDLE) return(INIT_FAILED);",
+        "mt5_buffer_read": "double val_{var} = SafeCopyBuf(handle_kst_signal_{tf}, 1, {mt5_tf}); if(val_{var} == EMPTY_VALUE) indicatorFailed = true;",
+        "tradovate_code":  "ta.kst(df_m{tv_tf}['close'])['KSTsignal_10_15_20_30_10_10_10_15_9'].iloc[-1]",
+        "custom_indicator_mt5": True,
+        "description": "KST Signal line on {tf} (custom indicator buffer 1)",
+    }),
     # VPT
     (r"^vpt$", {
         "mt5_handle_var":  "int handle_vpt_{tf};",
