@@ -457,7 +457,7 @@ Report={report_path}
 ReplaceReport=1
 
 [TesterInputs]
-DebugConditions=true
+DebugConditions=true||false||0||true||N
 """
 
 

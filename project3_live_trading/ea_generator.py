@@ -2684,7 +2684,7 @@ input double TotalDDLimitPct    = {dd_total_pct};           // Total DD blow lim
 input bool   LogTrades          = true;                      // Log trades to CSV
 input string LogFilePath        = "trades_log_{magic_number}.csv"; // Log file path
 // WHY: June 2026 — per-bar condition diagnostic; enable to find which condition never fires in MT5
-input bool   DebugConditions    = false;                     // Log per-bar condition values to condlog_<magic>.csv
+input bool   DebugConditions    = true;                      // Log per-bar condition values to condlog_<magic>.csv (batch diag default ON)
 // WHY: The value is computed as a GMT hour in Python (line ~809), so we
 //      must compare against TimeGMT(), not TimeCurrent() (server time).
 //      Old name "Server" was misleading — a Cyprus broker's server time
