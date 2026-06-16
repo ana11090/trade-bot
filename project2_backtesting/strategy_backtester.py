@@ -1170,8 +1170,7 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                                   #      CSV needed for the tick-anchored MaxSpreadPips filter.
                                   #      None = filter is disabled for this call (no parity check).
                                   # CHANGED: May 2026 — tick-anchored spread filter
-                                  data_dir=None,
-                                  floor_to_min_lot=True):
+                                  data_dir=None):
     """
     Vectorized trade simulation for FixedSLTP exit strategy.
 
@@ -1525,7 +1524,7 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
             _raw_lot = risk_dollars / (sl_pips * pip_value_per_lot)
             _stepped = int(_raw_lot / _broker_volume_step) * _broker_volume_step
             if _stepped < 0.01:
-                lot_size = 0.01 if floor_to_min_lot else 0.0  # 0.0 = skip (Option B)
+                lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
             else:
                 lot_size = _stepped
             # WHY (leverage): Cap lot_size to what the account can margin.
@@ -1537,10 +1536,11 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 margin_per_lot = (contract_size * entry_price) / leverage
                 max_lots_by_margin = (_sizing_equity * 0.95) / margin_per_lot
                 if lot_size > max_lots_by_margin:
-                    lot_size = max(0.01, int(max_lots_by_margin / _broker_volume_step) * _broker_volume_step)
-
-        if lot_size <= 0.0:
-            continue  # below-min lot under Option B skip policy — no trade (matches EA LogSkip)
+                    _stepped = int(max_lots_by_margin / _broker_volume_step) * _broker_volume_step
+                    if _stepped < 0.01:
+                        lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
+                    else:
+                        lot_size = _stepped
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -1548,6 +1548,12 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         # CHANGED: April 2026 — equity-tracking lot sizing
         if compound_equity and _running_balance is not None and account_size:
             _running_balance = max(account_size * 0.5, _running_balance + net_profit)
+
+        # WHY: Under Option B (floor_to_min_lot=False), lot_size can be 0.0
+        #      when risk-lots < 0.01. Skip the trade to match EA behavior.
+        # CHANGED: June 2026 — lot-sizing parity guard
+        if lot_size <= 0.0:
+            continue   # below-min under skip policy -> no trade (matches EA Option B)
 
         # WHY (Phase A.42): Increment daily counter after a trade opens.
         # CHANGED: April 2026 — Phase A.42
@@ -1624,6 +1630,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #          (audit Part C MED #20)
                  slippage_seed=None,
                  account_size=None, risk_per_trade_pct=1.0,
+                 floor_to_min_lot: bool = True,
                  default_sl_pips=150.0, pip_value_per_lot=1.0,
                  # WHY: Asymmetric swap — see _select_swap_pips.
                  # CHANGED: April 2026 — asymmetric swap
@@ -1728,8 +1735,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # WHY: IANA zone for broker-local → UTC conversion. None = EET/EEST
                  #      default via shared/tz_offset.resolve_broker_tz. DST-correct.
                  # CHANGED: June 2026 — broker_timezone for UTC gating
-                 broker_timezone=None,
-                 floor_to_min_lot=True):
+                 broker_timezone=None):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -2131,7 +2137,6 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             entry_bar_offset=entry_bar_offset,
             # CHANGED: May 2026 — tick-anchored spread filter
             data_dir=data_dir,
-            floor_to_min_lot=floor_to_min_lot,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────────
@@ -2636,11 +2641,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             _broker_volume_step = 0.01
             _stepped = int(lot_size / _broker_volume_step) * _broker_volume_step
             if _stepped < 0.01:
-                lot_size = 0.01 if floor_to_min_lot else 0.0  # 0.0 = skip (Option B)
+                lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
             else:
                 lot_size = _stepped
-            if lot_size <= 0.0:
-                continue  # below-min lot under Option B skip policy — no trade
 
             # WHY (T1b): Make SL-aware sizing visible in the backtest log so the user
             #      can verify ATR exits are getting large _sl_for_sizing values.
@@ -2664,7 +2667,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 if lot_size > _max_lots:
                     # WHY (May 2026): broker volume step truncation
                     # CHANGED: May 2026 — match MT5 broker volume step
-                    lot_size = max(0.01, int(_max_lots / _broker_volume_step) * _broker_volume_step)
+                    _stepped = int(_max_lots / _broker_volume_step) * _broker_volume_step
+                    if _stepped < 0.01:
+                        lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
+                    else:
+                        lot_size = _stepped
             dollar_pnl = round(net_pips * pip_value_per_lot * lot_size, 2)
 
             # WHY: Update running balance after each trade so compounding
@@ -2720,6 +2727,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             }
         except Exception:
             _entry_dbg = {}
+
+        # WHY: Under Option B (floor_to_min_lot=False), lot_size can be 0.0
+        #      when risk-lots < 0.01. Skip the trade to match EA behavior.
+        # CHANGED: June 2026 — lot-sizing parity guard
+        if lot_size is not None and lot_size <= 0.0:
+            continue   # below-min under skip policy -> no trade (matches EA Option B)
 
         trades.append({
             "entry_time":  entry_time,
@@ -2805,6 +2818,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   spread_pips=2.5, commission_pips=0.0,
                   slippage_pips=0.0,
                   account_size=None, risk_per_trade_pct=1.0,
+                  floor_to_min_lot: bool = True,
                   default_sl_pips=150.0, pip_value_per_lot=1.0,
                   # WHY (Phase A.42): 0 = no limit; positive int = max trades
                   #      per calendar day, matching live EA's MaxTradesPerDay.
@@ -2878,8 +2892,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   no_trades_window_end_hour=-1,
                   # WHY: IANA zone for broker → UTC conversion. None = EET/EEST default.
                   # CHANGED: June 2026 — broker_timezone for UTC gating
-                  broker_timezone=None,
-                  floor_to_min_lot=True):
+                  broker_timezone=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -3196,7 +3209,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
             entry_bar_offset=entry_bar_offset,
             # CHANGED: May 2026 — tick-anchored spread filter
             data_dir=data_dir,
-            floor_to_min_lot=floor_to_min_lot,
         )
 
     # ── Simulate trades from signal candles ──────────────────────────────
@@ -3754,7 +3766,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             _broker_volume_step = 0.01
             _stepped = int(lot_size / _broker_volume_step) * _broker_volume_step
             if _stepped < 0.01:
-                lot_size = 0.01 if floor_to_min_lot else 0.0  # 0.0 = skip (Option B)
+                lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
             else:
                 lot_size = _stepped
             # WHY (leverage): Same margin cap as run_backtest.
@@ -3763,10 +3775,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 _margin_per_lot = (contract_size * entry_price) / leverage
                 _max_lots = (_sizing_equity * 0.95) / _margin_per_lot
                 if lot_size > _max_lots:
-                    lot_size = max(0.01, int(_max_lots / _broker_volume_step) * _broker_volume_step)
-
-        if lot_size <= 0.0:
-            continue  # below-min lot under Option B skip policy — no trade
+                    _stepped = int(_max_lots / _broker_volume_step) * _broker_volume_step
+                    if _stepped < 0.01:
+                        lot_size = 0.01 if floor_to_min_lot else 0.0   # A: floor / B: skip
+                    else:
+                        lot_size = _stepped
 
         net_profit = net_pips * pip_value_per_lot * lot_size
 
@@ -3837,6 +3850,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
             'cost_swap_pips':       round(float(swap_cost_pips_fbt), 1),
             'swap_nights':          int(swap_nights_fbt),
         }
+
+        # WHY: Under Option B (floor_to_min_lot=False), lot_size can be 0.0
+        #      when risk-lots < 0.01. Skip the trade to match EA behavior.
+        # CHANGED: June 2026 — lot-sizing parity guard
+        if lot_size <= 0.0:
+            continue   # below-min under skip policy -> no trade (matches EA Option B)
+
         trades.append(trade)
 
         # WHY: DD circuit breaker — update daily/total P&L and check thresholds.
@@ -4150,6 +4170,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           slippage_pips=0.0,
                           pip_size=0.01,
                           account_size=None, risk_per_trade_pct=1.0,
+                          floor_to_min_lot: bool = True,
                           default_sl_pips=150.0, pip_value_per_lot=1.0,
                           progress_callback=None,
                           use_safety_stops=True,
@@ -4246,8 +4267,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           no_trades_window_end_hour=-1,
                           # WHY: IANA zone for broker → UTC. Forwarded to fast_backtest.
                           # CHANGED: June 2026 — broker_timezone for UTC gating
-                          broker_timezone=None,
-                          floor_to_min_lot=True):
+                          broker_timezone=None):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -4843,6 +4863,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     #      and skips re-conversion.
                     # CHANGED: June 2026 — broker_timezone forwarding
                     broker_timezone=broker_timezone,
+                    # WHY: Forward lot-sizing policy flag for EA/Python parity.
+                    # CHANGED: June 2026 — lot-sizing parity
                     floor_to_min_lot=floor_to_min_lot,
                 )
                 stats = compute_stats(trades)
