@@ -3004,6 +3004,32 @@ void OnTick()
    if(spreadPips > MaxSpreadPips)
    {{ LogSkip("spread_too_wide", spreadPips); return; }}
 
+   // CHANGED: June 2026 — per-bar entry-eval diagnostic (gated). Prints ONE line per
+   //   entry-TF bar BEFORE any gate return, so bars blocked by hours/session are visible.
+   if(DebugConditions)
+   {{
+      int _ee_h = _now_gmt.hour;
+      bool _ee_hours   = CheckHours();
+      bool _ee_session = CheckSession();
+      bool _ee_day     = CheckDayFilter();
+      bool _ee_maxtr   = !(MaxTradesPerDay > 0 && g_dailyTrades >= MaxTradesPerDay);
+      bool _ee_posopen = false;
+      for(int _eei = PositionsTotal()-1; _eei >= 0; _eei--)
+      {{
+         ulong _eet = PositionGetTicket(_eei);
+         if(_eet > 0 && PositionGetInteger(POSITION_MAGIC) == MagicNumber
+            && PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {{ _ee_posopen = true; break; }}
+      }}
+      Print("[ENTRY-EVAL] bar=", TimeToString(iTime(_Symbol,{mql_period},0), TIME_DATE|TIME_MINUTES),
+            " gmt_h=", _ee_h,
+            " hoursOK=", _ee_hours,
+            " sessionOK=", _ee_session,
+            " dayOK=", _ee_day,
+            " maxTradesOK=", _ee_maxtr,
+            " posOpen=", _ee_posopen);
+   }}
+
    // WHY: MaxTradesPerDay=0 means unlimited. Old code checked
    //      g_dailyTrades >= 0 which is always true → blocked all trades.
    // CHANGED: April 2026 — 0 = unlimited
