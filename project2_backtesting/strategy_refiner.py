@@ -1057,6 +1057,13 @@ def load_strategy_list():
                             #      alongside win_pass. Legacy rows default to 0.
                             # CHANGED: June 2026 — consecutive DD-breach passthrough
                             'max_consecutive_dd_breaches': r.get('max_consecutive_dd_breaches', 0),
+                            # WHY: entry_bar_offset stamped by strategy_backtester.py at
+                            #      run_comparison_matrix line 4906. Passthrough ensures
+                            #      run_backtest_panel auto-selects N+1 mode on re-run
+                            #      without the user having to tick the checkbox again.
+                            #      Legacy rows (before May 2026) default to 0.
+                            # CHANGED: June 2026 — entry_bar_offset passthrough
+                            'entry_bar_offset':          r.get('entry_bar_offset', 0),
                             # WHY (T2b): Stability verdict + time-distribution fields
                             #      attached by the auto-stability gate in run_backtest_panel.
                             #      Expose them so View Results can render the badge.
@@ -1302,6 +1309,11 @@ def load_strategy_list():
                         'win_pass_rate':     None,
                         'is_stale':          is_stale,
                         'stale_issues':      stale_issues,
+                        # WHY: saved_rules.json for Time-Based rules already carry
+                        #      entry_bar_offset. Pass through so the backtest panel
+                        #      auto-selects the right mode on re-run.
+                        # CHANGED: June 2026 — entry_bar_offset passthrough
+                        'entry_bar_offset':  rule.get('entry_bar_offset', 0),
                         # WHY (T2b): No stability data for saved rules.
                         # CHANGED: April 2026 — T2b
                         'stability_verdict':         None,
