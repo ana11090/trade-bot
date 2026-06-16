@@ -301,7 +301,7 @@ def generate_ea(
             symbol=symbol,
             magic_number=magic_number,
             risk_per_trade_pct=risk_per_trade_pct,
-            floor_to_min_lot=floor_to_min_lot,
+            floor_to_min_lot=('true' if floor_to_min_lot else 'false'),
             max_trades_per_day=max_trades_per_day,
             session_filter=session_filter or [],
             day_filter=day_filter or [1, 2, 3, 4, 5],
