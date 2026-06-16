@@ -5267,6 +5267,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 #      file is a self-contained record. backtest_matrix.json
                 #      will later strip trades for size; per-rule files
                 #      keep them for review.
+                # Stamp the spread filter so batch_compare_reports can detect
+                # parity gaps (0 = filter was OFF, EA default is 65 pips).
+                # CHANGED: June 2026 — embed run_max_spread_pips
+                _row['run_max_spread_pips'] = max_spread_pips
                 with open(_fpath, 'w', encoding='utf-8') as _f_per:
                     json.dump(_row, _f_per, indent=2, default=str)
                 _written += 1

@@ -55,17 +55,23 @@ def _load_py_trades_for(combo, exit_name, entry_tf):
     if not os.path.isdir(d):
         return None, None
 
-    # Extract 8-hex ID from combo for robust matching
-    m = re.search(r"[0-9a-f]{8}", str(combo).lower())
-    hexid = m.group(0) if m else None
+    # Build safe combo prefix using the same sanitization as strategy_backtester's write path.
+    # WHY: re.search(r"[0-9a-f]{8}") fails for combos like "#15_BUY_M5_4c_6179_ATR_Only_c2db"
+    #      where underscores split the hex segments — no 8-char continuous match exists,
+    #      so hexid=None and the filter falls through to a wrong rule's file.
+    # CHANGED: June 2026 — safe-combo filename match replaces hex extraction
+    _safe_combo = str(combo).lstrip('#')
+    for _ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+        _safe_combo = _safe_combo.replace(_ch, '_')
+    safe_combo = _safe_combo.lower()
     want_exit = _norm(exit_name)
     want_tf = _norm(entry_tf)
 
     best = None
     for f in glob.glob(os.path.join(d, "rule_*.json")):
         base = os.path.basename(f).lower()
-        # Quick filter: file must contain the hex ID
-        if hexid and hexid not in base:
+        # Quick filter: filename must contain the full safe combo string
+        if safe_combo not in base:
             continue
 
         try:
@@ -99,7 +105,10 @@ def _load_py_trades_for(combo, exit_name, entry_tf):
     meta = {
         "file": os.path.basename(f),
         "py_tf": rd.get("entry_tf"),
-        "tf_match": (_norm(rd.get("entry_tf") or "") == want_tf)
+        "tf_match": (_norm(rd.get("entry_tf") or "") == want_tf),
+        # run_max_spread_pips is embedded at write time (strategy_backtester).
+        # 0/absent = backtest ran without spread filter (parity gap vs EA at 65 pips).
+        "py_max_spread": rd.get("run_max_spread_pips", 0),
     }
     return rd["trades"], meta
 
@@ -678,6 +687,17 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         m['net_profit'] = stats.get('net_profit', '')
         m['profit_factor'] = stats.get('profit_factor', '')
         m['note'] = f"matched (file: {meta.get('file', '?')[:20]})"
+        # Warn when Python backtest had no spread filter but EA uses 65 pips.
+        # WHY: EA blocks entries when spread > 65 pips; Python without the filter
+        #      keeps those bars — producing extra Python trades not in EA output.
+        #      Fix: re-run backtest with "Use Config" ON + prop firm (leveraged).
+        # CHANGED: June 2026 — spread filter mismatch warning
+        _py_spread = (meta or {}).get('py_max_spread', 0)
+        if not _py_spread:
+            m['note'] += ' [SPREAD:PY=0 vs EA=65pip]'
+            print(f'  [SPREAD WARN] {name[:40]}: Python run had max_spread_pips=0 '
+                  f'(filter OFF). EA uses 65 pip gate. Re-run backtest with '
+                  f'"Use Config" ON + leveraged firm to get parity.')
         rows.append(m)
         print('%-32s %5d %5d %8s %6d %7d %6d %6d  %s' %
               (name[:32], m['mt5'], m['py'],

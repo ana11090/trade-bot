@@ -1945,6 +1945,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             f'         CopyBuffer(handle_exit_atr, 0, 1, 1, _atrEntry);  // shift=1: last closed bar\n'
             f'         g_entrySL = _atrEntry[0] * SL_ATR_Mult;\n'
             f'         g_entryTP = _atrEntry[0] * TP_ATR_Mult;\n'
+            f'         // CHANGED: June 2026 — ATR SL/TP diagnostic (gated)\n'
+            f'         if(DebugConditions)\n'
+            f'            Print("[ATR-EXIT] entrySL=", g_entrySL,\n'
+            f'                  " entryTP=", g_entryTP,\n'
+            f'                  " atr=", _atrEntry[0],\n'
+            f'                  " slMult=", SL_ATR_Mult,\n'
+            f'                  " tpMult=", TP_ATR_Mult);\n'
             f'      }}\n'
         )
 
