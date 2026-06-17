@@ -1324,6 +1324,31 @@ def _write_debug_dump():
                                   % (_ym_sg, _m1_hit_sg or "data_dir unknown"))
                     except Exception:
                         pass
+                # ---- regression fingerprint (auto) ----
+                # WHY: the gap fix must ONLY change gap-bar entries. REGULAR (on-boundary,
+                #   non-gap-day) Python entries must be byte-identical run-to-run. Print a
+                #   compact fingerprint of the REGULAR entries so a regression (gap logic
+                #   leaking onto normal bars) is visible without a separate script.
+                _gap_days_sg = {g[:10] for g in _gap_sg}
+                _reg_entries_sg, _gap_entries_sg = [], []
+                for _r_fp in _py_rows_sg:
+                    _t_fp = str(_r_fp.get("entry_time", "")).strip()
+                    _tn_fp = _t_fp.replace("-", ".")
+                    _onbound_fp = _onb_sg(_t_fp)
+                    _isgapday_fp = _tn_fp[:10] in _gap_days_sg
+                    if _onbound_fp and not _isgapday_fp:
+                        _reg_entries_sg.append(_tn_fp)
+                    else:
+                        _gap_entries_sg.append(_tn_fp)
+                import hashlib as _hl_sg
+                _reg_fp_sg = _hl_sg.md5(("|".join(sorted(_reg_entries_sg))).encode()).hexdigest()[:10]
+                _bf.write("  -- entry split: %d regular, %d gap/off-boundary\n"
+                          % (len(_reg_entries_sg), len(_gap_entries_sg)))
+                _bf.write("  -- REGULAR fingerprint: %s  (must stay constant across gap-fix runs)\n"
+                          % _reg_fp_sg)
+                _bf.write("  -- REGULAR entries: %s\n"
+                          % (", ".join(_reg_entries_sg[:12]) + (" ..." if len(_reg_entries_sg) > 12 else "")))
+                # ---- end regression fingerprint ----
                 # ---- end SESSIONGAP DIAG ----
 
                 _bf.write("\n" + "=" * 78 + "\n\n")
