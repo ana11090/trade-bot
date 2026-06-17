@@ -1191,6 +1191,17 @@ def _write_debug_dump():
             _bf.write("window %s..%s   reports_dir %s\n" %
                       (_consolidated["window"]["from"], _consolidated["window"]["to"], reports))
             _bf.write("journal lines decoded: %d\n" % len(_jlines))
+            # Probe: is the SESSIONGAP gap-fill code present in the LOADED backtester?
+            # WHY: if the fix isn't active entries stay at 04:00 — surface it so we
+            #   never again wonder whether the code is loaded vs the data is missing.
+            try:
+                import inspect as _insp
+                from project2_backtesting import strategy_backtester as _sbt
+                _gap_present = "gap_fill_parity" in _insp.getsource(_sbt)
+                _bf.write("gap-fill code in loaded backtester: %s\n"
+                          % ("PRESENT" if _gap_present else "ABSENT (entries will stay at boundary)"))
+            except Exception as _ge:
+                _bf.write("gap-fill code probe failed: %r\n" % _ge)
             _bf.write("=" * 78 + "\n\n")
 
             # ---- comparison_summary.csv verbatim ----
@@ -1316,12 +1327,19 @@ def _write_debug_dump():
                         _m1_hit_sg = ""
                         if _dd_sg:
                             import glob as _glob_sg
-                            _cands_sg = (_glob_sg.glob(os.path.join(_dd_sg, "*M1*%s*.csv" % _ym_sg)) +
-                                         _glob_sg.glob(os.path.join(_dd_sg, "*ticks*%s*.csv" % _ym_sg)) +
-                                         _glob_sg.glob(os.path.join(_dd_sg, "*%s*M1*.csv" % _ym_sg)))
-                            _m1_hit_sg = os.path.basename(_cands_sg[0]) if _cands_sg else "NONE"
-                        _bf.write("  M1/tick data for %s: %s  (needed to fill at session open like MT5)\n"
-                                  % (_ym_sg, _m1_hit_sg or "data_dir unknown"))
+                            # Match the backtester's M1 filenames (strategy_backtester.py ~478):
+                            # a SINGLE file xauusd_M1.csv / XAUUSD_M1.csv / M1.csv — no year_month.
+                            _names_sg = ("xauusd_M1.csv", "XAUUSD_M1.csv", "M1.csv")
+                            _found_sg = None
+                            for _nm_sg in _names_sg:
+                                _hits_sg = (_glob_sg.glob(os.path.join(_dd_sg, _nm_sg)) +
+                                            _glob_sg.glob(os.path.join(_dd_sg, "**", _nm_sg), recursive=True))
+                                if _hits_sg:
+                                    _found_sg = _hits_sg[0]
+                                    break
+                            _m1_hit_sg = os.path.basename(_found_sg) if _found_sg else "NONE"
+                        _bf.write("  M1 data file: %s  (backtester needs this to fill at session open)\n"
+                                  % (_m1_hit_sg or "data_dir unknown"))
                     except Exception:
                         pass
                 # ---- regression fingerprint (auto) ----
