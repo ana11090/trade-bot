@@ -480,6 +480,29 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                 _walk = _parent
         except Exception:
             pass
+        # 3. Repo-relative data/ — explicit fallback anchored to __file__, not data_dir.
+        #    Covers the standard repo layout data/sources/<datasource>/XAUUSD_M1.csv
+        #    regardless of where data_dir points. Survives folder moves that would
+        #    break data_dir-relative paths.
+        # CHANGED: June 2026 — Option 2: repo-anchored M1 path
+        try:
+            _repo_data = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+            for _rname in ('xauusd_M1.csv', 'XAUUSD_M1.csv', 'M1.csv'):
+                candidate_paths.append(os.path.join(_repo_data, _rname))
+            if os.path.isdir(_repo_data):
+                for _d1 in os.scandir(_repo_data):
+                    if not _d1.is_dir():
+                        continue
+                    for _rname in ('xauusd_M1.csv', 'XAUUSD_M1.csv', 'M1.csv'):
+                        candidate_paths.append(os.path.join(_d1.path, _rname))
+                    for _d2 in os.scandir(_d1.path):
+                        if not _d2.is_dir():
+                            continue
+                        for _rname in ('xauusd_M1.csv', 'XAUUSD_M1.csv', 'M1.csv'):
+                            candidate_paths.append(os.path.join(_d2.path, _rname))
+        except Exception:
+            pass
 
         # Dedupe while preserving order
         _seen = set()
