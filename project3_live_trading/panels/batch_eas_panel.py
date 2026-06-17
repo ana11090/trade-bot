@@ -1317,7 +1317,26 @@ def _write_debug_dump():
                 except Exception:
                     pass
 
-                _ea_jl = [ln for ln in _jlines if _ea in ln]
+                # Change A — restrict to CURRENT run's lines only.
+                # WHY: the agent journal accumulates across reruns; a prior run with
+                #   indFail=true would mis-tag UNMAPPED even after the indicator is fixed.
+                #   Walk backward from the last line while time is monotonic; a backward
+                #   clock jump marks a previous-run boundary.
+                _ea_all = [ln for ln in _jlines if _ea in ln]
+                def _hms3(ln):
+                    _p = ln.split("\t")
+                    return _p[2].strip() if len(_p) > 2 else ""
+                _ea_jl = _ea_all
+                if _ea_all:
+                    _last_t = _hms3(_ea_all[-1])
+                    _cut = 0
+                    for _k in range(len(_ea_all) - 1, -1, -1):
+                        _t = _hms3(_ea_all[_k])
+                        if _t and _last_t and _t > _last_t:
+                            _cut = _k + 1
+                            break
+                        _last_t = _t
+                    _ea_jl = _ea_all[_cut:]
 
                 # --- classify (all applicable tags, not just primary) ---
                 _tags = []
@@ -1329,17 +1348,29 @@ def _write_debug_dump():
                         _tags.append("PY_AFTER_END")
                     if _late > 0:
                         _tags.append("ENTRY_OFFSET")
-                    if not _py_max_spread3:
+                    # Change C — require MT5 actually skipped a bar for spread before tagging.
+                    # WHY: py_max_spread=0 alone fires on every pre-fix run; adding the
+                    #   spread_too_wide agent-log confirmation makes the tag meaningful.
+                    if (not _py_max_spread3
+                            and any("spread_too_wide" in _ln3 for _ln3 in _ea_jl)):
                         _tags.append("SPREAD_NOT_ENFORCED")
-                    # UNMAPPED_INDICATOR — indicator_not_ready / indFail lines in agent log
-                    for _ln3 in _ea_jl:
-                        if "indicator_not_ready" in _ln3 or "indFail" in _ln3:
-                            _fm3 = (_re.search(r'\bfeat=(\S+)', _ln3) or
-                                    _re.search(r'\[DIAG\]\s+(\w+)=0\.0', _ln3))
-                            _fn3 = _fm3.group(1) if _fm3 else None
-                            _tags.append(
-                                "UNMAPPED_INDICATOR(%s)" % _fn3 if _fn3 else "UNMAPPED_INDICATOR")
-                            break
+                    # Change B — gate UNMAPPED_INDICATOR: only fire when MT5 took 0 trades AND
+                    # a feature is stuck at 0.0000 on a line flagged indFail=true. Previous
+                    # code matched any "indFail" substring (fires on "indFail=false" too) and
+                    # ran on all lines including stale prior-run ones.
+                    if _mt5_n == 0:
+                        _unmapped_feat = None
+                        for _ln3 in _ea_jl:
+                            if "indFail=true" not in _ln3:
+                                continue
+                            _zeros = _re.findall(r'(\w+)=0\.0000\b', _ln3)
+                            if _zeros:
+                                _unmapped_feat = _zeros[0]
+                                break
+                        if _unmapped_feat is not None:
+                            _tags.append("UNMAPPED_INDICATOR(%s)" % _unmapped_feat)
+                        elif any("indicator_not_ready" in _ln3 for _ln3 in _ea_jl):
+                            _tags.append("UNMAPPED_INDICATOR")
                     # ONINIT_CRASH
                     if any("OnInit" in _ln3 and
                            any(_kw3 in _ln3.lower() for _kw3 in ("critical", "fail", "error"))
