@@ -544,6 +544,38 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
         return None
 
 
+def _find_gap_fill(data_dir, bar_ts, tf_minutes, ntw_start, ntw_end, broker_timezone):
+    """For gap_fill_parity: find the first M1 bar within a blocked higher-TF candle
+    that falls outside the no-trades window (UTC) and is not a Monday-00:xx bar.
+
+    WHY: The H4[00:00] bar on session-reopen days is blocked by the no-trades window
+         because its UTC equivalent falls in the closed-market band (e.g. 22:00 UTC for
+         Europe/Athens +2). MT5 fills at the first tick after market open (01:05 broker
+         = 23:05 UTC = hour 23), which is OUTSIDE the window. This function finds that
+         first valid M1 bar so Python can match MT5's session-open fill time and price.
+
+    Returns (broker_timestamp, open_price) or None.
+    CHANGED: June 2026 — SESSIONGAP parity fix
+    """
+    m1_bars = _load_m1_for_candle(data_dir, bar_ts, tf_minutes)
+    if m1_bars is None or len(m1_bars) == 0:
+        return None
+    _m1w = m1_bars.copy()
+    _add_timestamp_utc(_m1w, broker_timezone)
+    for _, _row in _m1w.iterrows():
+        try:
+            _utc_h = pd.Timestamp(_row['timestamp_utc']).hour
+            if _in_no_trades_window(_utc_h, ntw_start, ntw_end):
+                continue
+            _m1_ts = pd.Timestamp(_row['timestamp'])
+            if _m1_ts.weekday() == 0 and _m1_ts.hour == 0:
+                continue
+            return (_m1_ts, float(_row['open']))
+        except Exception:
+            continue
+    return None
+
+
 def request_backtest_stop():
     """Signal the backtester to stop after the current combo."""
     _stop_requested.set()
@@ -1735,7 +1767,17 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  # WHY: IANA zone for broker-local → UTC conversion. None = EET/EEST
                  #      default via shared/tz_offset.resolve_broker_tz. DST-correct.
                  # CHANGED: June 2026 — broker_timezone for UTC gating
-                 broker_timezone=None):
+                 broker_timezone=None,
+                 # WHY: gap_fill_parity — when True, H4 (or higher-TF) bars that are
+                 #      blocked by the no-trades window or Monday-00:xx blackout are NOT
+                 #      skipped outright. Instead the backtester finds the first M1 bar
+                 #      within that candle that falls outside the window and fills there,
+                 #      matching MT5's session-open first-tick fill (e.g. 01:05 broker).
+                 #      Default False — existing behavior unchanged. Enable per-EA to test.
+                 #      SCOPE: only bars where the outer H4 timestamp is blocked AND an
+                 #      M1 bar within it is valid. Non-gap bars are never affected.
+                 # CHANGED: June 2026 — SESSIONGAP parity fix
+                 gap_fill_parity=False):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -2171,6 +2213,23 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         if _eb_int >= len(df):
             continue
         next_candle = df.iloc[_eb_int]
+        # WHY: gap_fill_parity — set to (broker_ts, open_price) if a blocked bar
+        #      is overridden with a session-open M1 fill. None = use H4 bar open.
+        # CHANGED: June 2026 — SESSIONGAP parity fix
+        _gap_fill_entry = None
+        # WHY: Scope guard — only target bars after a WEEKLY/HOLIDAY gap (>1 TF
+        #      duration between consecutive bars). Daily session reopens (exactly
+        #      4h gap) are NOT gap bars and must keep their existing NTW-blocked
+        #      behavior. Without this guard the fix fires on every 00:00 bar.
+        # CHANGED: June 2026 — SESSIONGAP parity fix scope guard
+        _is_gap_bar = False
+        if _eb_int > 0:
+            try:
+                _dt_gap = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
+                           pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
+                _is_gap_bar = _dt_gap.total_seconds() > _run_candle_tf_minutes * 60
+            except Exception:
+                pass
 
         # WHY (Phase A.42): Enforce max trades per calendar day.
         # CHANGED: April 2026 — Phase A.42
@@ -2242,7 +2301,21 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 _ntw_hour = pd.Timestamp(next_candle['timestamp_utc']).hour
                 if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
                                                     no_trades_window_end_hour):
-                    continue
+                    # WHY (gap_fill_parity): The H4[00:00] broker bar has UTC hour 22
+                    #      (inside [20,23)) so it is blocked. But MT5 fills at the
+                    #      first tick after market open (01:05 broker = 23:05 UTC =
+                    #      hour 23, outside the window). Find that M1 bar instead.
+                    #      Only applies to weekly/holiday gaps (_is_gap_bar=True),
+                    #      NOT daily session reopens (exactly 4h gap).
+                    if gap_fill_parity and data_dir and _is_gap_bar:
+                        _gap_fill_entry = _find_gap_fill(
+                            data_dir, next_candle['timestamp'],
+                            _run_candle_tf_minutes,
+                            no_trades_window_start_hour, no_trades_window_end_hour,
+                            broker_timezone,
+                        )
+                    if _gap_fill_entry is None:
+                        continue
             except Exception:
                 pass
 
@@ -2255,7 +2328,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         try:
             _mb_ts = pd.Timestamp(next_candle['timestamp'])
             if _mb_ts.weekday() == 0 and _mb_ts.hour == 0:
-                continue
+                # WHY (gap_fill_parity): Monday 00:00 broker bars are also blocked,
+                #      but MT5 fills at the first post-open M1 bar (e.g. 01:05).
+                #      _is_gap_bar guard ensures only weekly/holiday gaps are
+                #      retimed, not normal Monday daily reopens with a 4h gap.
+                if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None:
+                    _gap_fill_entry = _find_gap_fill(
+                        data_dir, next_candle['timestamp'],
+                        _run_candle_tf_minutes,
+                        no_trades_window_start_hour, no_trades_window_end_hour,
+                        broker_timezone,
+                    )
+                if _gap_fill_entry is None:
+                    continue
         except Exception:
             pass
 
@@ -2287,7 +2372,21 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         else:
             trade_dir = direction
 
-        entry_price = float(next_candle["open"])
+        # WHY (gap_fill_parity): on reopen bars use the M1 session-open price
+        #      instead of the H4 bar open (which is 00:00, before market opens).
+        #      The H4 bar open in the CSV equals the M1[00:00] bar open (synthetic),
+        #      while the actual first fill available is the M1[01:05] bar open.
+        # CHANGED: June 2026 — SESSIONGAP parity fix
+        if _gap_fill_entry is not None:
+            entry_price = _gap_fill_entry[1]
+            _gap_fill_ts = _gap_fill_entry[0]
+            log.debug(
+                f"[gap_fill_parity] H4 bar {next_candle['timestamp']} blocked; "
+                f"gap fill at M1 {_gap_fill_ts} open={entry_price:.2f}"
+            )
+        else:
+            entry_price = float(next_candle["open"])
+            _gap_fill_ts = None
         # Apply random slippage against the trader (always a worse fill)
         if slippage_pips > 0:
             # WHY: Use per-run RNG initialized above for reproducibility.
@@ -2321,7 +2420,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         #      net_pips below, NOT baked into entry_price. Matches MT5 EA's
         #      slPrice = bid - sl convention. See revert notes (8dddd52).
         # CHANGED: April 2026 — restore bid-anchored entry (revert 8dddd52)
-        entry_time = next_candle["timestamp"]
+        entry_time = _gap_fill_ts if _gap_fill_ts is not None else next_candle["timestamp"]
 
         pos = {
             "entry_price":         entry_price,
