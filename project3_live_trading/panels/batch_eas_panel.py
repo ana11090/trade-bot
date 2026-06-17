@@ -1174,6 +1174,21 @@ def _write_debug_dump():
                         break
             return out
 
+        def _deep_get(o, key):
+            # WHY: entry_bar_offset and run_max_spread_pips may live at the top level
+            #   or inside a nested dict (run_settings, rules[0], etc.) depending on when
+            #   the rule JSON was written. Top-level .get() returns None when the key is
+            #   nested, causing the bundle to report None even when the value is present.
+            # CHANGED: 2026-06-17 — recursive key lookup for bundle correctness
+            if isinstance(o, dict):
+                if key in o:
+                    return o[key]
+                for v in o.values():
+                    r = _deep_get(v, key)
+                    if r is not None:
+                        return r
+            return None
+
         with open(_bundle_path, "w", encoding="utf-8") as _bf:
             _bf.write("PARITY BUNDLE  generated %s\n" % _consolidated["generated"])
             _bf.write("window %s..%s   reports_dir %s\n" %
@@ -1215,8 +1230,9 @@ def _write_debug_dump():
                                 _sj = json.load(_sf)
                             _bf.write("PY rule: entry_bar_offset=%s spread_pips=%s "
                                       "run_max_spread_pips=%s exit_class=%s exit_params=%s\n\n" % (
-                                _sj.get("entry_bar_offset"), _sj.get("spread_pips"),
-                                _sj.get("run_max_spread_pips", "ABSENT"),
+                                _deep_get(_sj, "entry_bar_offset"),
+                                _sj.get("spread_pips"),
+                                _deep_get(_sj, "run_max_spread_pips") or "ABSENT",
                                 _sj.get("exit_class"), json.dumps(_sj.get("exit_params", {}))))
                     except Exception as _xe:
                         _bf.write("PY rule params: (read failed: %r)\n\n" % _xe)
