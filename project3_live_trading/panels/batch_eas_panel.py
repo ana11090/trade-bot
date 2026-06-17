@@ -1466,11 +1466,19 @@ def _write_debug_dump():
                     "fdiv": "classify-err: %r" % _re3, "sub": "",
                 })
 
-        # Build TALLY (each EA counted once per tag it carries, not per trade)
+        # Build TALLY — systemic CAUSES only. PY_AFTER_END is a window artifact
+        # (Python covers more data than the MT5 test window), not a divergence to fix.
+        # CLEAN/UNCLASSIFIED are states, not causes. Exclude all three from the tally
+        # so the ranking reflects actionable fixes. They still appear on per-EA rows.
+        _TALLY_EXCLUDE = {"PY_AFTER_END", "CLEAN", "UNCLASSIFIED"}
         _tag_ctr = _Counter()
+        _in_window_clean = 0        # EAs whose only non-CLEAN tag is PY_AFTER_END
         for _rr in _rpt_rows:
-            for _tg in _rr["tags"]:
+            _causes = [t for t in _rr["tags"] if t.split("(")[0] not in _TALLY_EXCLUDE]
+            for _tg in _causes:
                 _tag_ctr[_tg] += 1
+            if not _causes and ("PY_AFTER_END" in _rr["tags"] or "CLEAN" in _rr["tags"]):
+                _in_window_clean += 1
 
         _report_path = os.path.join(dump, "PARITY_REPORT.txt")
         with open(_report_path, "w", encoding="utf-8") as _rf:
@@ -1478,22 +1486,28 @@ def _write_debug_dump():
             _rf.write("window %s..%s  reports_dir %s\n\n" % (
                 _consolidated["window"]["from"], _consolidated["window"]["to"], reports))
 
-            # Section 1 — TALLY: systemic-fix driver (fix code X → N EAs improve at once)
+            # Section 1 — TALLY: systemic-fix driver (fix cause X → N EAs improve at once).
+            # PY_AFTER_END/CLEAN excluded (window artifact / state, not a cause to fix).
             _n_eas = len(_rpt_rows)
-            _rf.write("=== TALLY (%d EA%s) ===\n" % (_n_eas, "s" if _n_eas != 1 else ""))
+            _rf.write("=== TALLY (%d EA%s — systemic causes only) ===\n" % (
+                _n_eas, "s" if _n_eas != 1 else ""))
             for _tg, _cnt in sorted(_tag_ctr.items(), key=lambda _x: -_x[1]):
                 _rf.write("%-36s %d\n" % (_tg, _cnt))
+            _rf.write("%-36s %d\n" % ("(in-window clean / after-end only)", _in_window_clean))
             _rf.write("\n")
 
-            # Section 2 — PER-EA ROWS (one line each; tags col carries ALL applicable codes)
+            # Section 2 — PER-EA ROWS (one line each; causes lead, PY_AFTER_END/CLEAN trail)
             _rf.write("=== PER-EA ROWS ===\n")
             _rf.write("%-52s %4s %4s %7s %5s  %-52s  %s\n" % (
                 "EA", "mt5", "py", "inrange", "exact", "tags", "first_div"))
             _rf.write("-" * 148 + "\n")
+            def _tag_order(_t):
+                return (1 if _t.split("(")[0] in ("PY_AFTER_END", "CLEAN", "UNCLASSIFIED") else 0, _t)
             for _rr in _rpt_rows:
+                _ordered = sorted(_rr["tags"], key=_tag_order)
                 _rf.write("%-52s %4d %4d %7d %5d  %-52s  %s\n" % (
                     _rr["ea"][:52], _rr["mt5"], _rr["py"], _rr["inrange"], _rr["exact"],
-                    ",".join(_rr["tags"])[:52], _rr["fdiv"][:80]))
+                    ",".join(_ordered)[:52], _rr["fdiv"][:80]))
             _rf.write("\n")
 
             # Section 3 — INDEX: EA name → per-rule folder (pull full detail without inlining)
