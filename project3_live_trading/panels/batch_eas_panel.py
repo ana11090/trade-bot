@@ -1250,6 +1250,82 @@ def _write_debug_dump():
                     _bf.write("\n".join(_sl) + "\n")
                 else:
                     _bf.write("(no matching agent-log lines — check DebugConditions / EA name)\n")
+
+                # ---- SESSIONGAP DIAG (auto) ----
+                # WHY: surface the session-open fill divergence every run. MT5 fills the reopen
+                #   bar at first-tick time (e.g. 01:05); Python can only fill at an existing H4
+                #   bar timestamp (all_times[_eb]) so it maps to the next boundary (04:00) or
+                #   drops the trade. This block lists per gap fill: MT5 time, what Python did,
+                #   and the FirstNewBar context — the exact inputs the SESSIONGAP fix needs.
+                import csv as _csv_sg
+                _tf_e = (_e.get("tf") or "H4").upper()
+                _TFm_sg = {"D1":1440,"H4":240,"H1":60,"M30":30,"M15":15,"M5":5,"W1":10080}.get(_tf_e, 5)
+                def _onb_sg(_ts):
+                    _m_sg = _re.search(r'\s(\d{2}):(\d{2}):', _ts or "")
+                    if not _m_sg: return True
+                    return ((int(_m_sg.group(1))*60 + int(_m_sg.group(2))) % _TFm_sg) == 0
+                _mt5_rows_sg, _py_rows_sg = [], []
+                try:
+                    with open(os.path.join(_sub, "mt5_trades.csv"), encoding="utf-8") as _f_sg:
+                        _mt5_rows_sg = list(_csv_sg.DictReader(_f_sg))
+                except Exception:
+                    pass
+                try:
+                    with open(os.path.join(_sub, "python_trades.csv"), encoding="utf-8") as _f_sg:
+                        _py_rows_sg = list(_csv_sg.DictReader(_f_sg))
+                except Exception:
+                    pass
+                _py_ets_sg = {str(_r.get("entry_time","")).strip().replace("-",".") for _r in _py_rows_sg}
+                _py_days_sg = {}
+                for _r_sg in _py_rows_sg:
+                    _t_sg = str(_r_sg.get("entry_time","")).strip().replace("-",".")
+                    _py_days_sg.setdefault(_t_sg[:10], []).append(_t_sg[11:])
+                # FirstNewBar lines for this EA from current-run journal
+                _fnb_sg = {}
+                for _ln_sg in [l for l in _jlines if _ea in l and "FirstNewBar" in l]:
+                    _p_sg = _ln_sg.split("\t")
+                    _tsf_sg = _p_sg[3] if len(_p_sg) > 3 else ""
+                    _mm_sg = _re.match(r'\s*(\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})', _tsf_sg)
+                    _sv_sg = _re.search(r'server=(\S+ \S+)\s+server_prev=(\S+ \S+)', _ln_sg)
+                    if _mm_sg:
+                        _fnb_sg[_mm_sg.group(1).strip()] = (
+                            (_sv_sg.group(1), _sv_sg.group(2)) if _sv_sg else ("?","?"))
+                _gap_sg = [str(_r.get("entry_time","")).strip() for _r in _mt5_rows_sg
+                           if not _onb_sg(str(_r.get("entry_time","")))]
+                _bf.write("\n-- SESSIONGAP DIAG (tf=%s, off-boundary MT5 fills=%d) --\n"
+                          % (_tf_e, len(_gap_sg)))
+                if not _gap_sg:
+                    _bf.write("  (no off-boundary MT5 fills — not a session-gap EA)\n")
+                for _g_sg in _gap_sg:
+                    _day_sg = _g_sg[:10]
+                    _matched_sg = _g_sg in _py_ets_sg
+                    _sameday_sg = _py_days_sg.get(_day_sg, [])
+                    if _matched_sg:
+                        _verdict_sg = "PY MATCHED (same time)"
+                    elif _sameday_sg:
+                        _verdict_sg = "PY shifted -> %s" % ",".join(_sameday_sg)
+                    else:
+                        _verdict_sg = "PY DROPPED (no same-day entry)"
+                    _ctx_sg = _fnb_sg.get(_g_sg)
+                    _ctxs_sg = (" | FirstNewBar server=%s prev=%s" % _ctx_sg) if _ctx_sg else ""
+                    _bf.write("  MT5 %s  ->  %s%s\n" % (_g_sg, _verdict_sg, _ctxs_sg))
+                if _gap_sg:
+                    _ym_sg = _gap_sg[0][:7].replace(".", "_")
+                    try:
+                        _dd_sg = _derive_data_dir(_last_out_dir) if _last_out_dir else None
+                        _m1_hit_sg = ""
+                        if _dd_sg:
+                            import glob as _glob_sg
+                            _cands_sg = (_glob_sg.glob(os.path.join(_dd_sg, "*M1*%s*.csv" % _ym_sg)) +
+                                         _glob_sg.glob(os.path.join(_dd_sg, "*ticks*%s*.csv" % _ym_sg)) +
+                                         _glob_sg.glob(os.path.join(_dd_sg, "*%s*M1*.csv" % _ym_sg)))
+                            _m1_hit_sg = os.path.basename(_cands_sg[0]) if _cands_sg else "NONE"
+                        _bf.write("  M1/tick data for %s: %s  (needed to fill at session open like MT5)\n"
+                                  % (_ym_sg, _m1_hit_sg or "data_dir unknown"))
+                    except Exception:
+                        pass
+                # ---- end SESSIONGAP DIAG ----
+
                 _bf.write("\n" + "=" * 78 + "\n\n")
 
         _d("PARITY BUNDLE: %s" % _bundle_path)
