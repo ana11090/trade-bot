@@ -1926,6 +1926,58 @@ def get_mql_code(feature_name, platform='mt5'):
             'description':     f'{tf} Volume Ratio {period}',
         }
 
+    # ── vwap / vwap_distance ─────────────────────────────────────────────────
+    # WHY: Python computes a DAILY-RESET session VWAP (indicator_utils.py:493-500):
+    #      vwap = cumsum(TP*vol)/cumsum(vol) grouped per calendar day (dt.normalize()),
+    #      where TP=(H+L+C)/3 and vol=tick volume. vwap_distance=(close-vwap)/vwap*100.
+    #      MT5 has no native session-VWAP, so accumulate inline from the day's first
+    #      bar through shift=GetBarShift (the just-closed bar the EA evaluates).
+    #      Day boundary = broker-time midnight (matches dt.normalize() on broker timestamps).
+    #      Walk back from shift forward (higher shifts = older bars) until the bar's
+    #      calendar day differs from the evaluation bar.
+    # CHANGED: June 2026 — add vwap_distance MT5 mapping (parity for _22_ etc.)
+    if ind == 'vwap' or ind == 'vwap_distance':
+        _is_dist = (ind == 'vwap_distance')
+        return {
+            'var_name':        var_name,
+            'handle_var':      '',
+            'handle_init':     '',
+            'read_code':       (
+                f'double val_{var_name} = 0.0;\n'
+                f'      {{\n'
+                f'         int _sh = GetBarShift({mt5_tf});            // just-closed bar\n'
+                f'         datetime _t0 = iTime(_Symbol, {mt5_tf}, _sh);\n'
+                f'         MqlDateTime _d0; TimeToStruct(_t0, _d0);\n'
+                f'         _d0.hour = 0; _d0.min = 0; _d0.sec = 0;\n'
+                f'         datetime _midnight = StructToTime(_d0);     // broker-time midnight of that day\n'
+                f'         double _pv = 0.0, _vv = 0.0;\n'
+                f'         for(int _i = _sh; _i < _sh + 500; _i++) {{\n'
+                f'            datetime _ti = iTime(_Symbol, {mt5_tf}, _i);\n'
+                f'            if(_ti == 0) break;\n'
+                f'            if(_ti < _midnight) break;               // crossed into previous day\n'
+                f'            double _h = iHigh(_Symbol,  {mt5_tf}, _i);\n'
+                f'            double _l = iLow(_Symbol,   {mt5_tf}, _i);\n'
+                f'            double _c = iClose(_Symbol, {mt5_tf}, _i);\n'
+                f'            double _vol = (double)iVolume(_Symbol, {mt5_tf}, _i);\n'
+                f'            double _tp = (_h + _l + _c) / 3.0;\n'
+                f'            _pv += _tp * _vol;\n'
+                f'            _vv += _vol;\n'
+                f'         }}\n'
+                f'         if(_vv > 0.0) {{\n'
+                f'            double _vwap = _pv / _vv;\n'
+                + (
+                f'            double _close = iClose(_Symbol, {mt5_tf}, _sh);\n'
+                f'            val_{var_name} = (_vwap != 0.0) ? (_close - _vwap) / _vwap * 100.0 : 0.0;\n'
+                if _is_dist else
+                f'            val_{var_name} = _vwap;\n'
+                )
+                + f'         }} else {{ indicatorFailed = true; }}\n'
+                f'      }}'
+            ),
+            'custom_indicator': False,
+            'description':     f'{tf} Session VWAP{" Distance %" if _is_dist else ""} (daily reset, inline)',
+        }
+
     # ── day_of_month ──────────────────────────────────────────────────────────
     # WHY: Calendar feature — no indicator handle needed, computed from time.
     # CHANGED: April 2026 — add day_of_month mapping
