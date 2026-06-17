@@ -1347,32 +1347,37 @@ def _write_debug_dump():
                     if _after > 0:
                         _tags.append("PY_AFTER_END")
                     if _late > 0:
-                        # Split ENTRY_OFFSET into two causes that need different fixes:
-                        #   SESSIONGAP — MT5 filled on a gap-reopen bar (e.g. 01:05) that Python
-                        #     did not match. Detected by FirstNewBar in the current-run journal
-                        #     at an MT5 entry timestamp not present in Python's entries. Fix =
-                        #     first-tick/gap alignment, NOT entry_bar_offset=1.
-                        #   1BAR — regular one-bar-late offset (12:00 vs 08:00). Fix = offset=1.
+                        # SESSIONGAP signal = MT5 entry NOT on an entry-TF bar boundary.
+                        # WHY: XAUUSD reopens ~01:05 server time after the overnight/weekend
+                        #   break; MT5 fills at that first-tick time while Python snaps to the
+                        #   next clean H4 boundary (04:00). Off-boundary entry timestamps are
+                        #   session-open fills by definition — deterministic, no log needed.
+                        #   The old FirstNewBar-marker test missed most of them: the EA logs
+                        #   FirstNewBar only on the backtest-start bar, not every daily reopen.
+                        # 1BAR = remaining one-bar-late offset on clean boundary bars. Fix = offset=1.
                         # Both can coexist on the same EA.
-                        _gap_ts = set()
-                        for _ln3 in _ea_jl:
-                            if "FirstNewBar" in _ln3:
-                                _p3b = _ln3.split("\t")
-                                _tsf = _p3b[3] if len(_p3b) > 3 else ""
-                                _m3b = _re.match(r'\s*(\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})', _tsf)
-                                if _m3b:
-                                    _gap_ts.add(_m3b.group(1).strip())
+                        _TF_MIN_SG = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30,
+                                      "M15": 15, "M5": 5, "W1": 10080}
+                        _tfm_sg = _TF_MIN_SG.get((_tf or "H4").upper(), 5)
+                        def _on_boundary(_ts):
+                            _mm_sg = _re.search(r'\s(\d{2}):(\d{2}):', _ts)
+                            if not _mm_sg:
+                                return True   # can't parse → don't flag as gap
+                            _mins_sg = int(_mm_sg.group(1)) * 60 + int(_mm_sg.group(2))
+                            return (_mins_sg % _tfm_sg) == 0
                         _mt5_ets = {str(_mr3.get("entry_time", "")).strip() for _mr3 in _mt5r3}
                         _py_ets_norm = {
                             str(_pr3.get("entry_time", "")).strip().replace("-", ".")
                             for _pr3 in _pyr3}
+                        # gap fills = off-boundary MT5 entries Python did NOT match
                         _gap_unmatched = [t for t in _mt5_ets
-                                          if t in _gap_ts and t not in _py_ets_norm]
+                                          if not _on_boundary(t) and t not in _py_ets_norm]
                         if _gap_unmatched:
                             _tags.append("ENTRY_OFFSET_SESSIONGAP")
+                        # 1BAR = late offset not explained by gap fills
                         if _late > len(_gap_unmatched):
                             _tags.append("ENTRY_OFFSET_1BAR")
-                        # fallback: if late>0 but neither fired (parsing miss), keep generic
+                        # fallback: if late>0 but neither fired (no CSVs / parse miss)
                         if ("ENTRY_OFFSET_SESSIONGAP" not in _tags
                                 and "ENTRY_OFFSET_1BAR" not in _tags):
                             _tags.append("ENTRY_OFFSET_1BAR")
