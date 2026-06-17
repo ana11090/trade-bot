@@ -1137,6 +1137,115 @@ def _write_debug_dump():
     except Exception as _je:
         _d("consolidated write failed: %r" % _je)
 
+    # ADDED 2026-06-17 — single self-contained PARITY_BUNDLE.txt.
+    # WHY: one upload instead of many scattered files. Inlines comparison_summary,
+    #   per-EA summary + MT5 + Python trades + exit params, and the per-EA AGENT-LOG
+    #   SLICE (decoded from the UTF-16 journal already copied above). Purely additive;
+    #   per-EA folders and batch_debug.json are untouched.
+    try:
+        _bundle_path = os.path.join(dump, "PARITY_BUNDLE.txt")
+        # Decode the agent journal once (UTF-16LE first, then fallbacks). It was copied
+        # to dump/mt5_journal.log earlier in this function.
+        _jraw, _jtxt = b"", ""
+        _jpath = os.path.join(dump, "mt5_journal.log")
+        if os.path.isfile(_jpath):
+            try:
+                with open(_jpath, "rb") as _jf:
+                    _jraw = _jf.read()
+                for _enc in ("utf-16", "utf-8", "cp1252"):
+                    try:
+                        _jtxt = _jraw.decode(_enc, errors="ignore")
+                        if "ENTRY-EVAL" in _jtxt or "[DIAG]" in _jtxt or "[ATR-EXIT]" in _jtxt:
+                            break
+                    except Exception:
+                        _jtxt = ""
+            except Exception:
+                _jtxt = ""
+        _jlines = _jtxt.splitlines()
+
+        def _slice_for(ea_name, tags, max_lines=80):
+            # Lines in the agent log that mention this EA's name AND one of the tags.
+            out = []
+            for ln in _jlines:
+                if ea_name in ln and any(t in ln for t in tags):
+                    out.append(ln.rstrip())
+                    if len(out) >= max_lines:
+                        out.append("  ... (truncated at %d)" % max_lines)
+                        break
+            return out
+
+        with open(_bundle_path, "w", encoding="utf-8") as _bf:
+            _bf.write("PARITY BUNDLE  generated %s\n" % _consolidated["generated"])
+            _bf.write("window %s..%s   reports_dir %s\n" %
+                      (_consolidated["window"]["from"], _consolidated["window"]["to"], reports))
+            _bf.write("journal lines decoded: %d\n" % len(_jlines))
+            _bf.write("=" * 78 + "\n\n")
+
+            # ---- comparison_summary.csv verbatim ----
+            _csv_path = os.path.join(dump, "comparison_summary.csv")
+            _bf.write("### COMPARISON_SUMMARY.CSV\n")
+            if os.path.isfile(_csv_path):
+                with open(_csv_path, encoding="utf-8") as _cf:
+                    _bf.write(_cf.read().strip() + "\n")
+            else:
+                _bf.write("(not found)\n")
+            _bf.write("\n" + "=" * 78 + "\n\n")
+
+            # ---- per-EA section ----
+            for _e in _consolidated["eas"]:
+                _ea = _e["name"]
+                _sub = os.path.join(dump, _ea)
+                _bf.write("### EA: %s\n" % _ea)
+                _bf.write("combo=%s exit=%s tf=%s\n" % (_e["combo"], _e["exit"], _e["tf"]))
+                _bf.write("MT5 trades=%s  net_profit=%s  pf=%s\n" % (
+                    _e["mt5"]["trades"],
+                    _e["mt5"]["stats"].get("net_profit", "?"),
+                    _e["mt5"]["stats"].get("profit_factor", "?")))
+                _bf.write("PY  trades=%s  net_pips=%s  source=%s\n\n" % (
+                    _e["python"]["trades"], _e["python"]["net_pips"], _e["python"]["source"]))
+
+                # exit params from the source rule JSON (so SL/TP mults are visible inline)
+                _src = _e["python"]["source"]
+                if _src:
+                    try:
+                        _rd = _py_rules_dir()
+                        _sp = os.path.join(_rd, _src)
+                        if os.path.isfile(_sp):
+                            with open(_sp, encoding="utf-8") as _sf:
+                                _sj = json.load(_sf)
+                            _bf.write("PY rule: entry_bar_offset=%s spread_pips=%s "
+                                      "run_max_spread_pips=%s exit_class=%s exit_params=%s\n\n" % (
+                                _sj.get("entry_bar_offset"), _sj.get("spread_pips"),
+                                _sj.get("run_max_spread_pips", "ABSENT"),
+                                _sj.get("exit_class"), json.dumps(_sj.get("exit_params", {}))))
+                    except Exception as _xe:
+                        _bf.write("PY rule params: (read failed: %r)\n\n" % _xe)
+
+                # MT5 trades csv inline
+                _bf.write("-- MT5 trades --\n")
+                _mp = os.path.join(_sub, "mt5_trades.csv")
+                if os.path.isfile(_mp):
+                    with open(_mp, encoding="utf-8") as _mf:
+                        _bf.write(_mf.read().strip() + "\n")
+                _bf.write("\n-- PYTHON trades --\n")
+                _pp = os.path.join(_sub, "python_trades.csv")
+                if os.path.isfile(_pp):
+                    with open(_pp, encoding="utf-8") as _pf:
+                        _bf.write(_pf.read().strip() + "\n")
+
+                # agent-log slice for THIS EA: entries, exits, skips
+                _bf.write("\n-- AGENT LOG [ATR-EXIT] / [SKIP] / signal= for this EA --\n")
+                _sl = _slice_for(_ea, ("[ATR-EXIT]", "[SKIP]", "signal=true", "OnInit"))
+                if _sl:
+                    _bf.write("\n".join(_sl) + "\n")
+                else:
+                    _bf.write("(no matching agent-log lines — check DebugConditions / EA name)\n")
+                _bf.write("\n" + "=" * 78 + "\n\n")
+
+        _d("PARITY BUNDLE: %s" % _bundle_path)
+    except Exception as _be:
+        _d("PARITY_BUNDLE write failed: %r" % _be)
+
     if _dbg is not None:
         try: _dbg.close()
         except Exception: pass
