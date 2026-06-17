@@ -852,7 +852,8 @@ def _write_debug_dump():
     try:
         from project3_live_trading.batch_compare_reports import (
             _load_py_trades_for, _py_rules_dir, _parse_mt5_xlsx, _parse_mt5_html,
-            _find_report, _parse_mt5_html_stats, _read_mt5_entries)
+            _find_report, _parse_mt5_html_stats, _read_mt5_entries,
+            _compare, _tf_bar_minutes)
     except Exception:
         _append("Debug dump skipped (import failed).")
         return
@@ -1137,6 +1138,47 @@ def _write_debug_dump():
     except Exception as _je:
         _d("consolidated write failed: %r" % _je)
 
+    # ---- decode journal once (shared by PARITY_BUNDLE and PARITY_REPORT) ----
+    _jraw, _jtxt = b"", ""
+    _jpath = os.path.join(dump, "mt5_journal.log")
+    if os.path.isfile(_jpath):
+        try:
+            with open(_jpath, "rb") as _jf:
+                _jraw = _jf.read()
+            for _enc in ("utf-16", "utf-8", "cp1252"):
+                try:
+                    _jtxt = _jraw.decode(_enc, errors="ignore")
+                    if "ENTRY-EVAL" in _jtxt or "[DIAG]" in _jtxt or "[ATR-EXIT]" in _jtxt:
+                        break
+                except Exception:
+                    _jtxt = ""
+        except Exception:
+            _jtxt = ""
+    _jlines = _jtxt.splitlines()
+
+    def _slice_for(ea_name, tags, max_lines=80):
+        out = []
+        for ln in _jlines:
+            if ea_name in ln and any(t in ln for t in tags):
+                out.append(ln.rstrip())
+                if len(out) >= max_lines:
+                    out.append("  ... (truncated at %d)" % max_lines)
+                    break
+        return out
+
+    def _deep_get(o, key):
+        # WHY: entry_bar_offset and run_max_spread_pips may live at the top level
+        #   or inside a nested dict depending on when the rule JSON was written.
+        # CHANGED: 2026-06-17 — recursive key lookup for bundle correctness
+        if isinstance(o, dict):
+            if key in o:
+                return o[key]
+            for v in o.values():
+                r = _deep_get(v, key)
+                if r is not None:
+                    return r
+        return None
+
     # ADDED 2026-06-17 — single self-contained PARITY_BUNDLE.txt.
     # WHY: one upload instead of many scattered files. Inlines comparison_summary,
     #   per-EA summary + MT5 + Python trades + exit params, and the per-EA AGENT-LOG
@@ -1144,51 +1186,6 @@ def _write_debug_dump():
     #   per-EA folders and batch_debug.json are untouched.
     try:
         _bundle_path = os.path.join(dump, "PARITY_BUNDLE.txt")
-        # Decode the agent journal once (UTF-16LE first, then fallbacks). It was copied
-        # to dump/mt5_journal.log earlier in this function.
-        _jraw, _jtxt = b"", ""
-        _jpath = os.path.join(dump, "mt5_journal.log")
-        if os.path.isfile(_jpath):
-            try:
-                with open(_jpath, "rb") as _jf:
-                    _jraw = _jf.read()
-                for _enc in ("utf-16", "utf-8", "cp1252"):
-                    try:
-                        _jtxt = _jraw.decode(_enc, errors="ignore")
-                        if "ENTRY-EVAL" in _jtxt or "[DIAG]" in _jtxt or "[ATR-EXIT]" in _jtxt:
-                            break
-                    except Exception:
-                        _jtxt = ""
-            except Exception:
-                _jtxt = ""
-        _jlines = _jtxt.splitlines()
-
-        def _slice_for(ea_name, tags, max_lines=80):
-            # Lines in the agent log that mention this EA's name AND one of the tags.
-            out = []
-            for ln in _jlines:
-                if ea_name in ln and any(t in ln for t in tags):
-                    out.append(ln.rstrip())
-                    if len(out) >= max_lines:
-                        out.append("  ... (truncated at %d)" % max_lines)
-                        break
-            return out
-
-        def _deep_get(o, key):
-            # WHY: entry_bar_offset and run_max_spread_pips may live at the top level
-            #   or inside a nested dict (run_settings, rules[0], etc.) depending on when
-            #   the rule JSON was written. Top-level .get() returns None when the key is
-            #   nested, causing the bundle to report None even when the value is present.
-            # CHANGED: 2026-06-17 — recursive key lookup for bundle correctness
-            if isinstance(o, dict):
-                if key in o:
-                    return o[key]
-                for v in o.values():
-                    r = _deep_get(v, key)
-                    if r is not None:
-                        return r
-            return None
-
         with open(_bundle_path, "w", encoding="utf-8") as _bf:
             _bf.write("PARITY BUNDLE  generated %s\n" % _consolidated["generated"])
             _bf.write("window %s..%s   reports_dir %s\n" %
@@ -1219,7 +1216,6 @@ def _write_debug_dump():
                 _bf.write("PY  trades=%s  net_pips=%s  source=%s\n\n" % (
                     _e["python"]["trades"], _e["python"]["net_pips"], _e["python"]["source"]))
 
-                # exit params from the source rule JSON (so SL/TP mults are visible inline)
                 _src = _e["python"]["source"]
                 if _src:
                     try:
@@ -1237,7 +1233,6 @@ def _write_debug_dump():
                     except Exception as _xe:
                         _bf.write("PY rule params: (read failed: %r)\n\n" % _xe)
 
-                # MT5 trades csv inline
                 _bf.write("-- MT5 trades --\n")
                 _mp = os.path.join(_sub, "mt5_trades.csv")
                 if os.path.isfile(_mp):
@@ -1249,7 +1244,6 @@ def _write_debug_dump():
                     with open(_pp, encoding="utf-8") as _pf:
                         _bf.write(_pf.read().strip() + "\n")
 
-                # agent-log slice for THIS EA: entries, exits, skips
                 _bf.write("\n-- AGENT LOG [ATR-EXIT] / [SKIP] / signal= for this EA --\n")
                 _sl = _slice_for(_ea, ("[ATR-EXIT]", "[SKIP]", "signal=true", "OnInit"))
                 if _sl:
@@ -1261,6 +1255,224 @@ def _write_debug_dump():
         _d("PARITY BUNDLE: %s" % _bundle_path)
     except Exception as _be:
         _d("PARITY_BUNDLE write failed: %r" % _be)
+
+    # ADDED 2026-06-17 — PARITY_REPORT.txt: compact classified report, scales to 100+ EAs.
+    # WHY: at 100 EAs PARITY_BUNDLE (full trade tables + 80-line log slices) is unreadable.
+    #   PARITY_REPORT gives the same systemic-cause triage in ~3 lines/EA with no inline data.
+    #   Tags derive from comparison_summary.csv (already has bar-size fix applied) + agent-log
+    #   scan. No trade tables, no log lines — just TALLY + per-EA tag row + INDEX.
+    #   PARITY_BUNDLE and per-EA folders are unchanged; this is a third additive output.
+    try:
+        import csv as _csv2
+        from datetime import timedelta as _td2, datetime as _dt2
+        from collections import Counter as _Counter
+
+        _TF_MIN2 = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30, "M15": 15, "M5": 5, "W1": 10080}
+
+        # Parse comparison_summary.csv — has _compare() outputs with bar-size fix applied.
+        _cmp_by_ea = {}
+        _cs_path2 = os.path.join(dump, "comparison_summary.csv")
+        if os.path.isfile(_cs_path2):
+            with open(_cs_path2, encoding="utf-8") as _cf2:
+                for _crow2 in _csv2.DictReader(_cf2):
+                    _cmp_by_ea[_crow2.get("name", "")] = _crow2
+
+        _rpt_rows = []
+        for _e in _consolidated["eas"]:
+            _ea = _e["name"]
+            _sub = os.path.join(dump, _ea)
+            _tf  = _e["tf"]
+            try:
+                _crow  = _cmp_by_ea.get(_ea, {})
+                _mt5_n = int(_crow.get("mt5",         0) or 0)
+                _py_n  = int(_crow.get("py",          0) or 0)
+                _exct  = int(_crow.get("exact",       0) or 0)
+                _inrng = int(_crow.get("py_in_range", 0) or 0)
+                _late  = int(_crow.get("one_bar_late",  0) or 0)
+                _after = int(_crow.get("py_after_end",  0) or 0)
+
+                # Load rule JSON for spread metadata
+                _sj3 = {}
+                _src3 = _e["python"]["source"]
+                if _src3:
+                    _sp3 = os.path.join(_py_rules_dir(), _src3)
+                    if os.path.isfile(_sp3):
+                        try:
+                            with open(_sp3, encoding="utf-8") as _sf3:
+                                _sj3 = json.load(_sf3)
+                        except Exception:
+                            pass
+                _py_max_spread3 = _deep_get(_sj3, "run_max_spread_pips") or 0
+
+                # Load per-EA CSVs for EXIT_INTRABAR_SL and first-div walk
+                _mt5r3, _pyr3 = [], []
+                try:
+                    with open(os.path.join(_sub, "mt5_trades.csv"), encoding="utf-8") as _mf3:
+                        _mt5r3 = list(_csv2.DictReader(_mf3))
+                except Exception:
+                    pass
+                try:
+                    with open(os.path.join(_sub, "python_trades.csv"), encoding="utf-8") as _pf3:
+                        _pyr3 = list(_csv2.DictReader(_pf3))
+                except Exception:
+                    pass
+
+                _ea_jl = [ln for ln in _jlines if _ea in ln]
+
+                # --- classify (all applicable tags, not just primary) ---
+                _tags = []
+                if (_mt5_n > 0 and _exct == _mt5_n and _py_n == _mt5_n
+                        and not _crow.get("error")):
+                    _tags.append("CLEAN")
+                else:
+                    if _after > 0:
+                        _tags.append("PY_AFTER_END")
+                    if _late > 0:
+                        _tags.append("ENTRY_OFFSET")
+                    if not _py_max_spread3:
+                        _tags.append("SPREAD_NOT_ENFORCED")
+                    # UNMAPPED_INDICATOR — indicator_not_ready / indFail lines in agent log
+                    for _ln3 in _ea_jl:
+                        if "indicator_not_ready" in _ln3 or "indFail" in _ln3:
+                            _fm3 = (_re.search(r'\bfeat=(\S+)', _ln3) or
+                                    _re.search(r'\[DIAG\]\s+(\w+)=0\.0', _ln3))
+                            _fn3 = _fm3.group(1) if _fm3 else None
+                            _tags.append(
+                                "UNMAPPED_INDICATOR(%s)" % _fn3 if _fn3 else "UNMAPPED_INDICATOR")
+                            break
+                    # ONINIT_CRASH
+                    if any("OnInit" in _ln3 and
+                           any(_kw3 in _ln3.lower() for _kw3 in ("critical", "fail", "error"))
+                           for _ln3 in _ea_jl):
+                        _tags.append("ONINIT_CRASH")
+                    elif _mt5_n == 0 and _crow.get("error"):
+                        _tags.append("ONINIT_CRASH")
+                    # EXIT_INTRABAR_SL — matched entry: MT5 closed at loss, PY took profit
+                    _mt5_eset = {str(_mr3.get("entry_time", "")).strip() for _mr3 in _mt5r3}
+                    for _pr3 in _pyr3:
+                        _pet3 = str(_pr3.get("entry_time", "")).strip()
+                        _pex3 = str(_pr3.get("exit_reason", "")).upper()
+                        _pvm3 = str(_pr3.get("exit_via_m1", "")).lower()
+                        if (_pet3 in _mt5_eset and ("TP" in _pex3 or "TAKE_PROFIT" in _pex3)
+                                and _pvm3 != "true"):
+                            for _mr3 in _mt5r3:
+                                if str(_mr3.get("entry_time", "")).strip() == _pet3:
+                                    try:
+                                        _m5p3 = float(str(
+                                            _mr3.get("profit", _mr3.get("Profit", "0"))
+                                        ).replace(",", "").strip() or "0")
+                                        if _m5p3 < 0:
+                                            _tags.append("EXIT_INTRABAR_SL")
+                                    except Exception:
+                                        pass
+                                    break
+                        if "EXIT_INTRABAR_SL" in _tags:
+                            break
+                    # LONG_HOLD_BLOCK
+                    if any("position_already_open" in _ln3 for _ln3 in _ea_jl):
+                        _tags.append("LONG_HOLD_BLOCK")
+                    if not _tags:
+                        _tags.append("UNCLASSIFIED")
+
+                # --- first divergence (walk entry times in order, TF-tolerant) ---
+                _fdiv = ""
+                try:
+                    def _pt3(s):
+                        try:
+                            return _dt2.fromisoformat(
+                                str(s).split(".")[0].replace(" ", "T"))
+                        except Exception:
+                            return None
+                    _bmin3 = _TF_MIN2.get(_tf.upper(), 5)
+                    _tol3  = _td2(minutes=_bmin3)
+                    _ms3   = sorted(filter(None, (_pt3(_r.get("entry_time")) for _r in _mt5r3)))
+                    _ps3   = sorted(filter(None, (_pt3(_r.get("entry_time")) for _r in _pyr3)))
+                    if not _ms3 and not _ps3:
+                        _fdiv = "no trades in either engine"
+                    elif not _ms3:
+                        _fdiv = "%s PY-only entry" % _ps3[0].strftime("%Y-%m-%d %H:%M")
+                    elif not _ps3:
+                        _fdiv = "%s MT5-only entry" % _ms3[0].strftime("%Y-%m-%d %H:%M")
+                    else:
+                        _mset3 = set(_ms3)
+                        _pset3 = set(_ps3)
+                        for _t3 in sorted(_mset3 | _pset3):
+                            _near_p3 = any(
+                                abs((_t3 - _p3).total_seconds()) <= _tol3.total_seconds()
+                                for _p3 in _pset3)
+                            _near_m3 = any(
+                                abs((_t3 - _m3).total_seconds()) <= _tol3.total_seconds()
+                                for _m3 in _mset3)
+                            if _t3 in _mset3 and not _near_p3:
+                                _fdiv = "%s MT5-only entry" % _t3.strftime("%Y-%m-%d %H:%M")
+                                break
+                            if _t3 in _pset3 and not _near_m3:
+                                _why3 = ""
+                                for _ln3 in _ea_jl:
+                                    if _t3.strftime("%Y-%m-%d") in _ln3 and "[SKIP]" in _ln3:
+                                        _rm3 = _re.search(r'\[SKIP\]\s+(\S+)', _ln3)
+                                        if _rm3:
+                                            _why3 = _rm3.group(1)
+                                        break
+                                _fdiv = "%s PY-only%s" % (
+                                    _t3.strftime("%Y-%m-%d %H:%M"),
+                                    " MT5 skip %s" % _why3 if _why3 else " entry")
+                                break
+                        if not _fdiv and "EXIT_INTRABAR_SL" in _tags and _pyr3:
+                            _first_pet = str(_pyr3[0].get("entry_time", ""))[:16]
+                            _fdiv = "%s exit mismatch (MT5 SL, PY TP)" % _first_pet
+                except Exception:
+                    pass
+
+                _rpt_rows.append({
+                    "ea": _ea, "mt5": _mt5_n, "py": _py_n, "inrange": _inrng,
+                    "exact": _exct, "tags": _tags, "fdiv": _fdiv, "sub": _sub,
+                })
+            except Exception as _re3:
+                _rpt_rows.append({
+                    "ea": _ea, "mt5": 0, "py": 0, "inrange": 0, "exact": 0,
+                    "tags": ["UNCLASSIFIED"],
+                    "fdiv": "classify-err: %r" % _re3, "sub": "",
+                })
+
+        # Build TALLY (each EA counted once per tag it carries, not per trade)
+        _tag_ctr = _Counter()
+        for _rr in _rpt_rows:
+            for _tg in _rr["tags"]:
+                _tag_ctr[_tg] += 1
+
+        _report_path = os.path.join(dump, "PARITY_REPORT.txt")
+        with open(_report_path, "w", encoding="utf-8") as _rf:
+            _rf.write("PARITY REPORT  generated %s\n" % _consolidated["generated"])
+            _rf.write("window %s..%s  reports_dir %s\n\n" % (
+                _consolidated["window"]["from"], _consolidated["window"]["to"], reports))
+
+            # Section 1 — TALLY: systemic-fix driver (fix code X → N EAs improve at once)
+            _n_eas = len(_rpt_rows)
+            _rf.write("=== TALLY (%d EA%s) ===\n" % (_n_eas, "s" if _n_eas != 1 else ""))
+            for _tg, _cnt in sorted(_tag_ctr.items(), key=lambda _x: -_x[1]):
+                _rf.write("%-36s %d\n" % (_tg, _cnt))
+            _rf.write("\n")
+
+            # Section 2 — PER-EA ROWS (one line each; tags col carries ALL applicable codes)
+            _rf.write("=== PER-EA ROWS ===\n")
+            _rf.write("%-52s %4s %4s %7s %5s  %-52s  %s\n" % (
+                "EA", "mt5", "py", "inrange", "exact", "tags", "first_div"))
+            _rf.write("-" * 148 + "\n")
+            for _rr in _rpt_rows:
+                _rf.write("%-52s %4d %4d %7d %5d  %-52s  %s\n" % (
+                    _rr["ea"][:52], _rr["mt5"], _rr["py"], _rr["inrange"], _rr["exact"],
+                    ",".join(_rr["tags"])[:52], _rr["fdiv"][:80]))
+            _rf.write("\n")
+
+            # Section 3 — INDEX: EA name → per-rule folder (pull full detail without inlining)
+            _rf.write("=== INDEX (EA -> folder) ===\n")
+            for _rr in _rpt_rows:
+                _rf.write("%-52s  %s\n" % (_rr["ea"][:52], _rr["sub"]))
+
+        _d("PARITY REPORT: %s" % _report_path)
+    except Exception as _rpe:
+        _d("PARITY_REPORT write failed: %r" % _rpe)
 
     if _dbg is not None:
         try: _dbg.close()

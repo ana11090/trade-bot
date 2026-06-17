@@ -584,6 +584,13 @@ def _python_trades_for(name, python_dir, rec=None):
     return shared if os.path.exists(shared) else None
 
 
+_TF_MINUTES = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30, "M15": 15, "M5": 5, "W1": 10080}
+
+def _tf_bar_minutes(tf):
+    """Return the bar duration in minutes for an entry TF string (e.g. 'H4' → 240)."""
+    return _TF_MINUTES.get((tf or "").upper(), 5)
+
+
 def _compare(mt5, py, bar_minutes=5):
     """Return dict of comparison metrics between two sorted datetime lists."""
     mset, pset = set(mt5), set(py)
@@ -657,6 +664,10 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         combo = str(rec.get('rule_combo') or '')
         exit_name = rec.get('exit_name') or ''
         tf = rec.get('entry_tf') or ''
+        # WHY: one-bar offset for H4 rules is 4 h (240 min), not 5 min.
+        #   Hardcoding bar_minutes=5 made one_bar_early/late blind to H4/H1 shifts.
+        # CHANGED: 2026-06-17 — per-EA bar minutes derived from entry_tf
+        per_bm = _tf_bar_minutes(tf)
         py_trades, meta = _load_py_trades_for(combo, exit_name, tf) if combo else (None, None)
 
         if not py_trades:
@@ -682,7 +693,7 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
 
         # TF matches → do real entry-time comparison
         py = _extract_py_entry_times(py_trades)
-        m = _compare(mt5, py, bar_minutes=bar_minutes)
+        m = _compare(mt5, py, bar_minutes=per_bm)
         m['name'] = name
         m['net_profit'] = stats.get('net_profit', '')
         m['profit_factor'] = stats.get('profit_factor', '')
