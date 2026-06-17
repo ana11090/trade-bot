@@ -1347,7 +1347,35 @@ def _write_debug_dump():
                     if _after > 0:
                         _tags.append("PY_AFTER_END")
                     if _late > 0:
-                        _tags.append("ENTRY_OFFSET")
+                        # Split ENTRY_OFFSET into two causes that need different fixes:
+                        #   SESSIONGAP — MT5 filled on a gap-reopen bar (e.g. 01:05) that Python
+                        #     did not match. Detected by FirstNewBar in the current-run journal
+                        #     at an MT5 entry timestamp not present in Python's entries. Fix =
+                        #     first-tick/gap alignment, NOT entry_bar_offset=1.
+                        #   1BAR — regular one-bar-late offset (12:00 vs 08:00). Fix = offset=1.
+                        # Both can coexist on the same EA.
+                        _gap_ts = set()
+                        for _ln3 in _ea_jl:
+                            if "FirstNewBar" in _ln3:
+                                _p3b = _ln3.split("\t")
+                                _tsf = _p3b[3] if len(_p3b) > 3 else ""
+                                _m3b = _re.match(r'\s*(\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})', _tsf)
+                                if _m3b:
+                                    _gap_ts.add(_m3b.group(1).strip())
+                        _mt5_ets = {str(_mr3.get("entry_time", "")).strip() for _mr3 in _mt5r3}
+                        _py_ets_norm = {
+                            str(_pr3.get("entry_time", "")).strip().replace("-", ".")
+                            for _pr3 in _pyr3}
+                        _gap_unmatched = [t for t in _mt5_ets
+                                          if t in _gap_ts and t not in _py_ets_norm]
+                        if _gap_unmatched:
+                            _tags.append("ENTRY_OFFSET_SESSIONGAP")
+                        if _late > len(_gap_unmatched):
+                            _tags.append("ENTRY_OFFSET_1BAR")
+                        # fallback: if late>0 but neither fired (parsing miss), keep generic
+                        if ("ENTRY_OFFSET_SESSIONGAP" not in _tags
+                                and "ENTRY_OFFSET_1BAR" not in _tags):
+                            _tags.append("ENTRY_OFFSET_1BAR")
                     # Change C — require MT5 actually skipped a bar for spread before tagging.
                     # WHY: py_max_spread=0 alone fires on every pre-fix run; adding the
                     #   spread_too_wide agent-log confirmation makes the tag meaningful.
