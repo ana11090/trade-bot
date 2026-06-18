@@ -2142,6 +2142,13 @@ def build_panel(parent):
                              font=("Segoe UI", 8))
     _nostats_lbl.pack(side=tk.LEFT, padx=4)
 
+    # WHY: After saving new rules, the grid doesn't auto-update. This button
+    #      reloads the full strategy list from disk so newly saved rules appear.
+    # CHANGED: June 2026 — refresh button for batch grid
+    tk.Button(filt_row, text="🔄", font=("Segoe UI", 10), bg=BG,
+              relief="flat", cursor="hand2", padx=4,
+              command=lambda: _populate_grid(_cur_source)).pack(side=tk.RIGHT, padx=4)
+
     # CHANGED: June 2026 — grid + log in a vertical PanedWindow so the log box is drag-resizable
     # WHY: fixed-height log can't be resized; PanedWindow sash lets you drag to grow/shrink.
     _split = tk.PanedWindow(panel, orient="vertical", sashwidth=6,
