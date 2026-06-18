@@ -1325,19 +1325,69 @@ def _write_debug_dump():
                     try:
                         _dd_sg = _derive_data_dir(_last_out_dir) if _last_out_dir else None
                         _m1_hit_sg = ""
+                        import glob as _glob_sg
+                        _names_sg = ("xauusd_M1.csv", "XAUUSD_M1.csv", "M1.csv")
+                        _found_sg = None
+                        # 1. Search MT5 data_dir tree (original probe)
                         if _dd_sg:
-                            import glob as _glob_sg
-                            # Match the backtester's M1 filenames (strategy_backtester.py ~478):
-                            # a SINGLE file xauusd_M1.csv / XAUUSD_M1.csv / M1.csv — no year_month.
-                            _names_sg = ("xauusd_M1.csv", "XAUUSD_M1.csv", "M1.csv")
-                            _found_sg = None
                             for _nm_sg in _names_sg:
                                 _hits_sg = (_glob_sg.glob(os.path.join(_dd_sg, _nm_sg)) +
                                             _glob_sg.glob(os.path.join(_dd_sg, "**", _nm_sg), recursive=True))
                                 if _hits_sg:
                                     _found_sg = _hits_sg[0]
                                     break
-                            _m1_hit_sg = os.path.basename(_found_sg) if _found_sg else "NONE"
+                        # 2. Repo-anchored fallback — mirrors strategy_backtester.py 483-505.
+                        #    Uses __file__ to find <repo>/data/ regardless of MT5 data_dir.
+                        #    __file__ is project3_live_trading/panels/batch_eas_panel.py, so
+                        #    THREE dirname() calls reach the repo root -> data/.
+                        if not _found_sg:
+                            try:
+                                _repo_data_sg = os.path.join(
+                                    os.path.dirname(os.path.dirname(os.path.dirname(
+                                        os.path.abspath(__file__)))), 'data')
+                                # Top-level data/<name>
+                                for _nm_sg in _names_sg:
+                                    _rp_sg = os.path.join(_repo_data_sg, _nm_sg)
+                                    if os.path.exists(_rp_sg):
+                                        _found_sg = _rp_sg
+                                        break
+                                # data/<d1>/<name> and data/<d1>/<d2>/<name> — mirrors the
+                                # backtester's two-level scan (strategy_backtester.py 493-503),
+                                # i.e. the standard data/sources/<datasource>/XAUUSD_M1.csv layout.
+                                if not _found_sg and os.path.isdir(_repo_data_sg):
+                                    for _d1_sg in os.scandir(_repo_data_sg):
+                                        if not _d1_sg.is_dir():
+                                            continue
+                                        for _nm_sg in _names_sg:
+                                            _rp_sg = os.path.join(_d1_sg.path, _nm_sg)
+                                            if os.path.exists(_rp_sg):
+                                                _found_sg = _rp_sg
+                                                break
+                                        if _found_sg:
+                                            break
+                                        for _d2_sg in os.scandir(_d1_sg.path):
+                                            if not _d2_sg.is_dir():
+                                                continue
+                                            for _nm_sg in _names_sg:
+                                                _rp_sg = os.path.join(_d2_sg.path, _nm_sg)
+                                                if os.path.exists(_rp_sg):
+                                                    _found_sg = _rp_sg
+                                                    break
+                                            if _found_sg:
+                                                break
+                                        if _found_sg:
+                                            break
+                            except Exception:
+                                pass
+                        if _found_sg:
+                            # Detect LFS stub (3-line pointer file, < 200 bytes)
+                            _sz_sg = os.path.getsize(_found_sg)
+                            if _sz_sg < 200:
+                                _m1_hit_sg = "%s (LFS STUB - run: git lfs pull)" % _found_sg
+                            else:
+                                _m1_hit_sg = _found_sg
+                        else:
+                            _m1_hit_sg = "NONE"
                         _bf.write("  M1 data file: %s  (backtester needs this to fill at session open)\n"
                                   % (_m1_hit_sg or "data_dir unknown"))
                     except Exception:
