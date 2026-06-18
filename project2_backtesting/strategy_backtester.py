@@ -2260,16 +2260,25 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: June 2026 — SESSIONGAP parity fix
         _gap_fill_entry = None
         # WHY: Scope guard — only target bars after a WEEKLY/HOLIDAY gap (>1 TF
-        #      duration between consecutive bars). Daily session reopens (exactly
-        #      4h gap) are NOT gap bars and must keep their existing NTW-blocked
-        #      behavior. Without this guard the fix fires on every 00:00 bar.
-        # CHANGED: June 2026 — SESSIONGAP parity fix scope guard
+        #      duration between consecutive bars). Check BOTH _eb_int vs _eb_int-1
+        #      AND _eb_int-1 vs _eb_int-2 (shift(1) can put the entry one bar after
+        #      the reopen bar). _gap_bar_ts tracks which bar is the actual reopen bar.
+        # CHANGED: June 2026 — SESSIONGAP parity: 2-bar lookback + gap_bar_ts
         _is_gap_bar = False
+        _gap_bar_ts = None
         if _eb_int > 0:
             try:
                 _dt_gap = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
                            pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                _is_gap_bar = _dt_gap.total_seconds() > _run_candle_tf_minutes * 60
+                if _dt_gap.total_seconds() > _run_candle_tf_minutes * 60:
+                    _is_gap_bar = True
+                    _gap_bar_ts = df.iloc[_eb_int]['timestamp']
+                elif _eb_int > 1:
+                    _dt_gap_prev = (pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']) -
+                                    pd.Timestamp(df.iloc[_eb_int - 2]['timestamp']))
+                    if _dt_gap_prev.total_seconds() > _run_candle_tf_minutes * 60:
+                        _is_gap_bar = True
+                        _gap_bar_ts = df.iloc[_eb_int - 1]['timestamp']
             except Exception:
                 pass
 
@@ -2413,6 +2422,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 trade_dir = "BUY"
         else:
             trade_dir = direction
+
+        # WHY (gap_fill_parity): Non-blocked gap bars — entry passed all skip
+        #      checks but is near a gap (shift(1) can put entry one bar after the
+        #      reopen). Find the M1 session-open bar for the gap bar.
+        # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
+        if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None and _gap_bar_ts is not None:
+            _gap_fill_entry = _find_gap_fill(
+                data_dir, _gap_bar_ts,
+                _run_candle_tf_minutes,
+                -1, -1,
+                broker_timezone,
+            )
 
         # WHY (gap_fill_parity): on reopen bars use the M1 session-open price
         #      instead of the H4 bar open (which is 00:00, before market opens).
@@ -3079,7 +3100,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   #      there (matching MT5's session-open first-tick fill at 01:05).
                   #      False = skip blocked bars (existing behavior).
                   # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
-                  gap_fill_parity=False):
+                  gap_fill_parity=False,
+                  # WHY: exit_intrabar_m1 — refine exit_time from bar close to the
+                  #      first M1 bar crossing SL/TP within that candle, matching
+                  #      MT5's tick-level exit. Fixes LONG_HOLD_BLOCK re-entry desync.
+                  # CHANGED: June 2026 — M1 intrabar exit time in fast_backtest
+                  exit_intrabar_m1=False):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -3426,15 +3452,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      DD reset) compare against UTC. Derive the UTC scalar once.
         entry_time_utc = next_candle['timestamp_utc']
 
-        # WHY (gap_fill_parity): Detect weekly/holiday gap bars (time gap > 1 TF
-        #      duration). Daily session reopens (exactly 4h) are NOT gap bars.
-        # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
+        # WHY (gap_fill_parity): Detect weekly/holiday gap bars. A gap is > 1 TF
+        #      duration between consecutive bars. Check BOTH _eb_int vs _eb_int-1
+        #      AND _eb_int-1 vs _eb_int-2, because with shift(1) the entry bar can
+        #      be one bar AFTER the reopen bar (e.g. entry at 04:00, gap between
+        #      Dec 31 20:00 and Jan 2 00:00 is at _eb_int-1 vs _eb_int-2).
+        # CHANGED: June 2026 — SESSIONGAP parity: 2-bar lookback + gap_bar_ts
         _gap_fill_entry = None
         _is_gap_bar = False
+        _gap_bar_ts = None
         if gap_fill_parity and _eb_int > 0:
             try:
-                _dt_gap_fbt = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
-                               pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
                 _tf_min_fbt = 60
                 try:
                     _ts_s_fbt = pd.to_datetime(df['timestamp'].iloc[:11])
@@ -3442,7 +3470,17 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _tf_min_fbt = int(_gaps_fbt.median())
                 except Exception:
                     pass
-                _is_gap_bar = _dt_gap_fbt.total_seconds() > _tf_min_fbt * 60
+                _dt_gap_fbt = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
+                               pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
+                if _dt_gap_fbt.total_seconds() > _tf_min_fbt * 60:
+                    _is_gap_bar = True
+                    _gap_bar_ts = df.iloc[_eb_int]['timestamp']
+                elif _eb_int > 1:
+                    _dt_gap_prev = (pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']) -
+                                    pd.Timestamp(df.iloc[_eb_int - 2]['timestamp']))
+                    if _dt_gap_prev.total_seconds() > _tf_min_fbt * 60:
+                        _is_gap_bar = True
+                        _gap_bar_ts = df.iloc[_eb_int - 1]['timestamp']
             except Exception:
                 pass
 
@@ -3552,6 +3590,21 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 pass
             if _dd_total_halted or _dd_daily_halted:
                 continue
+
+        # WHY (gap_fill_parity): Non-blocked gap bars — the entry bar passed all
+        #      skip checks (NTW, Monday, spread, DD) but is near a gap. The NTW/Monday
+        #      blocks only fire when the entry bar itself is blocked. But with shift(1),
+        #      the entry can be one bar AFTER the blocked reopen bar (e.g. 04:00 on
+        #      Jan 2 Thursday — not blocked, but gap is at 00:00). Find the M1 session-
+        #      open bar and use its time/price instead, matching MT5's first-tick fill.
+        # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
+        if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None and _gap_bar_ts is not None:
+            _gap_fill_entry = _find_gap_fill(
+                data_dir, _gap_bar_ts,
+                _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
+                -1, -1,
+                broker_timezone,
+            )
 
         # WHY (gap_fill_parity): On reopen bars, use M1 session-open price/time.
         # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
@@ -3902,6 +3955,38 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: May 2026 — entry-candle exit_time fidelity
         exit_time   = result.get('exit_time', exit_candle['timestamp'])
 
+        # WHY: exit_intrabar_m1 — refine exit_time from bar timestamp to the
+        #      first M1 bar crossing SL/TP within that candle. MT5 exits at the
+        #      exact tick; Python exits at bar close → desyncs re-entry window.
+        #      Only for SL/TP exits; HARD_CLOSE/END_OF_DATA handled elsewhere.
+        # CHANGED: June 2026 — M1 intrabar exit time in fast_backtest
+        if exit_intrabar_m1 and data_dir and exit_idx > 0:
+            try:
+                _m1b_fbt = _load_m1_for_candle(
+                    data_dir, exit_candle['timestamp'],
+                    candle_minutes if candle_minutes else 240)
+                if _m1b_fbt is not None and not _m1b_fbt.empty:
+                    _ep_fbt = result['exit_price']
+                    _m1_cross_fbt = None
+                    if 'SL' in exit_reason or 'STOP' in exit_reason:
+                        if direction == 'BUY':
+                            _sl_hits = _m1b_fbt[_m1b_fbt['low'].astype(float) <= _ep_fbt]
+                        else:
+                            _sl_hits = _m1b_fbt[_m1b_fbt['high'].astype(float) >= _ep_fbt]
+                        if not _sl_hits.empty:
+                            _m1_cross_fbt = _sl_hits.iloc[0]['timestamp']
+                    elif 'TP' in exit_reason or 'PROFIT' in exit_reason:
+                        if direction == 'BUY':
+                            _tp_hits = _m1b_fbt[_m1b_fbt['high'].astype(float) >= _ep_fbt]
+                        else:
+                            _tp_hits = _m1b_fbt[_m1b_fbt['low'].astype(float) <= _ep_fbt]
+                        if not _tp_hits.empty:
+                            _m1_cross_fbt = _tp_hits.iloc[0]['timestamp']
+                    if _m1_cross_fbt is not None:
+                        exit_time = _m1_cross_fbt
+            except Exception:
+                pass
+
         if direction == "BUY":
             pips = (exit_price - entry_price) / pip_size
         else:
@@ -4123,13 +4208,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _dd_total_halted = True
 
         # Mark occupied candles and update cooldown tracker
-        # CHANGED: June 2026 — for entry-candle exits (exit_idx=0, trade exits on the
-        #   fill bar itself), set occupied_until to one bar BEFORE the exit so the
-        #   exit bar's close signal is free — matching EA g_lastExitEntryBarTime logic
-        #   and run_backtest entry-candle path. Without this, fast_backtest also
-        #   blocked the exit bar's signal, producing one-bar-late re-entries.
+        # WHY: MT5 re-enters on the SAME bar the prior trade closed. Python
+        #      must free the exit bar by setting occupied_until to one bar BEFORE
+        #      the exit — matches run_backtest's offset-aware re-entry parity and
+        #      EA g_lastExitEntryBarTime logic. Without this, fast_backtest blocks
+        #      the exit bar's signal, producing one-bar-late re-entries.
+        # CHANGED: June 2026 — always free exit bar for re-entry (match run_backtest)
         _exit_int = min(_eb_int + exit_idx, len(df) - 1)
-        _occ_int  = max(0, _exit_int - 1) if exit_idx == 0 else _exit_int
+        _occ_int  = max(_eb_int, _exit_int - 1)
         occupied_until_idx = df.index[_occ_int]
         _last_exit_pos_fbt = _exit_int
 
@@ -4503,7 +4589,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           broker_timezone=None,
                           # WHY: gap_fill_parity — forwarded to fast_backtest.
                           # CHANGED: June 2026 — SESSIONGAP parity plumbed to matrix
-                          gap_fill_parity=False):
+                          gap_fill_parity=False,
+                          # WHY: exit_intrabar_m1 — forwarded to fast_backtest.
+                          # CHANGED: June 2026 — M1 intrabar exit plumbed to matrix
+                          exit_intrabar_m1=False):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
@@ -5105,6 +5194,9 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # WHY: Forward gap_fill_parity for SESSIONGAP entries.
                     # CHANGED: June 2026 — SESSIONGAP parity plumbed to matrix
                     gap_fill_parity=gap_fill_parity,
+                    # WHY: Forward exit_intrabar_m1 for M1 exit time parity.
+                    # CHANGED: June 2026 — M1 intrabar exit plumbed to matrix
+                    exit_intrabar_m1=exit_intrabar_m1,
                 )
                 stats = compute_stats(trades)
 
