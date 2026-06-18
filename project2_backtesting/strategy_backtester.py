@@ -585,17 +585,29 @@ def _find_gap_fill(data_dir, bar_ts, tf_minutes, ntw_start, ntw_end, broker_time
         return None
     _m1w = m1_bars.copy()
     _add_timestamp_utc(_m1w, broker_timezone)
-    for _, _row in _m1w.iterrows():
-        try:
-            _utc_h = pd.Timestamp(_row['timestamp_utc']).hour
-            if _in_no_trades_window(_utc_h, ntw_start, ntw_end):
-                continue
-            _m1_ts = pd.Timestamp(_row['timestamp'])
-            if _m1_ts.weekday() == 0 and _m1_ts.hour == 0:
-                continue
-            return (_m1_ts, float(_row['open']))
-        except Exception:
-            continue
+    # WHY (June 2026 — Hot Spot 2): iterrows + per-row pd.Timestamp() is slow.
+    #      Vectorize the window/weekday filter; take the first surviving row.
+    #      Exact same semantics as the scalar _in_no_trades_window loop above.
+    # CHANGED: June 2026 — Hot Spot 2: vectorized M1 scan
+    try:
+        _h_sg  = _m1w['timestamp_utc'].dt.hour.to_numpy()
+        _ts_sg = _m1w['timestamp']
+        _wd_sg = _ts_sg.dt.weekday.to_numpy()
+        _hh_sg = _ts_sg.dt.hour.to_numpy()
+        _end_n = 24 if ntw_end == 0 else ntw_end
+        if ntw_start < 0 or ntw_end < 0 or ntw_start == _end_n:
+            _in_ntw_sg = np.zeros(len(_h_sg), dtype=bool)
+        elif ntw_start < _end_n:
+            _in_ntw_sg = (ntw_start <= _h_sg) & (_h_sg < _end_n)
+        else:
+            _in_ntw_sg = (_h_sg >= ntw_start) | (_h_sg < _end_n)
+        _mask_sg = ~_in_ntw_sg & ~((_wd_sg == 0) & (_hh_sg == 0))
+        _hits_sg = _m1w.index[_mask_sg]
+        if len(_hits_sg):
+            _r_sg = _m1w.loc[_hits_sg[0]]
+            return (pd.Timestamp(_r_sg['timestamp']), float(_r_sg['open']))
+    except Exception:
+        pass
     return None
 
 
@@ -2587,30 +2599,45 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             except Exception:
                 pass
 
-        for future_idx, future_candle in remaining_df.iterrows():
+        # WHY (June 2026 — Hot Spot 1a speedup): iterrows() boxes each row into a
+        #      pd.Series and future_candle.to_dict() rebuilds a dict per row —
+        #      dominant cost when a trade runs hundreds of candles. Fix: convert
+        #      remaining_df to a list of dicts ONCE (one bulk C-level op), then
+        #      loop by position over pre-built dicts. ind.loc / get_loc are kept
+        #      unchanged — df.index is NON-CONTIGUOUS after warmup skip (line
+        #      ~1906: df.iloc[200:] preserves labels 200..N), so iloc/int() would
+        #      be wrong; label-based .loc and get_loc remain correct.
+        # CHANGED: June 2026 — Hot Spot 1a: bulk to_dict replaces iterrows
+        _rem_dicts = remaining_df.to_dict('records')
+        _idx_arr   = remaining_df.index.to_numpy()
+        _rem_n     = len(_rem_dicts)
+        _df_len    = len(df)
+
+        for _k in range(_rem_n):
             # WHY (May 2026 — entry-candle gap fix): If the entry-candle
             #      scan above set exit_price, skip the post-entry loop.
             # CHANGED: May 2026 — entry-candle short-circuit
             if exit_price is not None:
                 break
+            future_idx   = _idx_arr[_k]
+            candle_dict  = _rem_dicts[_k]          # already a dict — no per-row boxing
             candles_held += 1
             pos["candles_held"]        = candles_held
-            pos["highest_since_entry"] = max(pos["highest_since_entry"], float(future_candle["high"]))
-            pos["lowest_since_entry"]  = min(pos["lowest_since_entry"],  float(future_candle["low"]))
+            pos["highest_since_entry"] = max(pos["highest_since_entry"], float(candle_dict["high"]))
+            pos["lowest_since_entry"]  = min(pos["lowest_since_entry"],  float(candle_dict["low"]))
 
-            pnl = (float(future_candle["close"]) - entry_price) / pip_size
+            pnl = (float(candle_dict["close"]) - entry_price) / pip_size
             if trade_dir == "SELL":
                 pnl = -pnl
             pos["current_pnl_pips"] = pnl
 
-            candle_dict = future_candle.to_dict()
             if future_idx in ind.index:
                 candle_dict.update(ind.loc[future_idx].to_dict())
             # CHANGED: June 2026 — supply next-bar open for live-realistic PSAR fill
             #   (Fix 1: exit at next-bar open rather than this bar's close)
             try:
                 _np_pos = df.index.get_loc(future_idx) + 1
-                if _np_pos < len(df):
+                if _np_pos < _df_len:
                     candle_dict["next_open"] = float(df.iloc[_np_pos]["open"])
             except Exception:
                 pass
@@ -2623,10 +2650,10 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             if hard_close_hour >= 0:
                 try:
                     # WHY (June 2026 DST fix): hard_close_hour is GMT-labeled.
-                    _candle_hour = pd.Timestamp(future_candle['timestamp_utc']).hour
+                    _candle_hour = pd.Timestamp(candle_dict['timestamp_utc']).hour
                     if _candle_hour == hard_close_hour:
-                        exit_price  = float(future_candle["open"])
-                        exit_time   = future_candle["timestamp"]
+                        exit_price  = float(candle_dict["open"])
+                        exit_time   = candle_dict["timestamp"]
                         exit_reason = "HARD_CLOSE_HOUR"
                         # CHANGED: June 2026 — offset-aware re-entry parity (hard close)
                         try:
@@ -2647,7 +2674,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
             result = exit_strategy.on_new_candle(candle_dict, pos)
             if result:
                 exit_price  = result["exit_price"]
-                exit_time   = future_candle["timestamp"]
+                exit_time   = candle_dict["timestamp"]
                 exit_reason = result["reason"]
                 # CHANGED: June 2026 — offset-aware re-entry parity. MT5 re-enters on
                 #   the SAME bar the prior trade closed; Python blocked through the exit
