@@ -3836,6 +3836,51 @@ def fast_backtest(df, ind, rules, exit_strategy,
             except Exception:
                 pass
 
+        # WHY: Entry-candle M1 simulation for trailing/breakeven exits.
+        #      The entry-candle scan above EXCLUDES trailing exits (look-ahead bias
+        #      at bar OHLC level). But MT5 fires breakeven→trail→SL per TICK, often
+        #      exiting within 20 seconds of entry (e.g. 16:00:00 → 16:00:20).
+        #      With M1 data we can safely check the entry candle: filter to M1 bars
+        #      AFTER entry_time (no look-ahead), run on_new_candle on each.
+        # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
+        if _use_m1_exit_sim and result is None and _n_future > 0:
+            try:
+                _ec_m1 = _load_m1_for_candle(
+                    data_dir, future_candles.iloc[0]['timestamp'],
+                    candle_minutes if candle_minutes else 240)
+                if _ec_m1 is not None and not _ec_m1.empty:
+                    _entry_ts_pd = pd.Timestamp(entry_time)
+                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
+                    pos_info['candles_held'] = 0
+                    for _eci in range(len(_ec_m1_after)):
+                        _ecr = _ec_m1_after.iloc[_eci]
+                        _ech = float(_ecr['high'])
+                        _ecl = float(_ecr['low'])
+                        _ecc = float(_ecr['close'])
+                        if _ech > pos_info['highest_since_entry']:
+                            pos_info['highest_since_entry'] = _ech
+                        if _ecl < pos_info['lowest_since_entry']:
+                            pos_info['lowest_since_entry'] = _ecl
+                        pos_info['current_pnl_pips'] = (
+                            (_ecc - entry_price) / pip_size if direction == "BUY"
+                            else (entry_price - _ecc) / pip_size)
+                        _ec_m1_dict = {
+                            'open': float(_ecr['open']), 'high': _ech,
+                            'low': _ecl, 'close': _ecc,
+                            'timestamp': _ecr['timestamp'],
+                        }
+                        try:
+                            step_result = exit_strategy.on_new_candle(_ec_m1_dict, pos_info)
+                        except Exception:
+                            step_result = None
+                        if step_result:
+                            result = step_result
+                            result['exit_time'] = _ecr['timestamp']
+                            exit_idx = 0
+                            break
+            except Exception:
+                pass
+
         for ci in range(1, _n_future):
             # WHY (May 2026 — entry-candle gap fix): If the entry-candle scan
             #      above already set result, skip the post-entry loop —
