@@ -1949,6 +1949,33 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     else:
                         _use_offsets = _checkbox_offsets
 
+                    # WHY: Exit strategy class filter — only test exits matching
+                    #      the selected class. "All" = None (use all defaults).
+                    # CHANGED: June 2026 — exit strategy class filter
+                    _exit_filter_sel = _exit_filter_var.get() if _exit_filter_var else "All"
+                    _filtered_exits = None
+                    if _exit_filter_sel and _exit_filter_sel != "All":
+                        try:
+                            from project2_backtesting.exit_strategies import get_default_exit_strategies
+                            _all_exits = get_default_exit_strategies(
+                                pip_size=_cfg_pip_size, entry_tf=tf)
+                            _filtered_exits = [
+                                e for e in _all_exits
+                                if getattr(e, 'name', type(e).__name__) == _exit_filter_sel
+                            ]
+                            if not _filtered_exits:
+                                _filtered_exits = None
+                                output_text.insert(tk.END,
+                                    f"⚠ Exit filter '{_exit_filter_sel}' matched 0 exits — using all\n")
+                                output_text.see(tk.END)
+                            else:
+                                output_text.insert(tk.END,
+                                    f"🎯 Exit filter: {_exit_filter_sel} ({len(_filtered_exits)} variant(s))\n")
+                                output_text.see(tk.END)
+                        except Exception as _ef_err:
+                            print(f"[EXIT-FILTER] error: {_ef_err}")
+                            _filtered_exits = None
+
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -1957,6 +1984,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         use_safety_stops=use_safety,
                         max_trades_per_day=_a42_limit,
                         combine_all_rules=_a45_combine,
+                        exit_strategies=_filtered_exits,
                         spread_pips=_cfg_spread,
                         commission_pips=_cfg_commission,
                         pip_size=_cfg_pip_size,
@@ -2043,6 +2071,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      On H4+ it fills at M1 session-open matching MT5.
                         # CHANGED: June 2026 — auto-enable SESSIONGAP parity
                         gap_fill_parity=_a48_use_cfg,
+                        # WHY: Auto-enable M1 intrabar exit when config is loaded.
+                        #      Refines exit_time to first M1 bar crossing SL/TP,
+                        #      matching MT5's tick-level exit. Fixes LONG_HOLD_BLOCK.
+                        # CHANGED: June 2026 — auto-enable M1 intrabar exit
+                        exit_intrabar_m1=_a48_use_cfg,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -4532,6 +4565,59 @@ def build_panel(parent):
         text="    OFF = test each rule individually (faster)\n"
              "    ON  = also test every OR-combination of selected rules\n"
              "    ⚠️  5 rules = 31 combos × 12 exits = 372 tests. 8 rules = 3,060 tests.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Exit strategy filter ──────────────────────────────────────────────────
+    # WHY: Running all 20 exit strategies on every rule takes 18-20x longer
+    #      than needed for parity testing (where you only care about one exit).
+    #      This dropdown filters the exit list by class name. "All" = default.
+    # CHANGED: June 2026 — exit strategy class filter
+    global _exit_filter_var
+
+    _exit_filter_frame = tk.Frame(panel, bg="white", pady=6)
+    _exit_filter_frame.pack(fill="x", padx=20)
+
+    _exit_filter_row = tk.Frame(_exit_filter_frame, bg="white")
+    _exit_filter_row.pack(fill="x")
+
+    tk.Label(
+        _exit_filter_row,
+        text="🎯 Exit Strategy:",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+    ).pack(side=tk.LEFT)
+
+    _exit_filter_var = tk.StringVar(value="All")
+    _exit_filter_options = [
+        "All",
+        "ATR Only",
+        "ATR Fixed SL/TP",
+        "ATR BE Trail",
+        "PSAR Exit",
+        "Trailing Stop",
+        "ATR + Trailing",
+        "Time-Based",
+        "Indicator Exit",
+        "Fixed SL/TP",
+        "Hybrid",
+    ]
+    _exit_filter_combo = ttk.Combobox(
+        _exit_filter_row,
+        textvariable=_exit_filter_var,
+        values=_exit_filter_options,
+        state="readonly",
+        width=22,
+    )
+    _exit_filter_combo.pack(side=tk.LEFT, padx=10)
+
+    tk.Label(
+        _exit_filter_frame,
+        text="    Filter which exit strategies to test. 'All' runs all ~20 variants.\n"
+             "    Picking one class (e.g. 'ATR Only') runs only its 2 variants — ~10x faster.",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
