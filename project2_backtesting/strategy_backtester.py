@@ -3738,6 +3738,20 @@ def fast_backtest(df, ind, rules, exit_strategy,
             _check_entry_candle_sltp,
             TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit,
         )
+        try:
+            from project2_backtesting.exit_strategies import HybridExit as _HybridExit
+        except ImportError:
+            _HybridExit = None
+        # WHY: Trailing/breakeven exits need intra-bar price simulation to match
+        #      MT5's tick-level management. M1 bars within each H4 candle let us
+        #      simulate the breakeven→trail→SL sequence that fires in seconds on MT5
+        #      but takes hours at bar-level in Python.
+        # CHANGED: June 2026 — M1 intra-bar exit simulation for trailing exits
+        _m1_exit_types = (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
+        if _HybridExit:
+            _m1_exit_types = _m1_exit_types + (_HybridExit,)
+        _use_m1_exit_sim = (exit_intrabar_m1 and data_dir and
+                            isinstance(exit_strategy, _m1_exit_types))
         _entry_scan_eligible = not isinstance(
             exit_strategy,
             (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
@@ -3839,6 +3853,54 @@ def fast_backtest(df, ind, rules, exit_strategy,
             # CHANGED: April 2026 — same-bar exit look-ahead bias fix
             pos_info['candles_held'] = ci
             pos_info['minutes_held'] = ci * candle_minutes
+
+            # WHY: M1 intra-bar exit simulation for trailing/breakeven exits.
+            #      MT5 fires breakeven/trail management per TICK — a tight BE trail
+            #      can enter and exit within 20 seconds. Python's on_new_candle fires
+            #      once per H4 bar (4 hours). This loads M1 bars within the H4 candle
+            #      and runs on_new_candle on each, simulating the price sequence that
+            #      triggers breakeven → trail → SL within seconds.
+            # CHANGED: June 2026 — M1 intra-bar exit simulation
+            if _use_m1_exit_sim:
+                try:
+                    _m1_sim = _load_m1_for_candle(
+                        data_dir, future_candles.iloc[ci]['timestamp'],
+                        candle_minutes if candle_minutes else 240)
+                except Exception:
+                    _m1_sim = None
+                if _m1_sim is not None and not _m1_sim.empty:
+                    _m1_exited = False
+                    for _m1i in range(len(_m1_sim)):
+                        _m1r = _m1_sim.iloc[_m1i]
+                        _m1h = float(_m1r['high'])
+                        _m1l = float(_m1r['low'])
+                        _m1c = float(_m1r['close'])
+                        if _m1h > pos_info['highest_since_entry']:
+                            pos_info['highest_since_entry'] = _m1h
+                        if _m1l < pos_info['lowest_since_entry']:
+                            pos_info['lowest_since_entry'] = _m1l
+                        pos_info['current_pnl_pips'] = (
+                            (_m1c - entry_price) / pip_size if direction == "BUY"
+                            else (entry_price - _m1c) / pip_size)
+                        _m1_dict = {
+                            'open': float(_m1r['open']), 'high': _m1h,
+                            'low': _m1l, 'close': _m1c,
+                            'timestamp': _m1r['timestamp'],
+                        }
+                        try:
+                            step_result = exit_strategy.on_new_candle(_m1_dict, pos_info)
+                        except Exception:
+                            step_result = None
+                        if step_result:
+                            result = step_result
+                            result['exit_time'] = _m1r['timestamp']
+                            exit_idx = ci
+                            _m1_exited = True
+                            break
+                    if _m1_exited:
+                        break
+                    continue  # M1 covered this bar — skip H4-level on_new_candle
+
             close = _closes_np[ci]
             high  = _highs_np[ci]
             low   = _lows_np[ci]
