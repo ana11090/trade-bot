@@ -2038,6 +2038,11 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      filters compare on the right clock. None → default.
                         # CHANGED: June 2026 — broker_timezone pass-through
                         broker_timezone=_firm_broker_tz if _a48_use_cfg else None,
+                        # WHY: Auto-enable gap_fill_parity when config is loaded.
+                        #      On M5 entry TFs _is_gap_bar is always False (no-op).
+                        #      On H4+ it fills at M1 session-open matching MT5.
+                        # CHANGED: June 2026 — auto-enable SESSIONGAP parity
+                        gap_fill_parity=_a48_use_cfg,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
