@@ -2078,6 +2078,14 @@ def build_panel(parent):
     filt_row = tk.Frame(panel, bg=BG)
     filt_row.pack(fill="x", padx=10, pady=(0, 4))
 
+    # WHY: After saving new rules, the grid doesn't auto-update. This button
+    #      reloads the full strategy list from disk so newly saved rules appear.
+    # CHANGED: June 2026 — refresh button for batch grid
+    tk.Button(filt_row, text="🔄 Refresh", font=("Segoe UI", 9, "bold"),
+              bg=MIDGREY, fg="white", relief="raised", cursor="hand2",
+              padx=6, pady=1,
+              command=lambda: _populate_grid(_cur_source)).pack(side=tk.LEFT, padx=(0, 10))
+
     tk.Label(filt_row, text="Stage:", bg=BG, fg=DARK,
              font=("Segoe UI", 9)).pack(side=tk.LEFT)
     _f_stage = ttk.Combobox(filt_row, width=10, state="readonly",
@@ -2141,13 +2149,6 @@ def build_panel(parent):
     _nostats_lbl = tk.Label(filt_row, text="", bg=BG, fg="#888",
                              font=("Segoe UI", 8))
     _nostats_lbl.pack(side=tk.LEFT, padx=4)
-
-    # WHY: After saving new rules, the grid doesn't auto-update. This button
-    #      reloads the full strategy list from disk so newly saved rules appear.
-    # CHANGED: June 2026 — refresh button for batch grid
-    tk.Button(filt_row, text="🔄", font=("Segoe UI", 10), bg=BG,
-              relief="flat", cursor="hand2", padx=4,
-              command=lambda: _populate_grid(_cur_source)).pack(side=tk.RIGHT, padx=4)
 
     # CHANGED: June 2026 — grid + log in a vertical PanedWindow so the log box is drag-resizable
     # WHY: fixed-height log can't be resized; PanedWindow sash lets you drag to grow/shrink.
