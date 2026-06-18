@@ -794,6 +794,13 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
     if len(win_rules) == 1:
         # Single rule — simple AND
         rule = win_rules[0]
+        # WHY: A rule can use the same indicator in multiple conditions
+        #      (e.g. H4_mt5_adx_21 > 27 AND H4_mt5_adx_21 <= 35). The read_code
+        #      contains `double val_...` — emitting it twice causes a MQL5
+        #      compile error "identifier already declared". Track which var_names
+        #      have been read and only emit read_code on the first occurrence.
+        # CHANGED: June 2026 — dedup reads in single-rule EA path
+        _emitted_vars_sr = set()
         for ci, cond in enumerate(rule.get('conditions', []), 1):
             feat = cond['feature']
             op   = cond.get('operator', '>')
@@ -807,9 +814,11 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
             #      they need to become single {/} in the final MQL5 output.
             # CHANGED: June 2026 — brace unescape on read_code (Section B fix)
             _read_clean = mql["read_code"].replace('{{', '{').replace('}}', '}')
+            _read_line = f'   {_read_clean}\n' if var_n not in _emitted_vars_sr else ''
+            _emitted_vars_sr.add(var_n)
             condition_checks.append(
                 f'   // Condition {ci}: {feat} {op} {cond.get("value", 0):.4f}\n'
-                f'   {_read_clean}\n'
+                f'{_read_line}'
                 f'   if(!({cond_expr})) entrySignal = false;\n'
             )
     else:
