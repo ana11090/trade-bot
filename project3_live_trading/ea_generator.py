@@ -2253,9 +2253,10 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
         # CHANGED: June 2026 — declare TrailDistance which the trailing logic uses.
         #   HybridExit references TrailDistance at line ~2138 but never declared it
         #   → undeclared-identifier compile error. Same pattern as ATRBreakevenTrail.
+        # CHANGED: June 2026 — removed TrailDistance (now declared by trailing inputs
+        #   block at ~L2630 for all _has_trailing exits including HybridExit)
         exit_inputs = (
             f'input double BreakevenPips   = {breakeven_pips};            // Move SL to entry after this profit\n'
-            f'input double TrailDistance   = {trail_distance_pips};       // Trailing distance (pips)\n'
             f'input int    MaxHoldCandles  = {max_candles};               // Force close after N candles\n'
         )
         exit_globals = (
