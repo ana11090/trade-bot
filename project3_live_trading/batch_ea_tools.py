@@ -536,7 +536,7 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         with open(ini_path, 'w', encoding='utf-8') as f:
             f.write(ini)
         bat_lines.append('echo === RUNNING %s ===' % name)
-        bat_lines.append('start "" /wait "%s" /config:"%s"' % (exe, ini_path))
+        bat_lines.append('start "" /min /wait "%s" /config:"%s"' % (exe, ini_path))
         bat_lines.append('echo === DONE %s ===' % name)
         made += 1
 
