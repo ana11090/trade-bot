@@ -5010,6 +5010,52 @@ def build_panel(parent):
     )
     _stop_button.pack(side=tk.LEFT, padx=(0, 10))
 
+    # WHY: Indicator caches (.cache_*.parquet) persist old indicator values.
+    #      When an indicator algorithm changes (e.g. _mt5_mfi replacing ta library),
+    #      stale caches silently serve old values. This button deletes all caches
+    #      so indicators recompute from scratch on the next backtest run.
+    # CHANGED: June 2026 — Clear Cache button
+    def _clear_indicator_caches():
+        import glob
+        deleted = 0
+        # Search common data directories for cache files
+        _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _search_dirs = [
+            os.path.join(_repo, 'data'),
+            os.path.join(_repo, 'data', 'sources'),
+        ]
+        # Also add current source path's directory
+        if _current_source_path[0] and _current_source_path[0] != "__ALL_SOURCES__":
+            _search_dirs.append(os.path.dirname(_current_source_path[0]))
+        for d in _search_dirs:
+            if not os.path.isdir(d):
+                continue
+            # Search this dir and one level of subdirs
+            for pattern in [
+                os.path.join(d, '.cache_*.parquet'),
+                os.path.join(d, '*', '.cache_*.parquet'),
+            ]:
+                for f in glob.glob(pattern):
+                    try:
+                        os.remove(f)
+                        deleted += 1
+                    except Exception:
+                        pass
+        if _output_text:
+            _output_text.config(state=tk.NORMAL)
+            _output_text.insert(tk.END,
+                f"🗑 Deleted {deleted} indicator cache file(s). "
+                f"Indicators will recompute on next Run Backtest.\n")
+            _output_text.see(tk.END)
+            _output_text.config(state=tk.DISABLED)
+
+    tk.Button(
+        _a26_run_row, text="🗑 Clear Cache",
+        command=_clear_indicator_caches,
+        bg="#6c757d", fg="white", font=("Arial", 11),
+        relief=tk.FLAT, cursor="hand2", padx=15, pady=12,
+    ).pack(side=tk.LEFT, padx=(0, 10))
+
     # WHY (Phase A.40b): Patch the run-button reference into the A.40b
     #      refs dict now that it exists. Used only by the optional
     #      auto-run path in apply_pending_rule_selection.
