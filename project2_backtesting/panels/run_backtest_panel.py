@@ -5020,34 +5020,33 @@ def build_panel(parent):
         deleted = 0
         # Search common data directories for cache files
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        _search_dirs = [
-            os.path.join(_repo, 'data'),
-            os.path.join(_repo, 'data', 'sources'),
-        ]
+        _search_dirs = set()
+        _search_dirs.add(os.path.join(_repo, 'data'))
         # Also add current source path's directory
         if _current_source_path[0] and _current_source_path[0] != "__ALL_SOURCES__":
-            _search_dirs.append(os.path.dirname(_current_source_path[0]))
+            _search_dirs.add(os.path.dirname(_current_source_path[0]))
         for d in _search_dirs:
             if not os.path.isdir(d):
                 continue
-            # Search this dir and one level of subdirs
-            for pattern in [
-                os.path.join(d, '.cache_*.parquet'),
-                os.path.join(d, '*', '.cache_*.parquet'),
-            ]:
-                for f in glob.glob(pattern):
-                    try:
-                        os.remove(f)
-                        deleted += 1
-                    except Exception:
-                        pass
+            # Recursive search — finds caches at any depth
+            for f in glob.glob(os.path.join(d, '**', '.cache_*.parquet'), recursive=True):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception:
+                    pass
+            # Also check the directory itself
+            for f in glob.glob(os.path.join(d, '.cache_*.parquet')):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception:
+                    pass
         if _output_text:
-            _output_text.config(state=tk.NORMAL)
             _output_text.insert(tk.END,
                 f"🗑 Deleted {deleted} indicator cache file(s). "
                 f"Indicators will recompute on next Run Backtest.\n")
             _output_text.see(tk.END)
-            _output_text.config(state=tk.DISABLED)
 
     tk.Button(
         _a26_run_row, text="🗑 Clear Cache",
