@@ -1637,8 +1637,13 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 pass
 
         trades.append({
-            'entry_time':   str(entry_time),
-            'exit_time':    str(exit_time),
+            # WHY: pd.Timestamp() converts numpy.datetime64 to string with
+            #      space separator ('2026-01-14 16:00:00') matching the
+            #      iterative path. Raw str() gives ISO T-separator which
+            #      broke batch compare entry_time parsing.
+            # CHANGED: June 2026 — consistent timestamp format (vectorized path)
+            'entry_time':   str(pd.Timestamp(entry_time)),
+            'exit_time':    str(pd.Timestamp(exit_time)),
             'entry_price':  round(float(entry_price), 5),
             'exit_price':   round(float(exit_price), 5),
             'direction':    direction,
@@ -1674,15 +1679,13 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         })
 
         # CHANGED: June 2026 — offset-aware re-entry parity (vectorized path), to match
-        #   the detailed path + the EA: free the exit bar for re-entry but never earlier
-        #   than this trade's own entry bar (_eb). Was df.index[exit_pos] → blocked
-        #   through the exit bar (one bar late).
+        #   the detailed path + the EA: free the exit bar for re-entry. When exit is on
+        #   the entry candle (exit_pos == _eb), free the entry bar too so the next signal
+        #   at that bar can fire. Mirrors the fast_backtest fix.
         _free_pos = exit_pos - 1
-        if _free_pos < _eb:
-            _free_pos = _eb
         if _free_pos < 0:
             _free_pos = 0
-        occupied_until_idx = df.index[_free_pos]
+        occupied_until_idx = df.index[_free_pos] if _free_pos >= 0 else -1
 
     return trades
 
@@ -3505,7 +3508,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
     # CHANGED: April 2026 — vectorized FixedSLTP in fast_backtest
     # CHANGED: April 2026 — exclude ATRFixedSLTP from vectorized path
     from project2_backtesting.exit_strategies import FixedSLTP, ATRFixedSLTP
-    if isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP):
+    # WHY: the vectorized FixedSLTP path has NONE of the parity infrastructure
+    #      (gap fill, session-gap M1, sub-bar closure, NTW, Monday blackout) that
+    #      lives in the main loop below. In parity mode, skip it so FixedSLTP gets
+    #      the same exit logic as every other strategy. Non-parity keeps the fast path.
+    # CHANGED: June 2026 — route FixedSLTP through full loop when gap_fill_parity
+    if (isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP)
+            and not gap_fill_parity):
         return _vectorized_fixed_sltp_exits(
             df, signal_indices, signal_rule_ids, rules,
             exit_strategy, direction, pip_size,
@@ -3710,6 +3719,36 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
         # WHY (gap_fill_parity): On reopen bars, use M1 session-open price/time.
         # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
+        # WHY (June 2026 v3): Two gap patterns exist:
+        #   A) No M1 bar at 00:00 → first M1 bar is at 01:05 (delay from H4 open)
+        #   B) Synthetic M1 bar at 00:00 → gap between 00:00 and 01:05 (intra-M1 gap)
+        #   Check BOTH: first-bar delay from H4 open AND gaps between consecutive M1 bars.
+        # CHANGED: June 2026 — sub-bar market closure detection v3 (combined)
+        if (_gap_fill_entry is None and gap_fill_parity and data_dir
+                and pd.Timestamp(entry_time).hour == 0):
+            try:
+                _m1_check = _load_m1_for_candle(data_dir, entry_time,
+                    _tf_min_fbt if '_tf_min_fbt' in dir() else 240)
+                if _m1_check is not None and len(_m1_check) > 0:
+                    _m1_ts_arr = pd.to_datetime(_m1_check['timestamp'])
+                    _entry_ts_ck = pd.Timestamp(entry_time)
+                    # Pattern A: first M1 bar is delayed from H4 bar open
+                    _first_m1_ts = _m1_ts_arr.iloc[0]
+                    _delay_min = (_first_m1_ts - _entry_ts_ck).total_seconds() / 60
+                    if _delay_min > 5:
+                        _gap_fill_entry = (_first_m1_ts,
+                                          float(_m1_check.iloc[0]['open']))
+                    # Pattern B: gap between consecutive M1 bars (synthetic bar at 00:00)
+                    elif len(_m1_check) > 1:
+                        _m1_gaps = _m1_ts_arr.diff()
+                        _big_gap = _m1_gaps[_m1_gaps > pd.Timedelta(minutes=30)]
+                        if len(_big_gap) > 0:
+                            _reopen_idx = _big_gap.index[0]
+                            _reopen_row = _m1_check.loc[_reopen_idx]
+                            _gap_fill_entry = (pd.Timestamp(_reopen_row['timestamp']),
+                                              float(_reopen_row['open']))
+            except Exception:
+                pass
         if _gap_fill_entry is not None:
             entry_price = _gap_fill_entry[1]
             entry_time = _gap_fill_entry[0]
