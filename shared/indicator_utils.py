@@ -61,6 +61,54 @@ def _mt5_rsi(close, period):
     return rsi
 
 
+def _mt5_mfi(high, low, close, volume, period=14):
+    """MFI matching MT5's iMFI exactly — rolling sum of positive/negative money flow.
+
+    WHY: Python's ta.volume.MFIIndicator may differ from MT5's iMFI in edge cases
+         (TP == prev TP handling, NaN propagation, min_periods). This manual
+         implementation matches iMFI's algorithm:
+         1. TP = (H + L + C) / 3
+         2. MF = TP × Volume
+         3. If TP > TP[1] → positive flow; if TP < TP[1] → negative flow;
+            if TP == TP[1] → neither (flow is zero, matching MT5 behavior)
+         4. Sum positive/negative flows over `period` bars
+         5. MFI = 100 - 100 / (1 + pos_sum / neg_sum)
+    CHANGED: June 2026 — MT5-parity MFI (replaces ta library)
+    """
+    h = np.asarray(high, dtype=np.float64)
+    l = np.asarray(low, dtype=np.float64)
+    c = np.asarray(close, dtype=np.float64)
+    v = np.asarray(volume, dtype=np.float64)
+    n = len(h)
+
+    tp = (h + l + c) / 3.0
+    mf = tp * v
+
+    pos_flow = np.zeros(n)
+    neg_flow = np.zeros(n)
+    for i in range(1, n):
+        if tp[i] > tp[i - 1]:
+            pos_flow[i] = mf[i]
+        elif tp[i] < tp[i - 1]:
+            neg_flow[i] = mf[i]
+        # TP == TP[i-1]: neither — matches MT5 iMFI behavior
+
+    # Rolling sum over `period` bars
+    out = np.full(n, np.nan)
+    for i in range(period, n):
+        ps = np.sum(pos_flow[i - period + 1:i + 1])
+        ns = np.sum(neg_flow[i - period + 1:i + 1])
+        if ns > 0:
+            out[i] = 100.0 - 100.0 / (1.0 + ps / ns)
+        elif ps > 0:
+            out[i] = 100.0
+        else:
+            out[i] = 50.0  # no flow either way
+
+    idx = high.index if hasattr(high, 'index') else range(n)
+    return pd.Series(out, index=idx)
+
+
 def _mt5_atr(high, low, close, period):
     """ATR using Wilder's smoothing — matches MT5 iATR."""
     tr1 = high - low
@@ -363,13 +411,10 @@ def compute_all_indicators(candles_df, prefix=""):
     ).chaikin_money_flow()
 
     # Money Flow Index
-    _ind[f'{prefix}mfi'] = ta.volume.MFIIndicator(
-        high=candles_df['high'],
-        low=candles_df['low'],
-        close=candles_df['close'],
-        volume=candles_df['volume'],
-        window=14
-    ).money_flow_index()
+    # CHANGED: June 2026 — use _mt5_mfi for MT5 parity (was ta.volume.MFIIndicator)
+    _ind[f'{prefix}mfi'] = _mt5_mfi(
+        candles_df['high'], candles_df['low'],
+        candles_df['close'], candles_df['volume'], period=14)
 
     # GROUP M — Price Action & Candle Structure (8 features)
     _ind[f'{prefix}candle_body'] = abs(candles_df['close'] - candles_df['open'])
@@ -938,9 +983,10 @@ def compute_indicators(df, only=None, prefix="", skip_smart=False):
         _ind[f'{prefix}cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
             high=df['high'], low=df['low'], close=df['close'],
             volume=df['volume'], window=20).chaikin_money_flow()
-        _ind[f'{prefix}mfi'] = ta.volume.MFIIndicator(
-            high=df['high'], low=df['low'], close=df['close'],
-            volume=df['volume'], window=14).money_flow_index()
+        # CHANGED: June 2026 — use _mt5_mfi for MT5 parity (was ta.volume.MFIIndicator)
+        _ind[f'{prefix}mfi'] = _mt5_mfi(
+            df['high'], df['low'], df['close'],
+            df['volume'], period=14)
 
     # GROUP M — Price Action
     if only is None or 'price_action' in only:
