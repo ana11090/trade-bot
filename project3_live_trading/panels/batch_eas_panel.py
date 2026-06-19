@@ -1082,6 +1082,30 @@ def _write_debug_dump():
         if _clogs:
             shutil.copy(_clogs[0], os.path.join(dump, "condlog.csv"))
             _d("Copied condlog: %s" % _clogs[0])
+            # WHY: Parse condlog to find ALL-PASS bars (MT5's actual signals).
+            #      Save to mt5_signal_override.json so the Python backtester can
+            #      OPT IN (env MT5_SIGNAL_OVERRIDE) to supplement its signal mask.
+            # CHANGED: June 2026 — condlog signal override for parity (opt-in consumer)
+            try:
+                _cl_bars = {}
+                with open(_clogs[0], encoding='utf-8-sig') as _clf_ov:
+                    for _clr_ov in _csv.DictReader(_clf_ov):
+                        _bt_ov = _clr_ov.get('bar_time', '').strip()
+                        _pf_ov = _clr_ov.get('pass_fail', '').strip().upper()
+                        _cl_bars.setdefault(_bt_ov, []).append(_pf_ov)
+                _all_pass_ov = sorted([bt for bt, pfs in _cl_bars.items()
+                                       if all(p == 'PASS' for p in pfs)])
+                _repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__))))
+                _ov_path = os.path.join(_repo_root,
+                    'project2_backtesting', 'outputs', 'mt5_signal_override.json')
+                with open(_ov_path, 'w', encoding='utf-8') as _ovf:
+                    json.dump({'signal_bars': _all_pass_ov,
+                               'source': str(_clogs[0]),
+                               'generated': str(datetime.datetime.now())}, _ovf, indent=2)
+                _d("MT5 signal override: %d ALL-PASS bars -> %s" % (len(_all_pass_ov), _ov_path))
+            except Exception as _ov_err:
+                _d("MT5 signal override failed: %r" % _ov_err)
         else:
             _d("condlog: not found (run with DebugConditions=true first)")
         # CHANGED 2026-06-15 — select the AGENT log by CONTENT, not mtime.

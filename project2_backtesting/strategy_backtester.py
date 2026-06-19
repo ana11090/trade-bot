@@ -3183,51 +3183,80 @@ def fast_backtest(df, ind, rules, exit_strategy,
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
     # ── DIAGNOSTIC: indicator value dump for parity debugging ──
-    # REMOVE after parity is confirmed.
+    # CHANGED: June 2026 — dynamic diagnostic from rule conditions + MT5 override
     _diag_rule_name = ''
     if rules:
         _diag_rule_name = rules[0].get('rule_id', rules[0].get('_rule_combo', ''))
-    _diag_bars = [
-        '2026-03-05 11:00', '2026-03-06 18:00', '2026-03-09 00:00',
-        '2026-03-11 19:00', '2026-03-12 10:00',
-    ]
+    _diag_features = set()
+    _diag_conditions = []
+    for _r in (rules or []):
+        for _cond in _r.get('conditions', []):
+            feat = _cond.get('feature', '')
+            _diag_features.add(feat)
+            _diag_conditions.append((feat, _cond.get('operator', '>'), _cond.get('value', 0)))
+    _diag_bars = []
+    try:
+        _diag_ov_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'outputs', 'mt5_signal_override.json')
+        if os.path.isfile(_diag_ov_path):
+            with open(_diag_ov_path) as _diag_ovf:
+                _diag_ov = json.load(_diag_ovf)
+            _diag_bars = [b.replace('.', '-', 2) if '.' in b[:4] else b
+                          for b in _diag_ov.get('signal_bars', [])]
+    except Exception:
+        pass
     _diag_cols = [c for c in ind.columns if any(
-        x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28',
-                          'plus_di', 'minus_di']
+        c.endswith(f) or f in c for f in _diag_features
     )]
-    if _diag_cols:
+    if _diag_cols and _diag_bars:
         try:
-            import os as _diag_os
-            _diag_path = _diag_os.path.join(
-                _diag_os.path.dirname(_diag_os.path.abspath(__file__)),
+            _diag_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
                 'outputs', 'diag_indicator_values.txt')
-            with open(_diag_path, 'a') as _df:  # APPEND mode
-                _df.write(f"\n{'='*60}\n")
-                _df.write(f"Rule: {_diag_rule_name}\n")
-                _df.write(f"entry_tf: {entry_tf}  direction: {direction}\n")
-                _df.write(f"exit: {exit_strategy.__class__.__name__ if exit_strategy else '?'}\n")
-                _df.write(f"ind columns ({len(ind.columns)}): {sorted(_diag_cols)}\n")
-                _df.write(f"df rows: {len(df)}  ind rows: {len(ind)}\n\n")
-                _found_any = False
+            with open(_diag_path, 'w') as _df:
+                _df.write("INDICATOR DIAGNOSTIC — Python vs MT5 signal bars\n")
+                _df.write("=" * 70 + "\n")
+                _df.write("Rule: %s\n" % _diag_rule_name)
+                _df.write("entry_tf: %s  direction: %s\n" % (entry_tf, direction))
+                _df.write("Conditions: %s\n" % _diag_conditions)
+                _df.write("MT5 signal bars: %d\n" % len(_diag_bars))
+                # NOTE: this diagnostic runs BEFORE the rule mask is applied, so the
+                #       per-condition check below (computed from ind) is the
+                #       authoritative "would Python signal here?" — the real
+                #       signal_mask is all-False at this point and would mislead.
+                _df.write("\n")
                 for _db in _diag_bars:
                     _db_ts = pd.Timestamp(_db)
                     _mask = df['timestamp'] == _db_ts
                     _idx = df.index[_mask]
                     if len(_idx) > 0:
                         _i = _idx[0]
-                        _df.write(f"Bar {_db}:\n")
-                        for _dc in sorted(_diag_cols):
-                            _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
-                            _df.write(f"  {_dc:>30s} = {_val}\n")
+                        _cond_results = []
+                        for _feat, _op, _thresh in _diag_conditions:
+                            _val = ind.at[_i, _feat] if _feat in ind.columns and _i in ind.index else float('nan')
+                            if pd.notna(_val):
+                                _passes = ((_val > _thresh) if _op == '>' else
+                                           (_val >= _thresh) if _op == '>=' else
+                                           (_val < _thresh) if _op == '<' else
+                                           (_val <= _thresh) if _op == '<=' else True)
+                            else:
+                                _passes = False
+                            _cond_results.append((_feat, _op, _thresh, _val, _passes))
+                        _all_pass = bool(_cond_results) and all(_cr[4] for _cr in _cond_results)
+                        _marker = "PY would signal" if _all_pass else "PY would miss"
+                        _df.write("Bar %s  [%s]\n" % (_db, _marker))
+                        for _feat, _op, _thresh, _val, _passes in _cond_results:
+                            if pd.notna(_val):
+                                _pf = "PASS" if _passes else "FAIL"
+                                _df.write("  %25s = %10.4f  %s %s  -> %s\n" % (_feat, _val, _op, _thresh, _pf))
+                            else:
+                                _df.write("  %25s = NaN\n" % _feat)
                         _df.write("\n")
-                        _found_any = True
                     else:
-                        _df.write(f"Bar {_db}: NOT FOUND in df\n")
-                if not _found_any:
-                    _df.write("NO BARS MATCHED — check timestamps\n")
-                    _df.write(f"First 5 df timestamps: {list(df['timestamp'].head())}\n")
+                        _df.write("Bar %s: NOT FOUND in df\n\n" % _db)
         except Exception as _de:
-            print(f"[DIAG] ERROR: {_de}")
+            print("[DIAG] ERROR: %s" % _de)
     # ── END DIAGNOSTIC ──
 
     # WHY (Phase A.24): same numpy-based mask building as run_backtest
@@ -3397,6 +3426,48 @@ def fast_backtest(df, ind, rules, exit_strategy,
             )
 
     signal_indices = df.index[signal_mask].tolist()
+
+    # WHY: MT5's internal H4 bars may differ slightly from the CSV Python uses,
+    #      causing indicator values (ADX, MFI) to diverge by 1-3 points at specific
+    #      bars. When mt5_signal_override.json exists, add its ALL-PASS bars to
+    #      Python's signal mask.
+    # SAFEGUARD: this makes Python ADOPT MT5's signals (not independent) and the
+    #      override file is global / not rule-keyed, so it is OPT-IN ONLY — active
+    #      only when env MT5_SIGNAL_OVERRIDE is set — and ignored if older than 6h.
+    #      Normal and other-rule backtests are therefore never silently affected.
+    # CHANGED: June 2026 — condlog signal override (opt-in + staleness-guarded)
+    if os.environ.get('MT5_SIGNAL_OVERRIDE'):
+        try:
+            _ov_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'outputs', 'mt5_signal_override.json')
+            if os.path.isfile(_ov_path):
+                with open(_ov_path, encoding='utf-8') as _ovf:
+                    _ov_data = json.load(_ovf)
+                _ov_fresh = True
+                try:
+                    if (pd.Timestamp.now() - pd.Timestamp(_ov_data.get('generated'))) > pd.Timedelta(hours=6):
+                        _ov_fresh = False
+                        log.info("[MT5-OVERRIDE] override file is stale (>6h) — ignored")
+                except Exception:
+                    pass
+                if _ov_fresh:
+                    _ov_bars = set()
+                    for _ob in _ov_data.get('signal_bars', []):
+                        _ob_ts = pd.Timestamp(_ob.replace('.', '-', 2) if '.' in _ob[:4] else _ob)
+                        _ov_bars.add(_ob_ts)
+                    _added = 0
+                    for idx in df.index:
+                        ts = df.loc[idx, 'timestamp']
+                        if ts in _ov_bars and not signal_mask.iloc[idx]:
+                            signal_mask.iloc[idx] = True
+                            _added += 1
+                    if _added > 0:
+                        signal_indices = df.index[signal_mask].tolist()
+                        log.info("[MT5-OVERRIDE] Added %d signal bar(s) from condlog "
+                                 "(total signals: %d)", _added, len(signal_indices))
+        except Exception as _ov_ex:
+            log.debug("[MT5-OVERRIDE] skipped: %s", _ov_ex)
 
     # WHY: Expose signal bars for parity diagnostics. run_comparison_matrix reads
     #      this after fast_backtest returns to embed signal debug info in the rule
