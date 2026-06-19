@@ -4424,8 +4424,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      the exit bar's signal, producing one-bar-late re-entries.
         # CHANGED: June 2026 — always free exit bar for re-entry (match run_backtest)
         _exit_int = min(_eb_int + exit_idx, len(df) - 1)
-        _occ_int  = max(_eb_int, _exit_int - 1)
-        occupied_until_idx = df.index[_occ_int]
+        # WHY: entry-candle exits (exit_idx=0) must FREE the entry bar so the next
+        #      signal there isn't blocked — MT5 re-enters on the bar after a same-bar
+        #      SL hit. Drop the max(_eb_int, ...) floor; -1 sentinel = nothing occupied
+        #      (df.index[-1] would wrongly occupy the LAST bar). For exit_idx>0 this is
+        #      identical to before. NOTE: run_backtest still keeps the floor.
+        # CHANGED: June 2026 — free entry bar on entry-candle exit (fast_backtest only)
+        _occ_int  = _exit_int - 1
+        occupied_until_idx = df.index[_occ_int] if _occ_int >= 0 else -1
         _last_exit_pos_fbt = _exit_int
 
     if _skipped_count > 0:
