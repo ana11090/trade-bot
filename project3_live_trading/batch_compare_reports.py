@@ -686,8 +686,8 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
                   (name[:32], len(mt5), len(py_trades),
                    (stats.get('net_profit') or '?')[:8], note))
             rows.append(dict(name=name, mt5=len(mt5), py=len(py_trades),
-                            net_profit=stats.get('net_profit', ''),
-                            profit_factor=stats.get('profit_factor', ''),
+                            mt5_net_profit=stats.get('net_profit', ''),
+                            mt5_profit_factor=stats.get('profit_factor', ''),
                             note=note))
             continue
 
@@ -695,8 +695,19 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         py = _extract_py_entry_times(py_trades)
         m = _compare(mt5, py, bar_minutes=per_bm)
         m['name'] = name
-        m['net_profit'] = stats.get('net_profit', '')
-        m['profit_factor'] = stats.get('profit_factor', '')
+        m['mt5_net_profit'] = stats.get('net_profit', '')
+        m['mt5_profit_factor'] = stats.get('profit_factor', '')
+        # WHY: Show Python profit alongside MT5 for at-a-glance comparison.
+        # CHANGED: June 2026 — enriched comparison_summary for parity dashboard
+        _py_npips = sum(float(t.get('net_pips', 0) or 0) for t in py_trades)
+        _py_nprof = sum(float(t.get('net_profit', 0) or 0) for t in py_trades)
+        _py_wins = sum(1 for t in py_trades if float(t.get('net_pips', 0) or 0) > 0)
+        m['py_net_pips'] = round(_py_npips, 1)
+        m['py_net_profit'] = round(_py_nprof, 2)
+        m['py_win_rate'] = round(100.0 * _py_wins / len(py_trades), 1) if py_trades else 0
+        m['mt5_only'] = m['mt5'] - m['py_in_range']
+        m['py_only'] = m['py'] - m['py_in_range']
+        m['parity_pct'] = round(100.0 * m['exact'] / m['mt5'], 0) if m['mt5'] else 0
         m['note'] = f"matched (file: {meta.get('file', '?')[:20]})"
         # Warn when Python backtest had no spread filter but EA uses 65 pips.
         # WHY: EA blocks entries when spread > 65 pips; Python without the filter
@@ -710,15 +721,18 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
                   f'(filter OFF). EA uses 65 pip gate. Re-run backtest with '
                   f'"Use Config" ON + leveraged firm to get parity.')
         rows.append(m)
-        print('%-32s %5d %5d %8s %6d %7d %6d %6d  %s' %
-              (name[:32], m['mt5'], m['py'],
+        print('%-32s MT5=$%-8s PY=$%-8s  %d/%d exact (%d%%)  mt5_only=%d' %
+              (name[:32],
                (stats.get('net_profit') or '?')[:8],
-               m['exact'], m['one_bar_early'], m['one_bar_late'], m['py_after_end'],
-               m['note'][:30]))
+               str(m.get('py_net_profit', '?'))[:8],
+               m['exact'], m['mt5'], m['parity_pct'],
+               m['mt5_only']))
 
     # write CSV summary
     out_csv = os.path.join(reports_dir, 'comparison_summary.csv')
-    keys = ['name', 'net_profit', 'profit_factor', 'mt5', 'py', 'py_in_range', 'exact',
+    keys = ['name', 'mt5_net_profit', 'py_net_profit', 'mt5_profit_factor',
+            'mt5', 'py', 'py_in_range', 'exact', 'parity_pct',
+            'mt5_only', 'py_only', 'py_net_pips', 'py_win_rate',
             'one_bar_early', 'one_bar_late', 'py_after_end', 'note']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
