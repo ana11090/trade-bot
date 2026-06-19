@@ -502,7 +502,12 @@ def _extract_py_entry_times(trades):
         try:
             # handle both string and datetime formats
             if isinstance(et, str):
-                dt = datetime.strptime(et, '%Y-%m-%d %H:%M:%S').replace(second=0)
+                # WHY: Vectorized FixedSLTP stores entry_time as numpy.datetime64,
+                #      which serializes to ISO format "2026-01-14T16:00:00" (T separator).
+                #      The iterative path stores "2026-01-14 16:00:00" (space separator).
+                #      fromisoformat handles both; strptime only handles one.
+                # CHANGED: June 2026 — handle ISO T-separator from vectorized path
+                dt = datetime.fromisoformat(et).replace(second=0)
             elif isinstance(et, datetime):
                 dt = et.replace(second=0)
             else:
