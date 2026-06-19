@@ -40,6 +40,11 @@ log = get_logger(__name__)
 # Timeframes to load, in order: smallest first so merge_asof steps up cleanly
 _TIMEFRAMES = ["M5", "M15", "H1", "H4", "D1"]
 
+# WHY: fast_backtest stores signal debug info here after each run so
+#      run_comparison_matrix can embed it in the rule JSON for diagnostics.
+# CHANGED: June 2026 — signal debug for parity diagnostics
+_last_signal_debug = None
+
 import threading as _bt_threading
 
 # WHY: Allows the UI to request a graceful stop mid-backtest.
@@ -3393,6 +3398,32 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     signal_indices = df.index[signal_mask].tolist()
 
+    # WHY: Expose signal bars for parity diagnostics. run_comparison_matrix reads
+    #      this after fast_backtest returns to embed signal debug info in the rule
+    #      JSON, so the PARITY_BUNDLE can compare Python signals vs MT5 entries.
+    # CHANGED: June 2026 — signal debug for parity diagnostics
+    global _last_signal_debug
+    try:
+        _sig_ts = [str(df.loc[si, 'timestamp']) for si in signal_indices]
+        _sig_ind = {}
+        for si in signal_indices:
+            _row_vals = {}
+            for col in ind.columns:
+                try:
+                    v = ind.loc[si, col]
+                    if not pd.isna(v):
+                        _row_vals[col] = round(float(v), 6)
+                except Exception:
+                    pass
+            _sig_ind[str(df.loc[si, 'timestamp'])] = _row_vals
+        _last_signal_debug = {
+            'signal_count': len(signal_indices),
+            'signal_bars': _sig_ts,
+            'indicator_values': _sig_ind,
+        }
+    except Exception:
+        _last_signal_debug = None
+
     if not signal_indices:
         return trades
 
@@ -5344,6 +5375,10 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     "entry_bar_offset": _ebo,
                     "signals_before_regime_filter": getattr(fast_backtest, '_last_sig_before', 0),
                     "signals_after_regime_filter":  getattr(fast_backtest, '_last_sig_after', 0),
+                    # WHY: Signal debug for parity diagnostics. PARITY_BUNDLE reads
+                    #      this to compare Python signal bars vs MT5 entry bars.
+                    # CHANGED: June 2026 — signal debug in rule JSON
+                    "signal_debug": _last_signal_debug,
                 }
                 matrix.append(result)
 

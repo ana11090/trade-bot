@@ -1419,6 +1419,72 @@ def _write_debug_dump():
                 # ---- end regression fingerprint ----
                 # ---- end SESSIONGAP DIAG ----
 
+                # ---- SIGNAL DIAG: Python indicator values at MT5 entry bars ----
+                # WHY: When Python has fewer trades than MT5, the signal mask didn't
+                #      fire on some bars. This shows Python's indicator values at each
+                #      MT5 entry bar alongside MT5's condlog values, pinpointing which
+                #      indicator diverges and by how much.
+                # CHANGED: June 2026 — signal parity diagnostic
+                try:
+                    _sig_debug = _sj.get("signal_debug") if '_sj' in dir() else None
+                    if _sig_debug and _mt5_rows_sg:
+                        _py_sig_bars = set(_sig_debug.get("signal_bars", []))
+                        _sig_ind_vals = _sig_debug.get("indicator_values", {})
+                        # Load condlog for MT5 indicator values
+                        _cl_path = os.path.join(dump, "condlog.csv")
+                        _cl_by_bar = {}
+                        if os.path.isfile(_cl_path):
+                            import csv as _csv_cl
+                            with open(_cl_path, encoding="utf-8-sig") as _clf:
+                                for _clr in _csv_cl.DictReader(_clf):
+                                    _bt = _clr.get("bar_time", "").strip()
+                                    _cl_by_bar.setdefault(_bt, []).append(_clr)
+                        _bf.write("\n-- SIGNAL DIAG (Python signals=%d, MT5 entries=%d) --\n"
+                                  % (_sig_debug.get("signal_count", 0), len(_mt5_rows_sg)))
+                        _bf.write("  %-22s %-8s  %-20s %10s %10s %10s  %s\n" % (
+                            "MT5 entry", "PY sig?", "feature", "PY val", "MT5 val", "delta", "cond"))
+                        for _mr in _mt5_rows_sg:
+                            _mt = str(_mr.get("entry_time", "")).strip()
+                            # Normalize to match signal_bars format
+                            _mt_norm = _mt.replace(".", "-").replace(" ", " ")[:19]
+                            _has_py = any(_mt_norm[:16] in sb[:16] for sb in _py_sig_bars)
+                            _marker = "✓" if _has_py else "✗ MISS"
+                            # Get Python indicator values at this bar
+                            _py_vals = None
+                            for _sk in _sig_ind_vals:
+                                if _mt_norm[:16] in _sk[:16]:
+                                    _py_vals = _sig_ind_vals[_sk]
+                                    break
+                            # Get MT5 condlog values at this bar
+                            _mt_cl = _cl_by_bar.get(_mt, [])
+                            if not _has_py:
+                                _bf.write("  %-22s %-8s" % (_mt, _marker))
+                                if _mt_cl:
+                                    for _clr in _mt_cl:
+                                        _feat = _clr.get("feature", "?")
+                                        _mt5v = float(_clr.get("value", 0))
+                                        _thresh = float(_clr.get("threshold", 0))
+                                        _pf = _clr.get("pass_fail", "?")
+                                        # Find Python's value for this feature
+                                        _pyv = "?"
+                                        if _py_vals:
+                                            _pyv = _py_vals.get(_feat, "?")
+                                        _delta = ""
+                                        if isinstance(_pyv, (int, float)):
+                                            _delta = "%+.4f" % (_pyv - _mt5v)
+                                            _pyv = "%.4f" % _pyv
+                                        _bf.write("  %-20s %10s %10.4f %10s  mt5=%s\n" % (
+                                            _feat, _pyv, _mt5v, _delta, _pf))
+                                        _bf.write("  %-22s %-8s" % ("", ""))
+                                    _bf.write("\n")
+                                else:
+                                    _bf.write("  (no condlog for this bar)\n")
+                            else:
+                                _bf.write("  %-22s %-8s  (matched)\n" % (_mt, _marker))
+                except Exception as _sde:
+                    _bf.write("\n-- SIGNAL DIAG: failed (%r) --\n" % _sde)
+                # ---- end SIGNAL DIAG ----
+
                 _bf.write("\n" + "=" * 78 + "\n\n")
 
         _d("PARITY BUNDLE: %s" % _bundle_path)
