@@ -3617,8 +3617,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
                                                     no_trades_window_end_hour):
                     # WHY (gap_fill_parity): blocked H4 bar — try M1 session-open.
-                    # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
-                    if gap_fill_parity and data_dir and _is_gap_bar:
+                    #   Also fire for hour==0 entries: 00:00 EET = 22:00 UTC is inside
+                    #   the NTW (20-23) so the bar is blocked, but it is NOT _is_gap_bar
+                    #   (20:00→00:00 = 4h = normal spacing). _find_gap_fill filters M1 by
+                    #   the NTW window, so it returns the 01:05 EET (23:05 UTC) reopen.
+                    # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest (v7: hour==0)
+                    if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(entry_time).hour == 0):
                         _gap_fill_entry = _find_gap_fill(
                             data_dir, next_candle['timestamp'],
                             _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
