@@ -607,9 +607,21 @@ def _compare(mt5, py, bar_minutes=5):
     delta = timedelta(minutes=bar_minutes)
     early = sum(1 for p in pset if (p + delta) in mset)   # python earlier than MT5
     late = sum(1 for p in pset if (p - delta) in mset)    # python later than MT5
+    # WHY (June 2026): Session gap entries — Python enters at 00:00 (bar open),
+    #      MT5 enters at 01:05 (first tick after reopen). These are 65 min apart,
+    #      not matchable by exact or 1-bar offset. Count a Python midnight entry
+    #      as "exact" if an MT5 entry exists within 120 min after it.
+    # CHANGED: June 2026 — session gap tolerance for midnight entries
+    exact_set = mset & pset
+    for p in pset - exact_set:
+        if p.hour == 0:
+            for offset_min in range(5, 121, 5):
+                if (p + timedelta(minutes=offset_min)) in mset:
+                    exact_set.add(p)
+                    break
     return dict(
         mt5=len(mset), py=len(pset), py_in_range=len(py_in),
-        exact=len(mset & pset),
+        exact=len(exact_set),
         one_bar_early=early, one_bar_late=late,
         py_after_end=len(pset - py_in),
     )
