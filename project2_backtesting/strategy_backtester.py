@@ -4018,13 +4018,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
                         _ech = float(_ecr['high'])
                         _ecl = float(_ecr['low'])
                         _ecc = float(_ecr['close'])
-                        if _ech > pos_info['highest_since_entry']:
-                            pos_info['highest_since_entry'] = _ech
-                        if _ecl < pos_info['lowest_since_entry']:
-                            pos_info['lowest_since_entry'] = _ecl
-                        pos_info['current_pnl_pips'] = (
-                            (_ecc - entry_price) / pip_size if direction == "BUY"
-                            else (entry_price - _ecc) / pip_size)
                         _ec_m1_dict = {
                             'open': float(_ecr['open']), 'high': _ech,
                             'low': _ecl, 'close': _ecc,
@@ -4034,6 +4027,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                             step_result = exit_strategy.on_new_candle(_ec_m1_dict, pos_info)
                         except Exception:
                             step_result = None
+                        # Update pos_info AFTER on_new_candle so TrailingStop
+                        # can detect new highs and trigger tick resolution
+                        if _ech > pos_info['highest_since_entry']:
+                            pos_info['highest_since_entry'] = _ech
+                        if _ecl < pos_info['lowest_since_entry']:
+                            pos_info['lowest_since_entry'] = _ecl
+                        pos_info['current_pnl_pips'] = (
+                            (_ecc - entry_price) / pip_size if direction == "BUY"
+                            else (entry_price - _ecc) / pip_size)
                         if step_result:
                             result = step_result
                             result['exit_time'] = _ecr['timestamp']
@@ -4081,13 +4083,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
                         _m1h = float(_m1r['high'])
                         _m1l = float(_m1r['low'])
                         _m1c = float(_m1r['close'])
-                        if _m1h > pos_info['highest_since_entry']:
-                            pos_info['highest_since_entry'] = _m1h
-                        if _m1l < pos_info['lowest_since_entry']:
-                            pos_info['lowest_since_entry'] = _m1l
-                        pos_info['current_pnl_pips'] = (
-                            (_m1c - entry_price) / pip_size if direction == "BUY"
-                            else (entry_price - _m1c) / pip_size)
                         _m1_dict = {
                             'open': float(_m1r['open']), 'high': _m1h,
                             'low': _m1l, 'close': _m1c,
@@ -4097,6 +4092,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                             step_result = exit_strategy.on_new_candle(_m1_dict, pos_info)
                         except Exception:
                             step_result = None
+                        # Update pos_info AFTER on_new_candle so TrailingStop
+                        # can detect new highs and trigger tick resolution
+                        if _m1h > pos_info['highest_since_entry']:
+                            pos_info['highest_since_entry'] = _m1h
+                        if _m1l < pos_info['lowest_since_entry']:
+                            pos_info['lowest_since_entry'] = _m1l
+                        pos_info['current_pnl_pips'] = (
+                            (_m1c - entry_price) / pip_size if direction == "BUY"
+                            else (entry_price - _m1c) / pip_size)
                         if step_result:
                             result = step_result
                             result['exit_time'] = _m1r['timestamp']
