@@ -4004,14 +4004,21 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     candle_minutes if candle_minutes else 240)
                 if _ec_m1 is not None and not _ec_m1.empty:
                     _entry_ts_pd = pd.Timestamp(entry_time)
-                    # WHY: trailing/breakeven MUST exclude the entry-minute bar (> not
-                    #      >=). That bar can show both trail-activation (high) and SL
-                    #      (low); OHLC order hits SL before the trail activates, but MT5
-                    #      ticks go up first (trail arms) then down (trail exit, small
-                    #      profit). M1 can't replicate tick order → >= flips P&L worse.
-                    #      (Static SL/TP in _check_entry_candle_sltp DOES use >=, since
-                    #      "was the level touched" is order-independent.)
-                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
+                    # Save H4-seeded extremes, reset to entry price so the
+                    # M1 sim can detect new highs/lows bar-by-bar. This lets
+                    # TrailingStop._new_high_this_candle fire → tick resolution.
+                    _saved_highest = pos_info['highest_since_entry']
+                    _saved_lowest  = pos_info['lowest_since_entry']
+                    pos_info['highest_since_entry'] = entry_price
+                    pos_info['lowest_since_entry']  = entry_price
+                    # WHY: include the entry-minute bar (>=). It can show both
+                    #      trail-activation (high) and SL (low) in one bar. With the
+                    #      reset above (highest=entry_price) + the update-after-call
+                    #      reorder, that bar registers as a NEW HIGH, so TrailingStop's
+                    #      tick resolution fires and ticks decide order (up-first=trail
+                    #      vs down-first=SL). Earlier `>=` regressed ONLY because the
+                    #      H4-high seed kept tick resolution from firing; that's fixed.
+                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] >= _entry_ts_pd]
                     pos_info['candles_held'] = 0
                     for _eci in range(len(_ec_m1_after)):
                         _ecr = _ec_m1_after.iloc[_eci]
@@ -4041,6 +4048,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
                             result['exit_time'] = _ecr['timestamp']
                             exit_idx = 0
                             break
+                    # Restore H4-seeded extremes if the M1 sim found no exit,
+                    # so the main loop (ci=1+) continues with H4-level seeding.
+                    if result is None:
+                        pos_info['highest_since_entry'] = _saved_highest
+                        pos_info['lowest_since_entry']  = _saved_lowest
             except Exception:
                 pass
 
