@@ -3999,113 +3999,183 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
         if _use_m1_exit_sim and result is None and _n_future > 0:
             try:
-                # ── TICK SIM: first 5 minutes after entry ──
-                # WHY: MT5 trailing stops fire per-tick and can exit within
-                #      27-46 seconds. M1 bars can't replicate sub-minute
-                #      ordering (both trail activation high and SL low in
-                #      same bar). Ticks resolve the ambiguity directly.
-                _tick_loader = pos_info.get('_tick_loader')
-                if _tick_loader is not None:
-                    _entry_ticks = _tick_loader(future_candles.iloc[0]['timestamp'])
-                    if _entry_ticks is not None and not _entry_ticks.empty:
-                        _entry_ts_ms = int(pd.Timestamp(entry_time).timestamp() * 1000)
-                        _tick_end_ms = _entry_ts_ms + 5 * 60 * 1000  # 5 minutes
-                        _ticks_window = _entry_ticks[
-                            (_entry_ticks['timestamp_ms'] > _entry_ts_ms) &
-                            (_entry_ticks['timestamp_ms'] <= _tick_end_ms)
-                        ]
-                        if not _ticks_window.empty:
-                            # Reset to entry price so trailing can activate
-                            _saved_h = pos_info['highest_since_entry']
-                            _saved_l = pos_info['lowest_since_entry']
-                            pos_info['highest_since_entry'] = entry_price
-                            pos_info['lowest_since_entry']  = entry_price
-                            pos_info['candles_held'] = 0
+                # ── TICK SIM: first 60 seconds after entry ──
+                # WHY: MT5 trailing stops exit within 27-46 seconds on some
+                #      trades. The M1 sim (> filter) starts at minute 1 and
+                #      misses these sub-minute exits. This simple inline sim
+                #      processes ticks for the first 60 seconds ONLY, checking
+                #      trailing activation and SL/TP directly without calling
+                #      on_new_candle (which has complex state that breaks with
+                #      per-tick calls).
+                _tick_loader_ec = pos_info.get('_tick_loader')
+                # WHY: the inline tick sim uses simplified TrailingStop math
+                #      (running high + trail distance). Other exit types (Hybrid,
+                #      ATRBreakevenTrail, ATRTrailing, PSARExit) have different
+                #      logic, so restrict it to TrailingStop; the rest use the M1
+                #      fallback as before.
+                _is_trailing_type = isinstance(exit_strategy, TrailingStop)
+                if (_tick_loader_ec is not None and result is None
+                        and _is_trailing_type):
+                    try:
+                        _ec_ticks = _tick_loader_ec(
+                            future_candles.iloc[0]['timestamp'])
+                        if _ec_ticks is not None and not _ec_ticks.empty:
+                            _et_ms = int(pd.Timestamp(entry_time
+                                         ).timestamp() * 1000)
+                            _et_end = _et_ms + 60_000  # 60 seconds
+                            _first_min = _ec_ticks[
+                                (_ec_ticks['timestamp_ms'] > _et_ms) &
+                                (_ec_ticks['timestamp_ms'] <= _et_end)]
+                            if not _first_min.empty:
+                                _sl_pips_v = getattr(
+                                    exit_strategy, 'sl_pips', None) or 0
+                                _tp_pips_v = getattr(
+                                    exit_strategy, 'tp_pips', None)
+                                _act_pips  = getattr(
+                                    exit_strategy, 'activation_pips', None) or 0
+                                _trail_d   = getattr(
+                                    exit_strategy, 'trail_distance_pips',
+                                    None) or 0
+                                if direction == "BUY":
+                                    _fsl = (entry_price - _sl_pips_v * pip_size
+                                            ) if _sl_pips_v > 0 else 0
+                                    _ftp = (entry_price + _tp_pips_v * pip_size
+                                            ) if _tp_pips_v else None
+                                else:
+                                    _fsl = (entry_price + _sl_pips_v * pip_size
+                                            ) if _sl_pips_v > 0 else float('inf')
+                                    _ftp = (entry_price - _tp_pips_v * pip_size
+                                            ) if _tp_pips_v else None
+                                _rh = entry_price  # running high (BUY)
+                                _rl = entry_price  # running low (SELL)
+                                for _, _tk in _first_min.iterrows():
+                                    _bid = float(_tk['bid'])
+                                    _tk_ts = pd.Timestamp(
+                                        int(_tk['timestamp_ms']), unit='ms')
+                                    if direction == "BUY":
+                                        if _bid > _rh:
+                                            _rh = _bid
+                                        _prof = (_rh - entry_price) / pip_size
+                                        if (_prof >= _act_pips and _act_pips > 0
+                                                and _trail_d > 0):
+                                            _tsl = _rh - _trail_d * pip_size
+                                            _eff = max(_fsl, _tsl)
+                                        else:
+                                            _eff = _fsl
+                                        if _bid <= _eff and _eff > 0:
+                                            _is_tr = _eff > _fsl
+                                            result = {
+                                                'exit_price': _eff,
+                                                'reason': ('TRAILING_STOP_TICK'
+                                                    if _is_tr
+                                                    else 'STOP_LOSS_TICK'),
+                                                'exit_time': _tk_ts,
+                                            }
+                                            exit_idx = 0
+                                            pos_info['candles_held'] = 0
+                                            break
+                                        if (_ftp is not None
+                                                and _bid >= _ftp):
+                                            result = {
+                                                'exit_price': _ftp,
+                                                'reason': 'TAKE_PROFIT_TICK',
+                                                'exit_time': _tk_ts,
+                                            }
+                                            exit_idx = 0
+                                            pos_info['candles_held'] = 0
+                                            break
+                                    else:  # SELL
+                                        if _bid < _rl:
+                                            _rl = _bid
+                                        _prof = (entry_price - _rl) / pip_size
+                                        if (_prof >= _act_pips and _act_pips > 0
+                                                and _trail_d > 0):
+                                            _tsl = _rl + _trail_d * pip_size
+                                            _eff = min(_fsl, _tsl)
+                                        else:
+                                            _eff = _fsl
+                                        if _bid >= _eff and _eff < float('inf'):
+                                            _is_tr = _eff < _fsl
+                                            result = {
+                                                'exit_price': _eff,
+                                                'reason': ('TRAILING_STOP_TICK'
+                                                    if _is_tr
+                                                    else 'STOP_LOSS_TICK'),
+                                                'exit_time': _tk_ts,
+                                            }
+                                            exit_idx = 0
+                                            pos_info['candles_held'] = 0
+                                            break
+                                        if (_ftp is not None
+                                                and _bid <= _ftp):
+                                            result = {
+                                                'exit_price': _ftp,
+                                                'reason': 'TAKE_PROFIT_TICK',
+                                                'exit_time': _tk_ts,
+                                            }
+                                            exit_idx = 0
+                                            pos_info['candles_held'] = 0
+                                            break
+                                # Update pos_info from tick sim
+                                if direction == "BUY" and _rh > pos_info['highest_since_entry']:
+                                    pos_info['highest_since_entry'] = _rh
+                                if direction == "SELL" and _rl < pos_info['lowest_since_entry']:
+                                    pos_info['lowest_since_entry'] = _rl
+                    except Exception:
+                        pass
 
-                            for _, _tick in _ticks_window.iterrows():
-                                _bid = float(_tick['bid'])
-                                _tick_ts = pd.Timestamp(
-                                    int(_tick['timestamp_ms']), unit='ms')
-                                # Build point-candle (open=high=low=close=bid)
-                                _tc = {
-                                    'open': _bid, 'high': _bid,
-                                    'low': _bid, 'close': _bid,
-                                    'timestamp': _tick_ts,
-                                }
-                                try:
-                                    step_result = exit_strategy.on_new_candle(
-                                        _tc, pos_info)
-                                except Exception:
-                                    step_result = None
-                                # Update pos_info after each tick
-                                if _bid > pos_info['highest_since_entry']:
-                                    pos_info['highest_since_entry'] = _bid
-                                if _bid < pos_info['lowest_since_entry']:
-                                    pos_info['lowest_since_entry'] = _bid
-                                pos_info['current_pnl_pips'] = (
-                                    (_bid - entry_price) / pip_size
-                                    if direction == "BUY"
-                                    else (entry_price - _bid) / pip_size)
-                                if step_result:
-                                    result = step_result
-                                    result['exit_time'] = _tick_ts
-                                    exit_idx = 0
-                                    break
-
-                            if result is None:
-                                # Tick sim didn't exit — DON'T restore,
-                                # let M1 continue with tick-accumulated state
-                                pass
-
-                # ── M1 FALLBACK: rest of entry candle ──
-                if result is None:
-                    _ec_m1 = _load_m1_for_candle(
-                        data_dir, future_candles.iloc[0]['timestamp'],
-                        candle_minutes if candle_minutes else 240)
-                    if _ec_m1 is not None and not _ec_m1.empty:
-                        _entry_ts_pd = pd.Timestamp(entry_time)
-                        _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
-                        # If tick sim ran, skip M1 bars already covered
-                        if _tick_loader is not None and '_ticks_window' in dir() \
-                                and not _ticks_window.empty:
-                            _tick_end_ts = _entry_ts_pd + pd.Timedelta(minutes=5)
-                            _ec_m1_after = _ec_m1_after[
-                                _ec_m1_after['timestamp'] >= _tick_end_ts]
-                        if 'candles_held' not in pos_info or pos_info.get('candles_held', -1) < 0:
-                            pos_info['candles_held'] = 0
-                        for _eci in range(len(_ec_m1_after)):
-                            _ecr = _ec_m1_after.iloc[_eci]
-                            _ech = float(_ecr['high'])
-                            _ecl = float(_ecr['low'])
-                            _ecc = float(_ecr['close'])
-                            _ec_m1_dict = {
-                                'open': float(_ecr['open']), 'high': _ech,
-                                'low': _ecl, 'close': _ecc,
-                                'timestamp': _ecr['timestamp'],
-                            }
-                            try:
-                                step_result = exit_strategy.on_new_candle(
-                                    _ec_m1_dict, pos_info)
-                            except Exception:
-                                step_result = None
-                            if _ech > pos_info['highest_since_entry']:
-                                pos_info['highest_since_entry'] = _ech
-                            if _ecl < pos_info['lowest_since_entry']:
-                                pos_info['lowest_since_entry'] = _ecl
-                            pos_info['current_pnl_pips'] = (
-                                (_ecc - entry_price) / pip_size
-                                if direction == "BUY"
-                                else (entry_price - _ecc) / pip_size)
-                            if step_result:
-                                result = step_result
-                                result['exit_time'] = _ecr['timestamp']
-                                exit_idx = 0
-                                break
-
-                    # Restore H4-seeded extremes if no exit found
-                    if result is None and '_saved_h' in dir():
-                        pos_info['highest_since_entry'] = _saved_h
-                        pos_info['lowest_since_entry']  = _saved_l
+                # ── M1 FALLBACK: minute 1+ of entry candle ──
+                _ec_m1 = _load_m1_for_candle(
+                    data_dir, future_candles.iloc[0]['timestamp'],
+                    candle_minutes if candle_minutes else 240)
+                if result is None and _ec_m1 is not None and not _ec_m1.empty:
+                    _entry_ts_pd = pd.Timestamp(entry_time)
+                    # Save H4-seeded extremes, reset to entry price so the
+                    # M1 sim can detect new highs/lows bar-by-bar. This lets
+                    # TrailingStop._new_high_this_candle fire → tick resolution.
+                    _saved_highest = pos_info['highest_since_entry']
+                    _saved_lowest  = pos_info['lowest_since_entry']
+                    pos_info['highest_since_entry'] = entry_price
+                    pos_info['lowest_since_entry']  = entry_price
+                    # WHY: exclude the entry-minute bar (>). The first 60s is now
+                    #      handled by the inline tick sim above; the M1 sim covers
+                    #      minute 1 onward. Reset+reorder above still let trailing
+                    #      detect new highs on the post-entry M1 bars.
+                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
+                    pos_info['candles_held'] = 0
+                    for _eci in range(len(_ec_m1_after)):
+                        _ecr = _ec_m1_after.iloc[_eci]
+                        _ech = float(_ecr['high'])
+                        _ecl = float(_ecr['low'])
+                        _ecc = float(_ecr['close'])
+                        _ec_m1_dict = {
+                            'open': float(_ecr['open']), 'high': _ech,
+                            'low': _ecl, 'close': _ecc,
+                            'timestamp': _ecr['timestamp'],
+                        }
+                        try:
+                            step_result = exit_strategy.on_new_candle(_ec_m1_dict, pos_info)
+                        except Exception:
+                            step_result = None
+                        # Update pos_info AFTER on_new_candle so TrailingStop
+                        # can detect new highs and trigger tick resolution
+                        if _ech > pos_info['highest_since_entry']:
+                            pos_info['highest_since_entry'] = _ech
+                        if _ecl < pos_info['lowest_since_entry']:
+                            pos_info['lowest_since_entry'] = _ecl
+                        pos_info['current_pnl_pips'] = (
+                            (_ecc - entry_price) / pip_size if direction == "BUY"
+                            else (entry_price - _ecc) / pip_size)
+                        if step_result:
+                            result = step_result
+                            result['exit_time'] = _ecr['timestamp']
+                            exit_idx = 0
+                            break
+                    # Restore H4-seeded extremes if the M1 sim found no exit,
+                    # so the main loop (ci=1+) continues with H4-level seeding.
+                    if result is None:
+                        pos_info['highest_since_entry'] = _saved_highest
+                        pos_info['lowest_since_entry']  = _saved_lowest
             except Exception:
                 pass
 
