@@ -3940,6 +3940,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _ec_result = _check_entry_candle_sltp(
                         _ec_dict, entry_time, _ec_sl, _ec_tp, direction, pos_info
                     )
+                    # --- TEMP DIAG: remove after confirming fix ---
+                    try:
+                        import os as _os_diag
+                        _diag_path = _os_diag.path.join(_os_diag.path.dirname(_os_diag.path.abspath(__file__)), 'outputs', 'ec_diag.log')
+                        with open(_diag_path, 'a') as _df:
+                            _df.write(f"[EC-DIAG] entry={entry_time} sl={_ec_sl} tp={_ec_tp} dir={direction} result={_ec_result}\n")
+                    except Exception:
+                        pass
+                    # --- END TEMP DIAG ---
                     if _ec_result is not None:
                         _which, _price, _hit_ts = _ec_result
                         # WHY: GAP fill on entry candle is rare (price would
@@ -3995,6 +4004,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     candle_minutes if candle_minutes else 240)
                 if _ec_m1 is not None and not _ec_m1.empty:
                     _entry_ts_pd = pd.Timestamp(entry_time)
+                    # WHY: trailing/breakeven MUST exclude the entry-minute bar (> not
+                    #      >=). That bar can show both trail-activation (high) and SL
+                    #      (low); OHLC order hits SL before the trail activates, but MT5
+                    #      ticks go up first (trail arms) then down (trail exit, small
+                    #      profit). M1 can't replicate tick order → >= flips P&L worse.
+                    #      (Static SL/TP in _check_entry_candle_sltp DOES use >=, since
+                    #      "was the level touched" is order-independent.)
                     _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
                     pos_info['candles_held'] = 0
                     for _eci in range(len(_ec_m1_after)):
