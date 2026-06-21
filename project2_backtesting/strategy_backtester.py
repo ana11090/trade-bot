@@ -3940,15 +3940,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _ec_result = _check_entry_candle_sltp(
                         _ec_dict, entry_time, _ec_sl, _ec_tp, direction, pos_info
                     )
-                    # --- TEMP DIAG: remove after confirming fix ---
-                    try:
-                        import os as _os_diag
-                        _diag_path = _os_diag.path.join(_os_diag.path.dirname(_os_diag.path.abspath(__file__)), 'outputs', 'ec_diag.log')
-                        with open(_diag_path, 'a') as _df:
-                            _df.write(f"[EC-DIAG] entry={entry_time} sl={_ec_sl} tp={_ec_tp} dir={direction} result={_ec_result}\n")
-                    except Exception:
-                        pass
-                    # --- END TEMP DIAG ---
                     if _ec_result is not None:
                         _which, _price, _hit_ts = _ec_result
                         # WHY: GAP fill on entry candle is rare (price would
