@@ -3999,60 +3999,113 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
         if _use_m1_exit_sim and result is None and _n_future > 0:
             try:
-                _ec_m1 = _load_m1_for_candle(
-                    data_dir, future_candles.iloc[0]['timestamp'],
-                    candle_minutes if candle_minutes else 240)
-                if _ec_m1 is not None and not _ec_m1.empty:
-                    _entry_ts_pd = pd.Timestamp(entry_time)
-                    # Save H4-seeded extremes, reset to entry price so the
-                    # M1 sim can detect new highs/lows bar-by-bar. This lets
-                    # TrailingStop._new_high_this_candle fire → tick resolution.
-                    _saved_highest = pos_info['highest_since_entry']
-                    _saved_lowest  = pos_info['lowest_since_entry']
-                    pos_info['highest_since_entry'] = entry_price
-                    pos_info['lowest_since_entry']  = entry_price
-                    # WHY: include the entry-minute bar (>=). It can show both
-                    #      trail-activation (high) and SL (low) in one bar. With the
-                    #      reset above (highest=entry_price) + the update-after-call
-                    #      reorder, that bar registers as a NEW HIGH, so TrailingStop's
-                    #      tick resolution fires and ticks decide order (up-first=trail
-                    #      vs down-first=SL). Earlier `>=` regressed ONLY because the
-                    #      H4-high seed kept tick resolution from firing; that's fixed.
-                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] >= _entry_ts_pd]
-                    pos_info['candles_held'] = 0
-                    for _eci in range(len(_ec_m1_after)):
-                        _ecr = _ec_m1_after.iloc[_eci]
-                        _ech = float(_ecr['high'])
-                        _ecl = float(_ecr['low'])
-                        _ecc = float(_ecr['close'])
-                        _ec_m1_dict = {
-                            'open': float(_ecr['open']), 'high': _ech,
-                            'low': _ecl, 'close': _ecc,
-                            'timestamp': _ecr['timestamp'],
-                        }
-                        try:
-                            step_result = exit_strategy.on_new_candle(_ec_m1_dict, pos_info)
-                        except Exception:
-                            step_result = None
-                        # Update pos_info AFTER on_new_candle so TrailingStop
-                        # can detect new highs and trigger tick resolution
-                        if _ech > pos_info['highest_since_entry']:
-                            pos_info['highest_since_entry'] = _ech
-                        if _ecl < pos_info['lowest_since_entry']:
-                            pos_info['lowest_since_entry'] = _ecl
-                        pos_info['current_pnl_pips'] = (
-                            (_ecc - entry_price) / pip_size if direction == "BUY"
-                            else (entry_price - _ecc) / pip_size)
-                        if step_result:
-                            result = step_result
-                            result['exit_time'] = _ecr['timestamp']
-                            exit_idx = 0
-                            break
-                    # Restore H4-seeded extremes if the M1 sim found no exit,
-                    # so the main loop (ci=1+) continues with H4-level seeding.
-                    if result is None:
-                        pos_info['highest_since_entry'] = _saved_highest
-                        pos_info['lowest_since_entry']  = _saved_lowest
+                # ── TICK SIM: first 5 minutes after entry ──
+                # WHY: MT5 trailing stops fire per-tick and can exit within
+                #      27-46 seconds. M1 bars can't replicate sub-minute
+                #      ordering (both trail activation high and SL low in
+                #      same bar). Ticks resolve the ambiguity directly.
+                _tick_loader = pos_info.get('_tick_loader')
+                if _tick_loader is not None:
+                    _entry_ticks = _tick_loader(future_candles.iloc[0]['timestamp'])
+                    if _entry_ticks is not None and not _entry_ticks.empty:
+                        _entry_ts_ms = int(pd.Timestamp(entry_time).timestamp() * 1000)
+                        _tick_end_ms = _entry_ts_ms + 5 * 60 * 1000  # 5 minutes
+                        _ticks_window = _entry_ticks[
+                            (_entry_ticks['timestamp_ms'] > _entry_ts_ms) &
+                            (_entry_ticks['timestamp_ms'] <= _tick_end_ms)
+                        ]
+                        if not _ticks_window.empty:
+                            # Reset to entry price so trailing can activate
+                            _saved_h = pos_info['highest_since_entry']
+                            _saved_l = pos_info['lowest_since_entry']
+                            pos_info['highest_since_entry'] = entry_price
+                            pos_info['lowest_since_entry']  = entry_price
+                            pos_info['candles_held'] = 0
+
+                            for _, _tick in _ticks_window.iterrows():
+                                _bid = float(_tick['bid'])
+                                _tick_ts = pd.Timestamp(
+                                    int(_tick['timestamp_ms']), unit='ms')
+                                # Build point-candle (open=high=low=close=bid)
+                                _tc = {
+                                    'open': _bid, 'high': _bid,
+                                    'low': _bid, 'close': _bid,
+                                    'timestamp': _tick_ts,
+                                }
+                                try:
+                                    step_result = exit_strategy.on_new_candle(
+                                        _tc, pos_info)
+                                except Exception:
+                                    step_result = None
+                                # Update pos_info after each tick
+                                if _bid > pos_info['highest_since_entry']:
+                                    pos_info['highest_since_entry'] = _bid
+                                if _bid < pos_info['lowest_since_entry']:
+                                    pos_info['lowest_since_entry'] = _bid
+                                pos_info['current_pnl_pips'] = (
+                                    (_bid - entry_price) / pip_size
+                                    if direction == "BUY"
+                                    else (entry_price - _bid) / pip_size)
+                                if step_result:
+                                    result = step_result
+                                    result['exit_time'] = _tick_ts
+                                    exit_idx = 0
+                                    break
+
+                            if result is None:
+                                # Tick sim didn't exit — DON'T restore,
+                                # let M1 continue with tick-accumulated state
+                                pass
+
+                # ── M1 FALLBACK: rest of entry candle ──
+                if result is None:
+                    _ec_m1 = _load_m1_for_candle(
+                        data_dir, future_candles.iloc[0]['timestamp'],
+                        candle_minutes if candle_minutes else 240)
+                    if _ec_m1 is not None and not _ec_m1.empty:
+                        _entry_ts_pd = pd.Timestamp(entry_time)
+                        _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
+                        # If tick sim ran, skip M1 bars already covered
+                        if _tick_loader is not None and '_ticks_window' in dir() \
+                                and not _ticks_window.empty:
+                            _tick_end_ts = _entry_ts_pd + pd.Timedelta(minutes=5)
+                            _ec_m1_after = _ec_m1_after[
+                                _ec_m1_after['timestamp'] >= _tick_end_ts]
+                        if 'candles_held' not in pos_info or pos_info.get('candles_held', -1) < 0:
+                            pos_info['candles_held'] = 0
+                        for _eci in range(len(_ec_m1_after)):
+                            _ecr = _ec_m1_after.iloc[_eci]
+                            _ech = float(_ecr['high'])
+                            _ecl = float(_ecr['low'])
+                            _ecc = float(_ecr['close'])
+                            _ec_m1_dict = {
+                                'open': float(_ecr['open']), 'high': _ech,
+                                'low': _ecl, 'close': _ecc,
+                                'timestamp': _ecr['timestamp'],
+                            }
+                            try:
+                                step_result = exit_strategy.on_new_candle(
+                                    _ec_m1_dict, pos_info)
+                            except Exception:
+                                step_result = None
+                            if _ech > pos_info['highest_since_entry']:
+                                pos_info['highest_since_entry'] = _ech
+                            if _ecl < pos_info['lowest_since_entry']:
+                                pos_info['lowest_since_entry'] = _ecl
+                            pos_info['current_pnl_pips'] = (
+                                (_ecc - entry_price) / pip_size
+                                if direction == "BUY"
+                                else (entry_price - _ecc) / pip_size)
+                            if step_result:
+                                result = step_result
+                                result['exit_time'] = _ecr['timestamp']
+                                exit_idx = 0
+                                break
+
+                    # Restore H4-seeded extremes if no exit found
+                    if result is None and '_saved_h' in dir():
+                        pos_info['highest_since_entry'] = _saved_h
+                        pos_info['lowest_since_entry']  = _saved_l
             except Exception:
                 pass
 
