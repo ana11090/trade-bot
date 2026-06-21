@@ -4036,12 +4036,10 @@ def fast_backtest(df, ind, rules, exit_strategy,
                                 _trail_d   = getattr(
                                     exit_strategy, 'trail_distance_pips',
                                     None) or 0
-                                _tk_entry = (entry_price + spread_pips * pip_size
-                                             ) if direction == "BUY" else entry_price
                                 if direction == "BUY":
-                                    _fsl = (_tk_entry - _sl_pips_v * pip_size
+                                    _fsl = (entry_price - _sl_pips_v * pip_size
                                             ) if _sl_pips_v > 0 else 0
-                                    _ftp = (_tk_entry + _tp_pips_v * pip_size
+                                    _ftp = (entry_price + _tp_pips_v * pip_size
                                             ) if _tp_pips_v else None
                                 else:
                                     _fsl = (entry_price + _sl_pips_v * pip_size
@@ -4057,7 +4055,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                                     if direction == "BUY":
                                         if _bid > _rh:
                                             _rh = _bid
-                                        _prof = (_rh - _tk_entry) / pip_size
+                                        _prof = (_rh - entry_price) / pip_size
                                         if (_prof >= _act_pips and _act_pips > 0
                                                 and _trail_d > 0):
                                             _tsl = _rh - _trail_d * pip_size
@@ -4089,7 +4087,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                                     else:  # SELL
                                         if _bid < _rl:
                                             _rl = _bid
-                                        _prof = (_tk_entry - _rl) / pip_size
+                                        _prof = (entry_price - _rl) / pip_size
                                         if (_prof >= _act_pips and _act_pips > 0
                                                 and _trail_d > 0):
                                             _tsl = _rl + _trail_d * pip_size
