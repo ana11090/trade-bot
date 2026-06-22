@@ -3990,30 +3990,34 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
         if _use_m1_exit_sim and result is None and _n_future > 0:
             try:
-                # ── TICK SIM: first 60 seconds after entry ──
-                # WHY: MT5 trailing stops exit within 27-46 seconds on some
-                #      trades. The M1 sim (> filter) starts at minute 1 and
-                #      misses these sub-minute exits. This simple inline sim
-                #      processes ticks for the first 60 seconds ONLY, checking
-                #      trailing activation and SL/TP directly without calling
-                #      on_new_candle (which has complex state that breaks with
-                #      per-tick calls).
+                # ── TICK SIM: first 120 seconds after entry ──
+                # WHY: MT5 exits SL/TP within seconds-to-minutes at tick level.
+                #      The M1 sim (> filter) starts at minute 1+ and misses
+                #      sub-minute exits. This inline sim processes ticks for the
+                #      first 120 seconds, checking SL/TP (and trailing for
+                #      TrailingStop) directly without calling on_new_candle.
+                #      Eligible: TrailingStop, FixedSLTP (not ATRFixedSLTP).
                 _tick_loader_ec = pos_info.get('_tick_loader')
-                # WHY: the inline tick sim uses simplified TrailingStop math
-                #      (running high + trail distance). Other exit types (Hybrid,
-                #      ATRBreakevenTrail, ATRTrailing, PSARExit) have different
-                #      logic, so restrict it to TrailingStop; the rest use the M1
-                #      fallback as before.
-                _is_trailing_type = isinstance(exit_strategy, TrailingStop)
+                # WHY: TrailingStop uses the trail branch; FixedSLTP has sl_pips/
+                #      tp_pips but no trailing (activation_pips=0 → trail branch
+                #      skipped, leaving a plain SL/TP check per tick). Both are
+                #      tick-eligible. ATRFixedSLTP excluded (ATR-computed levels,
+                #      untested); Hybrid/ATRBreakevenTrail/ATRTrailing/PSARExit
+                #      excluded (complex logic) — those use the M1 fallback.
+                _is_tick_eligible = (
+                    isinstance(exit_strategy, TrailingStop)
+                    or (isinstance(exit_strategy, FixedSLTP)
+                        and not isinstance(exit_strategy, ATRFixedSLTP))
+                )
                 if (_tick_loader_ec is not None and result is None
-                        and _is_trailing_type):
+                        and _is_tick_eligible):
                     try:
                         _ec_ticks = _tick_loader_ec(
                             future_candles.iloc[0]['timestamp'])
                         if _ec_ticks is not None and not _ec_ticks.empty:
                             _et_ms = int(pd.Timestamp(entry_time
                                          ).timestamp() * 1000)
-                            _et_end = _et_ms + 60_000  # 60 seconds
+                            _et_end = _et_ms + 120_000  # 120 seconds
                             _first_min = _ec_ticks[
                                 (_ec_ticks['timestamp_ms'] > _et_ms) &
                                 (_ec_ticks['timestamp_ms'] <= _et_end)]
