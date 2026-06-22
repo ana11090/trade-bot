@@ -3987,8 +3987,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      exiting within 20 seconds of entry (e.g. 16:00:00 → 16:00:20).
         #      With M1 data we can safely check the entry candle: filter to M1 bars
         #      AFTER entry_time (no look-ahead), run on_new_candle on each.
-        # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
-        if _use_m1_exit_sim and result is None and _n_future > 0:
+        # WHY: tick sim runs INDEPENDENTLY of _use_m1_exit_sim — that flag is
+        #      False for FixedSLTP (not in _m1_exit_types), but FixedSLTP still
+        #      needs the tick sim to catch sub-minute SL/TP exits. Gated
+        #      internally by _is_tick_eligible (TrailingStop / FixedSLTP).
+        # CHANGED: June 2026 — tick sim moved out of the _use_m1_exit_sim block
+        if result is None and _n_future > 0:
             try:
                 # ── TICK SIM: first 120 seconds after entry ──
                 # WHY: MT5 exits SL/TP within seconds-to-minutes at tick level.
@@ -4118,7 +4122,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                                     pos_info['lowest_since_entry'] = _rl
                     except Exception:
                         pass
+            except Exception:
+                pass
 
+        # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
+        if _use_m1_exit_sim and result is None and _n_future > 0:
+            try:
                 # ── M1 FALLBACK: minute 1+ of entry candle ──
                 _ec_m1 = _load_m1_for_candle(
                     data_dir, future_candles.iloc[0]['timestamp'],
