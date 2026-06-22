@@ -600,12 +600,15 @@ def _find_gap_fill(data_dir, bar_ts, tf_minutes, ntw_start, ntw_end, broker_time
         #      session open) shifts to UTC hour 22, which is INSIDE the NTW.
         #      Using UTC hours here produces 02:00 broker entries in summer
         #      instead of 01:05. Fix: filter by broker-local hour instead.
-        #      Broker hour >= 1 is always valid (session opens at 01:05 broker,
-        #      regardless of DST). The Monday-00:xx filter is subsumed.
-        # CHANGED: June 2026 — DST-correct broker-local filter replaces UTC NTW
+        #      Broker minute-of-day >= 65 (01:05) is always valid — the session
+        #      opens at 01:05 broker time regardless of DST. M1 bars at 01:00–
+        #      01:04 exist in the data during the US→EU DST gap (Mar 9–27) but
+        #      MT5 doesn't enter until 01:05. The Monday-00:xx filter is subsumed.
+        # CHANGED: June 2026 — DST-correct broker-local filter (tightened to 01:05)
         _ts_sg = _m1w['timestamp']
         _hh_sg = _ts_sg.dt.hour.to_numpy()
-        _mask_sg = _hh_sg >= 1
+        _mm_sg = _ts_sg.dt.minute.to_numpy()
+        _mask_sg = (_hh_sg * 60 + _mm_sg) >= 65
         _hits_sg = _m1w.index[_mask_sg]
         if len(_hits_sg):
             _r_sg = _m1w.loc[_hits_sg[0]]
