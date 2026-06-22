@@ -3901,7 +3901,19 @@ def fast_backtest(df, ind, rules, exit_strategy,
             exit_strategy,
             (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
         )
-        if _entry_scan_eligible and _n_future > 0:
+        # WHY: FixedSLTP (not ATRFixedSLTP) DEFERS this M1-resolution entry-candle
+        #      SL/TP scan to the tick sim below when tick data is available. The
+        #      tick sim resolves SL/TP at the precise TICK time (full-candle window)
+        #      instead of M1-bar time, so occupied_until / exit_time match MT5.
+        #      Falls back to this scan when no tick loader. TrailingStop is already
+        #      excluded above, so FixedSLTP is the only conflicting type.
+        # CHANGED: June 2026 — defer FixedSLTP entry-candle SL/TP to the tick sim
+        _sltp_defer_to_ticks = (
+            isinstance(exit_strategy, FixedSLTP)
+            and not isinstance(exit_strategy, ATRFixedSLTP)
+            and pos_info.get('_tick_loader') is not None
+        )
+        if _entry_scan_eligible and not _sltp_defer_to_ticks and _n_future > 0:
             try:
                 _ec = future_candles.iloc[0]
                 _ec_dict = _ec.to_dict()
@@ -4021,7 +4033,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
                         if _ec_ticks is not None and not _ec_ticks.empty:
                             _et_ms = int(pd.Timestamp(entry_time
                                          ).timestamp() * 1000)
-                            _et_end = _et_ms + 120_000  # 120 seconds
+                            # TrailingStop: 120s (exits within seconds)
+                            # FixedSLTP: full candle (SL can hit at any minute)
+                            _tick_window_ms = (120_000
+                                if isinstance(exit_strategy, TrailingStop)
+                                else candle_minutes * 60_000)
+                            _et_end = _et_ms + _tick_window_ms
                             _first_min = _ec_ticks[
                                 (_ec_ticks['timestamp_ms'] > _et_ms) &
                                 (_ec_ticks['timestamp_ms'] <= _et_end)]
