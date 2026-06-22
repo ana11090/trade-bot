@@ -595,18 +595,17 @@ def _find_gap_fill(data_dir, bar_ts, tf_minutes, ntw_start, ntw_end, broker_time
     #      Exact same semantics as the scalar _in_no_trades_window loop above.
     # CHANGED: June 2026 — Hot Spot 2: vectorized M1 scan
     try:
-        _h_sg  = _m1w['timestamp_utc'].dt.hour.to_numpy()
+        # WHY (June 2026 — DST fix): The NTW is defined in fixed GMT hours
+        #      [20,23), but after DST spring-forward, broker 01:05 (the real
+        #      session open) shifts to UTC hour 22, which is INSIDE the NTW.
+        #      Using UTC hours here produces 02:00 broker entries in summer
+        #      instead of 01:05. Fix: filter by broker-local hour instead.
+        #      Broker hour >= 1 is always valid (session opens at 01:05 broker,
+        #      regardless of DST). The Monday-00:xx filter is subsumed.
+        # CHANGED: June 2026 — DST-correct broker-local filter replaces UTC NTW
         _ts_sg = _m1w['timestamp']
-        _wd_sg = _ts_sg.dt.weekday.to_numpy()
         _hh_sg = _ts_sg.dt.hour.to_numpy()
-        _end_n = 24 if ntw_end == 0 else ntw_end
-        if ntw_start < 0 or ntw_end < 0 or ntw_start == _end_n:
-            _in_ntw_sg = np.zeros(len(_h_sg), dtype=bool)
-        elif ntw_start < _end_n:
-            _in_ntw_sg = (ntw_start <= _h_sg) & (_h_sg < _end_n)
-        else:
-            _in_ntw_sg = (_h_sg >= ntw_start) | (_h_sg < _end_n)
-        _mask_sg = ~_in_ntw_sg & ~((_wd_sg == 0) & (_hh_sg == 0))
+        _mask_sg = _hh_sg >= 1
         _hits_sg = _m1w.index[_mask_sg]
         if len(_hits_sg):
             _r_sg = _m1w.loc[_hits_sg[0]]
@@ -2366,7 +2365,12 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                     #      hour 23, outside the window). Find that M1 bar instead.
                     #      Only applies to weekly/holiday gaps (_is_gap_bar=True),
                     #      NOT daily session reopens (exactly 4h gap).
-                    if gap_fill_parity and data_dir and _is_gap_bar:
+                    # WHY (June 2026 — first-bar fix): Also fire for broker
+                    #      hour==0 entries where _is_gap_bar is False because
+                    #      _eb_int==0 (no previous bar to compare). Matches
+                    #      fast_backtest's existing hour==0 fallback.
+                    # CHANGED: June 2026 — first-bar gap-fill in run_backtest
+                    if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(next_candle['timestamp']).hour == 0):
                         _gap_fill_entry = _find_gap_fill(
                             data_dir, next_candle['timestamp'],
                             _run_candle_tf_minutes,
@@ -2391,7 +2395,9 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 #      but MT5 fills at the first post-open M1 bar (e.g. 01:05).
                 #      _is_gap_bar guard ensures only weekly/holiday gaps are
                 #      retimed, not normal Monday daily reopens with a 4h gap.
-                if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None:
+                # WHY (June 2026 — first-bar fix): Also handle _eb_int==0 Mondays.
+                # CHANGED: June 2026 — first-bar gap-fill in run_backtest
+                if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(next_candle['timestamp']).hour == 0) and _gap_fill_entry is None:
                     _gap_fill_entry = _find_gap_fill(
                         data_dir, next_candle['timestamp'],
                         _run_candle_tf_minutes,
@@ -2435,7 +2441,15 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         #      checks but is near a gap (shift(1) can put entry one bar after the
         #      reopen). Find the M1 session-open bar for the gap bar.
         # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
-        if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None and _gap_bar_ts is not None:
+        # WHY (June 2026 — duplicate fix): Only override time+price when the
+        #      current entry bar IS the gap bar itself. When _is_gap_bar was set
+        #      via the 2-bar lookback (_gap_bar_ts points to the PREVIOUS bar),
+        #      the current bar (e.g. 04:00) is a normal bar with its own signal —
+        #      retiming it to 01:05 creates a duplicate entry with the gap bar.
+        # CHANGED: June 2026 — guard non-blocked gap-fill against lookback false positives
+        _is_direct_gap = (_gap_bar_ts is not None
+                          and pd.Timestamp(_gap_bar_ts) == pd.Timestamp(next_candle['timestamp']))
+        if gap_fill_parity and data_dir and _is_gap_bar and _is_direct_gap and _gap_fill_entry is None:
             _gap_fill_entry = _find_gap_fill(
                 data_dir, _gap_bar_ts,
                 _run_candle_tf_minutes,
@@ -3713,7 +3727,12 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      Jan 2 Thursday — not blocked, but gap is at 00:00). Find the M1 session-
         #      open bar and use its time/price instead, matching MT5's first-tick fill.
         # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
-        if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None and _gap_bar_ts is not None:
+        # WHY (June 2026 — duplicate fix): Only override when the current entry bar
+        #      IS the gap bar. See run_backtest comment for full explanation.
+        # CHANGED: June 2026 — guard non-blocked gap-fill against lookback false positives
+        _is_direct_gap_fbt = (_gap_bar_ts is not None
+                              and pd.Timestamp(_gap_bar_ts) == pd.Timestamp(next_candle['timestamp']))
+        if gap_fill_parity and data_dir and _is_gap_bar and _is_direct_gap_fbt and _gap_fill_entry is None:
             _gap_fill_entry = _find_gap_fill(
                 data_dir, _gap_bar_ts,
                 _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
