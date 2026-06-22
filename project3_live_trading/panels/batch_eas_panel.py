@@ -989,15 +989,25 @@ def _write_debug_dump():
             try:
                 _rdir = _py_rules_dir()
                 _hexids = _re.findall(_HEX_RE, ea.lower())
+                # WHY (June 2026 — TF guard): The hex-ID scan previously matched
+                #      on exit hashes (e.g. 0df9) shared across rules, letting M5
+                #      rule files match H4 EAs. Adding a TF check prevents this.
+                # CHANGED: June 2026 — TF guard in fallback rules-dir scan
+                _want_tf_scan = (rec.get("entry_tf") or "").upper().strip()
                 for _jf in sorted(glob.glob(os.path.join(_rdir, "*.json"))):
                     _bn = os.path.basename(_jf).lower()
                     if any(h in _bn for h in _hexids):
                         with open(_jf, encoding="utf-8") as _fh:
                             _rd = json.load(_fh)
+                        _got_tf = (_rd.get("entry_tf") or "").upper().strip()
+                        if _want_tf_scan and _got_tf and _got_tf != _want_tf_scan:
+                            _d("  rules-dir scan SKIP (TF mismatch): %s has %s, want %s"
+                               % (os.path.basename(_jf), _got_tf, _want_tf_scan))
+                            continue
                         py = _rd.get("trades") or _rd.get("py_trades") or py
                         meta = {"file": os.path.basename(_jf),
                                 "py_tf": _rd.get("entry_tf"),
-                                "tf_match": (_rd.get("entry_tf") == rec.get("entry_tf"))}
+                                "tf_match": (_got_tf == _want_tf_scan)}
                         _d("  rules-dir scan matched: %s (%d trades)"
                            % (os.path.basename(_jf), len(py or [])))
                         break
