@@ -716,12 +716,40 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         m['mt5_profit_factor'] = stats.get('profit_factor', '')
         # WHY: Show Python profit alongside MT5 for at-a-glance comparison.
         # CHANGED: June 2026 — enriched comparison_summary for parity dashboard
+        # WHY (June 2026 — in-range P&L): Total PY profit includes trades after
+        #      MT5's window end, inflating the gap. Add in-range columns that only
+        #      sum P&L from trades within the MT5 window for fair comparison.
+        # CHANGED: June 2026 — in-range P&L columns + renamed total columns
         _py_npips = sum(float(t.get('net_pips', 0) or 0) for t in py_trades)
         _py_nprof = sum(float(t.get('net_profit', 0) or 0) for t in py_trades)
         _py_wins = sum(1 for t in py_trades if float(t.get('net_pips', 0) or 0) > 0)
-        m['py_net_pips'] = round(_py_npips, 1)
-        m['py_net_profit'] = round(_py_nprof, 2)
+        m['py_pips_total'] = round(_py_npips, 1)
+        m['py_profit_total'] = round(_py_nprof, 2)
         m['py_win_rate'] = round(100.0 * _py_wins / len(py_trades), 1) if py_trades else 0
+        # In-range P&L: only PY trades with entry_time <= last MT5 entry
+        _cutoff = max(mt5) if mt5 else None
+        if _cutoff:
+            _ir_trades = []
+            for _t in py_trades:
+                try:
+                    _et = _t.get('entry_time')
+                    if isinstance(_et, str):
+                        _et_dt = datetime.fromisoformat(_et)
+                    elif isinstance(_et, datetime):
+                        _et_dt = _et
+                    else:
+                        continue
+                    if _et_dt.replace(second=0) <= _cutoff:
+                        _ir_trades.append(_t)
+                except Exception:
+                    pass
+            _ir_pips = sum(float(t.get('net_pips', 0) or 0) for t in _ir_trades)
+            _ir_prof = sum(float(t.get('net_profit', 0) or 0) for t in _ir_trades)
+            m['py_pips_inrange'] = round(_ir_pips, 1)
+            m['py_profit_inrange'] = round(_ir_prof, 2)
+        else:
+            m['py_pips_inrange'] = m['py_pips_total']
+            m['py_profit_inrange'] = m['py_profit_total']
         m['mt5_only'] = m['mt5'] - m['py_in_range']
         m['py_only'] = m['py'] - m['py_in_range']
         m['parity_pct'] = round(100.0 * m['exact'] / m['mt5'], 0) if m['mt5'] else 0
@@ -738,18 +766,21 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
                   f'(filter OFF). EA uses 65 pip gate. Re-run backtest with '
                   f'"Use Config" ON + leveraged firm to get parity.')
         rows.append(m)
-        print('%-32s MT5=$%-8s PY=$%-8s  %d/%d exact (%d%%)  mt5_only=%d' %
+        print('%-32s MT5=$%-8s PY_inrange=$%-8s PY_total=$%-8s  %d/%d exact (%d%%)  mt5_only=%d' %
               (name[:32],
                (stats.get('net_profit') or '?')[:8],
-               str(m.get('py_net_profit', '?'))[:8],
+               str(m.get('py_profit_inrange', '?'))[:8],
+               str(m.get('py_profit_total', '?'))[:8],
                m['exact'], m['mt5'], m['parity_pct'],
                m['mt5_only']))
 
     # write CSV summary
     out_csv = os.path.join(reports_dir, 'comparison_summary.csv')
-    keys = ['name', 'mt5_net_profit', 'py_net_profit', 'mt5_profit_factor',
+    keys = ['name', 'mt5_net_profit', 'py_profit_inrange', 'py_profit_total',
+            'mt5_profit_factor',
             'mt5', 'py', 'py_in_range', 'exact', 'parity_pct',
-            'mt5_only', 'py_only', 'py_net_pips', 'py_win_rate',
+            'mt5_only', 'py_only',
+            'py_pips_inrange', 'py_pips_total', 'py_win_rate',
             'one_bar_early', 'one_bar_late', 'py_after_end', 'note']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
