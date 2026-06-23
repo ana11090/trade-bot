@@ -2307,7 +2307,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 elif _eb_int > 0:
                     _h0_dt = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
                               pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                    _hour0_session_gap = _h0_dt.total_seconds() > _run_candle_tf_minutes * 60
+                    _hour0_session_gap = _h0_dt.total_seconds() >= _run_candle_tf_minutes * 60
         except Exception:
             pass
 
@@ -3667,7 +3667,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                             elif _eb_int > 0:
                                 _h0_dt_f = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
                                             pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                                _hour0_sg_fbt = _h0_dt_f.total_seconds() > (_tf_min_fbt if '_tf_min_fbt' in dir() else 240) * 60
+                                _hour0_sg_fbt = _h0_dt_f.total_seconds() >= (_tf_min_fbt if '_tf_min_fbt' in dir() else 240) * 60
                     except Exception:
                         pass
                     if gap_fill_parity and data_dir and (_is_gap_bar or _hour0_sg_fbt):
