@@ -1818,6 +1818,35 @@ def _write_debug_dump():
                 _rf.write("%-52s  %s\n" % (_rr["ea"][:52], _rr["sub"]))
 
         _d("PARITY REPORT: %s" % _report_path)
+
+        # ── Eval Windows Report ──────────────────────────────────────────
+        # WHY (June 2026): After parity comparison, auto-run sliding-window
+        #      eval simulation for each rule. Answers "would this rule pass
+        #      the Get Leveraged challenge starting on any given date?"
+        # CHANGED: June 2026 — eval_windows_report feature
+        try:
+            from project3_live_trading.batch_compare_reports import generate_eval_windows_report
+            _rules_dir = _py_rules_dir()
+            if _rules_dir and os.path.isdir(_rules_dir):
+                _eval_path = generate_eval_windows_report(
+                    rules_dir=_rules_dir,
+                    reports_dir=reports,
+                    manifest_path=(mpath if os.path.isfile(mpath) else None),
+                    firm_id='leveraged',
+                    challenge_id='leveraged_standard',
+                    account_size=10000,
+                    risk_pct=1.0,
+                    sl_pips=150.0,
+                    pip_value_per_lot=1.0,
+                )
+                if _eval_path:
+                    _d("EVAL WINDOWS REPORT: %s" % _eval_path)
+                else:
+                    _d("EVAL WINDOWS: no report generated (check logs)")
+            else:
+                _d("EVAL WINDOWS: rules_dir not found — skipping")
+        except Exception as _eval_err:
+            _d("EVAL WINDOWS ERROR: %r" % _eval_err)
     except Exception as _rpe:
         _d("PARITY_REPORT write failed: %r" % _rpe)
 
