@@ -2368,12 +2368,14 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                     #      hour 23, outside the window). Find that M1 bar instead.
                     #      Only applies to weekly/holiday gaps (_is_gap_bar=True),
                     #      NOT daily session reopens (exactly 4h gap).
-                    # WHY (June 2026 — first-bar fix): Also fire for broker
-                    #      hour==0 entries where _is_gap_bar is False because
-                    #      _eb_int==0 (no previous bar to compare). Matches
-                    #      fast_backtest's existing hour==0 fallback.
-                    # CHANGED: June 2026 — first-bar gap-fill in run_backtest
-                    if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(next_candle['timestamp']).hour == 0):
+                    # WHY (June 2026 — first-bar fix): Also fire for bar index 0
+                    #      where _is_gap_bar is False because _eb_int==0 (no
+                    #      previous bar to compare). Only for the literal first
+                    #      bar, NOT every daily midnight bar — normal daily
+                    #      reopens (20:00→00:00 = 4h) should be skipped, not
+                    #      gap-filled, matching MT5 behavior.
+                    # CHANGED: June 2026 — restrict first-bar gap-fill to _eb_int==0
+                    if gap_fill_parity and data_dir and (_is_gap_bar or _eb_int == 0):
                         _gap_fill_entry = _find_gap_fill(
                             data_dir, next_candle['timestamp'],
                             _run_candle_tf_minutes,
@@ -2399,8 +2401,8 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 #      _is_gap_bar guard ensures only weekly/holiday gaps are
                 #      retimed, not normal Monday daily reopens with a 4h gap.
                 # WHY (June 2026 — first-bar fix): Also handle _eb_int==0 Mondays.
-                # CHANGED: June 2026 — first-bar gap-fill in run_backtest
-                if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(next_candle['timestamp']).hour == 0) and _gap_fill_entry is None:
+                # CHANGED: June 2026 — restrict first-bar gap-fill to _eb_int==0
+                if gap_fill_parity and data_dir and (_is_gap_bar or _eb_int == 0) and _gap_fill_entry is None:
                     _gap_fill_entry = _find_gap_fill(
                         data_dir, next_candle['timestamp'],
                         _run_candle_tf_minutes,
@@ -3638,8 +3640,8 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     #   the NTW (20-23) so the bar is blocked, but it is NOT _is_gap_bar
                     #   (20:00→00:00 = 4h = normal spacing). _find_gap_fill filters M1 by
                     #   the NTW window, so it returns the 01:05 EET (23:05 UTC) reopen.
-                    # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest (v7: hour==0)
-                    if gap_fill_parity and data_dir and (_is_gap_bar or pd.Timestamp(entry_time).hour == 0):
+                    # CHANGED: June 2026 — restrict first-bar gap-fill to _eb_int==0
+                    if gap_fill_parity and data_dir and (_is_gap_bar or _eb_int == 0):
                         _gap_fill_entry = _find_gap_fill(
                             data_dir, next_candle['timestamp'],
                             _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
