@@ -622,6 +622,11 @@ def _compare(mt5, py, bar_minutes=5):
     return dict(
         mt5=len(mset), py=len(pset), py_in_range=len(py_in),
         exact=len(exact_set),
+        # WHY (June 2026 — matched P&L): Return the set of PY entry times that
+        #      matched MT5 entries, so the caller can filter PY trades and compute
+        #      P&L only for the trades both sides agree on.
+        # CHANGED: June 2026 — return exact_set for matched-only P&L
+        _exact_set=exact_set,
         one_bar_early=early, one_bar_late=late,
         py_after_end=len(pset - py_in),
     )
@@ -750,6 +755,35 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         else:
             m['py_pips_inrange'] = m['py_pips_total']
             m['py_profit_inrange'] = m['py_profit_total']
+        # WHY (June 2026 — matched P&L): Sum P&L only from PY trades whose entry
+        #      time is in the exact-match set. This gives a true apples-to-apples
+        #      comparison: same trades, same count, only per-trade pricing differs.
+        # CHANGED: June 2026 — matched-only P&L column
+        _exact_set = m.pop('_exact_set', set())
+        if _exact_set:
+            _matched_trades = []
+            for _t in py_trades:
+                try:
+                    _et = _t.get('entry_time')
+                    if isinstance(_et, str):
+                        _et_dt = datetime.fromisoformat(_et).replace(second=0)
+                    elif isinstance(_et, datetime):
+                        _et_dt = _et.replace(second=0)
+                    else:
+                        continue
+                    if _et_dt in _exact_set:
+                        _matched_trades.append(_t)
+                except Exception:
+                    pass
+            _m_pips = sum(float(t.get('net_pips', 0) or 0) for t in _matched_trades)
+            _m_prof = sum(float(t.get('net_profit', 0) or 0) for t in _matched_trades)
+            m['py_profit_matched'] = round(_m_prof, 2)
+            m['py_pips_matched'] = round(_m_pips, 1)
+            m['matched_trades'] = len(_matched_trades)
+        else:
+            m['py_profit_matched'] = m['py_profit_inrange']
+            m['py_pips_matched'] = m['py_pips_inrange']
+            m['matched_trades'] = m.get('exact', 0)
         m['mt5_only'] = m['mt5'] - m['py_in_range']
         m['py_only'] = m['py'] - m['py_in_range']
         m['parity_pct'] = round(100.0 * m['exact'] / m['mt5'], 0) if m['mt5'] else 0
@@ -766,21 +800,25 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
                   f'(filter OFF). EA uses 65 pip gate. Re-run backtest with '
                   f'"Use Config" ON + leveraged firm to get parity.')
         rows.append(m)
-        print('%-32s MT5=$%-8s PY_inrange=$%-8s PY_total=$%-8s  %d/%d exact (%d%%)  mt5_only=%d' %
+        _gap_matched = ''
+        try:
+            _gap_matched = round(float(stats.get('net_profit', 0)) - m.get('py_profit_matched', 0), 2)
+        except Exception:
+            pass
+        print('%-32s MT5=$%-8s PY_matched=$%-8s  gap=$%-8s  %d/%d exact (%d%%)' %
               (name[:32],
                (stats.get('net_profit') or '?')[:8],
-               str(m.get('py_profit_inrange', '?'))[:8],
-               str(m.get('py_profit_total', '?'))[:8],
-               m['exact'], m['mt5'], m['parity_pct'],
-               m['mt5_only']))
+               str(m.get('py_profit_matched', '?'))[:8],
+               str(_gap_matched)[:8],
+               m['exact'], m['mt5'], m['parity_pct']))
 
     # write CSV summary
     out_csv = os.path.join(reports_dir, 'comparison_summary.csv')
-    keys = ['name', 'mt5_net_profit', 'py_profit_inrange', 'py_profit_total',
-            'mt5_profit_factor',
-            'mt5', 'py', 'py_in_range', 'exact', 'parity_pct',
+    keys = ['name', 'mt5_net_profit', 'py_profit_matched', 'py_profit_inrange',
+            'py_profit_total', 'mt5_profit_factor',
+            'mt5', 'py', 'py_in_range', 'matched_trades', 'exact', 'parity_pct',
             'mt5_only', 'py_only',
-            'py_pips_inrange', 'py_pips_total', 'py_win_rate',
+            'py_pips_matched', 'py_pips_inrange', 'py_pips_total', 'py_win_rate',
             'one_bar_early', 'one_bar_late', 'py_after_end', 'note']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
