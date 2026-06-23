@@ -829,7 +829,266 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     print('Columns: exact=same-bar entries; early/late=Python off by one bar;')
     print('         after=Python trades past MT5 end (expected if Python ran longer).')
     print('         note=TF mismatch warning or match confirmation.')
+
+    # WHY (June 2026): Run prop firm eval window analysis per rule and
+    #      generate an xlsx showing which windows pass/fail, at what dates,
+    #      and by how much — so the user can see strategy viability alongside
+    #      the parity comparison.
+    # CHANGED: June 2026 — eval window report
+    try:
+        generate_eval_report(reports_dir, python_dir, manifest_path=manifest_path)
+    except Exception as _eval_err:
+        print('\n[EVAL] Report generation failed: %r' % _eval_err)
+
     return rows
+
+
+def generate_eval_report(reports_dir, python_dir, manifest_path=None):
+    """Generate prop firm eval window analysis per rule.
+
+    Runs simulate_challenge (sliding_window, no funded stage) for each
+    individual rule's PY trades and writes eval_windows_report.xlsx.
+    """
+    import json, os, glob
+    import pandas as pd
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Border, Side
+    from datetime import datetime
+
+    # ── Firm settings (Get Leveraged, match leveraged.json) ──────────────
+    # NOTE: challenge id is 'leveraged_standard' (verified via load_all_firms);
+    #       'leveraged_get_leveraged' does not exist and would yield None.
+    FIRM_ID = "leveraged"
+    CHALLENGE_ID = "leveraged_standard"
+    ACCOUNT_SIZE = 10000
+    RISK_PCT = 1.0
+    DEFAULT_SL = 150.0
+    PIP_VALUE = 1.0  # XAUUSD
+
+    # ── Find individual rule JSON files (skip composites and M5 rules) ───
+    rule_files = {}
+    for jf in sorted(glob.glob(os.path.join(python_dir, "rule_*.json"))):
+        bn = os.path.basename(jf)
+        if any(x in bn.lower() for x in ['_all_', '_top_', '_m5']):
+            continue
+        with open(jf, encoding='utf-8') as fh:
+            data = json.load(fh)
+        trades = data.get('trades') or data.get('py_trades') or []
+        if not trades:
+            continue
+        rule_hash = data.get('rule_hash', '')
+        exit_hash = data.get('exit_hash', '')
+        entry_tf  = data.get('entry_tf', '')
+        rule_label = f"{rule_hash}_{exit_hash}" if rule_hash and exit_hash else bn
+        rule_files[bn] = {
+            'label': rule_label,
+            'rule_hash': rule_hash,
+            'exit_hash': exit_hash,
+            'entry_tf': entry_tf,
+            'trades': trades,
+            'filename': bn,
+        }
+
+    if not rule_files:
+        print("[EVAL] No individual rule JSONs found — skipping eval report.")
+        return
+
+    from project2_backtesting.strategy_validator import _trades_to_df
+    from shared.prop_firm_simulator import simulate_challenge
+    from project2_backtesting.strategy_refiner import max_consecutive_dd_breaches
+
+    summary_rows = []
+    window_rows = []
+
+    for fname, info in rule_files.items():
+        label = info['label']
+        trades = info['trades']
+        print(f"[EVAL] Simulating {label} ({len(trades)} trades)...")
+        try:
+            df = _trades_to_df(
+                trades,
+                risk_per_trade_pct=RISK_PCT,
+                default_sl_pips=DEFAULT_SL,
+                pip_value_per_lot=PIP_VALUE,
+                account_size=ACCOUNT_SIZE,
+            )
+            sim = simulate_challenge(
+                trades_df=df,
+                firm_id=FIRM_ID,
+                challenge_id=CHALLENGE_ID,
+                account_size=ACCOUNT_SIZE,
+                mode='sliding_window',
+                simulate_funded=False,
+                risk_per_trade_pct=RISK_PCT,
+                default_sl_pips=DEFAULT_SL,
+                pip_value_per_lot=PIP_VALUE,
+            )
+        except Exception as e:
+            print(f"[EVAL] ERROR on {label}: {e}")
+            continue
+
+        if sim is None:
+            print(f"[EVAL] sim returned None for {label} (firm/challenge not found?)")
+            continue
+
+        results = getattr(sim, 'individual_results', [])
+        passes = [r for r in results if r.eval_outcome == 'PASS']
+        fails  = [r for r in results
+                  if r.eval_outcome not in ('PASS', 'INSUFFICIENT_TRADES')]
+        incomplete = [r for r in results if r.eval_outcome == 'INSUFFICIENT_TRADES']
+
+        real_total = len(passes) + len(fails)
+        pass_rate = round(100.0 * len(passes) / real_total, 1) if real_total else 0
+
+        fail_reasons = {}
+        for r in fails:
+            fail_reasons[r.eval_outcome] = fail_reasons.get(r.eval_outcome, 0) + 1
+
+        worst_dd = max((r.eval_max_dd_pct for r in results), default=0)
+        avg_prof_pass = (sum(r.eval_profit_pct for r in passes) / len(passes)
+                         if passes else 0)
+        avg_dd_fail = (sum(r.eval_max_dd_pct for r in fails) / len(fails)
+                       if fails else 0)
+
+        # Consecutive fail streaks
+        _max_consec_dd = max_consecutive_dd_breaches(results)
+        # Broader: any non-PASS, non-INSUFFICIENT outcome counts as a fail
+        _any_fail_set = {'FAIL_DD', 'FAIL_DAILY_DD', 'FAIL_TIMEOUT'}
+        _cf_run, _cf_worst = 0, 0
+        for r in results:
+            if r.eval_outcome in _any_fail_set:
+                _cf_run += 1
+                _cf_worst = max(_cf_worst, _cf_run)
+            else:
+                _cf_run = 0
+
+        summary_rows.append({
+            'rule': info['rule_hash'],
+            'exit_config': info['exit_hash'],
+            'tf': info['entry_tf'],
+            'py_trades': len(trades),
+            'total_windows': len(results),
+            'passed': len(passes),
+            'failed': len(fails),
+            'pass_rate': pass_rate,
+            'fail_dd': fail_reasons.get('FAIL_DD', 0),
+            'fail_daily_dd': fail_reasons.get('FAIL_DAILY_DD', 0),
+            'fail_timeout': fail_reasons.get('FAIL_TIMEOUT', 0),
+            'insufficient': len(incomplete),
+            'worst_dd_pct': round(worst_dd, 2),
+            'avg_profit_pct_passed': round(avg_prof_pass, 2),
+            'avg_dd_pct_failed': round(avg_dd_fail, 2),
+            'max_consec_fails': _cf_worst,
+            'max_consec_dd': _max_consec_dd,
+        })
+
+        for r in results:
+            phases_str = ''
+            if r.eval_phase_results:
+                phases_str = ', '.join(
+                    f"{p.get('phase_name','?')}: {p.get('outcome','?')}"
+                    for p in r.eval_phase_results
+                    if isinstance(p, dict)
+                )
+            window_rows.append({
+                'rule': info['rule_hash'],
+                'exit_config': info['exit_hash'],
+                'start_date': r.start_date,
+                'outcome': r.eval_outcome,
+                'eval_days': r.eval_days,
+                'eval_trading_days': r.eval_trading_days,
+                'profit_pct': round(r.eval_profit_pct, 2),
+                'max_dd_pct': round(r.eval_max_dd_pct, 2),
+                'phases': phases_str,
+            })
+
+    if not summary_rows:
+        print("[EVAL] No rules simulated — skipping xlsx.")
+        return
+
+    # ── Write xlsx ───────────────────────────────────────────────────────
+    wb = Workbook()
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font_w = Font(bold=True, size=11, color="FFFFFF")
+    pass_fill   = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    fail_fill   = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    timeout_fill = PatternFill(start_color="FFE699", end_color="FFE699", fill_type="solid")
+    grey_fill   = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin'),
+    )
+
+    ws = wb.active
+    ws.title = "Summary"
+    s_cols = list(summary_rows[0].keys())
+    for ci, col in enumerate(s_cols, 1):
+        cell = ws.cell(row=1, column=ci, value=col)
+        cell.font = header_font_w
+        cell.fill = header_fill
+        cell.border = thin_border
+    for ri, row in enumerate(summary_rows, 2):
+        for ci, col in enumerate(s_cols, 1):
+            val = row[col]
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.border = thin_border
+            if col == 'pass_rate':
+                cell.number_format = '0.0'
+                if val >= 70:
+                    cell.fill = pass_fill
+                elif val < 40:
+                    cell.fill = fail_fill
+            elif col in ('worst_dd_pct', 'avg_dd_pct_failed'):
+                cell.number_format = '0.00'
+            elif col == 'max_consec_fails':
+                if val > 3:
+                    cell.fill = fail_fill
+                    cell.font = Font(bold=True, color="9C0006")
+                elif val <= 2:
+                    cell.fill = pass_fill
+            elif col == 'max_consec_dd':
+                if val > 3:
+                    cell.fill = fail_fill
+                    cell.font = Font(bold=True, color="9C0006")
+    for ci, col in enumerate(s_cols, 1):
+        ws.column_dimensions[ws.cell(row=1, column=ci).column_letter].width = max(len(col) + 4, 12)
+    ws.freeze_panes = 'A2'
+
+    ws2 = wb.create_sheet("Windows")
+    w_cols = list(window_rows[0].keys()) if window_rows else []
+    for ci, col in enumerate(w_cols, 1):
+        cell = ws2.cell(row=1, column=ci, value=col)
+        cell.font = header_font_w
+        cell.fill = header_fill
+        cell.border = thin_border
+    for ri, row in enumerate(window_rows, 2):
+        for ci, col in enumerate(w_cols, 1):
+            val = row[col]
+            cell = ws2.cell(row=ri, column=ci, value=val)
+            cell.border = thin_border
+        outcome = row.get('outcome', '')
+        fill = None
+        if outcome == 'PASS':
+            fill = pass_fill
+        elif outcome in ('FAIL_DD', 'FAIL_DAILY_DD'):
+            fill = fail_fill
+        elif outcome == 'FAIL_TIMEOUT':
+            fill = timeout_fill
+        elif outcome == 'INSUFFICIENT_TRADES':
+            fill = grey_fill
+        if fill:
+            for ci in range(1, len(w_cols) + 1):
+                ws2.cell(row=ri, column=ci).fill = fill
+    for ci, col in enumerate(w_cols, 1):
+        ws2.column_dimensions[ws2.cell(row=1, column=ci).column_letter].width = max(len(col) + 4, 14)
+    ws2.freeze_panes = 'A2'
+    if window_rows:
+        ws2.auto_filter.ref = ws2.dimensions
+
+    out_path = os.path.join(reports_dir, 'eval_windows_report.xlsx')
+    wb.save(out_path)
+    print(f"\n[EVAL] Report saved: {out_path}")
+    print(f"[EVAL] {len(summary_rows)} rules, {len(window_rows)} windows total")
 
 
 def compare_reports(reports_dir, python_dir, manifest_path=''):
