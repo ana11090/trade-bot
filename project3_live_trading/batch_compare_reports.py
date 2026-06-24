@@ -858,6 +858,7 @@ def compare_reports(reports_dir, python_dir, manifest_path=''):
 def generate_eval_windows_report(
     rules_dir,
     reports_dir,
+    out_dir=None,
     manifest_path=None,
     firm_id='leveraged',
     challenge_id='leveraged_standard',
@@ -871,7 +872,9 @@ def generate_eval_windows_report(
     Parameters
     ----------
     rules_dir     : path to outputs/rules/ with rule_*.json files
-    reports_dir   : path to batch/reports/ (output goes in reports_dir/eval_windows/)
+    reports_dir   : path to batch/reports/ (kept for back-compat / fallback)
+    out_dir       : directory to write eval_windows_report.xlsx into.
+                    When None, falls back to reports_dir. No subfolder is created.
     manifest_path : optional batch_manifest.json for combo labels
     firm_id       : prop firm id (default 'leveraged')
     challenge_id  : challenge id (default 'leveraged_standard')
@@ -1035,14 +1038,10 @@ def generate_eval_windows_report(
         return None
 
     # ── Build XLSX ────────────────────────────────────────────────────────
-    eval_dir = os.path.join(reports_dir, 'eval_windows')
-    # Clean old files so previous-run leftovers don't interfere with copy
-    if os.path.isdir(eval_dir):
-        for _old in os.listdir(eval_dir):
-            try:
-                os.remove(os.path.join(eval_dir, _old))
-            except Exception:
-                pass
+    # CHANGED 2026-06-24 — write directly into the per-batch debug_dump folder.
+    #   No reports/eval_windows/ subfolder, no wipe, no copy. out_dir is the
+    #   debug_dump_<stamp>/ dir passed by the panel; fall back to reports_dir.
+    eval_dir = out_dir or reports_dir
     os.makedirs(eval_dir, exist_ok=True)
 
     wb = Workbook()

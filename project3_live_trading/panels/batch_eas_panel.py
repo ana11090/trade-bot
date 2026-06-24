@@ -1917,6 +1917,7 @@ def _write_debug_dump():
                 _eval_path = generate_eval_windows_report(
                     rules_dir=_rules_dir,
                     reports_dir=reports,
+                    out_dir=dump,
                     manifest_path=(mpath if os.path.isfile(mpath) else None),
                     firm_id='leveraged',
                     challenge_id='leveraged_standard',
