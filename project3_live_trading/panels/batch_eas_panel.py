@@ -1218,7 +1218,9 @@ def _write_debug_dump():
     #      each EA's folder, just like the mt5_trades.csv and comparison files.
     try:
         _eval_dir = os.path.join(reports, 'eval_windows')
+        _d("eval copy: checking %s (exists=%s)" % (_eval_dir, os.path.isdir(_eval_dir)))
         if os.path.isdir(_eval_dir):
+            _d("eval copy: files in eval_dir: %s" % os.listdir(_eval_dir))
             import re as _re_eval
             for _ea_sub in [d for d in os.listdir(dump)
                             if os.path.isdir(os.path.join(dump, d))]:

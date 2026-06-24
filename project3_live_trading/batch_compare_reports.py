@@ -1168,9 +1168,14 @@ def generate_eval_windows_report(
         _key = (sr.get('rule', ''), sr.get('exit_config', ''))
         _summary_by_key[_key] = sr
 
+    print(f"[EVAL] Per-rule grouping: {len(_grouped)} groups")
+    for _key in list(_grouped.keys())[:5]:
+        print(f"[EVAL]   group key: {_key!r} -> {len(_grouped[_key])} windows")
     for (_rule, _exit), windows in _grouped.items():
         if not _rule:
+            print(f"[EVAL]   SKIP empty rule: key=({_rule!r}, {_exit!r})")
             continue
+        print(f"[EVAL]   generating eval_{_rule}_{_exit}.xlsx ({len(windows)} windows)")
         sr = _summary_by_key.get((_rule, _exit), {})
         wb2 = Workbook()
         ws_r = wb2.active
