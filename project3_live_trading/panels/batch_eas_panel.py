@@ -843,6 +843,85 @@ def _step_compare():
         return False
 
 
+def _resolve_eval_settings_from_rule(rule_dict):
+    """Refiner-style per-rule resolution of (firm_id, challenge_id, account,
+    risk_pct, sl_pips, pip_value, firm_label). Reads stage/firm/account/risk/SL
+    from the rule itself — never hardcodes. Mirrors _update_passrate_detail in
+    strategy_refiner_panel.py so the EA eval files match the refiner panel."""
+    from shared.sim_detail import resolve_firm_challenge
+
+    rd = rule_dict or {}
+    rule0 = ((rd.get('rules') or [{}])[0] if rd.get('rules')
+             else (rd.get('saved_rule') or {})) or {}
+    rs0 = rd.get('run_settings') or {}
+
+    def _f(*vals, default):
+        for v in vals:
+            if v not in (None, '', 0):
+                try:
+                    return float(v)
+                except Exception:
+                    pass
+        return float(default)
+
+    acct = _f(rule0.get('account_size'), rs0.get('starting_capital'),
+              rd.get('account_size'), default=10000)
+    risk = _f(rule0.get('risk_pct'), rs0.get('risk_pct'),
+              rd.get('risk_pct'), default=1.0)
+    sl   = _f((rule0.get('exit_params') or {}).get('sl_pips'),
+              default=150.0)
+    pipv = _f(rule0.get('pip_value_per_lot'), rs0.get('pip_value_per_lot'),
+              default=1.0)
+
+    # Stage — read from the rule (informational; firm phase drives the numbers).
+    stage = (rd.get('prop_firm_stage')
+             or rs0.get('prop_firm_stage')
+             or rule0.get('prop_firm_stage')
+             or 'evaluation')
+
+    top_firm = (rd.get('prop_firm_name') or rd.get('firm_name')
+                or rs0.get('prop_firm_name') or rs0.get('firm_name'))
+    top_firm_id = (rd.get('firm_id') or rs0.get('firm_id'))
+
+    firm_id, ch_id = resolve_firm_challenge(
+        rule0, int(acct),
+        fallback_firm_name=top_firm,
+        fallback_firm_id=top_firm_id)
+
+    return {
+        'firm_id': firm_id, 'challenge_id': ch_id,
+        'account_size': int(acct), 'risk_pct': risk,
+        'sl_pips': sl, 'pip_value': pipv, 'stage': stage,
+        'firm_label': (top_firm or rule0.get('prop_firm_name') or firm_id or '?'),
+    }
+
+
+def _mt5_trades_to_sim_trades(mt5_trades, pip_value_per_lot):
+    """Convert parsed MT5 trades (dollar profit + volume) into the trade-dict
+    shape build_sim_detail_text/_trades_to_df expect (net_pips + exit_time).
+
+    pips = profit / (volume * pip_value_per_lot). Uses MT5's real net profit
+    (already includes commission/swap), so the eval reflects actual fills.
+    Volume<=0 or missing pip value -> trade skipped (can't size it)."""
+    out = []
+    pv = float(pip_value_per_lot or 0)
+    for t in mt5_trades or []:
+        try:
+            vol = float(t.get('volume') or t.get('Volume') or 0)
+            profit = float(t.get('profit') or t.get('Profit') or 0)
+        except Exception:
+            continue
+        if vol <= 0 or pv <= 0:
+            continue
+        net_pips = profit / (vol * pv)
+        out.append({
+            'entry_time': t.get('entry_time') or t.get('time'),
+            'exit_time':  t.get('exit_time') or t.get('entry_time') or t.get('time'),
+            'net_pips':   net_pips,
+        })
+    return out
+
+
 def _write_sim_detail_xlsx(path, text):
     """Render build_sim_detail_text() output into an xlsx that mirrors the
     refiner 'eval & funded simulation' panel: one line per row, Consolas font,
@@ -1100,48 +1179,60 @@ def _write_debug_dump():
                      ("%.1f" % py_net_pips) if py_net_pips is not None else "?",
                      (meta or {}).get("file", "?")))
 
-        # ADDED 2026-06-24 — generate eval_windows.xlsx DIRECTLY in this EA's folder.
-        # WHY: refiner-panel eval/funded simulation (pass rate, days-to-pass/fail,
-        #      DD, per-window detail) visible right beside mt5_trades.csv. No
-        #      reports/eval_windows/ staging, no copy, no hex-ID matching.
+        # ADDED 2026-06-24 — refiner-style eval, TWO files per EA:
+        #   eval_windows_PY.xlsx  (Python trades — matches refiner panel exactly)
+        #   eval_windows_MT5.xlsx (MT5 executed trades, same per-rule settings)
+        # Per-rule resolution of stage/firm/account/risk/SL — never hardcoded.
         try:
-            if py and meta and meta.get("file"):
+            if meta and meta.get("file"):
                 import json as _json_ev
-                from shared.sim_detail import build_sim_detail_text, resolve_firm_challenge
+                from shared.sim_detail import build_sim_detail_text
 
-                # Re-load the resolved rule JSON for the header/money calc.
                 _rd_path = os.path.join(_py_rules_dir(), meta["file"])
                 _rd_ev = {}
                 if os.path.isfile(_rd_path):
                     with open(_rd_path, encoding="utf-8") as _fh_ev:
                         _rd_ev = _json_ev.load(_fh_ev)
 
-                _fid, _cid = resolve_firm_challenge(
-                    _rd_ev, 10000,
-                    fallback_firm_id="leveraged")
-                if not _fid:
-                    _fid, _cid = "leveraged", "leveraged_standard"
+                _cfg = _resolve_eval_settings_from_rule(_rd_ev)
+                if not _cfg["firm_id"] or not _cfg["challenge_id"]:
+                    # refiner-style fallback so a missing firm doesn't blank the file
+                    _cfg["firm_id"] = _cfg["firm_id"] or "leveraged"
+                    _cfg["challenge_id"] = _cfg["challenge_id"] or "leveraged_standard"
 
-                _text_ev, _ = build_sim_detail_text(
-                    strategy_dict=_rd_ev,
-                    trades=py,
-                    firm_id=_fid,
-                    challenge_id=_cid,
-                    account_size=10000,
-                    risk_per_trade_pct=1.0,
-                    default_sl_pips=150.0,
-                    pip_value_per_lot=1.0,
-                    symbol="XAUUSD",
-                )
+                def _gen(_trades, _suffix):
+                    if not _trades:
+                        _d("  eval_windows_%s skipped (no trades)" % _suffix)
+                        return
+                    _txt, _ = build_sim_detail_text(
+                        strategy_dict=_rd_ev, trades=_trades,
+                        firm_id=_cfg["firm_id"], challenge_id=_cfg["challenge_id"],
+                        account_size=_cfg["account_size"],
+                        risk_per_trade_pct=_cfg["risk_pct"],
+                        default_sl_pips=_cfg["sl_pips"],
+                        pip_value_per_lot=_cfg["pip_value"],
+                        symbol="XAUUSD", firm_label=_cfg["firm_label"],
+                    )
+                    # Prefix the file with the source + resolved stage/firm so it's
+                    # unambiguous which trades and which requirements were used.
+                    _hdr = ("# SOURCE: %s trades  |  STAGE: %s  |  FIRM: %s / %s\n"
+                            % (_suffix, _cfg["stage"], _cfg["firm_id"],
+                               _cfg["challenge_id"]))
+                    _write_sim_detail_xlsx(
+                        os.path.join(sub, "eval_windows_%s.xlsx" % _suffix),
+                        _hdr + _txt)
+                    _d("  eval_windows_%s.xlsx written (stage=%s firm=%s)"
+                       % (_suffix, _cfg["stage"], _cfg["firm_id"]))
 
-                _write_sim_detail_xlsx(
-                    os.path.join(sub, "eval_windows.xlsx"), _text_ev)
-                _d("  eval_windows.xlsx written directly (%d lines)"
-                   % _text_ev.count("\n"))
+                # Python file — refiner-equivalent
+                _gen(py, "PY")
+                # MT5 file — same settings, MT5 executed trades
+                _mt5_sim = _mt5_trades_to_sim_trades(mt5_trades, _cfg["pip_value"])
+                _gen(_mt5_sim, "MT5")
             else:
-                _d("  eval_windows.xlsx skipped (no py trades / no rule file)")
+                _d("  eval_windows_*.xlsx skipped (no rule file resolved)")
         except Exception as _ev_err:
-            _d("  eval_windows.xlsx generation failed: %r" % _ev_err)
+            _d("  eval_windows generation failed: %r" % _ev_err)
 
         # ADDED 2026-06-15 — append this EA to the consolidated aggregate
         _consolidated["eas"].append({
