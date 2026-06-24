@@ -843,6 +843,49 @@ def _step_compare():
         return False
 
 
+def _write_sim_detail_xlsx(path, text):
+    """Render build_sim_detail_text() output into an xlsx that mirrors the
+    refiner 'eval & funded simulation' panel: one line per row, Consolas font,
+    green for PASS rows, red for FAIL rows, grey for incomplete rows."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except Exception:
+        # openpyxl missing — fall back to a .txt so the data is never lost.
+        with open(path.rsplit(".", 1)[0] + ".txt", "w", encoding="utf-8") as _f:
+            _f.write(text)
+        return
+
+    GREEN = PatternFill("solid", fgColor="C6EFCE")
+    RED   = PatternFill("solid", fgColor="FFC7CE")
+    GREY  = PatternFill("solid", fgColor="E0E0E0")
+    mono  = Font(name="Consolas", size=10)
+    head  = Font(name="Consolas", size=10, bold=True)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "eval & funded"
+
+    for i, line in enumerate(text.split("\n"), 1):
+        c = ws.cell(row=i, column=1, value=line)
+        c.font = mono
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        # header-ish lines (Firm:/EVAL/FUNDED/Per-window) get bold
+        _stripped = line.lstrip()
+        if (_stripped.startswith(("Firm:", "🎯", "💰", "📋"))):
+            c.font = head
+        # per-window outcome colouring
+        if "✓ PASS" in line:
+            c.fill = GREEN
+        elif "✗" in line:
+            c.fill = RED
+        elif "… Incomplete" in line:
+            c.fill = GREY
+
+    ws.column_dimensions["A"].width = 90
+    wb.save(path)
+
+
 def _write_debug_dump():
     """Write MT5 + Python trades + comparison into per-EA folders AND a single
     consolidated batch_debug.json. Restores the per-EA folder layout (mt5_trades.csv,
@@ -1057,6 +1100,49 @@ def _write_debug_dump():
                      ("%.1f" % py_net_pips) if py_net_pips is not None else "?",
                      (meta or {}).get("file", "?")))
 
+        # ADDED 2026-06-24 — generate eval_windows.xlsx DIRECTLY in this EA's folder.
+        # WHY: refiner-panel eval/funded simulation (pass rate, days-to-pass/fail,
+        #      DD, per-window detail) visible right beside mt5_trades.csv. No
+        #      reports/eval_windows/ staging, no copy, no hex-ID matching.
+        try:
+            if py and meta and meta.get("file"):
+                import json as _json_ev
+                from shared.sim_detail import build_sim_detail_text, resolve_firm_challenge
+
+                # Re-load the resolved rule JSON for the header/money calc.
+                _rd_path = os.path.join(_py_rules_dir(), meta["file"])
+                _rd_ev = {}
+                if os.path.isfile(_rd_path):
+                    with open(_rd_path, encoding="utf-8") as _fh_ev:
+                        _rd_ev = _json_ev.load(_fh_ev)
+
+                _fid, _cid = resolve_firm_challenge(
+                    _rd_ev, 10000,
+                    fallback_firm_id="leveraged")
+                if not _fid:
+                    _fid, _cid = "leveraged", "leveraged_standard"
+
+                _text_ev, _ = build_sim_detail_text(
+                    strategy_dict=_rd_ev,
+                    trades=py,
+                    firm_id=_fid,
+                    challenge_id=_cid,
+                    account_size=10000,
+                    risk_per_trade_pct=1.0,
+                    default_sl_pips=150.0,
+                    pip_value_per_lot=1.0,
+                    symbol="XAUUSD",
+                )
+
+                _write_sim_detail_xlsx(
+                    os.path.join(sub, "eval_windows.xlsx"), _text_ev)
+                _d("  eval_windows.xlsx written directly (%d lines)"
+                   % _text_ev.count("\n"))
+            else:
+                _d("  eval_windows.xlsx skipped (no py trades / no rule file)")
+        except Exception as _ev_err:
+            _d("  eval_windows.xlsx generation failed: %r" % _ev_err)
+
         # ADDED 2026-06-15 — append this EA to the consolidated aggregate
         _consolidated["eas"].append({
             "name": ea,
@@ -1212,38 +1298,6 @@ def _write_debug_dump():
                 if r is not None:
                     return r
         return None
-
-    # ADDED 2026-06-23 — copy per-rule eval xlsx into each EA's debug folder
-    # WHY: Ana wants the eval windows (pass/fail, DD, dates) visible inside
-    #      each EA's folder, just like the mt5_trades.csv and comparison files.
-    try:
-        _eval_dir = os.path.join(reports, 'eval_windows')
-        _d("eval copy: checking %s (exists=%s)" % (_eval_dir, os.path.isdir(_eval_dir)))
-        if os.path.isdir(_eval_dir):
-            _d("eval copy: files in eval_dir: %s" % os.listdir(_eval_dir))
-            import re as _re_eval
-            for _ea_sub in [d for d in os.listdir(dump)
-                            if os.path.isdir(os.path.join(dump, d))]:
-                # Extract 4-char hex IDs from EA folder name
-                _hexids_ea = _re_eval.findall(
-                    r'(?<![0-9a-f])([0-9a-f]{4})(?![0-9a-f])', _ea_sub.lower())
-                if len(_hexids_ea) < 2:
-                    continue
-                # Match eval_{rule}_{exit}.xlsx — ONLY eval_ prefix, sorted for consistency
-                for _ef in sorted(os.listdir(_eval_dir)):
-                    if not _ef.startswith('eval_') or not _ef.endswith('.xlsx'):
-                        continue
-                    if _ef == 'eval_windows_report.xlsx':
-                        continue
-                    _ef_lower = _ef.lower()
-                    if all(h in _ef_lower for h in _hexids_ea[:2]):
-                        _src = os.path.join(_eval_dir, _ef)
-                        _dst = os.path.join(dump, _ea_sub, 'eval_windows.xlsx')
-                        shutil.copy(_src, _dst)
-                        _d("  eval copy: %s -> %s" % (_ef, _ea_sub))
-                        break
-    except Exception as _eval_copy_err:
-        _d("eval copy to EA folders failed: %r" % _eval_copy_err)
 
     # ADDED 2026-06-17 — single self-contained PARITY_BUNDLE.txt.
     # WHY: one upload instead of many scattered files. Inlines comparison_summary,

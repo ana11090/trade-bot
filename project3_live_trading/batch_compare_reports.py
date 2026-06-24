@@ -1011,12 +1011,6 @@ def generate_eval_windows_report(
             'avg_dd_pct_failed': round(sum(fail_dds) / len(fail_dds), 2) if fail_dds else 0,
             'max_consec_fails': max_consec,
             'avg_days_to_pass': round(sim.eval_avg_days_to_pass, 1),
-            # WHY (June 2026): per-rule xlsx header shows Total P&L, Worst DD and
-            #      Passed count — provide those keys here so the header resolves.
-            'total_pnl': round(float(rd.get('total_dollar_pnl', 0)
-                               or sum(float(t.get('net_profit', 0) or 0) for t in trades)), 2),
-            'worst_dd_pct': round(max((r.eval_max_dd_pct for r in individual), default=0), 2),
-            'passed': pass_count,
         })
 
         # Window rows
@@ -1160,95 +1154,6 @@ def generate_eval_windows_report(
     wb.save(out_path)
     print(f"\n[EVAL] Report saved: {out_path}")
     print(f"[EVAL] {len(summary_rows)} rules, {len(window_rows)} windows total")
-
-    # ── Per-rule xlsx files (one per rule+exit combo) ─────────────────────
-    # WHY (June 2026): Group by (rule, exit_config) so each combo gets its
-    #      own file. Named eval_{rule}_{exit}.xlsx for easy matching to EAs.
-    # CHANGED: June 2026 — group by rule+exit, add P&L to header
-    _grouped = {}
-    for wr in window_rows:
-        _key = (wr.get('rule', ''), wr.get('exit_config', ''))
-        _grouped.setdefault(_key, []).append(wr)
-
-    _summary_by_key = {}
-    for sr in summary_rows:
-        _key = (sr.get('rule', ''), sr.get('exit_config', ''))
-        _summary_by_key[_key] = sr
-
-    print(f"[EVAL] Per-rule grouping: {len(_grouped)} groups")
-    for _key in list(_grouped.keys())[:5]:
-        print(f"[EVAL]   group key: {_key!r} -> {len(_grouped[_key])} windows")
-    for (_rule, _exit), windows in _grouped.items():
-        if not _rule:
-            print(f"[EVAL]   SKIP empty rule: key=({_rule!r}, {_exit!r})")
-            continue
-        print(f"[EVAL]   generating eval_{_rule}_{_exit}.xlsx ({len(windows)} windows)")
-        sr = _summary_by_key.get((_rule, _exit), {})
-        wb2 = Workbook()
-        ws_r = wb2.active
-        ws_r.title = 'Eval Windows'
-
-        # Info header
-        ws_r.cell(row=1, column=1, value='Rule').font = bold
-        ws_r.cell(row=1, column=2, value=_rule)
-        ws_r.cell(row=1, column=3, value='Exit').font = bold
-        ws_r.cell(row=1, column=4, value=_exit)
-        ws_r.cell(row=1, column=5, value='Pass Rate').font = bold
-        _pr = sr.get('pass_rate', sr.get('pass_rate_pct', 0)) or 0
-        ws_r.cell(row=1, column=6, value=f"{_pr}%")
-
-        ws_r.cell(row=2, column=1, value='Combo').font = bold
-        ws_r.cell(row=2, column=2, value=str(sr.get('rule_combo', ''))[:50])
-        ws_r.cell(row=2, column=3, value='Total P&L').font = bold
-        ws_r.cell(row=2, column=4, value=sr.get('total_pnl', 0))
-        ws_r.cell(row=2, column=4).number_format = '$#,##0.00'
-        ws_r.cell(row=2, column=5, value='Max Consec Fails').font = bold
-        _cf = sr.get('max_consec_fails', 0) or 0
-        ws_r.cell(row=2, column=6, value=_cf)
-        if _cf > 3:
-            ws_r.cell(row=2, column=6).fill = RED
-            ws_r.cell(row=2, column=6).font = Font(bold=True, color='9C0006')
-
-        ws_r.cell(row=3, column=1, value='Trades').font = bold
-        ws_r.cell(row=3, column=2, value=sr.get('py_trades', sr.get('n_trades', 0)))
-        ws_r.cell(row=3, column=3, value='Worst DD').font = bold
-        ws_r.cell(row=3, column=4, value=f"{sr.get('worst_dd_pct', 0)}%")
-        ws_r.cell(row=3, column=5, value=f"Passed {sr.get('passed',0)}/{sr.get('total_windows',0)}").font = bold
-
-        # Window headers
-        for c, h in enumerate(w_headers, 1):
-            cell = ws_r.cell(row=4, column=c, value=h)
-            cell.fill = HEADER
-            cell.font = header_font
-            cell.border = thin_border
-
-        for i, wr in enumerate(windows, 5):
-            vals = [wr['rule'], wr['exit_config'], wr['start_date'], wr['outcome'],
-                    wr['profit_pct'], wr['max_dd_pct'], wr['eval_days'],
-                    wr['eval_trading_days']]
-            for c, v in enumerate(vals, 1):
-                cell = ws_r.cell(row=i, column=c, value=v)
-                cell.border = thin_border
-
-            outcome = wr['outcome']
-            fill = None
-            if outcome == 'PASS':
-                fill = GREEN
-            elif outcome == 'FAIL_DD':
-                fill = RED
-            elif outcome == 'FAIL_DAILY_DD':
-                fill = ORANGE
-            elif outcome == 'INSUFFICIENT_TRADES':
-                fill = GREY
-            if fill:
-                for c in range(1, len(w_headers) + 1):
-                    ws_r.cell(row=i, column=c).fill = fill
-
-        safe_name = f"eval_{_rule}_{_exit}".replace('/', '_').replace('\\', '_')[:80]
-        per_path = os.path.join(eval_dir, f'{safe_name}.xlsx')
-        wb2.save(per_path)
-
-    print(f"[EVAL] {len(_grouped)} per-rule xlsx files saved to {eval_dir}/")
     return out_path
 
 
