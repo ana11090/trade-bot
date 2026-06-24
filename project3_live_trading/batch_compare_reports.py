@@ -1042,6 +1042,13 @@ def generate_eval_windows_report(
 
     # ── Build XLSX ────────────────────────────────────────────────────────
     eval_dir = os.path.join(reports_dir, 'eval_windows')
+    # Clean old files so previous-run leftovers don't interfere with copy
+    if os.path.isdir(eval_dir):
+        for _old in os.listdir(eval_dir):
+            try:
+                os.remove(os.path.join(eval_dir, _old))
+            except Exception:
+                pass
     os.makedirs(eval_dir, exist_ok=True)
 
     wb = Workbook()

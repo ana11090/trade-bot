@@ -1229,18 +1229,18 @@ def _write_debug_dump():
                     r'(?<![0-9a-f])([0-9a-f]{4})(?![0-9a-f])', _ea_sub.lower())
                 if len(_hexids_ea) < 2:
                     continue
-                # Try matching eval_{rule}_{exit}.xlsx
-                for _ef in os.listdir(_eval_dir):
-                    if not _ef.endswith('.xlsx') or _ef == 'eval_windows_report.xlsx':
+                # Match eval_{rule}_{exit}.xlsx — ONLY eval_ prefix, sorted for consistency
+                for _ef in sorted(os.listdir(_eval_dir)):
+                    if not _ef.startswith('eval_') or not _ef.endswith('.xlsx'):
+                        continue
+                    if _ef == 'eval_windows_report.xlsx':
                         continue
                     _ef_lower = _ef.lower()
-                    # Require BOTH the rule AND exit hash in the eval filename
-                    # (all, not any — else sibling exit configs of the same rule
-                    # would match the first file listed and copy the wrong one).
                     if all(h in _ef_lower for h in _hexids_ea[:2]):
                         _src = os.path.join(_eval_dir, _ef)
                         _dst = os.path.join(dump, _ea_sub, 'eval_windows.xlsx')
                         shutil.copy(_src, _dst)
+                        _d("  eval copy: %s -> %s" % (_ef, _ea_sub))
                         break
     except Exception as _eval_copy_err:
         _d("eval copy to EA folders failed: %r" % _eval_copy_err)
