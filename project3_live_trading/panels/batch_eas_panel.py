@@ -63,6 +63,15 @@ _f_sort       = None
 _f_profitable = None   # BooleanVar — profitable-only filter (parity with refiner)
 _nostats_lbl  = None
 _cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
+# CHANGED: June 2026 — Run Backtest / Run Scenario mode toggle
+# WHY: "Run Scenario" loads the SAME freshly-discovered rules the Run Backtest
+#   panel loads (via shared.scenario_sources), straight to MT5 — no Python
+#   backtest in between (the batch pipeline never ran one anyway).
+_mode_var       = None   # "Run Backtest" | "Run Scenario"
+_scenario_var   = None   # selected scenario-source label
+_scenario_paths = {}     # {label: path} from shared.scenario_sources
+_scenario_combo = None   # the scenario dropdown widget (hidden in backtest mode)
+_src_combo_ref  = None   # the existing Source dropdown widget (hidden in scenario mode)
 # CHANGED: June 2026 — multi-select exit-strategy filter
 _f_exit_vars  = {}     # exit_name -> tk.BooleanVar
 _f_exit_all   = None   # tk.BooleanVar for the "All" toggle
@@ -283,6 +292,15 @@ def _populate_grid(source):
     global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable
     global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
     if _grid_tree is None:
+        return
+    # WHY: in Run Scenario mode every refresh/filter/TF-filter callback fires
+    #   _populate_grid(_cur_source) with _cur_source="scenario" — which has no
+    #   matching source in load_strategy_list() and would fall through to 'all',
+    #   leaking backtest rows into the scenario grid. Delegate to the scenario
+    #   renderer instead (it honors the same _f_tf filter for the 5-TF fan).
+    # CHANGED: June 2026 — scenario-mode delegation guard
+    if _mode_var is not None and _mode_var.get() == "Run Scenario":
+        _populate_grid_scenario()
         return
     _cur_source = source
     for _i in _grid_tree.get_children():
@@ -558,6 +576,142 @@ def _populate_grid(source):
                      % (_no_stats, _shown))
         else:
             _nostats_lbl.config(text="")
+
+
+_SCENARIO_TFS = ["M5", "M15", "H1", "H4", "D1"]   # mirrors Run Backtest Multi-TF
+
+
+def _fan_rule_across_tfs(rule, tfs=_SCENARIO_TFS):
+    """Return [(tf, rule_dict), ...] — one copy per timeframe, identical except
+    entry_tf/entry_timeframe. Mirrors Run Backtest Multi-TF: same conditions and
+    feature prefixes, only the entry-candle TF changes. Does NOT remap feature
+    prefixes — the backtester doesn't either, so this stays faithful."""
+    out = []
+    _base = (rule.get("_saved_rule_id") or rule.get("rule_id")
+             or _scenario_label(rule))
+    for tf in tfs:
+        r = dict(rule)                 # shallow copy; conditions list shared (read-only here)
+        r["entry_tf"] = tf
+        r["entry_timeframe"] = tf
+        # TF-distinct label so grid rows + generated EA names don't collide.
+        r["_fanned_label"] = f"{_base}__{tf}"
+        out.append((tf, r))
+    return out
+
+
+def _scenario_label(r):
+    """Descriptive fallback label for a discovery rule with no id."""
+    import hashlib
+    _dir = r.get('direction', r.get('action', 'BUY'))
+    _tf  = r.get('entry_timeframe', r.get('entry_tf', 'XX'))
+    _nc  = len(r.get('conditions', []))
+    _h   = hashlib.md5(str(sorted(str(c) for c in r.get('conditions', []))).encode()).hexdigest()[:4]
+    return f"{_dir}_{_tf}_{_nc}c_{_h}"
+
+
+def _populate_grid_scenario():
+    """Populate the grid from the selected scenario source — the SAME rules the
+    Run Backtest panel would load (via shared.scenario_sources). These feed
+    Generate EAs -> Compile -> Build -> Run Tests -> Compare straight to MT5;
+    the batch pipeline never ran a Python backtest, so no flow change is needed.
+
+    Discovery rules carry no backtest stats, so every stats cell renders "—" —
+    byte-identical to what _populate_grid produces for a stat-less row. The
+    column order here MUST match `cols`/`_col_spec` in build_panel (~line 2485)
+    and the vals tuple in _populate_grid (~line 517); keep all three in sync."""
+    global _grid_entries, _batch_sel_iids, _iid_to_entry, _cur_source
+    if _grid_tree is None:
+        return
+    try:
+        from shared.scenario_sources import load_rules_for_source
+    except Exception as _imp_err:
+        print("[BATCH-GRID] scenario import failed:", repr(_imp_err), flush=True)
+        return
+    label = _scenario_var.get() if _scenario_var is not None else ""
+    rules = load_rules_for_source(label, _scenario_paths) if label else []
+
+    for _i in _grid_tree.get_children():
+        _grid_tree.delete(_i)
+    _batch_sel_iids = set()
+    _iid_to_entry = {}
+    _cur_source = "scenario"
+
+    # Fan each source rule across all 5 TFs (Run Backtest Multi-TF parity): one
+    # grid row per (rule × TF), identical except entry_tf. Conditions/feature
+    # prefixes unchanged — the backtester doesn't remap them either.
+    _fanned = []
+    for _r in rules:
+        for _tf, _rtf in _fan_rule_across_tfs(_r):
+            _fanned.append(_rtf)
+
+    # Optional TF filter (shared _f_tf combobox): narrow the fan to one TF so the
+    # grid isn't overwhelming. "All" (default) keeps the full 5× fan.
+    try:
+        _sel_tf = _f_tf.get() if _f_tf is not None else "All"
+    except Exception:
+        _sel_tf = "All"
+    if _sel_tf and _sel_tf.lower() != "all":
+        _fanned = [_r for _r in _fanned
+                   if str(_r.get("entry_tf", "")).lower() == _sel_tf.lower()]
+
+    _grid_entries = _fanned
+
+    if not _grid_entries:
+        # sel/id/stage blank, message in the 'rule' column; Treeview pads the rest.
+        _grid_tree.insert('', 'end', iid='__none__',
+                          values=("", "", "", "(no rules in this scenario source)"))
+        if _nostats_lbl is not None:
+            _nostats_lbl.config(text="")
+        return
+
+    _shown = 0
+    for r in _grid_entries:
+        try:
+            _name = (r.get('_fanned_label') or r.get('_saved_rule_id') or
+                     r.get('rule_id') or _scenario_label(r))
+            tf     = (r.get('entry_tf') or r.get('entry_timeframe') or '—')
+            exit_  = (r.get('exit_name') or r.get('exit_class') or
+                      r.get('exit_strategy') or '?')
+            direction = r.get('direction') or r.get('dir') or r.get('action') or '—'
+            try:
+                off = "N" if int(r.get('entry_bar_offset', 0) or 0) == 0 else "N+1"
+            except (TypeError, ValueError):
+                off = "N"
+            # 20 columns: sel, id, stage, rule, exit, tf, dir, trades, wr, pf,
+            #   net_pips, net_$, net_%, avg_pips, avg_$, avg_%, profit, win_pass,
+            #   prop_score, off. Discovery rules have no stats -> all "—".
+            vals = (
+                "☐",
+                r.get('id', _shown),
+                _stage_cell(r),
+                str(_name)[:60],
+                exit_, tf, direction,
+                "—",                      # trades
+                "—",                      # win rate
+                "—",                      # PF
+                "—",                      # net pips
+                "—", "—",                 # net $, net %
+                "—",                      # avg pips
+                "—", "—",                 # avg $, avg %
+                "—",                      # profit
+                "—",                      # win pass
+                "—",                      # prop score
+                off,
+            )
+            _iid = "scn::%d" % _shown
+            _iid_to_entry[_iid] = r
+            _grid_tree.insert('', 'end', iid=_iid, values=vals, tags=("neutral",))
+            _shown += 1
+        except Exception as _row_err:
+            print("[BATCH-GRID] scenario skipped a row:", repr(_row_err), flush=True)
+            continue
+
+    print("[BATCH-GRID] scenario source=%r shown=%d" % (label, _shown), flush=True)
+    _grid_tree.heading("sel", text="☐", command=_toggle_all)
+    if _nostats_lbl is not None:
+        _nostats_lbl.config(
+            text="(scenario mode — %d rule(s) from discovery source; "
+                 "stats filled by the MT5 run)" % _shown)
 
 
 def _toggle_row(event):
@@ -1184,53 +1338,59 @@ def _write_debug_dump():
         #   eval_windows_MT5.xlsx (MT5 executed trades, same per-rule settings)
         # Per-rule resolution of stage/firm/account/risk/SL — never hardcoded.
         try:
-            if meta and meta.get("file"):
-                import json as _json_ev
-                from shared.sim_detail import build_sim_detail_text
+            import json as _json_ev
+            from shared.sim_detail import build_sim_detail_text
 
+            # CHANGED 2026-06-25 — rule JSON is OPTIONAL. In backtest mode it gives
+            #   per-rule stage/firm/account/risk/SL; in scenario mode (no Python
+            #   run) it's absent, so we fall back to firm defaults and still build
+            #   the MT5 eval from the actual MT5 trades. PY file only when py exists.
+            _rd_ev = {}
+            if meta and meta.get("file"):
                 _rd_path = os.path.join(_py_rules_dir(), meta["file"])
-                _rd_ev = {}
                 if os.path.isfile(_rd_path):
                     with open(_rd_path, encoding="utf-8") as _fh_ev:
                         _rd_ev = _json_ev.load(_fh_ev)
 
-                _cfg = _resolve_eval_settings_from_rule(_rd_ev)
-                if not _cfg["firm_id"] or not _cfg["challenge_id"]:
-                    # refiner-style fallback so a missing firm doesn't blank the file
-                    _cfg["firm_id"] = _cfg["firm_id"] or "leveraged"
-                    _cfg["challenge_id"] = _cfg["challenge_id"] or "leveraged_standard"
+            _cfg = _resolve_eval_settings_from_rule(_rd_ev)
+            if not _cfg.get("firm_id"):
+                _cfg["firm_id"] = "leveraged"
+            if not _cfg.get("challenge_id"):
+                _cfg["challenge_id"] = "leveraged_standard"
 
-                def _gen(_trades, _suffix):
-                    if not _trades:
-                        _d("  eval_windows_%s skipped (no trades)" % _suffix)
-                        return
-                    _txt, _ = build_sim_detail_text(
-                        strategy_dict=_rd_ev, trades=_trades,
-                        firm_id=_cfg["firm_id"], challenge_id=_cfg["challenge_id"],
-                        account_size=_cfg["account_size"],
-                        risk_per_trade_pct=_cfg["risk_pct"],
-                        default_sl_pips=_cfg["sl_pips"],
-                        pip_value_per_lot=_cfg["pip_value"],
-                        symbol="XAUUSD", firm_label=_cfg["firm_label"],
-                    )
-                    # Prefix the file with the source + resolved stage/firm so it's
-                    # unambiguous which trades and which requirements were used.
-                    _hdr = ("# SOURCE: %s trades  |  STAGE: %s  |  FIRM: %s / %s\n"
-                            % (_suffix, _cfg["stage"], _cfg["firm_id"],
-                               _cfg["challenge_id"]))
-                    _write_sim_detail_xlsx(
-                        os.path.join(sub, "eval_windows_%s.xlsx" % _suffix),
-                        _hdr + _txt)
-                    _d("  eval_windows_%s.xlsx written (stage=%s firm=%s)"
-                       % (_suffix, _cfg["stage"], _cfg["firm_id"]))
+            def _gen(_trades, _suffix):
+                if not _trades or len(_trades) < 1:
+                    _d("  eval_windows_%s skipped (no %s trades)" % (_suffix, _suffix))
+                    return
+                _txt, _ = build_sim_detail_text(
+                    strategy_dict=_rd_ev, trades=_trades,
+                    firm_id=_cfg["firm_id"], challenge_id=_cfg["challenge_id"],
+                    account_size=_cfg["account_size"],
+                    risk_per_trade_pct=_cfg["risk_pct"],
+                    default_sl_pips=_cfg["sl_pips"],
+                    pip_value_per_lot=_cfg["pip_value"],
+                    symbol="XAUUSD", firm_label=_cfg["firm_label"],
+                )
+                # Prefix the file with the source + resolved stage/firm + EA so it's
+                # unambiguous which trades and which requirements were used.
+                _hdr = ("# SOURCE: %s trades  |  STAGE: %s  |  FIRM: %s / %s  |  EA: %s\n"
+                        % (_suffix, _cfg["stage"], _cfg["firm_id"],
+                           _cfg["challenge_id"], ea))
+                _write_sim_detail_xlsx(
+                    os.path.join(sub, "eval_windows_%s.xlsx" % _suffix),
+                    _hdr + _txt)
+                _d("  eval_windows_%s.xlsx written (stage=%s firm=%s, %d trades)"
+                   % (_suffix, _cfg["stage"], _cfg["firm_id"], len(_trades)))
 
-                # Python file — refiner-equivalent
+            # MT5 file — ALWAYS attempt (this is what scenario mode needs).
+            _mt5_sim = _mt5_trades_to_sim_trades(mt5_trades, _cfg["pip_value"])
+            _gen(_mt5_sim, "MT5")
+
+            # PY file — only when a Python run exists (backtest mode).
+            if py:
                 _gen(py, "PY")
-                # MT5 file — same settings, MT5 executed trades
-                _mt5_sim = _mt5_trades_to_sim_trades(mt5_trades, _cfg["pip_value"])
-                _gen(_mt5_sim, "MT5")
             else:
-                _d("  eval_windows_*.xlsx skipped (no rule file resolved)")
+                _d("  eval_windows_PY skipped (no Python run — scenario mode)")
         except Exception as _ev_err:
             _d("  eval_windows generation failed: %r" % _ev_err)
 
@@ -2005,10 +2165,37 @@ def _write_debug_dump():
             from project3_live_trading.batch_compare_reports import generate_eval_windows_report
             _rules_dir = _py_rules_dir()
             if _rules_dir and os.path.isdir(_rules_dir):
+                # CHANGED 2026-06-25 — combined report computes from MT5 trades in
+                #   BOTH modes. Backtest mode keys mt5_by_source by the rule JSON
+                #   filename (python.source) so the report can also load rd for
+                #   labels. Scenario mode has no Python run (python.source is null)
+                #   for every EA, so key by EA name instead — otherwise the map is
+                #   empty and the report generates nothing.
+                _has_py_src = any((ea.get("python") or {}).get("source")
+                                  for ea in _consolidated.get("eas", []))
+                _mt5_by_source = {}
+                for ea in _consolidated.get("eas", []):
+                    _nm = ea.get("name", "")
+                    _src = (ea.get("python") or {}).get("source")
+                    if _has_py_src:
+                        if not _src:
+                            continue
+                        _key = _src      # backtest: rule JSON filename
+                    else:
+                        if not _nm:
+                            continue
+                        _key = _nm       # scenario: EA folder name
+                    _csv_path = os.path.join(dump, _nm, "mt5_trades.csv")
+                    # First EA wins per key (composites share a rule JSON).
+                    _mt5_by_source.setdefault(_key, _csv_path)
+
                 _eval_path = generate_eval_windows_report(
                     rules_dir=_rules_dir,
                     reports_dir=reports,
                     out_dir=dump,
+                    only_sources=list(_mt5_by_source.keys()),
+                    mt5_by_source=_mt5_by_source,
+                    trade_source='mt5',
                     manifest_path=(mpath if os.path.isfile(mpath) else None),
                     firm_id='leveraged',
                     challenge_id='leveraged_standard',
@@ -2356,15 +2543,73 @@ def build_panel(parent):
     src_var = tk.StringVar(value="all")
     bar = tk.Frame(panel, bg=BG)
     bar.pack(fill="x", padx=10, pady=(8, 2))
-    tk.Label(bar, text="Source:", bg=BG, fg=DARK,
+
+    # ── Mode toggle: Run Backtest (current behavior) vs Run Scenario (load the
+    #    SAME discovery rules the Run Backtest panel loads, straight to MT5). ──
+    # CHANGED: June 2026 — Run Backtest / Run Scenario mode toggle
+    global _mode_var, _scenario_var, _scenario_paths, _scenario_combo, _src_combo_ref
+    _mode_var = tk.StringVar(value="Run Backtest")
+    tk.Label(bar, text="Mode:", bg=BG, fg=DARK,
              font=("Segoe UI", 9)).pack(side=tk.LEFT)
+    mode_combo = ttk.Combobox(bar, textvariable=_mode_var, width=14, state="readonly",
+                              values=["Run Backtest", "Run Scenario"])
+    mode_combo.pack(side=tk.LEFT, padx=(4, 12))
+
+    # Existing Source dropdown — shown only in Run Backtest mode.
+    _src_lbl = tk.Label(bar, text="Source:", bg=BG, fg=DARK, font=("Segoe UI", 9))
+    _src_lbl.pack(side=tk.LEFT)
     # CHANGED: June 2026 — add backtest + optimizer + all options
     src_combo = ttk.Combobox(bar, textvariable=src_var, width=14, state="readonly",
                               values=["all", "backtest", "optimizer", "saved_rules", "my_rules"])
     src_combo.pack(side=tk.LEFT, padx=6)
     src_combo.bind("<<ComboboxSelected>>", lambda e: _populate_grid(src_var.get()))
+    _src_combo_ref = src_combo
     # WHY: src_var is local to build_panel; filter-widget lambdas use _cur_source (module
     #   global updated at the top of _populate_grid) so they always pass the active source.
+
+    # New Scenario dropdown — shown only in Run Scenario mode (packed by _apply_mode).
+    _scenario_var = tk.StringVar(value="")
+    _scn_lbl = tk.Label(bar, text="Scenario:", bg=BG, fg=DARK, font=("Segoe UI", 9))
+    _scenario_combo = ttk.Combobox(bar, textvariable=_scenario_var, width=42,
+                                   state="readonly", values=["⏳ Loading…"])
+
+    def _load_scenario_sources_async():
+        # Scanner reads several JSON files; run off the UI thread, then push the
+        # results + first-source grid back via .after(0, ...).
+        from shared.scenario_sources import get_available_sources
+        try:
+            avail = get_available_sources()
+        except Exception:
+            avail = []
+        labels = [s[0] for s in avail]
+        _scenario_paths.clear()
+        _scenario_paths.update({s[0]: s[1] for s in avail})
+
+        def _ui():
+            _scenario_combo['values'] = labels or ["(no sources found)"]
+            if labels and not _scenario_var.get():
+                _scenario_combo.set(labels[0])
+            _populate_grid_scenario()
+        try:
+            _scenario_combo.after(0, _ui)
+        except Exception:
+            pass
+
+    def _apply_mode(*_a):
+        if _mode_var.get() == "Run Scenario":
+            _src_lbl.pack_forget(); _src_combo_ref.pack_forget()
+            _scn_lbl.pack(side=tk.LEFT, after=mode_combo)
+            _scenario_combo.pack(side=tk.LEFT, padx=6, after=_scn_lbl)
+            import threading as _t
+            _t.Thread(target=_load_scenario_sources_async, daemon=True).start()
+        else:
+            _scn_lbl.pack_forget(); _scenario_combo.pack_forget()
+            _src_lbl.pack(side=tk.LEFT, after=mode_combo)
+            _src_combo_ref.pack(side=tk.LEFT, padx=6, after=_src_lbl)
+            _populate_grid(src_var.get())
+
+    mode_combo.bind("<<ComboboxSelected>>", _apply_mode)
+    _scenario_combo.bind("<<ComboboxSelected>>", lambda e: _populate_grid_scenario())
 
     def _btn(text, cmd):
         return tk.Button(bar, text=text, command=cmd, bg=MIDGREY, fg="white",

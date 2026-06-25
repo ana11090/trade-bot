@@ -4968,6 +4968,32 @@ def compute_stats(trades):
     return stats
 
 
+def _bt_profile_dump(pr):
+    """Write cProfile stats for the profiled run_comparison_matrix call.
+    Diagnostic only (opt-in via BT_PROFILE=1). No-op when pr is None."""
+    if pr is None:
+        return
+    try:
+        pr.disable()
+    except Exception:
+        pass
+    import os, sys, pstats
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "outputs", "bt_profile.txt")
+    try:
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            f.write("=== cumulative (top 60) ===\n")
+            pstats.Stats(pr, stream=f).sort_stats("cumulative").print_stats(60)
+            f.write("\n=== tottime (top 60) ===\n")
+            pstats.Stats(pr, stream=f).sort_stats("tottime").print_stats(60)
+            f.write("\n=== callers of hottest funcs ===\n")
+            pstats.Stats(pr, stream=f).sort_stats("tottime").print_callers(25)
+        print(f"[BT_PROFILE] wrote {out}", file=sys.stderr)
+    except Exception as e:
+        print(f"[BT_PROFILE] dump failed: {e}", file=sys.stderr)
+
+
 def run_comparison_matrix(candles_path, timeframe="H1",
                           report_path=None, rule_indices=None,
                           exit_strategies=None, direction="BUY",
@@ -5086,6 +5112,22 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     progress_callback: optional callable(current, total, combo_name) for UI updates.
     Returns dict with "matrix", "rules_tested", "exits_tested", "elapsed".
     """
+    # ── PROFILING (opt-in, diagnostic only) ──────────────────────────────
+    # BT_PROFILE=1 profiles the FIRST call's body in place (one TF pass) and
+    # dumps pstats at return. Unset -> identical behavior, zero overhead.
+    # WHY: 1,940-combo runs take hours; this finds the real hot lines without
+    #      touching any backtest logic. Self-disables after the first profiled
+    #      call so a multi-TF run profiles only TF #1.
+    import os as _os_prof
+    _BT_PROFILE_ON = (_os_prof.environ.get("BT_PROFILE") == "1"
+                      and not getattr(run_comparison_matrix, "_bt_profiled", False))
+    _bt_pr = None
+    if _BT_PROFILE_ON:
+        import cProfile as _cP
+        run_comparison_matrix._bt_profiled = True   # one-shot: TF #1 only
+        _bt_pr = _cP.Profile()
+        _bt_pr.enable()
+    # ── END PROFILING SETUP ──────────────────────────────────────────────
     _stop_requested.clear()  # Reset from any previous run
     log.info("=" * 70)
     log.info("STRATEGY BACKTESTER — Vectorized Comparison Matrix")
@@ -6177,6 +6219,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      level, breaches computed, and trade_count set. Trades are
     #      already stripped (line 2517-2519).
     # CHANGED: April 2026 — return summary instead of matrix
+    _bt_profile_dump(_bt_pr)   # opt-in profiler dump (no-op unless BT_PROFILE=1)
     return {
         "matrix":       summary,
         "rules_tested": [c["name"] for c in rule_combos],

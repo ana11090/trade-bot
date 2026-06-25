@@ -855,10 +855,44 @@ def compare_reports(reports_dir, python_dir, manifest_path=''):
 #      window. Answers "would this rule pass the Get Leveraged challenge?"
 # CHANGED: June 2026 — eval_windows_report feature
 
+def _mt5_csv_to_sim_trades(csv_path, pip_value_per_lot):
+    """Load an EA's mt5_trades.csv and convert to sim-trade dicts (net_pips +
+    exit_time). pips = profit / (volume * pip_value_per_lot), using MT5's real
+    net profit (incl. commission/swap). Returns [] if the file is missing/empty
+    or volume/pip_value make sizing impossible."""
+    import csv as _csv, os as _os
+    out = []
+    pv = float(pip_value_per_lot or 0)
+    if not csv_path or not _os.path.isfile(csv_path) or pv <= 0:
+        return out
+    try:
+        with open(csv_path, encoding='utf-8-sig', newline='') as f:
+            for row in _csv.DictReader(f):
+                try:
+                    vol = float(row.get('volume') or row.get('Volume') or 0)
+                    profit = float(row.get('profit') or row.get('Profit') or 0)
+                except (TypeError, ValueError):
+                    continue
+                if vol <= 0:
+                    continue
+                out.append({
+                    'entry_time': row.get('entry_time') or row.get('time'),
+                    'exit_time':  (row.get('exit_time') or row.get('entry_time')
+                                   or row.get('time')),
+                    'net_pips':   profit / (vol * pv),
+                })
+    except Exception as e:
+        print(f"  [EVAL] mt5 csv read failed {csv_path}: {e}")
+    return out
+
+
 def generate_eval_windows_report(
     rules_dir,
     reports_dir,
     out_dir=None,
+    only_sources=None,
+    mt5_by_source=None,
+    trade_source='python',
     manifest_path=None,
     firm_id='leveraged',
     challenge_id='leveraged_standard',
@@ -918,30 +952,81 @@ def generate_eval_windows_report(
         print(f"[EVAL] Rules dir not found: {rules_dir}")
         return None
 
-    rule_files = sorted(glob.glob(os.path.join(rules_dir, 'rule_*.json')))
-    if not rule_files:
-        print(f"[EVAL] No rule_*.json files in {rules_dir}")
-        return None
-
-    print(f"\n[EVAL] Running sliding-window eval for {len(rule_files)} rules "
-          f"(firm={firm_id}, challenge={challenge_id}, acct=${account_size:,})")
+    if only_sources:
+        # Scoped to the exact rules that ran in this batch — feed the report the
+        # authoritative list from the panel (_consolidated["eas"] sources) instead
+        # of globbing all rule_*.json on disk. Dedupe, basename-only, keep only
+        # files that actually exist in rules_dir.
+        _seen = set()
+        rule_files = []
+        for _src in only_sources:
+            if not _src:
+                continue
+            _bn = os.path.basename(_src)
+            if _bn in _seen:
+                continue
+            _seen.add(_bn)
+            _p = os.path.join(rules_dir, _bn)
+            if os.path.isfile(_p):
+                rule_files.append(_p)
+        # WHY (2026-06-25): scenario mode has NO rule JSON on disk — only_sources
+        #   are EA names keyed into mt5_by_source. Don't abort when rule_files is
+        #   empty as long as we still have MT5 trades to evaluate.
+        _mt5_mode = (trade_source == 'mt5' and bool(mt5_by_source))
+        if not rule_files and not _mt5_mode:
+            print(f"[EVAL] No scoped rule files found in {rules_dir} "
+                  f"(only_sources={len(only_sources)})")
+            return None
+        _n = len(mt5_by_source) if _mt5_mode else len(rule_files)
+        print(f"\n[EVAL] Running sliding-window eval for {_n} batch "
+              f"rules (scoped to this run; source={trade_source}; firm={firm_id}, "
+              f"challenge={challenge_id}, acct=${account_size:,})")
+    else:
+        rule_files = sorted(glob.glob(os.path.join(rules_dir, 'rule_*.json')))
+        if not rule_files:
+            print(f"[EVAL] No rule_*.json files in {rules_dir}")
+            return None
+        print(f"\n[EVAL] Running sliding-window eval for {len(rule_files)} rules "
+              f"(firm={firm_id}, challenge={challenge_id}, acct=${account_size:,})")
 
     summary_rows = []
     window_rows = []
 
-    for rf in rule_files:
-        fname = os.path.basename(rf)
-        try:
-            with open(rf, encoding='utf-8') as f:
-                rd = json.load(f)
-        except Exception as e:
-            print(f"  [EVAL] SKIP {fname}: {e}")
-            continue
+    # CHANGED (2026-06-25): iterate MT5 mode by mt5_by_source (key -> csv path) so
+    #   scenario EAs (no rule JSON) are still evaluated. Backtest MT5 keys are rule
+    #   JSON filenames, so we load rd for labels when that file exists; scenario
+    #   keys are EA names with no JSON, so rd stays {} and the EA name is the label.
+    if trade_source == 'mt5':
+        _iter = list((mt5_by_source or {}).items())   # (key, csv_path)
+    else:
+        _iter = [(os.path.basename(rf), rf) for rf in rule_files]
 
-        trades = rd.get('trades') or rd.get('py_trades') or []
-        if not trades or len(trades) < 3:
-            print(f"  [EVAL] SKIP {fname}: {len(trades)} trades (need >=3)")
-            continue
+    for fname, _ref in _iter:
+        if trade_source == 'mt5':
+            rd = {}
+            _rj = os.path.join(rules_dir, os.path.basename(fname))
+            if os.path.isfile(_rj):
+                try:
+                    with open(_rj, encoding='utf-8') as f:
+                        rd = json.load(f)
+                except Exception:
+                    rd = {}
+            trades = _mt5_csv_to_sim_trades(_ref, pip_value_per_lot)
+            if not trades or len(trades) < 3:
+                print(f"  [EVAL] SKIP {fname}: {len(trades)} MT5 trades "
+                      f"(need >=3) [{_ref}]")
+                continue
+        else:
+            try:
+                with open(_ref, encoding='utf-8') as f:
+                    rd = json.load(f)
+            except Exception as e:
+                print(f"  [EVAL] SKIP {fname}: {e}")
+                continue
+            trades = rd.get('trades') or rd.get('py_trades') or []
+            if not trades or len(trades) < 3:
+                print(f"  [EVAL] SKIP {fname}: {len(trades)} trades (need >=3)")
+                continue
 
         rule_tf = rd.get('entry_tf', '')
         rule_combo = rd.get('rule_combo', fname)
@@ -1064,7 +1149,7 @@ def generate_eval_windows_report(
     ws.title = 'Summary'
 
     # Title row
-    ws.cell(row=1, column=1, value=f'Eval Windows Report — {firm_id} ${account_size:,}')
+    ws.cell(row=1, column=1, value=f'Eval Windows Report — {firm_id} ${account_size:,} — source: {trade_source.upper()}')
     ws.cell(row=1, column=1).font = Font(bold=True, size=14)
     ws.cell(row=2, column=1, value=f'Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}')
     ws.cell(row=2, column=1).font = Font(italic=True, size=9, color='666666')
