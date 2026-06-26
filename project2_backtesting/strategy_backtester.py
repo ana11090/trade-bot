@@ -5388,6 +5388,8 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      is linear and the user gets honest per-direction win
     #      rates instead of a meaningless 50/50 mush.
     # CHANGED: April 2026 — Phase A.30
+    # NOTE: direction logic mirrored in shared/scenario_expand.py:rule_directions
+    #       (EA Batch 'Run Scenario' mode). Keep both in sync.
     def _a30_rule_directions(rule_obj):
         """Return list of directions to test for one rule.
 
@@ -5438,6 +5440,7 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _rule_label = r.get('rule_id', '')
             if not _rule_label:
                 # Build from conditions like BUY_H1_5c
+                # NOTE: label formula mirrored in shared/scenario_expand.py:_combo_label
                 _rl_dir = r.get('direction', r.get('action', 'BUY'))
                 _rl_tf = r.get('entry_timeframe', r.get('entry_tf', 'XX'))
                 _rl_nc = len(r.get('conditions', []))

@@ -578,27 +578,6 @@ def _populate_grid(source):
             _nostats_lbl.config(text="")
 
 
-_SCENARIO_TFS = ["M5", "M15", "H1", "H4", "D1"]   # mirrors Run Backtest Multi-TF
-
-
-def _fan_rule_across_tfs(rule, tfs=_SCENARIO_TFS):
-    """Return [(tf, rule_dict), ...] — one copy per timeframe, identical except
-    entry_tf/entry_timeframe. Mirrors Run Backtest Multi-TF: same conditions and
-    feature prefixes, only the entry-candle TF changes. Does NOT remap feature
-    prefixes — the backtester doesn't either, so this stays faithful."""
-    out = []
-    _base = (rule.get("_saved_rule_id") or rule.get("rule_id")
-             or _scenario_label(rule))
-    for tf in tfs:
-        r = dict(rule)                 # shallow copy; conditions list shared (read-only here)
-        r["entry_tf"] = tf
-        r["entry_timeframe"] = tf
-        # TF-distinct label so grid rows + generated EA names don't collide.
-        r["_fanned_label"] = f"{_base}__{tf}"
-        out.append((tf, r))
-    return out
-
-
 def _scenario_label(r):
     """Descriptive fallback label for a discovery rule with no id."""
     import hashlib
@@ -636,13 +615,13 @@ def _populate_grid_scenario():
     _iid_to_entry = {}
     _cur_source = "scenario"
 
-    # Fan each source rule across all 5 TFs (Run Backtest Multi-TF parity): one
-    # grid row per (rule × TF), identical except entry_tf. Conditions/feature
-    # prefixes unchanged — the backtester doesn't remap them either.
-    _fanned = []
-    for _r in rules:
-        for _tf, _rtf in _fan_rule_across_tfs(_r):
-            _fanned.append(_rtf)
+    # Expand each source rule into (direction × TF × exit) variants using the
+    # backtest's OWN exit set + direction-expansion + label logic (single source
+    # of truth — see shared/scenario_expand.py). No Python backtest is run; these
+    # variants are fed to Generate -> generate_ea (MT5). Conditions/feature
+    # prefixes are unchanged — the backtester doesn't remap them either.
+    from shared.scenario_expand import expand_scenario_rules
+    _fanned = expand_scenario_rules(rules)
 
     # Optional TF filter (shared _f_tf combobox): narrow the fan to one TF so the
     # grid isn't overwhelming. "All" (default) keeps the full 5× fan.
