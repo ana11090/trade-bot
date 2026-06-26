@@ -72,6 +72,9 @@ _scenario_var   = None   # selected scenario-source label
 _scenario_paths = {}     # {label: path} from shared.scenario_sources
 _scenario_combo = None   # the scenario dropdown widget (hidden in backtest mode)
 _src_combo_ref  = None   # the existing Source dropdown widget (hidden in scenario mode)
+# CHANGED: June 2026 — account-size dropdown (rule's own account wins; this is the
+#   fallback). Applies in BOTH modes; populated from the firm's account_sizes.
+_acct_var       = None   # selected account size (str), e.g. "10000"
 # CHANGED: June 2026 — multi-select exit-strategy filter
 _f_exit_vars  = {}     # exit_name -> tk.BooleanVar
 _f_exit_all   = None   # tk.BooleanVar for the "All" toggle
@@ -997,8 +1000,14 @@ def _resolve_eval_settings_from_rule(rule_dict):
                     pass
         return float(default)
 
+    # Account: rule's own value wins; otherwise the batch panel's Account dropdown.
+    try:
+        _panel_acct = (int(_acct_var.get()) if (_acct_var is not None
+                       and str(_acct_var.get()).strip()) else 10000)
+    except Exception:
+        _panel_acct = 10000
     acct = _f(rule0.get('account_size'), rs0.get('starting_capital'),
-              rd.get('account_size'), default=10000)
+              rd.get('account_size'), default=_panel_acct)
     risk = _f(rule0.get('risk_pct'), rs0.get('risk_pct'),
               rd.get('risk_pct'), default=1.0)
     sl   = _f((rule0.get('exit_params') or {}).get('sl_pips'),
@@ -2178,7 +2187,10 @@ def _write_debug_dump():
                     manifest_path=(mpath if os.path.isfile(mpath) else None),
                     firm_id='leveraged',
                     challenge_id='leveraged_standard',
-                    account_size=10000,
+                    account_size=(int(_acct_var.get())
+                                  if (_acct_var is not None
+                                      and str(_acct_var.get()).strip())
+                                  else 10000),
                     risk_pct=1.0,
                     sl_pips=150.0,
                     pip_value_per_lot=1.0,
@@ -2589,6 +2601,31 @@ def build_panel(parent):
 
     mode_combo.bind("<<ComboboxSelected>>", _apply_mode)
     _scenario_combo.bind("<<ComboboxSelected>>", lambda e: _populate_grid_scenario())
+
+    # Account-size dropdown — the fallback when a rule carries no account_size.
+    # Applies in BOTH modes. Populated from the firm's account_sizes (5 tiers).
+    global _acct_var
+    _acct_var = tk.StringVar(value="10000")
+    tk.Label(bar, text="Account:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(12, 2))
+
+    def _acct_sizes():
+        try:
+            import json
+            _p = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "prop_firms", "leveraged.json")
+            _d = json.load(open(_p, encoding="utf-8"))
+            _szs = (_d.get("challenges", [{}]) or [{}])[0].get("account_sizes")
+            if _szs:
+                return [str(int(s)) for s in _szs]
+        except Exception:
+            pass
+        return ["5000", "10000", "25000", "50000", "100000"]
+
+    _acct_combo = ttk.Combobox(bar, textvariable=_acct_var, width=10,
+                               state="readonly", values=_acct_sizes())
+    _acct_combo.pack(side=tk.LEFT, padx=(0, 12))
 
     def _btn(text, cmd):
         return tk.Button(bar, text=text, command=cmd, bg=MIDGREY, fg="white",

@@ -155,6 +155,20 @@ def _gen_ea_for(entry):
         r["rule_combo"] = (r.get("combo") or r.get("rule_conditions") or
                            r.get("conditions"))
     firm_name, firm = _resolve_firm(entry)
+    # Account size: rule's own value wins; else whatever the batch panel's Account
+    # dropdown selected; else 10k. Set on a COPY of the firm dict (never mutate the
+    # cached firm) because generate_ea reads prop_firm['account_size'] for lot
+    # sizing / margin cap (ea_generator.py:205).
+    firm = dict(firm or {})
+    _acct = (r.get("account_size") or r.get("starting_capital"))
+    if not _acct:
+        try:
+            from project3_live_trading.panels import batch_eas_panel as _bp
+            _av = getattr(_bp, "_acct_var", None)
+            _acct = int(_av.get()) if (_av is not None and str(_av.get()).strip()) else None
+        except Exception:
+            _acct = None
+    firm["account_size"] = int(_acct or 10000)
     entry_tf = r.get("entry_tf") or r.get("entry_timeframe") or "H1"
     _fa = r.get("filters_applied") or {}
     hour_filter = None
