@@ -1380,6 +1380,34 @@ def _generate_mt5(win_rules, exit_name, exit_params, symbol, magic_number,
                     f'      }}\n'
                     f'   }}')
 
+            # ── eval emergency total-DD HARD stop ────────────────────────────
+            # WHY: total_dd_alert_pct only ALERTS (above) — an evaluation EA could
+            #      bleed past the firm's total-DD limit on a slow daily stop alone.
+            #      When the firm's eval rule carries emergency_total_dd_pct, arm a
+            #      period hard-stop (mirrors the funded_accumulate emergency stop,
+            #      but uses Print/CloseAllPositions — no funded-only payout calls).
+            # CHANGED: June 2026 — eval-stage total-DD hard stop
+            emergency_total = params.get('emergency_total_dd_pct')
+            if emergency_total is not None:
+                extra_inputs.append(f'input double EmergencyDDPct = {emergency_total}; // [{rname}] Hard stop for period (firm blows at {dd_total_pct}%)')
+                extra_globals.append('bool g_stoppedForPeriod = false;')
+                extra_tick_checks.append(
+                    f'   // [{rname}] Emergency total-DD hard stop at {emergency_total}% (firm limit: {dd_total_pct}%)\n'
+                    f'   // WHY: stops trading for the rest of the period so the EA\n'
+                    f'   //      cannot bleed past the firm total-DD limit.\n'
+                    f'   if(g_stoppedForPeriod) {{ return; }}\n'
+                    f'   if(UsePropFirmMode)\n'
+                    f'   {{\n'
+                    f'      double totalDDPct = (g_startingBalance > 0) ? (g_hwm - equity) / g_startingBalance * 100.0 : 0;\n'
+                    f'      if(totalDDPct >= EmergencyDDPct)\n'
+                    f'      {{\n'
+                    f'         g_stoppedForPeriod = true;\n'
+                    f'         CloseAllPositions("EmergencyDD");\n'
+                    f'         Print("[EVAL] Emergency total DD hit: ", DoubleToString(totalDDPct,1), "% — stopped for period");\n'
+                    f'         return;\n'
+                    f'      }}\n'
+                    f'   }}')
+
         # ── funded_accumulate: DD alerts with payout status ──────────────────
         elif rtype == 'funded_accumulate':
             if 'risk_pct' in params:

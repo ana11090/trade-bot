@@ -181,7 +181,8 @@
         "risk_pct_range": [0.8, 1.5],
         "max_trades_per_day_range": [3, 5],
         "daily_dd_alert_pct": 2.7,
-        "total_dd_alert_pct": 5.7
+        "total_dd_alert_pct": 5.7,
+        "emergency_total_dd_pct": 6.0
       }
     },
     {
