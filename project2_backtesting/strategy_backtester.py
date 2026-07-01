@@ -3938,6 +3938,20 @@ def fast_backtest(df, ind, rules, exit_strategy,
         _lows_np   = future_candles['low'].to_numpy(dtype=float, copy=False)
         _n_future  = len(_closes_np)
 
+        # PERF (fix #3): Pre-build per-candle dicts (OHLC + indicators) once
+        #   before the loop. Each .to_dict() + ind.loc merge inside the loop costs
+        #   ~30µs per candle; at 100K+ iterations that dominates non-trailing exits.
+        #   ind.iloc[_eb_int:_ind_end] aligns with _fc_dicts[0.._n_future-1] by
+        #   position — same rows the original code reached via ind.index[abs_pos].
+        # CHANGED: July 2026 — fix #3 indicator merge pre-build
+        _fc_dicts = future_candles.to_dict('records')
+        _ind_n = len(ind)
+        if _eb_int < _ind_n:
+            _ind_end = min(_eb_int + _n_future, _ind_n)
+            _ind_records = ind.iloc[_eb_int:_ind_end].to_dict('records')
+            for _fci, _irec in enumerate(_ind_records):
+                _fc_dicts[_fci].update(_irec)
+
         result = None
         exit_idx = -1
 
@@ -4298,7 +4312,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             if _use_m1_exit_sim:
                 try:
                     _m1_sim = _load_m1_for_candle(
-                        data_dir, future_candles.iloc[ci]['timestamp'],
+                        data_dir, _fc_dicts[ci]['timestamp'],
                         candle_minutes if candle_minutes else 240)
                 except Exception:
                     _m1_sim = None
@@ -4360,30 +4374,15 @@ def fast_backtest(df, ind, rules, exit_strategy,
             if low < pos_info['lowest_since_entry']:
                 pos_info['lowest_since_entry'] = low
 
-            # WHY (Phase A.10): exit strategies access candle fields by
-            #      name (candle['close'], candle['high'], etc.) so we
-            #      still need a Series-shaped object for the callback.
-            #      This is the only retained .iloc in the hot loop.
-            # WHY (Code Audit Fix — Bug 1b): Old code passed only price
-            #      data from future_candles. Exit strategies that read
-            #      indicator columns (ATRBased reads H1_atr_14,
-            #      IndicatorExit reads H1_rsi_14) got None and silently
-            #      degraded. Merge indicator row from `ind` into the
-            #      candle dict, matching run_backtest's behavior.
-            #      Performance note: .to_dict() + .update() adds ~20µs
-            #      per candle. The vectorized FixedSLTP path (majority
-            #      of combos) is unaffected.
-            # CHANGED: April 2026 — Code Audit Fix
-            candle = future_candles.iloc[ci]
-            _future_abs_idx = _eb_int + ci
-            if _future_abs_idx < len(ind):
-                try:
-                    _ind_idx = ind.index[_future_abs_idx]
-                    _candle_dict = candle.to_dict()
-                    _candle_dict.update(ind.loc[_ind_idx].to_dict())
-                    candle = _candle_dict
-                except Exception:
-                    pass
+            # WHY (Phase A.10 + Code Audit Fix Bug 1b + fix #3):
+            #      exit strategies access candle by key name (candle['close'],
+            #      candle['H1_atr_14'], etc.). OHLC + indicator columns are
+            #      pre-merged into _fc_dicts before the loop — one
+            #      .to_dict('records') + one ind.iloc slice — so each iteration
+            #      is a single O(1) dict lookup with no pandas overhead.
+            # CHANGED: April 2026 — Code Audit Fix (indicator merge)
+            # CHANGED: July 2026 — fix #3 pre-built dicts (replaces per-candle .iloc)
+            candle = _fc_dicts[ci]
 
             # WHY: Hard close overrides SL/TP — force-exit at the specified GMT hour.
             #      Checked before the exit strategy so it always takes priority.
