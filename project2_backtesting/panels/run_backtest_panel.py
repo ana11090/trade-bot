@@ -193,6 +193,7 @@ _rule_inner    = None
 _use_safety_var      = None  # BooleanVar for safety stops toggle
 _funded_protect_var  = None  # BooleanVar for funded protection simulation
 _hwm_lock_var        = None  # BooleanVar for HWM-lock parity toggle (see PARITY_TODO.md)
+_win_pass_inline_var = None  # BooleanVar: compute Win Pass rate per combo at backtest time (off = fast, grid shows "—")
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -1856,6 +1857,14 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # WHY (Phase A.48): Pass config values so the backtester
                     #      uses the user's actual spread/commission/account.
                     # CHANGED: April 2026 — Phase A.48
+                    # WHY: Win Pass opt-in gate. simulate_challenge runs N windows
+                    #      per combo; at 1,940 combos it dominates runtime on M5+.
+                    #      When the checkbox is off, clear the IDs so the backtester
+                    #      skips all sims and the grid shows "—" (pre-May-2026 behavior).
+                    # CHANGED: July 2026 — Win Pass opt-in (fix #4)
+                    if _win_pass_inline_var is not None and not _win_pass_inline_var.get():
+                        _wp_firm_id = _wp_challenge_id = _wp_account_size = None
+
                     # WHY (Win Pass diagnostic): Surface whether Win Pass
                     #      will run on this matrix so the user can see in
                     #      stdout why the column shows "—" if a piece is
@@ -4417,7 +4426,7 @@ def build_panel(parent):
     safety_frame = tk.Frame(panel, bg="white", pady=6)
     safety_frame.pack(fill="x", padx=20)
 
-    global _use_safety_var, _funded_protect_var, _hwm_lock_var
+    global _use_safety_var, _funded_protect_var, _hwm_lock_var, _win_pass_inline_var
     use_safety_var = tk.BooleanVar(value=True)
     _use_safety_var = use_safety_var
     tk.Checkbutton(
@@ -4465,6 +4474,22 @@ def build_panel(parent):
         fg="#666",
         bg="white",
         justify="left",
+    ).pack(anchor="w")
+
+    # WHY: simulate_challenge runs once per combo in sliding_window mode
+    #      (N windows per rule × 1,940 combos). OFF = skip it, grid shows "—"
+    #      for Win Pass (same as before May 2026). ON = inline pass-rate,
+    #      accurate but adds significant runtime on M5+. Default OFF so the
+    #      5-TF sweep is fast; enable only when you need pass-rate numbers.
+    # CHANGED: July 2026 — Win Pass opt-in (fix #4 — per-combo simulate_challenge)
+    win_pass_inline_var = tk.BooleanVar(value=False)
+    _win_pass_inline_var = win_pass_inline_var
+    tk.Checkbutton(
+        safety_frame,
+        text="Compute Win Pass rate per combo (slower — uncheck for speed)",
+        variable=win_pass_inline_var,
+        font=("Segoe UI", 10),
+        bg="white",
     ).pack(anchor="w")
 
     # ── Phase A.42: Max Trades Per Day control ────────────────────────────────
