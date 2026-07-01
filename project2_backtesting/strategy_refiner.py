@@ -957,6 +957,7 @@ def load_strategy_list():
                         results.append({
                             'index':             i,
                             'source':            'backtest',
+                            'generated_at':      data.get('generated_at', ''),
                             'label':             (f"{_rc} × {r.get('exit_strategy','?')}"
                                                   f"{'  [' + r.get('entry_tf','') + ']' if r.get('entry_tf','') else ''}"
                                                   f"  [{trades_count} trades, WR {wr_str}, PF {pf:.1f}, {net:+,.0f} pips]"),

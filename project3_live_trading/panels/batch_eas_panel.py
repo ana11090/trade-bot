@@ -63,6 +63,7 @@ _f_sort       = None
 _f_profitable = None   # BooleanVar — profitable-only filter (parity with refiner)
 _nostats_lbl  = None
 _cur_source   = "all"  # tracks the active source so filter-widget callbacks don't need src_var
+_latest_run_at = None  # generated_at of the most recently observed backtest matrix (for "this run" filter)
 # CHANGED: June 2026 — Run Backtest / Run Scenario mode toggle
 # WHY: "Run Scenario" loads the SAME freshly-discovered rules the Run Backtest
 #   panel loads (via shared.scenario_sources), straight to MT5 — no Python
@@ -271,7 +272,15 @@ def _stage_cell(r):
         return str(v)
     rs = r.get('run_settings') or {}
     v = rs.get('prop_firm_stage')
-    return str(v) if v else "—"
+    if v:
+        return str(v)
+    # WHY (fix 1B): backtest rows predate or omit the stage stamp; infer "evaluation"
+    #   when the row has firm info rather than showing "—". Cosmetic — the firm phase
+    #   dropdown drives actual pass-rate numbers, not this column.
+    # CHANGED: July 2026 — evaluation fallback for unstamped backtest rows
+    if r.get('firm_id') or r.get('prop_firm_name'):
+        return "evaluation"
+    return "—"
 
 
 def _rule_label(r):
@@ -291,7 +300,7 @@ def _populate_grid(source):
     # CHANGED: June 2026 — scope fix: declare filter globals explicitly so _passes always sees
     #   the live widget values; filter applied as list comprehension before insert loop
     # CHANGED: June 2026 — added exit filter globals
-    global _grid_entries, _batch_sel_iids, _iid_to_entry, _cur_source
+    global _grid_entries, _batch_sel_iids, _iid_to_entry, _cur_source, _latest_run_at
     global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable
     global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
     if _grid_tree is None:
@@ -328,12 +337,30 @@ def _populate_grid(source):
     #   loop if they reach it. Strip them unconditionally before any further processing.
     _all = [r for r in _all if r.get('source') != 'separator']
 
+    # Pre-compute backtest rows once; track their latest generated_at for "this run".
+    # CHANGED: July 2026 — "this run" scoping (fix issue 2A)
+    _bt_all = [r for r in _all if r.get('source') == 'backtest']
+    if _bt_all:
+        _lat = max((r.get('generated_at', '') for r in _bt_all), default=None)
+        if _lat:
+            _latest_run_at = _lat
+
     # Filter by the source dropdown.
     # Source tags set by load_strategy_list: 'backtest', 'optimizer', 'saved', 'my_rules'.
     # WHY: 'saved_rules' catches everything that isn't backtest/optimizer (source values from
     #   saved entries vary: 'saved', 'my_rules', '?', or sometimes absent).
     if source == 'backtest':
-        _grid_entries = [r for r in _all if r.get('source') == 'backtest']
+        _grid_entries = list(_bt_all)
+    elif source == 'this run':
+        # WHY: show only rows from the most recently written backtest matrix.
+        #   generated_at is propagated from the matrix JSON top-level to each row
+        #   by load_strategy_list(). Rows from an older run have a lower timestamp
+        #   and are excluded. Falls back to all backtest rows when no timestamp.
+        # CHANGED: July 2026 — "this run" filter
+        if _latest_run_at:
+            _grid_entries = [r for r in _bt_all if r.get('generated_at') == _latest_run_at]
+        else:
+            _grid_entries = list(_bt_all)
     elif source == 'optimizer':
         _grid_entries = [r for r in _all if r.get('source') == 'optimizer']
     elif source == 'saved_rules':
@@ -636,6 +663,16 @@ def _populate_grid_scenario():
         _fanned = [_r for _r in _fanned
                    if str(_r.get("entry_tf", "")).lower() == _sel_tf.lower()]
 
+    # CHANGED 2026-06-26 — guard against runaway fans. "All Sources Combined"
+    # (~9,300 rules) × exits × TFs is ~1M variants and freezes the Treeview.
+    # Cap the grid; the user narrows with the source picker + TF/exit filters.
+    _MAX_SCENARIO_ROWS = 2000
+    _total_variants = len(_fanned)
+    _truncated = False
+    if _total_variants > _MAX_SCENARIO_ROWS:
+        _fanned = _fanned[:_MAX_SCENARIO_ROWS]
+        _truncated = True
+
     _grid_entries = _fanned
 
     if not _grid_entries:
@@ -691,9 +728,15 @@ def _populate_grid_scenario():
     print("[BATCH-GRID] scenario source=%r shown=%d" % (label, _shown), flush=True)
     _grid_tree.heading("sel", text="☐", command=_toggle_all)
     if _nostats_lbl is not None:
-        _nostats_lbl.config(
-            text="(scenario mode — %d rule(s) from discovery source; "
-                 "stats filled by the MT5 run)" % _shown)
+        if _truncated:
+            _nostats_lbl.config(
+                text=("scenario mode — showing %d of %d variants (capped). "
+                      "Pick a single source or use TF/Exit filters to narrow."
+                      % (_shown, _total_variants)))
+        else:
+            _nostats_lbl.config(
+                text=("scenario mode — %d rule(s) from discovery source; "
+                      "stats filled by the MT5 run" % _shown))
 
 
 def _toggle_row(event):
@@ -796,6 +839,18 @@ def _step_generate(source_var):
         return False
 
 def _do_generate(source_var):
+    # CHANGED 2026-06-26 — confirm before generating a large batch (the scenario
+    # fan can select hundreds/thousands of variants). messagebox must run on the
+    # MAIN thread, so check the selection here BEFORE handing off to the worker.
+    _sel_n = len([i for i in _batch_sel_iids if i in _iid_to_entry])
+    if _sel_n > 200:
+        import tkinter.messagebox as _mb
+        if not _mb.askyesno(
+                "Generate many EAs?",
+                "You're about to generate %d EAs. This will take a while and "
+                "produce a large MT5 batch. Continue?" % _sel_n):
+            _append("Generate cancelled (large selection).")
+            return
     _run_bg(lambda: _step_generate(source_var))
 
 
@@ -2529,9 +2584,10 @@ def build_panel(parent):
              font=("Segoe UI", 13, "bold"), padx=12, pady=8).pack(side=tk.LEFT)
 
     # Source + action buttons row
-    # CHANGED: June 2026 — default 'all' so grid is never blank if backtest_matrix.json
-    #   is a Git LFS stub (not yet pulled). Switch to 'backtest' once matrix is available.
-    src_var = tk.StringVar(value="all")
+    # WHY: default 'backtest' shows the last matrix run without mixing in saved rules.
+    #   Use 'this run' after a backtest to scope to the run just launched; use 'all' to merge.
+    # CHANGED: July 2026 — default 'backtest' (was 'all') + added 'this run' option
+    src_var = tk.StringVar(value="backtest")
     bar = tk.Frame(panel, bg=BG)
     bar.pack(fill="x", padx=10, pady=(8, 2))
 
@@ -2551,7 +2607,7 @@ def build_panel(parent):
     _src_lbl.pack(side=tk.LEFT)
     # CHANGED: June 2026 — add backtest + optimizer + all options
     src_combo = ttk.Combobox(bar, textvariable=src_var, width=14, state="readonly",
-                              values=["all", "backtest", "optimizer", "saved_rules", "my_rules"])
+                              values=["backtest", "this run", "all", "optimizer", "saved_rules", "my_rules"])
     src_combo.pack(side=tk.LEFT, padx=6)
     src_combo.bind("<<ComboboxSelected>>", lambda e: _populate_grid(src_var.get()))
     _src_combo_ref = src_combo
@@ -2627,8 +2683,14 @@ def build_panel(parent):
                                state="readonly", values=_acct_sizes())
     _acct_combo.pack(side=tk.LEFT, padx=(0, 12))
 
+    # CHANGED 2026-06-26 — action buttons get their own row. The Mode/Scenario/
+    # Account dropdowns were consuming the top bar's width and pushing "▶ Run All"
+    # off the right edge. Separate row = all 6 buttons always visible.
+    btnbar = tk.Frame(panel, bg=BG)
+    btnbar.pack(fill="x", padx=10, pady=(2, 2))
+
     def _btn(text, cmd):
-        return tk.Button(bar, text=text, command=cmd, bg=MIDGREY, fg="white",
+        return tk.Button(btnbar, text=text, command=cmd, bg=MIDGREY, fg="white",
                          relief=tk.FLAT, cursor="hand2", padx=12, pady=4,
                          font=("Segoe UI", 9, "bold"))
 
