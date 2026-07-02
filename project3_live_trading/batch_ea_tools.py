@@ -401,7 +401,17 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
                  entry.get('rule_id') or str(entry.get('id') or ('rule_%d' % i)))
         _exit = r.get('exit_name') or r.get('exit_strategy') or ''
         _tf   = r.get('entry_tf') or r.get('entry_timeframe') or ''
-        _suffix_parts = [p for p in (_tf, _exit) if p]
+        # WHY: combo already ends in <exitTag>_<exitHash> (built by the
+        #      backtester), so appending the exit name AGAIN produced
+        #      ..._ATR___Traili_4115_H4_ATR___Trailing. Suffix TF only;
+        #      names stay unique (exit tag+hash is in the combo) and get
+        #      ~15 chars shorter. Fallback: if the combo does NOT carry an
+        #      exit tag (older stores), keep the exit in the suffix.
+        # CHANGED: July 2026 — no duplicate exit name in EA names
+        _combo_has_exit = bool(_exit) and (
+            _safe_name(_exit)[:8].lower() in _safe_name(combo).lower())
+        _suffix_parts = [p for p in ((_tf,) if _combo_has_exit
+                                     else (_tf, _exit)) if p]
         _base = combo + ('_' + '_'.join(_suffix_parts) if _suffix_parts else '')
         name = _safe_name(_base)
         # guarantee uniqueness even if base still collides

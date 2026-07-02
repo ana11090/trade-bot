@@ -1190,6 +1190,81 @@ def _write_sim_detail_xlsx(path, text):
     wb.save(path)
 
 
+def _write_name_map(dump, eas):
+    """NAME_MAP.csv + NAME_MAP.txt: one row per EA decoding the name.
+
+    WHY: EA names like _1_BUY_XX_4c_46cd_Trailing_Sto_6671_H4_Trailing_Stop
+         are built from combo + exit-tag + exit-params-hash. Two EAs can
+         share the same exit NAME (Trailing Stop) with different params —
+         only the 4-hex hash differs and the params are invisible. This map
+         shows: EA -> rule JSON -> folder -> full exit name -> exit params.
+    NAME FORMAT KEY: _<combo#>_<DIR>_<discoveryTF>_<nConds>c_<ruleHash>_
+         <exitTag>_<exitParamsHash>_<entryTF>[_<exitName>]
+         'XX' = discovery-origin tag, NOT the evaluation timeframe.
+    CHANGED: July 2026 — name map legend
+    """
+    import csv as _csv, json as _json
+    try:
+        from project3_live_trading.batch_compare_reports import _py_rules_dir
+        _rdir = _py_rules_dir()
+    except Exception:
+        _rdir = ""
+    rows = []
+    for e in eas or []:
+        _name  = e.get("name", "")
+        _pysrc = (e.get("python") or {}).get("source", "")
+        _exit_params = ""
+        if _rdir and _pysrc:
+            _rp = os.path.join(_rdir, _pysrc)
+            if os.path.isfile(_rp):
+                try:
+                    with open(_rp, encoding="utf-8") as _f:
+                        _rd = _json.load(_f)
+                    _r0 = ((_rd.get("rules") or [{}])[0]
+                           if _rd.get("rules") else _rd)
+                    _ep = (_r0.get("exit_params")
+                           or _rd.get("exit_params") or {})
+                    _exit_params = ", ".join(
+                        "%s=%s" % (k, v) for k, v in sorted(_ep.items()))
+                except Exception:
+                    _exit_params = "(rule json unreadable)"
+            else:
+                _exit_params = "(rule json not found)"
+        rows.append({
+            "ea_name":     _name,
+            "rule_json":   _pysrc or "(unmatched)",
+            "combo":       e.get("combo", ""),
+            "entry_tf":    e.get("tf", ""),
+            "exit_name":   e.get("exit", ""),
+            "exit_params": _exit_params,
+            "folder":      os.path.join(dump, _name),
+        })
+    # CSV — machine friendly
+    _csvp = os.path.join(dump, "NAME_MAP.csv")
+    with open(_csvp, "w", newline="", encoding="utf-8") as _f:
+        _w = _csv.DictWriter(_f, fieldnames=[
+            "ea_name", "rule_json", "combo", "entry_tf",
+            "exit_name", "exit_params", "folder"])
+        _w.writeheader()
+        _w.writerows(rows)
+    # TXT — human friendly, aligned
+    _txtp = os.path.join(dump, "NAME_MAP.txt")
+    with open(_txtp, "w", encoding="utf-8") as _f:
+        _f.write("NAME MAP — how to read an EA name\n")
+        _f.write("_<combo#>_<DIR>_<discTF>_<nConds>c_<ruleHash>_"
+                 "<exitTag>_<exitHash>_<entryTF>\n")
+        _f.write("'XX' = discovery tag, NOT the run timeframe. Two EAs with "
+                 "the same exit name differ ONLY in exit_params below.\n")
+        _f.write("=" * 100 + "\n\n")
+        for r in rows:
+            _f.write("EA:      %s\n" % r["ea_name"])
+            _f.write("  rule:  %s\n" % r["rule_json"])
+            _f.write("  exit:  %s  [%s]\n" % (r["exit_name"], r["exit_params"]))
+            _f.write("  tf:    %s   combo: %s\n" % (r["entry_tf"], r["combo"]))
+            _f.write("  folder: %s\n\n" % r["folder"])
+    return _csvp
+
+
 def _write_debug_dump():
     """Write MT5 + Python trades + comparison into per-EA folders AND a single
     consolidated batch_debug.json. Restores the per-EA folder layout (mt5_trades.csv,
@@ -2286,6 +2361,13 @@ def _write_debug_dump():
                 _d("EVAL WINDOWS: rules_dir not found — skipping")
         except Exception as _eval_err:
             _d("EVAL WINDOWS ERROR: %r" % _eval_err)
+        # WHY: legend decoding every EA name -> rule json -> folder -> exit params.
+        # CHANGED: July 2026 — name map legend
+        try:
+            _nm = _write_name_map(dump, _consolidated.get("eas"))
+            _d("NAME MAP: %s" % _nm)
+        except Exception as _nme:
+            _d("NAME MAP failed: %r" % _nme)
     except Exception as _rpe:
         _d("PARITY_REPORT write failed: %r" % _rpe)
 
