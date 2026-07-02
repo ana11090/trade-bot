@@ -1070,6 +1070,29 @@ def generate_eval_windows_report(
             else:
                 cur_consec = 0
 
+        # WHY: Min/Max consecutive PASS streaks — how long the strategy can
+        #      chain passing windows (max), and its weakest streak (min).
+        #      Incomplete/insufficient windows carry no outcome information,
+        #      so they neither extend nor break a streak; any FAIL_* or
+        #      timeout breaks it.
+        # CHANGED: July 2026 — min/max consecutive pass columns
+        _pass_streaks = []
+        _cur_pass = 0
+        for r in individual:
+            _oc = str(r.eval_outcome or '')
+            if _oc == 'PASS':
+                _cur_pass += 1
+            elif _oc in ('INSUFFICIENT_TRADES',) or _oc.startswith('INCOMPLETE'):
+                continue
+            else:
+                if _cur_pass > 0:
+                    _pass_streaks.append(_cur_pass)
+                _cur_pass = 0
+        if _cur_pass > 0:
+            _pass_streaks.append(_cur_pass)
+        min_consec_pass = min(_pass_streaks) if _pass_streaks else 0
+        max_consec_pass = max(_pass_streaks) if _pass_streaks else 0
+
         # Summary row
         pass_count = sim.eval_pass_count
         fail_count = sim.eval_fail_count
@@ -1097,6 +1120,8 @@ def generate_eval_windows_report(
             'fail_timeout': sim.eval_fail_reasons.get('FAIL_TIMEOUT', 0),
             'avg_profit_pct_passed': round(sum(pass_profits) / len(pass_profits), 2) if pass_profits else 0,
             'avg_dd_pct_failed': round(sum(fail_dds) / len(fail_dds), 2) if fail_dds else 0,
+            'min_consec_pass': min_consec_pass,
+            'max_consec_pass': max_consec_pass,
             'max_consec_fails': max_consec,
             'avg_days_to_pass': round(sim.eval_avg_days_to_pass, 1),
         })
@@ -1156,7 +1181,8 @@ def generate_eval_windows_report(
 
     headers = ['Rule', 'Combo', 'Exit', 'TF', 'Trades', 'Windows',
                'Pass', 'Fail', 'Pass%', 'Fail_DD', 'Fail_DailyDD', 'Fail_Timeout',
-               'Avg Profit% (pass)', 'Avg DD% (fail)', 'Max Consec Fails',
+               'Avg Profit% (pass)', 'Avg DD% (fail)',
+               'Min Consec Pass', 'Max Consec Pass', 'Max Consec Fails',
                'Avg Days to Pass']
     for c, h in enumerate(headers, 1):
         cell = ws.cell(row=4, column=c, value=h)
@@ -1170,6 +1196,7 @@ def generate_eval_windows_report(
                 sr['n_trades'], sr['total_windows'], sr['pass_count'], sr['fail_count'],
                 sr['pass_rate_pct'], sr['fail_dd'], sr['fail_daily_dd'], sr['fail_timeout'],
                 sr['avg_profit_pct_passed'], sr['avg_dd_pct_failed'],
+                sr['min_consec_pass'], sr['max_consec_pass'],
                 sr['max_consec_fails'], sr['avg_days_to_pass']]
         for c, v in enumerate(vals, 1):
             cell = ws.cell(row=i, column=c, value=v)
@@ -1182,13 +1209,18 @@ def generate_eval_windows_report(
         elif sr['pass_rate_pct'] < 40:
             rate_cell.fill = RED
 
-        # Color max consec fails
-        consec_cell = ws.cell(row=i, column=15)
+        # Color max consec fails (shifted +2 by the new pass-streak columns)
+        # CHANGED: July 2026 — min/max consecutive pass columns
+        consec_cell = ws.cell(row=i, column=17)
         if sr['max_consec_fails'] > 3:
             consec_cell.fill = RED
             consec_cell.font = Font(bold=True, color='9C0006')
         elif sr['max_consec_fails'] <= 1:
             consec_cell.fill = GREEN
+        # Color max consec pass: 3+ chained passes is a strong signal
+        _mcp_cell = ws.cell(row=i, column=16)
+        if sr['max_consec_pass'] >= 3:
+            _mcp_cell.fill = GREEN
 
     # Auto-width
     for col in ws.columns:
