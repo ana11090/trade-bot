@@ -974,6 +974,8 @@ def generate_eval_windows_report(
     risk_pct=1.0,
     sl_pips=150.0,
     pip_value_per_lot=1.0,
+    py_period="?",
+    mt5_period="?",
 ):
     """Generate eval_windows_report.xlsx from stored Python trade JSONs.
 
@@ -1247,11 +1249,17 @@ def generate_eval_windows_report(
     ws = wb.active
     ws.title = 'Summary'
 
-    # Title row
-    ws.cell(row=1, column=1, value=f'Eval Windows Report — {firm_id} ${account_size:,} — source: {trade_source.upper()}')
-    ws.cell(row=1, column=1).font = Font(bold=True, size=14)
-    ws.cell(row=2, column=1, value=f'Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}')
-    ws.cell(row=2, column=1).font = Font(italic=True, size=9, color='666666')
+    # WHY: spec'd fixed cells — A1/B1 python window, A2/B2 mt5 window.
+    # CHANGED: July 2026 — fixed-cell period header
+    ws.cell(row=1, column=1, value='python timeframe backtest').font = Font(bold=True)
+    ws.cell(row=1, column=2, value=str(py_period))
+    ws.cell(row=2, column=1, value='mt5 timeframe backtest').font = Font(bold=True)
+    ws.cell(row=2, column=2, value=str(mt5_period))
+    # Title row (shifted down by 2)
+    ws.cell(row=3, column=1, value=f'Eval Windows Report — {firm_id} ${account_size:,} — source: {trade_source.upper()}')
+    ws.cell(row=3, column=1).font = Font(bold=True, size=14)
+    ws.cell(row=4, column=1, value=f'Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}')
+    ws.cell(row=4, column=1).font = Font(italic=True, size=9, color='666666')
 
     headers = ['Rule', 'Combo', 'Exit', 'TF', 'Trades', 'Windows',
                'Pass', 'Fail', 'Pass%', 'Fail_DD', 'Fail_DailyDD', 'Fail_Timeout',
@@ -1259,13 +1267,13 @@ def generate_eval_windows_report(
                'Min Consec Pass', 'Max Consec Pass', 'Max Consec Fails',
                'Avg Days to Pass']
     for c, h in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=c, value=h)
+        cell = ws.cell(row=6, column=c, value=h)
         cell.fill = HEADER
         cell.font = header_font
         cell.border = thin_border
         cell.alignment = Alignment(horizontal='center', wrap_text=True)
 
-    for i, sr in enumerate(summary_rows, 5):
+    for i, sr in enumerate(summary_rows, 7):
         vals = [sr['rule'], sr['rule_combo'], sr['exit_config'], sr['tf'],
                 sr['n_trades'], sr['total_windows'], sr['pass_count'], sr['fail_count'],
                 sr['pass_rate_pct'], sr['fail_dd'], sr['fail_daily_dd'], sr['fail_timeout'],
@@ -1303,15 +1311,21 @@ def generate_eval_windows_report(
 
     # ── Windows sheet ─────────────────────────────────────────────────────
     ws2 = wb.create_sheet('Windows')
+    # WHY: same spec'd A1/B1/A2/B2 period header on every sheet.
+    # CHANGED: July 2026 — fixed-cell period header
+    ws2.cell(row=1, column=1, value='python timeframe backtest').font = Font(bold=True)
+    ws2.cell(row=1, column=2, value=str(py_period))
+    ws2.cell(row=2, column=1, value='mt5 timeframe backtest').font = Font(bold=True)
+    ws2.cell(row=2, column=2, value=str(mt5_period))
     w_headers = ['Rule', 'Exit', 'Start Date', 'Outcome', 'Profit%', 'Max DD%',
                  'Eval Days', 'Trading Days']
     for c, h in enumerate(w_headers, 1):
-        cell = ws2.cell(row=1, column=c, value=h)
+        cell = ws2.cell(row=3, column=c, value=h)
         cell.fill = HEADER
         cell.font = header_font
         cell.border = thin_border
 
-    for i, wr in enumerate(window_rows, 2):
+    for i, wr in enumerate(window_rows, 4):
         vals = [wr['rule'], wr['exit_config'], wr['start_date'], wr['outcome'],
                 wr['profit_pct'], wr['max_dd_pct'], wr['eval_days'],
                 wr['eval_trading_days']]

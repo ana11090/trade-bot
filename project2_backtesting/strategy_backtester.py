@@ -6267,6 +6267,21 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 for _ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
                     _safe = _safe.replace(_ch, '_')
                 _fname = f"rule_{_safe}_{_row_tf}.json"
+                # WHY: two DIFFERENT rules can collapse to the same filename
+                #      in one save run — the second silently overwrote the
+                #      first. Append 6 random digits on within-run collision.
+                #      Re-saving the SAME rule across runs still overwrites
+                #      (intended — keeps rule files stable for matching).
+                # CHANGED: July 2026 — 6 random digits on duplicate names
+                try:
+                    _seen_fnames
+                except NameError:
+                    _seen_fnames = set()
+                if _fname in _seen_fnames:
+                    import random as _rnd
+                    _fname = f"rule_{_safe}_{_row_tf}_" + "".join(
+                        _rnd.choices("0123456789", k=6)) + ".json"
+                _seen_fnames.add(_fname)
                 _fpath = os.path.join(_rules_dir, _fname)
                 # WHY: Write the FULL row (including trades) so each
                 #      file is a self-contained record. backtest_matrix.json

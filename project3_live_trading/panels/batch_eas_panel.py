@@ -1147,7 +1147,7 @@ def _mt5_trades_to_sim_trades(mt5_trades, pip_value_per_lot):
     return out
 
 
-def _write_sim_detail_xlsx(path, text):
+def _write_sim_detail_xlsx(path, text, py_period="?", mt5_period="?"):
     """Render build_sim_detail_text() output into an xlsx that mirrors the
     refiner 'eval & funded simulation' panel: one line per row, Consolas font,
     green for PASS rows, red for FAIL rows, grey for incomplete rows."""
@@ -1170,7 +1170,15 @@ def _write_sim_detail_xlsx(path, text):
     ws = wb.active
     ws.title = "eval & funded"
 
-    for i, line in enumerate(text.split("\n"), 1):
+    # WHY: A1/B1 = python window, A2/B2 = mt5 window — spec'd layout so the
+    #      run periods are always in the same cells in every excel.
+    # CHANGED: July 2026 — fixed-cell period header
+    ws.cell(row=1, column=1, value="python timeframe backtest").font = head
+    ws.cell(row=1, column=2, value=str(py_period)).font = mono
+    ws.cell(row=2, column=1, value="mt5 timeframe backtest").font = head
+    ws.cell(row=2, column=2, value=str(mt5_period)).font = mono
+
+    for i, line in enumerate(text.split("\n"), 3):
         c = ws.cell(row=i, column=1, value=line)
         c.font = mono
         c.alignment = Alignment(horizontal="left", vertical="center")
@@ -1187,6 +1195,7 @@ def _write_sim_detail_xlsx(path, text):
             c.fill = GREY
 
     ws.column_dimensions["A"].width = 90
+    ws.column_dimensions["B"].width = 45
     wb.save(path)
 
 
@@ -1504,6 +1513,23 @@ def _write_debug_dump():
             if not _cfg.get("challenge_id"):
                 _cfg["challenge_id"] = "leveraged_standard"
 
+            # WHY: both windows shown in every per-EA excel (spec: A1/B1 py,
+            #      A2/B2 mt5), regardless of which source the file holds.
+            # CHANGED: July 2026 — fixed-cell period header
+            def _rng(_ts):
+                try:
+                    _es = sorted(str(t.get("entry_time") or "") for t in (_ts or [])
+                                 if t.get("entry_time"))
+                    _xs = sorted(str(t.get("exit_time") or t.get("entry_time") or "")
+                                 for t in (_ts or [])
+                                 if (t.get("exit_time") or t.get("entry_time")))
+                    return "%s -> %s" % (_es[0], _xs[-1]) if _es else "?"
+                except Exception:
+                    return "?"
+            _py_period_txt = _rng(py) if py else "(no python run)"
+            _mt5_period_txt = "%s | trades %s" % (
+                (mt5_stats or {}).get("period", "?"), _rng(mt5_trades))
+
             def _gen(_trades, _suffix):
                 if not _trades or len(_trades) < 1:
                     _d("  eval_windows_%s skipped (no %s trades)" % (_suffix, _suffix))
@@ -1524,7 +1550,8 @@ def _write_debug_dump():
                            _cfg["challenge_id"], ea))
                 _write_sim_detail_xlsx(
                     os.path.join(sub, "eval_windows_%s.xlsx" % _suffix),
-                    _hdr + _txt)
+                    _hdr + _txt,
+                    py_period=_py_period_txt, mt5_period=_mt5_period_txt)
                 _d("  eval_windows_%s.xlsx written (stage=%s firm=%s, %d trades)"
                    % (_suffix, _cfg["stage"], _cfg["firm_id"], len(_trades)))
 
@@ -2335,6 +2362,29 @@ def _write_debug_dump():
                     # First EA wins per key (composites share a rule JSON).
                     _mt5_by_source.setdefault(_key, _csv_path)
 
+                # WHY: overall python window across all EAs for the aggregate report.
+                # CHANGED: July 2026 — fixed-cell period header
+                _batch_py_period = "?"
+                try:
+                    import glob as _pg, json as _pj
+                    from project3_live_trading.batch_compare_reports import _py_rules_dir as _prd
+                    _pmin = _pmax = None
+                    for _pf in _pg.glob(os.path.join(_prd(), "rule_*.json")):
+                        try:
+                            with open(_pf, encoding="utf-8") as _ph:
+                                _pt = (_pj.load(_ph).get("trades") or [])
+                            if _pt:
+                                _a = str(_pt[0].get("entry_time", ""))
+                                _b = str(_pt[-1].get("exit_time",
+                                         _pt[-1].get("entry_time", "")))
+                                _pmin = _a if (_pmin is None or _a < _pmin) else _pmin
+                                _pmax = _b if (_pmax is None or _b > _pmax) else _pmax
+                        except Exception:
+                            continue
+                    if _pmin:
+                        _batch_py_period = "%s -> %s" % (_pmin, _pmax)
+                except Exception:
+                    pass
                 _eval_path = generate_eval_windows_report(
                     rules_dir=_rules_dir,
                     reports_dir=reports,
@@ -2352,6 +2402,9 @@ def _write_debug_dump():
                     risk_pct=1.0,
                     sl_pips=150.0,
                     pip_value_per_lot=1.0,
+                    py_period=_batch_py_period,
+                    mt5_period="%s -> %s" % (_consolidated["window"]["from"],
+                                             _consolidated["window"]["to"]),
                 )
                 if _eval_path:
                     _d("EVAL WINDOWS REPORT: %s" % _eval_path)

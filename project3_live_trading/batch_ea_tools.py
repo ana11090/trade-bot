@@ -417,7 +417,12 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
         # guarantee uniqueness even if base still collides
         _existing = {rr['name'] for rr in results}
         if name in _existing:
-            name = _safe_name(_base + '_%d' % i)
+            # WHY: spec — duplicate names get 6 random digits, not a counter.
+            # CHANGED: July 2026 — 6 random digits on duplicate names
+            import random as _rnd
+            while name in _existing:
+                name = _safe_name(_base + '_' + ''.join(
+                    _rnd.choices('0123456789', k=6)))
         path = os.path.join(out_dir, name + '.mq5')
         rec = {
             'name': name, 'path': path,
