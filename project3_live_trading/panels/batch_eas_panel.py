@@ -801,6 +801,24 @@ def _run_bg(fn):
     threading.Thread(target=fn, daemon=True).start()
 
 
+# WHY: Graceful stop for batch runs. Every step checks this flag
+#      between iterations and exits cleanly when set. The subprocess
+#      reference lets Stop kill metaeditor64 or the .bat runner.
+# CHANGED: July 2026 — batch stop button
+_batch_stop_requested = False
+_batch_subprocess = None   # holds the active Popen, if any
+
+def _request_batch_stop():
+    global _batch_stop_requested, _batch_subprocess
+    _batch_stop_requested = True
+    _append("\n⏹ Stop requested — finishing current EA and saving...")
+    if _batch_subprocess is not None:
+        try:
+            _batch_subprocess.terminate()
+        except Exception:
+            pass
+
+
 # ── button callbacks ──────────────────────────────────────────────────────────
 
 # CHANGED: June 2026 — synchronous step functions for "Run All" chain
@@ -966,9 +984,11 @@ def _step_run_tests():
                     pass
 
         _append("Running %d EA(s) via %s ..." % (_total_eas, os.path.basename(bat)))
+        global _batch_subprocess
         proc = subprocess.Popen(["cmd", "/c", bat], cwd=os.path.dirname(bat),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, bufsize=1)
+        _batch_subprocess = proc
 
         _seen = {"n": 0}
         def _pump():
@@ -986,6 +1006,13 @@ def _step_run_tests():
 
         while proc.poll() is None:
             time.sleep(5)
+            if _batch_stop_requested:
+                _append("  ⏹ Stop signal — terminating tester...")
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+                break
             # CHANGED: June 2026 — count .xlsx reports (full deal data) instead of .htm (summary only)
             # WHY: tester now writes .xlsx with complete trade details.
             done_n = (len(_glob.glob(os.path.join(_last_reports_dir, "*.xlsx"))) +
@@ -994,6 +1021,7 @@ def _step_run_tests():
             _prog = "%d/%d done" % (done_n, _total_eas) if _total_eas else "%d done" % done_n
             _append("  [heartbeat] %s" % _prog)
 
+        _batch_subprocess = None
         _append("All tester passes finished." if proc.returncode == 0 else
                 "Tester exited code %d" % proc.returncode)
         return proc.returncode == 0
@@ -2276,22 +2304,36 @@ def _write_debug_dump():
 def _do_run_all(source_var):
     """Chain: Generate → Compile → Build → Run → Compare → Debug Dump."""
     def chain():
+        global _batch_stop_requested
+        _batch_stop_requested = False
         _append("\n===== RUN ALL =====")
+        if _batch_stop_requested:
+            _append("===== STOPPED BY USER ====="); return
         if not _step_generate(source_var):
-            _append("===== STOPPED (generate) =====")
-            return
+            _append("===== STOPPED (generate) ====="); return
+        if _batch_stop_requested:
+            _append("===== STOPPED BY USER (after generate) =====")
+            _step_compare(); _write_debug_dump(); return
         if not _step_compile():
-            _append("===== STOPPED (compile) =====")
-            return
+            _append("===== STOPPED (compile) ====="); return
+        if _batch_stop_requested:
+            _append("===== STOPPED BY USER (after compile) =====")
+            _step_compare(); _write_debug_dump(); return
         if not _step_build_run_files():
-            _append("===== STOPPED (build) =====")
-            return
+            _append("===== STOPPED (build) ====="); return
+        if _batch_stop_requested:
+            _append("===== STOPPED BY USER (after build) =====")
+            _step_compare(); _write_debug_dump(); return
         if not _step_run_tests():
-            _append("===== STOPPED (run) =====")
-            return
+            if _batch_stop_requested:
+                _append("===== STOPPED BY USER (during run) =====")
+                _step_compare(); _write_debug_dump(); return
+            _append("===== STOPPED (run) ====="); return
+        if _batch_stop_requested:
+            _append("===== STOPPED BY USER (after run) =====")
+            _step_compare(); _write_debug_dump(); return
         if not _step_compare():
-            _append("===== STOPPED (compare) =====")
-            return
+            _append("===== STOPPED (compare) ====="); return
         _write_debug_dump()
         _append("===== RUN ALL COMPLETE =====")
     _run_bg(chain)
@@ -2703,6 +2745,9 @@ def build_panel(parent):
     _btn("3. Compare Reports", _do_compare).pack(side=tk.LEFT, padx=4)
     # CHANGED: June 2026 — Run All chains all steps + writes debug dump
     _btn("▶ Run All", lambda: _do_run_all(src_var)).pack(side=tk.LEFT, padx=8)
+    # WHY: Graceful stop — kills the active step, saves whatever completed.
+    # CHANGED: July 2026 — batch stop button
+    _btn("⏹ Stop", _request_batch_stop).pack(side=tk.LEFT, padx=4)
 
     # CHANGED: June 2026 — filter row (parity with Strategy Refiner)
     filt_row = tk.Frame(panel, bg=BG)

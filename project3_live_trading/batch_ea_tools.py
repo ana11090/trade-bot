@@ -254,6 +254,16 @@ def batch_compile(out_dir, data_dir, experts_subdir=r"Experts\batch",
 
     results = []
     for src in mq5_files:
+        # WHY: check batch stop flag between compilations
+        # CHANGED: July 2026 — batch stop support
+        try:
+            from project3_live_trading.panels.batch_eas_panel import _batch_stop_requested
+            if _batch_stop_requested:
+                results.append({"name": "(stopped)", "ok": False,
+                                "error": "stopped by user"})
+                break
+        except ImportError:
+            pass
         name = os.path.splitext(os.path.basename(src))[0]
         dest = os.path.join(dest_dir, name + ".mq5")
         ex5  = os.path.join(dest_dir, name + ".ex5")
