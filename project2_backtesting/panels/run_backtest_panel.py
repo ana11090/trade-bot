@@ -194,6 +194,12 @@ _use_safety_var      = None  # BooleanVar for safety stops toggle
 _funded_protect_var  = None  # BooleanVar for funded protection simulation
 _hwm_lock_var        = None  # BooleanVar for HWM-lock parity toggle (see PARITY_TODO.md)
 _win_pass_inline_var = None  # BooleanVar: compute Win Pass rate per combo at backtest time (off = fast, grid shows "—")
+# WHY: M1 intrabar exit sim toggle. ON = resolve exits at M1 sub-candle level (matches MT5
+#      intrabar fills, slower on high-trade-count runs). OFF = resolve exits at bar level
+#      (fast path). Independent of _a48_use_config_var — toggling M1 does NOT affect
+#      spread/swaps/timezone/etc.
+# CHANGED: July 2026 — dedicated M1 intrabar toggle
+_m1_intrabar_var = None  # BooleanVar: M1 sub-candle exit resolution (default ON)
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -937,6 +943,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      When unchecked, use function defaults (pre-A.48 behavior).
             # CHANGED: April 2026 — Phase A.48
             _a48_use_cfg = _a48_use_config_var.get() if _a48_use_config_var is not None else False
+            _m1_intrabar = _m1_intrabar_var.get() if _m1_intrabar_var is not None else True
 
             # WHY: All _cfg_* variables must exist before the try block.
             #      Python marks them as local when it sees assignment inside try,
@@ -2080,11 +2087,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      On H4+ it fills at M1 session-open matching MT5.
                         # CHANGED: June 2026 — auto-enable SESSIONGAP parity
                         gap_fill_parity=_a48_use_cfg,
-                        # WHY: Auto-enable M1 intrabar exit when config is loaded.
-                        #      Refines exit_time to first M1 bar crossing SL/TP,
-                        #      matching MT5's tick-level exit. Fixes LONG_HOLD_BLOCK.
-                        # CHANGED: June 2026 — auto-enable M1 intrabar exit
-                        exit_intrabar_m1=_a48_use_cfg,
+                        # WHY: M1 intrabar exit is now controlled by its own checkbox
+                        #      (_m1_intrabar_var), independent of the firm-config toggle.
+                        #      ON = M1 sub-candle exit walk (MT5 parity, slower).
+                        #      OFF = bar-level exits (fast path, looser intrabar parity).
+                        # CHANGED: July 2026 — decouple M1 from _a48_use_cfg
+                        exit_intrabar_m1=_m1_intrabar,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -4656,7 +4664,7 @@ def build_panel(parent):
     #      controls whether to read and pass those values. Default OFF
     #      preserves pre-A.48 behavior (function defaults).
     # CHANGED: April 2026 — Phase A.48
-    global _a48_use_config_var
+    global _a48_use_config_var, _m1_intrabar_var
 
     _a48_frame = tk.Frame(panel, bg="white", pady=6)
     _a48_frame.pack(fill="x", padx=20)
@@ -4725,6 +4733,27 @@ def build_panel(parent):
         text=f"    OFF = use defaults (spread=2.5, commission=0, no account sizing)\n"
              f"    ON  = read from Configuration panel\n"
              f"{_a48_preview}",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # WHY: M1 intrabar exit is expensive on high-trade-count TFs (M5). Decoupled from
+    #      the firm-config toggle so you can turn off M1 without losing spread/swaps/etc.
+    #      ON = current behavior (MT5 intrabar parity). OFF = bar-level exits (fast).
+    # CHANGED: July 2026 — dedicated M1 intrabar toggle checkbox
+    _m1_intrabar_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        _a48_frame,
+        text="M1 intrabar exits (accurate MT5 parity — slower on M5/high-trade runs)",
+        variable=_m1_intrabar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+    tk.Label(
+        _a48_frame,
+        text="    OFF = resolve exits at bar level (much faster; looser intrabar parity)",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
