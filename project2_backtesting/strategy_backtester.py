@@ -266,6 +266,18 @@ def _check_ticks_available(data_dir):
     """
     if not data_dir:
         return False
+    # WHY: This function is called once per signal-bar evaluation via the
+    #      spread filter — os.listdir on every call is millions of syscalls
+    #      per matrix run. Cache POSITIVE results only: ticks appearing
+    #      mid-run (the original disk-fresh motivation) is still detected
+    #      because negative results keep re-reading the disk; ticks do not
+    #      vanish mid-run, so a cached True stays valid.
+    # CHANGED: July 2026 — cache positive tick availability per data_dir
+    try:
+        if _check_ticks_available._last_result.get(data_dir) is True:
+            return True
+    except AttributeError:
+        pass
     tick_files = []
     err = None
     try:
@@ -1869,6 +1881,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     Returns list of trade dicts.
     """
+    # WHY: The M1 intrabar checkbox OFF means "run bar-level like before any
+    #      tick/M1 machinery existed". Every tick/M1 feature in this function
+    #      (loaders, tick sim, spread-from-ticks, gap-fill M1 session-open,
+    #      M1 exit refinement, tick-availability listdir) is guarded by
+    #      `and data_dir`. Nulling data_dir here is a single-point, provably
+    #      complete kill switch — nothing tick/M1 can run without it.
+    #      NOTE: with the checkbox OFF this also disables the config-driven
+    #      spread filter and SESSIONGAP gap-fill (both need tick/M1 files).
+    #      OFF = fast sweep mode; use ON for MT5-parity runs.
+    # CHANGED: July 2026 — checkbox OFF disables all tick/M1 via data_dir
+    if not exit_intrabar_m1:
+        data_dir = None
+
     # WHY (May 2026): Wire SL slippage distribution to exit strategy so
     #      _get_fill_price can sample realistic broker slips on SL fills.
     # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
@@ -2592,13 +2617,19 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
         # WHY: Provide tick and M1 loaders to exit strategies.
         #      Fallback chain: ticks → M1 → conservative.
-        # CHANGED: April 2026 — tick data + M1 fallback in position info
-        if data_dir and _check_ticks_available(data_dir):
+        # WHY: Gated on exit_intrabar_m1 — the checkbox promises OFF = bar-level
+        #      exits (pre-intrabar fast path), but the loaders drove per-candle
+        #      tick/M1 loads in exit_strategies (trailing ambiguity, PSAR M1,
+        #      entry-candle SL/TP) and the fast_backtest tick sim regardless of
+        #      the flag. With OFF the loaders are None; every consumer already
+        #      no-ops on None, so OFF is now truly bar-level. ON is unchanged.
+        # CHANGED: July 2026 — exit_intrabar_m1 gates tick/M1 loader injection
+        if exit_intrabar_m1 and data_dir and _check_ticks_available(data_dir):
             _d, _cm = data_dir, _run_candle_tf_minutes
             pos['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
         else:
             pos['_tick_loader'] = None
-        if data_dir:
+        if exit_intrabar_m1 and data_dir:
             _d, _cm = data_dir, _run_candle_tf_minutes
             pos['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
         else:
@@ -3197,6 +3228,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
+    # WHY: See run_backtest — checkbox OFF = complete tick/M1 kill switch.
+    #      All tick/M1 features in fast_backtest are guarded by `and data_dir`
+    #      (loaders, tick sim, _sltp_defer_to_ticks, spread filter incl. the
+    #      vectorized forward, gap-fill M1, M1 exit refinement, listdir).
+    # CHANGED: July 2026 — checkbox OFF disables all tick/M1 via data_dir
+    if not exit_intrabar_m1:
+        data_dir = None
+
     trades = []
     # WHY: Add a UTC column up front so all GMT-labeled / P1-UTC gates
     #      (no-trades window, force-close, DD reset, entry-time filter,
@@ -3742,7 +3781,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: May 2026 — tick-anchored filter (replaces session estimator)
         if max_spread_pips > 0 and data_dir:
             try:
-                _entry_ts_for_spread = df.index[_eb_int]
+                # WHY: df has a RangeIndex (run_comparison_matrix pre-trims with
+                #      reset_index(drop=True)), so df.index[_eb_int] returned the
+                #      INTEGER position; pd.Timestamp(<int>) = 1970-01-01 → tick
+                #      month never found → spread filter was a silent no-op in
+                #      fast_backtest since May. Use the entry bar's real timestamp
+                #      (entry_time = next_candle['timestamp'], already in scope).
+                # CHANGED: July 2026 — spread filter uses entry bar timestamp
+                _entry_ts_for_spread = entry_time
             except Exception:
                 _entry_ts_for_spread = None
             if _entry_ts_for_spread is not None:
@@ -3922,13 +3968,18 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 pass
 
         # WHY: Provide tick and M1 loaders. Fallback: ticks → M1 → conservative.
-        # CHANGED: April 2026 — tick + M1 fallback in position info (fast_backtest)
-        if data_dir and _check_ticks_available(data_dir):
+        # WHY: Gated on exit_intrabar_m1 — with the checkbox OFF these loaders
+        #      still powered the tick sim (~L4105, f579a49), _sltp_defer_to_ticks,
+        #      and per-candle tick/M1 iteration in exit_strategies, so OFF was as
+        #      slow as ON. None loaders no-op every consumer; tick sim and defer
+        #      flag both key off loader existence and fall back to bar-level.
+        # CHANGED: July 2026 — exit_intrabar_m1 gates tick/M1 loader injection
+        if exit_intrabar_m1 and data_dir and _check_ticks_available(data_dir):
             _d, _cm = data_dir, candle_minutes
             pos_info['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
         else:
             pos_info['_tick_loader'] = None
-        if data_dir:
+        if exit_intrabar_m1 and data_dir:
             _d, _cm = data_dir, candle_minutes
             pos_info['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
         else:

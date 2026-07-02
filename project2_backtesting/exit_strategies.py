@@ -24,8 +24,9 @@ def _warn_m1_fallback_once():
             _log.getLogger(__name__).warning(
                 "[M1] M1 sub-candle loader unavailable for one or more "
                 "trades — falling back to parent-candle SL/TP detection. "
-                "H4/D1 results may diverge from MT5. Check that M1 CSV "
-                "exists and is real data (not an LFS stub)."
+                "EXPECTED if the 'M1 intrabar exits' checkbox is OFF. "
+                "If the checkbox is ON, check that the M1 CSV exists and "
+                "is real data (not an LFS stub)."
             )
         except Exception:
             pass
