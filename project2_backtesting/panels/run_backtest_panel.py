@@ -1598,6 +1598,8 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "
                   f"regime_conditions={len(_run_settings['regime_filter_conditions'])}")
+            print(f"[BACKTEST] M1 intrabar exits: "
+                  f"{'ON (MT5-accurate, slower)' if _m1_intrabar else 'OFF (bar-level, fast)'}")
 
             # WHY (May 2026): Show user the full parity status so they
             #      can see at a glance whether the run will match MT5.
