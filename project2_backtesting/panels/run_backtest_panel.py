@@ -192,6 +192,14 @@ _rule_canvas   = None
 _rule_inner    = None
 _use_safety_var      = None  # BooleanVar for safety stops toggle
 _funded_protect_var  = None  # BooleanVar for funded protection simulation
+_hwm_lock_var        = None  # BooleanVar for HWM-lock parity toggle (see PARITY_TODO.md)
+_win_pass_inline_var = None  # BooleanVar: compute Win Pass rate per combo at backtest time (off = fast, grid shows "—")
+# WHY: M1 intrabar exit sim toggle. ON = resolve exits at M1 sub-candle level (matches MT5
+#      intrabar fills, slower on high-trade-count runs). OFF = resolve exits at bar level
+#      (fast path). Independent of _a48_use_config_var — toggling M1 does NOT affect
+#      spread/swaps/timezone/etc.
+# CHANGED: July 2026 — dedicated M1 intrabar toggle
+_m1_intrabar_var = None  # BooleanVar: M1 sub-candle exit resolution (default ON)
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -209,6 +217,21 @@ _t2b_td_weight_var        = None  # BooleanVar: multiply ranking by coverage
 # CHANGED: April 2026 — T2b-fix — opt-in stability gate
 _t2b_stability_var        = None  # BooleanVar: run walk-forward on top rows
 _a48_use_config_var       = None  # BooleanVar: use Configuration panel settings
+# WHY: Entry bar offset checkboxes. offset=1 (N+1) is TRUE EA parity: the MT5 EA
+#      computes the signal from closed bar N but FILLS at the open of bar N+1
+#      (verified from EA logs: signal bar 23:40 → opened 23:45). offset=0 enters at
+#      bar N itself — one bar early vs MT5. When both are checked, both run in one pass.
+# CHANGED: May 2026 — entry bar offset toggle for EA parity
+# CHANGED: June 2026 — corrected EA-parity offset (was mislabeled as N; real parity is N+1)
+_ebo_signal_bar_var       = None  # BooleanVar: test offset=0 (signal bar, legacy — 1 bar early vs EA)
+_ebo_next_bar_var         = None  # BooleanVar: test offset=1 (next bar, TRUE EA parity)
+# WHY: Optional date-range overrides for the backtest. When filled they
+#      override _cfg_bt_start/_cfg_bt_end (which come from saved config).
+#      Empty = test the full data range (pre-existing behavior).
+#      Use case: match MT5 Strategy Tester's date range exactly.
+# CHANGED: April 2026 — date-range UI for MT5 parity comparison
+_bt_date_start_var        = None  # StringVar: backtest start date (YYYY-MM-DD)
+_bt_date_end_var          = None  # StringVar: backtest end date (YYYY-MM-DD)
 
 # WHY (Phase A.21): exceptions during Run Backtest were being formatted
 #      into output_text via format_exc(), but the user reported they
@@ -400,6 +423,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     backtest_dir = os.path.join(project_root, 'project2_backtesting')
 
+    # WHY (May 2026): Refuse to start if firm config is off.
+    #      Running without it produces results that don't match MT5 and
+    #      wastes a 15-minute run. Gate on the main thread so the
+    #      messagebox renders correctly before the worker spawns.
+    # CHANGED: May 2026 — block backtest when parity settings off
+    if _a48_use_config_var is not None and not _a48_use_config_var.get():
+        import tkinter.messagebox as _mb
+        _go = _mb.askyesno(
+            "Firm config is OFF",
+            "Firm config is currently OFF.\n\n"
+            "Without it, Python will not match MT5 (no spread filter, "
+            "no swap, no hard close, etc.). The results will be misleading.\n\n"
+            "Are you sure you want to run anyway?",
+            icon="warning"
+        )
+        if not _go:
+            output_text.insert(tk.END,
+                "\n⚠️  Backtest cancelled — please check '⚙️ Use Configuration settings' "
+                "and try again.\n\n")
+            output_text.see(tk.END)
+            return
+
     def ui(fn):
         """Schedule fn on the main thread."""
         progress_bar.after(0, fn)
@@ -423,7 +468,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _stop_button.config(state=tk.NORMAL, text="⏹ Stop")
         output_text.delete(1.0, tk.END)
         output_text.insert(tk.END, "=== BACKTEST STARTED ===\n\n")
-        output_text.insert(tk.END, "Entry: next candle open (no look-ahead bias)\n\n")
+        # WHY: Show which entry timing mode(s) are active for diagnostic clarity.
+        # CHANGED: May 2026 — dynamic entry timing label
+        _ebo_modes = []
+        if _ebo_signal_bar_var and _ebo_signal_bar_var.get():
+            _ebo_modes.append("Signal bar (offset=0, legacy — 1 bar early vs EA)")
+        if _ebo_next_bar_var and _ebo_next_bar_var.get():
+            _ebo_modes.append("Next bar (offset=1, EA parity)")
+        if not _ebo_modes:
+            _ebo_modes.append("Next bar (offset=1, EA parity)")
+        output_text.insert(tk.END, f"Entry timing: {' + '.join(_ebo_modes)}\n\n")
         output_text.see(tk.END)
 
         ui(lambda: _set_progress(progress_bar, step_label, 5, "Loading data and rules..."))
@@ -452,14 +506,20 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 progress_label.config(text="Error: no rules selected", fg="#dc3545")
                 return
 
-            # WHY: Data source comes from rule first, then config, then default.
-            # CHANGED: April 2026 — rule-driven data source
+            # WHY: Data source path from rule may be an absolute path from a
+            #      different machine. ALWAYS validate with os.path.isdir() before
+            #      trusting it. If invalid, resolve from data_source_id which is
+            #      machine-independent (just a folder name under data/sources/).
+            # CHANGED: May 2026 — validate data_source_path before use
             _data_source_path = ''
             _data_source_id = ''
             if selected_rules:
-                _data_source_path = selected_rules[0].get('data_source_path', '')
                 _data_source_id = selected_rules[0].get('data_source_id', '')
-                if _data_source_id and not _data_source_path:
+                _stored_path = selected_rules[0].get('data_source_path', '')
+                # Trust stored path ONLY if it exists on this machine
+                if _stored_path and os.path.isdir(_stored_path):
+                    _data_source_path = _stored_path
+                elif _data_source_id:
                     try:
                         from shared.data_sources import get_source_path
                         _data_source_path = get_source_path(_data_source_id)
@@ -480,9 +540,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _ds_mod = _ds_ilu.module_from_spec(_ds_spec)
                     _ds_spec.loader.exec_module(_ds_mod)
                     _p1_cfg = _ds_mod.load()
-                    _data_source_id   = _p1_cfg.get('data_source_id', '') or ''
-                    _data_source_path = _p1_cfg.get('data_source_path', '') or ''
-                    if _data_source_id and not _data_source_path:
+                    _data_source_id = _data_source_id or _p1_cfg.get('data_source_id', '') or ''
+                    _cfg_path = _p1_cfg.get('data_source_path', '') or ''
+                    # Same validation: trust config path only if it exists on this machine
+                    if _cfg_path and os.path.isdir(_cfg_path):
+                        _data_source_path = _cfg_path
+                    elif _data_source_id:
                         try:
                             from shared.data_sources import get_source_path
                             _data_source_path = get_source_path(_data_source_id)
@@ -494,25 +557,101 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 _data_source_path = os.path.join(project_root, 'data')
 
             # Find candle data for the selected (base) timeframe
-            candle_path = None
-            candidates = [
+            # WHY (May 2026): Old logic silently fell through 4 in-source
+            #      paths to 2 legacy paths at <project_root>/data/. When
+            #      the selected data source contained no CSVs, the legacy
+            #      file was used and the user got results computed on a
+            #      DIFFERENT broker's data with no indication. Now we
+            #      separate "in selected source" from "legacy", and if
+            #      we end up on a legacy path while a real source was
+            #      selected, we abort with a clear message.
+            # CHANGED: May 2026 — fail loud on data-source fallback
+            _in_source_paths = [
                 os.path.join(_data_source_path, f'{symbol}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, f'{symbol.upper()}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, f'{symbol.lower()}_{entry_tf}.csv'),
                 os.path.join(_data_source_path, symbol, f'{entry_tf}.csv'),
-                # Legacy fallback
+            ]
+            _legacy_paths = [
                 os.path.join(project_root, 'data', f'{symbol}_{entry_tf}.csv'),
                 os.path.join(project_root, 'data', symbol, f'{entry_tf}.csv'),
             ]
-            for p in candidates:
+            candle_path = None
+            _used_legacy = False
+            from shared.data_sources import is_lfs_pointer, assert_not_lfs_stub
+            for p in _in_source_paths:
                 if os.path.exists(p):
+                    # WHY: Auto-pull LFS stubs instead of just showing an error.
+                    #      assert_not_lfs_stub runs 'git lfs pull' automatically
+                    #      on first detection so the user never has to do it manually.
+                    # CHANGED: May 2026 — auto-pull LFS in panel
+                    if is_lfs_pointer(p):
+                        output_text.insert(tk.END,
+                            f"\n⏳ {os.path.basename(p)} is an LFS stub — downloading real data...\n"
+                            f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                        output_text.see(tk.END)
+                        output_text.update_idletasks()
+                    try:
+                        assert_not_lfs_stub(p)
+                    except ValueError as _lfs_err:
+                        output_text.insert(tk.END, str(_lfs_err) + "\n")
+                        output_text.see(tk.END)
+                        return
                     candle_path = p
                     break
+            if candle_path is None:
+                for p in _legacy_paths:
+                    if os.path.exists(p):
+                        if is_lfs_pointer(p):
+                            output_text.insert(tk.END,
+                                f"\n⏳ {os.path.basename(p)} is an LFS stub — downloading real data...\n"
+                                f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                            output_text.see(tk.END)
+                            output_text.update_idletasks()
+                        try:
+                            assert_not_lfs_stub(p)
+                        except ValueError as _lfs_err:
+                            output_text.insert(tk.END, str(_lfs_err) + "\n")
+                            output_text.see(tk.END)
+                            return
+                        candle_path = p
+                        _used_legacy = True
+                        break
+
+            # If a real data source was selected (non-empty id and the
+            # configured path is NOT the bare project_root/data) and we
+            # ended up on a legacy fallback file, abort. This is the
+            # silent-mismatch case the user hit before.
+            _selected_source_is_real = bool(_data_source_id) and \
+                os.path.normpath(_data_source_path) != \
+                os.path.normpath(os.path.join(project_root, 'data'))
+            if candle_path is not None and _used_legacy and _selected_source_is_real:
+                _msg = (
+                    f"\n[DATA SOURCE ERROR] You selected '{_data_source_id}' "
+                    f"({_data_source_path}) but it contains no "
+                    f"{symbol}_{entry_tf}.csv. Backtest aborted to prevent "
+                    f"running on the wrong feed.\n"
+                    f"Searched (in order):\n"
+                    + "\n".join(f"   {p} ({'EXISTS' if os.path.exists(p) else 'missing'})"
+                                for p in _in_source_paths)
+                    + "\n\nTo fix: place the CSV files for this source in "
+                    f"{_data_source_path}\\, or pick a different data source.\n"
+                )
+                output_text.insert(tk.END, _msg)
+                output_text.see(tk.END)
+                return
+            if candle_path is not None and _used_legacy:
+                # Legacy fallback only allowed when no real source was
+                # selected (e.g., empty config). Warn but proceed.
+                output_text.insert(tk.END,
+                    f"\n[WARN] Using legacy candle path {candle_path} "
+                    f"(no data source explicitly selected).\n")
+                output_text.see(tk.END)
 
             if candle_path is None:
                 output_text.insert(tk.END, f"ERROR: {entry_tf} candle data not found!\n")
                 output_text.insert(tk.END, f"Looked in:\n")
-                for p in candidates:
+                for p in (_in_source_paths + _legacy_paths):
                     output_text.insert(tk.END, f"  {p}\n")
                 progress_label.config(text="Error: candle data not found", fg="#dc3545")
                 return
@@ -597,10 +736,19 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
                     def _flush(_lines=_lines_to_flush, _pct=_cur_pct, _lbl=_cur_label):
                         try:
-                            # Limit text widget to last 500 lines to prevent slowdown
+                            # WHY (May 2026): The old 500-line cap silently
+                            #      deleted backtest setup output ([FIRM],
+                            #      [BACKTEST], [SIMULATOR], indicator-build
+                            #      banner). Users couldn't see the beginning
+                            #      of any run with >600 progress lines.
+                            #      Raise the cap to 50,000 — Tk handles that
+                            #      smoothly and a typical 1440-combo backtest
+                            #      emits ~3000 progress lines.
+                            # CHANGED: May 2026 — preserve early setup lines
                             _line_count = int(output_text.index('end-1c').split('.')[0])
-                            if _line_count > 600:
-                                output_text.delete("1.0", f"{_line_count - 500}.0")
+                            if _line_count > 50000:
+                                # Keep last 40000 lines; only trim when absurdly long
+                                output_text.delete("1.0", f"{_line_count - 40000}.0")
 
                             progress_bar['value'] = _pct
                             step_label.config(text=_lbl)
@@ -734,18 +882,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: April 2026 — Phase A.45
             _a45_combine = _a45_combine_var.get() if _a45_combine_var is not None else False
             if _a45_combine and len(selected_rules) > 1:
+                from project2_backtesting.strategy_backtester import MAX_RULE_COMBOS
                 _a45_combo_count = (2 ** len(selected_rules)) - 1
-                output_text.insert(
-                    tk.END,
-                    f"Rule combinations: ALL ({_a45_combo_count} combos from "
-                    f"{len(selected_rules)} rules)\n"
-                )
-                if len(selected_rules) >= 6:
+                if _a45_combo_count > MAX_RULE_COMBOS:
                     output_text.insert(
                         tk.END,
-                        f"⚠️  {_a45_combo_count} combos × 12 exits = "
-                        f"{_a45_combo_count * 12} backtests — this may take a while\n"
+                        f"Rule combinations: CAPPED — {len(selected_rules)} rules "
+                        f"would make ~{_a45_combo_count} combos, but only the first "
+                        f"{MAX_RULE_COMBOS} (smallest first) will run to protect "
+                        f"memory. Select fewer rules for full coverage.\n"
                     )
+                else:
+                    output_text.insert(
+                        tk.END,
+                        f"Rule combinations: ALL ({_a45_combo_count} combos from "
+                        f"{len(selected_rules)} rules)\n"
+                    )
+                    if len(selected_rules) >= 6:
+                        output_text.insert(
+                            tk.END,
+                            f"⚠️  {_a45_combo_count} combos × ~20 exits = "
+                            f"{_a45_combo_count * 20} backtests — this may take a while\n"
+                        )
             elif _a45_combine:
                 output_text.insert(tk.END, "Rule combinations: OFF (need ≥2 rules selected)\n")
                 _a45_combine = False
@@ -785,6 +943,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      When unchecked, use function defaults (pre-A.48 behavior).
             # CHANGED: April 2026 — Phase A.48
             _a48_use_cfg = _a48_use_config_var.get() if _a48_use_config_var is not None else False
+            _m1_intrabar = _m1_intrabar_var.get() if _m1_intrabar_var is not None else True
 
             # WHY: All _cfg_* variables must exist before the try block.
             #      Python marks them as local when it sees assignment inside try,
@@ -801,12 +960,50 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             _cfg_slippage = 0.0
             _cfg_bt_start = None
             _cfg_bt_end = None
+            # WHY: UI date fields apply even without saved config.
+            # CHANGED: April 2026 — date-range UI override (independent path)
+            try:
+                _ui_start_off = (_bt_date_start_var.get().strip()
+                                 if _bt_date_start_var is not None else "")
+                _ui_end_off   = (_bt_date_end_var.get().strip()
+                                 if _bt_date_end_var is not None else "")
+                if _ui_start_off:
+                    _cfg_bt_start = _ui_start_off
+                if _ui_end_off:
+                    _cfg_bt_end = _ui_end_off
+            except Exception:
+                pass
             _cfg_firm_data = {}
             _firm_display = 'No firm selected'
             _selected_firm_name = ''
             _bt_cfg = {}
             _inst_type = 'metals'
             _cfg_symbol = 'XAUUSD'
+            _cfg_variable_spread = False
+            _cfg_max_spread = 0.0
+            # WHY: Per-firm asymmetric swap. Read from prop_firms/<firm>.json
+            #      under instrument_specs.<symbol>. Default to 0 if firm
+            #      hasn't measured swap yet (zero = "not modeled").
+            # CHANGED: April 2026 — per-firm asymmetric swap
+            _cfg_swap_long  = 0.0
+            _cfg_swap_short = 0.0
+            # WHY: Per-firm session spread multipliers from prop_firms/<firm>.json.
+            #      None = use module default (_SESSION_SPREAD_MULTIPLIERS).
+            # CHANGED: April 2026 — per-firm spread calibration
+            _cfg_session_spread_multipliers = None
+            # WHY (May 2026): The parity status banner reads these even when
+            #      _a48_use_cfg is False. Hoist defaults to outer scope so
+            #      banner doesn't NameError on un-configured runs.
+            # CHANGED: May 2026 — outer-scope defaults for parity banner
+            _cfg_hard_close = -1
+            _cfg_market_reopen = -1
+            _firm_ntw_start = -1
+            _firm_ntw_end   = -1
+            # WHY: Default None so backtester falls back to its resolver default.
+            # CHANGED: June 2026 — broker_timezone outer-scope default
+            _firm_broker_tz = None
+            _cfg_cooldown = 0
+            _cfg_min_hold = 0
 
             if _a48_use_cfg:
                 try:
@@ -881,20 +1078,28 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         _cfg_dd_daily = 5.0
                         _cfg_dd_total = 10.0
                         _dd_source = "defaults"
-                    # WHY: Min hold from firm restrictions via rule.
+                    # WHY: First attempt — fast path for rules that carry
+                    #      prop_firm_name explicitly. Only 8/34 rules have
+                    #      this set; the rest fall through to the _firm_display
+                    #      fallback below (after _firm_display is resolved).
                     # CHANGED: April 2026 — min hold from firm
                     _cfg_min_hold = 0
                     try:
                         _mh_firm = _first_rule.get('prop_firm_name', '')
                         if _mh_firm:
                             import glob as _mh_glob
+                            import json as _mh_json
                             _mh_dir = os.path.join(project_root, 'prop_firms')
                             for _mh_fp in _mh_glob.glob(os.path.join(_mh_dir, '*.json')):
-                                import json as _mh_json
-                                with open(_mh_fp, encoding='utf-8') as _mh_f:
-                                    _mh_fd = _mh_json.load(_mh_f)
+                                try:
+                                    with open(_mh_fp, encoding='utf-8') as _mh_f:
+                                        _mh_fd = _mh_json.load(_mh_f)
+                                except Exception:
+                                    continue
                                 if _mh_fd.get('firm_name') == _mh_firm:
-                                    _mh_sec = int(_mh_fd.get('challenges', [{}])[0].get('restrictions', {}).get('min_trade_duration_seconds', 0))
+                                    _mh_sec = int(_mh_fd.get('challenges', [{}])[0]
+                                                  .get('restrictions', {})
+                                                  .get('min_trade_duration_seconds', 0))
                                     if _mh_sec > 0:
                                         _cfg_min_hold = max(1, _mh_sec // 60)
                                     break
@@ -906,7 +1111,13 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     #      live EA behaviour. -1 = disabled, 0 = no cooldown.
                     # CHANGED: April 2026 — hard close + cooldown from config
                     _cfg_hard_close  = int(float(_bt_cfg.get('hard_close_hour', -1)))
+                    _cfg_market_reopen = int(float(_bt_cfg.get('market_reopen_hour', -1)))
                     _cfg_cooldown    = int(float(_bt_cfg.get('cooldown_candles', 0)))
+                    # WHY: variable_spread and max_spread_pips — session-based
+                    #      spread model and max-spread entry filter.
+                    # CHANGED: April 2026 — session-based variable spread model
+                    _cfg_variable_spread = _bt_cfg.get('variable_spread', '0') == '1'
+                    _cfg_max_spread = float(_bt_cfg.get('max_spread_pips', 0))
                     _cfg_leverage    = int(_first_rule.get('leverage', 0))
                     _cfg_contract    = float(_first_rule.get('contract_size', 0))
 
@@ -914,6 +1125,21 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     _cfg_pip_size = _cfg_specs.get(_cfg_symbol, {}).get('pip_size', 0.01)
                     _cfg_bt_start = _bt_cfg.get('backtest_start', '').strip() or None
                     _cfg_bt_end   = _bt_cfg.get('backtest_end', '').strip() or None
+
+                    # WHY: UI date fields override saved-config dates when filled.
+                    #      Empty fields preserve the saved-config values (or None).
+                    # CHANGED: April 2026 — date-range UI override
+                    try:
+                        _ui_start = (_bt_date_start_var.get().strip()
+                                     if _bt_date_start_var is not None else "")
+                        _ui_end   = (_bt_date_end_var.get().strip()
+                                     if _bt_date_end_var is not None else "")
+                        if _ui_start:
+                            _cfg_bt_start = _ui_start
+                        if _ui_end:
+                            _cfg_bt_end = _ui_end
+                    except Exception:
+                        pass
 
                     # Instrument type for leverage fallback
                     try:
@@ -955,6 +1181,244 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         except Exception:
                             pass
 
+                    # WHY: DD alert thresholds — initialized to 0 (disabled).
+                    #      Populated from firm JSON below when stage matches.
+                    # CHANGED: May 2026 — DD circuit breaker
+                    _cfg_dd_daily_alert = 0.0
+                    _cfg_dd_total_alert = 0.0
+                    _cfg_dd_reset_hour = 20
+                    # WHY: HWM-lock parameters from firm's drawdown_mechanics.
+                    #      Plumbed to run_backtest only when "Use HWM-lock"
+                    #      checkbox is checked. See PARITY_TODO.md item 1.
+                    # CHANGED: May 2026 — HWM-lock parity toggle
+                    _cfg_hwm_lock_gain_pct = None
+                    _cfg_hwm_lock_level = 'starting_balance'
+
+                    # WHY: Win Pass — firm/challenge identifiers passed
+                    #      to run_comparison_matrix so each result row
+                    #      gets win_pass_passed/_total/_rate computed
+                    #      once at backtest time. None = legacy behavior
+                    #      (no Win Pass fields, grid renders "—").
+                    # CHANGED: May 2026 — pass-rate at backtest time
+                    _wp_firm_id      = None
+                    _wp_challenge_id = None
+                    _wp_account_size = None
+
+                    # WHY: Read per-firm asymmetric swap from the firm JSON.
+                    #      Firm display name is already resolved above.
+                    #      _cfg_symbol is set earlier from rule/config.
+                    # CHANGED: April 2026 — per-firm asymmetric swap
+                    try:
+                        import glob as _swap_glob
+                        _pf_dir = os.path.join(project_root, 'prop_firms')
+                        _swap_loaded = False
+                        # WHY: Pre-init so diagnostic block doesn't NameError when
+                        #      no firm matches and the matched block never ran.
+                        # CHANGED: April 2026 — per-firm parity diagnostics
+                        _firm_max_spread = None
+                        _firm_hard_close = None
+                        for _pf_file in _swap_glob.glob(os.path.join(_pf_dir, '*.json')):
+                            try:
+                                with open(_pf_file, 'r', encoding='utf-8') as _pf_fh:
+                                    _pf_data = json.load(_pf_fh)
+                                if _pf_data.get('firm_name', '') == _firm_display.split(' (')[0]:
+                                    _cfg_firm_data = _pf_data
+                                    _sym_up = _cfg_symbol.upper() if _cfg_symbol else 'XAUUSD'
+                                    _sym_spec = _pf_data.get('instrument_specs', {}).get(_sym_up, {})
+                                    _cfg_swap_long  = float(_sym_spec.get('swap_long_pips_per_night', 0) or 0)
+                                    _cfg_swap_short = float(_sym_spec.get('swap_short_pips_per_night', 0) or 0)
+                                    # WHY: Per-firm spread profile: base (typical_spread) and
+                                    #      session multipliers. Override saved-config spread when
+                                    #      the firm JSON has measured data. Multipliers are None
+                                    #      when not present → module-level fallback fires.
+                                    # CHANGED: April 2026 — per-firm spread calibration
+                                    _firm_typical_spread = _sym_spec.get('typical_spread')
+                                    if _firm_typical_spread is not None:
+                                        _cfg_spread = float(_firm_typical_spread)
+                                    _firm_spread_mults = _sym_spec.get('spread_session_multipliers')
+                                    if isinstance(_firm_spread_mults, dict):
+                                        _cfg_session_spread_multipliers = _firm_spread_mults
+                                    # WHY: Per-firm max-spread filter. Same key the EA reads
+                                    #      (instrument_specs.<symbol>.max_spread_pips_filter).
+                                    #      Override saved-config when the firm JSON has it so
+                                    #      EA and Python use the same filter threshold.
+                                    # CHANGED: April 2026 — per-firm max_spread parity with EA
+                                    _firm_max_spread = _sym_spec.get('max_spread_pips_filter')
+                                    if _firm_max_spread is not None:
+                                        _cfg_max_spread = float(_firm_max_spread)
+                                    # WHY: Per-firm hard close hour. Top-level firm JSON key
+                                    #      hard_close_hour_gmt — same key the EA reads.
+                                    #      Override saved-config when the firm has it so
+                                    #      EA and Python close at the same hour. -1 disables.
+                                    # CHANGED: April 2026 — per-firm hard_close parity with EA
+                                    _firm_hard_close = _pf_data.get('hard_close_hour_gmt')
+                                    if _firm_hard_close is not None:
+                                        _cfg_hard_close = int(_firm_hard_close)
+                                    # WHY: Per-firm market reopen hour. Blocks entries
+                                    #      from hard_close_hour through reopen (wraps
+                                    #      midnight). -1 = disabled.
+                                    # CHANGED: May 2026 — market closure window (MT5 parity)
+                                    _firm_market_reopen = _pf_data.get('market_reopen_hour_gmt')
+                                    if _firm_market_reopen is not None:
+                                        _cfg_market_reopen = int(_firm_market_reopen)
+                                    # WHY: Per-firm no-trades window — blocks
+                                    #      entries in broker settlement hours,
+                                    #      independent of force-close. Fixes
+                                    #      backtest entering at 00:00 where MT5
+                                    #      returns "market closed".
+                                    # CHANGED: June 2026 — firm no-trades window
+                                    _firm_ntw_start = _pf_data.get('no_trades_window_start_hour_gmt', -1)
+                                    _firm_ntw_end   = _pf_data.get('no_trades_window_end_hour_gmt',   -1)
+                                    # WHY: IANA timezone for broker → UTC conversion in
+                                    #      P2 backtester (Step 3). DST-correct, replaces
+                                    #      the broken fixed utc_offset_hours math.
+                                    # CHANGED: June 2026 — broker_timezone from firm config
+                                    _firm_broker_tz = _pf_data.get('broker_timezone')
+                                    # WHY: Read DD alert thresholds from firm's
+                                    #      trading_rules based on prop_firm_stage.
+                                    #      Eval uses 2.7%/5.7%, funded uses 2.5%/5.5%.
+                                    #      These are the bot's safety thresholds —
+                                    #      the EA stops trading at these levels to
+                                    #      protect against hitting the firm's hard
+                                    #      limits (3%/6%).
+                                    # CHANGED: May 2026 — DD alert from firm JSON
+                                    _rule_stage = (_first_rule.get('prop_firm_stage', '') or '').lower()
+                                    # WHY: Scan ALL matching-stage rules to find
+                                    #      daily_dd_alert_pct and emergency_total_dd_pct.
+                                    #      Evaluation has NO total halt (alert only).
+                                    #      Funded halts at emergency_total_dd_pct (5.0%),
+                                    #      NOT at total_dd_alert_pct (5.5%).
+                                    # CHANGED: May 2026 — stage-aware DD thresholds
+                                    for _tr in _pf_data.get('trading_rules', []):
+                                        _tr_stage = (_tr.get('stage', '') or '').lower()
+                                        _tr_params = _tr.get('parameters', {})
+                                        if _rule_stage == _tr_stage:
+                                            if 'daily_dd_alert_pct' in _tr_params:
+                                                _cfg_dd_daily_alert = float(
+                                                    _tr_params['daily_dd_alert_pct'])
+                                            # Total halt: ONLY from emergency_total_dd_pct
+                                            # (funded). Evaluation has no total halt.
+                                            if 'emergency_total_dd_pct' in _tr_params:
+                                                _cfg_dd_total_alert = float(
+                                                    _tr_params['emergency_total_dd_pct'])
+                                    # Daily DD reset hour from firm mechanics
+                                    _dd_mech = _pf_data.get('drawdown_mechanics', {})
+                                    _dd_daily_cfg = _dd_mech.get('daily_dd', {})
+                                    _dd_reset_time = _dd_daily_cfg.get('reset_time', '')
+                                    _dd_reset_tz = _dd_daily_cfg.get('reset_timezone', 'UTC')
+                                    # WHY: HWM-lock — same firm config path the
+                                    #      simulator reads. lock_after_gain_pct
+                                    #      is None when the firm has no lock rule.
+                                    # CHANGED: May 2026 — HWM-lock parity toggle
+                                    _trailing_dd_cfg = _dd_mech.get('trailing_dd', {})
+                                    _cfg_hwm_lock_gain_pct = _trailing_dd_cfg.get('lock_after_gain_pct')
+                                    _cfg_hwm_lock_level = _trailing_dd_cfg.get(
+                                        'lock_level', 'starting_balance')
+                                    # WHY: Win Pass — derive firm/challenge IDs
+                                    #      from the matched firm config so
+                                    #      run_comparison_matrix can compute
+                                    #      per-row pass rates. Account size
+                                    #      already comes from _cfg_account
+                                    #      (rule/config-driven). Fall back to
+                                    #      first challenge's first size if
+                                    #      _cfg_account is zero/missing.
+                                    # CHANGED: May 2026 — pass-rate at backtest time
+                                    try:
+                                        _wp_firm_id = _pf_data.get('firm_id')
+                                        _wp_challenges = _pf_data.get('challenges', []) or []
+                                        if _wp_challenges:
+                                            _wp_challenge_id = _wp_challenges[0].get('challenge_id')
+                                        _wp_account_size = int(_cfg_account) if _cfg_account else None
+                                        if not _wp_account_size and _wp_challenges:
+                                            _wp_sizes = _wp_challenges[0].get('account_sizes', []) or []
+                                            if _wp_sizes:
+                                                _wp_account_size = int(_wp_sizes[0])
+                                    except Exception:
+                                        pass
+                                    if _dd_reset_time:
+                                        try:
+                                            _rh = int(_dd_reset_time.split(':')[0])
+                                            if 'GMT+' in _dd_reset_tz:
+                                                _off = int(_dd_reset_tz.split('+')[1])
+                                                _rh = (_rh - _off) % 24
+                                            elif 'GMT-' in _dd_reset_tz:
+                                                _off = int(_dd_reset_tz.split('-')[1])
+                                                _rh = (_rh + _off) % 24
+                                            _cfg_dd_reset_hour = _rh
+                                        except Exception:
+                                            pass
+                                    _swap_loaded = True
+                                    break
+                            except Exception:
+                                continue
+                        if _swap_loaded and (_cfg_swap_long != 0 or _cfg_swap_short != 0):
+                            print(f"[BACKTEST] Swap rates: long={_cfg_swap_long:+.2f}, "
+                                  f"short={_cfg_swap_short:+.2f} pips/night "
+                                  f"({_firm_display} / {_cfg_symbol})")
+                        # WHY: Show spread profile being applied.
+                        # CHANGED: April 2026 — per-firm spread calibration diagnostic
+                        if _swap_loaded and (_firm_typical_spread is not None
+                                             or _cfg_session_spread_multipliers is not None):
+                            _mults_str = " + session multipliers" if _cfg_session_spread_multipliers else ""
+                            print(f"[BACKTEST] Spread profile: base={_cfg_spread:.1f} pips "
+                                  f"({_firm_display} / {_cfg_symbol}){_mults_str}")
+                        # WHY: Show per-firm max-spread filter and hard-close hour when applied.
+                        # CHANGED: April 2026 — per-firm max_spread + hard_close diagnostics
+                        if _swap_loaded and _firm_max_spread is not None:
+                            print(f"[BACKTEST] Max spread filter: {_cfg_max_spread:.1f} pips "
+                                  f"({_firm_display} firm)")
+                        if _swap_loaded and _firm_hard_close is not None:
+                            _hc_str = "disabled" if _cfg_hard_close < 0 else f"{_cfg_hard_close}h GMT"
+                            _mr_str = f", reopen={_cfg_market_reopen}h" if _cfg_market_reopen > 0 else ""
+                            print(f"[BACKTEST] Hard close: {_hc_str}{_mr_str} ({_firm_display} firm)")
+                        elif not _swap_loaded:
+                            print(f"[BACKTEST] No matching firm JSON for '{_firm_display}' — swap=0")
+                        # WHY: Show DD alert thresholds being applied.
+                        # CHANGED: May 2026 — DD circuit breaker diagnostic
+                        if _swap_loaded and _cfg_dd_daily_alert > 0:
+                            _firm_stage = (_first_rule.get('prop_firm_stage', '') or 'unknown')
+                            print(f"[BACKTEST] DD alerts: daily={_cfg_dd_daily_alert}% "
+                                  f"total={_cfg_dd_total_alert}% "
+                                  f"reset_hour={_cfg_dd_reset_hour}h GMT "
+                                  f"(stage={_firm_stage})")
+                    except Exception as _swap_e:
+                        print(f"[BACKTEST] WARNING: could not read swap rates: {_swap_e}")
+
+                    # WHY: Fallback — fires only when the rule-based attempt above
+                    #      produced 0 (26/34 rules don't carry prop_firm_name).
+                    #      Uses _firm_display which has rule → P2 config → P1
+                    #      config fallback, same as the swap loader. Guarded by
+                    #      _cfg_min_hold == 0 so the two blocks don't fight.
+                    # CHANGED: April 2026 — fallback parity with swap loader
+                    if _cfg_min_hold == 0:
+                        try:
+                            _mh_name2 = _firm_display.split(' (')[0] if _firm_display else ''
+                            if _mh_name2 and _mh_name2 not in ('No firm selected', 'No firm', ''):
+                                import glob as _mh_glob2
+                                import json as _mh_json2
+                                _mh_dir2 = os.path.join(project_root, 'prop_firms')
+                                for _mh_fp2 in _mh_glob2.glob(os.path.join(_mh_dir2, '*.json')):
+                                    try:
+                                        with open(_mh_fp2, encoding='utf-8') as _mh_f2:
+                                            _mh_fd2 = _mh_json2.load(_mh_f2)
+                                    except Exception:
+                                        continue
+                                    if _mh_fd2.get('firm_name') == _mh_name2:
+                                        _mh_sec2 = int(_mh_fd2.get('challenges', [{}])[0]
+                                                       .get('restrictions', {})
+                                                       .get('min_trade_duration_seconds', 0))
+                                        if _mh_sec2 > 0:
+                                            _cfg_min_hold = max(1, _mh_sec2 // 60)
+                                        break
+                        except Exception as _mh_e2:
+                            print(f"[BACKTEST] WARNING: min-hold fallback failed: {_mh_e2}")
+
+                    # WHY: Show min hold being applied so user can confirm parity.
+                    # CHANGED: April 2026 — min hold diagnostic line
+                    if _cfg_min_hold > 0:
+                        print(f"[BACKTEST] Min hold: {_cfg_min_hold}min "
+                              f"(from {_firm_display}, gates management exits)")
+
                     # Build period display text
                     if _cfg_bt_start and _cfg_bt_end:
                         _period_text = f"   Period: {_cfg_bt_start} → {_cfg_bt_end}\n"
@@ -974,9 +1438,62 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         f"   DD limits: {_cfg_dd_daily}% daily / {_cfg_dd_total}% total ({_dd_source})\n"
                         + (f"   Min hold: {_cfg_min_hold}min (firm rule)\n" if _cfg_min_hold > 0 else "")
                     )
-                    # Show data source
+                    # Show data source + resolution level
+                    # WHY: Show which resolution level is active so the user
+                    #      knows whether exit ambiguity is resolved exactly
+                    #      (ticks), approximately (M1), or conservatively.
+                    # CHANGED: April 2026 — 3-level resolution status display
+                    try:
+                        from project2_backtesting.strategy_backtester import _check_ticks_available
+                        _has_ticks = _check_ticks_available(_data_source_path) if _data_source_path else False
+                        _has_m1 = False
+                        if _data_source_path:
+                            for _m1p in ['M1.csv', 'XAUUSD_M1.csv', 'xauusd_M1.csv']:
+                                if os.path.exists(os.path.join(_data_source_path, _m1p)):
+                                    _has_m1 = True
+                                    break
+                        if _has_ticks:
+                            _resolution = "Tick resolution (exact MT5 parity)"
+                        elif _has_m1:
+                            _resolution = "M1 resolution (95%+ parity)"
+                        else:
+                            _resolution = "Candle resolution (conservative fallback)"
+                    except Exception:
+                        _resolution = "unknown"
+                    # WHY: Show tick/M1 status so user knows which exit
+                    #      resolution is active for this run.
+                    # CHANGED: April 2026 — tick/M1 status in backtest info
+                    try:
+                        _tf_bt = [f for f in os.listdir(_data_source_path)
+                                  if '_ticks' in f and f.endswith('.csv')]
+                    except Exception:
+                        _tf_bt = []
+                    if _has_ticks:
+                        _tick_line = (f"Tick data: {len(_tf_bt)} months available"
+                                      f" — exact MT5 parity for those candles")
+                    elif _has_m1:
+                        _tick_line = "M1 data available — 95%+ MT5 parity for exit resolution"
+                    else:
+                        _tick_line = "No tick/M1 data — using conservative exit fallback"
+                    # WHY (May 2026): Loud-on-screen audit so the user
+                    #      can see at a glance whether the configured
+                    #      source actually contains data, not just
+                    #      whether the path resolves.
+                    # CHANGED: May 2026 — data source audit banner
+                    _csv_audit = ""
+                    if _data_source_path and os.path.isdir(_data_source_path):
+                        _csvs = sorted(f for f in os.listdir(_data_source_path)
+                                      if f.lower().endswith('.csv'))
+                        _csv_audit = (f"   ↳ CSV files in source: " +
+                                     (", ".join(_csvs) or "NONE — backtest will fail with [DATA SOURCE ERROR]") +
+                                     "\n")
+                    else:
+                        _csv_audit = "   ↳ source path does not exist on disk\n"
+
                     output_text.insert(tk.END,
-                        f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n\n"
+                        f"📊 Data source: {_data_source_id or 'default'} ({_data_source_path})\n"
+                        f"{_csv_audit}"
+                        f"   {_tick_line}\n\n"
                     )
                 except Exception as _cfg_e:
                     output_text.insert(tk.END, f"⚠️ Config load failed: {_cfg_e} — using defaults\n\n")
@@ -1001,17 +1518,171 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             # CHANGED: April 2026 — leverage flows through the pipeline
             _run_settings['leverage']      = _cfg_leverage
             _run_settings['contract_size'] = _cfg_contract
-            _run_settings['firm_id']       = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', '')) if _a48_use_cfg else ''
-            _run_settings['firm_name']     = _firm_display if _a48_use_cfg else ''
+            # WHY: Always persist firm_id and firm_name regardless of
+            #      _a48_use_cfg. When cfg is off or failed, fall back to
+            #      the rule's own prop_firm_name / firm_id so the refiner's
+            #      firm resolver can still find the matching prop_firms JSON.
+            # CHANGED: June 2026 — firm info persisted even when cfg disabled
+            _run_settings_firm_id = ''
+            _run_settings_firm_name = ''
+            if _a48_use_cfg:
+                _run_settings_firm_id   = _cfg_firm_data.get('firm_id', _bt_cfg.get('firm_id', ''))
+                # Strip stage suffix — _firm_display may be "FTMO (evaluation)"
+                # but run_settings needs the clean name for resolver matching.
+                _run_settings_firm_name = _firm_display.split(' (')[0] if _firm_display else ''
+            if not _run_settings_firm_id:
+                # Fallback 1: read from the first selected rule
+                try:
+                    _fb_rule = selected_rules[0] if selected_rules else {}
+                    _run_settings_firm_id   = (_fb_rule.get('firm_id')
+                                               or _fb_rule.get('prop_firm_id')
+                                               or _bt_cfg.get('firm_id', ''))
+                    if not _run_settings_firm_name:
+                        _run_settings_firm_name = (_fb_rule.get('prop_firm_name')
+                                                   or _bt_cfg.get('firm_name', ''))
+                except Exception:
+                    pass
+            if not _run_settings_firm_id and not _run_settings_firm_name:
+                # WHY: Fallback 2 — P1 config. If neither the backtest config
+                #      nor the selected rule has firm data, read the P1 config
+                #      which always carries the firm from the last Run Scenarios
+                #      session. This prevents saving empty strings into
+                #      run_settings and triggering the refiner resolver error.
+                # CHANGED: June 2026 — P1 config as final firm fallback
+                try:
+                    import importlib.util as _p1fi_ilu
+                    _p1fi_path = os.path.join(project_root,
+                        'project1_reverse_engineering', 'config_loader.py')
+                    if os.path.exists(_p1fi_path):
+                        _p1fi_spec = _p1fi_ilu.spec_from_file_location('_p1fi_cl', _p1fi_path)
+                        _p1fi_mod = _p1fi_ilu.module_from_spec(_p1fi_spec)
+                        _p1fi_spec.loader.exec_module(_p1fi_mod)
+                        _p1fi_cfg = _p1fi_mod.load()
+                        _run_settings_firm_name = _p1fi_cfg.get('prop_firm_name', '') or ''
+                        _run_settings_firm_id   = _p1fi_cfg.get('prop_firm_id', '') or _p1fi_cfg.get('firm_id', '') or ''
+                except Exception:
+                    pass
+            _run_settings['firm_id']   = _run_settings_firm_id
+            _run_settings['firm_name'] = _run_settings_firm_name
+            # WHY: Stage drives the refiner's "Stage" column. Without
+            #      this line every backtest row shows "—" in Stage.
+            #      Read from the first rule's prop_firm_stage if present,
+            #      then fall back to the panel's current stage selection.
+            # CHANGED: May 2026 — propagate stage to matrix
+            _bt_stage = ''
+            try:
+                _first_rule = (selected_rules[0]
+                               if selected_rules else {})
+                _bt_stage = (_first_rule.get('prop_firm_stage', '')
+                             or _bt_cfg.get('prop_firm_stage', '')
+                             or '')
+                if not _bt_stage:
+                    # Last-resort: use eval if first challenge is eval,
+                    # else funded.
+                    _chs = (_cfg_firm_data.get('challenges') or [])
+                    if _chs:
+                        _bt_stage = _chs[0].get('stage', 'evaluation')
+            except Exception:
+                pass
+            _run_settings['prop_firm_stage'] = _bt_stage
             # WHY: Data source must be saved in results so saved rules
             #      from backtest carry the correct data_source_id.
             # CHANGED: April 2026 — data source in run settings
             _run_settings['data_source_id']   = _data_source_id
-            _run_settings['data_source_path'] = _data_source_path
+            # WHY: data_source_path is machine-specific (absolute path).
+            #      Only data_source_id should be persisted — the path is
+            #      resolved at runtime via get_source_path(data_source_id).
+            # CHANGED: May 2026 — don't persist absolute path
+            _run_settings['data_source_path'] = ''
             print(f"[BACKTEST] Run settings: regime={_run_settings['regime_filter_enabled']}, "
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "
                   f"regime_conditions={len(_run_settings['regime_filter_conditions'])}")
+            print(f"[BACKTEST] M1 intrabar exits: "
+                  f"{'ON (MT5-accurate, slower)' if _m1_intrabar else 'OFF (bar-level, fast — no tick/M1/gap-fill/spread-filter file access)'}")
+
+            # WHY (May 2026): Show user the full parity status so they
+            #      can see at a glance whether the run will match MT5.
+            #      If any critical setting is missing, flag it RED.
+            # CHANGED: May 2026 — parity status banner
+            output_text.insert(tk.END, "\n" + "═"*70 + "\n")
+            output_text.insert(tk.END, "  PYTHON ↔ MT5 PARITY STATUS\n")
+            output_text.insert(tk.END, "═"*70 + "\n")
+            _parity_lines = []
+            def _parity(label, value, ok_pred):
+                _ok = "✓" if ok_pred else "✗"
+                _parity_lines.append(f"  {_ok} {label:<32} = {value}")
+            _parity("Firm config loaded",
+                    "YES" if _a48_use_cfg else "NO (using defaults!)",
+                    _a48_use_cfg)
+            _parity("Max spread filter (pips)",
+                    f"{_cfg_max_spread:.0f}" if _cfg_max_spread > 0 else "OFF",
+                    _cfg_max_spread > 0)
+            _parity("Variable spread",
+                    "ON" if _cfg_variable_spread else "OFF",
+                    True)  # either is fine, just show state
+            _parity("Session spread multipliers",
+                    "loaded" if _cfg_session_spread_multipliers else "default (1.0x)",
+                    _cfg_session_spread_multipliers is not None)
+            # WHY (May 2026): Show whether tick files are present in
+            #      the data folder. If ✗, the spread filter is a no-op.
+            # CHANGED: May 2026 — visible tick diagnostic in banner
+            _ticks_ok = False
+            _tick_summary = "NO TICK FILES (filter disabled)"
+            try:
+                from project2_backtesting.strategy_backtester import (
+                    _check_ticks_available
+                )
+                # Use the same data_dir the backtest will use
+                _probe_dir = (_cfg_data_dir
+                              if (_a48_use_cfg and '_cfg_data_dir' in dir())
+                              else None)
+                if _probe_dir is None:
+                    # Fall back to the H4 CSV's parent dir
+                    try:
+                        _probe_dir = os.path.dirname(candle_path)
+                    except Exception:
+                        _probe_dir = None
+                if _probe_dir:
+                    _ticks_ok = _check_ticks_available(_probe_dir)
+                    if _ticks_ok:
+                        import os as _os
+                        _files = [f for f in _os.listdir(_probe_dir)
+                                  if '_ticks' in f and f.endswith('.csv')]
+                        _tick_summary = (
+                            f"{len(_files)} tick files in {_probe_dir}"
+                        )
+                    else:
+                        _tick_summary = (
+                            f"NO TICK FILES in {_probe_dir} — filter disabled"
+                        )
+            except Exception as _be:
+                _tick_summary = f"check failed: {_be}"
+            _parity("Tick bid/ask data",
+                    _tick_summary,
+                    _ticks_ok)
+            _parity("Hard close hour (GMT)",
+                    f"{_cfg_hard_close}" if _cfg_hard_close != -1 else "OFF",
+                    True)  # -1 is valid for 24/7
+            _parity("Market reopen hour (GMT)",
+                    f"{_cfg_market_reopen}" if _cfg_market_reopen != -1 else "OFF",
+                    True)
+            _parity("Cooldown candles",
+                    f"{_cfg_cooldown}",
+                    True)
+            _parity("Min hold minutes",
+                    f"{_cfg_min_hold}",
+                    True)
+            _parity("Swap long (pips/night)",
+                    f"{_cfg_swap_long:+.2f}",
+                    True)
+            _parity("Swap short (pips/night)",
+                    f"{_cfg_swap_short:+.2f}",
+                    True)
+            for _line in _parity_lines:
+                output_text.insert(tk.END, _line + "\n")
+            output_text.insert(tk.END, "═"*70 + "\n\n")
+            output_text.see(tk.END)
 
             # Determine which TFs to test
             # WHY (Phase 33 Fix 9): Old list missed D1 timeframe. Some users
@@ -1023,8 +1694,76 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             else:
                 tfs_to_test = [entry_tf]
 
+            # Clear diagnostic file once before all TF runs
+            # WHY: Store resolved path so we can show it in the output later.
+            # CHANGED: May 2026 — diagnostic file link in panel
+            _diag_file_path = os.path.join(
+                project_root, 'project2_backtesting',
+                'outputs', 'diag_indicator_values.txt')
+            try:
+                with open(_diag_file_path, 'w') as _dcf:
+                    _dcf.write("Diagnostic run started\n")
+            except Exception:
+                _diag_file_path = ''
+
+            # WHY: Auto-remap adx_ → mt5_adx_ for MT5 prop firms so rules
+            #      discovered on MT5 use Wilder-smoothed ADX for EA parity.
+            # CHANGED: May 2026 — auto-remap adx to mt5_adx for MT5 firms
+            _is_mt5_firm = (
+                _pf_data.get('platform', '').lower() == 'mt5'
+                if '_pf_data' in dir() and _pf_data else False
+            )
+            if _is_mt5_firm and selected_rules:
+                for _rule in selected_rules:
+                    for _cond in _rule.get('conditions', []):
+                        _feat = _cond.get('feature', '')
+                        if '_adx_' in _feat and 'mt5_adx' not in _feat:
+                            _cond['feature'] = _feat.replace('_adx_', '_mt5_adx_')
+
+            # WHY: Remap just modified selected_rules in memory, but the
+            #      temp file was written at line ~780 with the original
+            #      features. Re-write so run_comparison_matrix sees the
+            #      remapped features (e.g., mt5_adx_28 instead of adx_28).
+            # CHANGED: May 2026 — re-write temp file after ADX remap
+            if _is_mt5_firm and selected_rules:
+                _remap_temp = os.path.join(
+                    project_root, 'project2_backtesting', 'outputs',
+                    '_temp_selected_rules.json')
+                try:
+                    with open(_remap_temp, 'w', encoding='utf-8') as _rf:
+                        json.dump({'rules': selected_rules,
+                                   'discovery_method': 'selected_subset'},
+                                  _rf, indent=2, default=str)
+                except Exception:
+                    pass
+
+            # WHY: Tee stdout to BOTH terminal AND a capture buffer so the
+            #      user can see backtest progress live. The capture buffer
+            #      is still flushed to the panel's output_text at the end
+            #      for the full run record. Old behavior swallowed all
+            #      output into the buffer, making 15-30 min runs look
+            #      frozen — users would kill the app and lose the matrix.
+            # CHANGED: May 2026 — live backtest output
+            class _TeeStream:
+                def __init__(self, *targets):
+                    self.targets = targets
+                def write(self, s):
+                    for t in self.targets:
+                        try:
+                            t.write(s)
+                        except Exception:
+                            pass
+                def flush(self):
+                    for t in self.targets:
+                        try:
+                            t.flush()
+                        except Exception:
+                            pass
+
             capture = io.StringIO()
-            with contextlib.redirect_stdout(capture):
+            _original_stdout = sys.stdout
+            sys.stdout = _TeeStream(_original_stdout, capture)
+            try:
                 sys.path.insert(0, project_root)
                 from project2_backtesting.strategy_backtester import run_comparison_matrix
 
@@ -1042,19 +1781,82 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         output_text.see(tk.END)
 
                     # Resolve candle file for this TF
-                    tf_candle_path = None
-                    for cand in [
+                    # WHY (May 2026): Same silent-fallback bug as the
+                    #      single-TF resolver above (lines ~503-516). If
+                    #      the user picked a real data source but it has
+                    #      no CSVs for this TF, the loop would silently
+                    #      use the legacy file at <project_root>/data/.
+                    #      In multi-TF runs we abort the whole run instead
+                    #      of just this TF — a partial multi-TF result
+                    #      from mixed sources is the worst possible
+                    #      outcome to debug.
+                    # CHANGED: May 2026 — fail loud on data-source fallback
+                    _tf_in_source = [
                         os.path.join(_data_source_path, f'{symbol}_{tf}.csv'),
                         os.path.join(_data_source_path, f'{symbol.upper()}_{tf}.csv'),
                         os.path.join(_data_source_path, f'{symbol.lower()}_{tf}.csv'),
                         os.path.join(_data_source_path, symbol, f'{tf}.csv'),
-                        # Legacy fallback
+                    ]
+                    _tf_legacy = [
                         os.path.join(project_root, 'data', f'{symbol}_{tf}.csv'),
                         os.path.join(project_root, 'data', symbol, f'{tf}.csv'),
-                    ]:
+                    ]
+                    tf_candle_path = None
+                    _tf_used_legacy = False
+                    from shared.data_sources import is_lfs_pointer, assert_not_lfs_stub
+                    for cand in _tf_in_source:
                         if os.path.exists(cand):
+                            # WHY: Auto-pull LFS stubs instead of just showing an error.
+                            # CHANGED: May 2026 — auto-pull LFS in multi-TF loop
+                            if is_lfs_pointer(cand):
+                                output_text.insert(tk.END,
+                                    f"\n⏳ {os.path.basename(cand)} is an LFS stub — downloading real data...\n"
+                                    f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                                output_text.see(tk.END)
+                                output_text.update_idletasks()
+                            try:
+                                assert_not_lfs_stub(cand)
+                            except ValueError as _lfs_err:
+                                output_text.insert(tk.END, str(_lfs_err) + "\n")
+                                output_text.see(tk.END)
+                                return
                             tf_candle_path = cand
                             break
+                    if tf_candle_path is None:
+                        for cand in _tf_legacy:
+                            if os.path.exists(cand):
+                                if is_lfs_pointer(cand):
+                                    output_text.insert(tk.END,
+                                        f"\n⏳ {os.path.basename(cand)} is an LFS stub — downloading real data...\n"
+                                        f"   This is a one-time download (~270 MB). Please wait.\n\n")
+                                    output_text.see(tk.END)
+                                    output_text.update_idletasks()
+                                try:
+                                    assert_not_lfs_stub(cand)
+                                except ValueError as _lfs_err:
+                                    output_text.insert(tk.END, str(_lfs_err) + "\n")
+                                    output_text.see(tk.END)
+                                    return
+                                tf_candle_path = cand
+                                _tf_used_legacy = True
+                                break
+
+                    _tf_selected_is_real = bool(_data_source_id) and \
+                        os.path.normpath(_data_source_path) != \
+                        os.path.normpath(os.path.join(project_root, 'data'))
+                    if tf_candle_path is not None and _tf_used_legacy and _tf_selected_is_real:
+                        _tf_msg = (
+                            f"\n[DATA SOURCE ERROR] TF={tf}: source "
+                            f"'{_data_source_id}' has no {symbol}_{tf}.csv. "
+                            f"Multi-TF run aborted to prevent mixed-source "
+                            f"results.\nSearched:\n"
+                            + "\n".join(f"   {p} ({'EXISTS' if os.path.exists(p) else 'missing'})"
+                                        for p in _tf_in_source)
+                            + "\n"
+                        )
+                        output_text.insert(tk.END, _tf_msg)
+                        output_text.see(tk.END)
+                        return  # abort the whole multi-TF run
 
                     if tf_candle_path is None:
                         if multi_tf:
@@ -1064,6 +1866,134 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # WHY (Phase A.48): Pass config values so the backtester
                     #      uses the user's actual spread/commission/account.
                     # CHANGED: April 2026 — Phase A.48
+                    # WHY: Win Pass opt-in gate. simulate_challenge runs N windows
+                    #      per combo; at 1,940 combos it dominates runtime on M5+.
+                    #      When the checkbox is off, clear the IDs so the backtester
+                    #      skips all sims and the grid shows "—" (pre-May-2026 behavior).
+                    # CHANGED: July 2026 — Win Pass opt-in (fix #4)
+                    if _win_pass_inline_var is not None and not _win_pass_inline_var.get():
+                        _wp_firm_id = _wp_challenge_id = _wp_account_size = None
+
+                    # WHY (Win Pass diagnostic): Surface whether Win Pass
+                    #      will run on this matrix so the user can see in
+                    #      stdout why the column shows "—" if a piece is
+                    #      missing from _pf_data (firm/challenge/account).
+                    # CHANGED: May 2026 — Win Pass diagnostic print
+                    if _wp_firm_id and _wp_challenge_id and _wp_account_size:
+                        print(
+                            f"[BACKTEST] Win Pass ENABLED: "
+                            f"firm_id={_wp_firm_id}, "
+                            f"challenge_id={_wp_challenge_id}, "
+                            f"account=${int(_wp_account_size):,} — "
+                            f"rule pass-rate will be computed at "
+                            f"backtest time and saved per result row."
+                        )
+                    else:
+                        _wp_missing = []
+                        if not _wp_firm_id:
+                            _wp_missing.append("firm_id")
+                        if not _wp_challenge_id:
+                            _wp_missing.append("challenge_id")
+                        if not _wp_account_size:
+                            _wp_missing.append("account_size")
+                        print(
+                            f"[BACKTEST] Win Pass DISABLED — missing: "
+                            f"{', '.join(_wp_missing)}. Result rows will "
+                            f"have win_pass_rate=-1 and the grid Win Pass "
+                            f"column will show '—'. Configure prop firm "
+                            f"+ challenge + account size in the panel to "
+                            f"enable."
+                        )
+                    # WHY: Saved rules carry optimizer filters (day/session/hour)
+                    #      in filters_applied. Pass them so the backtester gates
+                    #      entries at signal-build time, reproducing the optimizer's
+                    #      filtered trade set.
+                    # CHANGED: May 2026 — backtest honors optimizer filters
+                    _fa = (_first_rule.get('filters_applied') or {}) if _first_rule else {}
+                    _entry_filters = {
+                        k: _fa[k] for k in ('days', 'sessions', 'hours')
+                        if _fa.get(k)
+                    } or None
+                    if _entry_filters:
+                        output_text.insert(tk.END,
+                            f"  Entry filters from saved rule: {_entry_filters}\n")
+                        output_text.see(tk.END)
+
+                    # CHANGED: June 2026 — apply the SAVED RULE's optimizer filters
+                    #          (min_hold/max_trades) so re-running an optimized rule
+                    #          reproduces the optimization. Previously these came only
+                    #          from config/UI vars, so saved optimizations (e.g.
+                    #          min_hold_minutes=20) were silently ignored and the bare
+                    #          rule ran (20 trades/-3470 pips instead of 43/+102k).
+                    _mh = _fa.get('min_hold_minutes')
+                    if _mh not in (None, '', 0, '0'):
+                        try:
+                            _cfg_min_hold = int(float(_mh))
+                            output_text.insert(tk.END,
+                                f"  [SAVED-FILTERS] min_hold_minutes override = {_cfg_min_hold}\n")
+                            output_text.see(tk.END)
+                            print(f"[SAVED-FILTERS] min_hold_minutes override = {_cfg_min_hold}")
+                        except (TypeError, ValueError):
+                            pass
+                    _mt = _fa.get('max_trades_per_day')
+                    if _mt not in (None, '', 0, '0'):
+                        try:
+                            _a42_limit = max(1, int(float(_mt)))
+                            output_text.insert(tk.END,
+                                f"  [SAVED-FILTERS] max_trades_per_day override = {_a42_limit}\n")
+                            output_text.see(tk.END)
+                            print(f"[SAVED-FILTERS] max_trades_per_day override = {_a42_limit}")
+                        except (TypeError, ValueError):
+                            pass
+
+                    # CHANGED: June 2026 — honor each rule's SAVED entry_bar_offset on
+                    #   re-run, so a rule always re-runs at the N/N+1 it was built with.
+                    #   Falls back to the checkbox selection only if no rule specifies one.
+                    _saved_offsets = []
+                    for _r in (selected_rules or []):
+                        _o = _r.get('entry_bar_offset', None)
+                        if _o is not None:
+                            try:
+                                _saved_offsets.append(int(_o))
+                            except Exception:
+                                pass
+                    _checkbox_offsets = [o for o, v in
+                        [(0, _ebo_signal_bar_var), (1, _ebo_next_bar_var)]
+                        if v is not None and v.get()] or [0]
+                    if _saved_offsets:
+                        _use_offsets = sorted(set(_saved_offsets))
+                        print("[ENTRY-OFFSET] using saved rule offset(s): %s "
+                              "(checkboxes overridden)" % _use_offsets)
+                    else:
+                        _use_offsets = _checkbox_offsets
+
+                    # WHY: Exit strategy class filter — only test exits matching
+                    #      the selected class. "All" = None (use all defaults).
+                    # CHANGED: June 2026 — exit strategy class filter
+                    _exit_filter_sel = _exit_filter_var.get() if _exit_filter_var else "All"
+                    _filtered_exits = None
+                    if _exit_filter_sel and _exit_filter_sel != "All":
+                        try:
+                            from project2_backtesting.exit_strategies import get_default_exit_strategies
+                            _all_exits = get_default_exit_strategies(
+                                pip_size=_cfg_pip_size, entry_tf=tf)
+                            _filtered_exits = [
+                                e for e in _all_exits
+                                if getattr(e, 'name', type(e).__name__) == _exit_filter_sel
+                            ]
+                            if not _filtered_exits:
+                                _filtered_exits = None
+                                output_text.insert(tk.END,
+                                    f"⚠ Exit filter '{_exit_filter_sel}' matched 0 exits — using all\n")
+                                output_text.see(tk.END)
+                            else:
+                                output_text.insert(tk.END,
+                                    f"🎯 Exit filter: {_exit_filter_sel} ({len(_filtered_exits)} variant(s))\n")
+                                output_text.see(tk.END)
+                        except Exception as _ef_err:
+                            print(f"[EXIT-FILTER] error: {_ef_err}")
+                            _filtered_exits = None
+
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -1072,6 +2002,7 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         use_safety_stops=use_safety,
                         max_trades_per_day=_a42_limit,
                         combine_all_rules=_a45_combine,
+                        exit_strategies=_filtered_exits,
                         spread_pips=_cfg_spread,
                         commission_pips=_cfg_commission,
                         pip_size=_cfg_pip_size,
@@ -1098,7 +2029,72 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      using config (flag OFF = raw test, pre-phase compat).
                         # CHANGED: April 2026 — hard close + cooldown (MT5 parity)
                         hard_close_hour=_cfg_hard_close if _a48_use_cfg else -1,
+                        market_reopen_hour=_cfg_market_reopen if _a48_use_cfg else -1,
                         cooldown_candles=_cfg_cooldown if _a48_use_cfg else 0,
+                        # WHY: Pass variable spread only when using config.
+                        # CHANGED: April 2026 — session-based variable spread model
+                        variable_spread=_cfg_variable_spread if _a48_use_cfg else False,
+                        max_spread_pips=_cfg_max_spread if _a48_use_cfg else 0,
+                        # WHY: Per-firm asymmetric swap — zero when no firm or no data.
+                        # CHANGED: April 2026 — asymmetric swap
+                        swap_long_pips_per_night=_cfg_swap_long if _a48_use_cfg else 0.0,
+                        swap_short_pips_per_night=_cfg_swap_short if _a48_use_cfg else 0.0,
+                        # WHY: Per-firm session spread multipliers — None = use module default.
+                        # CHANGED: April 2026 — per-firm spread calibration
+                        session_spread_multipliers=_cfg_session_spread_multipliers if _a48_use_cfg else None,
+                        # WHY: Min hold gates management exits — matches EA MinHoldMinutes.
+                        #      Pass whenever > 0 (may come from saved rule's filters_applied
+                        #      even when _a48_use_cfg is off).
+                        # CHANGED: April 2026 — min hold parity with MT5 EA
+                        # CHANGED: June 2026 — always pass _cfg_min_hold (not gated by _a48_use_cfg)
+                        min_hold_minutes=_cfg_min_hold,
+                        # CHANGED: June 2026 — use saved rule offset (computed above);
+                        #   falls back to checkboxes when no rule specifies one.
+                        entry_bar_offsets=_use_offsets,
+                        # WHY: DD circuit breaker — stop generating trades when
+                        #      daily/total DD alert threshold is hit. Matches EA's
+                        #      EvalDailyDDAlert / EvalTotalDDAlert behavior.
+                        #      0 = disabled (no config or safety stops OFF).
+                        # CHANGED: May 2026 — DD circuit breaker
+                        dd_daily_alert_pct=_cfg_dd_daily_alert if _a48_use_cfg else 0.0,
+                        dd_total_alert_pct=_cfg_dd_total_alert if _a48_use_cfg else 0.0,
+                        dd_daily_reset_hour=_cfg_dd_reset_hour,
+                        # WHY: HWM-lock parity toggle — see strategy_backtester.py
+                        # CHANGED: May 2026 — HWM-lock toggle
+                        use_hwm_lock=_hwm_lock_var.get() if _hwm_lock_var else False,
+                        hwm_lock_gain_pct=_cfg_hwm_lock_gain_pct,
+                        hwm_lock_level=_cfg_hwm_lock_level,
+                        # WHY: Win Pass — pass through firm IDs so the
+                        #      backtester runs simulate_challenge per
+                        #      rule at result-build time. See backtester
+                        #      summary loop for details.
+                        # CHANGED: May 2026 — pass-rate at backtest time
+                        win_pass_firm_id=_wp_firm_id,
+                        win_pass_challenge_id=_wp_challenge_id,
+                        win_pass_account_size=_wp_account_size,
+                        # WHY: Forward optimizer day/session/hour filters.
+                        # CHANGED: May 2026 — backtest honors optimizer filters
+                        entry_filters=_entry_filters,
+                        # WHY: Forward firm no-trades window (settlement hours).
+                        # CHANGED: June 2026 — firm no-trades window
+                        no_trades_window_start_hour=int(_firm_ntw_start) if _firm_ntw_start is not None and _a48_use_cfg else -1,
+                        no_trades_window_end_hour=int(_firm_ntw_end) if _firm_ntw_end is not None and _a48_use_cfg else -1,
+                        # WHY: IANA zone from firm config; backtester DST-converts
+                        #      timestamps so GMT-labeled gates and UTC P1 hour
+                        #      filters compare on the right clock. None → default.
+                        # CHANGED: June 2026 — broker_timezone pass-through
+                        broker_timezone=_firm_broker_tz if _a48_use_cfg else None,
+                        # WHY: Auto-enable gap_fill_parity when config is loaded.
+                        #      On M5 entry TFs _is_gap_bar is always False (no-op).
+                        #      On H4+ it fills at M1 session-open matching MT5.
+                        # CHANGED: June 2026 — auto-enable SESSIONGAP parity
+                        gap_fill_parity=_a48_use_cfg,
+                        # WHY: M1 intrabar exit is now controlled by its own checkbox
+                        #      (_m1_intrabar_var), independent of the firm-config toggle.
+                        #      ON = M1 sub-candle exit walk (MT5 parity, slower).
+                        #      OFF = bar-level exits (fast path, looser intrabar parity).
+                        # CHANGED: July 2026 — decouple M1 from _a48_use_cfg
+                        exit_intrabar_m1=_m1_intrabar,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -1299,7 +2295,25 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
 
                                         _exit_params = _cand.get('exit_params', {}) or {}
                                         _rules       = _cand.get('rules', []) or []
-                                        _direction   = _cand.get('direction', 'BUY')
+                                        # WHY: read direction from BOTH fields
+                                        #      ('direction' → 'action'). Old
+                                        #      _cand.get('direction', 'BUY')
+                                        #      silently tested a SELL candidate
+                                        #      as BUY when only 'action' was
+                                        #      present. Loud warning when
+                                        #      neither exists so a genuine
+                                        #      mis-tag is visible.
+                                        # CHANGED: June 2026 — direction fallback + loud default
+                                        _direction = (str(_cand.get('direction', '') or
+                                                          _cand.get('action', '') or '').upper().strip()
+                                                      or 'BUY')
+                                        if _direction not in ('BUY', 'SELL', 'BOTH'):
+                                            _direction = 'BUY'
+                                        if not (_cand.get('direction') or _cand.get('action')):
+                                            output_text.insert(
+                                                tk.END,
+                                                f"  [T2b] ⚠ candidate has no direction/action — "
+                                                f"defaulting to BUY (verify it isn't a SELL rule)\n")
                                         _cand_tf     = _cand.get('entry_tf', '')
 
                                         _cand_path = None
@@ -1395,6 +2409,12 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                             f"\n⚠️ Could not save combined results: {_save_e}\n"
                         )
 
+            finally:
+                # WHY: Restore original stdout no matter how the block
+                #      exits (success, exception, KeyboardInterrupt).
+                # CHANGED: May 2026 — live backtest output cleanup
+                sys.stdout = _original_stdout
+
             # Clean up temp file
             try:
                 os.remove(temp_path)
@@ -1419,6 +2439,16 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\nPartial results saved. Go to 'View Results' panel to see what completed.\n")
                 output_text.see(tk.END)
 
+                # WHY (May 2026): Even partial results need to flow
+                #      to the grids so user can review what completed.
+                # CHANGED: May 2026 — refresh-all after stop
+                try:
+                    from shared.panel_refresh import refresh_all_panels
+                    refresh_all_panels(reason='backtest_stopped')
+                except Exception as _re:
+                    output_text.insert(tk.END,
+                        f"\n⚠ refresh_all_panels failed: {_re}\n")
+
                 output_text.after(0, lambda: messagebox.showinfo(
                     "Backtest Stopped",
                     "Backtest stopped by user.\n\n"
@@ -1432,6 +2462,83 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                 output_text.insert(tk.END, "\n=== BACKTEST COMPLETED SUCCESSFULLY ===\n")
                 output_text.insert(tk.END, "\nGo to 'View Results' panel to see the comparison matrix!\n")
                 output_text.see(tk.END)
+
+                # WHY (May 2026): Auto-refresh all grids so user sees
+                #      fresh data without manually visiting each panel.
+                #      Without this, the EA generator grid can show
+                #      pre-backtest values while the matrix file is
+                #      freshly written.
+                # CHANGED: May 2026 — refresh-all after backtest
+                try:
+                    from shared.panel_refresh import refresh_all_panels
+                    _scheduled = refresh_all_panels(reason='backtest_complete')
+                    output_text.insert(tk.END,
+                        f"\n🔄 Refreshing {_scheduled} panels with new results...\n")
+                    output_text.see(tk.END)
+                except Exception as _re:
+                    output_text.insert(tk.END,
+                        f"\n⚠ refresh_all_panels failed: {_re}\n")
+                    output_text.see(tk.END)
+
+                # Show diagnostic file link
+                if _diag_file_path and os.path.exists(_diag_file_path):
+                    try:
+                        _diag_sz = os.path.getsize(_diag_file_path)
+                        if _diag_sz > 50:
+                            output_text.insert(tk.END,
+                                f"\n📊 Diagnostic indicator values:\n   {_diag_file_path}\n")
+                            def _open_diag(_p=_diag_file_path):
+                                try:
+                                    import subprocess, sys as _sys
+                                    if _sys.platform == 'win32':
+                                        os.startfile(_p)
+                                    elif _sys.platform == 'darwin':
+                                        subprocess.Popen(['open', _p])
+                                    else:
+                                        subprocess.Popen(['xdg-open', _p])
+                                except Exception as _e:
+                                    print(f"Could not open file: {_e}")
+                            import state as _diag_state
+                            if _diag_state.window:
+                                def _add_diag_btn():
+                                    _db = tk.Button(output_text, text="📂 Open Diagnostic File",
+                                                    command=_open_diag, font=("Segoe UI", 8),
+                                                    bg="#4a90d9", fg="white", relief=tk.FLAT,
+                                                    padx=8, pady=2, cursor="hand2")
+                                    output_text.window_create(tk.END, window=_db)
+                                    output_text.insert(tk.END, "\n")
+                                _diag_state.window.after(50, _add_diag_btn)
+                    except Exception:
+                        pass
+
+                # WHY: "Generate EA" shortcut — navigates to EA Generator panel
+                #      with the best result pre-selected. No manual matching needed.
+                # CHANGED: May 2026 — Generate EA from backtest results
+                if all_matrix:
+                    import state as _ea_btn_state
+                    _best = all_matrix[0]
+                    _best_idx = _best.get('_matrix_index',
+                                  next((i for i, r in enumerate(all_matrix) if r is _best), 0))
+                    _best_label = f"{_best.get('rule_combo', '?')} × {_best.get('exit_name', '?')}"
+                    def _jump_to_ea(_idx=_best_idx):
+                        import state as _jmp_state
+                        import sidebar as _jmp_sidebar
+                        _jmp_state.pending_ea_strategy_index[0] = _idx
+                        _jmp_sidebar.show_panel('p3_generator')
+                    if _ea_btn_state.window:
+                        def _add_ea_btn():
+                            _ea_btn = tk.Button(
+                                output_text,
+                                text=f"⚡ Generate EA  →  {_best_label}",
+                                font=("Segoe UI", 10, "bold"),
+                                bg="#28a745", fg="white", cursor="hand2",
+                                relief="flat", padx=10, pady=4,
+                                command=_jump_to_ea,
+                            )
+                            output_text.window_create(tk.END, window=_ea_btn)
+                            output_text.insert(tk.END, "\n")
+                            output_text.see(tk.END)
+                        _ea_btn_state.window.after(0, _add_ea_btn)
 
                 # WHY: Update status of saved rules to 'backtested' after successful backtest
                 # CHANGED: April 2026 — lifecycle status tracking
@@ -2734,7 +3841,12 @@ def build_panel(parent):
         _xgb_new = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'xgboost_result.json')
         _xgb_old = os.path.join(project_root, 'project1_reverse_engineering', 'outputs', 'discovery_xgboost.json')
         p1_xgboost = _xgb_new if os.path.exists(_xgb_new) else _xgb_old
-        saved_path = os.path.join(project_root, 'saved_rules.json')
+        saved_path    = os.path.join(project_root, 'saved_rules.json')
+        # WHY: my_rules.json holds rules the user explicitly saved via the
+        #      ★ My Rules button. Same list format as saved_rules.json.
+        #      Must appear in the dropdown so they can be backtested directly.
+        # CHANGED: June 2026 — My Rules source
+        my_rules_path = os.path.join(project_root, 'my_rules.json')
 
         if os.path.exists(p1_report):
             try:
@@ -2777,6 +3889,18 @@ def build_panel(parent):
                     d = json.load(f)
                 rules = d.get('rules', [])
                 sources.append((f"Bot Entry Rules ({len(rules)} rules, all TFs)", p1_bot_entry))
+            except Exception:
+                pass
+
+        # WHY: My Rules (manual saves via ★ button) — same list format as
+        #      saved_rules.json. Show even when empty so the user can see it
+        #      exists; only hide if the file itself is missing.
+        # CHANGED: June 2026 — My Rules source entry
+        if os.path.exists(my_rules_path):
+            try:
+                with open(my_rules_path, encoding='utf-8') as f:
+                    d = json.load(f)
+                sources.append((f"★ My Rules ({len(d)} rules)", my_rules_path))
             except Exception:
                 pass
 
@@ -2908,6 +4032,11 @@ def build_panel(parent):
                     return 'Step3'
                 if 'Bot Entry' in lbl:
                     return 'BotEntry'
+                # WHY: Check My Rules before generic Saved check so it gets
+                #      its own tag instead of falling through to 'Saved'.
+                # CHANGED: June 2026 — My Rules tag
+                if 'My Rules' in lbl:
+                    return 'MyRule'
                 if 'Saved' in lbl or 'Bookmarked' in lbl:
                     return 'Saved'
                 if 'XGBoost' in lbl:
@@ -3307,7 +4436,7 @@ def build_panel(parent):
     safety_frame = tk.Frame(panel, bg="white", pady=6)
     safety_frame.pack(fill="x", padx=20)
 
-    global _use_safety_var, _funded_protect_var
+    global _use_safety_var, _funded_protect_var, _hwm_lock_var, _win_pass_inline_var
     use_safety_var = tk.BooleanVar(value=True)
     _use_safety_var = use_safety_var
     tk.Checkbutton(
@@ -3330,6 +4459,23 @@ def build_panel(parent):
         bg="white",
     ).pack(anchor="w")
 
+    # WHY: HWM-lock toggle for backtester ↔ EA parity. OFF by default
+    #      preserves current trailing-HWM behavior. ON freezes the HWM
+    #      once balance hits the firm's lock_after_gain_pct threshold,
+    #      matching what the simulator and EA do in production. Use
+    #      this to A/B test how much the lock changes results before
+    #      flipping it on permanently. See PARITY_TODO.md item 1.
+    # CHANGED: May 2026 — HWM-lock parity toggle
+    hwm_lock_var = tk.BooleanVar(value=False)
+    _hwm_lock_var = hwm_lock_var
+    tk.Checkbutton(
+        safety_frame,
+        text="🔒 Use HWM-lock (match EA)",
+        variable=hwm_lock_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+
     tk.Label(
         safety_frame,
         text="    ON  = matches live EA behavior (recommended)\n"
@@ -3338,6 +4484,22 @@ def build_panel(parent):
         fg="#666",
         bg="white",
         justify="left",
+    ).pack(anchor="w")
+
+    # WHY: simulate_challenge runs once per combo in sliding_window mode
+    #      (N windows per rule × 1,940 combos). OFF = skip it, grid shows "—"
+    #      for Win Pass (same as before May 2026). ON = inline pass-rate,
+    #      accurate but adds significant runtime on M5+. Default OFF so the
+    #      5-TF sweep is fast; enable only when you need pass-rate numbers.
+    # CHANGED: July 2026 — Win Pass opt-in (fix #4 — per-combo simulate_challenge)
+    win_pass_inline_var = tk.BooleanVar(value=False)
+    _win_pass_inline_var = win_pass_inline_var
+    tk.Checkbutton(
+        safety_frame,
+        text="Compute Win Pass rate per combo (slower — uncheck for speed)",
+        variable=win_pass_inline_var,
+        font=("Segoe UI", 10),
+        bg="white",
     ).pack(anchor="w")
 
     # ── Phase A.42: Max Trades Per Day control ────────────────────────────────
@@ -3444,6 +4606,59 @@ def build_panel(parent):
         justify="left",
     ).pack(anchor="w")
 
+    # ── Exit strategy filter ──────────────────────────────────────────────────
+    # WHY: Running all 20 exit strategies on every rule takes 18-20x longer
+    #      than needed for parity testing (where you only care about one exit).
+    #      This dropdown filters the exit list by class name. "All" = default.
+    # CHANGED: June 2026 — exit strategy class filter
+    global _exit_filter_var
+
+    _exit_filter_frame = tk.Frame(panel, bg="white", pady=6)
+    _exit_filter_frame.pack(fill="x", padx=20)
+
+    _exit_filter_row = tk.Frame(_exit_filter_frame, bg="white")
+    _exit_filter_row.pack(fill="x")
+
+    tk.Label(
+        _exit_filter_row,
+        text="🎯 Exit Strategy:",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+    ).pack(side=tk.LEFT)
+
+    _exit_filter_var = tk.StringVar(value="All")
+    _exit_filter_options = [
+        "All",
+        "ATR Only",
+        "ATR Fixed SL/TP",
+        "ATR BE Trail",
+        "PSAR Exit",
+        "Trailing Stop",
+        "ATR + Trailing",
+        "Time-Based",
+        "Indicator Exit",
+        "Fixed SL/TP",
+        "Hybrid",
+    ]
+    _exit_filter_combo = ttk.Combobox(
+        _exit_filter_row,
+        textvariable=_exit_filter_var,
+        values=_exit_filter_options,
+        state="readonly",
+        width=22,
+    )
+    _exit_filter_combo.pack(side=tk.LEFT, padx=10)
+
+    tk.Label(
+        _exit_filter_frame,
+        text="    Filter which exit strategies to test. 'All' runs all ~20 variants.\n"
+             "    Picking one class (e.g. 'ATR Only') runs only its 2 variants — ~10x faster.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
     # ── Phase A.48: Use Configuration settings ────────────────────────────────
     # WHY (Phase A.48): The Configuration panel has spread, commission,
     #      account size, pip value, etc. But run_comparison_matrix was called
@@ -3451,15 +4666,47 @@ def build_panel(parent):
     #      controls whether to read and pass those values. Default OFF
     #      preserves pre-A.48 behavior (function defaults).
     # CHANGED: April 2026 — Phase A.48
-    global _a48_use_config_var
+    global _a48_use_config_var, _m1_intrabar_var
 
     _a48_frame = tk.Frame(panel, bg="white", pady=6)
     _a48_frame.pack(fill="x", padx=20)
 
     # WHY: Firm/leverage/risk settings are useless if the user forgets
     #      to check this box. Default ON so config is always used.
+    # WHY (May 2026): The checkbox also gates max_spread_pips, swap,
+    #      hard_close, market_reopen, cooldown, session multipliers,
+    #      min_hold, and DD alerts. Without it, Python diverges from
+    #      MT5 by a lot. Make it impossible to silently turn off.
     # CHANGED: April 2026 — default to ON
+    # CHANGED: May 2026 — warn on uncheck + log to output
     _a48_use_config_var = tk.BooleanVar(value=True)
+
+    def _a48_on_toggle(*_args):
+        try:
+            if not _a48_use_config_var.get():
+                # User unchecked — show a stern warning
+                import tkinter.messagebox as _mb
+                _resp = _mb.askyesno(
+                    "Disable firm config?",
+                    "Turning OFF firm config will skip ALL parity settings:\n"
+                    "  • Max spread filter (65 pips)\n"
+                    "  • Session spread multipliers\n"
+                    "  • Asymmetric swap\n"
+                    "  • Hard close hour\n"
+                    "  • Market reopen hour\n"
+                    "  • Cooldown / min hold\n"
+                    "  • DD alerts\n\n"
+                    "Python results will NOT match MT5.\n\n"
+                    "Are you sure you want to disable firm config?",
+                    icon="warning"
+                )
+                if not _resp:
+                    # Snap it back ON
+                    _a48_use_config_var.set(True)
+        except Exception:
+            pass
+
+    _a48_use_config_var.trace_add("write", _a48_on_toggle)
 
     # Read current config values to show in the label
     _a48_preview = ""
@@ -3493,6 +4740,220 @@ def build_panel(parent):
         bg="white",
         justify="left",
     ).pack(anchor="w")
+
+    # WHY: M1 intrabar exit is expensive on high-trade-count TFs (M5). Decoupled from
+    #      the firm-config toggle so you can turn off M1 without losing spread/swaps/etc.
+    #      ON = current behavior (MT5 intrabar parity). OFF = bar-level exits (fast).
+    # CHANGED: July 2026 — dedicated M1 intrabar toggle checkbox
+    _m1_intrabar_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        _a48_frame,
+        text="M1 intrabar exits (accurate MT5 parity — slower on M5/high-trade runs)",
+        variable=_m1_intrabar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(anchor="w")
+    tk.Label(
+        _a48_frame,
+        text="    OFF = resolve exits at bar level (much faster; looser intrabar parity)",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Entry timing (EA parity) ──────────────────────────────────────────────
+    # WHY: The MT5 EA (UseNextBarEntry=false) computes the signal from bar N's CLOSED
+    #      values but FILLS at the OPEN of bar N+1 (first tick of the next bar). Verified
+    #      from EA logs: signal bar 23:40 -> opened 23:45. So offset=1 (N+1) is TRUE EA
+    #      parity. offset=0 (enter at N) fills one bar early and is the legacy behavior.
+    #      The old comment had this backwards — it said "Signal bar (EA parity)" for
+    #      offset=0 which caused users to pick the wrong mode, producing 60 one-bar-early
+    #      mismatches vs MT5.
+    # CHANGED: May 2026 — entry bar offset toggle for EA parity
+    # CHANGED: June 2026 — corrected EA-parity offset (was mislabeled as N; real parity is N+1)
+    global _ebo_signal_bar_var, _ebo_next_bar_var
+
+    _ebo_frame = tk.Frame(panel, bg="white", pady=6)
+    _ebo_frame.pack(fill="x", padx=20)
+
+    tk.Label(
+        _ebo_frame,
+        text="⏱ Entry timing",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+        fg="#333",
+    ).pack(anchor="w")
+
+    # Default: N+1 is real EA parity → "Next bar" on by default, "Signal bar" off.
+    # CHANGED: June 2026 — default flipped to N+1 (true EA parity)
+    _ebo_signal_bar_var = tk.BooleanVar(value=False)
+    _ebo_next_bar_var   = tk.BooleanVar(value=True)
+
+    _ebo_cb_frame = tk.Frame(_ebo_frame, bg="white")
+    _ebo_cb_frame.pack(anchor="w")
+    tk.Checkbutton(
+        _ebo_cb_frame,
+        text="Signal bar (enters at bar N — legacy, fills 1 bar early vs EA)",
+        variable=_ebo_signal_bar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(side="left", padx=(0, 16))
+    tk.Checkbutton(
+        _ebo_cb_frame,
+        text="Next bar (+1 — EA parity, fills at open of N+1 like MT5)",
+        variable=_ebo_next_bar_var,
+        font=("Segoe UI", 10),
+        bg="white",
+    ).pack(side="left")
+
+    tk.Label(
+        _ebo_frame,
+        text="    Check both to run both modes and compare side-by-side (+1bar suffix on next-bar rows)",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w")
+
+    # ── Date Range Override (optional) ────────────────────────────────────────
+    # WHY: Enables clean comparison with MT5 Strategy Tester by matching
+    #      the exact date window. Backend already supports start_date/end_date;
+    #      this plumbs through a UI override on top of any saved-config dates.
+    # CHANGED: April 2026 — date-range UI for MT5 parity comparison
+    global _bt_date_start_var, _bt_date_end_var
+
+    _date_frame = tk.Frame(panel, bg="white", pady=6)
+    _date_frame.pack(fill="x", padx=20)
+
+    tk.Label(
+        _date_frame,
+        text="📅 Backtest date range (optional — leave blank to test all data)",
+        font=("Segoe UI", 10, "bold"),
+        bg="white",
+        fg="#333",
+    ).pack(anchor="w")
+
+    _bt_date_start_var = tk.StringVar(value="")
+    _bt_date_end_var   = tk.StringVar(value="")
+
+    def _last_date_in_source():
+        # WHY: the source is chosen in the Run Scenarios panel, which saves ONLY data_source_id
+        #   (data_source_path is intentionally '' for machine-independence). The old version read
+        #   data_source_path and gave up when empty — always empty by design — so it never found
+        #   the loaded source. Resolve via get_source_path(data_source_id) exactly like
+        #   run_scenarios.py (~3578), then read the M5 candle CSV's last timestamp.
+        # CHANGED: June 2026 — resolve active source via data_source_id; read M5 last date
+        import os, glob
+        try:
+            try:
+                from project1_reverse_engineering.config_loader import load as _load_cfg
+            except ModuleNotFoundError:
+                from config_loader import load as _load_cfg
+            from project1_reverse_engineering.step1_align_price import _parse_candle_timestamps
+
+            # WHY: data_source_path in config can be a STALE ABSOLUTE PATH from another
+            #   machine/drive (saw 'd:\traiding data\...' while the repo is on c:\).
+            #   resolve_data_dir() is the repo's single source of truth: it uses
+            #   data_source_path ONLY if it exists on disk, else falls back to
+            #   get_source_path(data_source_id), computed relative to the code location and
+            #   always correct on THIS machine. Don't hand-roll resolution here.
+            # CHANGED: June 2026 — use resolve_data_dir() instead of trusting stale data_source_path
+            from shared.data_sources import resolve_data_dir
+            src_dir = resolve_data_dir() or ''
+            print("[LASTDATE] source dir =", repr(src_dir), flush=True)
+
+            if not src_dir or not os.path.isdir(src_dir):
+                print("[LASTDATE] source dir missing or not a directory", flush=True)
+                return None
+
+            # Find the M5 candle file. MT5 exports XAUUSD_M5.csv; old data xauusd_M5.csv.
+            candidates = (glob.glob(os.path.join(src_dir, '*_M5.csv')) +
+                          glob.glob(os.path.join(src_dir, '*_m5.csv')))
+            if not candidates:
+                # fall back to ANY candle csv so the button still works for non-M5 sources
+                candidates = glob.glob(os.path.join(src_dir, '*.csv'))
+            if not candidates:
+                print("[LASTDATE] no candle csv in source dir", flush=True)
+                return None
+            candle_file = candidates[0]
+            print("[LASTDATE] candle file =", candle_file, flush=True)
+
+            import pandas as pd
+            df = pd.read_csv(candle_file)
+            if df.empty:
+                print("[LASTDATE] candle file is empty", flush=True)
+                return None
+
+            # Identify the timestamp column (step1 conventions: 'time'/'date'/'datetime'/first col).
+            ts_col = None
+            for c in df.columns:
+                if str(c).strip().lower() in ('time', 'date', 'datetime', 'timestamp'):
+                    ts_col = c
+                    break
+            if ts_col is None:
+                ts_col = df.columns[0]
+            print("[LASTDATE] ts column =", ts_col, flush=True)
+
+            parsed = _parse_candle_timestamps(df[ts_col])
+            parsed = parsed.dropna()
+            if parsed.empty:
+                print("[LASTDATE] no parseable timestamps", flush=True)
+                return None
+
+            last_dt = parsed.max()
+            result = last_dt.strftime('%Y-%m-%d')
+            print("[LASTDATE] last date =", result, flush=True)
+            return result
+
+        except Exception as e:
+            import traceback
+            print("[LASTDATE] EXCEPTION:", repr(e), flush=True)
+            traceback.print_exc()
+            return None
+
+    def _fill_end_with_last():
+        # WHY: button handler — set End to the source's last date, or warn if unknown.
+        # CHANGED: June 2026
+        from tkinter import messagebox
+        d = _last_date_in_source()
+        if d:
+            _bt_date_end_var.set(d)
+        else:
+            messagebox.showwarning(
+                "Last date",
+                "Could not read the last candle date from the selected source.\n"
+                "Pick/confirm the data source in the Run Scenarios panel, then try again.\n"
+                "(See console for [LASTDATE] details.)")
+
+    _date_row = tk.Frame(_date_frame, bg="white")
+    _date_row.pack(fill="x", pady=(4, 0))
+
+    tk.Label(_date_row, text="    Start (YYYY-MM-DD):",
+             font=("Segoe UI", 9), bg="white", fg="#333").pack(side=tk.LEFT)
+    tk.Entry(_date_row, textvariable=_bt_date_start_var, width=14,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(4, 12))
+
+    tk.Label(_date_row, text="End (YYYY-MM-DD):",
+             font=("Segoe UI", 9), bg="white", fg="#333").pack(side=tk.LEFT)
+    tk.Entry(_date_row, textvariable=_bt_date_end_var, width=14,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(4, 0))
+    # CHANGED: June 2026 — autofill End with source's last date
+    tk.Button(_date_row, text="↦ Last",
+              command=_fill_end_with_last,
+              bg="#17a2b8", fg="white", font=("Segoe UI", 8),
+              relief=tk.FLAT, cursor="hand2", padx=8, pady=1
+              ).pack(side=tk.LEFT, padx=(4, 0))
+
+    tk.Label(
+        _date_frame,
+        text="    Examples: 2026-03-04 → 2026-04-09 (match MT5 36-day window)\n"
+             "    Blank fields = use full data range or saved-config dates.",
+        font=("Segoe UI", 8),
+        fg="#666",
+        bg="white",
+        justify="left",
+    ).pack(anchor="w", pady=(2, 0))
 
     # ── T2b: Time-distribution filter + weight ────────────────────────────────
     # WHY (T2b): Reject rules that fire only in narrow time windows. Two
@@ -3604,6 +5065,51 @@ def build_panel(parent):
         state=tk.DISABLED  # disabled until backtest starts
     )
     _stop_button.pack(side=tk.LEFT, padx=(0, 10))
+
+    # WHY: Indicator caches (.cache_*.parquet) persist old indicator values.
+    #      When an indicator algorithm changes (e.g. _mt5_mfi replacing ta library),
+    #      stale caches silently serve old values. This button deletes all caches
+    #      so indicators recompute from scratch on the next backtest run.
+    # CHANGED: June 2026 — Clear Cache button
+    def _clear_indicator_caches():
+        import glob
+        deleted = 0
+        # Search common data directories for cache files
+        _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _search_dirs = set()
+        _search_dirs.add(os.path.join(_repo, 'data'))
+        # Also add current source path's directory
+        if _current_source_path[0] and _current_source_path[0] != "__ALL_SOURCES__":
+            _search_dirs.add(os.path.dirname(_current_source_path[0]))
+        for d in _search_dirs:
+            if not os.path.isdir(d):
+                continue
+            # Recursive search — finds caches at any depth
+            for f in glob.glob(os.path.join(d, '**', '.cache_*.parquet'), recursive=True):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception:
+                    pass
+            # Also check the directory itself
+            for f in glob.glob(os.path.join(d, '.cache_*.parquet')):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except Exception:
+                    pass
+        if _output_text:
+            _output_text.insert(tk.END,
+                f"🗑 Deleted {deleted} indicator cache file(s). "
+                f"Indicators will recompute on next Run Backtest.\n")
+            _output_text.see(tk.END)
+
+    tk.Button(
+        _a26_run_row, text="🗑 Clear Cache",
+        command=_clear_indicator_caches,
+        bg="#6c757d", fg="white", font=("Arial", 11),
+        relief=tk.FLAT, cursor="hand2", padx=15, pady=12,
+    ).pack(side=tk.LEFT, padx=(0, 10))
 
     # WHY (Phase A.40b): Patch the run-button reference into the A.40b
     #      refs dict now that it exists. Used only by the optional
