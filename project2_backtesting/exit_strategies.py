@@ -24,8 +24,9 @@ def _warn_m1_fallback_once():
             _log.getLogger(__name__).warning(
                 "[M1] M1 sub-candle loader unavailable for one or more "
                 "trades — falling back to parent-candle SL/TP detection. "
-                "H4/D1 results may diverge from MT5. Check that M1 CSV "
-                "exists and is real data (not an LFS stub)."
+                "EXPECTED if the 'M1 intrabar exits' checkbox is OFF. "
+                "If the checkbox is ON, check that the M1 CSV exists and "
+                "is real data (not an LFS stub)."
             )
         except Exception:
             pass
@@ -269,10 +270,10 @@ def _check_entry_candle_sltp(entry_candle, entry_time, sl_price, tp_price,
     try:
         import pandas as _pd
         _ets = _pd.Timestamp(entry_time)
-        # Filter to M1 candles strictly AFTER entry. Equality (==) means the
-        # M1 candle STARTED at entry — its bar contains pre-entry time too,
-        # so we skip it to be safe. Use > not >=.
-        _m1_after = _m1[_m1['timestamp'] > _ets]
+        # Filter to M1 candles AT or AFTER entry. The entry-minute bar's open
+        # IS the entry price; high/low/close are post-entry. Including it
+        # catches sub-minute SL/TP hits that MT5 finds via ticks.
+        _m1_after = _m1[_m1['timestamp'] >= _ets]
         if len(_m1_after) == 0:
             return None
 
