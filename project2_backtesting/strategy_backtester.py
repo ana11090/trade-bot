@@ -1821,6 +1821,11 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     Returns list of trade dicts.
     """
+    # WHY: Disable all tick/M1 file access — restores pre-M1 speed.
+    #      Remove this line when ready to re-enable tick/M1 features.
+    # CHANGED: July 2026 — tick/M1 kill switch
+    data_dir = None
+
     # WHY (May 2026): Wire SL slippage distribution to exit strategy so
     #      _get_fill_price can sample realistic broker slips on SL fills.
     # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
@@ -3058,6 +3063,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
+    # WHY: Disable all tick/M1 file access — restores pre-M1 speed.
+    #      Remove this line when ready to re-enable tick/M1 features.
+    # CHANGED: July 2026 — tick/M1 kill switch
+    data_dir = None
+
     trades = []
     # WHY: Add a UTC column up front so all GMT-labeled / P1-UTC gates
     #      (no-trades window, force-close, DD reset, entry-time filter,
