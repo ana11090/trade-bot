@@ -193,13 +193,6 @@ _rule_inner    = None
 _use_safety_var      = None  # BooleanVar for safety stops toggle
 _funded_protect_var  = None  # BooleanVar for funded protection simulation
 _hwm_lock_var        = None  # BooleanVar for HWM-lock parity toggle (see PARITY_TODO.md)
-_win_pass_inline_var = None  # BooleanVar: compute Win Pass rate per combo at backtest time (off = fast, grid shows "—")
-# WHY: M1 intrabar exit sim toggle. ON = resolve exits at M1 sub-candle level (matches MT5
-#      intrabar fills, slower on high-trade-count runs). OFF = resolve exits at bar level
-#      (fast path). Independent of _a48_use_config_var — toggling M1 does NOT affect
-#      spread/swaps/timezone/etc.
-# CHANGED: July 2026 — dedicated M1 intrabar toggle
-_m1_intrabar_var = None  # BooleanVar: M1 sub-candle exit resolution (default ON)
 _multi_tf_var    = None  # BooleanVar for multi-TF entry testing
 # WHY (Phase A.42): Max Trades Per Day control globals.
 # CHANGED: April 2026 — Phase A.42
@@ -943,7 +936,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
             #      When unchecked, use function defaults (pre-A.48 behavior).
             # CHANGED: April 2026 — Phase A.48
             _a48_use_cfg = _a48_use_config_var.get() if _a48_use_config_var is not None else False
-            _m1_intrabar = _m1_intrabar_var.get() if _m1_intrabar_var is not None else True
 
             # WHY: All _cfg_* variables must exist before the try block.
             #      Python marks them as local when it sees assignment inside try,
@@ -1598,8 +1590,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                   f"multi_tf={_run_settings['multi_tf']}, "
                   f"combine_all={_run_settings['combine_all_rules']}, "
                   f"regime_conditions={len(_run_settings['regime_filter_conditions'])}")
-            print(f"[BACKTEST] M1 intrabar exits: "
-                  f"{'ON (MT5-accurate, slower)' if _m1_intrabar else 'OFF (bar-level, fast — no tick/M1/gap-fill/spread-filter file access)'}")
 
             # WHY (May 2026): Show user the full parity status so they
             #      can see at a glance whether the run will match MT5.
@@ -1866,14 +1856,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     # WHY (Phase A.48): Pass config values so the backtester
                     #      uses the user's actual spread/commission/account.
                     # CHANGED: April 2026 — Phase A.48
-                    # WHY: Win Pass opt-in gate. simulate_challenge runs N windows
-                    #      per combo; at 1,940 combos it dominates runtime on M5+.
-                    #      When the checkbox is off, clear the IDs so the backtester
-                    #      skips all sims and the grid shows "—" (pre-May-2026 behavior).
-                    # CHANGED: July 2026 — Win Pass opt-in (fix #4)
-                    if _win_pass_inline_var is not None and not _win_pass_inline_var.get():
-                        _wp_firm_id = _wp_challenge_id = _wp_account_size = None
-
                     # WHY (Win Pass diagnostic): Surface whether Win Pass
                     #      will run on this matrix so the user can see in
                     #      stdout why the column shows "—" if a piece is
@@ -1967,33 +1949,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                     else:
                         _use_offsets = _checkbox_offsets
 
-                    # WHY: Exit strategy class filter — only test exits matching
-                    #      the selected class. "All" = None (use all defaults).
-                    # CHANGED: June 2026 — exit strategy class filter
-                    _exit_filter_sel = _exit_filter_var.get() if _exit_filter_var else "All"
-                    _filtered_exits = None
-                    if _exit_filter_sel and _exit_filter_sel != "All":
-                        try:
-                            from project2_backtesting.exit_strategies import get_default_exit_strategies
-                            _all_exits = get_default_exit_strategies(
-                                pip_size=_cfg_pip_size, entry_tf=tf)
-                            _filtered_exits = [
-                                e for e in _all_exits
-                                if getattr(e, 'name', type(e).__name__) == _exit_filter_sel
-                            ]
-                            if not _filtered_exits:
-                                _filtered_exits = None
-                                output_text.insert(tk.END,
-                                    f"⚠ Exit filter '{_exit_filter_sel}' matched 0 exits — using all\n")
-                                output_text.see(tk.END)
-                            else:
-                                output_text.insert(tk.END,
-                                    f"🎯 Exit filter: {_exit_filter_sel} ({len(_filtered_exits)} variant(s))\n")
-                                output_text.see(tk.END)
-                        except Exception as _ef_err:
-                            print(f"[EXIT-FILTER] error: {_ef_err}")
-                            _filtered_exits = None
-
                     tf_results = run_comparison_matrix(
                         candles_path=tf_candle_path,
                         timeframe=tf,
@@ -2002,7 +1957,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         use_safety_stops=use_safety,
                         max_trades_per_day=_a42_limit,
                         combine_all_rules=_a45_combine,
-                        exit_strategies=_filtered_exits,
                         spread_pips=_cfg_spread,
                         commission_pips=_cfg_commission,
                         pip_size=_cfg_pip_size,
@@ -2084,17 +2038,6 @@ def run_backtest_threaded(output_text, progress_label, progress_bar, step_label,
                         #      filters compare on the right clock. None → default.
                         # CHANGED: June 2026 — broker_timezone pass-through
                         broker_timezone=_firm_broker_tz if _a48_use_cfg else None,
-                        # WHY: Auto-enable gap_fill_parity when config is loaded.
-                        #      On M5 entry TFs _is_gap_bar is always False (no-op).
-                        #      On H4+ it fills at M1 session-open matching MT5.
-                        # CHANGED: June 2026 — auto-enable SESSIONGAP parity
-                        gap_fill_parity=_a48_use_cfg,
-                        # WHY: M1 intrabar exit is now controlled by its own checkbox
-                        #      (_m1_intrabar_var), independent of the firm-config toggle.
-                        #      ON = M1 sub-candle exit walk (MT5 parity, slower).
-                        #      OFF = bar-level exits (fast path, looser intrabar parity).
-                        # CHANGED: July 2026 — decouple M1 from _a48_use_cfg
-                        exit_intrabar_m1=_m1_intrabar,
                     )
 
                     # Tag each result row with entry TF when running multi-TF
@@ -4436,7 +4379,7 @@ def build_panel(parent):
     safety_frame = tk.Frame(panel, bg="white", pady=6)
     safety_frame.pack(fill="x", padx=20)
 
-    global _use_safety_var, _funded_protect_var, _hwm_lock_var, _win_pass_inline_var
+    global _use_safety_var, _funded_protect_var, _hwm_lock_var
     use_safety_var = tk.BooleanVar(value=True)
     _use_safety_var = use_safety_var
     tk.Checkbutton(
@@ -4484,22 +4427,6 @@ def build_panel(parent):
         fg="#666",
         bg="white",
         justify="left",
-    ).pack(anchor="w")
-
-    # WHY: simulate_challenge runs once per combo in sliding_window mode
-    #      (N windows per rule × 1,940 combos). OFF = skip it, grid shows "—"
-    #      for Win Pass (same as before May 2026). ON = inline pass-rate,
-    #      accurate but adds significant runtime on M5+. Default OFF so the
-    #      5-TF sweep is fast; enable only when you need pass-rate numbers.
-    # CHANGED: July 2026 — Win Pass opt-in (fix #4 — per-combo simulate_challenge)
-    win_pass_inline_var = tk.BooleanVar(value=False)
-    _win_pass_inline_var = win_pass_inline_var
-    tk.Checkbutton(
-        safety_frame,
-        text="Compute Win Pass rate per combo (slower — uncheck for speed)",
-        variable=win_pass_inline_var,
-        font=("Segoe UI", 10),
-        bg="white",
     ).pack(anchor="w")
 
     # ── Phase A.42: Max Trades Per Day control ────────────────────────────────
@@ -4606,59 +4533,6 @@ def build_panel(parent):
         justify="left",
     ).pack(anchor="w")
 
-    # ── Exit strategy filter ──────────────────────────────────────────────────
-    # WHY: Running all 20 exit strategies on every rule takes 18-20x longer
-    #      than needed for parity testing (where you only care about one exit).
-    #      This dropdown filters the exit list by class name. "All" = default.
-    # CHANGED: June 2026 — exit strategy class filter
-    global _exit_filter_var
-
-    _exit_filter_frame = tk.Frame(panel, bg="white", pady=6)
-    _exit_filter_frame.pack(fill="x", padx=20)
-
-    _exit_filter_row = tk.Frame(_exit_filter_frame, bg="white")
-    _exit_filter_row.pack(fill="x")
-
-    tk.Label(
-        _exit_filter_row,
-        text="🎯 Exit Strategy:",
-        font=("Segoe UI", 10, "bold"),
-        bg="white",
-    ).pack(side=tk.LEFT)
-
-    _exit_filter_var = tk.StringVar(value="All")
-    _exit_filter_options = [
-        "All",
-        "ATR Only",
-        "ATR Fixed SL/TP",
-        "ATR BE Trail",
-        "PSAR Exit",
-        "Trailing Stop",
-        "ATR + Trailing",
-        "Time-Based",
-        "Indicator Exit",
-        "Fixed SL/TP",
-        "Hybrid",
-    ]
-    _exit_filter_combo = ttk.Combobox(
-        _exit_filter_row,
-        textvariable=_exit_filter_var,
-        values=_exit_filter_options,
-        state="readonly",
-        width=22,
-    )
-    _exit_filter_combo.pack(side=tk.LEFT, padx=10)
-
-    tk.Label(
-        _exit_filter_frame,
-        text="    Filter which exit strategies to test. 'All' runs all ~20 variants.\n"
-             "    Picking one class (e.g. 'ATR Only') runs only its 2 variants — ~10x faster.",
-        font=("Segoe UI", 8),
-        fg="#666",
-        bg="white",
-        justify="left",
-    ).pack(anchor="w")
-
     # ── Phase A.48: Use Configuration settings ────────────────────────────────
     # WHY (Phase A.48): The Configuration panel has spread, commission,
     #      account size, pip value, etc. But run_comparison_matrix was called
@@ -4666,7 +4540,7 @@ def build_panel(parent):
     #      controls whether to read and pass those values. Default OFF
     #      preserves pre-A.48 behavior (function defaults).
     # CHANGED: April 2026 — Phase A.48
-    global _a48_use_config_var, _m1_intrabar_var
+    global _a48_use_config_var
 
     _a48_frame = tk.Frame(panel, bg="white", pady=6)
     _a48_frame.pack(fill="x", padx=20)
@@ -4735,27 +4609,6 @@ def build_panel(parent):
         text=f"    OFF = use defaults (spread=2.5, commission=0, no account sizing)\n"
              f"    ON  = read from Configuration panel\n"
              f"{_a48_preview}",
-        font=("Segoe UI", 8),
-        fg="#666",
-        bg="white",
-        justify="left",
-    ).pack(anchor="w")
-
-    # WHY: M1 intrabar exit is expensive on high-trade-count TFs (M5). Decoupled from
-    #      the firm-config toggle so you can turn off M1 without losing spread/swaps/etc.
-    #      ON = current behavior (MT5 intrabar parity). OFF = bar-level exits (fast).
-    # CHANGED: July 2026 — dedicated M1 intrabar toggle checkbox
-    _m1_intrabar_var = tk.BooleanVar(value=True)
-    tk.Checkbutton(
-        _a48_frame,
-        text="M1 intrabar exits (accurate MT5 parity — slower on M5/high-trade runs)",
-        variable=_m1_intrabar_var,
-        font=("Segoe UI", 10),
-        bg="white",
-    ).pack(anchor="w")
-    tk.Label(
-        _a48_frame,
-        text="    OFF = resolve exits at bar level (much faster; looser intrabar parity)",
         font=("Segoe UI", 8),
         fg="#666",
         bg="white",
@@ -5065,51 +4918,6 @@ def build_panel(parent):
         state=tk.DISABLED  # disabled until backtest starts
     )
     _stop_button.pack(side=tk.LEFT, padx=(0, 10))
-
-    # WHY: Indicator caches (.cache_*.parquet) persist old indicator values.
-    #      When an indicator algorithm changes (e.g. _mt5_mfi replacing ta library),
-    #      stale caches silently serve old values. This button deletes all caches
-    #      so indicators recompute from scratch on the next backtest run.
-    # CHANGED: June 2026 — Clear Cache button
-    def _clear_indicator_caches():
-        import glob
-        deleted = 0
-        # Search common data directories for cache files
-        _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        _search_dirs = set()
-        _search_dirs.add(os.path.join(_repo, 'data'))
-        # Also add current source path's directory
-        if _current_source_path[0] and _current_source_path[0] != "__ALL_SOURCES__":
-            _search_dirs.add(os.path.dirname(_current_source_path[0]))
-        for d in _search_dirs:
-            if not os.path.isdir(d):
-                continue
-            # Recursive search — finds caches at any depth
-            for f in glob.glob(os.path.join(d, '**', '.cache_*.parquet'), recursive=True):
-                try:
-                    os.remove(f)
-                    deleted += 1
-                except Exception:
-                    pass
-            # Also check the directory itself
-            for f in glob.glob(os.path.join(d, '.cache_*.parquet')):
-                try:
-                    os.remove(f)
-                    deleted += 1
-                except Exception:
-                    pass
-        if _output_text:
-            _output_text.insert(tk.END,
-                f"🗑 Deleted {deleted} indicator cache file(s). "
-                f"Indicators will recompute on next Run Backtest.\n")
-            _output_text.see(tk.END)
-
-    tk.Button(
-        _a26_run_row, text="🗑 Clear Cache",
-        command=_clear_indicator_caches,
-        bg="#6c757d", fg="white", font=("Arial", 11),
-        relief=tk.FLAT, cursor="hand2", padx=15, pady=12,
-    ).pack(side=tk.LEFT, padx=(0, 10))
 
     # WHY (Phase A.40b): Patch the run-button reference into the A.40b
     #      refs dict now that it exists. Used only by the optional

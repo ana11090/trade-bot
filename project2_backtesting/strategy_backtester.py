@@ -40,11 +40,6 @@ log = get_logger(__name__)
 # Timeframes to load, in order: smallest first so merge_asof steps up cleanly
 _TIMEFRAMES = ["M5", "M15", "H1", "H4", "D1"]
 
-# WHY: fast_backtest stores signal debug info here after each run so
-#      run_comparison_matrix can embed it in the rule JSON for diagnostics.
-# CHANGED: June 2026 — signal debug for parity diagnostics
-_last_signal_debug = None
-
 import threading as _bt_threading
 
 # WHY: Allows the UI to request a graceful stop mid-backtest.
@@ -246,8 +241,7 @@ def _build_entry_time_mask(timestamps, entry_filters):
 # CHANGED: April 2026 — tick data loader for exit ambiguity resolution
 
 _TF_MINUTES = {'M1': 1, 'M5': 5, 'M15': 15, 'H1': 60, 'H4': 240, 'D1': 1440}
-_tick_cache    = {}      # {(data_dir, year, month): DataFrame or None}
-_tick_ts_cache = {}      # {(data_dir, year, month): np.ndarray[int64]}  PERF: searchsorted
+_tick_cache = {}         # {(data_dir, year, month): DataFrame or None}
 # NOTE (May 2026): the availability cache was REMOVED. Reading os.listdir is
 #                  a 1 ms operation. The cache caused a real bug: when
 #                  the parity banner rendered before tick files were
@@ -266,18 +260,6 @@ def _check_ticks_available(data_dir):
     """
     if not data_dir:
         return False
-    # WHY: This function is called once per signal-bar evaluation via the
-    #      spread filter — os.listdir on every call is millions of syscalls
-    #      per matrix run. Cache POSITIVE results only: ticks appearing
-    #      mid-run (the original disk-fresh motivation) is still detected
-    #      because negative results keep re-reading the disk; ticks do not
-    #      vanish mid-run, so a cached True stays valid.
-    # CHANGED: July 2026 — cache positive tick availability per data_dir
-    try:
-        if _check_ticks_available._last_result.get(data_dir) is True:
-            return True
-    except AttributeError:
-        pass
     tick_files = []
     err = None
     try:
@@ -372,12 +354,7 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                         tick_path,
                         dtype={'timestamp_ms': 'int64', 'bid': 'float32', 'ask': 'float32'},
                     )
-                    # PERF: sort once at load time so every per-bar lookup binary-searches
-                    #   instead of boolean-scanning the whole month (1357x faster).
-                    # CHANGED: July 2026 — tick searchsorted (fix #5)
-                    tick_df = tick_df.sort_values('timestamp_ms').reset_index(drop=True)
                     _tick_cache[cache_key] = tick_df
-                    _tick_ts_cache[cache_key] = tick_df['timestamp_ms'].to_numpy()
                 except Exception as _te:
                     log.warning(f"[TICKS] Failed to load {tick_path}: {_te}")
                     _tick_cache[cache_key] = None
@@ -386,15 +363,10 @@ def _load_ticks_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
             return None
         candle_start_ms = int(ts.timestamp() * 1000)
         candle_end_ms   = candle_start_ms + candle_tf_minutes * 60 * 1000
-        tv = _tick_ts_cache.get(cache_key)
-        if tv is None:
-            tv = tick_df['timestamp_ms'].to_numpy()
-            _tick_ts_cache[cache_key] = tv
-        lo = np.searchsorted(tv, candle_start_ms, 'left')
-        hi = np.searchsorted(tv, candle_end_ms,   'left')
-        if hi <= lo:
-            return None
-        return tick_df.iloc[lo:hi]
+        mask = (tick_df['timestamp_ms'] >= candle_start_ms) & \
+               (tick_df['timestamp_ms'] <  candle_end_ms)
+        result = tick_df.loc[mask]
+        return result if len(result) > 0 else None
     except Exception as _e:
         log.warning(f"[TICKS] Error loading ticks for {candle_timestamp}: {_e}")
         return None
@@ -436,15 +408,12 @@ def _spread_at_bar_open_from_ticks(data_dir, bar_open_ts, pip_size=0.01,
             return None
         open_ms   = int(ts.timestamp() * 1000)
         cutoff_ms = open_ms + int(tolerance_seconds * 1000)
-        tv = _tick_ts_cache.get(cache_key)
-        if tv is None:
-            tv = tick_df['timestamp_ms'].to_numpy()
-            _tick_ts_cache[cache_key] = tv
-        lo = np.searchsorted(tv, open_ms,   'left')
-        hi = np.searchsorted(tv, cutoff_ms, 'left')
-        if hi <= lo:
+        mask = ((tick_df['timestamp_ms'] >= open_ms)
+                & (tick_df['timestamp_ms'] < cutoff_ms))
+        sl_ = tick_df.loc[mask]
+        if len(sl_) == 0:
             return None
-        first = tick_df.iloc[lo]          # first tick at/after bar open (sorted) — same semantic as before
+        first = sl_.iloc[0]
         spread_price = float(first['ask']) - float(first['bid'])
         if spread_price <= 0:
             return None
@@ -459,8 +428,7 @@ def _spread_at_bar_open_from_ticks(data_dir, bar_open_ts, pip_size=0.01,
 #      and cached for the entire backtest run (much smaller than ticks).
 # CHANGED: April 2026 — M1 sub-candle loader
 
-_m1_cache = {}     # {data_dir: DataFrame or None}
-_m1_ts_cache = {}  # {data_dir: np.ndarray[datetime64]}  PERF: for searchsorted slicing
+_m1_cache = {}  # {data_dir: DataFrame or None}
 # Track which data_dirs we've already logged the resolved path for —
 # prevents log spam (one [M1] line per data_dir, not per candle).
 _m1_logged_dirs = set()
@@ -486,7 +454,6 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
     if data_dir in _m1_failed_dirs and data_dir in _m1_cache:
         # Drop the failed cache so we retry the lookup
         del _m1_cache[data_dir]
-        _m1_ts_cache.pop(data_dir, None)
         _m1_failed_dirs.discard(data_dir)
 
     if data_dir not in _m1_cache:
@@ -571,12 +538,7 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
                     'low': 'float32', 'close': 'float32',
                 })
                 m1_df['timestamp'] = pd.to_datetime(m1_df['timestamp'])
-                # PERF: sort once so per-candle slicing can binary-search instead of
-                #   scanning all ~370k rows on every call (38x faster slice).
-                # CHANGED: June 2026 — searchsorted M1 slice
-                m1_df = m1_df.sort_values('timestamp').reset_index(drop=True)
                 _m1_cache[data_dir] = m1_df
-                _m1_ts_cache[data_dir] = m1_df['timestamp'].values
                 if data_dir not in _m1_logged_dirs:
                     log.info(
                         f"[M1] Loaded {len(m1_df):,} M1 candles from {m1_path}"
@@ -595,22 +557,12 @@ def _load_m1_for_candle(data_dir, candle_timestamp, candle_tf_minutes):
     m1_df = _m1_cache[data_dir]
     if m1_df is None:
         return None
-    # PERF: binary-search slice instead of full-series boolean mask (38x faster).
-    # CHANGED: June 2026 — searchsorted M1 slice
     try:
-        import numpy as np
-        ts         = pd.Timestamp(candle_timestamp)
-        candle_end = ts + pd.Timedelta(minutes=candle_tf_minutes)
-        tvals = _m1_ts_cache.get(data_dir)
-        if tvals is None:
-            # fallback: rebuild from the cached frame (keeps behaviour if ts_cache missed)
-            tvals = m1_df['timestamp'].values
-            _m1_ts_cache[data_dir] = tvals
-        lo = np.searchsorted(tvals, np.datetime64(ts),         'left')
-        hi = np.searchsorted(tvals, np.datetime64(candle_end), 'left')
-        if hi <= lo:
-            return None
-        return m1_df.iloc[lo:hi]
+        ts          = pd.Timestamp(candle_timestamp)
+        candle_end  = ts + pd.Timedelta(minutes=candle_tf_minutes)
+        mask = (m1_df['timestamp'] >= ts) & (m1_df['timestamp'] < candle_end)
+        result = m1_df.loc[mask]
+        return result if len(result) > 0 else None
     except Exception:
         return None
 
@@ -638,20 +590,18 @@ def _find_gap_fill(data_dir, bar_ts, tf_minutes, ntw_start, ntw_end, broker_time
     #      Exact same semantics as the scalar _in_no_trades_window loop above.
     # CHANGED: June 2026 — Hot Spot 2: vectorized M1 scan
     try:
-        # WHY (June 2026 — DST fix): The NTW is defined in fixed GMT hours
-        #      [20,23), but after DST spring-forward, broker 01:05 (the real
-        #      session open) shifts to UTC hour 22, which is INSIDE the NTW.
-        #      Using UTC hours here produces 02:00 broker entries in summer
-        #      instead of 01:05. Fix: filter by broker-local hour instead.
-        #      Broker minute-of-day >= 65 (01:05) is always valid — the session
-        #      opens at 01:05 broker time regardless of DST. M1 bars at 01:00–
-        #      01:04 exist in the data during the US→EU DST gap (Mar 9–27) but
-        #      MT5 doesn't enter until 01:05. The Monday-00:xx filter is subsumed.
-        # CHANGED: June 2026 — DST-correct broker-local filter (tightened to 01:05)
+        _h_sg  = _m1w['timestamp_utc'].dt.hour.to_numpy()
         _ts_sg = _m1w['timestamp']
+        _wd_sg = _ts_sg.dt.weekday.to_numpy()
         _hh_sg = _ts_sg.dt.hour.to_numpy()
-        _mm_sg = _ts_sg.dt.minute.to_numpy()
-        _mask_sg = (_hh_sg * 60 + _mm_sg) >= 65
+        _end_n = 24 if ntw_end == 0 else ntw_end
+        if ntw_start < 0 or ntw_end < 0 or ntw_start == _end_n:
+            _in_ntw_sg = np.zeros(len(_h_sg), dtype=bool)
+        elif ntw_start < _end_n:
+            _in_ntw_sg = (ntw_start <= _h_sg) & (_h_sg < _end_n)
+        else:
+            _in_ntw_sg = (_h_sg >= ntw_start) | (_h_sg < _end_n)
+        _mask_sg = ~_in_ntw_sg & ~((_wd_sg == 0) & (_hh_sg == 0))
         _hits_sg = _m1w.index[_mask_sg]
         if len(_hits_sg):
             _r_sg = _m1w.loc[_hits_sg[0]]
@@ -1682,13 +1632,8 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
                 pass
 
         trades.append({
-            # WHY: pd.Timestamp() converts numpy.datetime64 to string with
-            #      space separator ('2026-01-14 16:00:00') matching the
-            #      iterative path. Raw str() gives ISO T-separator which
-            #      broke batch compare entry_time parsing.
-            # CHANGED: June 2026 — consistent timestamp format (vectorized path)
-            'entry_time':   str(pd.Timestamp(entry_time)),
-            'exit_time':    str(pd.Timestamp(exit_time)),
+            'entry_time':   str(entry_time),
+            'exit_time':    str(exit_time),
             'entry_price':  round(float(entry_price), 5),
             'exit_price':   round(float(exit_price), 5),
             'direction':    direction,
@@ -1724,13 +1669,15 @@ def _vectorized_fixed_sltp_exits(df, signal_indices, signal_rule_ids, rules,
         })
 
         # CHANGED: June 2026 — offset-aware re-entry parity (vectorized path), to match
-        #   the detailed path + the EA: free the exit bar for re-entry. When exit is on
-        #   the entry candle (exit_pos == _eb), free the entry bar too so the next signal
-        #   at that bar can fire. Mirrors the fast_backtest fix.
+        #   the detailed path + the EA: free the exit bar for re-entry but never earlier
+        #   than this trade's own entry bar (_eb). Was df.index[exit_pos] → blocked
+        #   through the exit bar (one bar late).
         _free_pos = exit_pos - 1
+        if _free_pos < _eb:
+            _free_pos = _eb
         if _free_pos < 0:
             _free_pos = 0
-        occupied_until_idx = df.index[_free_pos] if _free_pos >= 0 else -1
+        occupied_until_idx = df.index[_free_pos]
 
     return trades
 
@@ -1865,14 +1812,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                  #      SCOPE: only bars where the outer H4 timestamp is blocked AND an
                  #      M1 bar within it is valid. Non-gap bars are never affected.
                  # CHANGED: June 2026 — SESSIONGAP parity fix
-                 gap_fill_parity=False,
-                 # WHY: exit_intrabar_m1 — when True, refines exit_time from the M5 bar
-                 #      open timestamp to the first M1 bar within that bar where SL/TP
-                 #      is crossed. Matches MT5's tick-level exit time. Requires data_dir
-                 #      so M1 data can be loaded (reuses existing _load_m1_for_candle
-                 #      cache). Default False = byte-identical to prior behavior.
-                 # CHANGED: June 2026 — M1 intrabar exit time parity
-                 exit_intrabar_m1: bool = False):
+                 gap_fill_parity=False):
     """
     Run a single backtest using vectorized entry detection.
 
@@ -1881,19 +1821,6 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
     Returns list of trade dicts.
     """
-    # WHY: The M1 intrabar checkbox OFF means "run bar-level like before any
-    #      tick/M1 machinery existed". Every tick/M1 feature in this function
-    #      (loaders, tick sim, spread-from-ticks, gap-fill M1 session-open,
-    #      M1 exit refinement, tick-availability listdir) is guarded by
-    #      `and data_dir`. Nulling data_dir here is a single-point, provably
-    #      complete kill switch — nothing tick/M1 can run without it.
-    #      NOTE: with the checkbox OFF this also disables the config-driven
-    #      spread filter and SESSIONGAP gap-fill (both need tick/M1 files).
-    #      OFF = fast sweep mode; use ON for MT5-parity runs.
-    # CHANGED: July 2026 — checkbox OFF disables all tick/M1 via data_dir
-    if not exit_intrabar_m1:
-        data_dir = None
-
     # WHY (May 2026): Wire SL slippage distribution to exit strategy so
     #      _get_fill_price can sample realistic broker slips on SL fills.
     # CHANGED: May 2026 — realistic SL slippage from MT5 calibration
@@ -2326,46 +2253,18 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
         # CHANGED: June 2026 — SESSIONGAP parity fix
         _gap_fill_entry = None
         # WHY: Scope guard — only target bars after a WEEKLY/HOLIDAY gap (>1 TF
-        #      duration between consecutive bars). Check BOTH _eb_int vs _eb_int-1
-        #      AND _eb_int-1 vs _eb_int-2 (shift(1) can put the entry one bar after
-        #      the reopen bar). _gap_bar_ts tracks which bar is the actual reopen bar.
-        # CHANGED: June 2026 — SESSIONGAP parity: 2-bar lookback + gap_bar_ts
+        #      duration between consecutive bars). Daily session reopens (exactly
+        #      4h gap) are NOT gap bars and must keep their existing NTW-blocked
+        #      behavior. Without this guard the fix fires on every 00:00 bar.
+        # CHANGED: June 2026 — SESSIONGAP parity fix scope guard
         _is_gap_bar = False
-        _gap_bar_ts = None
         if _eb_int > 0:
             try:
                 _dt_gap = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
                            pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                if _dt_gap.total_seconds() > _run_candle_tf_minutes * 60:
-                    _is_gap_bar = True
-                    _gap_bar_ts = df.iloc[_eb_int]['timestamp']
-                elif _eb_int > 1:
-                    _dt_gap_prev = (pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']) -
-                                    pd.Timestamp(df.iloc[_eb_int - 2]['timestamp']))
-                    if _dt_gap_prev.total_seconds() > _run_candle_tf_minutes * 60:
-                        _is_gap_bar = True
-                        _gap_bar_ts = df.iloc[_eb_int - 1]['timestamp']
+                _is_gap_bar = _dt_gap.total_seconds() > _run_candle_tf_minutes * 60
             except Exception:
                 pass
-
-        # WHY (June 2026 — corrected hour0 guard): Fire gap-fill for hour==0
-        #      bars ONLY when there's actually a session gap (> TF) to the
-        #      previous bar. Normal daily reopens (20:00→00:00 = 4h = TF) are
-        #      NOT gaps and should be skipped — MT5 skips them too.
-        #      _eb_int==0 was wrong because _eb_int is a DataFrame row index
-        #      (includes warmup), so it was NEVER 0 for test-window bars.
-        # CHANGED: June 2026 — gap-duration guard replaces broken _eb_int==0
-        _hour0_session_gap = False
-        try:
-            if pd.Timestamp(next_candle['timestamp']).hour == 0:
-                if _eb_int == 0:
-                    _hour0_session_gap = True  # literal first DataFrame row
-                elif _eb_int > 0:
-                    _h0_dt = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
-                              pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                    _hour0_session_gap = _h0_dt.total_seconds() >= _run_candle_tf_minutes * 60
-        except Exception:
-            pass
 
         # WHY (Phase A.42): Enforce max trades per calendar day.
         # CHANGED: April 2026 — Phase A.42
@@ -2443,11 +2342,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                     #      hour 23, outside the window). Find that M1 bar instead.
                     #      Only applies to weekly/holiday gaps (_is_gap_bar=True),
                     #      NOT daily session reopens (exactly 4h gap).
-                    # WHY (June 2026 — corrected hour0 guard): Fire gap-fill
-                    #      for _is_gap_bar OR hour==0 bars with an actual
-                    #      session gap (> TF). See _hour0_session_gap above.
-                    # CHANGED: June 2026 — gap-duration guard replaces _eb_int==0
-                    if gap_fill_parity and data_dir and (_is_gap_bar or _hour0_session_gap):
+                    if gap_fill_parity and data_dir and _is_gap_bar:
                         _gap_fill_entry = _find_gap_fill(
                             data_dir, next_candle['timestamp'],
                             _run_candle_tf_minutes,
@@ -2472,10 +2367,7 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 #      but MT5 fills at the first post-open M1 bar (e.g. 01:05).
                 #      _is_gap_bar guard ensures only weekly/holiday gaps are
                 #      retimed, not normal Monday daily reopens with a 4h gap.
-                # WHY (June 2026 — corrected hour0 guard): Also handle
-                #      hour==0 Mondays with session gap. See above.
-                # CHANGED: June 2026 — gap-duration guard replaces _eb_int==0
-                if gap_fill_parity and data_dir and (_is_gap_bar or _hour0_session_gap) and _gap_fill_entry is None:
+                if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None:
                     _gap_fill_entry = _find_gap_fill(
                         data_dir, next_candle['timestamp'],
                         _run_candle_tf_minutes,
@@ -2514,26 +2406,6 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 trade_dir = "BUY"
         else:
             trade_dir = direction
-
-        # WHY (gap_fill_parity): Non-blocked gap bars — entry passed all skip
-        #      checks but is near a gap (shift(1) can put entry one bar after the
-        #      reopen). Find the M1 session-open bar for the gap bar.
-        # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
-        # WHY (June 2026 — duplicate fix): Only override time+price when the
-        #      current entry bar IS the gap bar itself. When _is_gap_bar was set
-        #      via the 2-bar lookback (_gap_bar_ts points to the PREVIOUS bar),
-        #      the current bar (e.g. 04:00) is a normal bar with its own signal —
-        #      retiming it to 01:05 creates a duplicate entry with the gap bar.
-        # CHANGED: June 2026 — guard non-blocked gap-fill against lookback false positives
-        _is_direct_gap = (_gap_bar_ts is not None
-                          and pd.Timestamp(_gap_bar_ts) == pd.Timestamp(next_candle['timestamp']))
-        if gap_fill_parity and data_dir and _is_gap_bar and _is_direct_gap and _gap_fill_entry is None:
-            _gap_fill_entry = _find_gap_fill(
-                data_dir, _gap_bar_ts,
-                _run_candle_tf_minutes,
-                -1, -1,
-                broker_timezone,
-            )
 
         # WHY (gap_fill_parity): on reopen bars use the M1 session-open price
         #      instead of the H4 bar open (which is 00:00, before market opens).
@@ -2617,19 +2489,13 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
 
         # WHY: Provide tick and M1 loaders to exit strategies.
         #      Fallback chain: ticks → M1 → conservative.
-        # WHY: Gated on exit_intrabar_m1 — the checkbox promises OFF = bar-level
-        #      exits (pre-intrabar fast path), but the loaders drove per-candle
-        #      tick/M1 loads in exit_strategies (trailing ambiguity, PSAR M1,
-        #      entry-candle SL/TP) and the fast_backtest tick sim regardless of
-        #      the flag. With OFF the loaders are None; every consumer already
-        #      no-ops on None, so OFF is now truly bar-level. ON is unchanged.
-        # CHANGED: July 2026 — exit_intrabar_m1 gates tick/M1 loader injection
-        if exit_intrabar_m1 and data_dir and _check_ticks_available(data_dir):
+        # CHANGED: April 2026 — tick data + M1 fallback in position info
+        if data_dir and _check_ticks_available(data_dir):
             _d, _cm = data_dir, _run_candle_tf_minutes
             pos['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
         else:
             pos['_tick_loader'] = None
-        if exit_intrabar_m1 and data_dir:
+        if data_dir:
             _d, _cm = data_dir, _run_candle_tf_minutes
             pos['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
         else:
@@ -2810,31 +2676,6 @@ def run_backtest(candles_df, indicators_df, rules, exit_strategy,
                 exit_price  = result["exit_price"]
                 exit_time   = candle_dict["timestamp"]
                 exit_reason = result["reason"]
-                # WHY: exit_intrabar_m1 — refine exit_time from M5 bar open to first
-                #      M1 crossing within that bar, matching MT5's tick-level exit time.
-                #      Only applies to SL/TP exits; HARD_CLOSE_HOUR is handled above.
-                # CHANGED: June 2026 — M1 intrabar exit time parity
-                if exit_intrabar_m1 and data_dir:
-                    try:
-                        _m1b = _load_m1_for_candle(
-                            data_dir, candle_dict["timestamp"], _run_candle_tf_minutes)
-                        if _m1b is not None and not _m1b.empty:
-                            _ep = result["exit_price"]
-                            _m1_cross = None
-                            if 'SL' in exit_reason:
-                                _sl_hits = _m1b[_m1b['low'].astype(float) <= _ep] if direction == 'BUY' \
-                                           else _m1b[_m1b['high'].astype(float) >= _ep]
-                                if not _sl_hits.empty:
-                                    _m1_cross = _sl_hits.iloc[0]['timestamp']
-                            elif 'TP' in exit_reason:
-                                _tp_hits = _m1b[_m1b['high'].astype(float) >= _ep] if direction == 'BUY' \
-                                           else _m1b[_m1b['low'].astype(float) <= _ep]
-                                if not _tp_hits.empty:
-                                    _m1_cross = _tp_hits.iloc[0]['timestamp']
-                            if _m1_cross is not None:
-                                exit_time = _m1_cross
-                    except Exception:
-                        pass
                 # CHANGED: June 2026 — offset-aware re-entry parity. MT5 re-enters on
                 #   the SAME bar the prior trade closed; Python blocked through the exit
                 #   bar (one bar late). Free the exit bar by setting occupied_until to
@@ -3200,18 +3041,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                   no_trades_window_end_hour=-1,
                   # WHY: IANA zone for broker → UTC conversion. None = EET/EEST default.
                   # CHANGED: June 2026 — broker_timezone for UTC gating
-                  broker_timezone=None,
-                  # WHY: gap_fill_parity — on weekly/holiday reopen bars blocked by
-                  #      NTW or Monday-00:00, find the first valid M1 bar and fill
-                  #      there (matching MT5's session-open first-tick fill at 01:05).
-                  #      False = skip blocked bars (existing behavior).
-                  # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
-                  gap_fill_parity=False,
-                  # WHY: exit_intrabar_m1 — refine exit_time from bar close to the
-                  #      first M1 bar crossing SL/TP within that candle, matching
-                  #      MT5's tick-level exit. Fixes LONG_HOLD_BLOCK re-entry desync.
-                  # CHANGED: June 2026 — M1 intrabar exit time in fast_backtest
-                  exit_intrabar_m1=False):
+                  broker_timezone=None):
     """
     Fast backtest — NO DataFrame copies, NO SMART recomputation.
 
@@ -3228,14 +3058,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     CHANGED: April 2026 — 10-50x speedup for deep optimizer
     """
-    # WHY: See run_backtest — checkbox OFF = complete tick/M1 kill switch.
-    #      All tick/M1 features in fast_backtest are guarded by `and data_dir`
-    #      (loaders, tick sim, _sltp_defer_to_ticks, spread filter incl. the
-    #      vectorized forward, gap-fill M1, M1 exit refinement, listdir).
-    # CHANGED: July 2026 — checkbox OFF disables all tick/M1 via data_dir
-    if not exit_intrabar_m1:
-        data_dir = None
-
     trades = []
     # WHY: Add a UTC column up front so all GMT-labeled / P1-UTC gates
     #      (no-trades window, force-close, DD reset, entry-time filter,
@@ -3292,80 +3114,51 @@ def fast_backtest(df, ind, rules, exit_strategy,
     signal_rule_ids = pd.Series(-1,    index=ind.index, dtype=int)
 
     # ── DIAGNOSTIC: indicator value dump for parity debugging ──
-    # CHANGED: June 2026 — dynamic diagnostic from rule conditions + MT5 override
+    # REMOVE after parity is confirmed.
     _diag_rule_name = ''
     if rules:
         _diag_rule_name = rules[0].get('rule_id', rules[0].get('_rule_combo', ''))
-    _diag_features = set()
-    _diag_conditions = []
-    for _r in (rules or []):
-        for _cond in _r.get('conditions', []):
-            feat = _cond.get('feature', '')
-            _diag_features.add(feat)
-            _diag_conditions.append((feat, _cond.get('operator', '>'), _cond.get('value', 0)))
-    _diag_bars = []
-    try:
-        _diag_ov_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'outputs', 'mt5_signal_override.json')
-        if os.path.isfile(_diag_ov_path):
-            with open(_diag_ov_path) as _diag_ovf:
-                _diag_ov = json.load(_diag_ovf)
-            _diag_bars = [b.replace('.', '-', 2) if '.' in b[:4] else b
-                          for b in _diag_ov.get('signal_bars', [])]
-    except Exception:
-        pass
+    _diag_bars = [
+        '2026-03-05 11:00', '2026-03-06 18:00', '2026-03-09 00:00',
+        '2026-03-11 19:00', '2026-03-12 10:00',
+    ]
     _diag_cols = [c for c in ind.columns if any(
-        c.endswith(f) or f in c for f in _diag_features
+        x in c for x in ['keltner_width', 'mt5_stoch_14', 'sma_50_distance', 'adx_28',
+                          'plus_di', 'minus_di']
     )]
-    if _diag_cols and _diag_bars:
+    if _diag_cols:
         try:
-            _diag_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
+            import os as _diag_os
+            _diag_path = _diag_os.path.join(
+                _diag_os.path.dirname(_diag_os.path.abspath(__file__)),
                 'outputs', 'diag_indicator_values.txt')
-            with open(_diag_path, 'w') as _df:
-                _df.write("INDICATOR DIAGNOSTIC — Python vs MT5 signal bars\n")
-                _df.write("=" * 70 + "\n")
-                _df.write("Rule: %s\n" % _diag_rule_name)
-                _df.write("entry_tf: %s  direction: %s\n" % (entry_tf, direction))
-                _df.write("Conditions: %s\n" % _diag_conditions)
-                _df.write("MT5 signal bars: %d\n" % len(_diag_bars))
-                # NOTE: this diagnostic runs BEFORE the rule mask is applied, so the
-                #       per-condition check below (computed from ind) is the
-                #       authoritative "would Python signal here?" — the real
-                #       signal_mask is all-False at this point and would mislead.
-                _df.write("\n")
+            with open(_diag_path, 'a') as _df:  # APPEND mode
+                _df.write(f"\n{'='*60}\n")
+                _df.write(f"Rule: {_diag_rule_name}\n")
+                _df.write(f"entry_tf: {entry_tf}  direction: {direction}\n")
+                _df.write(f"exit: {exit_strategy.__class__.__name__ if exit_strategy else '?'}\n")
+                _df.write(f"ind columns ({len(ind.columns)}): {sorted(_diag_cols)}\n")
+                _df.write(f"df rows: {len(df)}  ind rows: {len(ind)}\n\n")
+                _found_any = False
                 for _db in _diag_bars:
                     _db_ts = pd.Timestamp(_db)
                     _mask = df['timestamp'] == _db_ts
                     _idx = df.index[_mask]
                     if len(_idx) > 0:
                         _i = _idx[0]
-                        _cond_results = []
-                        for _feat, _op, _thresh in _diag_conditions:
-                            _val = ind.at[_i, _feat] if _feat in ind.columns and _i in ind.index else float('nan')
-                            if pd.notna(_val):
-                                _passes = ((_val > _thresh) if _op == '>' else
-                                           (_val >= _thresh) if _op == '>=' else
-                                           (_val < _thresh) if _op == '<' else
-                                           (_val <= _thresh) if _op == '<=' else True)
-                            else:
-                                _passes = False
-                            _cond_results.append((_feat, _op, _thresh, _val, _passes))
-                        _all_pass = bool(_cond_results) and all(_cr[4] for _cr in _cond_results)
-                        _marker = "PY would signal" if _all_pass else "PY would miss"
-                        _df.write("Bar %s  [%s]\n" % (_db, _marker))
-                        for _feat, _op, _thresh, _val, _passes in _cond_results:
-                            if pd.notna(_val):
-                                _pf = "PASS" if _passes else "FAIL"
-                                _df.write("  %25s = %10.4f  %s %s  -> %s\n" % (_feat, _val, _op, _thresh, _pf))
-                            else:
-                                _df.write("  %25s = NaN\n" % _feat)
+                        _df.write(f"Bar {_db}:\n")
+                        for _dc in sorted(_diag_cols):
+                            _val = ind.at[_i, _dc] if _i in ind.index else 'N/A'
+                            _df.write(f"  {_dc:>30s} = {_val}\n")
                         _df.write("\n")
+                        _found_any = True
                     else:
-                        _df.write("Bar %s: NOT FOUND in df\n\n" % _db)
+                        _df.write(f"Bar {_db}: NOT FOUND in df\n")
+                if not _found_any:
+                    _df.write("NO BARS MATCHED — check timestamps\n")
+                    _df.write(f"First 5 df timestamps: {list(df['timestamp'].head())}\n")
         except Exception as _de:
-            print("[DIAG] ERROR: %s" % _de)
+            print(f"[DIAG] ERROR: {_de}")
     # ── END DIAGNOSTIC ──
 
     # WHY (Phase A.24): same numpy-based mask building as run_backtest
@@ -3536,74 +3329,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
 
     signal_indices = df.index[signal_mask].tolist()
 
-    # WHY: MT5's internal H4 bars may differ slightly from the CSV Python uses,
-    #      causing indicator values (ADX, MFI) to diverge by 1-3 points at specific
-    #      bars. When mt5_signal_override.json exists, add its ALL-PASS bars to
-    #      Python's signal mask.
-    # SAFEGUARD: this makes Python ADOPT MT5's signals (not independent) and the
-    #      override file is global / not rule-keyed, so it is OPT-IN ONLY — active
-    #      only when env MT5_SIGNAL_OVERRIDE is set — and ignored if older than 6h.
-    #      Normal and other-rule backtests are therefore never silently affected.
-    # CHANGED: June 2026 — condlog signal override (opt-in + staleness-guarded)
-    if os.environ.get('MT5_SIGNAL_OVERRIDE'):
-        try:
-            _ov_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                'outputs', 'mt5_signal_override.json')
-            if os.path.isfile(_ov_path):
-                with open(_ov_path, encoding='utf-8') as _ovf:
-                    _ov_data = json.load(_ovf)
-                _ov_fresh = True
-                try:
-                    if (pd.Timestamp.now() - pd.Timestamp(_ov_data.get('generated'))) > pd.Timedelta(hours=6):
-                        _ov_fresh = False
-                        log.info("[MT5-OVERRIDE] override file is stale (>6h) — ignored")
-                except Exception:
-                    pass
-                if _ov_fresh:
-                    _ov_bars = set()
-                    for _ob in _ov_data.get('signal_bars', []):
-                        _ob_ts = pd.Timestamp(_ob.replace('.', '-', 2) if '.' in _ob[:4] else _ob)
-                        _ov_bars.add(_ob_ts)
-                    _added = 0
-                    for idx in df.index:
-                        ts = df.loc[idx, 'timestamp']
-                        if ts in _ov_bars and not signal_mask.iloc[idx]:
-                            signal_mask.iloc[idx] = True
-                            _added += 1
-                    if _added > 0:
-                        signal_indices = df.index[signal_mask].tolist()
-                        log.info("[MT5-OVERRIDE] Added %d signal bar(s) from condlog "
-                                 "(total signals: %d)", _added, len(signal_indices))
-        except Exception as _ov_ex:
-            log.debug("[MT5-OVERRIDE] skipped: %s", _ov_ex)
-
-    # WHY: Expose signal bars for parity diagnostics. run_comparison_matrix reads
-    #      this after fast_backtest returns to embed signal debug info in the rule
-    #      JSON, so the PARITY_BUNDLE can compare Python signals vs MT5 entries.
-    # CHANGED: June 2026 — signal debug for parity diagnostics
-    global _last_signal_debug
-    try:
-        _sig_ts = [str(df.loc[si, 'timestamp']) for si in signal_indices]
-        _sig_ind = {}
-        for si in signal_indices:
-            _row_vals = {}
-            for col in ind.columns:
-                try:
-                    v = ind.loc[si, col]
-                    if not pd.isna(v):
-                        _row_vals[col] = round(float(v), 6)
-                except Exception:
-                    pass
-            _sig_ind[str(df.loc[si, 'timestamp'])] = _row_vals
-        _last_signal_debug = {
-            'signal_count': len(signal_indices),
-            'signal_bars': _sig_ts,
-            'indicator_values': _sig_ind,
-        }
-    except Exception:
-        _last_signal_debug = None
-
     if not signal_indices:
         return trades
 
@@ -3614,13 +3339,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
     # CHANGED: April 2026 — vectorized FixedSLTP in fast_backtest
     # CHANGED: April 2026 — exclude ATRFixedSLTP from vectorized path
     from project2_backtesting.exit_strategies import FixedSLTP, ATRFixedSLTP
-    # WHY: the vectorized FixedSLTP path has NONE of the parity infrastructure
-    #      (gap fill, session-gap M1, sub-bar closure, NTW, Monday blackout) that
-    #      lives in the main loop below. In parity mode, skip it so FixedSLTP gets
-    #      the same exit logic as every other strategy. Non-parity keeps the fast path.
-    # CHANGED: June 2026 — route FixedSLTP through full loop when gap_fill_parity
-    if (isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP)
-            and not gap_fill_parity):
+    if isinstance(exit_strategy, FixedSLTP) and not isinstance(exit_strategy, ATRFixedSLTP):
         return _vectorized_fixed_sltp_exits(
             df, signal_indices, signal_rule_ids, rules,
             exit_strategy, direction, pip_size,
@@ -3669,38 +3388,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      DD reset) compare against UTC. Derive the UTC scalar once.
         entry_time_utc = next_candle['timestamp_utc']
 
-        # WHY (gap_fill_parity): Detect weekly/holiday gap bars. A gap is > 1 TF
-        #      duration between consecutive bars. Check BOTH _eb_int vs _eb_int-1
-        #      AND _eb_int-1 vs _eb_int-2, because with shift(1) the entry bar can
-        #      be one bar AFTER the reopen bar (e.g. entry at 04:00, gap between
-        #      Dec 31 20:00 and Jan 2 00:00 is at _eb_int-1 vs _eb_int-2).
-        # CHANGED: June 2026 — SESSIONGAP parity: 2-bar lookback + gap_bar_ts
-        _gap_fill_entry = None
-        _is_gap_bar = False
-        _gap_bar_ts = None
-        if gap_fill_parity and _eb_int > 0:
-            try:
-                _tf_min_fbt = 60
-                try:
-                    _ts_s_fbt = pd.to_datetime(df['timestamp'].iloc[:11])
-                    _gaps_fbt = _ts_s_fbt.diff().dropna().dt.total_seconds() / 60
-                    _tf_min_fbt = int(_gaps_fbt.median())
-                except Exception:
-                    pass
-                _dt_gap_fbt = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
-                               pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                if _dt_gap_fbt.total_seconds() > _tf_min_fbt * 60:
-                    _is_gap_bar = True
-                    _gap_bar_ts = df.iloc[_eb_int]['timestamp']
-                elif _eb_int > 1:
-                    _dt_gap_prev = (pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']) -
-                                    pd.Timestamp(df.iloc[_eb_int - 2]['timestamp']))
-                    if _dt_gap_prev.total_seconds() > _tf_min_fbt * 60:
-                        _is_gap_bar = True
-                        _gap_bar_ts = df.iloc[_eb_int - 1]['timestamp']
-            except Exception:
-                pass
-
         # WHY: Block entries during market closure window — see run_backtest.
         # CHANGED: May 2026 — market closure window (parity with MT5)
         if hard_close_hour >= 0:
@@ -3722,33 +3409,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 _ntw_hour = pd.Timestamp(entry_time_utc).hour
                 if _in_no_trades_window(_ntw_hour, no_trades_window_start_hour,
                                                     no_trades_window_end_hour):
-                    # WHY (gap_fill_parity): blocked H4 bar — try M1 session-open.
-                    #   Also fire for hour==0 entries: 00:00 EET = 22:00 UTC is inside
-                    #   the NTW (20-23) so the bar is blocked, but it is NOT _is_gap_bar
-                    #   (20:00→00:00 = 4h = normal spacing). _find_gap_fill filters M1 by
-                    #   the NTW window, so it returns the 01:05 EET (23:05 UTC) reopen.
-                    # WHY (June 2026 — corrected hour0 guard): See run_backtest.
-                    # CHANGED: June 2026 — gap-duration guard replaces _eb_int==0
-                    _hour0_sg_fbt = False
-                    try:
-                        if pd.Timestamp(entry_time).hour == 0:
-                            if _eb_int == 0:
-                                _hour0_sg_fbt = True
-                            elif _eb_int > 0:
-                                _h0_dt_f = (pd.Timestamp(df.iloc[_eb_int]['timestamp']) -
-                                            pd.Timestamp(df.iloc[_eb_int - 1]['timestamp']))
-                                _hour0_sg_fbt = _h0_dt_f.total_seconds() >= (_tf_min_fbt if '_tf_min_fbt' in dir() else 240) * 60
-                    except Exception:
-                        pass
-                    if gap_fill_parity and data_dir and (_is_gap_bar or _hour0_sg_fbt):
-                        _gap_fill_entry = _find_gap_fill(
-                            data_dir, next_candle['timestamp'],
-                            _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
-                            no_trades_window_start_hour, no_trades_window_end_hour,
-                            broker_timezone,
-                        )
-                    if _gap_fill_entry is None:
-                        continue
+                    continue
             except Exception:
                 pass
 
@@ -3761,17 +3422,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
         try:
             _mb_ts = pd.Timestamp(entry_time)
             if _mb_ts.weekday() == 0 and _mb_ts.hour == 0:
-                # WHY (gap_fill_parity): Monday 00:00 blocked — try M1 session-open.
-                # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
-                if gap_fill_parity and data_dir and _is_gap_bar and _gap_fill_entry is None:
-                    _gap_fill_entry = _find_gap_fill(
-                        data_dir, next_candle['timestamp'],
-                        _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
-                        no_trades_window_start_hour, no_trades_window_end_hour,
-                        broker_timezone,
-                    )
-                if _gap_fill_entry is None:
-                    continue
+                continue
         except Exception:
             pass
 
@@ -3781,14 +3432,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
         # CHANGED: May 2026 — tick-anchored filter (replaces session estimator)
         if max_spread_pips > 0 and data_dir:
             try:
-                # WHY: df has a RangeIndex (run_comparison_matrix pre-trims with
-                #      reset_index(drop=True)), so df.index[_eb_int] returned the
-                #      INTEGER position; pd.Timestamp(<int>) = 1970-01-01 → tick
-                #      month never found → spread filter was a silent no-op in
-                #      fast_backtest since May. Use the entry bar's real timestamp
-                #      (entry_time = next_candle['timestamp'], already in scope).
-                # CHANGED: July 2026 — spread filter uses entry bar timestamp
-                _entry_ts_for_spread = entry_time
+                _entry_ts_for_spread = df.index[_eb_int]
             except Exception:
                 _entry_ts_for_spread = None
             if _entry_ts_for_spread is not None:
@@ -3831,63 +3475,7 @@ def fast_backtest(df, ind, rules, exit_strategy,
             if _dd_total_halted or _dd_daily_halted:
                 continue
 
-        # WHY (gap_fill_parity): Non-blocked gap bars — the entry bar passed all
-        #      skip checks (NTW, Monday, spread, DD) but is near a gap. The NTW/Monday
-        #      blocks only fire when the entry bar itself is blocked. But with shift(1),
-        #      the entry can be one bar AFTER the blocked reopen bar (e.g. 04:00 on
-        #      Jan 2 Thursday — not blocked, but gap is at 00:00). Find the M1 session-
-        #      open bar and use its time/price instead, matching MT5's first-tick fill.
-        # CHANGED: June 2026 — SESSIONGAP parity: non-blocked gap-adjacent entries
-        # WHY (June 2026 — duplicate fix): Only override when the current entry bar
-        #      IS the gap bar. See run_backtest comment for full explanation.
-        # CHANGED: June 2026 — guard non-blocked gap-fill against lookback false positives
-        _is_direct_gap_fbt = (_gap_bar_ts is not None
-                              and pd.Timestamp(_gap_bar_ts) == pd.Timestamp(next_candle['timestamp']))
-        if gap_fill_parity and data_dir and _is_gap_bar and _is_direct_gap_fbt and _gap_fill_entry is None:
-            _gap_fill_entry = _find_gap_fill(
-                data_dir, _gap_bar_ts,
-                _tf_min_fbt if '_tf_min_fbt' in dir() else 240,
-                -1, -1,
-                broker_timezone,
-            )
-
-        # WHY (gap_fill_parity): On reopen bars, use M1 session-open price/time.
-        # CHANGED: June 2026 — SESSIONGAP parity in fast_backtest
-        # WHY (June 2026 v3): Two gap patterns exist:
-        #   A) No M1 bar at 00:00 → first M1 bar is at 01:05 (delay from H4 open)
-        #   B) Synthetic M1 bar at 00:00 → gap between 00:00 and 01:05 (intra-M1 gap)
-        #   Check BOTH: first-bar delay from H4 open AND gaps between consecutive M1 bars.
-        # CHANGED: June 2026 — sub-bar market closure detection v3 (combined)
-        if (_gap_fill_entry is None and gap_fill_parity and data_dir
-                and pd.Timestamp(entry_time).hour == 0):
-            try:
-                _m1_check = _load_m1_for_candle(data_dir, entry_time,
-                    _tf_min_fbt if '_tf_min_fbt' in dir() else 240)
-                if _m1_check is not None and len(_m1_check) > 0:
-                    _m1_ts_arr = pd.to_datetime(_m1_check['timestamp'])
-                    _entry_ts_ck = pd.Timestamp(entry_time)
-                    # Pattern A: first M1 bar is delayed from H4 bar open
-                    _first_m1_ts = _m1_ts_arr.iloc[0]
-                    _delay_min = (_first_m1_ts - _entry_ts_ck).total_seconds() / 60
-                    if _delay_min > 5:
-                        _gap_fill_entry = (_first_m1_ts,
-                                          float(_m1_check.iloc[0]['open']))
-                    # Pattern B: gap between consecutive M1 bars (synthetic bar at 00:00)
-                    elif len(_m1_check) > 1:
-                        _m1_gaps = _m1_ts_arr.diff()
-                        _big_gap = _m1_gaps[_m1_gaps > pd.Timedelta(minutes=30)]
-                        if len(_big_gap) > 0:
-                            _reopen_idx = _big_gap.index[0]
-                            _reopen_row = _m1_check.loc[_reopen_idx]
-                            _gap_fill_entry = (pd.Timestamp(_reopen_row['timestamp']),
-                                              float(_reopen_row['open']))
-            except Exception:
-                pass
-        if _gap_fill_entry is not None:
-            entry_price = _gap_fill_entry[1]
-            entry_time = _gap_fill_entry[0]
-        else:
-            entry_price = float(next_candle['open'])
+        entry_price = float(next_candle['open'])
 
         # WHY: Apply only slippage to entry_price. Spread paid as cost line.
         #      Bid-anchored entry matches MT5 EA's bid - sl convention.
@@ -3968,18 +3556,13 @@ def fast_backtest(df, ind, rules, exit_strategy,
                 pass
 
         # WHY: Provide tick and M1 loaders. Fallback: ticks → M1 → conservative.
-        # WHY: Gated on exit_intrabar_m1 — with the checkbox OFF these loaders
-        #      still powered the tick sim (~L4105, f579a49), _sltp_defer_to_ticks,
-        #      and per-candle tick/M1 iteration in exit_strategies, so OFF was as
-        #      slow as ON. None loaders no-op every consumer; tick sim and defer
-        #      flag both key off loader existence and fall back to bar-level.
-        # CHANGED: July 2026 — exit_intrabar_m1 gates tick/M1 loader injection
-        if exit_intrabar_m1 and data_dir and _check_ticks_available(data_dir):
+        # CHANGED: April 2026 — tick + M1 fallback in position info (fast_backtest)
+        if data_dir and _check_ticks_available(data_dir):
             _d, _cm = data_dir, candle_minutes
             pos_info['_tick_loader'] = lambda ts, _d=_d, _cm=_cm: _load_ticks_for_candle(_d, ts, _cm)
         else:
             pos_info['_tick_loader'] = None
-        if exit_intrabar_m1 and data_dir:
+        if data_dir:
             _d, _cm = data_dir, candle_minutes
             pos_info['_m1_loader'] = lambda ts, _d=_d, _cm=_cm: _load_m1_for_candle(_d, ts, _cm)
         else:
@@ -4003,20 +3586,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
         _lows_np   = future_candles['low'].to_numpy(dtype=float, copy=False)
         _n_future  = len(_closes_np)
 
-        # PERF (fix #3): Pre-build per-candle dicts (OHLC + indicators) once
-        #   before the loop. Each .to_dict() + ind.loc merge inside the loop costs
-        #   ~30µs per candle; at 100K+ iterations that dominates non-trailing exits.
-        #   ind.iloc[_eb_int:_ind_end] aligns with _fc_dicts[0.._n_future-1] by
-        #   position — same rows the original code reached via ind.index[abs_pos].
-        # CHANGED: July 2026 — fix #3 indicator merge pre-build
-        _fc_dicts = future_candles.to_dict('records')
-        _ind_n = len(ind)
-        if _eb_int < _ind_n:
-            _ind_end = min(_eb_int + _n_future, _ind_n)
-            _ind_records = ind.iloc[_eb_int:_ind_end].to_dict('records')
-            for _fci, _irec in enumerate(_ind_records):
-                _fc_dicts[_fci].update(_irec)
-
         result = None
         exit_idx = -1
 
@@ -4032,37 +3601,11 @@ def fast_backtest(df, ind, rules, exit_strategy,
             _check_entry_candle_sltp,
             TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit,
         )
-        try:
-            from project2_backtesting.exit_strategies import HybridExit as _HybridExit
-        except ImportError:
-            _HybridExit = None
-        # WHY: Trailing/breakeven exits need intra-bar price simulation to match
-        #      MT5's tick-level management. M1 bars within each H4 candle let us
-        #      simulate the breakeven→trail→SL sequence that fires in seconds on MT5
-        #      but takes hours at bar-level in Python.
-        # CHANGED: June 2026 — M1 intra-bar exit simulation for trailing exits
-        _m1_exit_types = (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
-        if _HybridExit:
-            _m1_exit_types = _m1_exit_types + (_HybridExit,)
-        _use_m1_exit_sim = (exit_intrabar_m1 and data_dir and
-                            isinstance(exit_strategy, _m1_exit_types))
         _entry_scan_eligible = not isinstance(
             exit_strategy,
             (TrailingStop, ATRBreakevenTrail, ATRTrailing, PSARExit)
         )
-        # WHY: FixedSLTP (not ATRFixedSLTP) DEFERS this M1-resolution entry-candle
-        #      SL/TP scan to the tick sim below when tick data is available. The
-        #      tick sim resolves SL/TP at the precise TICK time (full-candle window)
-        #      instead of M1-bar time, so occupied_until / exit_time match MT5.
-        #      Falls back to this scan when no tick loader. TrailingStop is already
-        #      excluded above, so FixedSLTP is the only conflicting type.
-        # CHANGED: June 2026 — defer FixedSLTP entry-candle SL/TP to the tick sim
-        _sltp_defer_to_ticks = (
-            isinstance(exit_strategy, FixedSLTP)
-            and not isinstance(exit_strategy, ATRFixedSLTP)
-            and pos_info.get('_tick_loader') is not None
-        )
-        if _entry_scan_eligible and not _sltp_defer_to_ticks and _n_future > 0:
+        if _entry_scan_eligible and _n_future > 0:
             try:
                 _ec = future_candles.iloc[0]
                 _ec_dict = _ec.to_dict()
@@ -4142,213 +3685,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
             except Exception:
                 pass
 
-        # WHY: Entry-candle M1 simulation for trailing/breakeven exits.
-        #      The entry-candle scan above EXCLUDES trailing exits (look-ahead bias
-        #      at bar OHLC level). But MT5 fires breakeven→trail→SL per TICK, often
-        #      exiting within 20 seconds of entry (e.g. 16:00:00 → 16:00:20).
-        #      With M1 data we can safely check the entry candle: filter to M1 bars
-        #      AFTER entry_time (no look-ahead), run on_new_candle on each.
-        # WHY: tick sim runs INDEPENDENTLY of _use_m1_exit_sim — that flag is
-        #      False for FixedSLTP (not in _m1_exit_types), but FixedSLTP still
-        #      needs the tick sim to catch sub-minute SL/TP exits. Gated
-        #      internally by _is_tick_eligible (TrailingStop / FixedSLTP).
-        # CHANGED: June 2026 — tick sim moved out of the _use_m1_exit_sim block
-        if result is None and _n_future > 0:
-            try:
-                # ── TICK SIM: first 120 seconds after entry ──
-                # WHY: MT5 exits SL/TP within seconds-to-minutes at tick level.
-                #      The M1 sim (> filter) starts at minute 1+ and misses
-                #      sub-minute exits. This inline sim processes ticks for the
-                #      first 120 seconds, checking SL/TP (and trailing for
-                #      TrailingStop) directly without calling on_new_candle.
-                #      Eligible: TrailingStop, FixedSLTP (not ATRFixedSLTP).
-                _tick_loader_ec = pos_info.get('_tick_loader')
-                # WHY: TrailingStop uses the trail branch; FixedSLTP has sl_pips/
-                #      tp_pips but no trailing (activation_pips=0 → trail branch
-                #      skipped, leaving a plain SL/TP check per tick). Both are
-                #      tick-eligible. ATRFixedSLTP excluded (ATR-computed levels,
-                #      untested); Hybrid/ATRBreakevenTrail/ATRTrailing/PSARExit
-                #      excluded (complex logic) — those use the M1 fallback.
-                _is_tick_eligible = (
-                    isinstance(exit_strategy, TrailingStop)
-                    or (isinstance(exit_strategy, FixedSLTP)
-                        and not isinstance(exit_strategy, ATRFixedSLTP))
-                )
-                if (_tick_loader_ec is not None and result is None
-                        and _is_tick_eligible):
-                    try:
-                        _ec_ticks = _tick_loader_ec(
-                            future_candles.iloc[0]['timestamp'])
-                        if _ec_ticks is not None and not _ec_ticks.empty:
-                            _et_ms = int(pd.Timestamp(entry_time
-                                         ).timestamp() * 1000)
-                            # TrailingStop: 120s (exits within seconds)
-                            # FixedSLTP: full candle (SL can hit at any minute)
-                            _tick_window_ms = (120_000
-                                if isinstance(exit_strategy, TrailingStop)
-                                else candle_minutes * 60_000)
-                            _et_end = _et_ms + _tick_window_ms
-                            _first_min = _ec_ticks[
-                                (_ec_ticks['timestamp_ms'] > _et_ms) &
-                                (_ec_ticks['timestamp_ms'] <= _et_end)]
-                            if not _first_min.empty:
-                                _sl_pips_v = getattr(
-                                    exit_strategy, 'sl_pips', None) or 0
-                                _tp_pips_v = getattr(
-                                    exit_strategy, 'tp_pips', None)
-                                _act_pips  = getattr(
-                                    exit_strategy, 'activation_pips', None) or 0
-                                _trail_d   = getattr(
-                                    exit_strategy, 'trail_distance_pips',
-                                    None) or 0
-                                if direction == "BUY":
-                                    _fsl = (entry_price - _sl_pips_v * pip_size
-                                            ) if _sl_pips_v > 0 else 0
-                                    _ftp = (entry_price + _tp_pips_v * pip_size
-                                            ) if _tp_pips_v else None
-                                else:
-                                    _fsl = (entry_price + _sl_pips_v * pip_size
-                                            ) if _sl_pips_v > 0 else float('inf')
-                                    _ftp = (entry_price - _tp_pips_v * pip_size
-                                            ) if _tp_pips_v else None
-                                _rh = entry_price  # running high (BUY)
-                                _rl = entry_price  # running low (SELL)
-                                for _, _tk in _first_min.iterrows():
-                                    _bid = float(_tk['bid'])
-                                    _tk_ts = pd.Timestamp(
-                                        int(_tk['timestamp_ms']), unit='ms')
-                                    if direction == "BUY":
-                                        if _bid > _rh:
-                                            _rh = _bid
-                                        _prof = (_rh - entry_price) / pip_size
-                                        if (_prof >= _act_pips and _act_pips > 0
-                                                and _trail_d > 0):
-                                            _tsl = _rh - _trail_d * pip_size
-                                            _eff = max(_fsl, _tsl)
-                                        else:
-                                            _eff = _fsl
-                                        if _bid <= _eff and _eff > 0:
-                                            _is_tr = _eff > _fsl
-                                            result = {
-                                                'exit_price': _eff,
-                                                'reason': ('TRAILING_STOP_TICK'
-                                                    if _is_tr
-                                                    else 'STOP_LOSS_TICK'),
-                                                'exit_time': _tk_ts,
-                                            }
-                                            exit_idx = 0
-                                            pos_info['candles_held'] = 0
-                                            break
-                                        if (_ftp is not None
-                                                and _bid >= _ftp):
-                                            result = {
-                                                'exit_price': _ftp,
-                                                'reason': 'TAKE_PROFIT_TICK',
-                                                'exit_time': _tk_ts,
-                                            }
-                                            exit_idx = 0
-                                            pos_info['candles_held'] = 0
-                                            break
-                                    else:  # SELL
-                                        if _bid < _rl:
-                                            _rl = _bid
-                                        _prof = (entry_price - _rl) / pip_size
-                                        if (_prof >= _act_pips and _act_pips > 0
-                                                and _trail_d > 0):
-                                            _tsl = _rl + _trail_d * pip_size
-                                            _eff = min(_fsl, _tsl)
-                                        else:
-                                            _eff = _fsl
-                                        if _bid >= _eff and _eff < float('inf'):
-                                            _is_tr = _eff < _fsl
-                                            result = {
-                                                'exit_price': _eff,
-                                                'reason': ('TRAILING_STOP_TICK'
-                                                    if _is_tr
-                                                    else 'STOP_LOSS_TICK'),
-                                                'exit_time': _tk_ts,
-                                            }
-                                            exit_idx = 0
-                                            pos_info['candles_held'] = 0
-                                            break
-                                        if (_ftp is not None
-                                                and _bid <= _ftp):
-                                            result = {
-                                                'exit_price': _ftp,
-                                                'reason': 'TAKE_PROFIT_TICK',
-                                                'exit_time': _tk_ts,
-                                            }
-                                            exit_idx = 0
-                                            pos_info['candles_held'] = 0
-                                            break
-                                # Update pos_info from tick sim
-                                if direction == "BUY" and _rh > pos_info['highest_since_entry']:
-                                    pos_info['highest_since_entry'] = _rh
-                                if direction == "SELL" and _rl < pos_info['lowest_since_entry']:
-                                    pos_info['lowest_since_entry'] = _rl
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        # CHANGED: June 2026 — entry-candle M1 sim for trailing exits
-        if _use_m1_exit_sim and result is None and _n_future > 0:
-            try:
-                # ── M1 FALLBACK: minute 1+ of entry candle ──
-                _ec_m1 = _load_m1_for_candle(
-                    data_dir, future_candles.iloc[0]['timestamp'],
-                    candle_minutes if candle_minutes else 240)
-                if result is None and _ec_m1 is not None and not _ec_m1.empty:
-                    _entry_ts_pd = pd.Timestamp(entry_time)
-                    # Save H4-seeded extremes, reset to entry price so the
-                    # M1 sim can detect new highs/lows bar-by-bar. This lets
-                    # TrailingStop._new_high_this_candle fire → tick resolution.
-                    _saved_highest = pos_info['highest_since_entry']
-                    _saved_lowest  = pos_info['lowest_since_entry']
-                    pos_info['highest_since_entry'] = entry_price
-                    pos_info['lowest_since_entry']  = entry_price
-                    # WHY: exclude the entry-minute bar (>). The first 60s is now
-                    #      handled by the inline tick sim above; the M1 sim covers
-                    #      minute 1 onward. Reset+reorder above still let trailing
-                    #      detect new highs on the post-entry M1 bars.
-                    _ec_m1_after = _ec_m1[_ec_m1['timestamp'] > _entry_ts_pd]
-                    pos_info['candles_held'] = 0
-                    for _eci in range(len(_ec_m1_after)):
-                        _ecr = _ec_m1_after.iloc[_eci]
-                        _ech = float(_ecr['high'])
-                        _ecl = float(_ecr['low'])
-                        _ecc = float(_ecr['close'])
-                        _ec_m1_dict = {
-                            'open': float(_ecr['open']), 'high': _ech,
-                            'low': _ecl, 'close': _ecc,
-                            'timestamp': _ecr['timestamp'],
-                        }
-                        try:
-                            step_result = exit_strategy.on_new_candle(_ec_m1_dict, pos_info)
-                        except Exception:
-                            step_result = None
-                        # Update pos_info AFTER on_new_candle so TrailingStop
-                        # can detect new highs and trigger tick resolution
-                        if _ech > pos_info['highest_since_entry']:
-                            pos_info['highest_since_entry'] = _ech
-                        if _ecl < pos_info['lowest_since_entry']:
-                            pos_info['lowest_since_entry'] = _ecl
-                        pos_info['current_pnl_pips'] = (
-                            (_ecc - entry_price) / pip_size if direction == "BUY"
-                            else (entry_price - _ecc) / pip_size)
-                        if step_result:
-                            result = step_result
-                            result['exit_time'] = _ecr['timestamp']
-                            exit_idx = 0
-                            break
-                    # Restore H4-seeded extremes if the M1 sim found no exit,
-                    # so the main loop (ci=1+) continues with H4-level seeding.
-                    if result is None:
-                        pos_info['highest_since_entry'] = _saved_highest
-                        pos_info['lowest_since_entry']  = _saved_lowest
-            except Exception:
-                pass
-
         for ci in range(1, _n_future):
             # WHY (May 2026 — entry-candle gap fix): If the entry-candle scan
             #      above already set result, skip the post-entry loop —
@@ -4366,67 +3702,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
             # CHANGED: April 2026 — same-bar exit look-ahead bias fix
             pos_info['candles_held'] = ci
             pos_info['minutes_held'] = ci * candle_minutes
-
-            # WHY: M1 intra-bar exit simulation for trailing/breakeven exits.
-            #      MT5 fires breakeven/trail management per TICK — a tight BE trail
-            #      can enter and exit within 20 seconds. Python's on_new_candle fires
-            #      once per H4 bar (4 hours). This loads M1 bars within the H4 candle
-            #      and runs on_new_candle on each, simulating the price sequence that
-            #      triggers breakeven → trail → SL within seconds.
-            # CHANGED: June 2026 — M1 intra-bar exit simulation
-            if _use_m1_exit_sim:
-                try:
-                    _m1_sim = _load_m1_for_candle(
-                        data_dir, _fc_dicts[ci]['timestamp'],
-                        candle_minutes if candle_minutes else 240)
-                except Exception:
-                    _m1_sim = None
-                if _m1_sim is not None and not _m1_sim.empty:
-                    _m1_exited = False
-                    # PERF: pull columns to numpy arrays once instead of .iloc[i] per row
-                    #   (53x faster inner loop). Behaviour is identical: same dict passed to
-                    #   on_new_candle, same pos_info mutation order, same break logic.
-                    #   Timestamps stay as pandas Timestamps (not datetime64) so exit_time
-                    #   type is unchanged downstream.
-                    # CHANGED: June 2026 — numpy M1 exit loop
-                    _o_np  = _m1_sim['open'].to_numpy()
-                    _h_np  = _m1_sim['high'].to_numpy()
-                    _l_np  = _m1_sim['low'].to_numpy()
-                    _c_np  = _m1_sim['close'].to_numpy()
-                    _ts_list = list(_m1_sim['timestamp'])
-                    for _m1i in range(len(_m1_sim)):
-                        _m1h = float(_h_np[_m1i])
-                        _m1l = float(_l_np[_m1i])
-                        _m1c = float(_c_np[_m1i])
-                        _m1_ts = _ts_list[_m1i]
-                        _m1_dict = {
-                            'open': float(_o_np[_m1i]), 'high': _m1h,
-                            'low': _m1l, 'close': _m1c,
-                            'timestamp': _m1_ts,
-                        }
-                        try:
-                            step_result = exit_strategy.on_new_candle(_m1_dict, pos_info)
-                        except Exception:
-                            step_result = None
-                        # Update pos_info AFTER on_new_candle so TrailingStop
-                        # can detect new highs and trigger tick resolution
-                        if _m1h > pos_info['highest_since_entry']:
-                            pos_info['highest_since_entry'] = _m1h
-                        if _m1l < pos_info['lowest_since_entry']:
-                            pos_info['lowest_since_entry'] = _m1l
-                        pos_info['current_pnl_pips'] = (
-                            (_m1c - entry_price) / pip_size if direction == "BUY"
-                            else (entry_price - _m1c) / pip_size)
-                        if step_result:
-                            result = step_result
-                            result['exit_time'] = _m1_ts
-                            exit_idx = ci
-                            _m1_exited = True
-                            break
-                    if _m1_exited:
-                        break
-                    continue  # M1 covered this bar — skip H4-level on_new_candle
-
             close = _closes_np[ci]
             high  = _highs_np[ci]
             low   = _lows_np[ci]
@@ -4439,15 +3714,30 @@ def fast_backtest(df, ind, rules, exit_strategy,
             if low < pos_info['lowest_since_entry']:
                 pos_info['lowest_since_entry'] = low
 
-            # WHY (Phase A.10 + Code Audit Fix Bug 1b + fix #3):
-            #      exit strategies access candle by key name (candle['close'],
-            #      candle['H1_atr_14'], etc.). OHLC + indicator columns are
-            #      pre-merged into _fc_dicts before the loop — one
-            #      .to_dict('records') + one ind.iloc slice — so each iteration
-            #      is a single O(1) dict lookup with no pandas overhead.
-            # CHANGED: April 2026 — Code Audit Fix (indicator merge)
-            # CHANGED: July 2026 — fix #3 pre-built dicts (replaces per-candle .iloc)
-            candle = _fc_dicts[ci]
+            # WHY (Phase A.10): exit strategies access candle fields by
+            #      name (candle['close'], candle['high'], etc.) so we
+            #      still need a Series-shaped object for the callback.
+            #      This is the only retained .iloc in the hot loop.
+            # WHY (Code Audit Fix — Bug 1b): Old code passed only price
+            #      data from future_candles. Exit strategies that read
+            #      indicator columns (ATRBased reads H1_atr_14,
+            #      IndicatorExit reads H1_rsi_14) got None and silently
+            #      degraded. Merge indicator row from `ind` into the
+            #      candle dict, matching run_backtest's behavior.
+            #      Performance note: .to_dict() + .update() adds ~20µs
+            #      per candle. The vectorized FixedSLTP path (majority
+            #      of combos) is unaffected.
+            # CHANGED: April 2026 — Code Audit Fix
+            candle = future_candles.iloc[ci]
+            _future_abs_idx = _eb_int + ci
+            if _future_abs_idx < len(ind):
+                try:
+                    _ind_idx = ind.index[_future_abs_idx]
+                    _candle_dict = candle.to_dict()
+                    _candle_dict.update(ind.loc[_ind_idx].to_dict())
+                    candle = _candle_dict
+                except Exception:
+                    pass
 
             # WHY: Hard close overrides SL/TP — force-exit at the specified GMT hour.
             #      Checked before the exit strategy so it always takes priority.
@@ -4527,38 +3817,6 @@ def fast_backtest(df, ind, rules, exit_strategy,
         #      post-entry-candle exits.
         # CHANGED: May 2026 — entry-candle exit_time fidelity
         exit_time   = result.get('exit_time', exit_candle['timestamp'])
-
-        # WHY: exit_intrabar_m1 — refine exit_time from bar timestamp to the
-        #      first M1 bar crossing SL/TP within that candle. MT5 exits at the
-        #      exact tick; Python exits at bar close → desyncs re-entry window.
-        #      Only for SL/TP exits; HARD_CLOSE/END_OF_DATA handled elsewhere.
-        # CHANGED: June 2026 — M1 intrabar exit time in fast_backtest
-        if exit_intrabar_m1 and data_dir and exit_idx > 0:
-            try:
-                _m1b_fbt = _load_m1_for_candle(
-                    data_dir, exit_candle['timestamp'],
-                    candle_minutes if candle_minutes else 240)
-                if _m1b_fbt is not None and not _m1b_fbt.empty:
-                    _ep_fbt = result['exit_price']
-                    _m1_cross_fbt = None
-                    if 'SL' in exit_reason or 'STOP' in exit_reason:
-                        if direction == 'BUY':
-                            _sl_hits = _m1b_fbt[_m1b_fbt['low'].astype(float) <= _ep_fbt]
-                        else:
-                            _sl_hits = _m1b_fbt[_m1b_fbt['high'].astype(float) >= _ep_fbt]
-                        if not _sl_hits.empty:
-                            _m1_cross_fbt = _sl_hits.iloc[0]['timestamp']
-                    elif 'TP' in exit_reason or 'PROFIT' in exit_reason:
-                        if direction == 'BUY':
-                            _tp_hits = _m1b_fbt[_m1b_fbt['high'].astype(float) >= _ep_fbt]
-                        else:
-                            _tp_hits = _m1b_fbt[_m1b_fbt['low'].astype(float) <= _ep_fbt]
-                        if not _tp_hits.empty:
-                            _m1_cross_fbt = _tp_hits.iloc[0]['timestamp']
-                    if _m1_cross_fbt is not None:
-                        exit_time = _m1_cross_fbt
-            except Exception:
-                pass
 
         if direction == "BUY":
             pips = (exit_price - entry_price) / pip_size
@@ -4781,21 +4039,14 @@ def fast_backtest(df, ind, rules, exit_strategy,
                     _dd_total_halted = True
 
         # Mark occupied candles and update cooldown tracker
-        # WHY: MT5 re-enters on the SAME bar the prior trade closed. Python
-        #      must free the exit bar by setting occupied_until to one bar BEFORE
-        #      the exit — matches run_backtest's offset-aware re-entry parity and
-        #      EA g_lastExitEntryBarTime logic. Without this, fast_backtest blocks
-        #      the exit bar's signal, producing one-bar-late re-entries.
-        # CHANGED: June 2026 — always free exit bar for re-entry (match run_backtest)
+        # CHANGED: June 2026 — for entry-candle exits (exit_idx=0, trade exits on the
+        #   fill bar itself), set occupied_until to one bar BEFORE the exit so the
+        #   exit bar's close signal is free — matching EA g_lastExitEntryBarTime logic
+        #   and run_backtest entry-candle path. Without this, fast_backtest also
+        #   blocked the exit bar's signal, producing one-bar-late re-entries.
         _exit_int = min(_eb_int + exit_idx, len(df) - 1)
-        # WHY: entry-candle exits (exit_idx=0) must FREE the entry bar so the next
-        #      signal there isn't blocked — MT5 re-enters on the bar after a same-bar
-        #      SL hit. Drop the max(_eb_int, ...) floor; -1 sentinel = nothing occupied
-        #      (df.index[-1] would wrongly occupy the LAST bar). For exit_idx>0 this is
-        #      identical to before. NOTE: run_backtest still keeps the floor.
-        # CHANGED: June 2026 — free entry bar on entry-candle exit (fast_backtest only)
-        _occ_int  = _exit_int - 1
-        occupied_until_idx = df.index[_occ_int] if _occ_int >= 0 else -1
+        _occ_int  = max(0, _exit_int - 1) if exit_idx == 0 else _exit_int
+        occupied_until_idx = df.index[_occ_int]
         _last_exit_pos_fbt = _exit_int
 
     if _skipped_count > 0:
@@ -5060,32 +4311,6 @@ def compute_stats(trades):
     return stats
 
 
-def _bt_profile_dump(pr):
-    """Write cProfile stats for the profiled run_comparison_matrix call.
-    Diagnostic only (opt-in via BT_PROFILE=1). No-op when pr is None."""
-    if pr is None:
-        return
-    try:
-        pr.disable()
-    except Exception:
-        pass
-    import os, sys, pstats
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "outputs", "bt_profile.txt")
-    try:
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            f.write("=== cumulative (top 60) ===\n")
-            pstats.Stats(pr, stream=f).sort_stats("cumulative").print_stats(60)
-            f.write("\n=== tottime (top 60) ===\n")
-            pstats.Stats(pr, stream=f).sort_stats("tottime").print_stats(60)
-            f.write("\n=== callers of hottest funcs ===\n")
-            pstats.Stats(pr, stream=f).sort_stats("tottime").print_callers(25)
-        print(f"[BT_PROFILE] wrote {out}", file=sys.stderr)
-    except Exception as e:
-        print(f"[BT_PROFILE] dump failed: {e}", file=sys.stderr)
-
-
 def run_comparison_matrix(candles_path, timeframe="H1",
                           report_path=None, rule_indices=None,
                           exit_strategies=None, direction="BUY",
@@ -5191,35 +4416,13 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                           no_trades_window_end_hour=-1,
                           # WHY: IANA zone for broker → UTC. Forwarded to fast_backtest.
                           # CHANGED: June 2026 — broker_timezone for UTC gating
-                          broker_timezone=None,
-                          # WHY: gap_fill_parity — forwarded to fast_backtest.
-                          # CHANGED: June 2026 — SESSIONGAP parity plumbed to matrix
-                          gap_fill_parity=False,
-                          # WHY: exit_intrabar_m1 — forwarded to fast_backtest.
-                          # CHANGED: June 2026 — M1 intrabar exit plumbed to matrix
-                          exit_intrabar_m1=False):
+                          broker_timezone=None):
     """
     Run the full comparison matrix: rule combos x exit strategies.
 
     progress_callback: optional callable(current, total, combo_name) for UI updates.
     Returns dict with "matrix", "rules_tested", "exits_tested", "elapsed".
     """
-    # ── PROFILING (opt-in, diagnostic only) ──────────────────────────────
-    # BT_PROFILE=1 profiles the FIRST call's body in place (one TF pass) and
-    # dumps pstats at return. Unset -> identical behavior, zero overhead.
-    # WHY: 1,940-combo runs take hours; this finds the real hot lines without
-    #      touching any backtest logic. Self-disables after the first profiled
-    #      call so a multi-TF run profiles only TF #1.
-    import os as _os_prof
-    _BT_PROFILE_ON = (_os_prof.environ.get("BT_PROFILE") == "1"
-                      and not getattr(run_comparison_matrix, "_bt_profiled", False))
-    _bt_pr = None
-    if _BT_PROFILE_ON:
-        import cProfile as _cP
-        run_comparison_matrix._bt_profiled = True   # one-shot: TF #1 only
-        _bt_pr = _cP.Profile()
-        _bt_pr.enable()
-    # ── END PROFILING SETUP ──────────────────────────────────────────────
     _stop_requested.clear()  # Reset from any previous run
     log.info("=" * 70)
     log.info("STRATEGY BACKTESTER — Vectorized Comparison Matrix")
@@ -5480,8 +4683,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      is linear and the user gets honest per-direction win
     #      rates instead of a meaningless 50/50 mush.
     # CHANGED: April 2026 — Phase A.30
-    # NOTE: direction logic mirrored in shared/scenario_expand.py:rule_directions
-    #       (EA Batch 'Run Scenario' mode). Keep both in sync.
     def _a30_rule_directions(rule_obj):
         """Return list of directions to test for one rule.
 
@@ -5532,7 +4733,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 _rule_label = r.get('rule_id', '')
             if not _rule_label:
                 # Build from conditions like BUY_H1_5c
-                # NOTE: label formula mirrored in shared/scenario_expand.py:_combo_label
                 _rl_dir = r.get('direction', r.get('action', 'BUY'))
                 _rl_tf = r.get('entry_timeframe', r.get('entry_tf', 'XX'))
                 _rl_nc = len(r.get('conditions', []))
@@ -5815,12 +5015,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     # WHY: Forward lot-sizing policy flag for EA/Python parity.
                     # CHANGED: June 2026 — lot-sizing parity
                     floor_to_min_lot=floor_to_min_lot,
-                    # WHY: Forward gap_fill_parity for SESSIONGAP entries.
-                    # CHANGED: June 2026 — SESSIONGAP parity plumbed to matrix
-                    gap_fill_parity=gap_fill_parity,
-                    # WHY: Forward exit_intrabar_m1 for M1 exit time parity.
-                    # CHANGED: June 2026 — M1 intrabar exit plumbed to matrix
-                    exit_intrabar_m1=exit_intrabar_m1,
                 )
                 stats = compute_stats(trades)
 
@@ -5861,10 +5055,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                     "entry_bar_offset": _ebo,
                     "signals_before_regime_filter": getattr(fast_backtest, '_last_sig_before', 0),
                     "signals_after_regime_filter":  getattr(fast_backtest, '_last_sig_after', 0),
-                    # WHY: Signal debug for parity diagnostics. PARITY_BUNDLE reads
-                    #      this to compare Python signal bars vs MT5 entry bars.
-                    # CHANGED: June 2026 — signal debug in rule JSON
-                    "signal_debug": _last_signal_debug,
                 }
                 matrix.append(result)
 
@@ -6314,7 +5504,6 @@ def run_comparison_matrix(candles_path, timeframe="H1",
     #      level, breaches computed, and trade_count set. Trades are
     #      already stripped (line 2517-2519).
     # CHANGED: April 2026 — return summary instead of matrix
-    _bt_profile_dump(_bt_pr)   # opt-in profiler dump (no-op unless BT_PROFILE=1)
     return {
         "matrix":       summary,
         "rules_tested": [c["name"] for c in rule_combos],
