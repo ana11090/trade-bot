@@ -632,6 +632,71 @@ def _compare(mt5, py, bar_minutes=5):
     )
 
 
+def _eval_streaks_for(py_trades, meta):
+    """Run the sliding-window eval on stored PY trades; return
+    (pass_rate_pct, min_consec_pass, max_consec_pass, max_consec_fails)
+    or (None, None, None, None) when not computable.
+
+    WHY: surface pass-streak quality directly in comparison_summary.csv so
+         rule selection doesn't require opening the eval report.
+    CHANGED: July 2026 — eval columns in comparison_summary
+    """
+    try:
+        import pandas as _pd
+        from shared.prop_firm_simulator import simulate_challenge
+        from shared.sim_detail import resolve_firm_challenge
+        if not py_trades:
+            return None, None, None, None
+        _rd = {}
+        _f = (meta or {}).get('file')
+        if _f:
+            _p = os.path.join(_py_rules_dir(), _f)
+            if os.path.isfile(_p):
+                with open(_p, encoding='utf-8') as _fh:
+                    _rd = json.load(_fh)
+        _r0 = ((_rd.get('rules') or [{}])[0] if _rd.get('rules') else _rd) or {}
+        _acct = int(float(_r0.get('account_size')
+                          or (_rd.get('run_settings') or {}).get('starting_capital')
+                          or 10000))
+        _firm, _ch = resolve_firm_challenge(_r0, _acct)
+        _df = _pd.DataFrame(py_trades)
+        sim = simulate_challenge(
+            trades_df=_df, firm_id=_firm or 'leveraged',
+            challenge_id=_ch or 'leveraged_standard',
+            account_size=_acct, mode='sliding_window',
+            simulate_funded=False,
+            risk_per_trade_pct=float(_r0.get('risk_pct') or 1.0),
+            default_sl_pips=float((_r0.get('exit_params') or {}).get('sl_pips')
+                                  or 150.0),
+            pip_value_per_lot=float(_r0.get('pip_value_per_lot') or 1.0),
+            symbol='XAUUSD')
+        if sim is None:
+            return None, None, None, None
+        ind = getattr(sim, 'individual_results', []) or []
+        _ps, _cp, _mf, _cf = [], 0, 0, 0
+        for r in ind:
+            _oc = str(r.eval_outcome or '')
+            if _oc == 'PASS':
+                _cp += 1; _cf = 0
+            elif _oc in ('INSUFFICIENT_TRADES',) or _oc.startswith('INCOMPLETE'):
+                continue
+            else:
+                if _cp > 0:
+                    _ps.append(_cp)
+                _cp = 0
+                if _oc in ('FAIL_DD', 'FAIL_DAILY_DD'):
+                    _cf += 1; _mf = max(_mf, _cf)
+                else:
+                    _cf = 0
+        if _cp > 0:
+            _ps.append(_cp)
+        _rate = round(100 * sim.eval_pass_rate, 1) if (
+            sim.eval_pass_count + sim.eval_fail_count) else 0
+        return (_rate, (min(_ps) if _ps else 0), (max(_ps) if _ps else 0), _mf)
+    except Exception:
+        return None, None, None, None
+
+
 def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
     """Compare every MT5 .xlsx report in reports_dir to its Python trades.
 
@@ -731,6 +796,13 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
         m['py_pips_total'] = round(_py_npips, 1)
         m['py_profit_total'] = round(_py_nprof, 2)
         m['py_win_rate'] = round(100.0 * _py_wins / len(py_trades), 1) if py_trades else 0
+        # WHY: eval quality visible per row without opening the eval report.
+        # CHANGED: July 2026 — eval columns in comparison_summary
+        _er, _emin, _emax, _ef = _eval_streaks_for(py_trades, meta)
+        m['py_pass_rate']        = _er   if _er   is not None else ''
+        m['py_min_consec_pass']  = _emin if _emin is not None else ''
+        m['py_max_consec_pass']  = _emax if _emax is not None else ''
+        m['py_max_consec_fails'] = _ef   if _ef   is not None else ''
         # In-range P&L: only PY trades with entry_time <= last MT5 entry
         _cutoff = max(mt5) if mt5 else None
         if _cutoff:
@@ -819,6 +891,8 @@ def compare_folder(reports_dir, python_dir, manifest_path=None, bar_minutes=5):
             'mt5', 'py', 'py_in_range', 'matched_trades', 'exact', 'parity_pct',
             'mt5_only', 'py_only',
             'py_pips_matched', 'py_pips_inrange', 'py_pips_total', 'py_win_rate',
+            'py_pass_rate', 'py_min_consec_pass', 'py_max_consec_pass',
+            'py_max_consec_fails',
             'one_bar_early', 'one_bar_late', 'py_after_end', 'note']
     with open(out_csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')

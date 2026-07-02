@@ -5851,11 +5851,37 @@ def run_comparison_matrix(candles_path, timeframe="H1",
                 # CHANGED: April 2026 — short unique ID per rule×exit combo
                 _exit_tag = (exit_strat.name
                     .replace(' ', '_').replace('/', '').replace('-', '_')
-                    .replace('+', '_').replace('(', '').replace(')', ''))[:12]
-                _exit_hash = hashlib.md5(
-                    (exit_strat.name + str(exit_strat.params)).encode()
-                ).hexdigest()[:4]
-                _rule_combo_id = f'#{combo_idx}_' + combo["name"].split(' ')[0] + '_' + _exit_tag + '_' + _exit_hash
+                    .replace('+', '_').replace('(', '').replace(')', ''))[:11]
+                # WHY: the 4-hex params hash (e.g. 2f57 vs 6671) is opaque —
+                #      two Trailing Stops with different trail values were
+                #      indistinguishable by name. Encode the actual numeric
+                #      params instead: sl_pips=150, activation_pips=50,
+                #      trail_distance_pips=100 -> sl150_a50_td100. The hash
+                #      remains only as fallback when there are no params.
+                # CHANGED: July 2026 — param signature replaces exit hash
+                _sig_parts = []
+                try:
+                    for _pk in sorted((exit_strat.params or {}).keys()):
+                        _pv = exit_strat.params[_pk]
+                        if _pv in (None, False, ''):
+                            continue
+                        _kb = _pk.replace('_pips', '').replace('_pct', '')
+                        _ab = (''.join(w[0] for w in _kb.split('_'))
+                               if '_' in _kb else _kb[:2])
+                        try:
+                            _pv = int(_pv) if float(_pv) == int(float(_pv)) else _pv
+                        except Exception:
+                            pass
+                        _sig_parts.append('%s%s' % (_ab, _pv))
+                except Exception:
+                    pass
+                if _sig_parts:
+                    _exit_sig = '_'.join(_sig_parts)[:24]
+                else:
+                    _exit_sig = hashlib.md5(
+                        (exit_strat.name + str(exit_strat.params)).encode()
+                    ).hexdigest()[:4]
+                _rule_combo_id = f'#{combo_idx}_' + combo["name"].split(' ')[0] + '_' + _exit_tag + '_' + _exit_sig
                 # WHY: Append suffix when running both offsets so rows are distinguishable.
                 # CHANGED: May 2026 — offset tag in combo label
                 if len(entry_bar_offsets) > 1 and _ebo == 1:
