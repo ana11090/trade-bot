@@ -916,6 +916,94 @@ def _step_compile():
         return False
 
 
+def _resolve_test_window():
+    """Return (from_date, to_date) in MT5 format 'YYYY.MM.DD'.
+
+    from = Python run start date (rule JSON run_settings, then
+           backtest_config.json, then loud default).
+    to   = LAST date in the data source's candle CSV — MT5 tests the
+           maximum window the data allows.
+    CHANGED: July 2026 — max window: py start -> data end
+    """
+    import glob as _g, json as _j
+    def _fmt(_d):
+        return str(_d)[:10].replace("-", ".")
+
+    # ── from_date: the Python run's start ────────────────────────────
+    _from = None
+    try:
+        from project3_live_trading.batch_compare_reports import _py_rules_dir
+        _files = sorted(_g.glob(os.path.join(_py_rules_dir(), "rule_*.json")),
+                        key=os.path.getmtime, reverse=True)
+        for _f in _files[:5]:
+            try:
+                with open(_f, encoding="utf-8") as _fh:
+                    _rs = (_j.load(_fh).get("run_settings") or {})
+                if _rs.get("start_date"):
+                    _from = _fmt(_rs["start_date"])
+                    _append("Tester start from %s: %s"
+                            % (os.path.basename(_f), _rs["start_date"]))
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    if not _from:
+        try:
+            _cfgp = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))),
+                "project2_backtesting", "backtest_config.json")
+            with open(_cfgp, encoding="utf-8") as _fh:
+                _sd = (_j.load(_fh).get("backtest_start") or "")
+            if _sd:
+                _from = _fmt(_sd)
+                _append("Tester start from backtest_config.json: %s" % _sd)
+        except Exception:
+            pass
+    if not _from:
+        _from = "2026.01.01"
+        _append("WARNING: no Python start date found — tester start "
+                "defaults to 2026.01.01. Set dates in Run Backtest and "
+                "re-save rules to fix.")
+
+    # ── to_date: LAST date in the data source candle CSV (max window) ─
+    _to = None
+    try:
+        import pandas as _pd
+        from shared.data_sources import resolve_data_dir
+        _src = resolve_data_dir() or ""
+        _cands = (_g.glob(os.path.join(_src, "*_M5.csv")) +
+                  _g.glob(os.path.join(_src, "*_m5.csv"))) if _src else []
+        if not _cands and _src:
+            _cands = _g.glob(os.path.join(_src, "*.csv"))
+        # skip tick files — their dates are per-month, not the candle range
+        _cands = [c for c in _cands if "_ticks" not in os.path.basename(c).lower()]
+        if _cands:
+            _df = _pd.read_csv(_cands[0], usecols=lambda c: True, nrows=None)
+            _tc = None
+            for _c in _df.columns:
+                if str(_c).strip().lower() in ("time", "date", "datetime",
+                                               "timestamp"):
+                    _tc = _c
+                    break
+            if _tc is None:
+                _tc = _df.columns[0]
+            _parsed = _pd.to_datetime(_df[_tc], errors="coerce").dropna()
+            if len(_parsed):
+                _to = _parsed.max().strftime("%Y.%m.%d")
+                _append("Tester end = last data date: %s (%s)"
+                        % (_to, os.path.basename(_cands[0])))
+    except Exception as _e:
+        _append("Data end-date detection failed (%r)" % _e)
+    if not _to:
+        import datetime as _dt
+        _to = _dt.date.today().strftime("%Y.%m.%d")
+        _append("WARNING: could not read data end date — tester end "
+                "defaults to today (%s). MT5 stops at the data it has." % _to)
+
+    return _from, _to
+
+
 def _step_build_run_files():
     """Synchronous: returns True on success, False on error."""
     try:
@@ -939,7 +1027,9 @@ def _step_build_run_files():
         if not term:
             _append("Build failed: terminal64.exe not found. Run '2. Build Run Files' manually once to set path.")
             return False
-        emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir, terminal_exe=term)
+        _tst_from, _tst_to = _resolve_test_window()
+        emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
+                         terminal_exe=term, from_date=_tst_from, to_date=_tst_to)
         _last_bat_path = os.path.join(batch_dir, "run_all_tests.bat")
         _last_reports_dir = reports_dir
         _append("Run files written.")
@@ -1326,10 +1416,21 @@ def _write_debug_dump():
     _d("files found: %s" % ([os.path.basename(p) for p in report_files] or "NONE"))
 
     # ADDED 2026-06-15 — aggregate list for the consolidated batch_debug.json
+    # WHY: window was hardcoded; derive from manifest test_from/test_to so it
+    #      tracks whatever _resolve_test_window() computed when INIs were built.
+    # CHANGED: July 2026 — manifest-based dump window
+    _mw_from = min(
+        (str(r.get("test_from", "")).replace(".", "-")
+         for r in man.values() if r.get("test_from")),
+        default="2026-01-01")
+    _mw_to = max(
+        (str(r.get("test_to", "")).replace(".", "-")
+         for r in man.values() if r.get("test_to")),
+        default=datetime.datetime.now().strftime("%Y-%m-%d"))
     _consolidated = {
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "reports_dir": reports,
-        "window": {"from": "2026-01-01", "to": "2026-04-08"},
+        "window": {"from": _mw_from, "to": _mw_to},
         "eas": [],
     }
 
@@ -2520,8 +2621,10 @@ def _do_build_run_files():
                 if term and save_terminal_path(term):
                     _append("Saved terminal64 path for this machine (%s)."
                             % __import__('socket').gethostname())
+            _tst_from, _tst_to = _resolve_test_window()
             emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
-                             terminal_exe=term or None)
+                             terminal_exe=term or None,
+                             from_date=_tst_from, to_date=_tst_to)
             # CHANGED: June 2026 — record bat + reports dir for the Run Tests / Compare steps
             _last_bat_path    = os.path.join(batch_dir, "run_all_tests.bat")
             _last_reports_dir = reports_dir
