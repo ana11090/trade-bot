@@ -930,14 +930,22 @@ def compare_reports(reports_dir, python_dir, manifest_path=''):
 # CHANGED: June 2026 — eval_windows_report feature
 
 def _mt5_csv_to_sim_trades(csv_path, pip_value_per_lot):
-    """Load an EA's mt5_trades.csv and convert to sim-trade dicts (net_pips +
-    exit_time). pips = profit / (volume * pip_value_per_lot), using MT5's real
-    net profit (incl. commission/swap). Returns [] if the file is missing/empty
-    or volume/pip_value make sizing impossible."""
+    """Load an EA's mt5_trades.csv and convert to sim-trade dicts carrying
+    REAL MT5 dollar profit (incl. commission/swap) — used as-is by
+    _trades_to_df's Real_Profit bypass, no pips round-trip.
+
+    WHY: this used to compute 'net_pips' = profit / (volume * pip_value_per_lot)
+         then hand it to _trades_to_df/_rescale_trades, which re-derived a
+         DIFFERENT dollar profit from that synthetic pips figure using THIS
+         report's own risk_pct/sl_pips args (defaults 1.0%/150 pips) — not
+         the EA's actual risk (e.g. 0.3%) or actual SL. On a 0.01-lot EA
+         this inflated every real dollar by ~67x (verified: real -$16.30
+         became -$1,086.67; a real -$204.97 loss became -$13,664.67).
+    CHANGED: July 2026 — real MT5 dollars pass through unmodified.
+    """
     import csv as _csv, os as _os
     out = []
-    pv = float(pip_value_per_lot or 0)
-    if not csv_path or not _os.path.isfile(csv_path) or pv <= 0:
+    if not csv_path or not _os.path.isfile(csv_path):
         return out
     try:
         with open(csv_path, encoding='utf-8-sig', newline='') as f:
@@ -945,6 +953,8 @@ def _mt5_csv_to_sim_trades(csv_path, pip_value_per_lot):
                 try:
                     vol = float(row.get('volume') or row.get('Volume') or 0)
                     profit = float(row.get('profit') or row.get('Profit') or 0)
+                    commission = float(row.get('commission') or row.get('Commission') or 0)
+                    swap = float(row.get('swap') or row.get('Swap') or 0)
                 except (TypeError, ValueError):
                     continue
                 if vol <= 0:
@@ -953,7 +963,7 @@ def _mt5_csv_to_sim_trades(csv_path, pip_value_per_lot):
                     'entry_time': row.get('entry_time') or row.get('time'),
                     'exit_time':  (row.get('exit_time') or row.get('entry_time')
                                    or row.get('time')),
-                    'net_pips':   profit / (vol * pv),
+                    'profit':     profit + commission + swap,  # real MT5 dollars
                 })
     except Exception as e:
         print(f"  [EVAL] mt5 csv read failed {csv_path}: {e}")
