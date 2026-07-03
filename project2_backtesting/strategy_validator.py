@@ -473,19 +473,45 @@ def _trades_to_df(trades, risk_per_trade_pct=1.0, default_sl_pips=150.0,
                   pip_value_per_lot=10.0, account_size=100000):
     """Convert trade list to DataFrame accepted by simulate_challenge.
 
-    Includes 'Pips' column so _rescale_trades in the simulator can compute
-    dollar profit from pips directly — preventing double lot-size scaling.
+    Two trade shapes are accepted, detected per-trade:
+    - Python backtest trades: only 'net_pips' — no real executed lot size,
+      so 'Pips' is populated and _rescale_trades derives a risk-based dollar
+      profit from it (legitimate — Python never decided a real lot size).
+    - MT5 executed trades (from _parse_mt5_html/_parse_mt5_xlsx): carry a
+      REAL dollar 'profit' (+ commission + swap) from the actual fill.
+      These previously fell through t.get('net_pips', 0) == 0 for every
+      trade (MT5 dicts have no 'net_pips' key at all), so the entire MT5
+      eval was silently computed on zero pips — disconnected from the real
+      MT5 P&L. Real dollars are ground truth for MT5 trades and must not be
+      re-derived from a synthetic risk/SL assumption; 'Real_Profit' carries
+      them through so simulate_challenge can use them as-is (see the
+      use_actual_profit bypass in _rescale_trades).
+    WHY / CHANGED: July 2026 — MT5 trades used real profit instead of
+      silently defaulting to 0 pips.
     """
     rows = []
     for t in trades:
-        net_pips = t.get('net_pips', 0)
-        rows.append({
-            'Close Date': pd.to_datetime(t.get('exit_time', t.get('entry_time', '2020-01-01'))),
-            'Pips':       float(net_pips),
-            'Profit':     0.0,  # placeholder — _rescale_trades will compute from Pips
-        })
+        _has_mt5_profit = ('net_pips' not in t) and ('profit' in t)
+        if _has_mt5_profit:
+            _real = (float(t.get('profit') or 0)
+                    + float(t.get('commission') or 0)
+                    + float(t.get('swap') or 0))
+            rows.append({
+                'Close Date':   pd.to_datetime(t.get('exit_time', t.get('entry_time', '2020-01-01'))),
+                'Pips':         None,
+                'Profit':       _real,
+                'Real_Profit':  _real,
+            })
+        else:
+            net_pips = t.get('net_pips', 0)
+            rows.append({
+                'Close Date':   pd.to_datetime(t.get('exit_time', t.get('entry_time', '2020-01-01'))),
+                'Pips':         float(net_pips),
+                'Profit':       0.0,  # placeholder — _rescale_trades computes from Pips
+                'Real_Profit':  None,
+            })
     if not rows:
-        return pd.DataFrame(columns=['Close Date', 'Pips', 'Profit'])
+        return pd.DataFrame(columns=['Close Date', 'Pips', 'Profit', 'Real_Profit'])
     df = pd.DataFrame(rows)
     df = df.sort_values('Close Date').reset_index(drop=True)
     return df

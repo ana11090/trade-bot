@@ -117,12 +117,25 @@ def _rescale_trades(trades_df, account_size: float, risk_per_trade_pct: float,
     Rescale trade profits using Pips column with fixed lot sizing.
     Daily DD management happens during simulation, not here.
     Returns (modified_df, calculated_lot_size).
+
+    WHY: 'Real_Profit' (non-null) marks REAL executed MT5 dollars — ground
+         truth for whatever lot size the EA actually traded. Those rows are
+         used as-is; only rows without it (Python pip-only trades, which
+         never decided a real lot size) get the risk-based rescale below.
+    CHANGED: July 2026 — real MT5 profit bypass (use_actual_profit rows)
     """
     df = trades_df.copy()
+    _has_real = 'Real_Profit' in df.columns and df['Real_Profit'].notna().any()
 
     risk_dollars = account_size * (risk_per_trade_pct / 100.0)
     lot_size = risk_dollars / (default_sl_pips * pip_value_per_lot)
     lot_size = max(0.01, min(lot_size, 100.0))
+
+    if _has_real and df['Real_Profit'].notna().all():
+        # WHY: every row is real MT5 dollars — nothing to rescale, use as-is.
+        df["Profit_Original"] = df["Profit"].copy()
+        df["Profit"] = df["Real_Profit"]
+        return df, lot_size
 
     # WHY (leverage): Cap lot size to margin capacity so the simulator
     #      doesn't count trades that would be rejected by the broker.
