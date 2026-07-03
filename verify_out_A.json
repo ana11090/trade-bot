@@ -1,0 +1,70 @@
+{
+  "rule_15_BUY_M5_4c_6179_ATR_Only_81cf_M5.json": {
+    "rule": "rule_15_BUY_M5_4c_6179_ATR_Only_81cf_M5.json",
+    "n_trades": 3621,
+    "md5": "b1736ff5ea9069ba5907c18974b21920",
+    "sample": [
+      {
+        "entry_time": "2021-05-03 16:35:00",
+        "exit_time": "2021-05-04 01:00:00",
+        "entry_price": "1791.62",
+        "exit_price": "1792.61",
+        "exit_reason": "HARD_CLOSE_HOUR",
+        "pnl_pips": "99.0",
+        "candles_held": "99"
+      },
+      {
+        "entry_time": "2021-05-04 02:00:00",
+        "exit_time": "2021-05-04 06:25:00",
+        "entry_price": "1791.22",
+        "exit_price": "1784.54815",
+        "exit_reason": "ATR_STOP_LOSS",
+        "pnl_pips": "-667.2",
+        "candles_held": "52"
+      },
+      {
+        "entry_time": "2021-05-04 06:25:00",
+        "exit_time": "2021-05-04 15:00:00",
+        "entry_price": "1785.51",
+        "exit_price": "1797.10688",
+        "exit_reason": "ATR_TAKE_PROFIT",
+        "pnl_pips": "1159.7",
+        "candles_held": "102"
+      }
+    ]
+  },
+  "rule_15_BUY_M5_4c_6179_ATR_Fixed_SL_016e_M5.json": {
+    "rule": "rule_15_BUY_M5_4c_6179_ATR_Fixed_SL_016e_M5.json",
+    "n_trades": 7890,
+    "md5": "f71325cf450580fe05325036c9352e72",
+    "sample": [
+      {
+        "entry_time": "2021-05-03 16:35:00",
+        "exit_time": "2021-05-04 01:00:00",
+        "entry_price": "1791.62",
+        "exit_price": "1792.61",
+        "exit_reason": "HARD_CLOSE_HOUR",
+        "pnl_pips": "99.0",
+        "candles_held": "99"
+      },
+      {
+        "entry_time": "2021-05-04 02:00:00",
+        "exit_time": "2021-05-04 06:05:00",
+        "entry_price": "1791.22",
+        "exit_price": "1787.88",
+        "exit_reason": "ATR_FIXED_SL",
+        "pnl_pips": "-334.0",
+        "candles_held": "48"
+      },
+      {
+        "entry_time": "2021-05-04 06:05:00",
+        "exit_time": "2021-05-04 06:15:00",
+        "entry_price": "1788.83",
+        "exit_price": "1785.93",
+        "exit_reason": "ATR_FIXED_SL",
+        "pnl_pips": "-290.0",
+        "candles_held": "1"
+      }
+    ]
+  }
+}

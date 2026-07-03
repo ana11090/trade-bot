@@ -1,4 +1,4 @@
-# WHY: expose batch EA generation + MT5 run-file emit + report compare in one panel.
+﻿# WHY: expose batch EA generation + MT5 run-file emit + report compare in one panel.
 # CHANGED: June 2026 — new panel; reuses batch_ea_tools + batch_compare_reports.
 # CHANGED: June 2026 — added checkbox rule grid (same interaction as Strategy Refiner)
 # CHANGED: June 2026 — grid columns + filters match Strategy Refiner grid
@@ -1588,6 +1588,49 @@ def _write_debug_dump():
                     (len(py or []),
                      ("%.1f" % py_net_pips) if py_net_pips is not None else "?",
                      (meta or {}).get("file", "?")))
+
+            # WHY: entry/exit/profit per trade was parsed (_parse_mt5_html)
+            #      but never written per-EA — only aggregate stats were.
+            # CHANGED: July 2026 — full MT5 trade list in summary.txt
+            f.write("\n" + "=" * 100 + "\n")
+            f.write("MT5 TRADES (%d)\n" % len(mt5_trades))
+            f.write("=" * 100 + "\n")
+            f.write("%-20s %-20s %5s %10s %10s %8s %9s %8s %8s\n" % (
+                "entry_time", "exit_time", "dir", "entry_px",
+                "exit_px", "vol", "profit", "comm", "swap"))
+            f.write("-" * 100 + "\n")
+            for t in mt5_trades:
+                f.write("%-20s %-20s %5s %10s %10s %8s %9s %8s %8s\n" % (
+                    t.get("entry_time", "?"), t.get("exit_time", "?"),
+                    (t.get("direction") or "?")[:5],
+                    ("%.2f" % t["entry_price"]) if t.get("entry_price") is not None else "?",
+                    ("%.2f" % t["exit_price"]) if t.get("exit_price") is not None else "?",
+                    t.get("volume", "?"),
+                    ("%.2f" % t["profit"]) if t.get("profit") is not None else "?",
+                    ("%.2f" % t["commission"]) if t.get("commission") is not None else "?",
+                    ("%.2f" % t["swap"]) if t.get("swap") is not None else "?",
+                ))
+            _tot_profit = sum((t.get("profit") or 0) for t in mt5_trades)
+            _tot_comm   = sum((t.get("commission") or 0) for t in mt5_trades)
+            _tot_swap   = sum((t.get("swap") or 0) for t in mt5_trades)
+            f.write("-" * 100 + "\n")
+            f.write("TOTALS: profit=%.2f  commission=%.2f  swap=%.2f  net=%.2f\n" %
+                    (_tot_profit, _tot_comm, _tot_swap,
+                     _tot_profit + _tot_comm + _tot_swap))
+
+        # WHY: same trade list as a proper CSV for Excel/filtering.
+        # CHANGED: July 2026 — mt5_trades_detail.csv per EA
+        if mt5_trades:
+            import csv as _csv_mt5
+            with open(os.path.join(sub, "mt5_trades_detail.csv"), "w",
+                     newline="", encoding="utf-8") as _fcsv:
+                _fields = ["entry_time", "exit_time", "direction", "entry_price",
+                          "exit_price", "volume", "profit", "commission",
+                          "swap", "comment"]
+                _w = _csv_mt5.DictWriter(_fcsv, fieldnames=_fields,
+                                         extrasaction="ignore")
+                _w.writeheader()
+                _w.writerows(mt5_trades)
 
         # ADDED 2026-06-24 — refiner-style eval, TWO files per EA:
         #   eval_windows_PY.xlsx  (Python trades — matches refiner panel exactly)

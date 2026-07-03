@@ -355,16 +355,24 @@ def _simulate_phase(trading_dates, daily_trades, start_idx, phase,
         #      trade list, measure max drawdown from peak within the day.
         # CHANGED: April 2026 — Phase 71 Fix 10 — intraday peak DD
         #          (audit Part F HIGH #10)
-        _intraday_peak = 0.0
-        _intraday_run  = 0.0
-        _intraday_max_dd = 0.0
-        for _tp in trade_list:  # trade_list is list of floats (profits)
+        # Intraday max drawdown measured BELOW the start-of-day line (0), NOT
+        # peak-to-trough of cumulative P&L.
+        # WHY (2026-06-26 fix): the old code anchored the peak at the running
+        #   max, so a profitable day that pulled back from an intraday profit
+        #   high (e.g. +40% -> +33%) registered the give-back as "drawdown" and
+        #   falsely breached the daily limit. Daily DD is how far the account
+        #   falls BELOW its start-of-day equity — retracing gains while still up
+        #   on the day is not drawdown. Matches live_firm_sim.py (L204-206) and
+        #   the EA runtime (ea_generator.py L1357), which both measure distance
+        #   below the start-of-day reference.
+        _intraday_run    = 0.0
+        _intraday_low    = 0.0   # most-negative cumulative point (below start)
+        for _tp in trade_list:   # trade_list is list of floats (profits)
             _intraday_run += _tp
-            if _intraday_run > _intraday_peak:
-                _intraday_peak = _intraday_run
-            _drawdown_from_peak = _intraday_peak - _intraday_run
-            if _drawdown_from_peak > _intraday_max_dd:
-                _intraday_max_dd = _drawdown_from_peak
+            if _intraday_run < _intraday_low:
+                _intraday_low = _intraday_run
+        # how far below start-of-day the account dipped (0 if never below)
+        _intraday_max_dd = abs(min(0.0, _intraday_low))
 
         if daily_dd_ref_type == 'max_balance_equity':
             # Simulator approximation: use balance at start of day as the
@@ -684,16 +692,24 @@ def _simulate_funded_stage(trading_dates, daily_trades, start_idx,
         #      See C1 comment for full explanation of simulator limitations.
         # CHANGED: April 2026 — remove spurious floor (audit bug #2)
         # Phase 71 Fix 10: intraday peak DD (same as eval stage)
-        _intraday_peak = 0.0
-        _intraday_run  = 0.0
-        _intraday_max_dd = 0.0
-        for _tp in trade_list:  # trade_list is list of floats (profits)
+        # Intraday max drawdown measured BELOW the start-of-day line (0), NOT
+        # peak-to-trough of cumulative P&L.
+        # WHY (2026-06-26 fix): the old code anchored the peak at the running
+        #   max, so a profitable day that pulled back from an intraday profit
+        #   high (e.g. +40% -> +33%) registered the give-back as "drawdown" and
+        #   falsely breached the daily limit. Daily DD is how far the account
+        #   falls BELOW its start-of-day equity — retracing gains while still up
+        #   on the day is not drawdown. Matches live_firm_sim.py (L204-206) and
+        #   the EA runtime (ea_generator.py L1357), which both measure distance
+        #   below the start-of-day reference.
+        _intraday_run    = 0.0
+        _intraday_low    = 0.0   # most-negative cumulative point (below start)
+        for _tp in trade_list:   # trade_list is list of floats (profits)
             _intraday_run += _tp
-            if _intraday_run > _intraday_peak:
-                _intraday_peak = _intraday_run
-            _drawdown_from_peak = _intraday_peak - _intraday_run
-            if _drawdown_from_peak > _intraday_max_dd:
-                _intraday_max_dd = _drawdown_from_peak
+            if _intraday_run < _intraday_low:
+                _intraday_low = _intraday_run
+        # how far below start-of-day the account dipped (0 if never below)
+        _intraday_max_dd = abs(min(0.0, _intraday_low))
 
         if daily_dd_ref_type_f == 'max_balance_equity':
             dd_ref_f = balance - day_pnl  # balance at start of day (no floor)

@@ -115,5 +115,6 @@
   "win_pass_total": 0,
   "win_pass_rate": -1.0,
   "max_consecutive_dd_breaches": 0,
-  "entry_tf": "M5"
+  "entry_tf": "M5",
+  "run_max_spread_pips": 65.0
 }
