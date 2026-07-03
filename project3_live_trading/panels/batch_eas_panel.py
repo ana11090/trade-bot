@@ -81,11 +81,9 @@ _acct_var       = None   # selected account size (str), e.g. "10000"
 _exec_mode_var    = None   # "Zero Latency" | "Random"
 EXEC_MODE_KEY     = "execution_mode"
 DEFAULT_EXEC_MODE = "Random"
-# Map UI label -> MT5 tester ExecutionMode value (0=No delay, 1=Random delay, 2=Custom delay)
-EXEC_MODE_MAP = {
-    "Zero Latency": 0,
-    "Random":       1,
-}
+# WHY: the UI-label -> MT5-int mapping lives in batch_ea_tools.TESTER_EXEC_MODE_MAP
+#   (single source of truth, next to emit_tester_inis which consumes it) — this
+#   panel just passes the raw label string through.
 _EXEC_MODE_STATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "batch_exec_mode.json")
@@ -1069,7 +1067,7 @@ def _step_build_run_files():
         _exec_mode_sel = _exec_mode_var.get() if _exec_mode_var is not None else DEFAULT_EXEC_MODE
         emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
                          terminal_exe=term, from_date=_tst_from, to_date=_tst_to,
-                         exec_mode=EXEC_MODE_MAP.get(_exec_mode_sel, 1))
+                         exec_mode=_exec_mode_sel)
         _last_bat_path = os.path.join(batch_dir, "run_all_tests.bat")
         _last_reports_dir = reports_dir
         _append("Run files written.")
@@ -2713,7 +2711,7 @@ def _do_build_run_files():
             emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
                              terminal_exe=term or None,
                              from_date=_tst_from, to_date=_tst_to,
-                             exec_mode=EXEC_MODE_MAP.get(_exec_mode_sel, 1))
+                             exec_mode=_exec_mode_sel)
             # CHANGED: June 2026 — record bat + reports dir for the Run Tests / Compare steps
             _last_bat_path    = os.path.join(batch_dir, "run_all_tests.bat")
             _last_reports_dir = reports_dir

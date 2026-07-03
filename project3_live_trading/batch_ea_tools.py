@@ -463,6 +463,13 @@ def batch_generate(out_dir, source='my_rules', symbol='XAUUSD', magic_start=1234
 # CHANGED: June 2026 — Model param (0=1-min OHLC, no tick data needed) + Currency/Visual/Forward
 #   so the headless tester actually starts. Model=1 (every tick) hung waiting for tick history
 #   that wasn't downloaded — tester opened and idled forever (reports 0, "Cloud servers off").
+# CHANGED: July 2026 — Execution mode dropdown wiring (Zero Latency / Random)
+# MT5 Strategy Tester ExecutionMode values (0=No delay, 1=Random delay, 2=Custom delay)
+TESTER_EXEC_MODE_MAP = {
+    "Zero Latency": 0,
+    "Random":       1,
+}
+
 _INI_TEMPLATE = """; auto-generated MT5 Strategy Tester config
 [Tester]
 Expert={expert_rel}
@@ -491,7 +498,7 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
                      reports_dir, symbol='XAUUSD', period='M5',
                      from_date='2026.01.01', to_date='2026.04.08',
                      deposit=10000, leverage=10, terminal_exe=None, model=0,
-                     exec_mode=1):
+                     exec_mode='Random'):
     """Write one .ini per generated EA and a run_all.bat.
 
     terminal_data_dir : the MT5 *data* folder (where MQL5\\Experts lives), e.g.
@@ -501,9 +508,21 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         NOTE: you must COMPILE the .mq5 to .ex5 first (MetaEditor or /compile).
     terminal_exe : full path to terminal64.exe (for the .bat). If None, the .bat
         uses a placeholder you edit once.
-    exec_mode : MT5 tester ExecutionMode — 0=No delay (zero latency),
-        1=Random delay (default), 2=Custom delay.
+    exec_mode : "Zero Latency" | "Random" — UI label from the batch panel's
+        Execution dropdown, mapped via TESTER_EXEC_MODE_MAP to MT5's
+        ExecutionMode ini value (0=No delay, 1=Random delay).
     """
+    tester_exec_mode = TESTER_EXEC_MODE_MAP.get(exec_mode, 1)
+    # WHY (Phase: exec-mode wiring): MT5 only applies ExecutionMode (latency
+    #      simulation) when the testing Model is "Every tick based on real
+    #      ticks" (Model=4). This codebase defaults Model=0 (1-min OHLC) to
+    #      avoid needing downloaded tick history (see CHANGED note above on
+    #      _INI_TEMPLATE) — so Random delay silently has no effect unless the
+    #      caller also switches to Model=4. Warn, don't block.
+    if tester_exec_mode != 0 and model != 4:
+        print(f"[WARN] ExecutionMode={tester_exec_mode} ({exec_mode}) has no effect "
+              f"when Model={model}. Set Model=4 (real ticks) to use random delay.")
+
     with open(manifest_path, encoding='utf-8') as f:
         man = json.load(f)
 
@@ -560,7 +579,7 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
             expert_rel=expert_rel, symbol=symbol, period=_period,
             from_date=from_date, to_date=to_date, deposit=deposit,
             leverage=leverage, report_path=report_path, model=model,
-            exec_mode=exec_mode,
+            exec_mode=tester_exec_mode,
         )
         ini_path = os.path.join(ini_dir, name + '.ini')
         with open(ini_path, 'w', encoding='utf-8') as f:
@@ -616,4 +635,5 @@ if __name__ == '__main__':
             symbol=args.symbol, period=args.period,
             from_date=args.from_date, to_date=args.to_date,
             terminal_exe=args.terminal_exe or None,
+            exec_mode='Random',  # CLI harness has no panel dropdown; explicit safe default
         )
