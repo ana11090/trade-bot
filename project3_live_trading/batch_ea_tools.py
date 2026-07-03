@@ -469,6 +469,7 @@ Expert={expert_rel}
 Symbol={symbol}
 Period={period}
 Model={model}
+ExecutionMode={exec_mode}
 FromDate={from_date}
 ToDate={to_date}
 ForwardMode=0
@@ -489,7 +490,8 @@ DebugConditions=true||false||0||true||N
 def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
                      reports_dir, symbol='XAUUSD', period='M5',
                      from_date='2026.01.01', to_date='2026.04.08',
-                     deposit=10000, leverage=10, terminal_exe=None, model=0):
+                     deposit=10000, leverage=10, terminal_exe=None, model=0,
+                     exec_mode=1):
     """Write one .ini per generated EA and a run_all.bat.
 
     terminal_data_dir : the MT5 *data* folder (where MQL5\\Experts lives), e.g.
@@ -499,6 +501,8 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
         NOTE: you must COMPILE the .mq5 to .ex5 first (MetaEditor or /compile).
     terminal_exe : full path to terminal64.exe (for the .bat). If None, the .bat
         uses a placeholder you edit once.
+    exec_mode : MT5 tester ExecutionMode — 0=No delay (zero latency),
+        1=Random delay (default), 2=Custom delay.
     """
     with open(manifest_path, encoding='utf-8') as f:
         man = json.load(f)
@@ -556,6 +560,7 @@ def emit_tester_inis(manifest_path, terminal_data_dir, experts_subdir,
             expert_rel=expert_rel, symbol=symbol, period=_period,
             from_date=from_date, to_date=to_date, deposit=deposit,
             leverage=leverage, report_path=report_path, model=model,
+            exec_mode=exec_mode,
         )
         ini_path = os.path.join(ini_dir, name + '.ini')
         with open(ini_path, 'w', encoding='utf-8') as f:

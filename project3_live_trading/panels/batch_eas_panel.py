@@ -76,6 +76,44 @@ _src_combo_ref  = None   # the existing Source dropdown widget (hidden in scenar
 # CHANGED: June 2026 — account-size dropdown (rule's own account wins; this is the
 #   fallback). Applies in BOTH modes; populated from the firm's account_sizes.
 _acct_var       = None   # selected account size (str), e.g. "10000"
+# CHANGED: July 2026 — Execution mode dropdown (Zero Latency / Random), persisted
+#   across sessions and wired into the MT5 tester .ini's ExecutionMode key.
+_exec_mode_var    = None   # "Zero Latency" | "Random"
+EXEC_MODE_KEY     = "execution_mode"
+DEFAULT_EXEC_MODE = "Random"
+# Map UI label -> MT5 tester ExecutionMode value (0=No delay, 1=Random delay, 2=Custom delay)
+EXEC_MODE_MAP = {
+    "Zero Latency": 0,
+    "Random":       1,
+}
+_EXEC_MODE_STATE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "batch_exec_mode.json")
+
+
+def _load_exec_mode():
+    """Return last-used execution mode, defaulting to 'Random'."""
+    import json
+    try:
+        with open(_EXEC_MODE_STATE_PATH, encoding="utf-8") as f:
+            return json.load(f).get(EXEC_MODE_KEY, DEFAULT_EXEC_MODE)
+    except Exception:
+        return DEFAULT_EXEC_MODE
+
+
+def _save_exec_mode(value):
+    """Persist execution mode selection (atomic write, mirrors shared/feature_toggles.py)."""
+    import json, tempfile
+    try:
+        dir_name = os.path.dirname(_EXEC_MODE_STATE_PATH) or "."
+        fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix=".tmp_exec_mode_", dir=dir_name)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({EXEC_MODE_KEY: value}, fh, indent=2)
+        os.replace(tmp_path, _EXEC_MODE_STATE_PATH)
+    except Exception:
+        pass
+
+
 # CHANGED: June 2026 — multi-select exit-strategy filter
 _f_exit_vars  = {}     # exit_name -> tk.BooleanVar
 _f_exit_all   = None   # tk.BooleanVar for the "All" toggle
@@ -1028,8 +1066,10 @@ def _step_build_run_files():
             _append("Build failed: terminal64.exe not found. Run '2. Build Run Files' manually once to set path.")
             return False
         _tst_from, _tst_to = _resolve_test_window()
+        _exec_mode_sel = _exec_mode_var.get() if _exec_mode_var is not None else DEFAULT_EXEC_MODE
         emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
-                         terminal_exe=term, from_date=_tst_from, to_date=_tst_to)
+                         terminal_exe=term, from_date=_tst_from, to_date=_tst_to,
+                         exec_mode=EXEC_MODE_MAP.get(_exec_mode_sel, 1))
         _last_bat_path = os.path.join(batch_dir, "run_all_tests.bat")
         _last_reports_dir = reports_dir
         _append("Run files written.")
@@ -2582,6 +2622,10 @@ def _write_debug_dump():
 
 def _do_run_all(source_var):
     """Chain: Generate → Compile → Build → Run → Compare → Debug Dump."""
+    # Persist execution mode selection
+    if _exec_mode_var is not None:
+        _save_exec_mode(_exec_mode_var.get())
+
     def chain():
         global _batch_stop_requested
         _batch_stop_requested = False
@@ -2665,9 +2709,11 @@ def _do_build_run_files():
                     _append("Saved terminal64 path for this machine (%s)."
                             % __import__('socket').gethostname())
             _tst_from, _tst_to = _resolve_test_window()
+            _exec_mode_sel = _exec_mode_var.get() if _exec_mode_var is not None else DEFAULT_EXEC_MODE
             emit_tester_inis(manifest, data_dir, "Experts\\batch", reports_dir,
                              terminal_exe=term or None,
-                             from_date=_tst_from, to_date=_tst_to)
+                             from_date=_tst_from, to_date=_tst_to,
+                             exec_mode=EXEC_MODE_MAP.get(_exec_mode_sel, 1))
             # CHANGED: June 2026 — record bat + reports dir for the Run Tests / Compare steps
             _last_bat_path    = os.path.join(batch_dir, "run_all_tests.bat")
             _last_reports_dir = reports_dir
@@ -2899,6 +2945,7 @@ def build_panel(parent):
     global _log, _grid_tree, _cur_source
     global _f_stage, _f_tf, _f_dir, _f_mintr, _f_minwr, _f_sort, _f_profitable, _nostats_lbl
     global _f_exit_vars, _f_exit_all, _f_exit_menu, _f_exit_menuobj
+    global _exec_mode_var
     panel = tk.Frame(parent, bg=BG)
 
     hdr = tk.Frame(panel, bg=DARK)
@@ -3005,6 +3052,16 @@ def build_panel(parent):
     _acct_combo = ttk.Combobox(bar, textvariable=_acct_var, width=10,
                                state="readonly", values=_acct_sizes())
     _acct_combo.pack(side=tk.LEFT, padx=(0, 12))
+
+    # --- Execution mode (persisted; wired into tester .ini ExecutionMode) ---
+    tk.Label(bar, text="Execution:", bg=BG, fg=DARK,
+             font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 2))
+    _exec_mode_var = tk.StringVar(value=_load_exec_mode())
+    _exec_mode_combo = ttk.Combobox(
+        bar, textvariable=_exec_mode_var,
+        values=["Zero Latency", "Random"],
+        state="readonly", width=13)
+    _exec_mode_combo.pack(side=tk.LEFT, padx=(0, 12))
 
     # CHANGED 2026-06-26 — action buttons get their own row. The Mode/Scenario/
     # Account dropdowns were consuming the top bar's width and pushing "▶ Run All"
